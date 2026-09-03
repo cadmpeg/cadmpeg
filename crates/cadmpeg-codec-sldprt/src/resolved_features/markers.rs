@@ -198,14 +198,13 @@ pub(crate) fn spatial_sketches(
                 native_ref: Some(lane.id.clone()),
             });
             entities.extend(projected.into_iter().enumerate().map(
-                |(index, (_, native_ref, geometry))| SpatialSketchEntity {
-                    id: SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                    sketch: sketch_id.clone(),
-                    construction: false,
-                    native_ref,
-                    geometry_ref: None,
-                    endpoint_refs: Vec::new(),
-                    geometry,
+                |(index, (_, native_ref, geometry))| {
+                    SpatialSketchEntity::new(
+                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
+                        sketch_id.clone(),
+                        geometry,
+                    )
+                    .with_native_ref(native_ref)
                 },
             ));
             feature.definition = FeatureDefinition::SpatialSketch {
@@ -267,17 +266,15 @@ pub(crate) fn spatial_sketches(
             vertices
                 .chunks_exact(2)
                 .enumerate()
-                .map(|(index, vertices)| SpatialSketchEntity {
-                    id: SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
-                    sketch: sketch_id.clone(),
-                    construction: false,
-                    native_ref: None,
-                    geometry_ref: None,
-                    endpoint_refs: Vec::new(),
-                    geometry: SpatialSketchGeometry::Line {
-                        start: vertices[0],
-                        end: vertices[1],
-                    },
+                .map(|(index, vertices)| {
+                    SpatialSketchEntity::new(
+                        SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
+                        sketch_id.clone(),
+                        SpatialSketchGeometry::Line {
+                            start: vertices[0],
+                            end: vertices[1],
+                        },
+                    )
                 }),
         );
         feature.definition = FeatureDefinition::SpatialSketch {

@@ -11,14 +11,12 @@ use super::prelude::*;
 
 #[test]
 fn three_member_symmetry_states_project_unique_reflection_axis() {
-    let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry: SketchGeometry| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let first = entity(
         "generated:point#left",
@@ -51,9 +49,9 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
                 first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
                 second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
                 axis: ref axis_id,
-            } if first_id == &first.id
-                && second_id == &second.id
-                && axis_id == &axis_entity.id
+            } if first_id == first.id()
+                && second_id == second.id()
+                && axis_id == axis_entity.id()
         ));
     }
 
@@ -85,14 +83,12 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
 
 #[test]
 fn counted_dimension_groups_resolve_full_circle_symmetry() {
-    let entity = |id: &str, geometry: SketchGeometry| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry: SketchGeometry| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let first = entity(
         "generated:circle#first",
@@ -122,7 +118,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
             axis: ref axis_id,
-        }) if first_id == &first.id && second_id == &second.id && axis_id == &axis.id
+        }) if first_id == first.id() && second_id == second.id() && axis_id == axis.id()
     ));
 
     let mut mismatched = second.clone();
@@ -135,14 +131,12 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
 
 #[test]
 fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
-    let entity = |id: &str, geometry: SketchGeometry| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry: SketchGeometry| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let first = entity(
         "generated:arc#first",
@@ -176,7 +170,7 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
             axis: ref axis_id,
-        }) if first_id == &first.id && second_id == &second.id && axis_id == &axis.id
+        }) if first_id == first.id() && second_id == second.id() && axis_id == axis.id()
     ));
 
     let mut mismatched = second.clone();
@@ -191,14 +185,12 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
 
 #[test]
 fn counted_dimension_groups_resolve_centered_entities() {
-    let entity = |id: &str, geometry: SketchGeometry| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry: SketchGeometry| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let circle = entity(
         "generated:circle#first",
@@ -219,7 +211,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
     assert!(matches!(
         exact_counted_dimension_relation(&[&circle, &arc]),
         Some(SketchConstraintDefinition::Concentric { first, second })
-            if first == circle.id && second == arc.id
+            if first == circle.id().clone() && second == arc.id().clone()
     ));
 
     let coradial = entity(
@@ -232,7 +224,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
     assert!(matches!(
         exact_counted_dimension_relation(&[&circle, &coradial]),
         Some(SketchConstraintDefinition::Coradial { first, second })
-            if first == circle.id && second == coradial.id
+            if first == circle.id().clone() && second == coradial.id().clone()
     ));
 
     let ellipse = entity(
@@ -248,7 +240,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
     assert!(matches!(
         exact_counted_dimension_relation(&[&circle, &ellipse]),
         Some(SketchConstraintDefinition::Concentric { first, second })
-            if first == circle.id && second == ellipse.id
+            if first == circle.id().clone() && second == ellipse.id().clone()
     ));
 
     let mut displaced = arc.clone();
@@ -272,14 +264,12 @@ fn counted_dimension_groups_resolve_centered_entities() {
 
 #[test]
 fn coincident_relation_projects_one_unique_shared_locus_per_member() {
-    let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry: SketchGeometry| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let line = entity(
         "generated:line#0",
@@ -298,8 +288,8 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
         crate::design::dimensions::exact_coincident_loci(&[&line, &point]),
         Some(SketchConstraintDefinition::CoincidentLoci {
             loci: vec![
-                cadmpeg_ir::sketches::SketchLocus::Start(line.id.clone()),
-                cadmpeg_ir::sketches::SketchLocus::Entity(point.id.clone()),
+                cadmpeg_ir::sketches::SketchLocus::Start(line.id().clone()),
+                cadmpeg_ir::sketches::SketchLocus::Entity(point.id().clone()),
             ],
         })
     );
@@ -318,16 +308,14 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
 
 #[test]
 fn polygon_constraint_requires_three_distinct_resolved_members() {
-    let entity = |id: &str| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(0.0, 0.0),
-        },
+    let entity = |id: &str| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        )
     };
     let first = entity("generated:point#0");
     let second = entity("generated:point#1");
@@ -335,7 +323,7 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
     assert_eq!(
         exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third]),
         Some(SketchConstraintDefinition::Polygon {
-            entities: vec![first.id.clone(), second.id.clone(), third.id.clone()]
+            entities: vec![first.id().clone(), second.id().clone(), third.id().clone()]
         })
     );
     assert!(exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second]).is_none());
@@ -347,14 +335,12 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
 
 #[test]
 fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
-    let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry: SketchGeometry| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let source_horizontal = entity(
         "generated:line#source-horizontal",
@@ -432,10 +418,10 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         panic!("expected neutral offset constraint")
     };
     assert_eq!(pairs.len(), 2);
-    assert_eq!(pairs[0].source, source_horizontal.id);
-    assert_eq!(pairs[0].result, result_horizontal.id);
-    assert_eq!(pairs[1].source, source_vertical.id);
-    assert_eq!(pairs[1].result, result_vertical.id);
+    assert_eq!(pairs[0].source, source_horizontal.id().clone());
+    assert_eq!(pairs[0].result, result_horizontal.id().clone());
+    assert_eq!(pairs[1].source, source_vertical.id().clone());
+    assert_eq!(pairs[1].result, result_vertical.id().clone());
     assert!((distance.0 - 2.0).abs() <= 1.0e-9);
     assert!(pairs[0].source_reversed);
     assert!(!pairs[1].source_reversed);
@@ -469,14 +455,13 @@ fn single_curve_annotation_projects_parameterized_offset() {
     };
     let source_curve = curve(source_curve_id.clone(), 10, 20, 0);
     let result_curve = curve(result_curve_id.clone(), 11, 21, 7);
-    let entity = |id: &str, native_ref: String, start, end| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(native_ref),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let entity = |id: &str, native_ref: String, start, end| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Line { start, end },
+        )
+        .with_native_ref(Some(native_ref))
     };
     let source = entity(
         "source",
@@ -568,8 +553,8 @@ fn single_curve_annotation_projects_parameterized_offset() {
                 negated: false,
             }),
         } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
-            source: source.id.clone(),
-            result: result.id.clone(),
+            source: source.id().clone(),
+            result: result.id().clone(),
             source_reversed: true,
         }] && (distance - 2.0).abs() <= 1.0e-9
             && actual_parameter == parameter_id
@@ -620,8 +605,8 @@ fn single_curve_annotation_projects_parameterized_offset() {
             }),
             ..
         } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
-            source: source.id.clone(),
-            result: result.id.clone(),
+            source: source.id().clone(),
+            result: result.id().clone(),
             source_reversed: true,
         }] && actual_parameter == parameter_id
     ));
@@ -694,14 +679,12 @@ fn mixed_circle_arc_offset_uses_concentric_radius_difference() {
 
 #[test]
 fn angular_point_operand_selects_unique_incident_line_by_value() {
-    let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry: SketchGeometry| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let point = entity(
         "generated:point#vertex",
@@ -744,7 +727,7 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
         &projected,
     )
     .unwrap();
-    assert_eq!(lines, (diagonal.id.clone(), explicit.id.clone()));
+    assert_eq!(lines, (diagonal.id().clone(), explicit.id().clone()));
     let supplementary = indirect_angular_lines(
         "native",
         &[&point, &explicit],
@@ -920,41 +903,32 @@ fn counted_angular_group_projects_unique_point_selected_line() {
     let explicit = curve(41, Point2::new(0.0, 0.0), Point2::new(2.0, 0.0));
     let candidate = curve(42, Point2::new(0.0, 0.0), Point2::new(1.0, 3.0f64.sqrt()));
     let sketch = neutral_sketch_id(&placement);
-    let point_entity = SketchEntity {
-        id: SketchEntityId("generated:point#40".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(point.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let point_entity = SketchEntity::new(
+        SketchEntityId("generated:point#40".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: point.coordinates,
         },
-    };
-    let explicit_entity = SketchEntity {
-        id: SketchEntityId("generated:line#41".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(explicit.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    )
+    .with_native_ref(Some(point.id.clone()));
+    let explicit_entity = SketchEntity::new(
+        SketchEntityId("generated:line#41".into()),
+        sketch.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 0.0),
         },
-    };
-    let candidate_entity = SketchEntity {
-        id: SketchEntityId("generated:line#42".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(candidate.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    )
+    .with_native_ref(Some(explicit.id.clone()));
+    let candidate_entity = SketchEntity::new(
+        SketchEntityId("generated:line#42".into()),
+        sketch.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 3.0f64.sqrt()),
         },
-    };
+    )
+    .with_native_ref(Some(candidate.id.clone()));
     let entities = vec![point_entity, explicit_entity, candidate_entity];
     let curves = vec![explicit, candidate];
     let constraints = project_dimension_constraints(
@@ -982,25 +956,23 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             first,
             second,
             parameter: actual_parameter,
-        } if first == &entities[2].id
-            && second == &entities[1].id
+        } if first == entities[2].id()
+            && second == entities[1].id()
             && actual_parameter == &neutral_parameter_id_parts(stream, 20)
     ));
 }
 
 #[test]
 fn parallel_group_binds_one_common_axis_angle() {
-    let line = |id: &str, end: Point2| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
-            start: Point2::new(0.0, 0.0),
-            end,
-        },
+    let line = |id: &str, end: Point2| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end,
+            },
+        )
     };
     let first = line("generated:line#first", Point2::new(1.0, 1.0));
     let second = line("generated:line#second", Point2::new(-2.0, -2.0));
@@ -1027,7 +999,7 @@ fn parallel_group_binds_one_common_axis_angle() {
             entity,
             axis: SketchAxis::Horizontal,
             parameter,
-        }) if entity == first.id && parameter == parameter_id
+        }) if entity == first.id().clone() && parameter == parameter_id
     ));
     assert!(
         crate::design::dimensions::parallel_group_axis_angle_definition(

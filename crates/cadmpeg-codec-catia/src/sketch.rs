@@ -118,7 +118,7 @@ pub(crate) fn transfer_native_sketch_entities(
                 "sketch-entity",
             ));
             if ir.model.sketch_entities.iter().any(|entity| {
-                entity.id == entity_id
+                entity.id() == &entity_id
                     || (entity.sketch == sketch_id
                         && entity.native_ref.as_deref() == Some(geometry_field.id.as_str()))
             }) {
@@ -127,15 +127,14 @@ pub(crate) fn transfer_native_sketch_entities(
             let Some(native_kind) = geometry_field.class_name.clone() else {
                 continue;
             };
-            ir.model.sketch_entities.push(SketchEntity {
-                id: entity_id,
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: Some(geometry_field.id.clone()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Native { native_kind },
-            });
+            ir.model.sketch_entities.push(
+                SketchEntity::new(
+                    entity_id,
+                    sketch_id.clone(),
+                    SketchGeometry::Native { native_kind },
+                )
+                .with_native_ref(Some(geometry_field.id.clone())),
+            );
             transferred.insert(geometry_field.id.clone());
         }
     }
@@ -233,7 +232,10 @@ pub(crate) fn transfer_native_sketch_constraints(
             .iter()
             .filter(|entity| entity.sketch == sketch_id)
             .filter_map(|entity| {
-                Some((entity.native_ref.as_deref()?.to_string(), entity.id.clone()))
+                Some((
+                    entity.native_ref.as_deref()?.to_string(),
+                    entity.id().clone(),
+                ))
             })
             .collect::<HashMap<_, _>>();
 
@@ -725,7 +727,7 @@ fn sketch_entities_by_native_ref(
         if entities
             .insert(
                 native_ref.to_string(),
-                (entity.id.clone(), entity.sketch.clone()),
+                (entity.id().clone(), entity.sketch.clone()),
             )
             .is_some()
         {
@@ -1427,7 +1429,7 @@ mod tests {
             entity.native_ref.as_deref(),
             Some("catia:outer:object-record#geometry-field")
         );
-        assert_eq!(entity.id.0, "catia:outer:sketch-entity#geometry-field");
+        assert_eq!(entity.id().0, "catia:outer:sketch-entity#geometry-field");
         assert!(entity.geometry_ref.is_none());
         assert!(matches!(
             &entity.geometry,
@@ -1721,17 +1723,16 @@ mod tests {
     fn binds_a_constraint_to_an_exact_native_sketch_entity() {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
         let entity_id = SketchEntityId("synthetic:test:sketch-entity#source".to_string());
-        ir.model.sketch_entities.push(SketchEntity {
-            id: entity_id.clone(),
-            sketch: SketchId("synthetic:test:sketch#0".to_string()),
-            construction: false,
-            native_ref: Some("source-record".to_string()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Native {
-                native_kind: "2DPoint".to_string(),
-            },
-        });
+        ir.model.sketch_entities.push(
+            SketchEntity::new(
+                entity_id.clone(),
+                SketchId("synthetic:test:sketch#0".to_string()),
+                SketchGeometry::Native {
+                    native_kind: "2DPoint".to_string(),
+                },
+            )
+            .with_native_ref(Some("source-record".to_string())),
+        );
 
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
@@ -1746,17 +1747,16 @@ mod tests {
     fn refuses_a_constraint_entity_binding_when_native_identity_is_ambiguous() {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
         for suffix in ["first", "second"] {
-            ir.model.sketch_entities.push(SketchEntity {
-                id: SketchEntityId(format!("synthetic:test:sketch-entity#{suffix}")),
-                sketch: SketchId("synthetic:test:sketch#0".to_string()),
-                construction: false,
-                native_ref: Some("source-record".to_string()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Native {
-                    native_kind: "2DPoint".to_string(),
-                },
-            });
+            ir.model.sketch_entities.push(
+                SketchEntity::new(
+                    SketchEntityId(format!("synthetic:test:sketch-entity#{suffix}")),
+                    SketchId("synthetic:test:sketch#0".to_string()),
+                    SketchGeometry::Native {
+                        native_kind: "2DPoint".to_string(),
+                    },
+                )
+                .with_native_ref(Some("source-record".to_string())),
+            );
         }
 
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
@@ -1771,17 +1771,16 @@ mod tests {
     #[test]
     fn refuses_a_constraint_entity_binding_from_another_sketch() {
         let (mut ir, native, transfer, graph_scope) = fixture(false);
-        ir.model.sketch_entities.push(SketchEntity {
-            id: SketchEntityId("synthetic:test:other-sketch-entity#source".to_string()),
-            sketch: SketchId("synthetic:test:other-sketch#0".to_string()),
-            construction: false,
-            native_ref: Some("source-record".to_string()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Native {
-                native_kind: "2DPoint".to_string(),
-            },
-        });
+        ir.model.sketch_entities.push(
+            SketchEntity::new(
+                SketchEntityId("synthetic:test:other-sketch-entity#source".to_string()),
+                SketchId("synthetic:test:other-sketch#0".to_string()),
+                SketchGeometry::Native {
+                    native_kind: "2DPoint".to_string(),
+                },
+            )
+            .with_native_ref(Some("source-record".to_string())),
+        );
 
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 

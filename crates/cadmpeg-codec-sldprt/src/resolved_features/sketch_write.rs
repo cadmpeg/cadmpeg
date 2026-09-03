@@ -53,7 +53,7 @@ pub(super) fn sketch_brep(
     let entities = ordered_entities
         .iter()
         .copied()
-        .map(|entity| (entity.id.clone(), entity))
+        .map(|entity| (entity.id().clone(), entity))
         .collect::<HashMap<_, _>>();
     let referenced = sketch
         .profiles
@@ -62,11 +62,12 @@ pub(super) fn sketch_brep(
         .map(|entity_use| entity_use.entity.clone())
         .collect::<HashSet<_>>();
     if let Some(entity) = ordered_entities.iter().find(|entity| {
-        !referenced.contains(&entity.id) && !matches!(entity.geometry, SketchGeometry::Point { .. })
+        !referenced.contains(entity.id())
+            && !matches!(entity.geometry, SketchGeometry::Point { .. })
     }) {
         return Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT sketch writing cannot encode unprofiled curve {}",
-            entity.id.0
+            entity.id().0
         )));
     }
     let profiles = sketch.profiles.clone();
@@ -141,7 +142,7 @@ pub(super) fn sketch_brep(
             if length == 0.0 && matches!(entity.geometry, SketchGeometry::Line { .. }) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch entity {} has zero length",
-                    entity.id.0
+                    entity.id().0
                 )));
             }
             let curve_id = CurveId(format!("{prefix}:curve:{profile_index}:{use_index}"));
@@ -522,7 +523,7 @@ pub(super) fn patch_line_profiles(
             if entity.endpoint_refs.len() != 2 {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT sketch entity {} lacks two endpoint references",
-                    entity.id.0
+                    entity.id().0
                 )));
             }
             match &entity.geometry {

@@ -1537,17 +1537,16 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         ("point", "native:sketch-point"),
         ("curve", "native:sketch-curve"),
     ] {
-        ir.model.sketch_entities.push(SketchEntity {
-            id: SketchEntityId(id.into()),
-            sketch: SketchId("sketch".into()),
-            construction: false,
-            native_ref: Some(native_ref.into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(0.0, 0.0),
-            },
-        });
+        ir.model.sketch_entities.push(
+            SketchEntity::new(
+                SketchEntityId(id.into()),
+                SketchId("sketch".into()),
+                SketchGeometry::Point {
+                    position: Point2::new(0.0, 0.0),
+                },
+            )
+            .with_native_ref(Some(native_ref.into())),
+        );
     }
     let gaps = design_projection_gaps(&ir, &native);
     assert_eq!(gaps.unprojected_sketch_placements, 0);

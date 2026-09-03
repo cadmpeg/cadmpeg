@@ -134,28 +134,22 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
         (first.id.as_str(), &first),
         (second.id.as_str(), &second),
     ]);
-    let first_entity = SketchEntity {
-        id: SketchEntityId("first-entity".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(first.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let first_entity = SketchEntity::new(
+        SketchEntityId("first-entity".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(0.0, 0.0),
         },
-    };
-    let second_entity = SketchEntity {
-        id: SketchEntityId("second-entity".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(second.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    )
+    .with_native_ref(Some(first.id.clone()));
+    let second_entity = SketchEntity::new(
+        SketchEntityId("second-entity".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(1.0, 0.0),
         },
-    };
+    )
+    .with_native_ref(Some(second.id.clone()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
 
     assert!(marker_owns_constraint(&relation, &markers));
@@ -168,8 +162,8 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
             &HashMap::new(),
         ),
         Some(SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(first_entity.id),
-            second: SketchLocus::Entity(second_entity.id),
+            first: SketchLocus::Entity(first_entity.id().clone()),
+            second: SketchLocus::Entity(second_entity.id().clone()),
             axis: SketchCoordinateAxis::V,
         })
     );
@@ -364,14 +358,13 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
             SketchLocus::End(incident.clone()),
         ],
     )]);
-    let entity = |id: SketchEntityId, native_ref: Option<&str>, start, end| SketchEntity {
-        id,
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: native_ref.map(str::to_string),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let entity = |id: SketchEntityId, native_ref: Option<&str>, start, end| {
+        SketchEntity::new(
+            id,
+            SketchId("sketch".into()),
+            SketchGeometry::Line { start, end },
+        )
+        .with_native_ref(native_ref.map(str::to_string))
     };
     let entities = vec![
         entity(
@@ -423,17 +416,14 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
         point.id.clone(),
         vec![SketchLocus::Entity(point_id.clone())],
     )]);
-    let point_entity = SketchEntity {
-        id: point_id.clone(),
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: Some(point.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let point_entity = SketchEntity::new(
+        point_id.clone(),
+        SketchId("sketch".into()),
+        SketchGeometry::Point {
             position: Point2::new(1.0, 2.0),
         },
-    };
+    )
+    .with_native_ref(Some(point.id.clone()));
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
@@ -496,18 +486,14 @@ fn resolved_wrong_family_relation_is_inactive() {
         parameter: None,
         operands: Vec::new(),
     };
-    let entities = vec![SketchEntity {
-        id: entity_id,
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    let entities = vec![SketchEntity::new(
+        entity_id,
+        SketchId("sketch".into()),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    }];
+    )];
 
     assert!(marker_relation_is_inactive(
         &relation,
@@ -533,14 +519,12 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
         parameter: None,
         operands: Vec::new(),
     };
-    let point = |id: SketchEntityId, position| SketchEntity {
-        id,
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |id: SketchEntityId, position| {
+        SketchEntity::new(
+            id,
+            SketchId("sketch".into()),
+            SketchGeometry::Point { position },
+        )
     };
     let first = point(ids[0].clone(), Point2::new(1.0, 2.0));
     let coincident = point(ids[1].clone(), Point2::new(1.0, 2.0));
@@ -562,14 +546,12 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
 fn horizontal_relation_requires_one_line_or_two_points() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
-    let entity = |id: &str, geometry| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("sketch".into()),
+            geometry,
+        )
     };
     let definition = |entities| SketchConstraintDefinition::Native {
         native_kind: "sldprt:marker-relation:4".into(),
@@ -596,17 +578,17 @@ fn horizontal_relation_requires_one_line_or_two_points() {
 
     assert!(marker_relation_is_inactive(
         &relation,
-        &definition(vec![point.id.clone()]),
+        &definition(vec![point.id().clone()]),
         std::slice::from_ref(&point),
     ));
     assert!(!marker_relation_is_inactive(
         &relation,
-        &definition(vec![line.id.clone()]),
+        &definition(vec![line.id().clone()]),
         std::slice::from_ref(&line),
     ));
     assert!(!marker_relation_is_inactive(
         &relation,
-        &definition(vec![point.id.clone(), SketchEntityId("second".into())]),
+        &definition(vec![point.id().clone(), SketchEntityId("second".into())]),
         &[
             point,
             entity(

@@ -75,7 +75,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .sketch_entities
             .iter()
             .filter(|entity| entity.sketch == sketch.id)
-            .all(|entity| entity.id.0.contains(&format!("#{identity_scope}:"))));
+            .all(|entity| entity.id().0.contains(&format!("#{identity_scope}:"))));
         let parameters = result
             .ir()
             .model
@@ -132,7 +132,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .model
             .sketch_entities
             .iter()
-            .map(|entity| &entity.id)
+            .map(|entity| entity.id())
             .collect::<BTreeSet<_>>()
             .len(),
         4

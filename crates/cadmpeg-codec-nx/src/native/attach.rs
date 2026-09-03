@@ -3875,19 +3875,16 @@ fn attach_sketch_graph(
             }
             entities.push((
                 pair.source_offset,
-                SketchEntity {
-                    id: SketchEntityId(format!(
+                SketchEntity::new(
+                    SketchEntityId(format!(
                         "nx:feature-history:sketch-entity#coordinate-pair-{pair_key}"
                     )),
-                    sketch: sketch_id.clone(),
-                    construction: false,
-                    native_ref: Some(pair.id.clone()),
-                    geometry_ref: None,
-                    endpoint_refs: Vec::new(),
-                    geometry: SketchGeometry::Native {
+                    sketch_id.clone(),
+                    SketchGeometry::Native {
                         native_kind: "nx-coordinate-pair".into(),
                     },
-                },
+                )
+                .with_native_ref(Some(pair.id.clone())),
             ));
         }
         entities.extend(native_fixed_point_entities(
@@ -3898,7 +3895,7 @@ fn attach_sketch_graph(
         entities.sort_by(|(first_offset, first), (second_offset, second)| {
             first_offset
                 .cmp(second_offset)
-                .then_with(|| first.id.0.cmp(&second.id.0))
+                .then_with(|| first.id().cmp(second.id()))
         });
         for (source_offset, entity) in &entities {
             let tag = match &entity.geometry {
@@ -3911,9 +3908,9 @@ fn attach_sketch_graph(
                 _ => "SKETCH_NATIVE",
             };
             annotations
-                .note(&entity.id.0, stream, *source_offset)
+                .note(entity.id().0.as_str(), stream, *source_offset)
                 .tag(tag);
-            annotations.exactness(&entity.id.0, Exactness::ByteExact);
+            annotations.exactness(entity.id().0.as_str(), Exactness::ByteExact);
         }
         annotations
             .note(&sketch_id.0, stream, label.source_offset)
@@ -4041,19 +4038,16 @@ fn attach_sketch_graph(
             .unwrap_or(group.id.as_str());
         entities.push((
             source_offset,
-            SketchEntity {
-                id: SketchEntityId(format!(
+            SketchEntity::new(
+                SketchEntityId(format!(
                     "nx:feature-history:sketch-entity#point-{entity_key}"
                 )),
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: Some(native_ref),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Point {
+                sketch_id.clone(),
+                SketchGeometry::Point {
                     position: Point2::new(group.coordinates[0], group.coordinates[1]),
                 },
-            },
+            )
+            .with_native_ref(Some(native_ref)),
         ));
     }
     entities.extend(native_fixed_point_entities(
@@ -4064,7 +4058,7 @@ fn attach_sketch_graph(
     entities.sort_by(|(first_offset, first), (second_offset, second)| {
         first_offset
             .cmp(second_offset)
-            .then_with(|| first.id.0.cmp(&second.id.0))
+            .then_with(|| first.id().cmp(second.id()))
     });
     if entities.is_empty() {
         return None;
@@ -4073,9 +4067,9 @@ fn attach_sketch_graph(
         match &entity.geometry {
             SketchGeometry::Point { .. } => {
                 annotations
-                    .note(&entity.id.0, stream, *source_offset)
+                    .note(entity.id().0.as_str(), stream, *source_offset)
                     .tag("SKETCH_POINT");
-                annotations.exactness(&entity.id.0, Exactness::Derived);
+                annotations.exactness(entity.id().0.as_str(), Exactness::Derived);
             }
             SketchGeometry::Native { native_kind } => {
                 let tag = if native_kind == "nx-fixed-point" {
@@ -4084,9 +4078,9 @@ fn attach_sketch_graph(
                     "SKETCH_NATIVE"
                 };
                 annotations
-                    .note(&entity.id.0, stream, *source_offset)
+                    .note(entity.id().0.as_str(), stream, *source_offset)
                     .tag(tag);
-                annotations.exactness(&entity.id.0, Exactness::ByteExact);
+                annotations.exactness(entity.id().0.as_str(), Exactness::ByteExact);
             }
             _ => return None,
         }
@@ -4146,19 +4140,16 @@ fn native_fixed_point_entities(
         }
         entities.push((
             point.source_offset,
-            SketchEntity {
-                id: SketchEntityId(format!(
+            SketchEntity::new(
+                SketchEntityId(format!(
                     "nx:feature-history:sketch-entity#fixed-point-{point_key}"
                 )),
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: Some(point.id.clone()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Native {
+                sketch_id.clone(),
+                SketchGeometry::Native {
                     native_kind: "nx-fixed-point".into(),
                 },
-            },
+            )
+            .with_native_ref(Some(point.id.clone())),
         ));
     }
     Some(entities)

@@ -233,17 +233,15 @@ pub(in super::super) fn unresolved_saved_section_entity(
         |external_id| sketch_entity_id(sketch, external_id),
     );
     (
-        SketchEntity {
+        SketchEntity::new(
             id,
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: Some(sketch_native_ref(sketch)),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Native {
+            sketch.clone(),
+            SketchGeometry::Native {
                 native_kind: format!("saved_{}", kind.name()),
             },
-        },
+        )
+        .with_construction(true)
+        .with_native_ref(Some(sketch_native_ref(sketch))),
         offset,
     )
 }

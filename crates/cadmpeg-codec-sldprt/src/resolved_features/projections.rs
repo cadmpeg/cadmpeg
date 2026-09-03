@@ -49,7 +49,7 @@ pub(super) fn bind_circular_profile_by_dimension(
 ) {
     let geometry_by_entity = sketch_entities
         .iter()
-        .map(|entity| (&entity.id, &entity.geometry))
+        .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     let circular_profiles = sketches
         .iter()

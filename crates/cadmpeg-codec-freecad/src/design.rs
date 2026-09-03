@@ -1412,22 +1412,22 @@ fn parse_sketch(
             let geometry_value = carrier
                 .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
                 .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
-            entities.push(SketchEntity {
-                id: SketchEntityId(format!(
-                    "fcstd:design:sketch-entity#{}:{}",
-                    object.name,
-                    index + 1
-                )),
-                sketch: id.clone(),
-                construction: node.descendants().any(|child| {
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId(format!(
+                        "fcstd:design:sketch-entity#{}:{}",
+                        object.name,
+                        index + 1
+                    )),
+                    id.clone(),
+                    geometry_value,
+                )
+                .with_construction(node.descendants().any(|child| {
                     child.has_tag_name("Construction")
                         && child.attribute("value").is_some_and(|value| value != "0")
-                }),
-                native_ref: Some(geometry.id.clone()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: geometry_value,
-            });
+                }))
+                .with_native_ref(Some(geometry.id.clone())),
+            );
         }
     }
     if let Some(external_geometry) = property(properties, "ExternalGeo") {
@@ -1494,21 +1494,25 @@ fn parse_sketch(
             let geometry = carrier
                 .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
                 .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
-            entities.push(SketchEntity {
-                id: SketchEntityId(format!(
-                    "fcstd:design:sketch-entity#{}:external:{external_index}",
-                    object.name
-                )),
-                sketch: id.clone(),
-                construction: true,
-                native_ref: Some(external_geometry.id.clone()),
-                geometry_ref: references.map(|property| property.id.clone()),
-                endpoint_refs: reference_index
-                    .and_then(|index| references.and_then(|property| property.links.get(index)))
-                    .map(|reference| reference.subelements.clone())
-                    .unwrap_or_default(),
-                geometry,
-            });
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId(format!(
+                        "fcstd:design:sketch-entity#{}:external:{external_index}",
+                        object.name
+                    )),
+                    id.clone(),
+                    geometry,
+                )
+                .with_construction(true)
+                .with_native_ref(Some(external_geometry.id.clone()))
+                .with_geometry_ref(references.map(|property| property.id.clone()))
+                .with_endpoint_refs(
+                    reference_index
+                        .and_then(|index| references.and_then(|property| property.links.get(index)))
+                        .map(|reference| reference.subelements.clone())
+                        .unwrap_or_default(),
+                ),
+            );
         }
     }
     if let Some(references) = property(properties, "ExternalGeometry") {
@@ -1522,80 +1526,82 @@ fn parse_sketch(
             let numeric_suffix = format!(":external:{external_index}");
             let entity_suffix = if entities
                 .iter()
-                .any(|entity| entity.id.0.ends_with(&numeric_suffix))
+                .any(|entity| entity.id().0.ends_with(&numeric_suffix))
             {
                 format!(":external-link:{external_index}")
             } else {
                 numeric_suffix
             };
-            entities.push(SketchEntity {
-                id: SketchEntityId(format!(
-                    "fcstd:design:sketch-entity#{}{}",
-                    object.name, entity_suffix
-                )),
-                sketch: id.clone(),
-                construction: true,
-                native_ref: Some(references.id.clone()),
-                geometry_ref: Some(references.id.clone()),
-                endpoint_refs: reference.subelements.clone(),
-                geometry: SketchGeometry::ExternalReference {
-                    document: reference.document.clone(),
-                    object: target_object,
-                    subelements: reference.subelements.clone(),
-                },
-            });
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId(format!(
+                        "fcstd:design:sketch-entity#{}{}",
+                        object.name, entity_suffix
+                    )),
+                    id.clone(),
+                    SketchGeometry::ExternalReference {
+                        document: reference.document.clone(),
+                        object: target_object,
+                        subelements: reference.subelements.clone(),
+                    },
+                )
+                .with_construction(true)
+                .with_native_ref(Some(references.id.clone()))
+                .with_geometry_ref(Some(references.id.clone()))
+                .with_endpoint_refs(reference.subelements.clone()),
+            );
         }
     }
     let (horizontal_axis, vertical_axis, root_point) = builtin_reference_usage(properties);
     if horizontal_axis {
-        entities.push(SketchEntity {
-            id: SketchEntityId(format!(
-                "fcstd:design:sketch-entity#{}:reference-horizontal-axis",
-                object.name
-            )),
-            sketch: id.clone(),
-            construction: true,
-            native_ref: Some(object.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::ReferenceLine {
-                origin: Point2::new(0.0, 0.0),
-                direction: Point2::new(1.0, 0.0),
-            },
-        });
+        entities.push(
+            SketchEntity::new(
+                SketchEntityId(format!(
+                    "fcstd:design:sketch-entity#{}:reference-horizontal-axis",
+                    object.name
+                )),
+                id.clone(),
+                SketchGeometry::ReferenceLine {
+                    origin: Point2::new(0.0, 0.0),
+                    direction: Point2::new(1.0, 0.0),
+                },
+            )
+            .with_construction(true)
+            .with_native_ref(Some(object.id.clone())),
+        );
     }
     if vertical_axis {
-        entities.push(SketchEntity {
-            id: SketchEntityId(format!(
-                "fcstd:design:sketch-entity#{}:reference-vertical-axis",
-                object.name
-            )),
-            sketch: id.clone(),
-            construction: true,
-            native_ref: Some(object.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::ReferenceLine {
-                origin: Point2::new(0.0, 0.0),
-                direction: Point2::new(0.0, 1.0),
-            },
-        });
+        entities.push(
+            SketchEntity::new(
+                SketchEntityId(format!(
+                    "fcstd:design:sketch-entity#{}:reference-vertical-axis",
+                    object.name
+                )),
+                id.clone(),
+                SketchGeometry::ReferenceLine {
+                    origin: Point2::new(0.0, 0.0),
+                    direction: Point2::new(0.0, 1.0),
+                },
+            )
+            .with_construction(true)
+            .with_native_ref(Some(object.id.clone())),
+        );
     }
     if root_point {
-        entities.push(SketchEntity {
-            id: SketchEntityId(format!(
-                "fcstd:design:sketch-entity#{}:reference-root-point",
-                object.name
-            )),
-            sketch: id.clone(),
-            construction: true,
-            native_ref: Some(object.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(0.0, 0.0),
-            },
-        });
+        entities.push(
+            SketchEntity::new(
+                SketchEntityId(format!(
+                    "fcstd:design:sketch-entity#{}:reference-root-point",
+                    object.name
+                )),
+                id.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(0.0, 0.0),
+                },
+            )
+            .with_construction(true)
+            .with_native_ref(Some(object.id.clone())),
+        );
     }
     let (constraints, parameters) = parse_constraints(object, properties, &id, &entities)?;
     let profiles = build_profiles(&entities, &constraints);
@@ -2088,9 +2094,9 @@ fn parse_constraints(
         if matches!(type_code, Some(7 | 8)) && operands.len() == 1 && resolved.len() == 1 {
             if let Some(root) = entities
                 .iter()
-                .find(|entity| entity.id.0.ends_with(":reference-root-point"))
+                .find(|entity| entity.id().0.ends_with(":reference-root-point"))
             {
-                resolved.insert(0, SketchLocus::Entity(root.id.clone()));
+                resolved.insert(0, SketchLocus::Entity(root.id().clone()));
             }
         }
         let parameter = if matches!(type_code, Some(6..=9 | 11 | 16 | 18 | 19)) {
@@ -2273,7 +2279,7 @@ fn midpoint_constraint(
         let midpoint = resolve_operand(entity, position, entities)?;
         let bounded = entities
             .iter()
-            .find(|candidate| candidate.id == *locus_entity(&midpoint))?;
+            .find(|candidate| candidate.id() == locus_entity(&midpoint))?;
         if !matches!(bounded.geometry, SketchGeometry::Line { .. }) {
             continue;
         }
@@ -2281,13 +2287,13 @@ fn midpoint_constraint(
         let point = resolve_operand(entity, position, entities)?;
         let point_entity = entities
             .iter()
-            .find(|candidate| candidate.id == *locus_entity(&point))?;
+            .find(|candidate| candidate.id() == locus_entity(&point))?;
         if !matches!(point_entity.geometry, SketchGeometry::Point { .. }) {
             continue;
         }
         return Some(SketchConstraintDefinition::Midpoint {
             point,
-            entity: bounded.id.clone(),
+            entity: bounded.id().clone(),
         });
     }
     None
@@ -2731,8 +2737,8 @@ fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Opt
     let reference = |suffix: &str| {
         entities
             .iter()
-            .find(|candidate| candidate.id.0.ends_with(suffix))
-            .map(|candidate| SketchLocus::Entity(candidate.id.clone()))
+            .find(|candidate| candidate.id().0.ends_with(suffix))
+            .map(|candidate| SketchLocus::Entity(candidate.id().clone()))
     };
     match (entity, position) {
         (-1, 0) => return reference(":reference-horizontal-axis"),
@@ -2746,14 +2752,14 @@ fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Opt
         let suffix = format!(":external:{external_index}");
         let entity = entities
             .iter()
-            .find(|candidate| candidate.id.0.ends_with(&suffix))?;
+            .find(|candidate| candidate.id().0.ends_with(&suffix))?;
         return sketch_locus(entity, position);
     }
     sketch_locus(entities.get(usize::try_from(entity).ok()?)?, position)
 }
 
 fn sketch_locus(entity: &SketchEntity, position: i64) -> Option<SketchLocus> {
-    let id = entity.id.clone();
+    let id = entity.id().clone();
     if matches!(entity.geometry, SketchGeometry::Point { .. }) && matches!(position, 0..=3) {
         return Some(SketchLocus::Entity(id));
     }
@@ -3004,7 +3010,7 @@ fn build_profiles(
     // FreeCAD persists no profile seed. CADIR selects the first remaining persisted ordinal.
     while let Some(first) = unused.pop_first() {
         let mut chain = vec![SketchEntityUse {
-            entity: entities[first].id.clone(),
+            entity: entities[first].id().clone(),
             reversed: false,
         }];
         if ambiguous.contains(&first) {
@@ -3033,7 +3039,7 @@ fn build_profiles(
             };
             unused.remove(&index);
             chain.push(SketchEntityUse {
-                entity: entities[index].id.clone(),
+                entity: entities[index].id().clone(),
                 reversed,
             });
             tail = next_tail;
@@ -3056,7 +3062,7 @@ fn build_profiles(
             chain.insert(
                 0,
                 SketchEntityUse {
-                    entity: entities[index].id.clone(),
+                    entity: entities[index].id().clone(),
                     reversed,
                 },
             );
@@ -3104,7 +3110,7 @@ fn explicit_endpoint_relations(
     let entity_indices = entities
         .iter()
         .enumerate()
-        .map(|(index, entity)| (entity.id.0.as_str(), index))
+        .map(|(index, entity)| (entity.id().0.as_str(), index))
         .collect::<HashMap<_, _>>();
     let mut relations = BTreeMap::new();
     for constraint in constraints {
@@ -6258,15 +6264,11 @@ mod profile_tests {
     }
 
     fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
-        SketchEntity {
-            id: cadmpeg_ir::sketches::SketchEntityId(id.into()),
-            sketch: SketchId("test:sketch#curved".into()),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
+        SketchEntity::new(
+            cadmpeg_ir::sketches::SketchEntityId(id.into()),
+            SketchId("test:sketch#curved".into()),
             geometry,
-        }
+        )
     }
 
     #[test]
@@ -6321,7 +6323,7 @@ mod profile_tests {
         assert!(profiles
             .iter()
             .zip(&entities)
-            .all(|(profile, entity)| profile[0].entity == entity.id));
+            .all(|(profile, entity)| profile[0].entity == entity.id().clone()));
     }
 
     #[test]
@@ -6359,7 +6361,7 @@ mod profile_tests {
                 .iter()
                 .map(|profile| profile[0].entity.clone())
                 .collect::<Vec<_>>(),
-            vec![entities[1].id.clone(), entities[2].id.clone()]
+            vec![entities[1].id().clone(), entities[2].id().clone()]
         );
     }
 
@@ -6386,8 +6388,8 @@ mod profile_tests {
             sketch: entities[0].sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci {
                 loci: vec![
-                    SketchLocus::End(entities[0].id.clone()),
-                    SketchLocus::Start(entities[1].id.clone()),
+                    SketchLocus::End(entities[0].id().clone()),
+                    SketchLocus::Start(entities[1].id().clone()),
                 ],
             },
             name: None,
@@ -6438,8 +6440,8 @@ mod profile_tests {
             sketch: entities[0].sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci {
                 loci: vec![
-                    SketchLocus::End(entities[0].id.clone()),
-                    SketchLocus::Start(entities[2].id.clone()),
+                    SketchLocus::End(entities[0].id().clone()),
+                    SketchLocus::Start(entities[2].id().clone()),
                 ],
             },
             name: None,
@@ -6458,12 +6460,12 @@ mod profile_tests {
 
         assert_eq!(profiles.len(), 2);
         assert_eq!(profiles[0].len(), 2);
-        assert_eq!(profiles[0][0].entity, entities[0].id);
-        assert_eq!(profiles[0][1].entity, entities[2].id);
+        assert_eq!(profiles[0][0].entity, entities[0].id().clone());
+        assert_eq!(profiles[0][1].entity, entities[2].id().clone());
         assert_eq!(
             profiles[1],
             vec![SketchEntityUse {
-                entity: entities[1].id.clone(),
+                entity: entities[1].id().clone(),
                 reversed: false,
             }]
         );
@@ -6531,9 +6533,9 @@ mod profile_tests {
             sketch: entities[0].sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci {
                 loci: vec![
-                    SketchLocus::End(entities[0].id.clone()),
-                    SketchLocus::Start(entities[1].id.clone()),
-                    SketchLocus::Start(entities[2].id.clone()),
+                    SketchLocus::End(entities[0].id().clone()),
+                    SketchLocus::Start(entities[1].id().clone()),
+                    SketchLocus::Start(entities[2].id().clone()),
                 ],
             },
             name: None,

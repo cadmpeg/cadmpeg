@@ -973,15 +973,12 @@ pub(crate) fn project(
             unresolved_entities += 1;
             continue;
         };
-        projected_entities.push(SketchEntity {
-            id: entity_id(entity),
-            sketch: sketch_id(sketch),
-            construction: entity.entity_flags & 0x0408_0040 != 0,
-            native_ref: Some(entity.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: entity_endpoint_refs(entity, &raw_entities),
-            geometry,
-        });
+        projected_entities.push(
+            SketchEntity::new(entity_id(entity), sketch_id(sketch), geometry)
+                .with_construction(entity.entity_flags & 0x0408_0040 != 0)
+                .with_native_ref(Some(entity.id.clone()))
+                .with_endpoint_refs(entity_endpoint_refs(entity, &raw_entities)),
+        );
     }
 
     let projected_by_native = projected_entities
@@ -1182,7 +1179,7 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Coincident {
-                    entities: members.iter().map(|entity| entity.id.clone()).collect(),
+                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
                 },
                 None,
                 members,
@@ -1196,8 +1193,8 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Parallel {
-                    first: members[0].id.clone(),
-                    second: members[1].id.clone(),
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
                 },
                 Some(u32::from(orientation)),
                 members,
@@ -1211,8 +1208,8 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Perpendicular {
-                    first: members[0].id.clone(),
-                    second: members[1].id.clone(),
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
                 },
                 Some(u32::from(orientation)),
                 members,
@@ -1226,8 +1223,8 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Tangent {
-                    first: members[0].id.clone(),
-                    second: members[1].id.clone(),
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
                 },
                 extension,
                 members,
@@ -1237,7 +1234,7 @@ fn project_constraint(
             let member = resolve(entity)?;
             (
                 SketchConstraintDefinition::Horizontal {
-                    entity: member.id.clone(),
+                    entity: member.id().clone(),
                 },
                 Some(u32::from(state)),
                 [member, member],
@@ -1247,7 +1244,7 @@ fn project_constraint(
             let member = resolve(entity)?;
             (
                 SketchConstraintDefinition::Vertical {
-                    entity: member.id.clone(),
+                    entity: member.id().clone(),
                 },
                 Some(u32::from(state)),
                 [member, member],
@@ -1263,8 +1260,8 @@ fn project_constraint(
             let parameter = resolve_parameter(constraint, parameter, parameters)?;
             (
                 SketchConstraintDefinition::HorizontalDistance {
-                    first: SketchLocus::Entity(members[0].id.clone()),
-                    second: SketchLocus::Entity(members[1].id.clone()),
+                    first: SketchLocus::Entity(members[0].id().clone()),
+                    second: SketchLocus::Entity(members[1].id().clone()),
                     parameter,
                 },
                 None,
@@ -1281,8 +1278,8 @@ fn project_constraint(
             let parameter = resolve_parameter(constraint, parameter, parameters)?;
             (
                 SketchConstraintDefinition::VerticalDistance {
-                    first: SketchLocus::Entity(members[0].id.clone()),
-                    second: SketchLocus::Entity(members[1].id.clone()),
+                    first: SketchLocus::Entity(members[0].id().clone()),
+                    second: SketchLocus::Entity(members[1].id().clone()),
                     parameter,
                 },
                 None,
@@ -1294,7 +1291,7 @@ fn project_constraint(
             let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
             (
                 SketchConstraintDefinition::Radius {
-                    entity: member.id.clone(),
+                    entity: member.id().clone(),
                     parameter,
                 },
                 None,
@@ -1306,7 +1303,7 @@ fn project_constraint(
             let parameter = resolve_parameter(constraint, constraint.header.parameter, parameters)?;
             (
                 SketchConstraintDefinition::Diameter {
-                    entity: member.id.clone(),
+                    entity: member.id().clone(),
                     parameter,
                 },
                 None,
@@ -1321,7 +1318,7 @@ fn project_constraint(
                     native_state: Some(constraint.header.state as u32 as u64),
                     native_flags: Some(u64::from(constraint.header.content.flags)),
                     native_properties: std::collections::BTreeMap::new(),
-                    entities: members.iter().map(|entity| entity.id.clone()).collect(),
+                    entities: members.iter().map(|entity| entity.id().clone()).collect(),
                     parameter: None,
                     operands: vec![
                         native_operand(constraint, "entity", entity),
@@ -1336,8 +1333,8 @@ fn project_constraint(
             let members = [resolve(first)?, resolve(second)?];
             (
                 SketchConstraintDefinition::Equal {
-                    first: members[0].id.clone(),
-                    second: members[1].id.clone(),
+                    first: members[0].id().clone(),
+                    second: members[1].id().clone(),
                 },
                 None,
                 members,
@@ -1568,7 +1565,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
     let source_positions = entities
         .iter()
         .enumerate()
-        .map(|(index, entity)| (entity.id.0.as_str(), index))
+        .map(|(index, entity)| (entity.id().0.as_str(), index))
         .collect::<HashMap<_, _>>();
     let mut profiles = entities
         .iter()
@@ -1581,7 +1578,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         })
         .map(|entity| {
             vec![SketchEntityUse {
-                entity: entity.id.clone(),
+                entity: entity.id().clone(),
                 reversed: false,
             }]
         })
@@ -1624,7 +1621,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
         let mut point = first.endpoint_refs[1].as_str();
         let mut current = start_index;
         let mut loop_uses = vec![SketchEntityUse {
-            entity: first.id.clone(),
+            entity: first.id().clone(),
             reversed: false,
         }];
         visited.insert(current);
@@ -1650,7 +1647,7 @@ fn build_profiles(entities: &[&SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
             current = next;
             visited.insert(next);
             loop_uses.push(SketchEntityUse {
-                entity: line.id.clone(),
+                entity: line.id().clone(),
                 reversed,
             });
         }

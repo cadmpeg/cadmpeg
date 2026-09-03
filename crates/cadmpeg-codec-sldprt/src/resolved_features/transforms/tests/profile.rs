@@ -73,18 +73,15 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     };
     let sketch = SketchId("sketch".into());
     let line_id = SketchEntityId("line".into());
-    let entities = vec![SketchEntity {
-        id: line_id.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        geometry: SketchGeometry::Line {
+    let entities = vec![SketchEntity::new(
+        line_id.clone(),
+        sketch.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(5.0, 0.0),
         },
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        native_ref: Some(corner.id.clone()),
-    }];
+    )
+    .with_native_ref(Some(corner.id.clone()))];
 
     assert_eq!(
         doubled_profile_distance_loci(&relation, 0, 1, &sketch, &parameter, &entities, &markers,),
@@ -585,9 +582,16 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let mut compact_sketch = sketches[0].clone();
     compact_sketch.id = compact_id.clone();
     compact_sketch.profiles.clear();
-    let mut compact_entity = entities[0].clone();
-    compact_entity.id = SketchEntityId("compact-entity".into());
-    compact_entity.sketch = compact_id.clone();
+    let source_entity = &entities[0];
+    let compact_entity = SketchEntity::new(
+        SketchEntityId("compact-entity".into()),
+        compact_id.clone(),
+        source_entity.geometry.clone(),
+    )
+    .with_construction(source_entity.construction)
+    .with_native_ref(source_entity.native_ref.clone())
+    .with_geometry_ref(source_entity.geometry_ref.clone())
+    .with_endpoint_refs(source_entity.endpoint_refs.clone());
     let mut replacement_features = features.clone();
     replacement_features[1].definition = FeatureDefinition::Sketch {
         sketch: Some(compact_id),
@@ -716,25 +720,24 @@ fn marker_circle_fit_requires_one_circle_through_every_endpoint() {
 #[test]
 fn connected_marker_arcs_use_their_shared_endpoint_circle() {
     let sketch = SketchId("sketch".into());
-    let point = |id: &str, position| SketchEntity {
-        id: SketchEntityId(format!("entity-{id}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(id.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |id: &str, position| {
+        SketchEntity::new(
+            SketchEntityId(format!("entity-{id}")),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
+        .with_native_ref(Some(id.into()))
     };
-    let arc = |id: &str, start: &str, end: &str| SketchEntity {
-        id: SketchEntityId(format!("entity-{id}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(id.into()),
-        geometry_ref: None,
-        endpoint_refs: vec![start.into(), end.into()],
-        geometry: SketchGeometry::Native {
-            native_kind: "sldprt:marker-geometry:2".into(),
-        },
+    let arc = |id: &str, start: &str, end: &str| {
+        SketchEntity::new(
+            SketchEntityId(format!("entity-{id}")),
+            sketch.clone(),
+            SketchGeometry::Native {
+                native_kind: "sldprt:marker-geometry:2".into(),
+            },
+        )
+        .with_native_ref(Some(id.into()))
+        .with_endpoint_refs(vec![start.into(), end.into()])
     };
     let mut entities = vec![
         point("p0", Point2::new(0.0, -2.0)),
@@ -768,36 +771,35 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         .all(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. })));
     assert_eq!(entities[3].endpoint_refs, ["p0", "p1"]);
     assert_eq!(entities[4].endpoint_refs, ["p1", "p2"]);
-    entities.push(SketchEntity {
-        id: SketchEntityId("entity-line".into()),
-        sketch,
-        construction: false,
-        native_ref: Some("line".into()),
-        geometry_ref: None,
-        endpoint_refs: vec!["p2".into(), "p0".into()],
-        geometry: SketchGeometry::Line {
-            start: Point2::new(0.0, 2.0),
-            end: Point2::new(0.0, -2.0),
-        },
-    });
+    entities.push(
+        SketchEntity::new(
+            SketchEntityId("entity-line".into()),
+            sketch,
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 2.0),
+                end: Point2::new(0.0, -2.0),
+            },
+        )
+        .with_native_ref(Some("line".into()))
+        .with_endpoint_refs(vec!["p2".into(), "p0".into()]),
+    );
     assert_eq!(closed_marker_profiles(&entities)[0].len(), 3);
     entities
         .last_mut()
         .expect("required invariant")
         .construction = true;
     assert!(closed_marker_profiles(&entities).is_empty());
-    entities.push(SketchEntity {
-        id: SketchEntityId("entity-circle".into()),
-        sketch: entities[0].sketch.clone(),
-        construction: false,
-        native_ref: Some("circle".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
-            center: Point2::new(0.0, 0.0),
-            radius: Length(2.0),
-        },
-    });
+    entities.push(
+        SketchEntity::new(
+            SketchEntityId("entity-circle".into()),
+            entities[0].sketch.clone(),
+            SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+            },
+        )
+        .with_native_ref(Some("circle".into())),
+    );
     assert_eq!(
         closed_marker_profiles(&entities),
         vec![vec![SketchEntityUse {
@@ -888,41 +890,34 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         references: Vec::new(),
         sketch_entities: vec![center, first, second],
     };
-    let carrier = SketchEntity {
-        id: SketchEntityId("carrier".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: Some("center".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
+    let carrier = SketchEntity::new(
+        SketchEntityId("carrier".into()),
+        sketch_id.clone(),
+        SketchGeometry::Native {
             native_kind: "sldprt:marker-geometry:0".into(),
         },
-    };
+    )
+    .with_native_ref(Some("center".into()));
     let mut entities = vec![
         carrier,
-        SketchEntity {
-            id: SketchEntityId("first-entity".into()),
-            sketch: sketch_id.clone(),
-            construction: true,
-            native_ref: Some("first".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        SketchEntity::new(
+            SketchEntityId("first-entity".into()),
+            sketch_id.clone(),
+            SketchGeometry::Point {
                 position: Point2::new(5.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: SketchEntityId("second-entity".into()),
-            sketch: sketch_id.clone(),
-            construction: true,
-            native_ref: Some("second".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        )
+        .with_construction(true)
+        .with_native_ref(Some("first".into())),
+        SketchEntity::new(
+            SketchEntityId("second-entity".into()),
+            sketch_id.clone(),
+            SketchGeometry::Point {
                 position: Point2::new(0.0, 8.0),
             },
-        },
+        )
+        .with_construction(true)
+        .with_native_ref(Some("second".into())),
     ];
     assert_eq!(
         crate::resolved_features::dimensions::extended_radial_circle_index(&lane.native_payload, 0,),

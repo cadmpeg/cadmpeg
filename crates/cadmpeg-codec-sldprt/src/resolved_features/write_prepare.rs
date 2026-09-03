@@ -164,7 +164,7 @@ fn patch_spatial_sketches(
             let native_ref = entity.native_ref.as_deref().ok_or_else(|| {
                 cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} requires a retained native marker",
-                    entity.id.0
+                    entity.id().0
                 ))
             })?;
             let candidates = native
@@ -191,7 +191,7 @@ fn patch_spatial_sketches(
             let [(lane_index, offset, coordinate_offset)] = candidates.as_slice() else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} does not resolve to one native marker",
-                    entity.id.0
+                    entity.id().0
                 )));
             };
             if coordinate_offset.is_some() {
@@ -605,7 +605,7 @@ fn validate_generated_marker_constraint(
         .model
         .sketch_entities
         .iter()
-        .find(|entity| entity.id == *entity_id && entity.sketch == constraint.sketch)
+        .find(|entity| entity.id() == entity_id && entity.sketch == constraint.sketch)
         .ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "sketch constraint {} references entity {} outside sketch {}",
@@ -914,7 +914,7 @@ fn sketch_constraint_entity<'a>(
     ir.model
         .sketch_entities
         .iter()
-        .find(|candidate| candidate.id == *entity && candidate.sketch == constraint.sketch)
+        .find(|candidate| candidate.id() == entity && candidate.sketch == constraint.sketch)
         .ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "sketch constraint {} references entity {} outside sketch {}",
@@ -1465,15 +1465,11 @@ mod source_less_lane_tests {
     }
 
     fn generated_entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
-        SketchEntity {
-            id: SketchEntityId(id.into()),
-            sketch: SketchId("sketch".into()),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("sketch".into()),
             geometry,
-        }
+        )
     }
 
     fn add_sketch_owner(ir: &mut cadmpeg_ir::CadIr, sketch: &Sketch) {

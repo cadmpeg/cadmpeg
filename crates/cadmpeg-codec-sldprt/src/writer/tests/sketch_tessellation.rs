@@ -23,7 +23,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let sketch = decoded.ir().model.sketches[0].id.clone();
-    let entity = decoded.ir().model.sketch_entities[0].id.clone();
+    let entity = decoded.ir().model.sketch_entities[0].id().clone();
     decoded
         .ir_mut()
         .model

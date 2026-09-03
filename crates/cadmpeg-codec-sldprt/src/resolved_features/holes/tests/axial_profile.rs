@@ -132,14 +132,12 @@ fn axial_profile_resolves_counterdrill_roles() {
     .into_iter()
     .collect();
     let sketch = SketchId("profile".into());
-    let profile_point = |ordinal: usize, position| SketchEntity {
-        id: SketchEntityId(format!("profile-point-{ordinal}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let profile_point = |ordinal: usize, position| {
+        SketchEntity::new(
+            SketchEntityId(format!("profile-point-{ordinal}")),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
     };
     let entities = [
         profile_point(0, Point2::new(0.0, 2.775)),
@@ -339,14 +337,12 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
     .into_iter()
     .collect();
     let sketch = SketchId("profile".into());
-    let point = |ordinal: usize, position| SketchEntity {
-        id: SketchEntityId(format!("profile-point-{ordinal}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |ordinal: usize, position| {
+        SketchEntity::new(
+            SketchEntityId(format!("profile-point-{ordinal}")),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
     };
     let entities = [
         point(0, Point2::new(0.0, 0.0)),
@@ -390,14 +386,12 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
     .into_iter()
     .collect();
     let sketch = SketchId("profile".into());
-    let point = |ordinal: usize, position| SketchEntity {
-        id: SketchEntityId(format!("profile-point-{ordinal}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |ordinal: usize, position| {
+        SketchEntity::new(
+            SketchEntityId(format!("profile-point-{ordinal}")),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
     };
     let entities = [
         point(0, Point2::new(0.0, 2.5)),

@@ -94,23 +94,19 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         matching_edge_operand_ids: Vec::new(),
     };
     let sketch = neutral_sketch_id(&placement);
-    let line = |name: &str, start, end| SketchEntity {
-        id: SketchEntityId(name.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let line = |name: &str, start, end| {
+        SketchEntity::new(
+            SketchEntityId(name.into()),
+            sketch.clone(),
+            SketchGeometry::Line { start, end },
+        )
     };
-    let point = |name: &str, position| SketchEntity {
-        id: SketchEntityId(name.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |name: &str, position| {
+        SketchEntity::new(
+            SketchEntityId(name.into()),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
     };
     let entities = [
         line("first", Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
@@ -165,18 +161,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
 
     let mut radial_parameter = parameter.clone();
     radial_parameter.source_kind = "Radial Dimension-4".into();
-    let circle = SketchEntity {
-        id: SketchEntityId("radial-circle".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let circle = SketchEntity::new(
+        SketchEntityId("radial-circle".into()),
+        sketch.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(20.0, 20.0),
             radius: Length(2.0),
         },
-    };
+    );
     let mut radial_entities = entities.to_vec();
     radial_entities.push(circle.clone());
     let radial_constraints = project_dimension_constraints(
@@ -204,7 +196,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 parameter: actual_parameter,
             },
             ..
-        }] if entity == &circle.id
+        }] if entity == circle.id()
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
     ));
 
@@ -237,17 +229,15 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         secondary_id: 0,
         geometry: None,
     };
-    let annotation_point_entity = SketchEntity {
-        id: SketchEntityId("radial-extension-point".into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: Some(annotation_point.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let annotation_point_entity = SketchEntity::new(
+        SketchEntityId("radial-extension-point".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: annotation_point.coordinates,
         },
-    };
+    )
+    .with_construction(true)
+    .with_native_ref(Some(annotation_point.id.clone()));
     let mut annotation_line_entity = entities[0].clone();
     annotation_line_entity.native_ref = Some(annotation_curve.id.clone());
     let annotation_group = DesignDimensionLocusGroup {
@@ -314,7 +304,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 parameter: actual_parameter,
             },
             ..
-        }] if entity == &circle.id
+        }] if entity == circle.id()
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
     ));
 
@@ -531,18 +521,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
 
     let mut radial_parameter = parameter.clone();
     radial_parameter.source_kind = "Radial Dimension-2".into();
-    let radial_entity = SketchEntity {
-        id: SketchEntityId("circle".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let radial_entity = SketchEntity::new(
+        SketchEntityId("circle".into()),
+        sketch.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
         },
-    };
+    );
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -569,7 +555,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
             },
             native_ref: Some(native_ref),
             ..
-        }] if entity == &radial_entity.id
+        }] if entity == radial_entity.id()
             && actual_parameter.0 == expected_parameter
             && native_ref == &companion.id
     ));
@@ -595,18 +581,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     );
     assert!(retained.is_empty());
 
-    let line = SketchEntity {
-        id: SketchEntityId("measured-line".into()),
+    let line = SketchEntity::new(
+        SketchEntityId("measured-line".into()),
         sketch,
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+        SketchGeometry::Line {
             start: Point2::new(3.0, 4.0),
             end: Point2::new(3.0, 6.0),
         },
-    };
+    );
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -633,13 +615,20 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
                 parameter: actual_parameter,
             },
             ..
-        }] if first == &line.id
-            && second == &line.id
+        }] if first == line.id()
+            && second == line.id()
             && actual_parameter == &neutral_parameter_id_parts(stream, parameter.record_index)
     ));
 
-    let mut second_line = line.clone();
-    second_line.id = SketchEntityId("second-measured-line".into());
+    let second_line = SketchEntity::new(
+        SketchEntityId("second-measured-line".into()),
+        line.sketch.clone(),
+        line.geometry.clone(),
+    )
+    .with_construction(line.construction)
+    .with_native_ref(line.native_ref.clone())
+    .with_geometry_ref(line.geometry_ref.clone())
+    .with_endpoint_refs(line.endpoint_refs.clone());
     let retained = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -673,16 +662,14 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
 #[test]
 fn recipe_dimension_requires_one_axis_aligned_point_pair() {
     let sketch = SketchId("sketch".into());
-    let point = |name: &str, u, v| SketchEntity {
-        id: SketchEntityId(name.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, v),
-        },
+    let point = |name: &str, u, v| {
+        SketchEntity::new(
+            SketchEntityId(name.into()),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        )
     };
     let parameter = cadmpeg_ir::features::ParameterId("parameter".into());
     let mut entities = vec![
@@ -722,14 +709,12 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
 #[test]
 fn recipe_dimension_resolves_one_parallel_line_pair() {
     let sketch = SketchId("sketch".into());
-    let line = |name: &str, start, end| SketchEntity {
-        id: SketchEntityId(name.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let line = |name: &str, start, end| {
+        SketchEntity::new(
+            SketchEntityId(name.into()),
+            sketch.clone(),
+            SketchGeometry::Line { start, end },
+        )
     };
     let mut entities = vec![
         line("first", Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
@@ -747,14 +732,12 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         [SketchConstraintDefinition::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
     ));
-    let point = |name: &str, position| SketchEntity {
-        id: SketchEntityId(name.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |name: &str, position| {
+        SketchEntity::new(
+            SketchEntityId(name.into()),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
     };
     let mut entities_with_endpoints = entities.clone();
     entities_with_endpoints.extend([
@@ -847,17 +830,13 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             ]
     ));
 
-    let point = SketchEntity {
-        id: SketchEntityId("point".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let point = SketchEntity::new(
+        SketchEntityId("point".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(0.0, 2.0),
         },
-    };
+    );
     let mut point_entities = entities.clone();
     point_entities.push(point);
     assert!(matches!(
@@ -903,30 +882,24 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
 fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
     let sketch = SketchId("sketch".into());
     let parameter = cadmpeg_ir::features::ParameterId("parameter".into());
-    let point = |name: &str, u, v| SketchEntity {
-        id: SketchEntityId(name.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, v),
-        },
+    let point = |name: &str, u, v| {
+        SketchEntity::new(
+            SketchEntityId(name.into()),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        )
     };
     let entities = vec![
-        SketchEntity {
-            id: SketchEntityId("carrier".into()),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            SketchEntityId("carrier".into()),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(2.0, 0.0),
                 end: Point2::new(0.0, 0.0),
             },
-        },
+        ),
         point("carrier-start", 2.0, 0.0),
         point("carrier-end", 0.0, 0.0),
         point("extension", 4.0, 0.0),
@@ -953,18 +926,14 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
     ambiguous.extend([
         point("second-carrier-start", 12.0, 5.0),
         point("second-extension", 14.0, 5.0),
-        SketchEntity {
-            id: SketchEntityId("second-carrier".into()),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            SketchEntityId("second-carrier".into()),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(12.0, 5.0),
                 end: Point2::new(10.0, 5.0),
             },
-        },
+        ),
     ]);
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
         &ambiguous, &sketch, 2.0, &parameter, 0.0,
@@ -1001,17 +970,15 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         evaluated_value: 0.2,
         evaluated_value_offset: 0,
     };
-    let circle = |name: &str, center, radius| SketchEntity {
-        id: SketchEntityId(name.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
-            center,
-            radius: Length(radius),
-        },
+    let circle = |name: &str, center, radius| {
+        SketchEntity::new(
+            SketchEntityId(name.into()),
+            sketch.clone(),
+            SketchGeometry::Circle {
+                center,
+                radius: Length(radius),
+            },
+        )
     };
     let mut circles = vec![
         circle("outer-a", Point2::new(0.0, 0.0), 5.0),

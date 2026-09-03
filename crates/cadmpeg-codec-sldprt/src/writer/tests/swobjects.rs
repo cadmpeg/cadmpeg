@@ -226,18 +226,14 @@ fn encoder_writes_source_less_line_sketches() {
         .map(|index| SketchEntityId(format!("synthetic:test:sketch-entity#line-{index}")))
         .collect::<Vec<_>>();
     for index in 0..3 {
-        ir.model.sketch_entities.push(SketchEntity {
-            id: entity_ids[index].clone(),
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ir.model.sketch_entities.push(SketchEntity::new(
+            entity_ids[index].clone(),
+            sketch_id.clone(),
+            SketchGeometry::Line {
                 start: points[index],
                 end: points[(index + 1) % 3],
             },
-        });
+        ));
     }
     for index in 0..3 {
         ir.model.sketch_constraints.push(SketchConstraint {
@@ -297,17 +293,13 @@ fn encoder_writes_source_less_line_sketches() {
             native_ref: None,
         });
     }
-    ir.model.sketch_entities.push(SketchEntity {
-        id: SketchEntityId("synthetic:test:sketch-entity#point".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    ir.model.sketch_entities.push(SketchEntity::new(
+        SketchEntityId("synthetic:test:sketch-entity#point".into()),
+        sketch_id.clone(),
+        SketchGeometry::Point {
             position: Point2::new(4.0, 5.0),
         },
-    });
+    ));
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
@@ -684,36 +676,30 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         profiles: Vec::new(),
         native_ref: None,
     });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#a-point".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point { position: point },
-    });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: entity_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line { start, end },
-    });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#second-line".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line {
-            start: second_start,
-            end: second_end,
-        },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#a-point".into()),
+            sketch_id.clone(),
+            SpatialSketchGeometry::Point { position: point },
+        ));
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            entity_id,
+            sketch_id.clone(),
+            SpatialSketchGeometry::Line { start, end },
+        ));
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#second-line".into()),
+            sketch_id.clone(),
+            SpatialSketchGeometry::Line {
+                start: second_start,
+                end: second_end,
+            },
+        ));
     ir.model.features.push(Feature {
         id: FeatureId("synthetic:test:feature#spatial-path".into()),
         ordinal: 0,
@@ -832,18 +818,14 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         }]],
         native_ref: None,
     });
-    ir.model.sketch_entities.push(SketchEntity {
-        id: entity_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    });
+    ));
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
         sketch: sketch_id,

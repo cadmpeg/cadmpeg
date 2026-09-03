@@ -2783,7 +2783,7 @@ pub fn bind_work_point_sketch_point_constructions(
             *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                 point: SketchPointSelection::Planar {
                     sketch: entity.sketch.clone(),
-                    point: entity.id.clone(),
+                    point: entity.id().clone(),
                     native,
                 },
             }));
@@ -2794,7 +2794,7 @@ pub fn bind_work_point_sketch_point_constructions(
             *construction = Some(Box::new(DatumPointConstruction::SketchPoint {
                 point: SketchPointSelection::Spatial {
                     sketch: entity.sketch.clone(),
-                    point: entity.id.clone(),
+                    point: entity.id().clone(),
                     native,
                 },
             }));
@@ -8221,7 +8221,7 @@ pub(crate) fn closed_spatial_sketch_profiles(
                 normal: *normal,
                 u_axis: *reference_direction,
                 boundary: vec![SpatialSketchEntityUse {
-                    entity: entity.id.clone(),
+                    entity: entity.id().clone(),
                     reversed: false,
                 }],
             }),
@@ -8237,7 +8237,7 @@ pub(crate) fn closed_spatial_sketch_profiles(
     let mut unused = (0..edges.len()).collect::<HashSet<_>>();
     while let Some(&first) = unused
         .iter()
-        .min_by_key(|index| edges[**index].0.id.clone())
+        .min_by_key(|index| edges[**index].0.id().clone())
     {
         unused.remove(&first);
         let mut uses = vec![(first, false)];
@@ -8310,7 +8310,7 @@ pub(crate) fn closed_spatial_sketch_profiles(
             boundary: uses
                 .into_iter()
                 .map(|(index, reversed)| SpatialSketchEntityUse {
-                    entity: edges[index].0.id.clone(),
+                    entity: edges[index].0.id().clone(),
                     reversed,
                 })
                 .collect(),

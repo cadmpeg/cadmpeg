@@ -3846,7 +3846,7 @@ fn populate_annotations(
         if let Some(native_ref) = entity.native_ref.as_deref() {
             entities_by_native
                 .entry(native_ref)
-                .or_insert(entity.id.0.as_str());
+                .or_insert(entity.id().0.as_str());
         }
     }
     let planar_sketches = ir
@@ -4051,7 +4051,7 @@ fn populate_annotations(
             let stream = annotations.stream(crate::ids::native_scope(&fallback.name));
             for unknown in unknowns {
                 annotations
-                    .note(&unknown.id().0, stream, unknown.offset())
+                    .note(unknown.id().0.as_str(), stream, unknown.offset())
                     .tag("opaque_brep");
             }
         }

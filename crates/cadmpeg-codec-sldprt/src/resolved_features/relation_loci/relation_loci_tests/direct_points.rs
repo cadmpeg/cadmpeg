@@ -75,8 +75,8 @@ fn dynamic_point_distance_uses_direct_point_roster_when_ordinal_pair_misses() {
             &HashMap::new(),
         ),
         Some(SketchConstraintDefinition::DistanceLoci {
-            first: SketchLocus::Entity(first.id),
-            second: SketchLocus::Entity(target.id),
+            first: SketchLocus::Entity(first.id().clone()),
+            second: SketchLocus::Entity(target.id().clone()),
             parameter: ParameterId("parameter".into()),
         })
     );
@@ -113,8 +113,8 @@ fn dynamic_point_line_uses_roster_line_when_point_is_explicit() {
             &HashMap::new(),
         ),
         Some(SketchConstraintDefinition::DistanceLoci {
-            first: SketchLocus::Entity(point.id),
-            second: SketchLocus::Entity(line.id),
+            first: SketchLocus::Entity(point.id().clone()),
+            second: SketchLocus::Entity(line.id().clone()),
             parameter: ParameterId("parameter".into()),
         })
     );
@@ -164,15 +164,15 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
     let loci_by_marker = HashMap::from([
         (
             point_marker.id.clone(),
-            vec![SketchLocus::Entity(point.id.clone())],
+            vec![SketchLocus::Entity(point.id().clone())],
         ),
         (
             line_marker.id.clone(),
-            vec![SketchLocus::Entity(line.id.clone())],
+            vec![SketchLocus::Entity(line.id().clone())],
         ),
         (
             super::super::qualified_point_marker_key(&arc_marker_id),
-            vec![SketchLocus::Entity(qualified_proxy.id.clone())],
+            vec![SketchLocus::Entity(qualified_proxy.id().clone())],
         ),
     ]);
     let mut relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
@@ -191,8 +191,8 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
             &loci_by_marker,
         ),
         Some(SketchConstraintDefinition::DistanceLoci {
-            first: SketchLocus::Entity(point.id),
-            second: SketchLocus::Entity(line.id),
+            first: SketchLocus::Entity(point.id().clone()),
+            second: SketchLocus::Entity(line.id().clone()),
             parameter: ParameterId("parameter".into()),
         })
     );

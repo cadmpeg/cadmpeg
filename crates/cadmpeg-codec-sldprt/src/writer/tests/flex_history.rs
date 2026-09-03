@@ -164,15 +164,11 @@ fn encoder_writes_source_less_curved_sketches() {
         .enumerate()
         .map(|(index, geometry)| {
             let id = SketchEntityId(format!("synthetic:test:sketch-entity#curve-{index:02}"));
-            ir.model.sketch_entities.push(SketchEntity {
-                id: id.clone(),
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: None,
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
+            ir.model.sketch_entities.push(SketchEntity::new(
+                id.clone(),
+                sketch_id.clone(),
                 geometry,
-            });
+            ));
             id
         })
         .collect::<Vec<_>>();
@@ -839,17 +835,13 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             profiles: Vec::new(),
             native_ref: None,
         });
-        ir.model.sketch_entities.push(SketchEntity {
-            id: SketchEntityId(format!("synthetic:test:sketch-entity#named-{ordinal}")),
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        ir.model.sketch_entities.push(SketchEntity::new(
+            SketchEntityId(format!("synthetic:test:sketch-entity#named-{ordinal}")),
+            sketch_id.clone(),
+            SketchGeometry::Point {
                 position: Point2::new(ordinal as f64, ordinal as f64 + 1.0),
             },
-        });
+        ));
         ir.model.features.push(Feature {
             id: FeatureId(format!("synthetic:test:feature#named-{ordinal}")),
             ordinal: ordinal as u64,

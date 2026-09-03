@@ -83,7 +83,7 @@ pub(in super::super) fn connected_sketch_profile_vertices(
                 .iter()
                 .map(|entity_use| {
                     let geometry = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                        entity.sketch == *sketch_id && entity.id == entity_use.entity
+                        entity.sketch == *sketch_id && entity.id() == &entity_use.entity
                     }))
                     .map(|entity| &entity.geometry)?;
                     let (mut start, mut end) = sketch_geometry_endpoints(geometry)?;
@@ -346,10 +346,9 @@ pub(in super::super) fn resolved_sketch_profiles(
     for profile in &sketch.profiles {
         let mut geometries = Vec::new();
         for entity_use in profile {
-            let entity =
-                exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                    entity.sketch == *sketch_id && entity.id == entity_use.entity
-                }))?;
+            let entity = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
+                entity.sketch == *sketch_id && entity.id() == &entity_use.entity
+            }))?;
             let (mut start, mut end) = sketch_geometry_endpoints(&entity.geometry)?;
             if entity_use.reversed {
                 std::mem::swap(&mut start, &mut end);

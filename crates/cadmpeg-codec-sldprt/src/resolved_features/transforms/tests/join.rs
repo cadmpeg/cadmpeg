@@ -23,30 +23,22 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let first = SketchEntityId("first".into());
     let second = SketchEntityId("second".into());
     let entities = vec![
-        SketchEntity {
-            id: first.clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            first.clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(10.0, 20.0),
                 end: Point2::new(20.0, 20.0),
             },
-        },
-        SketchEntity {
-            id: second.clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            second.clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(20.0, 20.0),
                 end: Point2::new(20.0, 30.0),
             },
-        },
+        ),
     ];
     let feature = Feature {
         id: FeatureId("feature".into()),
@@ -529,18 +521,14 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         }],
         ..circle
     };
-    let circle_entity = SketchEntity {
-        id: SketchEntityId("dimensioned-circle".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let circle_entity = SketchEntity::new(
+        SketchEntityId("dimensioned-circle".into()),
+        sketch_id.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
         },
-    };
+    );
     assert!(matches!(
         typed_relation_definition(
             &unresolved_circle,
@@ -551,10 +539,17 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &joins,
         ),
         Some(SketchConstraintDefinition::Radius { entity, .. })
-            if entity == circle_entity.id
+            if entity == circle_entity.id().clone()
     ));
-    let mut duplicate_circle = circle_entity.clone();
-    duplicate_circle.id = SketchEntityId("duplicate-circle".into());
+    let duplicate_circle = SketchEntity::new(
+        SketchEntityId("duplicate-circle".into()),
+        circle_entity.sketch.clone(),
+        circle_entity.geometry.clone(),
+    )
+    .with_construction(circle_entity.construction)
+    .with_native_ref(circle_entity.native_ref.clone())
+    .with_geometry_ref(circle_entity.geometry_ref.clone())
+    .with_endpoint_refs(circle_entity.endpoint_refs.clone());
     assert_eq!(
         typed_relation_definition(
             &unresolved_circle,
@@ -573,42 +568,30 @@ fn line_handle_interior_points_identify_profile_entities() {
     let sketch = SketchId("sketch".into());
     let line_ids = ["horizontal", "vertical", "offset"].map(|id| SketchEntityId(id.into()));
     let entities = vec![
-        SketchEntity {
-            id: line_ids[0].clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            line_ids[0].clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(10.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: line_ids[1].clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            line_ids[1].clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(0.0, 20.0),
             },
-        },
-        SketchEntity {
-            id: line_ids[2].clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            line_ids[2].clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(10.0, 3.0),
                 end: Point2::new(20.0, 3.0),
             },
-        },
+        ),
     ];
     let feature = Feature {
         id: FeatureId("feature".into()),
@@ -680,30 +663,22 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
     let sketch = SketchId("sketch".into());
     let first_id = SketchEntityId("first".into());
     let second_id = SketchEntityId("second".into());
-    let first = SketchEntity {
-        id: first_id.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    let first = SketchEntity::new(
+        first_id.clone(),
+        sketch.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    };
-    let second = SketchEntity {
-        id: second_id.clone(),
+    );
+    let second = SketchEntity::new(
+        second_id.clone(),
         sketch,
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+        SketchGeometry::Line {
             start: Point2::new(1.0, 0.0),
             end: Point2::new(1.0, 1.0),
         },
-    };
+    );
     let mut first_marker = marker("first-marker", Some([0.0, 0.0]));
     first_marker.kind = SketchInputKind::LineOrCircle;
     let mut second_marker = marker("second-marker", Some([0.0, 0.0]));
@@ -734,7 +709,7 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
             vec![SketchLocus::Entity(second_id.clone())],
         ),
     ]);
-    let entities = HashMap::from([(&first.id, &first), (&second.id, &second)]);
+    let entities = HashMap::from([(first.id(), &first), (second.id(), &second)]);
 
     assert_eq!(
         unique_linked_endpoint_locus(&point, &markers, &loci, &entities, 1.0e-8),
@@ -746,7 +721,7 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
     };
-    let entities = HashMap::from([(&first.id, &first), (&ambiguous.id, &ambiguous)]);
+    let entities = HashMap::from([(first.id(), &first), (ambiguous.id(), &ambiguous)]);
     assert_eq!(
         unique_linked_endpoint_locus(&point, &markers, &loci, &entities, 1.0e-8),
         None
@@ -785,28 +760,23 @@ fn curve_handles_reject_point_geometry() {
 fn symmetry_invariant_marker_identifies_profile_entity() {
     let sketch = SketchId("sketch".into());
     let circle = SketchEntityId("circle".into());
-    let entity = SketchEntity {
-        id: circle.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let entity = SketchEntity::new(
+        circle.clone(),
+        sketch.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(10.0),
         },
-    };
-    let points = [-10.0, 10.0].map(|u| SketchEntity {
-        id: SketchEntityId(format!("point-{u}")),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, 0.0),
-        },
+    );
+    let points = [-10.0, 10.0].map(|u| {
+        SketchEntity::new(
+            SketchEntityId(format!("point-{u}")),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, 0.0),
+            },
+        )
+        .with_construction(true)
     });
     let feature = Feature {
         id: FeatureId("feature".into()),

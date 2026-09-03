@@ -100,15 +100,9 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         (first_line_id, first_line.clone()),
         (second_line_id, second_line.clone()),
     ] {
-        ir.model.sketch_entities.push(SketchEntity {
-            id,
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry,
-        });
+        ir.model
+            .sketch_entities
+            .push(SketchEntity::new(id, sketch_id.clone(), geometry));
     }
 
     let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("spline profile");
@@ -1764,30 +1758,22 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         native_ref: None,
     });
     ir.model.sketch_entities.extend([
-        SketchEntity {
-            id: entity_id(1),
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            entity_id(1),
+            sketch_id.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: entity_id(2),
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            entity_id(2),
+            sketch_id.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(1.0, 1.0),
                 end: Point2::new(1.0, 0.0),
             },
-        },
+        ),
     ]);
 
     assert_eq!(

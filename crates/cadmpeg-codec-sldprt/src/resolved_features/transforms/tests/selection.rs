@@ -54,16 +54,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     let mut entities = [(0.0, 0.0), (1.0, 2.0), (4.0, 7.0)]
         .into_iter()
         .enumerate()
-        .map(|(index, (u, v))| SketchEntity {
-            id: SketchEntityId(format!("point-{index}")),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(u, v),
-            },
+        .map(|(index, (u, v))| {
+            SketchEntity::new(
+                SketchEntityId(format!("point-{index}")),
+                sketch.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(u, v),
+                },
+            )
         })
         .collect::<Vec<_>>();
     let mut markers = [[0.0, 0.0], [0.002, 0.001], [0.007, 0.004]]
@@ -444,16 +442,14 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     let mut entities = [(0.0, 0.0), (1.0, 2.0), (4.0, 7.0)]
         .into_iter()
         .enumerate()
-        .map(|(index, (u, v))| SketchEntity {
-            id: SketchEntityId(format!("anchor-{index}")),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(u, v),
-            },
+        .map(|(index, (u, v))| {
+            SketchEntity::new(
+                SketchEntityId(format!("anchor-{index}")),
+                sketch.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(u, v),
+                },
+            )
         })
         .collect::<Vec<_>>();
     let mut markers = [[0.0, 0.0], [0.002, 0.001], [0.007, 0.004]]
@@ -468,18 +464,18 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     let mut point_marker = marker("dimension-point", Some([0.005, 0.006]));
     point_marker.offset = 81;
     markers.push(point_marker.clone());
-    entities.push(SketchEntity {
-        id: SketchEntityId("dimension-carrier".into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: Some(point_marker.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
-            center: Point2::new(5.0, 6.0),
-            radius: Length(10.0),
-        },
-    });
+    entities.push(
+        SketchEntity::new(
+            SketchEntityId("dimension-carrier".into()),
+            sketch.clone(),
+            SketchGeometry::Circle {
+                center: Point2::new(5.0, 6.0),
+                radius: Length(10.0),
+            },
+        )
+        .with_construction(true)
+        .with_native_ref(Some(point_marker.id.clone())),
+    );
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -555,7 +551,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     );
     assert_eq!(
         loci[&super::qualified_point_marker_key(&point_marker.id)],
-        vec![SketchLocus::Entity(point_entity.id.clone())]
+        vec![SketchLocus::Entity(point_entity.id().clone())]
     );
     let markers = lane
         .sketch_entities
@@ -568,7 +564,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     );
     assert_eq!(
         marker_point_locus(&point_marker.id, &markers, &loci),
-        Some(SketchLocus::Entity(point_entity.id.clone()))
+        Some(SketchLocus::Entity(point_entity.id().clone()))
     );
 }
 
@@ -831,18 +827,14 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         }]],
         native_ref: None,
     }];
-    let entities = [SketchEntity {
-        id: entity_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let entities = [SketchEntity::new(
+        entity_id,
+        sketch_id.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
         },
-    }];
+    )];
 
     bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters);
 

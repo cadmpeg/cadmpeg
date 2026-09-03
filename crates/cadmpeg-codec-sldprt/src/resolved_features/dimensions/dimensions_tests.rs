@@ -1605,17 +1605,15 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         pmi: None,
         native_ref: Some("scalar".into()),
     };
-    let center = SketchEntity {
-        id: SketchEntityId("center".into()),
-        sketch: sketch_id,
-        construction: true,
-        native_ref: Some(marker_id.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let center = SketchEntity::new(
+        SketchEntityId("center".into()),
+        sketch_id,
+        SketchGeometry::Point {
             position: Point2::new(1.0, 2.0),
         },
-    };
+    )
+    .with_construction(true)
+    .with_native_ref(Some(marker_id.into()));
     let mut entities = vec![center];
 
     project_relation_point_dimensioned_circles(
@@ -1633,17 +1631,17 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     assert_eq!(entities[1].geometry_ref.as_deref(), Some("relation"));
 
     let mut ambiguous = entities[..1].to_vec();
-    ambiguous.push(SketchEntity {
-        id: SketchEntityId("second-center".into()),
-        sketch: entities[0].sketch.clone(),
-        construction: true,
-        native_ref: Some(marker_id.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(1.0, 2.0),
-        },
-    });
+    ambiguous.push(
+        SketchEntity::new(
+            SketchEntityId("second-center".into()),
+            entities[0].sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(1.0, 2.0),
+            },
+        )
+        .with_construction(true)
+        .with_native_ref(Some(marker_id.into())),
+    );
     project_relation_point_dimensioned_circles(
         &mut ambiguous,
         std::slice::from_ref(&feature),
@@ -1718,17 +1716,15 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             link_selector: None,
         },
     ]);
-    let mut implicit_entities = vec![SketchEntity {
-        id: SketchEntityId("implicit-center".into()),
-        sketch: entities[0].sketch.clone(),
-        construction: true,
-        native_ref: Some("implicit-center".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let mut implicit_entities = vec![SketchEntity::new(
+        SketchEntityId("implicit-center".into()),
+        entities[0].sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(3.0, 4.0),
         },
-    }];
+    )
+    .with_construction(true)
+    .with_native_ref(Some("implicit-center".into()))];
     project_relation_point_dimensioned_circles(
         &mut implicit_entities,
         std::slice::from_ref(&feature),

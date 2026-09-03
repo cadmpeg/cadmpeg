@@ -784,41 +784,29 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         entity: second_profile_id.clone(),
         reversed: false,
     }]);
-    let point_entity = SketchEntity {
-        id: neutral_sketch_point_id(&sketch_id, 587),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let point_entity = SketchEntity::new(
+        neutral_sketch_point_id(&sketch_id, 587),
+        sketch_id.clone(),
+        SketchGeometry::Point {
             position: Point2::new(0.5, 1.0),
         },
-    };
-    let line_entity = SketchEntity {
-        id: neutral_sketch_curve_id(&sketch_id, 586, 0),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    );
+    let line_entity = SketchEntity::new(
+        neutral_sketch_curve_id(&sketch_id, 586, 0),
+        sketch_id.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    };
-    let second_profile_entity = SketchEntity {
-        id: second_profile_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    );
+    let second_profile_entity = SketchEntity::new(
+        second_profile_id,
+        sketch_id.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 1.0),
         },
-    };
+    );
     let profile_entities = [line_entity, second_profile_entity, point_entity];
     assert!(matches!(
         resolved_extrude_profile_selection(

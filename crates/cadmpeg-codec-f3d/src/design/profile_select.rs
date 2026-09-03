@@ -251,7 +251,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
                 sketch_entities
                     .iter()
-                    .any(|entity| entity.sketch == sketch && entity.id == selected)
+                    .any(|entity| entity.sketch == sketch && entity.id() == &selected)
                     .then_some((sketch, selected))
             })();
             if let Some((sketch, selected)) = resolved {
@@ -1076,7 +1076,7 @@ pub(crate) fn inserted_cylindrical_profile_selection(
             };
             let entity = entities
                 .iter()
-                .find(|entity| entity.sketch == sketch.id && entity.id == use_.entity)?;
+                .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)?;
             let SketchGeometry::Circle {
                 center: candidate_center,
                 radius: candidate_radius,
@@ -1271,7 +1271,7 @@ fn spatial_polyline_profile_containing_points(
             .map(|use_| {
                 let entity = entities
                     .iter()
-                    .find(|entity| entity.sketch == sketch.id && entity.id == use_.entity)?;
+                    .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)?;
                 let cadmpeg_ir::sketches::SpatialSketchGeometry::Line { start, end } =
                     &entity.geometry
                 else {
@@ -1691,7 +1691,7 @@ fn resolved_selection_member_points(
     );
     let SketchGeometry::Point { position } = &entities
         .iter()
-        .find(|entity| entity.id == entity_id && entity.sketch == sketch.id)?
+        .find(|entity| entity.id() == &entity_id && entity.sketch == sketch.id)?
         .geometry
     else {
         return None;
@@ -1756,7 +1756,7 @@ pub(crate) fn selection_containing_points(
                 profile.iter().any(|use_| {
                     entities
                         .iter()
-                        .find(|entity| entity.id == use_.entity)
+                        .find(|entity| entity.id() == &use_.entity)
                         .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
                 })
             })
@@ -1919,7 +1919,7 @@ fn resolve_entity_selection_path(
                 !resolution
                     .spatial_sketch_entities
                     .iter()
-                    .any(|entity| entity.sketch == spatial_sketch && entity.id == *curve)
+                    .any(|entity| entity.sketch == spatial_sketch && entity.id() == curve)
             })
         {
             return None;
@@ -1950,7 +1950,7 @@ fn resolve_entity_selection_path(
     if curves.iter().any(|curve| {
         !resolution.sketch_entities.iter().any(|entity| {
             entity.sketch == sketch
-                && entity.id == *curve
+                && entity.id() == curve
                 && !matches!(entity.geometry, SketchGeometry::Point { .. })
         })
     }) {
@@ -1993,7 +1993,7 @@ fn spatial_profile_member_entity<'a>(
         neutral_spatial_sketch_curve_id(&spatial_sketch.id, curve.primary_id, curve.secondary_id);
     let mut entities = spatial_entities
         .iter()
-        .filter(|entity| entity.sketch == spatial_sketch.id && entity.id == entity_id);
+        .filter(|entity| entity.sketch == spatial_sketch.id && entity.id() == &entity_id);
     let entity = entities.next()?;
     entities.next().is_none().then_some(entity)
 }
@@ -2018,12 +2018,12 @@ fn sketch_profile_member_entity(
     let entity_id = neutral_sketch_curve_id(&sketch.id, curve.primary_id, curve.secondary_id);
     let mut entities = sketch_entities
         .iter()
-        .filter(|entity| entity.sketch == sketch.id && entity.id == entity_id);
+        .filter(|entity| entity.sketch == sketch.id && entity.id() == &entity_id);
     let entity = entities.next()?;
     if entities.next().is_some() {
         return None;
     }
-    Some(entity.id.clone())
+    Some(entity.id().clone())
 }
 
 fn resolved_sketch_profile_regions(
@@ -2160,7 +2160,7 @@ fn resolved_spatial_sketch_profile_regions(
                     candidate
                         .boundary
                         .iter()
-                        .any(|use_| use_.entity == first.id)
+                        .any(|use_| &use_.entity == first.id())
                 });
         let (profile_index, selected_profile) = matching_profiles.next()?;
         if matching_profiles.next().is_some() {
@@ -2178,7 +2178,7 @@ fn resolved_spatial_sketch_profile_regions(
             if selected_profile
                 .boundary
                 .iter()
-                .any(|use_| use_.entity == entity.id)
+                .any(|use_| &use_.entity == entity.id())
             {
                 continue;
             }
@@ -2187,7 +2187,7 @@ fn resolved_spatial_sketch_profile_regions(
                     .spatial_sketch_entities
                     .iter()
                     .find(|candidate| {
-                        candidate.sketch == spatial_sketch.id && candidate.id == use_.entity
+                        candidate.sketch == spatial_sketch.id && candidate.id() == &use_.entity
                     })
                     .is_some_and(|candidate| {
                         coincident_spatial_profile_geometry(

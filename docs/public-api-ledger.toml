@@ -3291,3 +3291,10 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::sketches::SolverScalarClass"
 reason = "the three admitted Creo solver scalar classes are the only constructible values"
+
+[[change]]
+commit = "fadfe112d768c6e12f8842d88ffb1e9081b5a36b"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::sketches::{SketchEntity::id,SpatialSketchEntity::id}"
+reason = "private ids plus checked constructors and deserialization reject the empty identity state"

@@ -110,17 +110,15 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         pmi: None,
         native_ref: Some("scalar".into()),
     };
-    let mut entities = vec![SketchEntity {
-        id: SketchEntityId("center".into()),
-        sketch: sketch_id,
-        construction: true,
-        native_ref: Some("center".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let mut entities = vec![SketchEntity::new(
+        SketchEntityId("center".into()),
+        sketch_id,
+        SketchGeometry::Point {
             position: Point2::new(1.0, 2.0),
         },
-    }];
+    )
+    .with_construction(true)
+    .with_native_ref(Some("center".into()))];
 
     project_relation_point_dimensioned_circles(
         &mut entities,

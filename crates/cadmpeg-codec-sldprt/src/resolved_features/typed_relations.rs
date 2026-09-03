@@ -73,7 +73,7 @@ fn unique_entity_from_link_intersection(
         !entity.0.contains("sketch-entity#relation-point:")
             && sketch_entities
                 .iter()
-                .any(|candidate| candidate.id == *entity && candidate.sketch == *sketch)
+                .any(|candidate| candidate.id() == entity && candidate.sketch == *sketch)
             && links.iter().skip(1).all(|link| {
                 marker_entities(&link.entity_ref, markers_by_id, loci_by_marker).contains(entity)
             })
@@ -205,14 +205,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         && matches!(entity.geometry, SketchGeometry::Point { .. })
                 });
                 match (candidates.next(), candidates.next()) {
-                    (Some(entity), None) => Some(SketchLocus::Entity(entity.id.clone())),
+                    (Some(entity), None) => Some(SketchLocus::Entity(entity.id().clone())),
                     (None, None) => {
                         let locus =
                             marker_point_locus(&link.entity_ref, markers_by_id, loci_by_marker)?;
                         sketch_entities
                             .iter()
                             .any(|entity| {
-                                entity.sketch == *sketch && entity.id == locus_entity(&locus)
+                                entity.sketch == *sketch && entity.id() == &locus_entity(&locus)
                             })
                             .then_some(locus)
                     }
@@ -326,7 +326,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     if matching.next().is_some() {
                         return Vec::new();
                     }
-                    vec![entity.id.clone()]
+                    vec![entity.id().clone()]
                 })
                 .collect::<Vec<_>>();
             exact_entities.sort();
@@ -428,7 +428,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     ..
                 }) = sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id == entity)
+                    .find(|candidate| candidate.id() == &entity)
                 else {
                     return Some(native());
                 };
@@ -473,7 +473,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 ..
             }) = sketch_entities
                 .iter()
-                .find(|candidate| candidate.id == entity)
+                .find(|candidate| candidate.id() == &entity)
             else {
                 return Some(native());
             };
@@ -514,7 +514,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             .into_iter()
                             .filter(|entity| {
                                 sketch_entities.iter().any(|candidate| {
-                                    candidate.id == *entity && candidate.sketch == *sketch
+                                    candidate.id() == entity && candidate.sketch == *sketch
                                 })
                             })
                             .collect::<Vec<_>>()
@@ -528,12 +528,12 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         })
                         .filter(|(first, second)| {
                             let Some(first_entity) =
-                                sketch_entities.iter().find(|entity| entity.id == **first)
+                                sketch_entities.iter().find(|entity| entity.id() == *first)
                             else {
                                 return false;
                             };
                             let Some(second_entity) =
-                                sketch_entities.iter().find(|entity| entity.id == **second)
+                                sketch_entities.iter().find(|entity| entity.id() == *second)
                             else {
                                 return false;
                             };
@@ -578,13 +578,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if !sketch_entities.is_empty() {
                 let Some(_first_entity) = sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id == *first)
+                    .find(|candidate| candidate.id() == first)
                 else {
                     return Some(native());
                 };
                 let Some(_second_entity) = sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id == *second)
+                    .find(|candidate| candidate.id() == second)
                 else {
                     return Some(native());
                 };
@@ -666,7 +666,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             for locus in loci {
                 let Some(entity) = sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id == locus_entity(&locus))
+                    .find(|candidate| candidate.id() == &locus_entity(&locus))
                 else {
                     return Some(native());
                 };
@@ -677,7 +677,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         SketchGeometry::Point { .. } | SketchGeometry::Native { .. }
                     )
                 {
-                    entities.push(entity.id.clone());
+                    entities.push(entity.id().clone());
                 } else if point.replace(locus).is_some() {
                     return Some(native());
                 }
@@ -694,7 +694,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if [first, second].into_iter().any(|id| {
                 sketch_entities
                     .iter()
-                    .find(|entity| entity.id == *id)
+                    .find(|entity| entity.id() == id)
                     .is_none_or(|entity| !sketch_entity_contains_point(entity, position))
             }) {
                 return Some(native());
@@ -717,7 +717,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             for locus in loci {
                 let entity = sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id == locus_entity(&locus));
+                    .find(|candidate| candidate.id() == &locus_entity(&locus));
                 if matches!(locus, SketchLocus::Entity(_))
                     && entity.is_some_and(|entity| {
                         matches!(entity.geometry, SketchGeometry::Line { .. })
@@ -742,7 +742,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let Some(second_point) = profile_locus_point(second, sketch_entities) else {
                 return Some(native());
             };
-            let Some(axis_entity) = sketch_entities.iter().find(|entity| entity.id == axis) else {
+            let Some(axis_entity) = sketch_entities.iter().find(|entity| entity.id() == &axis)
+            else {
                 return Some(native());
             };
             if symmetric_loci_match_axis(first_point, second_point, axis_entity) != Some(true) {
@@ -766,7 +767,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 };
                 let Some(midpoint) = sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id == entity)
+                    .find(|candidate| candidate.id() == &entity)
                     .and_then(sketch_entity_midpoint)
                 else {
                     return Some(native());
@@ -1184,7 +1185,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
     let point = |locus: &SketchLocus| {
         let entity = sketch_entities
             .iter()
-            .find(|entity| entity.id == locus_entity(locus))?;
+            .find(|entity| entity.id() == &locus_entity(locus))?;
         sketch_entity_loci(entity)
             .into_iter()
             .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
@@ -1354,7 +1355,7 @@ fn append_axis_relation_point_locus(
         .filter(|entity| entity.sketch == *sketch)
         .filter(|entity| entity.native_ref.as_deref() == Some(marker_id))
         .filter(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
-        .map(|entity| SketchLocus::Entity(entity.id.clone()))
+        .map(|entity| SketchLocus::Entity(entity.id().clone()))
         .collect::<Vec<_>>();
     if let [locus] = candidates.as_slice() {
         if !loci.contains(locus) {
@@ -1459,7 +1460,7 @@ fn typed_axis_relation_is_inactive(
     definition: &SketchConstraintDefinition,
     sketch_entities: &[SketchEntity],
 ) -> Option<bool> {
-    let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id == *id);
+    let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id() == id);
     match definition {
         SketchConstraintDefinition::Horizontal { entity: id }
         | SketchConstraintDefinition::Vertical { entity: id } => {
@@ -1508,8 +1509,10 @@ fn typed_binary_relation_is_inactive(
     else {
         return None;
     };
-    let first = sketch_entities.iter().find(|entity| entity.id == *first)?;
-    let second = sketch_entities.iter().find(|entity| entity.id == *second)?;
+    let first = sketch_entities.iter().find(|entity| entity.id() == first)?;
+    let second = sketch_entities
+        .iter()
+        .find(|entity| entity.id() == second)?;
     Some(!binary_relation_matches_evaluated_geometry(
         kind, first, second,
     ))
@@ -1580,7 +1583,7 @@ pub(super) fn marker_relation_is_inactive(
     }
     let resolved = entities
         .iter()
-        .filter_map(|id| sketch_entities.iter().find(|entity| entity.id == *id))
+        .filter_map(|id| sketch_entities.iter().find(|entity| entity.id() == id))
         .collect::<Vec<_>>();
     if resolved.len() != entities.len() {
         return false;

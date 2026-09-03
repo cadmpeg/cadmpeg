@@ -25,28 +25,26 @@ use std::collections::BTreeMap;
 #[test]
 fn native_planar_and_spatial_sketch_geometry_is_reported() {
     let mut ir = CadIr::empty();
-    ir.model.sketch_entities.push(SketchEntity {
-        id: SketchEntityId("planar-entity".into()),
-        sketch: SketchId("planar-sketch".into()),
-        construction: false,
-        native_ref: Some("native:planar".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
-            native_kind: "SplineHandle".into(),
-        },
-    });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: SpatialSketchEntityId("spatial-entity".into()),
-        sketch: SpatialSketchId("spatial-sketch".into()),
-        construction: false,
-        native_ref: Some("native:spatial".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Native {
-            native_kind: "ReferenceCurve".into(),
-        },
-    });
+    ir.model.sketch_entities.push(
+        SketchEntity::new(
+            SketchEntityId("planar-entity".into()),
+            SketchId("planar-sketch".into()),
+            SketchGeometry::Native {
+                native_kind: "SplineHandle".into(),
+            },
+        )
+        .with_native_ref(Some("native:planar".into())),
+    );
+    ir.model.spatial_sketch_entities.push(
+        SpatialSketchEntity::new(
+            SpatialSketchEntityId("spatial-entity".into()),
+            SpatialSketchId("spatial-sketch".into()),
+            SpatialSketchGeometry::Native {
+                native_kind: "ReferenceCurve".into(),
+            },
+        )
+        .with_native_ref(Some("native:spatial".into())),
+    );
     let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
@@ -77,17 +75,16 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         },
         native_ref: Some("feature".into()),
     });
-    ir.model.sketch_entities.push(SketchEntity {
-        id: SketchEntityId("represented-geometry".into()),
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: Some("geometry-marker".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
-            native_kind: "UnknownGeometry".into(),
-        },
-    });
+    ir.model.sketch_entities.push(
+        SketchEntity::new(
+            SketchEntityId("represented-geometry".into()),
+            SketchId("sketch".into()),
+            SketchGeometry::Native {
+                native_kind: "UnknownGeometry".into(),
+            },
+        )
+        .with_native_ref(Some("geometry-marker".into())),
+    );
     let marker = |id: &str, ordinal, kind| SketchInputEntity {
         id: id.into(),
         parent: "lane".into(),
@@ -184,16 +181,15 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
 #[test]
 fn native_relation_records_have_at_most_one_neutral_owner() {
     let mut ir = CadIr::empty();
-    let entity = |id: &str, native_ref: &str| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: Some(native_ref.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
-            native_kind: "UnknownGeometry".into(),
-        },
+    let entity = |id: &str, native_ref: &str| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("sketch".into()),
+            SketchGeometry::Native {
+                native_kind: "UnknownGeometry".into(),
+            },
+        )
+        .with_native_ref(Some(native_ref.into()))
     };
     ir.model.sketch_entities = vec![
         entity("first", "relation-marker"),

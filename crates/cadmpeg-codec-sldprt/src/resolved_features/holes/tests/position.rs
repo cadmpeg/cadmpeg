@@ -600,17 +600,14 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         profiles: Vec::new(),
         native_ref: Some("lane".into()),
     };
-    let entities = [SketchEntity {
-        id: SketchEntityId("point".into()),
-        sketch: sketch.id.clone(),
-        construction: false,
-        native_ref: Some("authored-point".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let entities = [SketchEntity::new(
+        SketchEntityId("point".into()),
+        sketch.id.clone(),
+        SketchGeometry::Point {
             position: Point2::new(2.0, 3.0),
         },
-    }];
+    )
+    .with_native_ref(Some("authored-point".into()))];
     let mut features = vec![hole, sketch_feature];
     let mut paired_lane = lane.clone();
     paired_lane.sketch_entities.truncate(4);
@@ -932,37 +929,29 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         native_ref: Some("lane".into()),
     };
     let point = Point3::new(12.0, 23.0, 30.0);
-    let entity = SpatialSketchEntity {
-        id: SpatialSketchEntityId("point".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: Some("authored-point".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point { position: point },
-    };
-    let same_axis_endpoint = SpatialSketchEntity {
-        id: SpatialSketchEntityId("same-axis-endpoint".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: Some("same-axis-endpoint".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point {
+    let entity = SpatialSketchEntity::new(
+        SpatialSketchEntityId("point".into()),
+        sketch_id.clone(),
+        SpatialSketchGeometry::Point { position: point },
+    )
+    .with_native_ref(Some("authored-point".into()));
+    let same_axis_endpoint = SpatialSketchEntity::new(
+        SpatialSketchEntityId("same-axis-endpoint".into()),
+        sketch_id.clone(),
+        SpatialSketchGeometry::Point {
             position: Point3::new(12.0, 23.0, 20.0),
         },
-    };
-    let construction_point = SpatialSketchEntity {
-        id: SpatialSketchEntityId("construction-point".into()),
-        sketch: sketch_id,
-        construction: true,
-        native_ref: Some("construction-point".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point {
+    )
+    .with_native_ref(Some("same-axis-endpoint".into()));
+    let construction_point = SpatialSketchEntity::new(
+        SpatialSketchEntityId("construction-point".into()),
+        sketch_id,
+        SpatialSketchGeometry::Point {
             position: Point3::new(100.0, 100.0, 100.0),
         },
-    };
+    )
+    .with_construction(true)
+    .with_native_ref(Some("construction-point".into()));
     let surface = Surface {
         id: SurfaceId("bore".into()),
         geometry: SurfaceGeometry::Cylinder {
@@ -1054,14 +1043,12 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
     let entities = positions
         .into_iter()
         .enumerate()
-        .map(|(index, position)| SpatialSketchEntity {
-            id: SpatialSketchEntityId(format!("point-{index}")),
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SpatialSketchGeometry::Point { position },
+        .map(|(index, position)| {
+            SpatialSketchEntity::new(
+                SpatialSketchEntityId(format!("point-{index}")),
+                sketch_id.clone(),
+                SpatialSketchGeometry::Point { position },
+            )
         })
         .collect::<Vec<_>>();
     let mut features = vec![hole, sketch_feature];
@@ -1161,15 +1148,12 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         native_ref: Some("lane".into()),
     };
     let locus = Point3::new(12.0, 23.0, 30.0);
-    let entity = SpatialSketchEntity {
-        id: SpatialSketchEntityId("relation-locus".into()),
-        sketch: sketch_id,
-        construction: false,
-        native_ref: Some("relation-handle".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Point { position: locus },
-    };
+    let entity = SpatialSketchEntity::new(
+        SpatialSketchEntityId("relation-locus".into()),
+        sketch_id,
+        SpatialSketchGeometry::Point { position: locus },
+    )
+    .with_native_ref(Some("relation-handle".into()));
     let surface = Surface {
         id: SurfaceId("bore".into()),
         geometry: SurfaceGeometry::Cylinder {

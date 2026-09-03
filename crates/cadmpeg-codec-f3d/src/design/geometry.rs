@@ -94,7 +94,7 @@ pub(crate) fn sketch_arrangement_faces(
                     || sketch_geometry_parameter_range(&entity.geometry).is_some()
             })
             .map(|entity| SketchEntityUse {
-                entity: entity.id.clone(),
+                entity: entity.id().clone(),
                 reversed: false,
             })
             .collect::<Vec<_>>()
@@ -106,7 +106,7 @@ pub(crate) fn sketch_arrangement_faces(
             .collect::<Vec<_>>()
     };
     for use_ in candidate_uses {
-        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
         if matches!(entity.geometry, SketchGeometry::Circle { .. }) {
             circles.push((use_, entity));
             continue;
@@ -119,7 +119,7 @@ pub(crate) fn sketch_arrangement_faces(
             arrangement_node(&mut nodes, point, tolerance);
         }
         pending.push(SketchProfileBoundaryUse {
-            entity: entity.id.clone(),
+            entity: entity.id().clone(),
             parameter_range: range,
             reversed: use_.reversed,
         });
@@ -191,7 +191,7 @@ pub(crate) fn sketch_arrangement_faces(
     for boundary in pending {
         let entity = entities
             .iter()
-            .find(|entity| entity.id == boundary.entity)?;
+            .find(|entity| entity.id() == &boundary.entity)?;
         let parameters = arrangement_split_parameters(
             &entity.geometry,
             boundary.parameter_range,
@@ -465,13 +465,13 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     }
     let Some(arc_entity) = entities
         .iter()
-        .find(|entity| entity.id == arc.boundary.entity)
+        .find(|entity| entity.id() == &arc.boundary.entity)
     else {
         return false;
     };
     let Some(nurbs_entity) = entities
         .iter()
-        .find(|entity| entity.id == nurbs.boundary.entity)
+        .find(|entity| entity.id() == &nurbs.boundary.entity)
     else {
         return false;
     };
@@ -544,13 +544,13 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
     }
     let Some(line_entity) = entities
         .iter()
-        .find(|entity| entity.id == line.boundary.entity)
+        .find(|entity| entity.id() == &line.boundary.entity)
     else {
         return false;
     };
     let Some(nurbs_entity) = entities
         .iter()
-        .find(|entity| entity.id == nurbs.boundary.entity)
+        .find(|entity| entity.id() == &nurbs.boundary.entity)
     else {
         return false;
     };
@@ -915,13 +915,13 @@ fn arrangement_edges_coincident(
     }
     let Some(left_entity) = entities
         .iter()
-        .find(|entity| entity.id == left.boundary.entity)
+        .find(|entity| entity.id() == &left.boundary.entity)
     else {
         return false;
     };
     let Some(right_entity) = entities
         .iter()
-        .find(|entity| entity.id == right.boundary.entity)
+        .find(|entity| entity.id() == &right.boundary.entity)
     else {
         return false;
     };
@@ -1030,7 +1030,7 @@ fn arrangement_edge_tubes(
 
     let entity = entities
         .iter()
-        .find(|entity| entity.id == edge.boundary.entity)?;
+        .find(|entity| entity.id() == &edge.boundary.entity)?;
     let scale = edge
         .polyline
         .iter()
@@ -1081,7 +1081,7 @@ fn arrangement_analytic_segment(
 
     let entity = entities
         .iter()
-        .find(|entity| entity.id == edge.boundary.entity)?;
+        .find(|entity| entity.id() == &edge.boundary.entity)?;
     match &entity.geometry {
         SketchGeometry::Line { .. } => Some(ProfileBoundarySegment::Line {
             start: edge.polyline[0],
@@ -1248,7 +1248,7 @@ fn point_on_profile_boundary_use(
 ) -> bool {
     use cadmpeg_ir::sketches::SketchGeometry;
 
-    let Some(entity) = entities.iter().find(|entity| entity.id == use_.entity) else {
+    let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity) else {
         return false;
     };
     if !point_on_sketch_entity(point, entity, tolerance) {
@@ -1318,7 +1318,7 @@ pub(crate) fn region_containing_points(
                     profile.iter().any(|use_| {
                         entities
                             .iter()
-                            .find(|entity| entity.id == use_.entity)
+                            .find(|entity| entity.id() == &use_.entity)
                             .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
                     })
                 })
@@ -1357,7 +1357,7 @@ pub(crate) fn region_containing_points(
             profile.iter().any(|use_| {
                 entities
                     .iter()
-                    .find(|entity| entity.id == use_.entity)
+                    .find(|entity| entity.id() == &use_.entity)
                     .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
             })
         })
@@ -1623,7 +1623,7 @@ fn profile_boundary(
     use cadmpeg_ir::sketches::SketchGeometry;
 
     if let [use_] = profile {
-        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
         if let SketchGeometry::Circle { center, radius } = entity.geometry {
             return Some(ProfileBoundary::Circle {
                 center,
@@ -1664,7 +1664,7 @@ fn certified_profile_loop(
     let mut tubes = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
         let mut entity_tubes = match &entity.geometry {
             SketchGeometry::Line { start, end } => vec![CertifiedCurveTube {
                 start: *start,
@@ -1910,7 +1910,7 @@ fn circular_arc_profile_segments(
     let mut segments = Vec::with_capacity(profile.len());
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
         let segment = match entity.geometry {
             SketchGeometry::Line { start, end } => {
                 let [start, end] = if use_.reversed {
@@ -1963,7 +1963,7 @@ fn line_profile_vertices(
     let mut vertices = Vec::with_capacity(profile.len());
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
         let SketchGeometry::Line { start, end } = entity.geometry else {
             return None;
         };
@@ -2714,7 +2714,7 @@ pub(crate) fn closed_sketch_profiles(
         })
         .map(|entity| {
             vec![SketchEntityUse {
-                entity: entity.id.clone(),
+                entity: entity.id().clone(),
                 reversed: false,
             }]
         })
@@ -2769,7 +2769,7 @@ pub(crate) fn closed_sketch_profiles(
         adjacency.entry(end).or_default().push(edge);
     }
     for incident in adjacency.values_mut() {
-        incident.sort_by(|a, b| edges[*a].0.id.cmp(&edges[*b].0.id));
+        incident.sort_by(|a, b| edges[*a].0.id().cmp(&edges[*b].0.id()));
     }
 
     let Ok(mut visited) =
@@ -2778,7 +2778,7 @@ pub(crate) fn closed_sketch_profiles(
         return Vec::new();
     };
     let mut order = (0..edges.len()).collect::<Vec<_>>();
-    order.sort_by(|a, b| edges[*a].0.id.cmp(&edges[*b].0.id));
+    order.sort_by(|a, b| edges[*a].0.id().cmp(&edges[*b].0.id()));
     for first_edge in order {
         if visited[first_edge] {
             continue;
@@ -2834,12 +2834,12 @@ pub(crate) fn closed_sketch_profiles(
             continue;
         }
 
-        component.sort_by(|a, b| edges[*a].0.id.cmp(&edges[*b].0.id));
+        component.sort_by(|a, b| edges[*a].0.id().cmp(&edges[*b].0.id()));
         let first_edge = component[0];
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
         let mut profile = vec![SketchEntityUse {
-            entity: edges[first_edge].0.id.clone(),
+            entity: edges[first_edge].0.id().clone(),
             reversed: false,
         }];
         visited[first_edge] = true;
@@ -2857,7 +2857,7 @@ pub(crate) fn closed_sketch_profiles(
             current_node = if reversed { stored_start } else { stored_end };
             visited[next_edge] = true;
             profile.push(SketchEntityUse {
-                entity: edges[next_edge].0.id.clone(),
+                entity: edges[next_edge].0.id().clone(),
                 reversed,
             });
         }
@@ -2904,7 +2904,7 @@ fn branched_line_profiles(
             };
             angle(*first)
                 .total_cmp(&angle(*second))
-                .then_with(|| edges[*first / 2].0.id.cmp(&edges[*second / 2].0.id))
+                .then_with(|| edges[*first / 2].0.id().cmp(&edges[*second / 2].0.id()))
                 .then_with(|| first.cmp(second))
         });
     }
@@ -2932,7 +2932,7 @@ fn branched_line_profiles(
         .iter()
         .flat_map(|edge| [edge * 2, edge * 2 + 1])
         .collect::<Vec<_>>();
-    starts.sort_by(|a, b| (&edges[*a / 2].0.id, *a % 2).cmp(&(&edges[*b / 2].0.id, *b % 2)));
+    starts.sort_by(|a, b| (edges[*a / 2].0.id(), *a % 2).cmp(&(edges[*b / 2].0.id(), *b % 2)));
     for start in starts {
         if visited.contains(&start) {
             continue;
@@ -2957,7 +2957,7 @@ fn branched_line_profiles(
             };
             twice_area += from.u * to.v - from.v * to.u;
             profile.push(SketchEntityUse {
-                entity: edges[edge].0.id.clone(),
+                entity: edges[edge].0.id().clone(),
                 reversed,
             });
             current = next[&current];
@@ -3153,7 +3153,7 @@ fn tangent_nested_line_profile(
                 .iter()
                 .rev()
                 .map(|edge| SketchEntityUse {
-                    entity: edges[*edge].0.id.clone(),
+                    entity: edges[*edge].0.id().clone(),
                     reversed: true,
                 })
                 .collect::<Vec<_>>()
@@ -3161,7 +3161,7 @@ fn tangent_nested_line_profile(
             cycles[index]
                 .iter()
                 .map(|edge| SketchEntityUse {
-                    entity: edges[*edge].0.id.clone(),
+                    entity: edges[*edge].0.id().clone(),
                     reversed: false,
                 })
                 .collect::<Vec<_>>()
@@ -3172,7 +3172,10 @@ fn tangent_nested_line_profile(
     let profile_points = profile
         .iter()
         .filter_map(|use_| {
-            let entity = edges.iter().find(|(entity, _)| entity.id == use_.entity)?.0;
+            let entity = edges
+                .iter()
+                .find(|(entity, _)| entity.id() == &use_.entity)?
+                .0;
             match entity.geometry {
                 cadmpeg_ir::sketches::SketchGeometry::Line { start, end } => {
                     Some(if use_.reversed { end } else { start })
