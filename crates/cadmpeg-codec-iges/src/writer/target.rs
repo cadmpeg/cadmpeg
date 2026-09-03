@@ -3,7 +3,7 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    Consumption, EncodeInput, ExportBody, ResolvedTarget, ResolvedWrite, SourceIdentity, WritePath,
+    Consumption, EncodeInput, ExportBody, ResolvedTarget, ResolvedWrite, WritePath,
 };
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -25,29 +25,22 @@ pub(crate) fn plan(
                 None => "its retained source image is unavailable for byte replay and the semantic writer cannot synthesize it".to_owned(),
             })),
         },
-        ResolvedTarget::Inherited { index, .. } => {
-            replay_or_synthesize(input, crate::IgesVersion::ALL[*index])
-        }
-        ResolvedTarget::Explicit {
-            index,
-            entry,
-            source: SourceIdentity::Recorded(source),
-            ..
-        } => {
-            let version = crate::IgesVersion::ALL[*index];
-            if source == &entry.id {
-                replay_or_synthesize(input, version)
+        ResolvedTarget::Explicit { .. }
+        | ResolvedTarget::Inherited { .. }
+        | ResolvedTarget::Default { .. } => {
+            let index = resolved
+                .index()
+                .expect("catalog-backed resolutions carry an index");
+            let version = crate::IgesVersion::ALL[index];
+            if resolved.preserves_source() {
+                replay_or_synthesize(input, resolved, version)
             } else {
-                synthesized_body(input, version, resolved.displacement_message(), None, false)
+                synthesized_body(
+                    input,
+                    version,
+                    SynthesisCause::from_resolution(input, resolved),
+                )
             }
-        }
-        ResolvedTarget::Explicit {
-            index,
-            source: SourceIdentity::Unrecorded,
-            ..
-        } => synthesized_body(input, crate::IgesVersion::ALL[*index], None, None, true),
-        ResolvedTarget::Explicit { index, .. } | ResolvedTarget::Default { index, .. } => {
-            synthesized_body(input, crate::IgesVersion::ALL[*index], None, None, false)
         }
     }
 }
@@ -56,13 +49,19 @@ pub(crate) fn plan(
 /// it is intact, otherwise regenerate and report why replay was declined.
 fn replay_or_synthesize(
     input: EncodeInput<'_>,
+    resolved: &ResolvedWrite<'_>,
     version: crate::IgesVersion,
 ) -> Result<ExportBody, CodecError> {
     let replay_failure = match replay_bytes(input.ir, input.fidelity)? {
         Replay::Replayed { bytes } => return Ok(replayed_body(input.ir, bytes)),
         Replay::Declined { reason } => reason,
     };
-    synthesized_body(input, version, None, replay_failure, true)
+    debug_assert!(resolved.source_preservation_eligible());
+    synthesized_body(
+        input,
+        version,
+        SynthesisCause::ReplayDeclined(replay_failure),
+    )
 }
 
 fn replayed_body(ir: &CadIr, bytes: Vec<u8>) -> ExportBody {
@@ -78,39 +77,12 @@ fn replayed_body(ir: &CadIr, bytes: Vec<u8>) -> ExportBody {
 fn synthesized_body(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
-    displacement: Option<String>,
-    replay_failure: Option<String>,
-    preservation_eligible: bool,
+    cause: SynthesisCause,
 ) -> Result<ExportBody, CodecError> {
-    let source_available = input
-        .fidelity
-        .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
-        .is_some();
-    let mut losses = Vec::new();
-    if preservation_eligible && !source_available {
-        losses.push(
-            IgesLossCode::PreservedSourceUnavailable.note(
-                "preserved IGES source image is unavailable; semantic regeneration is required",
-            ),
-        );
-    }
-    let displaced = displacement.is_some();
-    if let Some(message) = displacement {
-        losses.push(IgesLossCode::SourceDialectDisplaced.note(message));
-    }
+    let (consumption, loss) = cause.into_fidelity();
+    let mut losses = loss.into_iter().collect::<Vec<_>>();
     let synthesis = super::synthesize(input.ir, version)?;
     losses.extend(synthesis.losses.clone());
-    let consumption = if preservation_eligible && !source_available {
-        Consumption::Degraded {
-            reason: "preserved IGES source image is unavailable".into(),
-        }
-    } else if displaced {
-        Consumption::NotConsumed
-    } else if let Some(reason) = replay_failure {
-        Consumption::Degraded { reason }
-    } else {
-        Consumption::NotConsumed
-    };
     Ok(super::body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },
@@ -118,6 +90,51 @@ fn synthesized_body(
         "IGES Fixed ASCII container regenerated from supported neutral geometry",
         synthesis.counts,
     ))
+}
+
+enum SynthesisCause {
+    Fresh,
+    Displaced(String),
+    ReplayDeclined(Option<String>),
+}
+
+impl SynthesisCause {
+    fn from_resolution(input: EncodeInput<'_>, resolved: &ResolvedWrite<'_>) -> Self {
+        if let Some(message) = resolved.displacement_message() {
+            Self::Displaced(message)
+        } else if resolved.source_preservation_eligible()
+            && !source_record_available(input.fidelity)
+        {
+            Self::ReplayDeclined(None)
+        } else {
+            Self::Fresh
+        }
+    }
+
+    fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::LossNote>) {
+        match self {
+            Self::Fresh => (Consumption::NotConsumed, None),
+            Self::Displaced(message) => (
+                Consumption::NotConsumed,
+                Some(IgesLossCode::SourceDialectDisplaced.note(message)),
+            ),
+            Self::ReplayDeclined(None) => (
+                Consumption::Degraded {
+                    reason: "preserved IGES source image is unavailable".into(),
+                },
+                Some(IgesLossCode::PreservedSourceUnavailable.note(
+                    "preserved IGES source image is unavailable; semantic regeneration is required",
+                )),
+            ),
+            Self::ReplayDeclined(Some(reason)) => (Consumption::Degraded { reason }, None),
+        }
+    }
+}
+
+fn source_record_available(fidelity: Option<&SourceFidelity>) -> bool {
+    fidelity
+        .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
+        .is_some()
 }
 
 enum Replay {
@@ -135,6 +152,17 @@ impl Replay {
             reason: Some(reason.into()),
         }
     }
+
+    fn declined_for_record(
+        record: Option<&cadmpeg_ir::RetainedSourceRecord>,
+        reason: impl Into<String>,
+    ) -> Self {
+        if record.is_some() {
+            Self::declined_because(reason)
+        } else {
+            Self::declined()
+        }
+    }
 }
 
 fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay, CodecError> {
@@ -145,18 +173,22 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
     else {
         return Ok(Replay::declined());
     };
+    let record = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID));
     let Some(expected) = source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE) else {
-        return Ok(Replay::declined_because(format!(
-            "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
-        )));
+        return Ok(Replay::declined_for_record(
+            record,
+            format!(
+                "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
+            ),
+        ));
     };
     if crate::document_digest(ir) != *expected {
-        return Ok(Replay::declined_because(
+        return Ok(Replay::declined_for_record(
+            record,
             "decoded model no longer matches the preserved IGES source digest; byte replay skipped",
         ));
     }
-    let Some(record) = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID))
-    else {
+    let Some(record) = record else {
         return Ok(Replay::declined());
     };
     let Some(data) = record.data() else {
