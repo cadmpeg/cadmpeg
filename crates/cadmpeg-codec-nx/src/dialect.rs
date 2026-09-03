@@ -14,8 +14,8 @@
 //! [`crate::container::scan_legacy`], which requires a Compound File envelope
 //! carrying `UG_PART/UG_PART` and a `\x0d\x01UGII  ` payload prefix and errors
 //! with [`cadmpeg_core::CodecError::WrongFormat`] otherwise. The parser that
-//! ran is recorded on `Container::legacy_cfb`, and that flag — not a second
-//! reading of the magic — is what this module classifies on.
+//! ran is recorded by [`crate::container::ContainerLayout`], not by a second
+//! reading of the magic.
 //!
 //! Each of the two host rows therefore names the grammar that actually parsed
 //! the document, so admission is [`Admission::Admitted`] on both. Embedded
@@ -176,14 +176,12 @@ impl NxDialect {
 
     /// The row for a parsed container.
     ///
-    /// The predicate is the dispatch itself: `Container::is_legacy_cfb` is set
-    /// by whichever of the two parsers built the container, so this reads the
-    /// decision rather than repeating it.
+    /// The layout is the dispatch itself: whichever parser built the container
+    /// selected its enum variant.
     pub(crate) fn of_container(container: &Container<'_>) -> Self {
-        if container.is_legacy_cfb() {
-            Self::LegacyCfb
-        } else {
-            Self::Splmsstr
+        match container.layout {
+            crate::container::ContainerLayout::Modern { .. } => Self::Splmsstr,
+            crate::container::ContainerLayout::LegacyCfb => Self::LegacyCfb,
         }
     }
 }

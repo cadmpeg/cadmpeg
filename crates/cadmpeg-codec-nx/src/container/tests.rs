@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_core::decode::InspectOptions;
 
 use crate::container;
-use crate::container::{Container, DirEntry, Region};
+use crate::container::{Container, ContainerLayout, DirEntry, Region, TEST_MODERN_LAYOUT};
 use crate::test_support::*;
 use crate::NxCodec;
 
@@ -33,10 +33,19 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
 fn container_parses_header_and_directory() {
     let c = container::scan_bytes(single_part_prt()).unwrap();
     assert_eq!(c.version, 0x06);
-    assert_eq!(c.file_tag, 0x33_22_11);
     assert_eq!(c.header_entry_count, 1);
-    assert_eq!(c.footer_entry_count, 0);
-    assert_eq!(c.footer_fingerprint, [0; 4]);
+    let ContainerLayout::Modern {
+        file_tag,
+        footer_entry_count,
+        footer_fingerprint,
+        ..
+    } = c.layout
+    else {
+        panic!("SPLMSSTR input must have modern layout facts");
+    };
+    assert_eq!(file_tag, 0x33_22_11);
+    assert_eq!(footer_entry_count, 0);
+    assert_eq!(footer_fingerprint, [0; 4]);
     assert!(c
         .entries
         .iter()
@@ -49,13 +58,9 @@ fn container_bounded_entry_tail_stops_at_the_next_stream() {
     let container = Container {
         data: payload.as_slice().into(),
         version: 0,
-        file_tag: 0,
-        footer_offset: 0,
         header_entry_count: 2,
-        footer_entry_count: 0,
-        footer_fingerprint: [0; 4],
         physical_size: payload.len() as u64,
-        legacy_cfb: true,
+        layout: ContainerLayout::LegacyCfb,
         entries: vec![
             DirEntry {
                 name: "/Root/first".into(),
@@ -86,13 +91,9 @@ fn container_cached_operation_labels_preserve_section_materialization() {
     let container = Container {
         data: payload.as_slice().into(),
         version: 0,
-        file_tag: 0,
-        footer_offset: 0,
         header_entry_count: 1,
-        footer_entry_count: 0,
-        footer_fingerprint: [0; 4],
         physical_size: payload.len() as u64,
-        legacy_cfb: false,
+        layout: TEST_MODERN_LAYOUT,
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
@@ -134,13 +135,9 @@ fn container_caches_owned_section_layouts() {
     let container = Container {
         data: file.into(),
         version: 0,
-        file_tag: 0,
-        footer_offset: 0,
         header_entry_count: 1,
-        footer_entry_count: 0,
-        footer_fingerprint: [0; 4],
         physical_size,
-        legacy_cfb: false,
+        layout: TEST_MODERN_LAYOUT,
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,

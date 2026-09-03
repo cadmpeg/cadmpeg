@@ -3927,13 +3927,9 @@ mod tests {
         let container = Container {
             data: data.clone().into(),
             version: 6,
-            file_tag: 0,
-            footer_offset: 0,
             header_entry_count: 0,
-            footer_entry_count: 0,
-            footer_fingerprint: [0; 4],
             physical_size,
-            legacy_cfb: false,
+            layout: crate::container::TEST_MODERN_LAYOUT,
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Footer,
@@ -4040,13 +4036,9 @@ mod tests {
         let container = Container {
             data: data.into(),
             version: 6,
-            file_tag: 0,
-            footer_offset: 0,
             header_entry_count: 0,
-            footer_entry_count: 0,
-            footer_fingerprint: [0; 4],
             physical_size,
-            legacy_cfb: false,
+            layout: crate::container::TEST_MODERN_LAYOUT,
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Header,
@@ -4142,13 +4134,9 @@ mod tests {
         let container = Container {
             data: data.into(),
             version: 6,
-            file_tag: 0,
-            footer_offset: 0,
             header_entry_count: 0,
-            footer_entry_count: 0,
-            footer_fingerprint: [0; 4],
             physical_size,
-            legacy_cfb: false,
+            layout: crate::container::TEST_MODERN_LAYOUT,
             entries: vec![DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: Region::Header,
@@ -5051,13 +5039,9 @@ mod tests {
         let container = crate::container::Container {
             data: data.into(),
             version: 1,
-            file_tag: 0,
-            footer_offset: 0,
             header_entry_count: 0,
-            footer_entry_count: 0,
-            footer_fingerprint: [0; 4],
             physical_size,
-            legacy_cfb: false,
+            layout: crate::container::TEST_MODERN_LAYOUT,
             entries: vec![crate::container::DirEntry {
                 name: "/Root/UG_PART/DisplayJT".to_string(),
                 region: crate::container::Region::Header,
