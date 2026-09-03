@@ -60,7 +60,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
     );
     let mut report = cadmpeg_ir::codec::DecodeBody {
         geometry_transferred: true,
-        coverage: Default::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
         transfer_ledger: Default::default(),

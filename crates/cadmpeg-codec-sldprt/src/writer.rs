@@ -210,21 +210,19 @@ pub(crate) fn write_semantic_with_records(
         .flat_map(|native| &native.feature_histories)
         .enumerate()
     {
-        let section = annotations
-            .provenance
-            .get(&history.id)
-            .map(|provenance| provenance.stream().to_owned())
-            .unwrap_or_else(|| format!("Contents/Keywords-{index}"));
+        let section = annotations.provenance.get(&history.id).map_or_else(
+            || format!("Contents/Keywords-{index}"),
+            |provenance| provenance.stream().to_owned(),
+        );
         sections.push((section, history_payload(history)?));
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
         let section = lane.configuration.as_ref().map_or_else(
             || {
-                annotations
-                    .provenance
-                    .get(&lane.id)
-                    .map(|provenance| provenance.stream().to_owned())
-                    .unwrap_or_else(|| "Contents/ResolvedFeatures".into())
+                annotations.provenance.get(&lane.id).map_or_else(
+                    || "Contents/ResolvedFeatures".into(),
+                    |provenance| provenance.stream().to_owned(),
+                )
             },
             |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
         );
