@@ -72,7 +72,7 @@ impl EndianArgs {
     pub fn mode(&self) -> Endian {
         match (self.le, self.be) {
             (false, true) => Endian::Big,
-            (false, false) | (true, false) => Endian::Little,
+            (_, false) => Endian::Little,
             (true, true) => unreachable!("clap rejects conflicting byte-order flags"),
         }
     }
