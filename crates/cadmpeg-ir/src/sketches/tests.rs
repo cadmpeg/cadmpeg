@@ -943,3 +943,93 @@ fn spatial_sketch_paths_round_trip_through_json() {
     let json = serde_json::to_string(&native).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
 }
+
+fn pattern_direction(axis: [f64; 2]) -> crate::sketches::SketchPatternDirection {
+    crate::sketches::SketchPatternDirection {
+        direction: axis,
+        spacing: crate::features::Length(2.0),
+        spacing_parameter: None,
+        span_parameter: None,
+        count_parameter: None,
+    }
+}
+
+#[test]
+fn rectangular_pattern_derives_counts_and_indices_on_the_wire() {
+    use crate::sketches::{
+        SketchConstraintDefinition, SketchEntityId, SketchPatternInstance, SketchRectangularPattern,
+    };
+
+    let pattern = SketchRectangularPattern::new(
+        [pattern_direction([1.0, 0.0]), pattern_direction([0.0, 1.0])],
+        vec![
+            vec![SketchPatternInstance {
+                entities: vec![SketchEntityId("test:sketch-entity#0".into())],
+            }],
+            vec![SketchPatternInstance {
+                entities: vec![SketchEntityId("test:sketch-entity#1".into())],
+            }],
+        ],
+    )
+    .unwrap();
+    let definition = SketchConstraintDefinition::RectangularPattern { pattern };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["directions"][0]["count"], 2);
+    assert_eq!(wire["directions"][1]["count"], 1);
+    assert_eq!(wire["instances"][0]["indices"], serde_json::json!([0, 0]));
+    assert_eq!(wire["instances"][1]["indices"], serde_json::json!([1, 0]));
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut split_count = wire.clone();
+    split_count["directions"][0]["count"] = serde_json::json!(3);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(split_count).is_err());
+    let mut displaced = wire;
+    displaced["instances"][1]["indices"] = serde_json::json!([0, 1]);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(displaced).is_err());
+}
+
+#[test]
+fn circular_pattern_derives_count_and_indices_on_the_wire() {
+    use crate::features::Angle;
+    use crate::sketches::{
+        SketchCircularPattern, SketchCircularPatternInstance, SketchConstraintDefinition,
+        SketchEntityId,
+    };
+
+    let pattern = SketchCircularPattern::new(
+        SketchEntityId("test:sketch-entity#center".into()),
+        Angle(1.0),
+        None,
+        None,
+        vec![
+            SketchCircularPatternInstance {
+                angle: Angle(0.0),
+                entities: vec![SketchEntityId("test:sketch-entity#0".into())],
+            },
+            SketchCircularPatternInstance {
+                angle: Angle(1.0),
+                entities: vec![SketchEntityId("test:sketch-entity#1".into())],
+            },
+        ],
+    )
+    .unwrap();
+    let definition = SketchConstraintDefinition::CircularPattern { pattern };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["count"], 2);
+    assert_eq!(wire["instances"][0]["index"], 0);
+    assert_eq!(wire["instances"][1]["index"], 1);
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut split_count = wire.clone();
+    split_count["count"] = serde_json::json!(3);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(split_count).is_err());
+    let mut displaced = wire;
+    displaced["instances"][1]["index"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(displaced).is_err());
+}

@@ -3193,3 +3193,24 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::SubdSymmetryKind::Radial::radial_maps"
 reason = "the radial discriminant now owns its selector-preserving native maps"
+
+[[change]]
+commit = "9032d94522abdf23b01366b9d4d63e0d7a03d6bb"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::{RectangularPattern,CircularPattern}"
+reason = "checked pattern carriers own positional instance collections and their derived wire fields"
+
+[[change]]
+commit = "9032d94522abdf23b01366b9d4d63e0d7a03d6bb"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::sketches::{SketchPatternDirection::count,SketchPatternInstance::indices,SketchCircularPatternInstance::index}"
+reason = "pattern dimensions and instance indices are derived from checked collection positions"
+
+[[change]]
+commit = "9032d94522abdf23b01366b9d4d63e0d7a03d6bb"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::sketches::{SketchRectangularPattern,SketchCircularPattern}"
+reason = "private fields and checked constructors enforce non-empty fixed-arity positional patterns"

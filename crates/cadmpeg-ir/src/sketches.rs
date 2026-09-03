@@ -798,47 +798,410 @@ pub struct SketchOffsetPair {
 }
 
 /// One axis of a rectangular sketch pattern.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SketchPatternDirection {
     /// Unit direction in sketch coordinates.
     pub direction: [f64; 2],
     /// Adjacent-instance spacing along `direction`.
     pub spacing: Length,
-    /// Number of instances along this axis, including the seed instance.
-    pub count: u32,
     /// Driving adjacent-spacing parameter, when the source exposes it as a neutral parameter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spacing_parameter: Option<ParameterId>,
     /// Driving seed-to-final-span parameter, when the source exposes span
     /// rather than adjacent spacing.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span_parameter: Option<ParameterId>,
     /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub count_parameter: Option<ParameterId>,
 }
 
 /// One resolved rectangular-pattern instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SketchPatternInstance {
-    /// Zero-based indices along the two pattern directions.
-    pub indices: [u32; 2],
     /// Entities in fixed seed-entity order.
     pub entities: Vec<SketchEntityId>,
 }
 
 /// One resolved circular-pattern instance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SketchCircularPatternInstance {
-    /// Zero-based position in pattern order; zero is the seed instance.
-    pub index: u32,
     /// Signed rotation from the seed instance in radians.
     pub angle: Angle,
     /// Entities in fixed seed-entity order.
     pub entities: Vec<SketchEntityId>,
+}
+
+/// Checked two-axis rectangular sketch pattern.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchRectangularPattern {
+    directions: [SketchPatternDirection; 2],
+    rows: Vec<Vec<SketchPatternInstance>>,
+}
+
+impl SketchRectangularPattern {
+    /// Construct a non-empty rectangular grid whose instances have one fixed
+    /// positive entity arity.
+    pub fn new(
+        directions: [SketchPatternDirection; 2],
+        rows: Vec<Vec<SketchPatternInstance>>,
+    ) -> Option<Self> {
+        let row_count = u32::try_from(rows.len()).ok()?;
+        let column_count = u32::try_from(rows.first()?.len()).ok()?;
+        if row_count == 0
+            || column_count == 0
+            || rows.iter().any(|row| row.len() != column_count as usize)
+        {
+            return None;
+        }
+        let entity_arity = rows.first()?.first()?.entities.len();
+        if entity_arity == 0
+            || rows
+                .iter()
+                .flatten()
+                .any(|instance| instance.entities.len() != entity_arity)
+        {
+            return None;
+        }
+        Some(Self { directions, rows })
+    }
+
+    /// Ordered pattern directions.
+    #[must_use]
+    pub fn directions(&self) -> &[SketchPatternDirection; 2] {
+        &self.directions
+    }
+
+    /// Rectangular instance rows. Outer and inner positions are the two
+    /// zero-based pattern indices.
+    #[must_use]
+    pub fn rows(&self) -> &[Vec<SketchPatternInstance>] {
+        &self.rows
+    }
+
+    /// Number of instances along each direction.
+    #[must_use]
+    pub fn counts(&self) -> [u32; 2] {
+        [self.rows.len() as u32, self.rows[0].len() as u32]
+    }
+}
+
+/// Checked circular sketch pattern.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchCircularPattern {
+    center: SketchEntityId,
+    angle: Angle,
+    angle_parameter: Option<ParameterId>,
+    count_parameter: Option<ParameterId>,
+    instances: Vec<SketchCircularPatternInstance>,
+}
+
+impl SketchCircularPattern {
+    /// Construct a non-empty pattern whose instances have one fixed positive
+    /// entity arity.
+    pub fn new(
+        center: SketchEntityId,
+        angle: Angle,
+        angle_parameter: Option<ParameterId>,
+        count_parameter: Option<ParameterId>,
+        instances: Vec<SketchCircularPatternInstance>,
+    ) -> Option<Self> {
+        u32::try_from(instances.len()).ok()?;
+        let entity_arity = instances.first()?.entities.len();
+        if entity_arity == 0
+            || instances
+                .iter()
+                .any(|instance| instance.entities.len() != entity_arity)
+        {
+            return None;
+        }
+        Some(Self {
+            center,
+            angle,
+            angle_parameter,
+            count_parameter,
+            instances,
+        })
+    }
+
+    /// Point entity defining the center of rotation.
+    #[must_use]
+    pub fn center(&self) -> &SketchEntityId {
+        &self.center
+    }
+
+    /// Evaluated angular span stored by the native pattern.
+    #[must_use]
+    pub fn angle(&self) -> Angle {
+        self.angle
+    }
+
+    /// Number of instances, including the seed instance.
+    #[must_use]
+    pub fn count(&self) -> u32 {
+        self.instances.len() as u32
+    }
+
+    /// Driving angular-span parameter.
+    #[must_use]
+    pub fn angle_parameter(&self) -> Option<&ParameterId> {
+        self.angle_parameter.as_ref()
+    }
+
+    /// Driving instance-count parameter.
+    #[must_use]
+    pub fn count_parameter(&self) -> Option<&ParameterId> {
+        self.count_parameter.as_ref()
+    }
+
+    /// Instances in pattern order. Slice position is the zero-based index.
+    #[must_use]
+    pub fn instances(&self) -> &[SketchCircularPatternInstance] {
+        &self.instances
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPatternDirectionWire {
+    direction: [f64; 2],
+    spacing: Length,
+    count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    spacing_parameter: Option<ParameterId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    span_parameter: Option<ParameterId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    count_parameter: Option<ParameterId>,
+}
+
+impl SketchPatternDirectionWire {
+    fn from_direction(value: &SketchPatternDirection, count: u32) -> Self {
+        Self {
+            direction: value.direction,
+            spacing: value.spacing,
+            count,
+            spacing_parameter: value.spacing_parameter.clone(),
+            span_parameter: value.span_parameter.clone(),
+            count_parameter: value.count_parameter.clone(),
+        }
+    }
+
+    fn into_direction(self) -> SketchPatternDirection {
+        SketchPatternDirection {
+            direction: self.direction,
+            spacing: self.spacing,
+            spacing_parameter: self.spacing_parameter,
+            span_parameter: self.span_parameter,
+            count_parameter: self.count_parameter,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPatternInstanceWire {
+    indices: [u32; 2],
+    entities: Vec<SketchEntityId>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchCircularPatternInstanceWire {
+    index: u32,
+    angle: Angle,
+    entities: Vec<SketchEntityId>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchRectangularPatternWire {
+    directions: [SketchPatternDirectionWire; 2],
+    instances: Vec<SketchPatternInstanceWire>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchCircularPatternWire {
+    center: SketchEntityId,
+    angle: Angle,
+    count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    angle_parameter: Option<ParameterId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    count_parameter: Option<ParameterId>,
+    instances: Vec<SketchCircularPatternInstanceWire>,
+}
+
+impl Serialize for SketchRectangularPattern {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let counts = self.counts();
+        SketchRectangularPatternWire {
+            directions: [
+                SketchPatternDirectionWire::from_direction(&self.directions[0], counts[0]),
+                SketchPatternDirectionWire::from_direction(&self.directions[1], counts[1]),
+            ],
+            instances: self
+                .rows
+                .iter()
+                .enumerate()
+                .flat_map(|(first, row)| {
+                    row.iter().enumerate().map(move |(second, instance)| {
+                        SketchPatternInstanceWire {
+                            indices: [first as u32, second as u32],
+                            entities: instance.entities.clone(),
+                        }
+                    })
+                })
+                .collect(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SketchRectangularPattern {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = SketchRectangularPatternWire::deserialize(deserializer)?;
+        let counts = wire.directions.each_ref().map(|direction| direction.count);
+        let row_count = usize::try_from(counts[0]).map_err(serde::de::Error::custom)?;
+        let column_count = usize::try_from(counts[1]).map_err(serde::de::Error::custom)?;
+        let expected = row_count
+            .checked_mul(column_count)
+            .ok_or_else(|| serde::de::Error::custom("rectangular pattern count overflows"))?;
+        if row_count == 0 || column_count == 0 || wire.instances.len() != expected {
+            return Err(serde::de::Error::custom(
+                "rectangular pattern directions.count must match instances",
+            ));
+        }
+        if wire
+            .instances
+            .iter()
+            .enumerate()
+            .any(|(position, instance)| {
+                usize::try_from(instance.indices[0]).ok() != Some(position / column_count)
+                    || usize::try_from(instance.indices[1]).ok() != Some(position % column_count)
+            })
+        {
+            return Err(serde::de::Error::custom(
+                "rectangular pattern instance indices must match their positions",
+            ));
+        }
+        let directions = wire
+            .directions
+            .map(SketchPatternDirectionWire::into_direction);
+        let mut instances = wire.instances.into_iter();
+        let rows = (0..row_count)
+            .map(|_| {
+                instances
+                    .by_ref()
+                    .take(column_count)
+                    .map(|instance| SketchPatternInstance {
+                        entities: instance.entities,
+                    })
+                    .collect()
+            })
+            .collect();
+        Self::new(directions, rows).ok_or_else(|| {
+            serde::de::Error::custom(
+                "rectangular pattern instances require one fixed positive entity arity",
+            )
+        })
+    }
+}
+
+impl Serialize for SketchCircularPattern {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        SketchCircularPatternWire {
+            center: self.center.clone(),
+            angle: self.angle,
+            count: self.count(),
+            angle_parameter: self.angle_parameter.clone(),
+            count_parameter: self.count_parameter.clone(),
+            instances: self
+                .instances
+                .iter()
+                .enumerate()
+                .map(|(index, instance)| SketchCircularPatternInstanceWire {
+                    index: index as u32,
+                    angle: instance.angle,
+                    entities: instance.entities.clone(),
+                })
+                .collect(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SketchCircularPattern {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = SketchCircularPatternWire::deserialize(deserializer)?;
+        if usize::try_from(wire.count).ok() != Some(wire.instances.len()) {
+            return Err(serde::de::Error::custom(
+                "circular pattern count must match instances",
+            ));
+        }
+        if wire
+            .instances
+            .iter()
+            .enumerate()
+            .any(|(index, instance)| u32::try_from(index).ok() != Some(instance.index))
+        {
+            return Err(serde::de::Error::custom(
+                "circular pattern instance index must match its position",
+            ));
+        }
+        let instances = wire
+            .instances
+            .into_iter()
+            .map(|instance| SketchCircularPatternInstance {
+                angle: instance.angle,
+                entities: instance.entities,
+            })
+            .collect();
+        Self::new(
+            wire.center,
+            wire.angle,
+            wire.angle_parameter,
+            wire.count_parameter,
+            instances,
+        )
+        .ok_or_else(|| {
+            serde::de::Error::custom(
+                "circular pattern instances require one fixed positive entity arity",
+            )
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SketchRectangularPattern {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SketchRectangularPattern".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SketchRectangularPatternWire::json_schema(generator)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SketchCircularPattern {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SketchCircularPattern".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SketchCircularPatternWire::json_schema(generator)
+    }
 }
 
 /// One independently measured pair within a repeated linear dimension.
@@ -948,27 +1311,15 @@ pub enum SketchConstraintDefinition {
     },
     /// A complete two-axis rectangular pattern with resolved instances.
     RectangularPattern {
-        /// Ordered pattern directions.
-        directions: [SketchPatternDirection; 2],
-        /// Instances in source order; `[0, 0]` is the seed instance.
-        instances: Vec<SketchPatternInstance>,
+        /// Checked directions and rectangular instance grid.
+        #[serde(flatten)]
+        pattern: SketchRectangularPattern,
     },
     /// A parameter-driven circular pattern with geometrically resolved instances.
     CircularPattern {
-        /// Point entity defining the center of rotation.
-        center: SketchEntityId,
-        /// Evaluated angular span stored by the native pattern.
-        angle: Angle,
-        /// Number of instances, including the seed instance.
-        count: u32,
-        /// Driving angular-span parameter, when the source exposes it as a neutral parameter.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        angle_parameter: Option<ParameterId>,
-        /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        count_parameter: Option<ParameterId>,
-        /// Instances in source order; index zero is the seed instance.
-        instances: Vec<SketchCircularPatternInstance>,
+        /// Checked center, parameters, and positional instances.
+        #[serde(flatten)]
+        pattern: SketchCircularPattern,
     },
     /// Text entity bounded by ordered frame curves.
     TextFrame {

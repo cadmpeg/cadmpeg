@@ -326,11 +326,10 @@ pub(crate) fn exact_rectangular_pattern(
         return None;
     }
     let directions = rectangular_pattern_directions(&source, distance_form)?;
-    let instances = exact_rectangular_pattern_instances(&directions, entities)?;
-    Some(Definition::RectangularPattern {
-        directions,
-        instances,
-    })
+    let counts = source.each_ref().map(|direction| direction.count);
+    let rows = exact_rectangular_pattern_instances(&directions, counts, entities)?;
+    let pattern = cadmpeg_ir::sketches::SketchRectangularPattern::new(directions, rows)?;
+    Some(Definition::RectangularPattern { pattern })
 }
 
 fn rectangular_pattern_directions(
@@ -364,7 +363,6 @@ fn rectangular_pattern_directions(
             Some(cadmpeg_ir::sketches::SketchPatternDirection {
                 direction: source.direction,
                 spacing: cadmpeg_ir::features::Length(spacing),
-                count: source.count,
                 spacing_parameter,
                 span_parameter,
                 count_parameter: source.count_parameter.clone(),
@@ -377,11 +375,12 @@ fn rectangular_pattern_directions(
 
 fn exact_rectangular_pattern_instances(
     directions: &[cadmpeg_ir::sketches::SketchPatternDirection; 2],
+    counts: [u32; 2],
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<Vec<cadmpeg_ir::sketches::SketchPatternInstance>> {
-    let instance_count = usize::try_from(directions[0].count)
+) -> Option<Vec<Vec<cadmpeg_ir::sketches::SketchPatternInstance>>> {
+    let instance_count = usize::try_from(counts[0])
         .ok()?
-        .checked_mul(usize::try_from(directions[1].count).ok()?)?;
+        .checked_mul(usize::try_from(counts[1]).ok()?)?;
     if instance_count == 0 || !entities.len().is_multiple_of(instance_count) {
         return None;
     }
@@ -390,43 +389,55 @@ fn exact_rectangular_pattern_instances(
     if seed.is_empty() {
         return None;
     }
-    let mut instances = Vec::with_capacity(instance_count);
-    let mut occupied = HashSet::new();
-    for instance in entities.chunks_exact(entity_count) {
-        let candidates = (0..directions[0].count)
-            .flat_map(|first| (0..directions[1].count).map(move |second| [first, second]))
-            .filter(|indices| {
-                let translation = Point2::new(
-                    f64::from(indices[0]) * directions[0].spacing.0 * directions[0].direction[0]
-                        + f64::from(indices[1])
-                            * directions[1].spacing.0
-                            * directions[1].direction[0],
-                    f64::from(indices[0]) * directions[0].spacing.0 * directions[0].direction[1]
-                        + f64::from(indices[1])
-                            * directions[1].spacing.0
-                            * directions[1].direction[1],
-                );
-                seed.iter().zip(instance).all(|(source, result)| {
-                    translated_sketch_geometry_matches(
-                        &source.geometry,
-                        &result.geometry,
-                        translation,
-                    )
+    let column_count = usize::try_from(counts[1]).ok()?;
+    let instances = entities
+        .chunks_exact(entity_count)
+        .enumerate()
+        .map(|(position, instance)| {
+            let candidates = (0..counts[0])
+                .flat_map(|first| (0..counts[1]).map(move |second| [first, second]))
+                .filter(|indices| {
+                    let translation = Point2::new(
+                        f64::from(indices[0])
+                            * directions[0].spacing.0
+                            * directions[0].direction[0]
+                            + f64::from(indices[1])
+                                * directions[1].spacing.0
+                                * directions[1].direction[0],
+                        f64::from(indices[0])
+                            * directions[0].spacing.0
+                            * directions[0].direction[1]
+                            + f64::from(indices[1])
+                                * directions[1].spacing.0
+                                * directions[1].direction[1],
+                    );
+                    seed.iter().zip(instance).all(|(source, result)| {
+                        translated_sketch_geometry_matches(
+                            &source.geometry,
+                            &result.geometry,
+                            translation,
+                        )
+                    })
                 })
+                .collect::<Vec<_>>();
+            let expected = [
+                u32::try_from(position / column_count).ok()?,
+                u32::try_from(position % column_count).ok()?,
+            ];
+            if candidates.as_slice() != [expected] {
+                return None;
+            }
+            Some(cadmpeg_ir::sketches::SketchPatternInstance {
+                entities: instance.iter().map(|entity| entity.id.clone()).collect(),
             })
-            .collect::<Vec<_>>();
-        let [indices] = candidates.as_slice() else {
-            return None;
-        };
-        if !occupied.insert(*indices) {
-            return None;
-        }
-        instances.push(cadmpeg_ir::sketches::SketchPatternInstance {
-            indices: *indices,
-            entities: instance.iter().map(|entity| entity.id.clone()).collect(),
-        });
-    }
-    (instances.first().map(|instance| instance.indices) == Some([0, 0])).then_some(instances)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let mut instances = instances.into_iter();
+    Some(
+        (0..counts[0])
+            .map(|_| instances.by_ref().take(column_count).collect())
+            .collect(),
+    )
 }
 
 pub(crate) fn exact_text_relation(
@@ -522,7 +533,8 @@ pub(crate) fn exact_circular_pattern(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use crate::records::SketchPatternDefinition;
     use cadmpeg_ir::sketches::{
-        SketchCircularPatternInstance, SketchConstraintDefinition as Definition, SketchGeometry,
+        SketchCircularPattern, SketchCircularPatternInstance,
+        SketchConstraintDefinition as Definition, SketchGeometry,
     };
 
     if relation.unknown_constraint_bits != 0
@@ -621,7 +633,6 @@ pub(crate) fn exact_circular_pattern(
                             )
                         })
                         .then(|| SketchCircularPatternInstance {
-                            index: index as u32,
                             angle: cadmpeg_ir::features::Angle(rotation),
                             entities: instance.iter().map(|entity| entity.id.clone()).collect(),
                         })
@@ -636,14 +647,14 @@ pub(crate) fn exact_circular_pattern(
     let [(center, instances)] = candidates.as_slice() else {
         return None;
     };
-    Some(Definition::CircularPattern {
-        center: center.clone(),
+    let pattern = SketchCircularPattern::new(
+        center.clone(),
         angle,
-        count: *evaluated_count,
-        angle_parameter: angle_parameter.map(neutral_parameter_id),
-        count_parameter: count_parameter.map(neutral_parameter_id),
-        instances: instances.clone(),
-    })
+        angle_parameter.map(neutral_parameter_id),
+        count_parameter.map(neutral_parameter_id),
+        instances.clone(),
+    )?;
+    Some(Definition::CircularPattern { pattern })
 }
 
 fn rotated_sketch_geometry_matches(
@@ -1064,25 +1075,18 @@ mod tests {
         let relation =
             rectangular_point_relation(3, 1.5, RectangularPatternDistanceForm::AdjacentSpacing);
         let parameters = rectangular_parameters(3, 1.5);
-        let Some(SketchConstraintDefinition::RectangularPattern {
-            directions,
-            instances,
-        }) = exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third])
+        let Some(SketchConstraintDefinition::RectangularPattern { pattern }) =
+            exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third])
         else {
             panic!("rectangular pattern did not resolve");
         };
+        let directions = pattern.directions();
         assert_eq!(directions[0].spacing.0, 15.0);
         assert_eq!(directions[1].spacing.0, 0.0);
         assert!(directions[0].spacing_parameter.is_some());
         assert_eq!(directions[0].span_parameter, None);
         assert!(directions[0].count_parameter.is_some());
-        assert_eq!(
-            instances
-                .iter()
-                .map(|instance| instance.indices)
-                .collect::<Vec<_>>(),
-            [[0, 0], [1, 0], [2, 0]]
-        );
+        assert_eq!(pattern.counts(), [3, 1]);
     }
 
     #[test]
@@ -1093,11 +1097,12 @@ mod tests {
         let relation =
             rectangular_point_relation(3, 3.0, RectangularPatternDistanceForm::SeedToFinalSpan);
         let parameters = rectangular_parameters(3, 3.0);
-        let Some(SketchConstraintDefinition::RectangularPattern { directions, .. }) =
+        let Some(SketchConstraintDefinition::RectangularPattern { pattern }) =
             exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third])
         else {
             panic!("total-span rectangular pattern did not resolve");
         };
+        let directions = pattern.directions();
         assert_eq!(directions[0].spacing.0, 15.0);
         assert_eq!(directions[0].spacing_parameter, None);
         assert!(directions[0].span_parameter.is_some());
@@ -1152,11 +1157,12 @@ mod tests {
         ] {
             let relation = rectangular_point_relation(2, 1.5, distance_form);
             let parameters = rectangular_parameters(2, 1.5);
-            let Some(SketchConstraintDefinition::RectangularPattern { directions, .. }) =
+            let Some(SketchConstraintDefinition::RectangularPattern { pattern }) =
                 exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second])
             else {
                 panic!("two-instance rectangular pattern did not resolve");
             };
+            let directions = pattern.directions();
             assert_eq!(directions[0].spacing.0, 15.0);
             match distance_form {
                 RectangularPatternDistanceForm::AdjacentSpacing => {
@@ -1233,27 +1239,21 @@ mod tests {
         };
         let members = [&center, &seed, &middle, &last];
         let returned = [&seed, &middle, &last, &center];
-        let Some(SketchConstraintDefinition::CircularPattern {
-            center: actual_center,
-            angle,
-            count,
-            instances,
-            ..
-        }) = exact_circular_pattern(
+        let Some(SketchConstraintDefinition::CircularPattern { pattern }) = exact_circular_pattern(
             &relation(std::f64::consts::PI),
             "native",
             &[],
             &members,
             &returned,
-        )
-        else {
+        ) else {
             panic!("partial circular pattern did not resolve");
         };
-        assert_eq!(actual_center, center.id);
-        assert_eq!(angle.0, std::f64::consts::PI);
-        assert_eq!(count, 3);
+        assert_eq!(pattern.center(), &center.id);
+        assert_eq!(pattern.angle().0, std::f64::consts::PI);
+        assert_eq!(pattern.count(), 3);
         assert_eq!(
-            instances
+            pattern
+                .instances()
                 .iter()
                 .map(|instance| instance.angle.0)
                 .collect::<Vec<_>>(),
@@ -1275,8 +1275,8 @@ mod tests {
                 &full_members,
                 &full_returned,
             ),
-            Some(SketchConstraintDefinition::CircularPattern { ref instances, .. })
-                if scalar_close(instances[1].angle.0, std::f64::consts::TAU / 3.0)
+            Some(SketchConstraintDefinition::CircularPattern { ref pattern })
+                if scalar_close(pattern.instances()[1].angle.0, std::f64::consts::TAU / 3.0)
         ));
     }
 
@@ -1343,16 +1343,13 @@ mod tests {
         };
         let members = [&center, &seed, &middle, &last];
         let returned = [&seed, &middle, &last, &center];
-        let Some(SketchConstraintDefinition::CircularPattern {
-            center: actual_center,
-            count,
-            ..
-        }) = exact_circular_pattern(&relation, "native", &[], &members, &returned)
+        let Some(SketchConstraintDefinition::CircularPattern { pattern }) =
+            exact_circular_pattern(&relation, "native", &[], &members, &returned)
         else {
             panic!("role-agnostic circular pattern did not resolve");
         };
-        assert_eq!(actual_center, center.id);
-        assert_eq!(count, 3);
+        assert_eq!(pattern.center(), &center.id);
+        assert_eq!(pattern.count(), 3);
     }
 
     #[test]
