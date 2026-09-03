@@ -2731,3 +2731,45 @@ crate = "cadmpeg-parasolid"
 kind = "signature"
 item = "cadmpeg_parasolid::classify_layer"
 reason = "Parasolid layer classification takes LayerInstance instead of an instance_tagged boolean"
+
+[[change]]
+commit = "082e47db2edcd08b16cd7ccd05cd6e01ee7177b0"
+crate = "cadmpeg-core"
+kind = "type"
+item = "cadmpeg_core::target::{TargetDescriptor,TargetCatalog}"
+reason = "the catalog owns its optional default index; an individual target row can no longer independently claim to be the default"
+
+[[change]]
+commit = "082e47db2edcd08b16cd7ccd05cd6e01ee7177b0"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::target::{find_target,default_target}"
+reason = "TargetCatalog is the single lookup and default-selection surface and returns each row with its catalog index"
+
+[[change]]
+commit = "082e47db2edcd08b16cd7ccd05cd6e01ee7177b0"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::target::{assert_valid_target_catalog,TargetRefusal::new,TargetRefusal::unknown_explicit}"
+reason = "catalog validation and refusals take the sealed TargetCatalog value so its rows and default cannot diverge"
+
+[[change]]
+commit = "082e47db2edcd08b16cd7ccd05cd6e01ee7177b0"
+crate = "cadmpeg-ir"
+kind = "type"
+item = "cadmpeg_ir::codec::write::{Catalog,TargetDomain::targets,Encoder::targets}"
+reason = "encoder catalogs return the target rows and their optional default as one TargetCatalog value"
+
+[[change]]
+commit = "082e47db2edcd08b16cd7ccd05cd6e01ee7177b0"
+crate = "cadmpeg-codec-step"
+kind = "trait_impl"
+item = "cadmpeg_codec_step::StepSchema::Default"
+reason = "the encoder catalog is the sole author of the cross-format AP214 default"
+
+[[change]]
+commit = "082e47db2edcd08b16cd7ccd05cd6e01ee7177b0"
+crate = "cadmpeg-codec-iges"
+kind = "trait_impl"
+item = "cadmpeg_codec_iges::IgesVersion::Default"
+reason = "the encoder catalog is the sole author of the cross-format IGES 5.3 default"

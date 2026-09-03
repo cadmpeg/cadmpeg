@@ -26,7 +26,7 @@ pub struct StepCodec {
 impl EncoderBackend for StepCodec {
     const FORMAT: &'static str = crate::dialect::FORMAT;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog(StepSchema::TARGETS);
+    const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(2));
 
     /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
     /// because every emitted schema stamps object-identifier arcs.

@@ -1,4 +1,4 @@
-# generated at 5fc457761
+# generated at 082e47db2
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -206,14 +206,16 @@ pub type cadmpeg_ir::codec::write::CadirEncoder::Target = cadmpeg_ir::codec::wri
 pub const cadmpeg_ir::codec::write::CadirEncoder::FORMAT: &'static str
 pub const cadmpeg_ir::codec::write::CadirEncoder::TARGET: cadmpeg_ir::codec::write::DialectFree
 pub fn cadmpeg_ir::codec::write::CadirEncoder::plan_resolved(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, ()) -> core::result::Result<cadmpeg_ir::codec::write::ExportBody, cadmpeg_core::error::CodecError>
-pub struct cadmpeg_ir::codec::write::Catalog(pub &'static [cadmpeg_core::target::TargetDescriptor])
+pub struct cadmpeg_ir::codec::write::Catalog(_)
+impl cadmpeg_ir::codec::write::Catalog
+pub const fn cadmpeg_ir::codec::write::Catalog::new(&'static [cadmpeg_core::target::TargetDescriptor], core::option::Option<usize>) -> Self
 impl cadmpeg_ir::codec::write::TargetDomain for cadmpeg_ir::codec::write::Catalog
 pub type cadmpeg_ir::codec::write::Catalog::Resolved<'a> = cadmpeg_ir::codec::write::ResolvedWrite<'a>
-pub fn cadmpeg_ir::codec::write::Catalog::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+pub fn cadmpeg_ir::codec::write::Catalog::targets(&self) -> cadmpeg_core::target::TargetCatalog
 pub struct cadmpeg_ir::codec::write::DialectFree
 impl cadmpeg_ir::codec::write::TargetDomain for cadmpeg_ir::codec::write::DialectFree
 pub type cadmpeg_ir::codec::write::DialectFree::Resolved<'a> = ()
-pub fn cadmpeg_ir::codec::write::DialectFree::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+pub fn cadmpeg_ir::codec::write::DialectFree::targets(&self) -> cadmpeg_core::target::TargetCatalog
 pub struct cadmpeg_ir::codec::write::EncodeInput<'a>
 pub cadmpeg_ir::codec::write::EncodeInput::fidelity: core::option::Option<&'a cadmpeg_ir::source_fidelity::SourceFidelity>
 pub cadmpeg_ir::codec::write::EncodeInput::ir: &'a cadmpeg_ir::document::CadIr
@@ -247,11 +249,11 @@ pub fn cadmpeg_ir::codec::write::ResolvedWrite<'a>::unavailable(&self, impl core
 pub trait cadmpeg_ir::codec::write::Encoder: cadmpeg_ir::codec::write::backend::encoder_sealed::Sealed
 pub fn cadmpeg_ir::codec::write::Encoder::id(&self) -> &'static str
 pub fn cadmpeg_ir::codec::write::Encoder::plan(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
-pub fn cadmpeg_ir::codec::write::Encoder::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+pub fn cadmpeg_ir::codec::write::Encoder::targets(&self) -> cadmpeg_core::target::TargetCatalog
 impl<E: cadmpeg_ir::codec::write::EncoderBackend> cadmpeg_ir::codec::write::Encoder for E
 pub fn E::id(&self) -> &'static str
 pub fn E::plan(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, cadmpeg_ir::codec::write::TargetRequest<'_>) -> core::result::Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::error::CodecError>
-pub fn E::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+pub fn E::targets(&self) -> cadmpeg_core::target::TargetCatalog
 pub trait cadmpeg_ir::codec::write::EncoderBackend
 pub type cadmpeg_ir::codec::write::EncoderBackend::Target: cadmpeg_ir::codec::write::TargetDomain
 pub const cadmpeg_ir::codec::write::EncoderBackend::FORMAT: &'static str
@@ -264,13 +266,13 @@ pub const cadmpeg_ir::codec::write::CadirEncoder::TARGET: cadmpeg_ir::codec::wri
 pub fn cadmpeg_ir::codec::write::CadirEncoder::plan_resolved(&self, cadmpeg_ir::codec::write::EncodeInput<'_>, ()) -> core::result::Result<cadmpeg_ir::codec::write::ExportBody, cadmpeg_core::error::CodecError>
 pub trait cadmpeg_ir::codec::write::TargetDomain: cadmpeg_ir::codec::write::backend::domain_sealed::Sealed
 pub type cadmpeg_ir::codec::write::TargetDomain::Resolved<'a>
-pub fn cadmpeg_ir::codec::write::TargetDomain::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+pub fn cadmpeg_ir::codec::write::TargetDomain::targets(&self) -> cadmpeg_core::target::TargetCatalog
 impl cadmpeg_ir::codec::write::TargetDomain for cadmpeg_ir::codec::write::Catalog
 pub type cadmpeg_ir::codec::write::Catalog::Resolved<'a> = cadmpeg_ir::codec::write::ResolvedWrite<'a>
-pub fn cadmpeg_ir::codec::write::Catalog::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+pub fn cadmpeg_ir::codec::write::Catalog::targets(&self) -> cadmpeg_core::target::TargetCatalog
 impl cadmpeg_ir::codec::write::TargetDomain for cadmpeg_ir::codec::write::DialectFree
 pub type cadmpeg_ir::codec::write::DialectFree::Resolved<'a> = ()
-pub fn cadmpeg_ir::codec::write::DialectFree::targets(&self) -> &'static [cadmpeg_core::target::TargetDescriptor]
+pub fn cadmpeg_ir::codec::write::DialectFree::targets(&self) -> cadmpeg_core::target::TargetCatalog
 pub enum cadmpeg_ir::codec::Confidence
 pub cadmpeg_ir::codec::Confidence::High
 pub cadmpeg_ir::codec::Confidence::Low

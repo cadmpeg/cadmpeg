@@ -32,11 +32,11 @@ mod tests {
     /// identity registry and against the catalog's own rules.
     ///
     /// The catalog is a claim about what a format's writer produces, so a typo
-    /// in an id, a second default, or a row that names no declared dialect are
-    /// all failures of the claim, not of style. CADIR is the one encoder with
-    /// no catalog: it writes the neutral document, which has no dialect.
+    /// in an id or a row that names no declared dialect is a failure of the
+    /// claim, not of style. CADIR is the one encoder with no catalog: it writes
+    /// the neutral document, which has no dialect.
     #[test]
-    fn every_catalog_names_declared_dialects_with_at_most_one_default() {
+    fn every_catalog_names_declared_dialects() {
         for format in Format::all() {
             let encoder = build_encoder(format);
             let targets = encoder.targets();

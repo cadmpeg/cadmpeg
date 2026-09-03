@@ -101,16 +101,15 @@ impl RhinoArchiveVersion {
     /// The typed write-target catalog row for this archive version.
     #[must_use]
     pub const fn descriptor(self) -> TargetDescriptor {
-        let (dialect, aliases, default) = match self {
-            Self::V5 => (chunks::ArchiveVersion::V5, &["50"].as_slice(), false),
-            Self::V6 => (chunks::ArchiveVersion::V6, &["6", "60"].as_slice(), false),
-            Self::V7 => (chunks::ArchiveVersion::V7, &["7", "70"].as_slice(), false),
-            Self::V8 => (chunks::ArchiveVersion::V8, &["8", "80"].as_slice(), true),
+        let (dialect, aliases) = match self {
+            Self::V5 => (chunks::ArchiveVersion::V5, &["50"].as_slice()),
+            Self::V6 => (chunks::ArchiveVersion::V6, &["6", "60"].as_slice()),
+            Self::V7 => (chunks::ArchiveVersion::V7, &["7", "70"].as_slice()),
+            Self::V8 => (chunks::ArchiveVersion::V8, &["8", "80"].as_slice()),
         };
         TargetDescriptor {
             id: dialect.id(),
             aliases,
-            default,
         }
     }
 
@@ -163,7 +162,7 @@ impl CodecBackend for RhinoCodec {
 impl EncoderBackend for RhinoCodec {
     const FORMAT: &'static str = dialect::FORMAT;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog(RhinoArchiveVersion::TARGETS);
+    const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
 
     /// Synthesis-only encoder. An off-catalog Rhino source cannot be reproduced
     /// because 3DM has no retained-image path.

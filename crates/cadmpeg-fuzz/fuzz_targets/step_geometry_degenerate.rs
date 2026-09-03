@@ -35,7 +35,7 @@ fuzz_target!(|data: &[u8]| {
     let _ = StepCodec::default()
         .plan(
             EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(StepSchema::default().descriptor().id.as_str()),
+            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut out));
 });

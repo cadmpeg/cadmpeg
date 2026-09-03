@@ -560,15 +560,15 @@ mod tests {
     use std::path::PathBuf;
 
     use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
-    use cadmpeg_core::target::TargetDescriptor;
+    use cadmpeg_core::target::{TargetCatalog, TargetDescriptor};
 
     use super::*;
 
     const IGES_TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
         id: DialectId::pinned("iges:5.3-fixed-ascii"),
         aliases: &[],
-        default: true,
     }];
+    const IGES_CATALOG: TargetCatalog = TargetCatalog::new(IGES_TARGETS, Some(0));
 
     fn report_value(refusal: &ConversionRefusal) -> serde_json::Value {
         serde_json::to_value(refusal.report()).expect("serialize refusal report")
@@ -584,7 +584,7 @@ mod tests {
             refusal: Box::new(TargetRefusal::unknown_explicit(
                 "iges",
                 "iges:9.9",
-                IGES_TARGETS,
+                IGES_CATALOG,
             )),
             decode_report: None,
             validation: None,

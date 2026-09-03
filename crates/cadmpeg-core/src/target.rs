@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::dialect::DialectId;
+use serde::ser::{SerializeSeq, Serializer};
 use serde::Serialize;
 
 /// One dialect that a caller can request from an encoder.
@@ -12,17 +13,12 @@ use serde::Serialize;
 /// Synthesis is a static capability. The catalog states ids, aliases, and
 /// the cross-format default; input-conditioned preservation remains a write
 /// planner decision.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetDescriptor {
     /// Registry dialect id, e.g. `step:ap242-e3`.
     pub id: DialectId,
     /// Short spellings accepted for `id`, e.g. `["6"]` for `rhino:archive-60`.
     pub aliases: &'static [&'static str],
-    /// True on at most one entry: the cross-format conversion default.
-    ///
-    /// A catalog may have no default when the encoder cannot synthesize a
-    /// document from a source of another format.
-    pub default: bool,
 }
 
 impl TargetDescriptor {
@@ -34,18 +30,113 @@ impl TargetDescriptor {
     }
 }
 
+/// An encoder's synthesis targets and its optional cross-format default.
+///
+/// The default is a position in `targets`, validated when the catalog is
+/// constructed. A catalog may have no default when the encoder cannot
+/// synthesize a document from a source of another format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TargetCatalog {
+    targets: &'static [TargetDescriptor],
+    default: Option<usize>,
+}
+
+impl TargetCatalog {
+    /// The empty catalog used by a dialect-free encoder.
+    pub const EMPTY: Self = Self::new(&[], None);
+
+    /// Builds a catalog whose optional default indexes one of its rows.
+    #[must_use]
+    pub const fn new(targets: &'static [TargetDescriptor], default: Option<usize>) -> Self {
+        if let Some(index) = default {
+            assert!(
+                index < targets.len(),
+                "target catalog default is out of bounds"
+            );
+        }
+        Self { targets, default }
+    }
+
+    /// Returns all synthesis targets in catalog order.
+    #[must_use]
+    pub const fn targets(self) -> &'static [TargetDescriptor] {
+        self.targets
+    }
+
+    /// Returns whether this catalog has no synthesis targets.
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.targets.is_empty()
+    }
+
+    /// Returns the number of synthesis targets.
+    #[must_use]
+    pub const fn len(self) -> usize {
+        self.targets.len()
+    }
+
+    /// Iterates over synthesis targets in catalog order.
+    pub fn iter(self) -> std::slice::Iter<'static, TargetDescriptor> {
+        self.targets.iter()
+    }
+
+    /// Returns the row named by a full id, format-local id, or alias, with its
+    /// position in the catalog.
+    #[must_use]
+    pub fn find(self, token: &str) -> Option<(usize, &'static TargetDescriptor)> {
+        self.targets
+            .iter()
+            .enumerate()
+            .find(|(_, target)| target.accepted_tokens().any(|accepted| accepted == token))
+    }
+
+    /// Returns the cross-format default and its position, when declared.
+    #[must_use]
+    pub fn default(self) -> Option<(usize, &'static TargetDescriptor)> {
+        self.default.map(|index| (index, &self.targets[index]))
+    }
+}
+
+impl IntoIterator for TargetCatalog {
+    type Item = &'static TargetDescriptor;
+    type IntoIter = std::slice::Iter<'static, TargetDescriptor>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.targets.iter()
+    }
+}
+
+impl Serialize for TargetCatalog {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        #[derive(Serialize)]
+        struct TargetDescriptorWire<'a> {
+            id: &'a DialectId,
+            aliases: &'static [&'static str],
+            default: bool,
+        }
+
+        let mut sequence = serializer.serialize_seq(Some(self.targets.len()))?;
+        for (index, target) in self.targets.iter().enumerate() {
+            sequence.serialize_element(&TargetDescriptorWire {
+                id: &target.id,
+                aliases: target.aliases,
+                default: self.default == Some(index),
+            })?;
+        }
+        sequence.end()
+    }
+}
+
 /// Panics when a static encoder target catalog violates its uniqueness rules.
 ///
-/// Every spelling accepted by [`find_target`] belongs to one row. A row may
+/// Every accepted spelling belongs to one row. A row may
 /// repeat its own format-local id as an alias, but no spelling may select two
 /// different rows.
-pub fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
-    let defaults = targets.iter().filter(|target| target.default).count();
-    assert!(
-        defaults <= 1,
-        "target catalog invariant failed: at most one entry may be the default"
-    );
-
+pub fn assert_valid_target_catalog(catalog: TargetCatalog) {
+    let targets = catalog.targets();
     let mut tokens = BTreeMap::<&str, usize>::new();
     for (index, target) in targets.iter().enumerate() {
         for token in target.accepted_tokens() {
@@ -58,27 +149,6 @@ pub fn assert_valid_target_catalog(targets: &[TargetDescriptor]) {
             }
         }
     }
-}
-
-/// The catalog entry `token` names, by full id, format-local id, or alias.
-///
-/// A format-local id is the part after the first colon. The caller has already
-/// selected an encoder, so `archive-60` is unambiguous within the Rhino
-/// catalog and lets `--to rhino:archive-60` pass its right half unchanged.
-#[must_use]
-pub fn find_target<'a>(
-    targets: &'a [TargetDescriptor],
-    token: &str,
-) -> Option<&'a TargetDescriptor> {
-    targets
-        .iter()
-        .find(|target| target.accepted_tokens().any(|accepted| accepted == token))
-}
-
-/// The catalog's cross-format default, or `None` when none is declared.
-#[must_use]
-pub fn default_target(targets: &'static [TargetDescriptor]) -> Option<&'static TargetDescriptor> {
-    targets.iter().find(|target| target.default)
 }
 
 /// A caller-supplied dialect token requested from an encoder.
@@ -168,7 +238,7 @@ pub struct TargetRefusal {
     format: String,
     #[serde(flatten)]
     kind: TargetRefusalKind,
-    available: &'static [TargetDescriptor],
+    available: TargetCatalog,
 }
 
 /// Why inheritance must select an encoder catalog default.
@@ -188,7 +258,7 @@ impl TargetRefusal {
     pub fn new(
         format: impl Into<String>,
         kind: TargetRefusalKind,
-        available: &'static [TargetDescriptor],
+        available: TargetCatalog,
     ) -> Self {
         Self {
             format: format.into(),
@@ -202,7 +272,7 @@ impl TargetRefusal {
     pub fn unknown_explicit(
         format: impl Into<String>,
         requested: impl Into<String>,
-        available: &'static [TargetDescriptor],
+        available: TargetCatalog,
     ) -> Self {
         Self::new(
             format,
@@ -228,7 +298,7 @@ impl TargetRefusal {
     /// Returns the encoder's structured synthesis catalog.
     #[must_use]
     pub const fn available(&self) -> &'static [TargetDescriptor] {
-        self.available
+        self.available.targets()
     }
 
     /// Returns the dialect spelling the refusal is about, when one exists.
@@ -340,18 +410,12 @@ mod tests {
     const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
         id: DialectId::pinned("fcstd:schema-4"),
         aliases: &["4"],
-        default: false,
     }];
 
-    fn target(
-        id: &'static str,
-        aliases: &'static [&'static str],
-        default: bool,
-    ) -> TargetDescriptor {
+    const fn target(id: &'static str, aliases: &'static [&'static str]) -> TargetDescriptor {
         TargetDescriptor {
             id: DialectId::pinned(id),
             aliases,
-            default,
         }
     }
 
@@ -364,7 +428,7 @@ mod tests {
                 requested: TargetToken::new("4"),
                 reason: "the source image cannot be patched".into(),
             },
-            TARGETS,
+            TargetCatalog::new(TARGETS, None),
         );
 
         assert_eq!(
@@ -386,70 +450,67 @@ mod tests {
 
     #[test]
     fn target_lookup_accepts_each_owned_spelling_and_rejects_a_miss() {
-        let targets = [target("test:first", &["one", "primary"], false)];
+        const TARGETS: &[TargetDescriptor] = &[target("test:first", &["one", "primary"])];
+        let catalog = TargetCatalog::new(TARGETS, None);
 
         assert_eq!(
-            targets[0].accepted_tokens().collect::<Vec<_>>(),
+            TARGETS[0].accepted_tokens().collect::<Vec<_>>(),
             vec!["test:first", "first", "one", "primary"]
         );
         for token in ["test:first", "first", "one", "primary"] {
             assert_eq!(
-                find_target(&targets, token).map(|entry| entry.id.as_str()),
+                catalog.find(token).map(|(_, entry)| entry.id.as_str()),
                 Some("test:first"),
                 "lookup failed for {token:?}"
             );
         }
-        assert_eq!(find_target(&targets, "missing"), None);
+        assert_eq!(catalog.find("missing"), None);
     }
 
     #[test]
-    #[should_panic(expected = "at most one entry may be the default")]
-    fn a_target_catalog_rejects_multiple_defaults() {
-        let targets = [
-            target("test:first", NO_ALIASES, true),
-            target("test:second", NO_ALIASES, true),
-        ];
-        assert_valid_target_catalog(&targets);
+    #[should_panic(expected = "target catalog default is out of bounds")]
+    fn a_target_catalog_rejects_an_invalid_default_index() {
+        let _ = TargetCatalog::new(TARGETS, Some(TARGETS.len()));
     }
 
     #[test]
     #[should_panic(expected = "token \"test:same\" selects both")]
     fn a_target_catalog_rejects_duplicate_ids() {
-        let targets = [
-            target("test:same", NO_ALIASES, false),
-            target("test:same", NO_ALIASES, false),
+        const DUPLICATES: &[TargetDescriptor] = &[
+            target("test:same", NO_ALIASES),
+            target("test:same", NO_ALIASES),
         ];
-        assert_valid_target_catalog(&targets);
+        assert_valid_target_catalog(TargetCatalog::new(DUPLICATES, None));
     }
 
     #[test]
     #[should_panic(expected = "token \"same\" selects both")]
     fn a_target_catalog_rejects_duplicate_aliases() {
-        let targets = [
-            target("test:first", &["same"], false),
-            target("test:second", &["same"], false),
+        const DUPLICATES: &[TargetDescriptor] = &[
+            target("test:first", &["same"]),
+            target("test:second", &["same"]),
         ];
-        assert_valid_target_catalog(&targets);
+        assert_valid_target_catalog(TargetCatalog::new(DUPLICATES, None));
     }
 
     #[test]
     #[should_panic(expected = "token \"test:second\" selects both")]
     fn a_target_catalog_rejects_an_alias_that_is_an_id() {
-        let targets = [
-            target("test:first", &["test:second"], false),
-            target("test:second", NO_ALIASES, false),
+        const DUPLICATES: &[TargetDescriptor] = &[
+            target("test:first", &["test:second"]),
+            target("test:second", NO_ALIASES),
         ];
-        assert_valid_target_catalog(&targets);
+        assert_valid_target_catalog(TargetCatalog::new(DUPLICATES, None));
     }
 
     #[test]
     #[should_panic(expected = "token \"second\" selects both")]
     fn a_target_catalog_rejects_an_alias_that_is_another_rows_local_id() {
-        let targets = [
-            target("test:first", &["second"], false),
-            target("test:second", NO_ALIASES, false),
+        const DUPLICATES: &[TargetDescriptor] = &[
+            target("test:first", &["second"]),
+            target("test:second", NO_ALIASES),
         ];
-        assert_valid_target_catalog(&targets);
+        assert_valid_target_catalog(TargetCatalog::new(DUPLICATES, None));
     }
 
     #[test]
@@ -459,7 +520,7 @@ mod tests {
             TargetRefusalKind::NoDefault {
                 source: DefaultSource::ForeignFormat("step".into()),
             },
-            TARGETS,
+            TargetCatalog::new(TARGETS, None),
         );
 
         assert_eq!(refusal.requested(), None);
@@ -472,7 +533,11 @@ mod tests {
 
     #[test]
     fn unrecorded_same_format_source_is_not_a_missing_default() {
-        let refusal = TargetRefusal::new("fcstd", TargetRefusalKind::UnrecordedSource, TARGETS);
+        let refusal = TargetRefusal::new(
+            "fcstd",
+            TargetRefusalKind::UnrecordedSource,
+            TargetCatalog::new(TARGETS, None),
+        );
 
         assert_eq!(
             refusal.to_string(),

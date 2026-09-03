@@ -3,7 +3,6 @@
 //! preservation path, and the two refusals.
 
 use super::*;
-use cadmpeg_core::target::find_target;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::report::FidelityResolution;
@@ -156,13 +155,13 @@ fn the_catalog_is_the_fixed_ascii_versions_the_writer_emits() {
     let targets = IgesCodec.targets();
     assert_eq!(targets.len(), IgesVersion::ALL.len());
     for version in IgesVersion::ALL {
-        assert!(find_target(targets, version.descriptor().id.as_str()).is_some());
-        assert!(find_target(targets, version.name()).is_some());
+        assert!(targets.find(version.descriptor().id.as_str()).is_some());
+        assert!(targets.find(version.name()).is_some());
     }
-    assert!(find_target(targets, "iges:5.3-compressed-ascii").is_none());
-    assert!(find_target(targets, "iges:5.3-binary").is_none());
+    assert!(targets.find("iges:5.3-compressed-ascii").is_none());
+    assert!(targets.find("iges:5.3-binary").is_none());
     assert_eq!(
-        cadmpeg_core::target::default_target(targets).map(|target| target.id.as_str()),
+        targets.default().map(|(_, target)| target.id.as_str()),
         Some(IgesVersion::V5_3.descriptor().id.as_str())
     );
 }
