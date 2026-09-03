@@ -643,13 +643,22 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::Spring { context, .. } => {
-                for side in &context.sides {
-                    if let Some(surface) = &side.surface {
-                        surfaces.insert(&surface.0);
+            ProceduralCurveDefinition::Spring { layout, .. } => match layout {
+                crate::geometry::SpringLayout::ContextFirst { supports, .. } => {
+                    for support in supports {
+                        if let crate::geometry::SpringSupport::Surface(surface) = support {
+                            surfaces.insert(&surface.0);
+                        }
                     }
                 }
-            }
+                crate::geometry::SpringLayout::CacheFirst { context, .. } => {
+                    for side in &context.sides {
+                        if let Some(surface) = &side.surface {
+                            surfaces.insert(&surface.0);
+                        }
+                    }
+                }
+            },
             ProceduralCurveDefinition::Deformable {
                 context, source, ..
             } => {

@@ -290,3 +290,52 @@ fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
         .to_string()
         .contains("nonzero loft type_code requires data.first_flag"));
 }
+
+fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
+    crate::geometry::ProceduralCurveDefinition::Spring {
+        layout: crate::geometry::SpringLayout::ContextFirst {
+            supports: [
+                crate::geometry::SpringSupport::Ranges([[0.0, 1.0], [2.0, 3.0]]),
+                crate::geometry::SpringSupport::Ranges([[4.0, 5.0], [6.0, 7.0]]),
+            ],
+            first_pcurve: crate::geometry::SpringPcurve::Range([8.0, 9.0]),
+            second_pcurve: None,
+            parameter_range: [-1.0, 2.0],
+            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            discontinuity_flag: true,
+        },
+        direction: 4,
+    }
+}
+
+#[test]
+fn spring_layout_keeps_the_flat_conditional_range_wire_shape() {
+    let definition = ranged_spring_definition();
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["kind"], "spring");
+    assert_eq!(wire["context"]["sides"][0], serde_json::json!({}));
+    assert_eq!(
+        wire["surface_parameter_ranges"][0],
+        serde_json::json!([[0.0, 1.0], [2.0, 3.0]])
+    );
+    assert_eq!(
+        wire["first_pcurve_parameter_range"],
+        serde_json::json!([8.0, 9.0])
+    );
+    assert!(wire.get("cache_first").is_none());
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire).unwrap(),
+        definition
+    );
+}
+
+#[test]
+fn spring_layout_rejects_split_support_state() {
+    let mut wire = serde_json::to_value(ranged_spring_definition()).unwrap();
+    wire["context"]["sides"][0]["surface"] = serde_json::json!("test:surface#conflict");
+    let error =
+        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("spring support side 0 requires exactly one"));
+}

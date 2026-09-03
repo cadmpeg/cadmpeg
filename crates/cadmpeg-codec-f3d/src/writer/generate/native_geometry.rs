@@ -4671,6 +4671,31 @@ mod native_interval_curve_tests {
     }
 }
 
+fn native_spring_pcurve(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    support: &cadmpeg_ir::geometry::SpringSupport,
+    pcurve: &PcurveGeometry,
+) -> Result<(), CodecError> {
+    let native = match support {
+        cadmpeg_ir::geometry::SpringSupport::Surface(surface_id) => {
+            let surface = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *surface_id)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "spring references missing support {surface_id}"
+                    ))
+                })?;
+            native_support_pcurve(&surface.geometry, pcurve)?
+        }
+        cadmpeg_ir::geometry::SpringSupport::Ranges(_) => pcurve.clone(),
+    };
+    native_nurbs_pcurve_block(bytes, &native)
+}
+
 pub(crate) fn native_procedural_curve(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -5117,71 +5142,45 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-        context,
-        surface_parameter_ranges,
-        first_pcurve_parameter_range,
-        discontinuity_flag,
-        cache_first,
-        direction,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { layout, direction } =
+        procedural.definition()
     {
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "spring_int_cur")?;
-        if let Some(form) = cache_first {
-            if surface_parameter_ranges.iter().any(Option::is_some)
-                || first_pcurve_parameter_range.is_some()
-            {
-                return Err(CodecError::Malformed(
-                    "cache-first spring context stores no conditional null-carrier ranges".into(),
-                ));
+        let (
+            supports,
+            first_pcurve,
+            second_pcurve,
+            parameter_range,
+            discontinuities,
+            discontinuity_flag,
+        ) = match layout {
+            cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+                supports,
+                first_pcurve,
+                second_pcurve,
+                parameter_range,
+                discontinuities,
+                discontinuity_flag,
+            } => (
+                supports,
+                first_pcurve,
+                second_pcurve,
+                parameter_range,
+                discontinuities,
+                discontinuity_flag,
+            ),
+            cadmpeg_ir::geometry::SpringLayout::CacheFirst { context, form } => {
+                native_cache_first_curve_context(bytes, target, context, form, Some(solved_cache))?;
+                native_enum(bytes, *direction);
+                bytes.push(0x10);
+                return Ok(true);
             }
-            native_cache_first_curve_context(bytes, target, context, form, Some(solved_cache))?;
-            native_enum(bytes, *direction);
-            bytes.push(0x10);
-            return Ok(true);
-        }
-        for (side_index, side) in context.sides.iter().enumerate() {
-            if let Some(surface_id) = &side.surface {
-                if surface_parameter_ranges[side_index].is_some() {
-                    return Err(CodecError::Malformed(
-                        "spring surface ranges require a null_surface support".into(),
-                    ));
-                }
-                let surface = target
-                    .model
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == *surface_id)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "spring references missing support {surface_id}"
-                        ))
-                    })?;
-                native_embedded_surface(bytes, &surface.geometry)?;
-            } else {
-                native_ident(bytes, "null_surface")?;
-                let ranges = surface_parameter_ranges[side_index].ok_or_else(|| {
-                    CodecError::Malformed(
-                        "spring null_surface support requires U/V parameter ranges".into(),
-                    )
-                })?;
-                for range in ranges {
-                    for value in range {
-                        native_f64(bytes, value);
-                    }
-                }
-            }
-        }
-        for (side_index, side) in context.sides.iter().enumerate() {
-            if let Some(pcurve) = &side.pcurve {
-                if side_index == 0 && first_pcurve_parameter_range.is_some() {
-                    return Err(CodecError::Malformed(
-                        "spring first-pcurve range requires a nullbs support".into(),
-                    ));
-                }
-                let native = if let Some(surface_id) = &side.surface {
+        };
+        for support in supports {
+            match support {
+                cadmpeg_ir::geometry::SpringSupport::Surface(surface_id) => {
                     let surface = target
                         .model
                         .surfaces
@@ -5192,29 +5191,38 @@ pub(crate) fn native_procedural_curve(
                                 "spring references missing support {surface_id}"
                             ))
                         })?;
-                    native_support_pcurve(&surface.geometry, pcurve)?
-                } else {
-                    pcurve.clone()
-                };
-                native_nurbs_pcurve_block(bytes, &native)?;
-            } else {
-                native_ident(bytes, "nullbs")?;
-                if side_index == 0 {
-                    let range = first_pcurve_parameter_range.ok_or_else(|| {
-                        CodecError::Malformed(
-                            "spring first nullbs support requires a parameter range".into(),
-                        )
-                    })?;
-                    for value in range {
-                        native_f64(bytes, value);
+                    native_embedded_surface(bytes, &surface.geometry)?;
+                }
+                cadmpeg_ir::geometry::SpringSupport::Ranges(ranges) => {
+                    native_ident(bytes, "null_surface")?;
+                    for range in ranges {
+                        for value in range {
+                            native_f64(bytes, *value);
+                        }
                     }
                 }
             }
         }
-        for value in context.parameter_range {
-            native_f64(bytes, value);
+        match first_pcurve {
+            cadmpeg_ir::geometry::SpringPcurve::Pcurve(pcurve) => {
+                native_spring_pcurve(bytes, target, &supports[0], pcurve)?
+            }
+            cadmpeg_ir::geometry::SpringPcurve::Range(range) => {
+                native_ident(bytes, "nullbs")?;
+                for value in range {
+                    native_f64(bytes, *value);
+                }
+            }
         }
-        for discontinuities in &context.discontinuities {
+        if let Some(pcurve) = second_pcurve {
+            native_spring_pcurve(bytes, target, &supports[1], pcurve)?;
+        } else {
+            native_ident(bytes, "nullbs")?;
+        }
+        for value in parameter_range {
+            native_f64(bytes, *value);
+        }
+        for discontinuities in discontinuities {
             native_i64(
                 bytes,
                 i64::try_from(discontinuities.len()).map_err(|_| {

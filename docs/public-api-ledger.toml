@@ -3158,3 +3158,17 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::geometry::LoftMemberForm"
 reason = "the enum owns the discriminator and exactly the fields serialized by each loft member form"
+
+[[change]]
+commit = "5fff27b303e24a926b60dcf6acf931c51bc4323f"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring"
+reason = "SpringLayout owns either context-first replacement ranges or a cache-first support context, and the carrier enums pair every absent support with its required range"
+
+[[change]]
+commit = "5fff27b303e24a926b60dcf6acf931c51bc4323f"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::geometry::{SpringLayout,SpringSupport,SpringPcurve}"
+reason = "the new types make spring layout and null-carrier replacement-range invariants structural"

@@ -9,9 +9,11 @@ use super::records::{
 };
 use crate::ids::IdFormat;
 use crate::nurbs;
+use crate::nurbs::pcurve::NurbsPcurve;
 use crate::nurbs::proc_curve::{
     EmbeddedDeformableData, EmbeddedLawCurve, EmbeddedProjection, EmbeddedSilhouette,
-    EmbeddedSpring, EmbeddedSurfaceOffset,
+    EmbeddedSpring, EmbeddedSpringLayout, EmbeddedSpringPcurve, EmbeddedSpringSupport,
+    EmbeddedSurfaceOffset,
 };
 use crate::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedCompoundLoft, EmbeddedCompoundLoftDirection,
@@ -3092,53 +3094,106 @@ fn emit_surface_offset_curve(
     }
 }
 
+fn emit_spring_surface(
+    out: &mut AsmBrep,
+    i: i64,
+    format: IdFormat<'_>,
+    side: usize,
+    geometry: SurfaceGeometry,
+) -> SurfaceId {
+    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+    out.surfaces.push(Surface {
+        id: id.clone(),
+        geometry,
+        source_object: None,
+    });
+    id
+}
+
+fn emit_spring_support(
+    out: &mut AsmBrep,
+    i: i64,
+    format: IdFormat<'_>,
+    side: usize,
+    support: EmbeddedSpringSupport,
+) -> cadmpeg_ir::geometry::SpringSupport {
+    match support {
+        EmbeddedSpringSupport::Surface(geometry) => cadmpeg_ir::geometry::SpringSupport::Surface(
+            emit_spring_surface(out, i, format, side, geometry),
+        ),
+        EmbeddedSpringSupport::Ranges(ranges) => {
+            cadmpeg_ir::geometry::SpringSupport::Ranges(ranges)
+        }
+    }
+}
+
 fn emit_spring_curve(
     out: &mut AsmBrep,
     i: i64,
     embedded: EmbeddedSpring,
     format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
-    let support_ids: [Option<SurfaceId>; 2] = embedded
-        .surfaces
-        .into_iter()
-        .enumerate()
-        .map(|(side, geometry)| {
-            geometry.map(|geometry| {
-                let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
-                out.surfaces.push(Surface {
-                    id: id.clone(),
-                    geometry,
-                    source_object: None,
-                });
-                id
-            })
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("two fixed support sides");
-    let pcurves = embedded.pcurves.map(|pcurve| {
-        pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-            degree: pcurve.degree,
-            knots: pcurve.knots,
-            control_points: pcurve.control_points,
-            weights: pcurve.weights,
-            periodic: pcurve.periodic,
-        })
-    });
-    cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-        context: cadmpeg_ir::geometry::IntcurveSupportContext {
-            sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                surface: support_ids[side].clone(),
-                pcurve: pcurves[side].clone(),
-                pcurve_parameter_range: None,
-            }),
-            parameter_range: embedded.parameter_range,
-            discontinuities: embedded.discontinuities,
+    let emit_pcurve = |pcurve: NurbsPcurve| PcurveGeometry::Nurbs {
+        degree: pcurve.degree,
+        knots: pcurve.knots,
+        control_points: pcurve.control_points,
+        weights: pcurve.weights,
+        periodic: pcurve.periodic,
+    };
+    let layout = match embedded.layout {
+        EmbeddedSpringLayout::ContextFirst {
+            supports: [first_support, second_support],
+            first_pcurve,
+            second_pcurve,
+            parameter_range,
+            discontinuities,
+            discontinuity_flag,
+        } => cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+            supports: [
+                emit_spring_support(out, i, format, 0, first_support),
+                emit_spring_support(out, i, format, 1, second_support),
+            ],
+            first_pcurve: match first_pcurve {
+                EmbeddedSpringPcurve::Pcurve(pcurve) => {
+                    cadmpeg_ir::geometry::SpringPcurve::Pcurve(emit_pcurve(pcurve))
+                }
+                EmbeddedSpringPcurve::Range(range) => {
+                    cadmpeg_ir::geometry::SpringPcurve::Range(range)
+                }
+            },
+            second_pcurve: second_pcurve.map(emit_pcurve),
+            parameter_range,
+            discontinuities,
+            discontinuity_flag,
         },
-        surface_parameter_ranges: embedded.surface_parameter_ranges,
-        first_pcurve_parameter_range: embedded.first_pcurve_parameter_range,
-        discontinuity_flag: embedded.discontinuity_flag,
-        cache_first: embedded.cache_first,
+        EmbeddedSpringLayout::CacheFirst { context, form } => {
+            let [first_surface, second_surface] = context.surfaces;
+            let [first_pcurve, second_pcurve] = context.pcurves;
+            cadmpeg_ir::geometry::SpringLayout::CacheFirst {
+                context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                    sides: [
+                        cadmpeg_ir::geometry::IntcurveSupportSide {
+                            surface: first_surface
+                                .map(|surface| emit_spring_surface(out, i, format, 0, surface)),
+                            pcurve: first_pcurve.map(emit_pcurve),
+                            pcurve_parameter_range: None,
+                        },
+                        cadmpeg_ir::geometry::IntcurveSupportSide {
+                            surface: second_surface
+                                .map(|surface| emit_spring_surface(out, i, format, 1, surface)),
+                            pcurve: second_pcurve.map(emit_pcurve),
+                            pcurve_parameter_range: None,
+                        },
+                    ],
+                    parameter_range: context.parameter_range,
+                    discontinuities: context.discontinuities,
+                },
+                form,
+            }
+        }
+    };
+    cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
+        layout,
         direction: embedded.direction,
     }
 }

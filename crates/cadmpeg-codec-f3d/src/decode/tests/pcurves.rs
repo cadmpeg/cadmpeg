@@ -145,13 +145,14 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         )
         .expect("spring decode");
     let ProceduralCurveDefinition::Spring {
-        context, direction, ..
+        layout, direction, ..
     } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
     assert_eq!(*direction, -3);
-    assert!(context
+    assert!(layout
+        .support_context()
         .sides
         .iter()
         .all(|side| side.surface.is_some() && side.pcurve.is_some()));
@@ -159,15 +160,20 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
     let mut edited = result.ir().clone();
     let expected_flag = edited.model.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::Spring {
-            context,
-            discontinuity_flag,
-            direction,
-            ..
+            layout, direction, ..
         } = definition
         else {
             unreachable!()
         };
-        context.parameter_range = [-2.0, 3.0];
+        let cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+            parameter_range,
+            discontinuity_flag,
+            ..
+        } = layout
+        else {
+            panic!("expected context-first spring")
+        };
+        *parameter_range = [-2.0, 3.0];
         let expected_flag = !*discontinuity_flag;
         *discontinuity_flag = expected_flag;
         *direction = 4;
@@ -182,11 +188,14 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
     assert!(matches!(
         regenerated.ir().model.procedural_curves[0].definition(),
         ProceduralCurveDefinition::Spring {
-            ref context,
-            discontinuity_flag,
+            layout: cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+                ref parameter_range,
+                discontinuity_flag,
+                ..
+            },
             direction: 4,
             ..
-        } if *discontinuity_flag == expected_flag && context.parameter_range == [-2.0, 3.0]
+        } if *discontinuity_flag == expected_flag && *parameter_range == [-2.0, 3.0]
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -218,34 +227,38 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("null-support spring decode");
-    let ProceduralCurveDefinition::Spring {
-        context,
-        surface_parameter_ranges,
-        first_pcurve_parameter_range,
-        discontinuity_flag,
-        cache_first,
-        direction,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::Spring { layout, direction } =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
-    assert_eq!(*cache_first, None);
     assert_eq!(*direction, 4);
+    let cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+        supports,
+        first_pcurve,
+        second_pcurve,
+        parameter_range,
+        discontinuity_flag,
+        ..
+    } = layout
+    else {
+        panic!("expected context-first spring")
+    };
     assert!(*discontinuity_flag);
-    assert!(context
-        .sides
-        .iter()
-        .all(|side| side.surface.is_none() && side.pcurve.is_none()));
     assert_eq!(
-        surface_parameter_ranges[0],
-        Some([[-2.0, 3.0], [-4.0, 5.0]])
+        supports[0],
+        cadmpeg_ir::geometry::SpringSupport::Ranges([[-2.0, 3.0], [-4.0, 5.0]])
     );
     assert_eq!(
-        surface_parameter_ranges[1],
-        Some([[-6.0, 7.0], [-8.0, 9.0]])
+        supports[1],
+        cadmpeg_ir::geometry::SpringSupport::Ranges([[-6.0, 7.0], [-8.0, 9.0]])
     );
-    assert_eq!(*first_pcurve_parameter_range, Some([-10.0, 11.0]));
-    assert_eq!(context.parameter_range, [-1.0, 2.0]);
+    assert_eq!(
+        *first_pcurve,
+        cadmpeg_ir::geometry::SpringPcurve::Range([-10.0, 11.0])
+    );
+    assert_eq!(*second_pcurve, None);
+    assert_eq!(*parameter_range, [-1.0, 2.0]);
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
