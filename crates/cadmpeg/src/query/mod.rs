@@ -23,9 +23,12 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use cadmpeg_core::dialect::{Admission, DialectLayers, DialectMatch};
+use cadmpeg_ir::SourceMeta;
 use clap::{Args, Subcommand};
 use serde::de::{IgnoredAny, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
 use crate::commands::CLI_SCHEMA_VERSION;
@@ -228,7 +231,7 @@ struct RefusalProbe {
     #[serde(default)]
     message: Option<String>,
     #[serde(default)]
-    dialects: Option<DialectLayersProbe>,
+    dialects: Option<DialectLayers>,
     /// Structured encoder request state and catalog on target refusals.
     /// Keep this lenient so query can project future target-refusal variants.
     #[serde(default)]
@@ -240,7 +243,7 @@ struct ContainerSummaryProbe {
     #[serde(default)]
     format: Option<String>,
     #[serde(default)]
-    dialects: Option<DialectLayersProbe>,
+    dialects: Option<DialectLayers>,
     #[serde(default)]
     losses: Vec<LossProbe>,
 }
@@ -268,76 +271,7 @@ struct DecodeReportProbe {
     #[serde(default)]
     losses: Vec<LossProbe>,
     #[serde(default)]
-    dialects: Option<DialectLayersProbe>,
-}
-
-/// Lenient dialect identity. Admission stays as JSON so a future admission
-/// variant does not make an otherwise projectable artifact unreadable.
-#[derive(Serialize)]
-struct DialectMatchProbe {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    format: Option<String>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dialect: Option<String>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    declared: Option<Value>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    admission: Option<Value>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    instance: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct DialectMatchProbeWire {
-    #[serde(default)]
-    format: Option<String>,
-    #[serde(default)]
-    dialect: Option<String>,
-    #[serde(default)]
-    declared: Option<Value>,
-    #[serde(default)]
-    admission: Option<Value>,
-    #[serde(default)]
-    instance: Option<String>,
-}
-
-impl<'de> Deserialize<'de> for DialectMatchProbe {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = DialectMatchProbeWire::deserialize(deserializer)?;
-        Ok(Self {
-            format: wire.format,
-            dialect: wire.dialect,
-            declared: wire.declared,
-            admission: wire.admission.map(project_admission),
-            instance: wire.instance,
-        })
-    }
-}
-
-/// Projects the version-7 `admitted_unverified` spelling onto the current
-/// four-state admission meaning while retaining unknown future variants.
-fn project_admission(admission: Value) -> Value {
-    let Some(legacy) = admission.get("admitted_unverified") else {
-        return admission;
-    };
-    match legacy.get("using") {
-        Some(Value::String(using)) => serde_json::json!({
-            "unverified": { "using": using }
-        }),
-        None | Some(Value::Null) => Value::String("residual".to_owned()),
-        Some(_) => admission,
-    }
-}
-
-#[derive(Deserialize, Serialize)]
-struct DialectLayersProbe {
-    primary: DialectMatchProbe,
-    #[serde(default)]
-    extra: Vec<DialectMatchProbe>,
+    dialects: Option<DialectLayers>,
 }
 
 #[derive(Deserialize)]
@@ -392,10 +326,10 @@ impl LossCodeProbe {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        push_decode_dialect_summary, DecodeReportProbe, DialectMatchProbe, LossCodeProbe,
-        SourceProbe,
-    };
+    use cadmpeg_core::dialect::{Admission, DialectMatch};
+    use cadmpeg_ir::SourceMeta;
+
+    use super::{push_decode_dialect_summary, DecodeReportProbe, LossCodeProbe};
 
     #[test]
     fn legacy_loss_codes_use_the_shared_migration_spelling() {
@@ -457,31 +391,34 @@ mod tests {
     }
 
     #[test]
-    fn dialect_probe_projects_both_legacy_unverified_states() {
-        let substituted: DialectMatchProbe = serde_json::from_value(serde_json::json!({
+    fn dialect_wire_projects_both_legacy_unverified_states() {
+        let substituted: DialectMatch = serde_json::from_value(serde_json::json!({
+            "format": "acis",
+            "dialect": "acis:sab-22300",
             "admission": {"admitted_unverified": {"using": "acis:sab-22200"}}
         }))
         .unwrap();
         assert_eq!(
-            substituted.admission,
-            Some(serde_json::json!({
-                "unverified": {"using": "acis:sab-22200"}
-            }))
+            substituted.using().as_ref().map(|using| using.as_str()),
+            Some("acis:sab-22200")
         );
+        assert!(matches!(
+            substituted.admission(),
+            Admission::Unverified { .. }
+        ));
 
-        let residual: DialectMatchProbe = serde_json::from_value(serde_json::json!({
+        let residual: DialectMatch = serde_json::from_value(serde_json::json!({
+            "format": "acis",
+            "dialect": "acis:sab-22300",
             "admission": {"admitted_unverified": {}}
         }))
         .unwrap();
-        assert_eq!(
-            residual.admission,
-            Some(serde_json::Value::String("residual".into()))
-        );
+        assert_eq!(residual.admission(), &Admission::Residual);
     }
 
     #[test]
     fn source_probe_migrates_legacy_identity_and_rejects_two_identity_fields() {
-        let legacy: SourceProbe = serde_json::from_value(serde_json::json!({
+        let legacy: SourceMeta = serde_json::from_value(serde_json::json!({
             "format": "rhino",
             "dialect": {
                 "format": "rhino",
@@ -490,17 +427,25 @@ mod tests {
             }
         }))
         .unwrap();
-        let layers = legacy.dialects.unwrap();
-        assert_eq!(layers.primary.dialect.as_deref(), Some("rhino:archive-80"));
-        assert!(layers.extra.is_empty());
+        let layers = legacy.dialects().unwrap();
+        assert_eq!(layers.primary().dialect().as_str(), "rhino:archive-80");
+        assert_eq!(layers.iter().count(), 1);
 
-        let Err(error) = serde_json::from_value::<SourceProbe>(serde_json::json!({
+        let Err(error) = serde_json::from_value::<SourceMeta>(serde_json::json!({
             "format": "rhino",
             "dialects": {
-                "primary": {"dialect": "rhino:archive-80"},
+                "primary": {
+                    "format": "rhino",
+                    "dialect": "rhino:archive-80",
+                    "admission": "admitted"
+                },
                 "extra": []
             },
-            "dialect": {"dialect": "rhino:archive-80"}
+            "dialect": {
+                "format": "rhino",
+                "dialect": "rhino:archive-80",
+                "admission": "admitted"
+            }
         })) else {
             panic!("two source identity fields are ambiguous");
         };
@@ -520,49 +465,11 @@ mod tests {
 struct CadirProbe {
     ir_version: String,
     #[serde(default)]
-    source: Option<SourceProbe>,
+    source: Option<SourceMeta>,
     #[serde(default)]
     model: BTreeMap<String, ArenaLen>,
     #[serde(default)]
     native: BTreeMap<String, NativeNamespaceProbe>,
-}
-
-struct SourceProbe {
-    format: Option<String>,
-    dialects: Option<DialectLayersProbe>,
-}
-
-#[derive(Deserialize)]
-struct SourceProbeWire {
-    #[serde(default)]
-    format: Option<String>,
-    #[serde(default)]
-    dialects: Option<DialectLayersProbe>,
-    #[serde(default)]
-    dialect: Option<DialectMatchProbe>,
-}
-
-impl<'de> Deserialize<'de> for SourceProbe {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = SourceProbeWire::deserialize(deserializer)?;
-        let dialects = match (wire.dialects, wire.dialect) {
-            (Some(_), Some(_)) => {
-                return Err(serde::de::Error::custom(
-                    "source metadata cannot contain both dialects and legacy dialect fields",
-                ));
-            }
-            (Some(dialects), None) => Some(dialects),
-            (None, Some(primary)) => Some(DialectLayersProbe {
-                primary,
-                extra: Vec::new(),
-            }),
-            (None, None) => None,
-        };
-        Ok(Self {
-            format: wire.format,
-            dialects,
-        })
-    }
 }
 
 #[derive(Deserialize)]
@@ -867,10 +774,8 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
             rows.push(("ir_version".to_owned(), cell(&cadir.ir_version)));
             match &cadir.source {
                 Some(source) => {
-                    if let Some(format) = &source.format {
-                        rows.push(("source_format".to_owned(), cell(format)));
-                    }
-                    push_dialect_layers_summary(&mut rows, "source", source.dialects.as_ref());
+                    rows.push(("source_format".to_owned(), cell(source.format())));
+                    push_dialect_layers_summary(&mut rows, "source", source.dialects());
                 }
                 None => rows.push(("source".to_owned(), "null".to_owned())),
             }
@@ -957,10 +862,62 @@ fn push_decode_dialect_summary(rows: &mut Vec<(String, String)>, decode: &Decode
     push_dialect_layers_summary(rows, "decode", decode.dialects.as_ref());
 }
 
+struct DialectLayersOutput<'a>(&'a DialectLayers);
+
+impl Serialize for DialectLayersOutput<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("DialectLayers", 2)?;
+        state.serialize_field("primary", &DialectMatchOutput(self.0.primary()))?;
+        let extra = self
+            .0
+            .iter()
+            .skip(1)
+            .map(DialectMatchOutput)
+            .collect::<Vec<_>>();
+        state.serialize_field("extra", &extra)?;
+        state.end()
+    }
+}
+
+struct DialectMatchOutput<'a>(&'a DialectMatch);
+
+impl Serialize for DialectMatchOutput<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let matched = self.0;
+        let mut state = serializer.serialize_struct("DialectMatch", 5)?;
+        state.serialize_field("format", matched.format())?;
+        state.serialize_field("dialect", matched.dialect())?;
+        if !matched.declared().is_empty() {
+            state.serialize_field("declared", matched.declared())?;
+        }
+        let admission = admission_value(matched);
+        state.serialize_field("admission", &admission)?;
+        if let Some(instance) = matched.instance() {
+            state.serialize_field("instance", instance)?;
+        }
+        state.end()
+    }
+}
+
+fn admission_value(matched: &DialectMatch) -> Value {
+    match matched.admission() {
+        Admission::Admitted => serde_json::json!("admitted"),
+        Admission::Unverified { .. } => serde_json::json!({
+            "unverified": {
+                "using": matched
+                    .using()
+                    .expect("unverified admission always names its grammar")
+            }
+        }),
+        Admission::Residual => serde_json::json!("residual"),
+        Admission::Refused => serde_json::json!("refused"),
+    }
+}
+
 fn push_dialect_layers_summary(
     rows: &mut Vec<(String, String)>,
     prefix: &str,
-    layers: Option<&DialectLayersProbe>,
+    layers: Option<&DialectLayers>,
 ) {
     let Some(layers) = layers else {
         rows.push((format!("{prefix}_dialects"), "null".to_owned()));
@@ -969,45 +926,44 @@ fn push_dialect_layers_summary(
     };
     rows.push((
         format!("{prefix}_dialect_layers"),
-        (1 + layers.extra.len()).to_string(),
+        layers.iter().count().to_string(),
     ));
     rows.push((
         format!("{prefix}_dialects"),
-        serde_json::to_string(layers).expect("dialect-layer probes always serialize"),
+        serde_json::to_string(&DialectLayersOutput(layers))
+            .expect("dialect-layer projections always serialize"),
     ));
-    push_dialect_summary(rows, prefix, Some(&layers.primary));
+    push_dialect_summary(rows, prefix, Some(layers.primary()));
 }
 
 fn push_dialect_summary(
     rows: &mut Vec<(String, String)>,
     prefix: &str,
-    matched: Option<&DialectMatchProbe>,
+    matched: Option<&DialectMatch>,
 ) {
     let Some(matched) = matched else {
         rows.push((format!("{prefix}_dialect"), "null".to_owned()));
         return;
     };
-    if let Some(format) = &matched.format {
-        rows.push((format!("{prefix}_dialect_format"), cell(format)));
-    }
+    rows.push((format!("{prefix}_dialect_format"), cell(matched.format())));
     rows.push((
         format!("{prefix}_dialect"),
-        matched
-            .dialect
-            .as_ref()
-            .map_or_else(|| "null".to_owned(), |dialect| cell(dialect)),
+        cell(matched.dialect().as_str()),
     ));
-    if let Some(admission) = &matched.admission {
-        let value = admission
-            .as_str()
-            .map_or_else(|| admission.to_string(), cell);
-        rows.push((format!("{prefix}_dialect_admission"), value));
-    }
-    if let Some(instance) = &matched.instance {
+    let admission = admission_value(matched);
+    let admission = admission
+        .as_str()
+        .map_or_else(|| admission.to_string(), cell);
+    rows.push((format!("{prefix}_dialect_admission"), admission));
+    if let Some(instance) = matched.instance() {
         rows.push((format!("{prefix}_dialect_instance"), cell(instance)));
     }
-    if let Some(declared) = &matched.declared {
-        rows.push((format!("{prefix}_dialect_declared"), declared.to_string()));
+    if !matched.declared().is_empty() {
+        rows.push((
+            format!("{prefix}_dialect_declared"),
+            serde_json::to_string(matched.declared())
+                .expect("dialect declarations always serialize"),
+        ));
     }
 }
 
