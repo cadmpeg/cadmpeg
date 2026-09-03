@@ -13,7 +13,10 @@ use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::document::SourceMeta;
 
-pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, cadmpeg_ir::Coverage) {
+pub(in super::super) fn source_meta(
+    scan: &ContainerScan,
+    classification: &crate::dialect::DialectClassification,
+) -> (SourceMeta, cadmpeg_ir::Coverage) {
     let mut attributes = BTreeMap::new();
     let mut coverage = cadmpeg_ir::Coverage::default();
     attributes.insert(
@@ -888,7 +891,7 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, cadmpe
     }
     (
         SourceMeta::classified(
-            DialectLayers::of(crate::dialect::classify(scan).matched().clone()),
+            DialectLayers::of(classification.matched().clone()),
             attributes,
         ),
         coverage,

@@ -59,17 +59,15 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
         || !model.tessellations.is_empty()
 }
 
-/// Build the decode body: diagnostics for data that cannot be represented in
-/// the emitted IR. Classification is not part of it.
+/// Build the decode body from the entry point's one dialect classification.
 pub(in super::super) fn build_report(
     scan: &ContainerScan,
+    classification: &crate::dialect::DialectClassification,
     ir: &CadIr,
     coverage: cadmpeg_ir::Coverage,
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
 ) -> DecodeBody {
-    let classification = crate::dialect::classify(scan);
-    let summary = container::summarize(scan, &classification);
     let geom_sections = scan
         .framing
         .sections
@@ -156,7 +154,7 @@ pub(in super::super) fn build_report(
         geometry_transferred: has_transferred_geometry(ir),
         coverage,
         losses,
-        notes: summary.notes,
+        notes: container::notes(scan),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
     }
 }
