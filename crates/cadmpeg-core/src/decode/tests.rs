@@ -117,6 +117,10 @@ fn concatenation_and_stored_slices_have_distinct_spaces() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let first = root.child(0, 2).unwrap();
     let second = root.child(4, 6).unwrap();
+    assert!(matches!(
+        ctx.concat_views(&[]),
+        Err(CodecError::Malformed(_))
+    ));
     let concat = ctx.concat_views(&[first, second]).unwrap();
     assert_eq!(concat.window(), &[0, 1, 4, 5]);
     let slice = ctx
@@ -317,6 +321,22 @@ fn committed_reads_preserve_truncation_location_and_operation() {
             if location == root.location_at(0)
                 && operation == "read header size"
     ));
+}
+
+#[test]
+fn unresolved_address_does_not_invent_a_root_step() {
+    let address = resolve_address(
+        &[],
+        SourceLocation {
+            space: SpaceId::ROOT,
+            offset: 7,
+        },
+    );
+    assert!(address.steps.is_empty());
+    assert_eq!(
+        address.inspect_commands("part.FCStd"),
+        ["cadmpeg inspect hex part.FCStd --offset 7 --len 64"]
+    );
 }
 
 #[test]
