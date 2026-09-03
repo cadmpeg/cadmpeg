@@ -1765,7 +1765,7 @@ fn encode_native_compound_loft(
                 CompoundLoftDirection::Vector { value } if *selector == 0 => {
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
-                CompoundLoftDirection::Curve { curve } if *selector != 0 => {
+                CompoundLoftDirection::Curve { curve, .. } if *selector != 0 => {
                     native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
                 }
                 _ => {
@@ -1907,7 +1907,7 @@ fn encode_native_scaled_compound_loft(
                 CompoundLoftDirection::Vector { value } if *selector == 0 => {
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
-                CompoundLoftDirection::Curve { curve } if *selector != 0 => {
+                CompoundLoftDirection::Curve { curve, .. } if *selector != 0 => {
                     native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
                 }
                 _ => {
@@ -3809,23 +3809,14 @@ fn encode_native_revision_compound_loft(
     for flag in construction.kind_flags {
         bytes.push(native_bool(flag));
     }
-    native_i64(bytes, construction.selector);
-    match (
-        construction.selector,
-        &construction.direction,
-        &construction.direction_curve,
-    ) {
-        (0, Some(direction), None) => {
-            native_vector(bytes, [direction.x, direction.y, direction.z]);
+    native_i64(bytes, construction.direction.selector());
+    match &construction.direction {
+        cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value } => {
+            native_vector(bytes, [value.x, value.y, value.z]);
         }
-        (selector, None, Some(curve)) if selector != 0 => {
+        cadmpeg_ir::geometry::CompoundLoftDirection::Curve { curve, .. } => {
             let curve = native_loft_curve_in_range(target, curve, None)?;
             native_nurbs_curve(bytes, &curve)?;
-        }
-        _ => {
-            return Err(CodecError::Malformed(
-                "compound-loft direction conflicts with its selector".into(),
-            ));
         }
     }
     // The trailing curve pairs with the parameter values: a reader recovers it

@@ -13,6 +13,7 @@ use crate::transform::{Transform, Transform2};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroI64;
 
 fn default_true() -> bool {
     true
@@ -2757,14 +2758,13 @@ pub struct RevisionCompoundLoftConstruction {
     pub kind: i64,
     /// Two flags opening the kind-zero payload.
     pub kind_flags: [bool; 2],
-    /// Kind-zero direction selector.
-    pub selector: i64,
-    /// Selector-zero direction vector.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub direction: Option<Vector3>,
-    /// Selector-nonzero BS3 direction curve.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub direction_curve: Option<CurveId>,
+    /// Direction carrier selected by the kind-zero direction tag.
+    #[serde(flatten, with = "revision_compound_loft_direction_wire")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "RevisionCompoundLoftDirectionSchemaWire")
+    )]
+    pub direction: CompoundLoftDirection,
     /// Two optional trailing parameter values.
     #[serde(default)]
     pub interval: [Option<f64>; 2],
@@ -2911,7 +2911,92 @@ pub enum CompoundLoftDirection {
     Curve {
         /// Stored curve.
         curve: CurveId,
+        /// Exact nonzero native selector retained for byte-faithful export.
+        #[serde(skip, default = "default_compound_loft_curve_selector")]
+        #[cfg_attr(feature = "schema", schemars(skip))]
+        selector: NonZeroI64,
     },
+}
+
+const fn default_compound_loft_curve_selector() -> NonZeroI64 {
+    NonZeroI64::new(1).unwrap()
+}
+
+impl CompoundLoftDirection {
+    /// Native selector for this direction form.
+    #[must_use]
+    pub const fn selector(&self) -> i64 {
+        match self {
+            Self::Vector { .. } => 0,
+            Self::Curve { selector, .. } => selector.get(),
+        }
+    }
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(
+    dead_code,
+    reason = "fields define the revision compound-loft direction wire schema"
+)]
+struct RevisionCompoundLoftDirectionSchemaWire {
+    selector: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    direction: Option<Vector3>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    direction_curve: Option<CurveId>,
+}
+
+mod revision_compound_loft_direction_wire {
+    use super::{CompoundLoftDirection, CurveId, Vector3};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::num::NonZeroI64;
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        selector: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction_curve: Option<CurveId>,
+    }
+
+    pub fn serialize<S>(value: &CompoundLoftDirection, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = match value {
+            CompoundLoftDirection::Vector { value } => Wire {
+                selector: 0,
+                direction: Some(*value),
+                direction_curve: None,
+            },
+            CompoundLoftDirection::Curve { curve, selector } => Wire {
+                selector: selector.get(),
+                direction: None,
+                direction_curve: Some(curve.clone()),
+            },
+        };
+        wire.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<CompoundLoftDirection, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.selector, wire.direction, wire.direction_curve) {
+            (0, Some(value), None) => Ok(CompoundLoftDirection::Vector { value }),
+            (selector, None, Some(curve)) => NonZeroI64::new(selector)
+                .map(|selector| CompoundLoftDirection::Curve { curve, selector })
+                .ok_or_else(|| {
+                    serde::de::Error::custom("compound-loft direction conflicts with its selector")
+                }),
+            _ => Err(serde::de::Error::custom(
+                "compound-loft direction conflicts with its selector",
+            )),
+        }
+    }
 }
 
 /// Structurally selected tail of `cl_loft_spl_sur`.

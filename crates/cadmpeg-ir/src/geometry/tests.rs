@@ -95,3 +95,44 @@ fn g2_full_support_rejects_split_wire_fields() {
         .to_string()
         .contains("G2 full surface and tolerance must occur together"));
 }
+
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+struct RevisionCompoundLoftDirectionWireTest {
+    #[serde(flatten, with = "super::revision_compound_loft_direction_wire")]
+    direction: crate::geometry::CompoundLoftDirection,
+}
+
+#[test]
+fn revision_compound_loft_direction_keeps_the_flat_wire_shape() {
+    let value = RevisionCompoundLoftDirectionWireTest {
+        direction: crate::geometry::CompoundLoftDirection::Curve {
+            curve: crate::ids::CurveId("test:curve#direction".into()),
+            selector: std::num::NonZeroI64::new(4).unwrap(),
+        },
+    };
+    let wire = serde_json::to_value(&value).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::json!({
+            "selector": 4,
+            "direction_curve": "test:curve#direction"
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<RevisionCompoundLoftDirectionWireTest>(wire).unwrap(),
+        value
+    );
+}
+
+#[test]
+fn revision_compound_loft_direction_rejects_a_mismatched_selector() {
+    let error =
+        serde_json::from_value::<RevisionCompoundLoftDirectionWireTest>(serde_json::json!({
+            "selector": 0,
+            "direction_curve": "test:curve#direction"
+        }))
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("compound-loft direction conflicts with its selector"));
+}

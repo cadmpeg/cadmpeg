@@ -754,7 +754,7 @@ fn emit_compound_loft_surface(
                 EmbeddedCompoundLoftDirection::Vector(value) => {
                     cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
                 }
-                EmbeddedCompoundLoftDirection::Curve(curve) => {
+                EmbeddedCompoundLoftDirection::Curve { selector, curve } => {
                     let id = CurveId(format!(
                         "{format}:brep:procedural_surface#{i}:cloft:tail0:direction"
                     ));
@@ -763,7 +763,10 @@ fn emit_compound_loft_surface(
                         geometry: CurveGeometry::Nurbs(curve),
                         source_object: None,
                     });
-                    cadmpeg_ir::geometry::CompoundLoftDirection::Curve { curve: id }
+                    cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
+                        curve: id,
+                        selector,
+                    }
                 }
             };
             cadmpeg_ir::geometry::CompoundLoftTail::Zero {
@@ -883,7 +886,7 @@ fn emit_scaled_compound_loft_surface(
         EmbeddedCompoundLoftDirection::Vector(value) => {
             cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
         }
-        EmbeddedCompoundLoftDirection::Curve(curve) => {
+        EmbeddedCompoundLoftDirection::Curve { selector, curve } => {
             let id = CurveId(format!(
                 "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}"
             ));
@@ -892,7 +895,10 @@ fn emit_scaled_compound_loft_surface(
                 geometry: CurveGeometry::Nurbs(curve),
                 source_object: None,
             });
-            cadmpeg_ir::geometry::CompoundLoftDirection::Curve { curve: id }
+            cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
+                curve: id,
+                selector,
+            }
         }
     };
     let branch = match embedded.branch {
@@ -2230,17 +2236,25 @@ fn emit_revision_compound_loft_surface(
             }
         })
         .collect();
-    let direction_curve = construction.direction_curve.map(|geometry| {
-        let id = CurveId(format!(
-            "{format}:brep:procedural_surface#{i}:cloft:direction"
-        ));
-        out.curves.push(Curve {
-            id: id.clone(),
-            geometry: CurveGeometry::Nurbs(geometry),
-            source_object: None,
-        });
-        id
-    });
+    let direction = match construction.direction {
+        EmbeddedCompoundLoftDirection::Vector(value) => {
+            cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
+        }
+        EmbeddedCompoundLoftDirection::Curve { selector, curve } => {
+            let id = CurveId(format!(
+                "{format}:brep:procedural_surface#{i}:cloft:direction"
+            ));
+            out.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Nurbs(curve),
+                source_object: None,
+            });
+            cadmpeg_ir::geometry::CompoundLoftDirection::Curve {
+                curve: id,
+                selector,
+            }
+        }
+    };
     let trailing_curve = construction.trailing_curve.map(|geometry| {
         let id = CurveId(format!(
             "{format}:brep:procedural_surface#{i}:cloft:trailing"
@@ -2264,9 +2278,7 @@ fn emit_revision_compound_loft_surface(
             flags: construction.flags,
             kind: construction.kind,
             kind_flags: construction.kind_flags,
-            selector: construction.selector,
-            direction: construction.direction,
-            direction_curve,
+            direction,
             interval: construction.interval,
             trailing_curve,
         }),
