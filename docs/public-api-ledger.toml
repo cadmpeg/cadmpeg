@@ -3018,3 +3018,17 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::native::catalogue::Catalogue::note_phase"
 reason = "NotePhase selects an annotation pass independently from the invariant-bearing row Phase"
+
+[[change]]
+commit = "fcf223bcba1a4cb426cf42a945469e2ec81c2601"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::topology::Loop::{coedges,vertex_uses}"
+reason = "LoopBoundary structurally selects one unanchored singular vertex or a coedge ring whose vertex uses carry required anchors"
+
+[[change]]
+commit = "fcf223bcba1a4cb426cf42a945469e2ec81c2601"
+crate = "cadmpeg-ir"
+kind = "struct"
+item = "cadmpeg_ir::topology::VertexUse"
+reason = "AnchoredVertexUse cannot omit its preceding coedge, while LoopBoundary::Vertex carries the only unanchored occurrence"

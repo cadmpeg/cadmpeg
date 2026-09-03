@@ -290,23 +290,39 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         if ids.faces(&lp.face.0).is_none() {
             ref_error(findings, &lp.id.0, "face", &lp.face.0);
         }
-        for ce in &lp.coedges {
-            if ids.coedges(&ce.0).is_none() {
-                ref_error(findings, &lp.id.0, "coedge", &ce.0);
-            }
-        }
-        for use_ in &lp.vertex_uses {
-            if ids.vertices(&use_.vertex.0).is_none() {
-                ref_error(findings, &lp.id.0, "vertex", &use_.vertex.0);
-            }
-            if let Some(after) = &use_.after {
-                if ids.coedges(&after.0).is_none() {
-                    ref_error(findings, &lp.id.0, "coedge(vertex-use after)", &after.0);
+        match &lp.boundary {
+            crate::topology::LoopBoundary::Vertex { vertex, pcurves } => {
+                if ids.vertices(&vertex.0).is_none() {
+                    ref_error(findings, &lp.id.0, "vertex", &vertex.0);
+                }
+                for pcurve in pcurves {
+                    if ids.pcurves(&pcurve.pcurve.0).is_none() {
+                        ref_error(findings, &lp.id.0, "pcurve(vertex use)", &pcurve.pcurve.0);
+                    }
                 }
             }
-            for pcurve in &use_.pcurves {
-                if ids.pcurves(&pcurve.pcurve.0).is_none() {
-                    ref_error(findings, &lp.id.0, "pcurve(vertex use)", &pcurve.pcurve.0);
+            crate::topology::LoopBoundary::Ring {
+                coedges,
+                vertex_uses,
+            } => {
+                for ce in coedges {
+                    if ids.coedges(&ce.0).is_none() {
+                        ref_error(findings, &lp.id.0, "coedge", &ce.0);
+                    }
+                }
+                for use_ in vertex_uses {
+                    if ids.vertices(&use_.vertex.0).is_none() {
+                        ref_error(findings, &lp.id.0, "vertex", &use_.vertex.0);
+                    }
+                    let after = &use_.after;
+                    if ids.coedges(&after.0).is_none() {
+                        ref_error(findings, &lp.id.0, "coedge(vertex-use after)", &after.0);
+                    }
+                    for pcurve in &use_.pcurves {
+                        if ids.pcurves(&pcurve.pcurve.0).is_none() {
+                            ref_error(findings, &lp.id.0, "pcurve(vertex use)", &pcurve.pcurve.0);
+                        }
+                    }
                 }
             }
         }
@@ -6331,34 +6347,19 @@ pub(super) fn check_loops(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<F
     }
 
     for lp in &ir.model.loops {
-        let vertex_only =
-            lp.coedges.is_empty() && lp.vertex_uses.len() == 1 && lp.vertex_uses[0].after.is_none();
-        let edge_loop = !lp.coedges.is_empty()
-            && lp.vertex_uses.iter().all(|use_| {
-                use_.after
-                    .as_ref()
-                    .is_some_and(|after| lp.coedges.contains(after))
-            });
-        if !vertex_only && !edge_loop {
-            findings.push(Finding {
-                check: Check::LoopClosure,
-                severity: Severity::Error,
-                message: "loop must contain a coedge ring with anchored vertex uses or one unanchored vertex use".into(),
-                entity: Some(lp.id.0.clone()),
-            });
+        let crate::topology::LoopBoundary::Ring { coedges, .. } = &lp.boundary else {
             continue;
-        }
-        if lp.coedges.is_empty() {
-            continue;
-        }
+        };
         // Walk the `next` chain from the first listed coedge and confirm it is a
         // simple cycle whose members are exactly the loop's coedge set.
-        let expected: HashSet<&str> = lp.coedges.iter().map(|c| c.0.as_str()).collect();
-        let start = lp.coedges[0].0.as_str();
+        let expected: HashSet<&str> = coedges.iter().map(|c| c.0.as_str()).collect();
+        let Some(start) = coedges.first().map(|coedge| coedge.0.as_str()) else {
+            continue;
+        };
         let mut visited: HashSet<&str> = HashSet::new();
         let mut cur = start;
         let mut broke = false;
-        for _ in 0..lp.coedges.len() {
+        for _ in 0..coedges.len() {
             if !visited.insert(cur) {
                 break; // returned early to an already-seen node
             }
@@ -6379,7 +6380,7 @@ pub(super) fn check_loops(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<F
                 severity: Severity::Error,
                 message: format!(
                     "coedge `next` ring does not close over the loop's {} coedges",
-                    lp.coedges.len()
+                    coedges.len()
                 ),
                 entity: Some(lp.id.0.clone()),
             });
@@ -6513,7 +6514,8 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .loops
         .iter()
-        .flat_map(|loop_| loop_.vertex_uses.iter().map(|use_| use_.vertex.0.as_str()))
+        .flat_map(crate::topology::Loop::vertices)
+        .map(|vertex| vertex.0.as_str())
         .collect::<HashSet<_>>();
     let mut wire_owners = HashMap::<&str, usize>::new();
     let mut free_owners = HashMap::<&str, usize>::new();
@@ -6653,11 +6655,21 @@ pub(super) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) 
         let Some(face) = loop_faces.get(loop_.id.0.as_str()) else {
             continue;
         };
-        for vertex_use in &loop_.vertex_uses {
-            faces_by_vertex
-                .entry(vertex_use.vertex.0.as_str())
-                .or_default()
-                .insert(*face);
+        match &loop_.boundary {
+            crate::topology::LoopBoundary::Vertex { vertex, .. } => {
+                faces_by_vertex
+                    .entry(vertex.0.as_str())
+                    .or_default()
+                    .insert(*face);
+            }
+            crate::topology::LoopBoundary::Ring { vertex_uses, .. } => {
+                for vertex_use in vertex_uses {
+                    faces_by_vertex
+                        .entry(vertex_use.vertex.0.as_str())
+                        .or_default()
+                        .insert(*face);
+                }
+            }
         }
     }
     let mut neighbors = HashMap::<&str, HashSet<&str>>::new();

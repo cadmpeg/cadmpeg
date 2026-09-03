@@ -36,7 +36,7 @@ fn closed_cylinder_gets_derived_seam() {
         .unwrap();
 
     assert_eq!(result.ir().model.faces[0].loops.len(), 1);
-    assert_eq!(result.ir().model.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir().model.loops[0].coedges().len(), 4);
     assert_eq!(result.ir().model.pcurves.len(), 4);
     assert!(result
         .ir()
@@ -130,7 +130,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         .unwrap();
 
     assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.loops[0].coedges.len(), 1);
+    assert_eq!(decoded.ir().model.loops[0].coedges().len(), 1);
     let edge = &decoded.ir().model.edges[0];
     assert_eq!(edge.start, edge.end);
     let vertex = decoded
@@ -290,7 +290,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.points.len(), 3);
-    assert_eq!(result.ir().model.loops[0].coedges.len(), 4);
+    assert_eq!(result.ir().model.loops[0].coedges().len(), 4);
     assert_eq!(result.ir().model.pcurves.len(), 4);
     let pole = result
         .ir()

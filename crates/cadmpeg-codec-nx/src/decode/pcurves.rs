@@ -3625,8 +3625,10 @@ mod tests {
             id: loop_id,
             face: face_id,
             boundary_role: LoopBoundaryRole::default(),
-            coedges: vec![CoedgeId("nx:s0:fin#0".into())],
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: vec![CoedgeId("nx:s0:fin#0".into())],
+                vertex_uses: Vec::new(),
+            },
         });
         ir.model.edges.push(Edge {
             id: edge_id,

@@ -314,8 +314,10 @@ fn add_face(
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary_role: LoopBoundaryRole::Outer,
-        coedges: coedge_ids,
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+            coedges: coedge_ids,
+            vertex_uses: Vec::new(),
+        },
     });
     model.faces.push(Face {
         id: face_id.clone(),
@@ -495,8 +497,10 @@ fn add_cylindrical_patch_face(
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary_role: LoopBoundaryRole::Outer,
-        coedges: coedge_ids,
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+            coedges: coedge_ids,
+            vertex_uses: Vec::new(),
+        },
     });
     model.faces.push(Face {
         id: face_id.clone(),

@@ -170,8 +170,7 @@ pub enum LoopBoundaryRole {
 }
 
 /// A closed boundary of a face, expressed as an ordered ring of coedges or one
-/// vertex use at a surface singularity. The ordering in `coedges` is the ring
-/// order; each coedge's `next` should point to the following entry.
+/// vertex use at a surface singularity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Loop {
@@ -182,12 +181,10 @@ pub struct Loop {
     /// Boundary role within the owning face.
     #[serde(default)]
     pub boundary_role: LoopBoundaryRole,
-    /// Coedges in ring order for an edge loop.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub coedges: Vec<CoedgeId>,
-    /// Ordered pole-vertex occurrences within the cyclic loop traversal.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vertex_uses: Vec<VertexUse>,
+    /// Vertex-only or coedge-ring boundary.
+    #[serde(flatten, with = "loop_boundary_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "LoopBoundarySchemaWire"))]
+    pub boundary: LoopBoundary,
 }
 
 /// One ordered parameter-space representation of a coedge.
@@ -204,18 +201,239 @@ pub struct PcurveUse {
     pub parameter_range: Option<[f64; 2]>,
 }
 
-/// One pole-vertex occurrence in a loop traversal.
+/// The mutually exclusive forms of a loop boundary.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum LoopBoundary {
+    /// One unanchored vertex at a surface singularity.
+    Vertex {
+        /// Referenced pole vertex.
+        vertex: VertexId,
+        /// Ordered parameter-space images associated with the pole.
+        pcurves: Vec<PcurveUse>,
+    },
+    /// An ordered coedge ring and its anchored pole occurrences.
+    Ring {
+        /// Coedges in ring order.
+        coedges: Vec<CoedgeId>,
+        /// Ordered pole-vertex occurrences within the cyclic traversal.
+        vertex_uses: Vec<AnchoredVertexUse>,
+    },
+}
+
+impl Loop {
+    /// Returns the ordered coedges when this is a ring boundary.
+    #[must_use]
+    pub fn coedges(&self) -> &[CoedgeId] {
+        match &self.boundary {
+            LoopBoundary::Vertex { .. } => &[],
+            LoopBoundary::Ring { coedges, .. } => coedges,
+        }
+    }
+
+    /// Returns the anchored vertex uses when this is a ring boundary.
+    #[must_use]
+    pub fn anchored_vertex_uses(&self) -> &[AnchoredVertexUse] {
+        match &self.boundary {
+            LoopBoundary::Vertex { .. } => &[],
+            LoopBoundary::Ring { vertex_uses, .. } => vertex_uses,
+        }
+    }
+
+    /// Returns mutable ring members when this is a ring boundary.
+    pub fn ring_mut(&mut self) -> Option<(&mut Vec<CoedgeId>, &mut Vec<AnchoredVertexUse>)> {
+        match &mut self.boundary {
+            LoopBoundary::Vertex { .. } => None,
+            LoopBoundary::Ring {
+                coedges,
+                vertex_uses,
+            } => Some((coedges, vertex_uses)),
+        }
+    }
+
+    /// Returns the singular vertex and its parameter-space images.
+    #[must_use]
+    pub fn singular_vertex(&self) -> Option<(&VertexId, &[PcurveUse])> {
+        match &self.boundary {
+            LoopBoundary::Vertex { vertex, pcurves } => Some((vertex, pcurves)),
+            LoopBoundary::Ring { .. } => None,
+        }
+    }
+
+    /// Iterates over every vertex referenced directly by this boundary.
+    pub fn vertices(&self) -> impl Iterator<Item = &VertexId> {
+        let (singular, anchored) = match &self.boundary {
+            LoopBoundary::Vertex { vertex, .. } => (Some(vertex), &[][..]),
+            LoopBoundary::Ring { vertex_uses, .. } => (None, vertex_uses.as_slice()),
+        };
+        singular
+            .into_iter()
+            .chain(anchored.iter().map(|use_| &use_.vertex))
+    }
+
+    /// Iterates over every parameter-space image attached to a boundary vertex.
+    pub fn vertex_pcurves(&self) -> impl Iterator<Item = &PcurveUse> {
+        let (singular, anchored) = match &self.boundary {
+            LoopBoundary::Vertex { pcurves, .. } => (Some(pcurves.as_slice()), &[][..]),
+            LoopBoundary::Ring { vertex_uses, .. } => (None, vertex_uses.as_slice()),
+        };
+        singular
+            .into_iter()
+            .flatten()
+            .chain(anchored.iter().flat_map(|use_| use_.pcurves.iter()))
+    }
+
+    /// Iterates over boundary vertices with their optional ring anchor and pcurves.
+    pub fn vertex_occurrences(
+        &self,
+    ) -> impl Iterator<Item = (&VertexId, Option<&CoedgeId>, &[PcurveUse])> {
+        let (singular, anchored) = match &self.boundary {
+            LoopBoundary::Vertex { vertex, pcurves } => {
+                (Some((vertex, pcurves.as_slice())), &[][..])
+            }
+            LoopBoundary::Ring { vertex_uses, .. } => (None, vertex_uses.as_slice()),
+        };
+        singular
+            .into_iter()
+            .map(|(vertex, pcurves)| (vertex, None, pcurves))
+            .chain(
+                anchored
+                    .iter()
+                    .map(|use_| (&use_.vertex, Some(&use_.after), use_.pcurves.as_slice())),
+            )
+    }
+}
+
+/// One pole-vertex occurrence anchored after a coedge in a ring traversal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct VertexUse {
+pub struct AnchoredVertexUse {
     /// Referenced pole vertex.
     pub vertex: VertexId,
-    /// Preceding coedge in the cyclic traversal, absent for a vertex-only loop.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub after: Option<CoedgeId>,
+    /// Preceding coedge in the cyclic traversal.
+    pub after: CoedgeId,
     /// Ordered parameter-space images associated with this pole occurrence.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the loop boundary wire schema")]
+struct LoopBoundarySchemaWire {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    coedges: Vec<CoedgeId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    vertex_uses: Vec<LoopVertexUseSchemaWire>,
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the loop vertex-use wire schema")]
+struct LoopVertexUseSchemaWire {
+    vertex: VertexId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    after: Option<CoedgeId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pcurves: Vec<PcurveUse>,
+}
+
+mod loop_boundary_wire {
+    use super::{AnchoredVertexUse, CoedgeId, LoopBoundary, PcurveUse, VertexId};
+    use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        coedges: Vec<CoedgeId>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        vertex_uses: Vec<VertexUseWire>,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct VertexUseWire {
+        vertex: VertexId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        after: Option<CoedgeId>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pcurves: Vec<PcurveUse>,
+    }
+
+    pub fn serialize<S>(value: &LoopBoundary, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = match value {
+            LoopBoundary::Vertex { vertex, pcurves } => Wire {
+                coedges: Vec::new(),
+                vertex_uses: vec![VertexUseWire {
+                    vertex: vertex.clone(),
+                    after: None,
+                    pcurves: pcurves.clone(),
+                }],
+            },
+            LoopBoundary::Ring {
+                coedges,
+                vertex_uses,
+            } => Wire {
+                coedges: coedges.clone(),
+                vertex_uses: vertex_uses
+                    .iter()
+                    .map(|vertex_use| VertexUseWire {
+                        vertex: vertex_use.vertex.clone(),
+                        after: Some(vertex_use.after.clone()),
+                        pcurves: vertex_use.pcurves.clone(),
+                    })
+                    .collect(),
+            },
+        };
+        wire.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<LoopBoundary, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        if wire.coedges.is_empty() {
+            let [vertex_use] = <[VertexUseWire; 1]>::try_from(wire.vertex_uses).map_err(|_| {
+                D::Error::custom("loop vertex_uses must contain one item when coedges is empty")
+            })?;
+            if vertex_use.after.is_some() {
+                return Err(D::Error::custom(
+                    "loop vertex use must omit after when coedges is empty",
+                ));
+            }
+            return Ok(LoopBoundary::Vertex {
+                vertex: vertex_use.vertex,
+                pcurves: vertex_use.pcurves,
+            });
+        }
+
+        let vertex_uses = wire
+            .vertex_uses
+            .into_iter()
+            .map(|vertex_use| {
+                let after = vertex_use
+                    .after
+                    .ok_or_else(|| D::Error::custom("loop ring vertex use must include after"))?;
+                if !wire.coedges.contains(&after) {
+                    return Err(D::Error::custom(
+                        "loop ring vertex use after must name a coedge in the ring",
+                    ));
+                }
+                Ok(AnchoredVertexUse {
+                    vertex: vertex_use.vertex,
+                    after,
+                    pcurves: vertex_use.pcurves,
+                })
+            })
+            .collect::<Result<_, D::Error>>()?;
+        Ok(LoopBoundary::Ring {
+            coedges: wire.coedges,
+            vertex_uses,
+        })
+    }
 }
 
 /// One use of an edge by a loop.
@@ -371,7 +589,7 @@ pub struct Point {
 
 #[cfg(test)]
 mod tests {
-    use super::{Coedge, CoedgeUseCurve};
+    use super::{Coedge, CoedgeUseCurve, Loop, LoopBoundary};
 
     fn coedge_json() -> serde_json::Value {
         serde_json::json!({
@@ -412,5 +630,62 @@ mod tests {
             .unwrap()
             .remove("use_curve_parameter_range");
         assert!(serde_json::from_value::<Coedge>(json).is_err());
+    }
+
+    #[test]
+    fn vertex_loop_preserves_the_flat_wire_fields() {
+        let json = serde_json::json!({
+            "id": "test:model:loop#0",
+            "face": "test:model:face#0",
+            "boundary_role": "outer",
+            "vertex_uses": [{ "vertex": "test:model:vertex#0" }]
+        });
+        let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
+        assert!(matches!(
+            loop_.boundary,
+            LoopBoundary::Vertex { ref vertex, ref pcurves }
+                if vertex.0 == "test:model:vertex#0" && pcurves.is_empty()
+        ));
+        assert_eq!(serde_json::to_value(loop_).unwrap(), json);
+    }
+
+    #[test]
+    fn ring_loop_preserves_the_flat_wire_fields() {
+        let json = serde_json::json!({
+            "id": "test:model:loop#0",
+            "face": "test:model:face#0",
+            "boundary_role": "outer",
+            "coedges": ["test:model:coedge#0"],
+            "vertex_uses": [{
+                "vertex": "test:model:vertex#0",
+                "after": "test:model:coedge#0"
+            }]
+        });
+        let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
+        assert!(matches!(loop_.boundary, LoopBoundary::Ring { .. }));
+        assert_eq!(serde_json::to_value(loop_).unwrap(), json);
+    }
+
+    #[test]
+    fn loop_boundary_rejects_split_wire_forms() {
+        let vertex_only_with_anchor = serde_json::json!({
+            "id": "test:model:loop#0",
+            "face": "test:model:face#0",
+            "boundary_role": "outer",
+            "vertex_uses": [{
+                "vertex": "test:model:vertex#0",
+                "after": "test:model:coedge#0"
+            }]
+        });
+        assert!(serde_json::from_value::<Loop>(vertex_only_with_anchor).is_err());
+
+        let ring_without_anchor = serde_json::json!({
+            "id": "test:model:loop#0",
+            "face": "test:model:face#0",
+            "boundary_role": "outer",
+            "coedges": ["test:model:coedge#0"],
+            "vertex_uses": [{ "vertex": "test:model:vertex#0" }]
+        });
+        assert!(serde_json::from_value::<Loop>(ring_without_anchor).is_err());
     }
 }

@@ -149,10 +149,29 @@ impl Brep {
         for loop_ in &mut self.loops {
             loop_.id.0 = qualify(&loop_.id.0);
             loop_.face.0 = qualify(&loop_.face.0);
-            loop_
-                .coedges
-                .iter_mut()
-                .for_each(|id| id.0 = qualify(&id.0));
+            match &mut loop_.boundary {
+                cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, pcurves } => {
+                    vertex.0 = qualify(&vertex.0);
+                    for pcurve in pcurves {
+                        pcurve.pcurve.0 = qualify(&pcurve.pcurve.0);
+                    }
+                }
+                cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges,
+                    vertex_uses,
+                } => {
+                    for id in coedges {
+                        id.0 = qualify(&id.0);
+                    }
+                    for vertex_use in vertex_uses {
+                        vertex_use.vertex.0 = qualify(&vertex_use.vertex.0);
+                        vertex_use.after.0 = qualify(&vertex_use.after.0);
+                        for pcurve in &mut vertex_use.pcurves {
+                            pcurve.pcurve.0 = qualify(&pcurve.pcurve.0);
+                        }
+                    }
+                }
+            }
         }
         for coedge in &mut self.coedges {
             coedge.id.0 = qualify(&coedge.id.0);
@@ -1540,8 +1559,10 @@ fn decode_graph(
                 id: LoopId(id_loop(*loop_attr)),
                 face: FaceId(id_face(f.bridge_attr)),
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                coedges,
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges,
+                    vertex_uses: Vec::new(),
+                },
             });
         }
     }
@@ -2092,7 +2113,7 @@ fn prune_rejected_topology(out: &mut Brep) {
     let kept_coedges = out
         .loops
         .iter()
-        .flat_map(|loop_| &loop_.coedges)
+        .flat_map(|loop_| loop_.coedges())
         .cloned()
         .collect::<HashSet<_>>();
     out.coedges
@@ -4789,13 +4810,13 @@ fn synthesize_cylinder_seams(
         let Some(b) = loops.get(&face.loops[1]) else {
             continue;
         };
-        if a.coedges.len() != 1 || b.coedges.len() != 1 {
+        if a.coedges().len() != 1 || b.coedges().len() != 1 {
             continue;
         }
-        let Some(ca) = coedges.get(&a.coedges[0]) else {
+        let Some(ca) = coedges.get(&a.coedges()[0]) else {
             continue;
         };
-        let Some(cb) = coedges.get(&b.coedges[0]) else {
+        let Some(cb) = coedges.get(&b.coedges()[0]) else {
             continue;
         };
         let Some(ea) = edges.get(&ca.edge) else {
@@ -4925,7 +4946,9 @@ fn synthesize_cylinder_seams(
             }
         }
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_a) {
-            lp.coedges = ring.to_vec();
+            if let Some((coedges, _)) = lp.ring_mut() {
+                *coedges = ring.to_vec();
+            }
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
             face.loops = vec![loop_a];
@@ -4948,7 +4971,7 @@ fn synthesize_sphere_seams(
     let loop_coedges = out
         .loops
         .iter()
-        .map(|lp| (&lp.id, &lp.coedges))
+        .map(|lp| (&lp.id, lp.coedges()))
         .collect::<HashMap<_, _>>();
     let coedge_edges = out
         .coedges
@@ -5090,10 +5113,10 @@ fn synthesize_sphere_seams(
         let Some(lp) = loops.get(&face.loops[0]) else {
             continue;
         };
-        if lp.coedges.len() != 3 {
+        if lp.coedges().len() != 3 {
             continue;
         }
-        let all_circles = lp.coedges.iter().all(|id| {
+        let all_circles = lp.coedges().iter().all(|id| {
             coedges
                 .get(id)
                 .and_then(|coedge| edges.get(&coedge.edge))
@@ -5114,7 +5137,7 @@ fn synthesize_sphere_seams(
                 center.z + radius * axis.z,
             );
             let mut pole_vertices = lp
-                .coedges
+                .coedges()
                 .iter()
                 .filter_map(|id| coedges.get(id))
                 .filter_map(|coedge| edges.get(&coedge.edge))
@@ -5135,7 +5158,7 @@ fn synthesize_sphere_seams(
                 face_index,
                 face.id.clone(),
                 lp.id.clone(),
-                lp.coedges.clone(),
+                lp.coedges().to_vec(),
                 seam_point,
                 pole_vertices.first().cloned(),
             ));
@@ -5228,7 +5251,9 @@ fn synthesize_sphere_seams(
             }
         }
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_id) {
-            lp.coedges = ring;
+            if let Some((coedges, _)) = lp.ring_mut() {
+                *coedges = ring;
+            }
         }
     }
 }
@@ -5786,8 +5811,10 @@ mod tests {
             id: LoopId(id.into()),
             face: FaceId(face.into()),
             boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: vec![CoedgeId(coedge.into())],
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: vec![CoedgeId(coedge.into())],
+                vertex_uses: Vec::new(),
+            },
         };
         let coedge = |id: &str, lp: &str, radial: &str, sense| Coedge {
             id: CoedgeId(id.into()),
@@ -6492,8 +6519,10 @@ mod tests {
                 id: loop_id.clone(),
                 face: FaceId("face".into()),
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::default(),
-                coedges: vec![coedge_id.clone()],
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: vec![coedge_id.clone()],
+                    vertex_uses: Vec::new(),
+                },
             }],
             coedges: vec![Coedge {
                 id: coedge_id,

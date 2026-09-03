@@ -201,12 +201,10 @@ fn wire_and_free_topology_negative_cases_are_reported() {
 fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
     let mut ir = unit_cube();
     let vertex = ir.model.vertices[0].id.clone();
-    ir.model.loops[0].coedges.clear();
-    ir.model.loops[0].vertex_uses = vec![crate::topology::VertexUse {
+    ir.model.loops[0].boundary = crate::topology::LoopBoundary::Vertex {
         vertex: vertex.clone(),
-        after: None,
         pcurves: Vec::new(),
-    }];
+    };
     ir.model.shells[0].free_vertices.push(vertex.clone());
     let mut second_shell = ir.model.shells[0].clone();
     second_shell.id.0 = "synthetic:test:shell#second".into();
@@ -264,12 +262,10 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
         id: loop_id.clone(),
         face: face_id,
         boundary_role: crate::topology::LoopBoundaryRole::Inner,
-        coedges: Vec::new(),
-        vertex_uses: vec![crate::topology::VertexUse {
+        boundary: crate::topology::LoopBoundary::Vertex {
             vertex: vertex_id,
-            after: None,
             pcurves: Vec::new(),
-        }],
+        },
     });
     ir.model.faces[0].loops.push(loop_id.clone());
     ir.model.finalize();
@@ -293,17 +289,4 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
         .find(|loop_| loop_.id == loop_id)
         .unwrap()
         .boundary_role = crate::topology::LoopBoundaryRole::Inner;
-
-    let coedge = ir.model.loops[0].coedges[0].clone();
-    ir.model
-        .loops
-        .iter_mut()
-        .find(|loop_| loop_.id == loop_id)
-        .unwrap()
-        .coedges
-        .push(coedge);
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.check == Check::LoopClosure && finding.entity.as_deref() == Some(loop_id.0.as_str())
-    }));
 }

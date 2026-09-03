@@ -24,7 +24,7 @@ pub(crate) fn decode_and_write_singular_vertex_loops() {
         .model
         .loops
         .iter()
-        .all(|loop_| loop_.coedges.is_empty() && loop_.vertex_uses.len() == 1));
+        .all(|loop_| loop_.singular_vertex().is_some()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let mut encoded = Vec::new();

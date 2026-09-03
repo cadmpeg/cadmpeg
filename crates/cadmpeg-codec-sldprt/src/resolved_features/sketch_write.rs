@@ -194,8 +194,10 @@ pub(super) fn sketch_brep(
             id: loop_id,
             face: face_id.clone(),
             boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: coedge_ids,
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: coedge_ids,
+                vertex_uses: Vec::new(),
+            },
         });
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
@@ -240,8 +242,10 @@ pub(super) fn sketch_brep(
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: vec![coedge_id],
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: vec![coedge_id],
+                vertex_uses: Vec::new(),
+            },
         });
         face_loops.push(loop_id);
     }

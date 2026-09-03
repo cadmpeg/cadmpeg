@@ -15,8 +15,8 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell,
-    Vertex, VertexUse,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region,
+    Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::Exactness;
@@ -249,7 +249,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             .loops
             .iter()
             .filter_map(|id| loop_indices.get(id))
-            .flat_map(|index| &ir.model.loops[*index].coedges)
+            .flat_map(|index| ir.model.loops[*index].coedges())
             .filter_map(|id| coedge_indices.get(id))
             .filter_map(|index| edge_indices.get(&ir.model.coedges[*index].edge))
             .collect::<Vec<_>>();
@@ -480,8 +480,10 @@ mod consolidated_revolution_binding_tests {
                 id: loop_id.clone(),
                 face,
                 boundary_role: LoopBoundaryRole::Unspecified,
-                coedges: vec![coedge.clone()],
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: vec![coedge.clone()],
+                    vertex_uses: Vec::new(),
+                },
             });
             ir.model.coedges.push(Coedge {
                 id: coedge.clone(),
@@ -4991,16 +4993,16 @@ fn emit_standard_topology(
                     ))
                 })
                 .collect();
-            let vertex_uses: Vec<VertexUse> = boundary
+            let vertex_uses: Vec<AnchoredVertexUse> = boundary
                 .coedges
                 .iter()
                 .enumerate()
-                .map(|(coedge_index, edge_use)| VertexUse {
+                .map(|(coedge_index, edge_use)| AnchoredVertexUse {
                     vertex: VertexId(format!(
                         "catia:standard:v#{}",
                         point_assignment[edge_use.end_vertex]
                     )),
-                    after: Some(coedge_ids[coedge_index].clone()),
+                    after: coedge_ids[coedge_index].clone(),
                     pcurves: Vec::new(),
                 })
                 .collect();
@@ -5115,8 +5117,10 @@ fn emit_standard_topology(
                 id: loop_id.clone(),
                 face: FaceId(format!("catia:standard:face#{face_index}")),
                 boundary_role,
-                coedges: coedge_ids,
-                vertex_uses,
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: coedge_ids,
+                    vertex_uses,
+                },
             });
             ir.model.faces[face_index].loops.push(loop_id);
         }
@@ -6706,7 +6710,7 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
                 .loops
                 .iter()
                 .filter_map(|id| loops.get(id))
-                .flat_map(|loop_| &loop_.coedges)
+                .flat_map(|loop_| loop_.coedges())
                 .filter_map(|id| coedges.get(id))
                 .filter_map(|coedge| edges.get(&coedge.edge))
             {

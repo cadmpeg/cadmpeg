@@ -82,8 +82,10 @@ fn edgeless_doc() -> CadIr {
         id: LoopId("lp0".into()),
         face: FaceId("f0".into()),
         boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-        coedges: vec![CoedgeId("ce0".into())],
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+            coedges: vec![CoedgeId("ce0".into())],
+            vertex_uses: Vec::new(),
+        },
     });
     ir.model.faces.push(Face {
         id: FaceId("f0".into()),
@@ -293,8 +295,8 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
         .model
         .loops
         .iter()
-        .find(|loop_| loop_.coedges.len() >= 3)
-        .and_then(|loop_| loop_.coedges.first())
+        .find(|loop_| loop_.coedges().len() >= 3)
+        .and_then(|loop_| loop_.coedges().first())
         .and_then(|coedge_id| {
             source
                 .model

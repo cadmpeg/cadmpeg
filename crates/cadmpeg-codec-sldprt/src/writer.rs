@@ -835,7 +835,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .loops
         .iter()
-        .flat_map(|loop_| loop_.coedges.iter().cloned())
+        .flat_map(|loop_| loop_.coedges().iter().cloned())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -2557,7 +2557,7 @@ pub(crate) fn brep_body(
         for value in [
             0,
             coedges[lp
-                .coedges
+                .coedges()
                 .first()
                 .ok_or_else(|| CodecError::Malformed("empty loop".into()))?],
             faces[&lp.face],

@@ -1739,8 +1739,10 @@ fn plane_face_draft(
             } else {
                 LoopBoundaryRole::Inner
             },
-            coedges: vec![coedge_id],
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: vec![coedge_id],
+                vertex_uses: Vec::new(),
+            },
         });
         loop_ids.push(loop_id);
     }

@@ -16,8 +16,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
-    VertexUse,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundary, PcurveUse, Point,
+    Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -868,11 +868,7 @@ pub(super) fn project(
                                     "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
                                 ),
                             );
-                            loop_vertex_uses.push(VertexUse {
-                                vertex,
-                                after,
-                                pcurves: projected,
-                            });
+                            loop_vertex_uses.push((vertex, after, projected));
                             continue;
                         };
                         let edge_definition = edge_lists[edge_list][*edge_index];
@@ -1034,6 +1030,44 @@ pub(super) fn project(
                     if !valid {
                         break;
                     }
+                    let boundary = if coedge_ids.is_empty() {
+                        let [(vertex, None, pcurves)] = loop_vertex_uses.as_slice() else {
+                            losses.push(entity_loss(
+                                entry,
+                                "vertex-only loop does not contain exactly one unanchored vertex",
+                            ));
+                            valid = false;
+                            break;
+                        };
+                        LoopBoundary::Vertex {
+                            vertex: vertex.clone(),
+                            pcurves: pcurves.clone(),
+                        }
+                    } else {
+                        let Some(vertex_uses) = loop_vertex_uses
+                            .into_iter()
+                            .map(|(vertex, after, pcurves)| {
+                                let after = after?;
+                                coedge_ids.contains(&after).then_some(AnchoredVertexUse {
+                                    vertex,
+                                    after,
+                                    pcurves,
+                                })
+                            })
+                            .collect::<Option<Vec<_>>>()
+                        else {
+                            losses.push(entity_loss(
+                                entry,
+                                "edge loop contains an unanchored vertex use",
+                            ));
+                            valid = false;
+                            break;
+                        };
+                        LoopBoundary::Ring {
+                            coedges: coedge_ids,
+                            vertex_uses,
+                        }
+                    };
                     candidate.model_mut().loops.push(Loop {
                         id: loop_id.clone(),
                         face: face_id.clone(),
@@ -1044,8 +1078,7 @@ pub(super) fn project(
                         } else {
                             cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
                         },
-                        coedges: coedge_ids,
-                        vertex_uses: loop_vertex_uses,
+                        boundary,
                     });
                     face_loops.push(loop_id);
                     consumed.insert(loop_sequence);

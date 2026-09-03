@@ -48,12 +48,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .coedges
         .iter()
         .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
-        .chain(ir.model.loops.iter().flat_map(|loop_| {
-            loop_
-                .vertex_uses
+        .chain(
+            ir.model
+                .loops
                 .iter()
-                .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.as_str()))
-        }))
+                .flat_map(crate::topology::Loop::vertex_pcurves)
+                .map(|pcurve| pcurve.pcurve.0.as_str()),
+        )
         .collect::<HashSet<_>>();
     for surface in &ir.model.procedural_surfaces {
         if let ProceduralSurfaceDefinition::CurveBounded {

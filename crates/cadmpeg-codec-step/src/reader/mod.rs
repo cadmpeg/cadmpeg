@@ -676,12 +676,12 @@ fn retain_unowned_carriers(
         .coedges
         .iter()
         .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.clone()))
-        .chain(ir.model.loops.iter().flat_map(|loop_| {
-            loop_
-                .vertex_uses
+        .chain(
+            ir.model
+                .loops
                 .iter()
-                .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.clone()))
-        }))
+                .flat_map(|loop_| loop_.vertex_pcurves().map(|pcurve| pcurve.pcurve.0.clone())),
+        )
         .chain(
             ir.model
                 .procedural_surfaces

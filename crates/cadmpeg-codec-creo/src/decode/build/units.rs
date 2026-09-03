@@ -1194,10 +1194,8 @@ fn pcurve_scales(ir: &CadIr, length_scale_mm: f64) -> BTreeMap<PcurveId, [f64; 2
             continue;
         };
         let scales = surface_parameter_scales(&surface.geometry, length_scale_mm);
-        for vertex_use in &loop_record.vertex_uses {
-            for use_record in &vertex_use.pcurves {
-                observe_pcurve_scale(&mut candidates, &use_record.pcurve, scales);
-            }
+        for use_record in loop_record.vertex_pcurves() {
+            observe_pcurve_scale(&mut candidates, &use_record.pcurve, scales);
         }
     }
     candidates

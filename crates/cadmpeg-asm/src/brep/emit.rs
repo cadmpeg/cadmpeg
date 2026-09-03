@@ -3829,8 +3829,10 @@ pub(crate) fn emit_loops(
                 id: LoopId(id(format, i)),
                 face: FaceId(id(format, owner)),
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                coedges,
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges,
+                    vertex_uses: Vec::new(),
+                },
             });
         }
     }

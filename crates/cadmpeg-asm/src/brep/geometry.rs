@@ -1062,7 +1062,7 @@ pub(crate) fn classify_body_kinds(out: &mut AsmBrep) {
         let Some(body) = loop_bodies.get(&loop_.id) else {
             continue;
         };
-        for coedge in &loop_.coedges {
+        for coedge in loop_.coedges() {
             coedge_bodies.insert(coedge.clone(), body.clone());
         }
     }

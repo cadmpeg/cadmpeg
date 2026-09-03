@@ -579,12 +579,10 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         id: inner.clone(),
         face: face.clone(),
         boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Inner,
-        coedges: Vec::new(),
-        vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
+        boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
             vertex,
-            after: None,
             pcurves: Vec::new(),
-        }],
+        },
     });
     ir.model.faces[0].loops.push(inner);
     let output = export(&ir);
@@ -662,12 +660,10 @@ fn duplicate_face_outer_bounds_reject_the_containing_topology_in_any_order() {
             id: duplicate.clone(),
             face,
             boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-            coedges: Vec::new(),
-            vertex_uses: vec![cadmpeg_ir::topology::VertexUse {
+            boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
                 vertex: ir.model.vertices[0].id.clone(),
-                after: None,
                 pcurves: Vec::new(),
-            }],
+            },
         });
         if duplicate_first {
             ir.model.faces[0].loops.insert(0, duplicate);

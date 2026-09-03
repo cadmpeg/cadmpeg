@@ -260,8 +260,8 @@ fn same_graph(ir: &CadIr, native: &crate::brep::Brep) -> bool {
             .model
             .loops
             .iter()
-            .map(|v| (&v.id, &v.face, &v.coedges))
-            .eq(native.loops.iter().map(|v| (&v.id, &v.face, &v.coedges)))
+            .map(|v| (&v.id, &v.face, v.coedges()))
+            .eq(native.loops.iter().map(|v| (&v.id, &v.face, v.coedges())))
         && ir
             .model
             .coedges

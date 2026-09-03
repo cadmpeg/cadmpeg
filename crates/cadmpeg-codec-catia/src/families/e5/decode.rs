@@ -14,7 +14,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex, VertexUse,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell,
+    Vertex,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -1773,9 +1774,9 @@ fn emit_e5_faces_loops_coedges(
                     } else {
                         edge.end_vertex
                     };
-                    Some(VertexUse {
+                    Some(AnchoredVertexUse {
                         vertex: vertex_for_ref.get(&endpoint_ref)?.clone(),
-                        after: Some(coedge_ids_by_member[member.serialized_index].clone()),
+                        after: coedge_ids_by_member[member.serialized_index].clone(),
                         pcurves: Vec::new(),
                     })
                 })
@@ -1803,8 +1804,10 @@ fn emit_e5_faces_loops_coedges(
                 } else {
                     cadmpeg_ir::topology::LoopBoundaryRole::Inner
                 },
-                coedges: coedge_ids.clone(),
-                vertex_uses,
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: coedge_ids.clone(),
+                    vertex_uses,
+                },
             });
             for (position, member) in members.iter().enumerate() {
                 let index = member.serialized_index;
@@ -3520,14 +3523,11 @@ mod route_tests {
             ir.model.coedges[0].pcurves[0].parameter_range,
             Some([1.0, 0.0])
         );
-        let [vertex_use] = ir.model.loops[0].vertex_uses.as_slice() else {
+        let [vertex_use] = ir.model.loops[0].anchored_vertex_uses() else {
             panic!("E5 edge emission must retain one vertex use");
         };
         assert_eq!(vertex_use.vertex, VertexId("catia:e5:v#1".to_string()));
-        assert_eq!(
-            vertex_use.after.as_ref().map(|id| id.0.as_str()),
-            Some("catia:e5:coedge#2-0")
-        );
+        assert_eq!(vertex_use.after.0.as_str(), "catia:e5:coedge#2-0");
     }
 
     #[test]

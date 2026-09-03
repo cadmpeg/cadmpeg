@@ -1226,13 +1226,16 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
 #[test]
 fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     let mut source = unit_cube();
-    source
+    let loop_ = source
         .model
         .loops
         .iter_mut()
-        .find(|loop_| loop_.coedges.len() >= 3)
-        .expect("unit cube has an edge loop")
-        .coedges
+        .find(|loop_| loop_.coedges().len() >= 3)
+        .expect("unit cube has an edge loop");
+    loop_
+        .ring_mut()
+        .expect("selected loop is a ring")
+        .0
         .swap(0, 1);
 
     let mut bytes = Vec::new();

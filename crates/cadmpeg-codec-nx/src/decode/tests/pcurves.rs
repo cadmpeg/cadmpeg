@@ -1069,8 +1069,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             id: loops[index].clone(),
             face: faces[index].clone(),
             boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: vec![coedges[index].clone()],
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: vec![coedges[index].clone()],
+                vertex_uses: Vec::new(),
+            },
         });
         ir.model.coedges.push(Coedge {
             id: coedges[index].clone(),

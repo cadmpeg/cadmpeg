@@ -732,8 +732,10 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             id: LoopId(id(FORMAT, 4)),
             face: FaceId("face".into()),
             boundary_role: LoopBoundaryRole::Unspecified,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: Vec::new(),
+                vertex_uses: Vec::new(),
+            },
         }],
         ..AsmBrep::default()
     };

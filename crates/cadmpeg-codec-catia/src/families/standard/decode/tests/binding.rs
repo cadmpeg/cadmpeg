@@ -839,7 +839,7 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
         let [loop_] = ir.model.loops.as_slice() else {
             panic!("standard edge emission must create one loop");
         };
-        let [vertex_use] = loop_.vertex_uses.as_slice() else {
+        let [vertex_use] = loop_.anchored_vertex_uses() else {
             panic!("standard edge emission must retain one vertex use");
         };
         assert_eq!(
@@ -848,9 +848,7 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
         );
         assert_eq!(
             vertex_use.after,
-            Some(cadmpeg_ir::ids::CoedgeId(
-                "catia:standard:coedge#0:0:0".to_string()
-            ))
+            cadmpeg_ir::ids::CoedgeId("catia:standard:coedge#0:0:0".to_string())
         );
 
         let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {

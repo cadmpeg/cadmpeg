@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell, VertexUse,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -495,15 +495,15 @@ pub(super) fn emit_faces(
                 .iter()
                 .map(|member| coedge_ids_by_member[*member].clone())
                 .collect();
-            let vertex_uses: Vec<VertexUse> = member_order
+            let vertex_uses: Vec<AnchoredVertexUse> = member_order
                 .iter()
                 .map(|&member| {
                     let edge = loop_.edges[member];
                     let endpoints = graph.edge_vertices[&edge];
                     let endpoint = endpoints[1 - usize::from(senses[member])];
-                    VertexUse {
+                    AnchoredVertexUse {
                         vertex: VertexId(format!("catia:b5:vertex#{endpoint}")),
-                        after: Some(coedge_ids_by_member[member].clone()),
+                        after: coedge_ids_by_member[member].clone(),
                         pcurves: Vec::new(),
                     }
                 })
@@ -530,8 +530,10 @@ pub(super) fn emit_faces(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary_role,
-                coedges: coedge_ids.clone(),
-                vertex_uses,
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: coedge_ids.clone(),
+                    vertex_uses,
+                },
             });
             for (position, &member) in member_order.iter().enumerate() {
                 let edge = loop_.edges[member];
