@@ -1139,27 +1139,26 @@ pub(crate) fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
 }
 
 /// Path-specific source attributes supplied to the single metadata builder.
-pub(crate) enum SourceMetaDetail {
+pub(crate) enum SourceMetaDetail<'a> {
+    /// Facts available from the flat V1 archive.
+    FlatLegacyArchive,
     /// Facts reported only by container inspection.
-    ContainerOnly,
+    ContainerOnly(&'a Scan<'a>),
     /// Facts reported only after full decoding.
-    Full(BTreeMap<String, String>),
+    Full {
+        scan: &'a Scan<'a>,
+        attributes: BTreeMap<String, String>,
+    },
 }
 
 /// Builds source metadata; `primary` is the one author of the document's identity.
-pub(crate) fn source_meta(
-    scan: &Scan<'_>,
-    primary: DialectMatch,
-    detail: SourceMetaDetail,
-) -> SourceMeta {
-    let mut attributes = BTreeMap::new();
-    attributes.insert(
-        "archive_version".to_string(),
-        scan.archive.value().to_string(),
-    );
-    attributes.insert("container_kind".to_string(), "3dm-chunks".to_string());
-    match detail {
-        SourceMetaDetail::ContainerOnly => {
+pub(crate) fn source_meta(primary: DialectMatch, detail: SourceMetaDetail<'_>) -> SourceMeta {
+    let attributes = match detail {
+        SourceMetaDetail::FlatLegacyArchive => {
+            BTreeMap::from([("archive_version".to_string(), "1".to_string())])
+        }
+        SourceMetaDetail::ContainerOnly(scan) => {
+            let mut attributes = chunked_source_attributes(scan);
             attributes.insert(
                 "comment_offset".to_string(),
                 scan.comment.range.start.to_string(),
@@ -1170,13 +1169,31 @@ pub(crate) fn source_meta(
                 "instance_definition_count".to_string(),
                 scan.definitions.definitions.len().to_string(),
             );
+            attributes
         }
-        SourceMetaDetail::Full(full) => attributes.extend(full),
-    }
+        SourceMetaDetail::Full {
+            scan,
+            attributes: full,
+        } => {
+            let mut attributes = chunked_source_attributes(scan);
+            attributes.extend(full);
+            attributes
+        }
+    };
     SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         attributes,
     )
+}
+
+fn chunked_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (
+            "archive_version".to_string(),
+            scan.archive.value().to_string(),
+        ),
+        ("container_kind".to_string(), "3dm-chunks".to_string()),
+    ])
 }
 
 /// Build an empty current-version IR and a container-only report.
@@ -1205,7 +1222,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     }));
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));
-    ir.source = Some(source_meta(scan, primary, SourceMetaDetail::ContainerOnly));
+    ir.source = Some(source_meta(primary, SourceMetaDetail::ContainerOnly(scan)));
     Decoded {
         ir,
         body: DecodeBody {
