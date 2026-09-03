@@ -20,9 +20,10 @@ use std::io::Cursor;
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() {
+    let kernel = header(None);
     let reportable = [
-        StreamEvidence::AsmBinary(None),
-        StreamEvidence::AcisBinary(None),
+        StreamEvidence::AsmBinary(&kernel),
+        StreamEvidence::AcisBinary(&kernel),
         StreamEvidence::Text(None),
     ]
     .map(|evidence| evidence.dialect());
@@ -61,7 +62,7 @@ fn only_the_acis_kernel_branches_are_banded() {
         };
 
         for asm in [
-            StreamEvidence::AsmBinary(Some(&kernel)),
+            StreamEvidence::AsmBinary(&kernel),
             StreamEvidence::Text(Some(TextEvidence {
                 branch: sat::Terminator::Asm,
                 header: &kernel,
@@ -72,7 +73,7 @@ fn only_the_acis_kernel_branches_are_banded() {
             assert_eq!(kernel.admission(), &Admission::Admitted, "{version:?}");
         }
 
-        let (host, matched) = layers(&StreamEvidence::AcisBinary(Some(&kernel)));
+        let (host, matched) = layers(&StreamEvidence::AcisBinary(&kernel));
         assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
             assert_eq!(matched.admission(), &Admission::Admitted, "{version:?}");
@@ -118,10 +119,14 @@ fn only_the_acis_kernel_branches_are_banded() {
 
 #[test]
 fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
+    let kernel = header(None);
     // The three identified rows are shared by inspect and decode refusal.
     for (evidence, id) in [
-        (StreamEvidence::AsmBinary(None), "sat:asm-binary"),
-        (StreamEvidence::AcisBinary(None), "sat:acis-binary"),
+        (StreamEvidence::UnframedAsmBinary(&kernel), "sat:asm-binary"),
+        (
+            StreamEvidence::UnframedAcisBinary(&kernel),
+            "sat:acis-binary",
+        ),
         (StreamEvidence::Text(None), "sat:text"),
     ] {
         let (matched, _) = layers(&evidence);
@@ -139,12 +144,12 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
     let verified = header(Some(21_800));
     let unverified = header(Some(UNVERIFIED_SAVE_FORMAT));
     for evidence in [
-        StreamEvidence::AsmBinary(Some(&verified)),
-        StreamEvidence::AsmBinary(Some(&unverified)),
-        StreamEvidence::AsmBinary(None),
-        StreamEvidence::AcisBinary(Some(&verified)),
-        StreamEvidence::AcisBinary(Some(&unverified)),
-        StreamEvidence::AcisBinary(None),
+        StreamEvidence::AsmBinary(&verified),
+        StreamEvidence::AsmBinary(&unverified),
+        StreamEvidence::UnframedAsmBinary(&verified),
+        StreamEvidence::AcisBinary(&verified),
+        StreamEvidence::AcisBinary(&unverified),
+        StreamEvidence::UnframedAcisBinary(&verified),
         StreamEvidence::Text(Some(TextEvidence {
             branch: sat::Terminator::Asm,
             header: &unverified,
@@ -172,7 +177,7 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
 fn the_declared_keys_are_pinned() {
     let kernel = header(Some(21_804));
 
-    let binary = classify(&StreamEvidence::AcisBinary(Some(&kernel)))
+    let binary = classify(&StreamEvidence::AcisBinary(&kernel))
         .declared()
         .clone();
     assert_eq!(binary[DECLARED_ENCODING], "binary");
@@ -201,7 +206,7 @@ fn the_declared_keys_are_pinned() {
 
     // An absent save-format word declares no band, which is a different
     // statement from a declaration of zero.
-    let silent = classify(&StreamEvidence::AsmBinary(Some(&header(None))))
+    let silent = classify(&StreamEvidence::AsmBinary(&header(None)))
         .declared()
         .clone();
     assert!(!silent.contains_key(DECLARED_SAVE_FORMAT_MAJOR));

@@ -36,12 +36,8 @@ pub(crate) fn decode_asm_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Decoded, CodecError> {
-    let header = asm_header::parse(bytes).ok_or_else(|| {
-        unsupported_unframed(
-            &StreamEvidence::AsmBinary(None),
-            "ASM binary magic has no parseable header",
-        )
-    })?;
+    let header =
+        asm_header::parse(bytes).expect("StreamKind::AsmBinary guarantees the ASM header magic");
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
@@ -70,7 +66,7 @@ pub(crate) fn decode_asm_binary(
     );
     let mut attributes = BTreeMap::new();
     header_attributes(&header, "asm", &mut attributes);
-    let evidence = StreamEvidence::AsmBinary(Some(&header));
+    let evidence = StreamEvidence::AsmBinary(&header);
     let (matched, kernel) = layers(&evidence);
     build_result(ctx, brep, attributes, &header, None, matched, &kernel)
 }
@@ -79,12 +75,8 @@ pub(crate) fn decode_acis_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Decoded, CodecError> {
-    let header = acis_header::parse(bytes).ok_or_else(|| {
-        unsupported_unframed(
-            &StreamEvidence::AcisBinary(None),
-            "ACIS binary magic has no parseable header",
-        )
-    })?;
+    let header =
+        acis_header::parse(bytes).expect("StreamKind::AcisBinary guarantees the ACIS header magic");
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
@@ -113,7 +105,7 @@ pub(crate) fn decode_acis_binary(
     // Every band frames and decodes the same way. Classification states
     // whether the grammar applied is the one the framed stream declares; it
     // gates nothing. Build the admitted evidence only after framing succeeds.
-    let evidence = StreamEvidence::AcisBinary(Some(&header));
+    let evidence = StreamEvidence::AcisBinary(&header);
     let (matched, kernel) = layers(&evidence);
     build_result(ctx, brep, attributes, &header, None, matched, &kernel)
 }
