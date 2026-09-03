@@ -473,9 +473,7 @@ pub(crate) fn project_dissected_sketches(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } = &feature.definition
             else {
                 return None;
@@ -485,15 +483,7 @@ pub(crate) fn project_dissected_sketches(
         .collect::<HashMap<_, _>>();
     let planar_features = features
         .iter()
-        .filter(|feature| {
-            matches!(
-                feature.definition,
-                FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
-                    ..
-                }
-            )
-        })
+        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
         .map(|feature| feature.id.clone())
         .collect::<HashSet<_>>();
     let aliases = features

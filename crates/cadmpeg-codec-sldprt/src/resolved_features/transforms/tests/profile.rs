@@ -132,10 +132,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     let producer = feature(
         "producer",
         "producer-native",
-        FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: None,
-        },
+        FeatureDefinition::Sketch { sketch: None },
     );
     let target = feature(
         "target",
@@ -371,10 +368,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             "sketch",
             "sketch-native",
             1,
-            FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         ),
     ];
     let mut payload = vec![0; 100];
@@ -566,18 +560,11 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     assert_eq!(sketches[0].profiles[0].len(), 3);
     assert!(matches!(
         features[1].definition,
-        FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: Some(_),
-            ..
-        }
+        FeatureDefinition::Sketch { sketch: Some(_) }
     ));
     let expected_sketch = sketches[0].id.clone();
     let mut configured_features = features.clone();
-    configured_features[1].definition = FeatureDefinition::Sketch {
-        space: cadmpeg_ir::features::SketchSpace::Planar,
-        sketch: None,
-    };
+    configured_features[1].definition = FeatureDefinition::Sketch { sketch: None };
     project_marker_backed_sketches(
         &mut configured_features,
         &mut sketches,
@@ -590,9 +577,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     assert!(matches!(
         &configured_features[1].definition,
         FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch),
-            ..
         } if sketch == &expected_sketch
     ));
 
@@ -605,7 +590,6 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     compact_entity.sketch = compact_id.clone();
     let mut replacement_features = features.clone();
     replacement_features[1].definition = FeatureDefinition::Sketch {
-        space: cadmpeg_ir::features::SketchSpace::Planar,
         sketch: Some(compact_id),
     };
     let mut replacement_sketches = vec![compact_sketch];
@@ -665,10 +649,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch: None,
-        },
+        definition: FeatureDefinition::Sketch { sketch: None },
         native_ref: Some("feature-native".into()),
     }];
     let lanes = vec![FeatureInputLane {
@@ -842,7 +823,6 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: Some("feature-native".into()),
@@ -1037,10 +1017,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
-            sketch,
-        },
+        definition: FeatureDefinition::Sketch { sketch },
         native_ref: Some(native_ref.into()),
     };
     let single = SketchId("single".into());

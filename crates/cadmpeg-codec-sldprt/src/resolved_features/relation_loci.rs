@@ -3446,9 +3446,7 @@ pub(super) fn profile_loci_by_marker(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } = &feature.definition
             else {
                 return None;
@@ -3891,9 +3889,7 @@ pub(super) fn marker_transform_candidates_by_feature(
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } = &feature.definition
             else {
                 return None;

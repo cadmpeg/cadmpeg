@@ -1320,9 +1320,7 @@ pub(crate) fn project_hole_position_sketches(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } = &feature.definition
             else {
                 return None;
@@ -3328,10 +3326,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         };
         if !matches!(
             model_position.definition,
-            FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
-            }
+            FeatureDefinition::Sketch { sketch: None }
         ) {
             continue;
         }

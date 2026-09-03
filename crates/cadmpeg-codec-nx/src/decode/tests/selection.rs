@@ -1063,10 +1063,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Unresolved,
-            sketch: None,
-        },
+        definition: FeatureDefinition::Sketch { sketch: None },
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -1238,7 +1235,6 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         native_ref: None,
     });
     ir.model.features[2].definition = FeatureDefinition::Sketch {
-        space: cadmpeg_ir::features::SketchSpace::Planar,
         sketch: Some(sketch_id),
     };
     losses.clear();
@@ -1338,10 +1334,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Unresolved,
-                sketch: None,
-            },
+            definition: FeatureDefinition::Sketch { sketch: None },
             native_ref: None,
         },
     ]);

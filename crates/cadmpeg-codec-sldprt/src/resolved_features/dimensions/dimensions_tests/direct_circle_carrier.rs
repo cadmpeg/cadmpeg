@@ -3,7 +3,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length, SketchSpace};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
@@ -65,7 +65,6 @@ fn feature(feature_ref: &str, sketch: &SketchId) -> Feature {
         FeatureId("neutral-feature".into()),
         0,
         FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(sketch.clone()),
         },
     );

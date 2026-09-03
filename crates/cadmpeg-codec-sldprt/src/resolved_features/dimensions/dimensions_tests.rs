@@ -10,7 +10,7 @@ use crate::records::{
 };
 use cadmpeg_ir::features::{
     DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
-    ParameterValue, SketchSpace,
+    ParameterValue,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -1588,7 +1588,6 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: Some(feature_ref.into()),

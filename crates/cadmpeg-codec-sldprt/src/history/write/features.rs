@@ -290,9 +290,7 @@ pub fn sync_neutral_features(
         .iter()
         .filter_map(|feature| match &feature.definition {
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } => parent_sources
                 .get(&feature.id)
                 .map(|source| (sketch.clone(), source.clone())),

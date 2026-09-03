@@ -61,7 +61,6 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch),
         },
         native_ref: Some("feature-native".into()),
@@ -622,7 +621,6 @@ fn line_handle_interior_points_identify_profile_entities() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch),
         },
         native_ref: Some("feature-native".into()),
@@ -821,7 +819,6 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch),
         },
         native_ref: Some("feature-native".into()),

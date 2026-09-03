@@ -444,9 +444,7 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             };
             let FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } = &model_features[target_index].definition
             else {
                 continue;
@@ -803,9 +801,7 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 continue;
             };
             let FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } = &model_features[profile_index].definition
             else {
                 continue;
@@ -816,11 +812,8 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                     return None;
                 }
                 let path_index = *model_by_native.get(path_feature.id.as_str())?;
-                let FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
-                    sketch: Some(path),
-                    ..
-                } = &model_features[path_index].definition
+                let FeatureDefinition::Sketch { sketch: Some(path) } =
+                    &model_features[path_index].definition
                 else {
                     return None;
                 };

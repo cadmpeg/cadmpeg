@@ -1256,7 +1256,7 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
 
 #[test]
 fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
@@ -1278,7 +1278,6 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(sketch_id.clone()),
         },
         native_ref: None,
@@ -1338,39 +1337,6 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     assert!(losses[0]
         .message
         .contains("1 NX sketch geometry record(s) and 1 sketch constraint"));
-}
-
-#[test]
-fn nx_sketch_completeness_requires_planar_space() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
-    use cadmpeg_ir::sketches::SketchId;
-
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-    ir.model.features.push(Feature {
-        id: FeatureId("test:feature#sketch".into()),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        parent: None,
-        dependencies: Vec::new(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Vec::new(),
-        outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Spatial,
-            sketch: Some(SketchId("test:sketch#0".into())),
-        },
-        native_ref: None,
-    });
-
-    let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
-    assert!(losses.iter().any(|loss| {
-        loss.message
-            .contains("incomplete neutral construction fields: sketch (1)")
-    }));
 }
 
 #[test]

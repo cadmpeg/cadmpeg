@@ -623,7 +623,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch),
         },
         native_ref: Some("native-profile".into()),
@@ -641,7 +640,6 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(SketchId("position".into())),
         },
         native_ref: Some("native-position".into()),
@@ -772,7 +770,6 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(SketchId(sketch.into())),
         },
         native_ref: Some(id.into()),

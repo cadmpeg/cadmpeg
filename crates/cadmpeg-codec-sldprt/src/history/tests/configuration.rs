@@ -242,10 +242,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         features: vec![native_feature],
     };
     let feature_id = cadmpeg_ir::features::FeatureId("sketch".into());
-    let unresolved = FeatureDefinition::Sketch {
-        space: SketchSpace::Planar,
-        sketch: None,
-    };
+    let unresolved = FeatureDefinition::Sketch { sketch: None };
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     ir.model.features.push(NeutralFeature {
         id: feature_id.clone(),
@@ -393,9 +390,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&feature_id].definition,
         FeatureDefinition::Sketch {
-            space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: Some(sketch),
-            ..
         } if sketch == &sketch_id
     ));
     assert!(matches!(
@@ -454,10 +449,7 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
-            sketch: None,
-        },
+        definition: FeatureDefinition::Sketch { sketch: None },
         native_ref: Some(native_ref.into()),
     };
     let mut features = vec![
@@ -577,10 +569,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
                         suppressed: false,
                         dependencies: Vec::new(),
                         outputs: Vec::new(),
-                        definition: FeatureDefinition::Sketch {
-                            space: SketchSpace::Planar,
-                            sketch: None,
-                        },
+                        definition: FeatureDefinition::Sketch { sketch: None },
                     },
                 ),
             ]),

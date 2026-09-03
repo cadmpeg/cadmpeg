@@ -391,9 +391,7 @@ fn validate_generated_marker_constraint(
         matches!(
             &feature.definition,
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch),
-                ..
             } if sketch == &constraint.sketch
         )
     }) {
@@ -1183,9 +1181,7 @@ fn unique_planar_sketch_owner<'a>(
         matches!(
             &feature.definition,
             FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(candidate),
-                ..
             } if candidate == sketch
         )
     })
@@ -1496,7 +1492,6 @@ mod source_less_lane_tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch.id.clone()),
             },
             native_ref: None,

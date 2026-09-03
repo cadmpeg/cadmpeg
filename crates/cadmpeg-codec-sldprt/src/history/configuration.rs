@@ -4,7 +4,7 @@
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::{
     Angle, ConfigurationBodies, DatumPlaneReference, DesignConfiguration, FaceSelection,
-    FeatureDefinition, FeatureId, Length, ParameterValue, SketchSpace, Termination,
+    FeatureDefinition, FeatureId, Length, ParameterValue, Termination,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -474,11 +474,7 @@ pub(crate) fn project_configuration_sketch_states(
                 }
                 continue;
             }
-            let FeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch,
-            } = &mut feature.definition
-            else {
+            let FeatureDefinition::Sketch { sketch } = &mut feature.definition else {
                 continue;
             };
             let Some(FeatureDefinition::SpatialSketch {

@@ -34,7 +34,7 @@ use crate::parasolid::StreamKind;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, SketchSpace,
+    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition,
 };
 use cadmpeg_ir::report::LossNote;
 use std::collections::{BTreeMap, BTreeSet};
@@ -562,20 +562,19 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::ExtractBody { source } if body_selection_is_incomplete(source) => {
                 "extract body"
             }
-            FeatureDefinition::Sketch { space, sketch }
-                if !matches!(space, SketchSpace::Planar)
-                    || sketch.as_ref().is_none_or(|sketch| {
-                        ir.model
-                            .sketches
-                            .iter()
-                            .find(|candidate| candidate.id == *sketch)
-                            .is_none_or(|sketch| {
-                                matches!(
-                                    sketch.placement,
-                                    cadmpeg_ir::sketches::SketchPlacement::Unresolved
-                                )
-                            })
-                    }) =>
+            FeatureDefinition::Sketch { sketch }
+                if sketch.as_ref().is_none_or(|sketch| {
+                    ir.model
+                        .sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch)
+                        .is_none_or(|sketch| {
+                            matches!(
+                                sketch.placement,
+                                cadmpeg_ir::sketches::SketchPlacement::Unresolved
+                            )
+                        })
+                }) =>
             {
                 "sketch"
             }

@@ -765,10 +765,7 @@ mod idless_history_binding_tests {
                 source_text: None,
                 source_content: Vec::new(),
                 outputs: Vec::new(),
-                definition: FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
-                    sketch: None,
-                },
+                definition: FeatureDefinition::Sketch { sketch: None },
                 native_ref: Some("profile-native".into()),
             },
             cadmpeg_ir::features::Feature {

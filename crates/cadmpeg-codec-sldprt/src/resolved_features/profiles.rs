@@ -137,9 +137,7 @@ pub(crate) fn bind_sketch_profiles(
             }
             match &mut feature.definition {
                 cadmpeg_ir::features::FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
                     sketch: feature_sketch,
-                    ..
                 } => {
                     sketch.name = Some(native_feature.name.clone());
                     *feature_sketch = Some(sketch.id.clone());
@@ -448,7 +446,6 @@ pub(crate) fn project_compact_sketch_profiles(
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -526,7 +523,6 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -634,7 +630,6 @@ pub(crate) fn project_compact_sketch_profiles(
                 sketches.push(sketch);
                 features[feature_index].definition =
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     };
                 continue;
@@ -688,7 +683,6 @@ pub(crate) fn project_compact_sketch_profiles(
             sketch.profiles.push(profile);
             sketches.push(sketch);
             features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch_id),
             };
         }
@@ -903,7 +897,6 @@ pub(crate) fn project_marker_backed_sketches(
                     }
                     features[feature_index].definition =
                         cadmpeg_ir::features::FeatureDefinition::Sketch {
-                            space: cadmpeg_ir::features::SketchSpace::Planar,
                             sketch: Some(sketch_id),
                         };
                 }
@@ -916,7 +909,6 @@ pub(crate) fn project_marker_backed_sketches(
                     }
                 } else {
                     cadmpeg_ir::features::FeatureDefinition::Sketch {
-                        space: cadmpeg_ir::features::SketchSpace::Planar,
                         sketch: Some(sketch_id),
                     }
                 };
@@ -1702,7 +1694,6 @@ pub(crate) fn project_marker_backed_sketches(
                 }
             } else {
                 cadmpeg_ir::features::FeatureDefinition::Sketch {
-                    space: cadmpeg_ir::features::SketchSpace::Planar,
                     sketch: Some(sketch_id),
                 }
             };
@@ -2384,7 +2375,6 @@ fn project_detached_legacy_config_sketches(
             sketch_entities.append(&mut entities);
             sketches.push(sketch.clone());
             feature.definition = FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
                 sketch: Some(sketch.id),
             };
         }
@@ -2931,10 +2921,7 @@ mod detached_legacy_sketch_tests {
         let mut neutral_feature = cadmpeg_ir::features::Feature::new(
             cadmpeg_ir::features::FeatureId("neutral".into()),
             30,
-            FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         );
         neutral_feature.name = Some("empty".into());
         neutral_feature.native_ref = Some("feature".into());
@@ -3008,10 +2995,7 @@ mod detached_legacy_sketch_tests {
         let mut neutral_feature = cadmpeg_ir::features::Feature::new(
             cadmpeg_ir::features::FeatureId("neutral".into()),
             30,
-            FeatureDefinition::Sketch {
-                space: cadmpeg_ir::features::SketchSpace::Planar,
-                sketch: None,
-            },
+            FeatureDefinition::Sketch { sketch: None },
         );
         neutral_feature.name = Some("empty".into());
         neutral_feature.native_ref = Some("feature".into());
