@@ -521,8 +521,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
                 .decoded_rows
                 .saturating_sub(sketch_segment_coverage.resolved_geometry),
         );
-        for family in crate::coverage::SketchSegmentFamily::ALL {
-            let (decoded, resolved) = sketch_segment_coverage.family(family);
+        for (family, (decoded, resolved)) in sketch_segment_coverage.families() {
             let keys = crate::coverage::sketch_segment_keys(family);
             coverage.record(keys.decoded, decoded);
             coverage.record(keys.resolved, resolved);
