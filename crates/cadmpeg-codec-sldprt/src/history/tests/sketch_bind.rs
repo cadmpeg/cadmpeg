@@ -568,8 +568,7 @@ fn decode_projects_full_ellipse_sketch_geometry() {
             major_angle: Angle(value),
             major_radius: Length(2000.0),
             minor_radius: Length(1000.0),
-            start_angle: None,
-            end_angle: None,
+            bounds: None,
         } if (value - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
 }

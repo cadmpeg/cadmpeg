@@ -3228,3 +3228,10 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::sketches::OffsetParameter"
 reason = "the boolean sign representation restricts the legacy parameter_factor field to minus or plus one"
+
+[[change]]
+commit = "160c59efd93be06d9587e424f1473da0fbe6715e"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchGeometry::{Ellipse,Hyperbola,Parabola}"
+reason = "one optional bounds array replaces each independently optional start and end pair"

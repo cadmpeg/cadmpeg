@@ -1450,8 +1450,7 @@ fn project_geometry(
                 major_angle: Angle(major_direction[1].atan2(major_direction[0])),
                 major_radius: Length(major_radius * 10.0),
                 minor_radius: Length(minor_radius * 10.0),
-                start_angle: None,
-                end_angle: None,
+                bounds: None,
             })
         }
     }

@@ -190,8 +190,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         major_angle: cadmpeg_ir::features::Angle(0.0),
         major_radius: Length(5.0),
         minor_radius: Length(3.0),
-        start_angle: None,
-        end_angle: None,
+        bounds: None,
     };
     assert!(
         radial_dimension_definition(&entity, "Radius Dimension-2", 0.5, radius_parameter,)

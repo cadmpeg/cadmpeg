@@ -351,8 +351,7 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
             major_angle: Angle(angle),
             major_radius: Length(1500.0),
             minor_radius: Length(500.0),
-            start_angle: None,
-            end_angle: None,
+            bounds: None,
         } if (angle - 0.25).abs() < 1.0e-12
     ));
 }

@@ -622,8 +622,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 major_angle,
                 major_radius,
                 minor_radius,
-                start_angle,
-                end_angle,
+                bounds,
             } => {
                 if !finite2(*center)
                     || !major_angle.0.is_finite()
@@ -633,12 +632,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch ellipse");
                 }
-                if start_angle.is_some() != end_angle.is_some()
-                    || start_angle
-                        .iter()
-                        .chain(end_angle)
-                        .any(|angle| !angle.0.is_finite())
-                {
+                if bounds.iter().flatten().any(|angle| !angle.0.is_finite()) {
                     finding(
                         findings,
                         Check::ParameterDomain,
@@ -652,8 +646,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 major_angle,
                 major_radius,
                 minor_radius,
-                start_parameter,
-                end_parameter,
+                bounds,
             } => {
                 if !finite2(*center)
                     || !major_angle.0.is_finite()
@@ -662,7 +655,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 {
                     finding(findings, Check::Bounds, id, "invalid sketch hyperbola");
                 }
-                if invalid_optional_parameter_pair(*start_parameter, *end_parameter) {
+                if bounds.iter().flatten().any(|value| !value.is_finite()) {
                     finding(
                         findings,
                         Check::ParameterDomain,
@@ -675,13 +668,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 vertex,
                 axis_angle,
                 focal_length,
-                start_parameter,
-                end_parameter,
+                bounds,
             } => {
                 if !finite2(*vertex) || !axis_angle.0.is_finite() || nonpositive(focal_length.0) {
                     finding(findings, Check::Bounds, id, "invalid sketch parabola");
                 }
-                if invalid_optional_parameter_pair(*start_parameter, *end_parameter) {
+                if bounds.iter().flatten().any(|value| !value.is_finite()) {
                     finding(
                         findings,
                         Check::ParameterDomain,
@@ -1993,10 +1985,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-fn invalid_optional_parameter_pair(start: Option<f64>, end: Option<f64>) -> bool {
-    start.is_some() != end.is_some() || start.into_iter().chain(end).any(|value| !value.is_finite())
-}
-
 fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
     (left.u - right.u).hypot(left.v - right.v)
 }
@@ -2090,8 +2078,7 @@ fn oriented_endpoints(
             major_angle,
             major_radius,
             minor_radius,
-            start_angle: Some(start),
-            end_angle: Some(end),
+            bounds: Some([start, end]),
         } => (
             ellipse_point(
                 *center,

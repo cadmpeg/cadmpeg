@@ -29,8 +29,10 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
         entities[3].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Ellipse {
             major_angle: cadmpeg_ir::features::Angle(angle),
-            start_angle: Some(cadmpeg_ir::features::Angle(start)),
-            end_angle: Some(cadmpeg_ir::features::Angle(end)),
+            bounds: Some([
+                cadmpeg_ir::features::Angle(start),
+                cadmpeg_ir::features::Angle(end),
+            ]),
             ..
         } if (angle - 0.53).abs() < 1.0e-12
             && (start - (std::f64::consts::TAU - 0.42)).abs() < 1.0e-12
@@ -40,8 +42,7 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
         entities[4].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Ellipse {
             major_angle: cadmpeg_ir::features::Angle(angle),
-            start_angle: None,
-            end_angle: None,
+            bounds: None,
             ..
         } if (angle - 0.71).abs() < 1.0e-12
     ));
@@ -49,8 +50,7 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
         entities[5].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
             major_angle: cadmpeg_ir::features::Angle(angle),
-            start_parameter: Some(start),
-            end_parameter: Some(end),
+            bounds: Some([start, end]),
             ..
         } if (angle - 0.47).abs() < 1.0e-12
             && (start + 0.63).abs() < 1.0e-12
@@ -60,8 +60,7 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
         entities[6].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Parabola {
             axis_angle: cadmpeg_ir::features::Angle(angle),
-            start_parameter: Some(start),
-            end_parameter: Some(end),
+            bounds: Some([start, end]),
             ..
         } if (angle - 0.67).abs() < 1.0e-12
             && (start + 2.1).abs() < 1.0e-12
@@ -562,16 +561,17 @@ pub(crate) fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_
         entities[1].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Ellipse {
             major_angle: cadmpeg_ir::features::Angle(angle),
-            start_angle: None,
-            end_angle: None,
+            bounds: None,
             ..
         } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
     assert!(matches!(
         entities[2].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Ellipse {
-            start_angle: Some(cadmpeg_ir::features::Angle(0.5)),
-            end_angle: Some(cadmpeg_ir::features::Angle(1.5)),
+            bounds: Some([
+                cadmpeg_ir::features::Angle(0.5),
+                cadmpeg_ir::features::Angle(1.5),
+            ]),
             ..
         }
     ));
@@ -615,17 +615,12 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
     assert_eq!(entities.len(), 6);
     assert!(matches!(
         entities[0].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
-            start_parameter: None,
-            end_parameter: None,
-            ..
-        }
+        cadmpeg_ir::sketches::SketchGeometry::Hyperbola { bounds: None, .. }
     ));
     assert!(matches!(
         entities[1].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
-            start_parameter: Some(-1.0),
-            end_parameter: Some(1.5),
+            bounds: Some([-1.0, 1.5]),
             ..
         }
     ));
@@ -633,7 +628,7 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
         entities[2].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Parabola {
             focal_length: cadmpeg_ir::features::Length(2.0),
-            start_parameter: None,
+            bounds: None,
             ..
         }
     ));
@@ -641,8 +636,7 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
         entities[3].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Parabola {
             focal_length: cadmpeg_ir::features::Length(2.5),
-            start_parameter: Some(-2.0),
-            end_parameter: Some(3.0),
+            bounds: Some([-2.0, 3.0]),
             ..
         }
     ));
@@ -657,8 +651,7 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
     assert!(matches!(
         entities[5].geometry,
         cadmpeg_ir::sketches::SketchGeometry::Ellipse {
-            start_angle: Some(_),
-            end_angle: Some(_),
+            bounds: Some(_),
             ..
         }
     ));

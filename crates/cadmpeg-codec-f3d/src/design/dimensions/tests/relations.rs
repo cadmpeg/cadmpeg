@@ -242,8 +242,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
             major_angle: Angle(0.25),
             major_radius: Length(4.0),
             minor_radius: Length(1.5),
-            start_angle: None,
-            end_angle: None,
+            bounds: None,
         },
     );
     assert!(matches!(

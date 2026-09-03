@@ -463,8 +463,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let Some(SketchEntity {
                 geometry:
                     SketchGeometry::Ellipse {
-                        start_angle: Some(start),
-                        end_angle: Some(end),
+                        bounds: Some([start, end]),
                         ..
                     },
                 ..
@@ -864,8 +863,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             major_angle,
             major_radius,
             minor_radius,
-            start_angle,
-            end_angle,
+            bounds,
         } => {
             let cosine = major_angle.0.cos();
             let sine = major_angle.0.sin();
@@ -877,8 +875,8 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             if (equation - 1.0).abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9 {
                 return false;
             }
-            match (start_angle, end_angle) {
-                (Some(start), Some(end)) => {
+            match bounds {
+                Some([start, end]) => {
                     let parameter = ((y / minor_radius.0).atan2(x / major_radius.0) - start.0)
                         .rem_euclid(std::f64::consts::TAU);
                     let raw = end.0 - start.0;
@@ -890,8 +888,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
                     }
                     parameter <= sweep + EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9
                 }
-                (None, None) => true,
-                _ => false,
+                None => true,
             }
         }
         SketchGeometry::Hyperbola {
@@ -899,8 +896,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             major_angle,
             major_radius,
             minor_radius,
-            start_parameter,
-            end_parameter,
+            bounds,
         } => {
             let cosine = major_angle.0.cos();
             let sine = major_angle.0.sin();
@@ -912,20 +908,17 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             let on_curve = (x - major_radius.0 * parameter.cosh()).abs()
                 <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
-                && start_parameter
-                    .zip(*end_parameter)
-                    .is_none_or(|(start, end)| {
-                        (start.min(end) - SKETCH_POINT_TOLERANCE
-                            ..=start.max(end) + SKETCH_POINT_TOLERANCE)
-                            .contains(&parameter)
-                    })
+                && bounds.as_ref().is_none_or(|[start, end]| {
+                    ((*start).min(*end) - SKETCH_POINT_TOLERANCE
+                        ..=(*start).max(*end) + SKETCH_POINT_TOLERANCE)
+                        .contains(&parameter)
+                })
         }
         SketchGeometry::Parabola {
             vertex,
             axis_angle,
             focal_length,
-            start_parameter,
-            end_parameter,
+            bounds,
         } => {
             let cosine = axis_angle.0.cos();
             let sine = axis_angle.0.sin();
@@ -936,13 +929,11 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             let on_curve = (x - parameter * parameter / (4.0 * focal_length.0)).abs()
                 <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
-                && start_parameter
-                    .zip(*end_parameter)
-                    .is_none_or(|(start, end)| {
-                        (start.min(end) - SKETCH_POINT_TOLERANCE
-                            ..=start.max(end) + SKETCH_POINT_TOLERANCE)
-                            .contains(&parameter)
-                    })
+                && bounds.as_ref().is_none_or(|[start, end]| {
+                    ((*start).min(*end) - SKETCH_POINT_TOLERANCE
+                        ..=(*start).max(*end) + SKETCH_POINT_TOLERANCE)
+                        .contains(&parameter)
+                })
         }
         SketchGeometry::Point { .. }
         | SketchGeometry::Text { .. }

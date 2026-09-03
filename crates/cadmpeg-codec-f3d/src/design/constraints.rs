@@ -721,24 +721,21 @@ fn rotated_sketch_geometry_matches(
                 major_angle: aa,
                 major_radius: ar,
                 minor_radius: ai,
-                start_angle: as_,
-                end_angle: ae,
+                bounds: ab,
             },
             SketchGeometry::Ellipse {
                 center: b,
                 major_angle: ba,
                 major_radius: br,
                 minor_radius: bi,
-                start_angle: bs,
-                end_angle: be,
+                bounds: bb,
             },
         ) => {
             point_matches(*a, *b)
                 && angle_matches(aa.0, ba.0)
                 && scalar_close(ar.0, br.0)
                 && scalar_close(ai.0, bi.0)
-                && optional_angle_matches(as_.as_ref(), bs.as_ref())
-                && optional_angle_matches(ae.as_ref(), be.as_ref())
+                && optional_angle_bounds_match(ab.as_ref(), bb.as_ref())
         }
         (
             SketchGeometry::Nurbs {
@@ -841,24 +838,21 @@ pub(crate) fn translated_sketch_geometry_matches(
                 major_angle: first_major_angle,
                 major_radius: first_major_radius,
                 minor_radius: first_minor_radius,
-                start_angle: first_start,
-                end_angle: first_end,
+                bounds: first_bounds,
             },
             SketchGeometry::Ellipse {
                 center: second_center,
                 major_angle: second_major_angle,
                 major_radius: second_major_radius,
                 minor_radius: second_minor_radius,
-                start_angle: second_start,
-                end_angle: second_end,
+                bounds: second_bounds,
             },
         ) => {
             point_matches(*first_center, *second_center)
                 && scalar_close(first_major_angle.0, second_major_angle.0)
                 && scalar_close(first_major_radius.0, second_major_radius.0)
                 && scalar_close(first_minor_radius.0, second_minor_radius.0)
-                && optional_angle_matches(first_start.as_ref(), second_start.as_ref())
-                && optional_angle_matches(first_end.as_ref(), second_end.as_ref())
+                && optional_angle_bounds_match(first_bounds.as_ref(), second_bounds.as_ref())
         }
         (
             SketchGeometry::Nurbs {
@@ -894,13 +888,15 @@ pub(crate) fn translated_sketch_geometry_matches(
     }
 }
 
-fn optional_angle_matches(
-    first: Option<&cadmpeg_ir::features::Angle>,
-    second: Option<&cadmpeg_ir::features::Angle>,
+fn optional_angle_bounds_match(
+    first: Option<&[cadmpeg_ir::features::Angle; 2]>,
+    second: Option<&[cadmpeg_ir::features::Angle; 2]>,
 ) -> bool {
     match (first, second) {
         (None, None) => true,
-        (Some(first), Some(second)) => scalar_close(first.0, second.0),
+        (Some(first), Some(second)) => {
+            scalar_close(first[0].0, second[0].0) && scalar_close(first[1].0, second[1].0)
+        }
         _ => false,
     }
 }

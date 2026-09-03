@@ -250,12 +250,10 @@ pub enum SketchGeometry {
         major_radius: Length,
         /// Semi-minor radius.
         minor_radius: Length,
-        /// Start parameter for a bounded arc; absent for a full ellipse.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        start_angle: Option<Angle>,
-        /// End parameter for a bounded arc; absent for a full ellipse.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        end_angle: Option<Angle>,
+        /// Parameter bounds for an arc; absent for a full ellipse.
+        #[serde(flatten, with = "angle_bounds_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "AngleBoundsWire"))]
+        bounds: Option<[Angle; 2]>,
     },
     /// Full or bounded hyperbola.
     Hyperbola {
@@ -267,12 +265,10 @@ pub enum SketchGeometry {
         major_radius: Length,
         /// Semi-minor radius.
         minor_radius: Length,
-        /// Start parameter for a bounded branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        start_parameter: Option<f64>,
-        /// End parameter for a bounded branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        end_parameter: Option<f64>,
+        /// Parameter bounds for a branch; absent for the full curve.
+        #[serde(flatten, with = "parameter_bounds_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "ParameterBoundsWire"))]
+        bounds: Option<[f64; 2]>,
     },
     /// Full or bounded parabola.
     Parabola {
@@ -282,12 +278,10 @@ pub enum SketchGeometry {
         axis_angle: Angle,
         /// Distance from the vertex to the focus.
         focal_length: Length,
-        /// Start parameter for a bounded branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        start_parameter: Option<f64>,
-        /// End parameter for a bounded branch; absent for the full curve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        end_parameter: Option<f64>,
+        /// Parameter bounds for a branch; absent for the full curve.
+        #[serde(flatten, with = "parameter_bounds_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "ParameterBoundsWire"))]
+        bounds: Option<[f64; 2]>,
     },
     /// NURBS curve in sketch coordinates.
     Nurbs {
@@ -351,6 +345,89 @@ pub enum SketchGeometry {
         /// Source geometry family.
         native_kind: String,
     },
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct AngleBoundsWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    start_angle: Option<Angle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    end_angle: Option<Angle>,
+}
+
+mod angle_bounds_wire {
+    use super::{Angle, AngleBoundsWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Option<[Angle; 2]>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let [start_angle, end_angle] = value
+            .clone()
+            .map_or([None, None], |[start, end]| [Some(start), Some(end)]);
+        AngleBoundsWire {
+            start_angle,
+            end_angle,
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[Angle; 2]>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = AngleBoundsWire::deserialize(deserializer)?;
+        match (wire.start_angle, wire.end_angle) {
+            (None, None) => Ok(None),
+            (Some(start), Some(end)) => Ok(Some([start, end])),
+            _ => Err(serde::de::Error::custom(
+                "start_angle and end_angle must be present together",
+            )),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ParameterBoundsWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    start_parameter: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    end_parameter: Option<f64>,
+}
+
+mod parameter_bounds_wire {
+    use super::ParameterBoundsWire;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Option<[f64; 2]>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let [start_parameter, end_parameter] =
+            value.map_or([None, None], |[start, end]| [Some(start), Some(end)]);
+        ParameterBoundsWire {
+            start_parameter,
+            end_parameter,
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<[f64; 2]>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ParameterBoundsWire::deserialize(deserializer)?;
+        match (wire.start_parameter, wire.end_parameter) {
+            (None, None) => Ok(None),
+            (Some(start), Some(end)) => Ok(Some([start, end])),
+            _ => Err(serde::de::Error::custom(
+                "start_parameter and end_parameter must be present together",
+            )),
+        }
+    }
 }
 
 /// A sketch whose solved geometry is expressed directly in model space.
