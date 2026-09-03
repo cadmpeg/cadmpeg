@@ -56,6 +56,9 @@ impl<'a> Resolution<'a> {
 const BASELINE_UNAVAILABLE: &str =
     "the retained FCStd document graph is unavailable, and this writer regenerates no \
      Document.xml, so the target cannot be written";
+const TRANSCODE_UNAVAILABLE: &str =
+    "the resolved target displaces the retained FCStd source dialect, and this writer \
+     regenerates no Document.xml, so the target cannot be written";
 
 /// Resolve the request against the source, then plan the export it names.
 ///
@@ -108,6 +111,9 @@ pub(in crate::writer) fn resolve<'a>(
     ir: &'a CadIr,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<Resolution<'a>, CodecError> {
+    if !resolved.source_preservation_eligible() {
+        return Err(resolved.unavailable(TRANSCODE_UNAVAILABLE));
+    }
     // Target resolution already classified the source declaration. The
     // accepted Resolution threads that witness to the byte writer; the byte
     // writer does not classify the native declaration again.
