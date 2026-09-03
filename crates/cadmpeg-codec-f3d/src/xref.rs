@@ -16,7 +16,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
-    ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceParent, PrototypeReference,
+    ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
 };
 
 use crate::bytes::{
@@ -292,10 +292,7 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                     reference.occurrence_ordinal,
                 ),
                 prototype: PrototypeReference::External {
-                    document: ExternalDocumentReference::path(
-                        reference.relative_path.clone(),
-                        ExternalResolution::Unresolved,
-                    ),
+                    document: ExternalDocumentReference::path(reference.relative_path.clone()),
                     object: None,
                 },
                 parent: OccurrenceParent::Root,

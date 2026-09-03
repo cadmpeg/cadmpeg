@@ -10,8 +10,8 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    CopyOnChange, CopyOnChangePolicy, ExternalDocumentReference, ExternalResolution, LinkState,
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    CopyOnChange, CopyOnChangePolicy, ExternalDocumentReference, LinkState, Occurrence,
+    OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
@@ -541,15 +541,10 @@ pub(crate) fn external_document_reference(
     attribute: Option<&str>,
 ) -> ExternalDocumentReference {
     let is_path = attribute.is_some_and(|name| name.eq_ignore_ascii_case("file"));
-    let resolution = if value.is_empty() {
-        ExternalResolution::MissingReference
-    } else {
-        ExternalResolution::Unresolved
-    };
     if is_path {
-        ExternalDocumentReference::path(value, resolution)
+        ExternalDocumentReference::path(value)
     } else {
-        ExternalDocumentReference::document_id(value, resolution)
+        ExternalDocumentReference::document_id(value)
     }
 }
 

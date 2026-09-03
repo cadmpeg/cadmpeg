@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{
-    ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceParent, PrototypeReference,
+    ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -197,11 +197,8 @@ fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference
     }
     PrototypeReference::External {
         document: match path {
-            Some(path) => ExternalDocumentReference::path(path, ExternalResolution::Unresolved),
-            None => ExternalDocumentReference::document_id(
-                reference.document_id.clone(),
-                ExternalResolution::Unresolved,
-            ),
+            Some(path) => ExternalDocumentReference::path(path),
+            None => ExternalDocumentReference::document_id(reference.document_id.clone()),
         },
         object: None,
     }
@@ -539,7 +536,7 @@ impl<'a> Cursor<'a> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    use cadmpeg_ir::products::{ExternalResolution, PrototypeReference};
+    use cadmpeg_ir::products::PrototypeReference;
 
     use super::*;
 
@@ -611,7 +608,7 @@ mod tests {
         };
         assert_eq!(document.as_path(), Some("components/part.ipt"));
         assert_eq!(document.as_document_id(), None);
-        assert_eq!(document.resolution, ExternalResolution::Unresolved);
+        assert!(!document.is_missing());
         assert_eq!(object, &None);
     }
 
