@@ -198,16 +198,17 @@ fn external_prototype(reference: &ExternalReferenceRecord) -> PrototypeReference
     let document_id = reference
         .document_id
         .chars()
-        .any(|character| character != '0')
-        .then(|| reference.document_id.clone());
-    if path.is_none() && document_id.is_none() {
+        .any(|character| character != '0');
+    if path.is_none() && !document_id {
         return PrototypeReference::Unresolved;
     }
     PrototypeReference::External {
-        document: ExternalDocumentReference {
-            path,
-            document_id,
-            resolution: ExternalResolution::Unresolved,
+        document: match path {
+            Some(path) => ExternalDocumentReference::path(path, ExternalResolution::Unresolved),
+            None => ExternalDocumentReference::document_id(
+                reference.document_id.clone(),
+                ExternalResolution::Unresolved,
+            ),
         },
         object: None,
     }
@@ -615,8 +616,8 @@ mod tests {
         let PrototypeReference::External { document, object } = &projected.prototype else {
             panic!("the persisted file reference must remain external");
         };
-        assert_eq!(document.path.as_deref(), Some("components/part.ipt"));
-        assert_eq!(document.document_id, None);
+        assert_eq!(document.as_path(), Some("components/part.ipt"));
+        assert_eq!(document.as_document_id(), None);
         assert_eq!(document.resolution, ExternalResolution::Unresolved);
         assert_eq!(object, &None);
     }
@@ -643,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_path_and_document_id_on_external_prototypes() {
+    fn path_identity_takes_precedence_on_external_prototypes() {
         let mut reference = external_reference(4, "components/part.ipt", [0, 0]);
         reference.document_id = "00112233445566778899aabbccddeeff".into();
         let projection = project_occurrences(
@@ -659,11 +660,8 @@ mod tests {
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the persisted document identity must remain external");
         };
-        assert_eq!(document.path.as_deref(), Some("components/part.ipt"));
-        assert_eq!(
-            document.document_id.as_deref(),
-            Some("00112233445566778899aabbccddeeff")
-        );
+        assert_eq!(document.as_path(), Some("components/part.ipt"));
+        assert_eq!(document.as_document_id(), None);
     }
 
     #[test]
@@ -685,9 +683,9 @@ mod tests {
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the persisted document identity must remain external");
         };
-        assert_eq!(document.path, None);
+        assert_eq!(document.as_path(), None);
         assert_eq!(
-            document.document_id.as_deref(),
+            document.as_document_id(),
             Some(expected_document_id.as_str())
         );
     }

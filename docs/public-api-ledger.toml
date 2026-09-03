@@ -2661,3 +2661,38 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::DocumentDraft"
 reason = "the unused alias duplicated ModelDraft without defining a distinct state or contract"
+
+[[change]]
+commit = "5fc45776185731bb3e933f998cedaaeda46f5ee1"
+crate = "cadmpeg-ir"
+kind = "type"
+item = "cadmpeg_ir::{ExternalDocumentReference,ExternalDocument}"
+reason = "an external document reference carries exactly one typed path or document id; malformed legacy field combinations exist only in the rejecting wire adapter"
+
+[[change]]
+commit = "5fc45776185731bb3e933f998cedaaeda46f5ee1"
+crate = "cadmpeg-ir"
+kind = "type"
+item = "cadmpeg_ir::{JointOperand,OperandContainer}"
+reason = "a joint operand always names its object and carries exactly one root, occurrence, or external container state"
+
+[[change]]
+commit = "5fc45776185731bb3e933f998cedaaeda46f5ee1"
+crate = "cadmpeg-ir"
+kind = "type"
+item = "cadmpeg_ir::JointLimits"
+reason = "enabled joint limits carry a lower bound, an upper bound, or both and cannot represent an enabled interval without bounds"
+
+[[change]]
+commit = "5fc45776185731bb3e933f998cedaaeda46f5ee1"
+crate = "cadmpeg-ir"
+kind = "type"
+item = "cadmpeg_ir::{AssemblyJoint,JointOperands,JointConnector,PairedJointKind}"
+reason = "grounded and paired joints bundle their exact connector, frame, and optional offset cardinality; paired families exclude grounded"
+
+[[change]]
+commit = "5fc45776185731bb3e933f998cedaaeda46f5ee1"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::AssemblyJoint::{kind,operands,frames,offset_frames}"
+reason = "the independent public fields are replaced by sealed grounded and paired constructors and read-only structural accessors"

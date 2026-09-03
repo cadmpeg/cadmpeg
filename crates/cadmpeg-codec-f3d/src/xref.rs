@@ -292,11 +292,10 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                     reference.occurrence_ordinal,
                 ),
                 prototype: PrototypeReference::External {
-                    document: ExternalDocumentReference {
-                        path: Some(reference.relative_path.clone()),
-                        document_id: None,
-                        resolution: ExternalResolution::Unresolved,
-                    },
+                    document: ExternalDocumentReference::path(
+                        reference.relative_path.clone(),
+                        ExternalResolution::Unresolved,
+                    ),
                     object: None,
                 },
                 parent: OccurrenceParent::Root,

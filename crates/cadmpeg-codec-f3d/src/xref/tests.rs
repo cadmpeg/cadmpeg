@@ -78,11 +78,10 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     assert_eq!(
         occurrences[0].prototype,
         cadmpeg_ir::products::PrototypeReference::External {
-            document: cadmpeg_ir::products::ExternalDocumentReference {
-                path: Some("part.f3d".into()),
-                document_id: None,
-                resolution: cadmpeg_ir::products::ExternalResolution::Unresolved,
-            },
+            document: cadmpeg_ir::products::ExternalDocumentReference::path(
+                "part.f3d",
+                cadmpeg_ir::products::ExternalResolution::Unresolved,
+            ),
             object: None,
         }
     );

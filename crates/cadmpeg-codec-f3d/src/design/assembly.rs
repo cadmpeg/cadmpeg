@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
-    AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointKind, JointLimits,
-    JointOperand,
+    AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointConnector, JointLimits,
+    JointOperand, PairedJointKind,
 };
 
 use crate::ids::native_stream;
@@ -301,9 +301,9 @@ pub(crate) fn project_assembly_joints(
         };
         let (angular_limits, linear_limits) = match alignment.limits.as_ref() {
             Some(limits) => {
-                let projected = JointLimits {
-                    minimum: Some(limits.minimum),
-                    maximum: Some(limits.maximum),
+                let projected = JointLimits::Both {
+                    minimum: limits.minimum,
+                    maximum: limits.maximum,
                 };
                 match limits.kind {
                     DesignAssemblyLimitKind::Angular => (Some(projected), None),
@@ -313,25 +313,35 @@ pub(crate) fn project_assembly_joints(
             None => (None, None),
         };
         let id = crate::ids::neutral_assembly_joint_id(scope);
-        joints.entry(id.0.clone()).or_insert_with(|| AssemblyJoint {
-            id,
-            kind: JointKind::Fixed,
-            operands,
-            frames: frames
-                .iter()
-                .map(|frame| neutral_transform(frame.transform))
-                .collect(),
-            offset_frames: Vec::new(),
-            suppressed: false,
-            detached: [false; 2],
-            angle: Some(alignment.angle),
-            translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
-            distance: None,
-            distance2: None,
-            angular_limits,
-            linear_limits,
-            properties: BTreeMap::new(),
-            native_ref: Some(scope.id.clone()),
+        let Ok([first_operand, second_operand]) =
+            <Vec<JointOperand> as TryInto<[JointOperand; 2]>>::try_into(operands)
+        else {
+            continue;
+        };
+        let [first_frame, second_frame] =
+            std::array::from_fn(|index| neutral_transform(frames[index].transform));
+        joints.entry(id.0.clone()).or_insert_with(|| {
+            let mut joint = AssemblyJoint::paired(
+                id,
+                PairedJointKind::Fixed,
+                [
+                    JointConnector {
+                        operand: first_operand,
+                        frame: first_frame,
+                    },
+                    JointConnector {
+                        operand: second_operand,
+                        frame: second_frame,
+                    },
+                ],
+                None,
+            );
+            joint.angle = Some(alignment.angle);
+            joint.translation_offset = Some(alignment.offset.map(|value| value * 10.0));
+            joint.angular_limits = angular_limits;
+            joint.linear_limits = linear_limits;
+            joint.native_ref = Some(scope.id.clone());
+            joint
         });
     }
     joints.into_values().collect()
@@ -343,14 +353,10 @@ fn project_legacy_operands(
     carriers
         .iter()
         .map(|carrier| {
-            Some(JointOperand {
-                occurrence: None,
-                external_document: None,
-                object: Some(crate::ids::neutral_assembly_legacy_object_id(
-                    &carrier.selection,
-                )),
-                subelements: Vec::new(),
-            })
+            Some(JointOperand::root(
+                crate::ids::neutral_assembly_legacy_object_id(&carrier.selection),
+                Vec::new(),
+            ))
         })
         .collect()
 }
@@ -374,19 +380,25 @@ fn project_qualified_operands(
                 if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
                     return None;
                 }
-                Some(JointOperand {
-                    occurrence: occurrence
-                        .map(|_| crate::ids::neutral_component_occurrence_id(root_guid)),
-                    external_document: occurrence.is_none().then(|| ExternalDocumentReference {
-                        path: None,
-                        document_id: path.identity_guids.first().cloned(),
-                        resolution: ExternalResolution::Unresolved,
-                    }),
-                    object: Some(root_guid.to_ascii_lowercase()),
-                    subelements: path.occurrence_guids[1..]
-                        .iter()
-                        .map(|guid| guid.to_ascii_lowercase())
-                        .collect(),
+                let object = root_guid.to_ascii_lowercase();
+                let subelements = path.occurrence_guids[1..]
+                    .iter()
+                    .map(|guid| guid.to_ascii_lowercase())
+                    .collect();
+                Some(match occurrence {
+                    Some(_) => JointOperand::occurrence(
+                        crate::ids::neutral_component_occurrence_id(root_guid),
+                        object,
+                        subelements,
+                    ),
+                    None => JointOperand::external(
+                        ExternalDocumentReference::document_id(
+                            path.identity_guids.first()?.clone(),
+                            ExternalResolution::Unresolved,
+                        ),
+                        object,
+                        subelements,
+                    ),
                 })
             }
             DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
@@ -406,12 +418,11 @@ fn project_qualified_operands(
                     else {
                         return None;
                     };
-                    Some(JointOperand {
-                        occurrence: Some(occurrence.clone()),
-                        external_document: None,
-                        object: Some(crate::ids::neutral_assembly_axial_object_id(&selectors[0])),
-                        subelements: Vec::new(),
-                    })
+                    Some(JointOperand::occurrence(
+                        occurrence.clone(),
+                        crate::ids::neutral_assembly_axial_object_id(&selectors[0]),
+                        Vec::new(),
+                    ))
                 }
                 DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
                     scope_record_index,
@@ -441,12 +452,10 @@ fn project_joint_origin_operand(
     } else if target_scope.joint_origin_transform.is_none() {
         return None;
     }
-    Some(JointOperand {
-        occurrence: None,
-        external_document: None,
-        object: Some(crate::ids::neutral_feature_id(target_scope).0),
-        subelements: Vec::new(),
-    })
+    Some(JointOperand::root(
+        crate::ids::neutral_feature_id(target_scope).0,
+        Vec::new(),
+    ))
 }
 
 fn unique_scope<'a>(
@@ -911,17 +920,17 @@ mod tests {
         )
         .expect("complete axial operands");
 
-        assert_eq!(operands[0].occurrence, Some(occurrence));
-        assert!(operands[0].external_document.is_none());
+        assert_eq!(
+            operands[0].container,
+            cadmpeg_ir::OperandContainer::Occurrence(occurrence)
+        );
         assert!(operands[0]
             .object
-            .as_deref()
-            .is_some_and(|object| object.starts_with("f3d:feature-input:connector#")));
-        assert!(operands[1].occurrence.is_none());
-        assert!(operands[1].external_document.is_none());
+            .starts_with("f3d:feature-input:connector#"));
+        assert_eq!(operands[1].container, cadmpeg_ir::OperandContainer::Root);
         assert_eq!(
-            operands[1].object.as_deref(),
-            Some(crate::ids::neutral_feature_id(&origin_scope).0.as_str())
+            operands[1].object,
+            crate::ids::neutral_feature_id(&origin_scope).0
         );
 
         let unlisted_operands = super::project_qualified_operands(
