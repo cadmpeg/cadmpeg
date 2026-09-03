@@ -352,19 +352,21 @@ fn rectangular_pattern_directions(
             if !spacing.is_finite() || spacing < 0.0 {
                 return None;
             }
-            let (spacing_parameter, span_parameter) = match distance_form {
-                RectangularPatternDistanceForm::AdjacentSpacing => {
-                    (source.distance_parameter.clone(), None)
-                }
-                RectangularPatternDistanceForm::SeedToFinalSpan => {
-                    (None, source.distance_parameter.clone())
-                }
-            };
+            let distance = source
+                .distance_parameter
+                .clone()
+                .map(|parameter| match distance_form {
+                    RectangularPatternDistanceForm::AdjacentSpacing => {
+                        cadmpeg_ir::sketches::SketchPatternDistance::Spacing(parameter)
+                    }
+                    RectangularPatternDistanceForm::SeedToFinalSpan => {
+                        cadmpeg_ir::sketches::SketchPatternDistance::Span(parameter)
+                    }
+                });
             Some(cadmpeg_ir::sketches::SketchPatternDirection {
                 direction: source.direction,
                 spacing: cadmpeg_ir::features::Length(spacing),
-                spacing_parameter,
-                span_parameter,
+                distance,
                 count_parameter: source.count_parameter.clone(),
             })
         })
@@ -1079,8 +1081,10 @@ mod tests {
         let directions = pattern.directions();
         assert_eq!(directions[0].spacing.0, 15.0);
         assert_eq!(directions[1].spacing.0, 0.0);
-        assert!(directions[0].spacing_parameter.is_some());
-        assert_eq!(directions[0].span_parameter, None);
+        assert!(matches!(
+            directions[0].distance,
+            Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing(_))
+        ));
         assert!(directions[0].count_parameter.is_some());
         assert_eq!(pattern.counts(), [3, 1]);
     }
@@ -1100,8 +1104,10 @@ mod tests {
         };
         let directions = pattern.directions();
         assert_eq!(directions[0].spacing.0, 15.0);
-        assert_eq!(directions[0].spacing_parameter, None);
-        assert!(directions[0].span_parameter.is_some());
+        assert!(matches!(
+            directions[0].distance,
+            Some(cadmpeg_ir::sketches::SketchPatternDistance::Span(_))
+        ));
         assert!(directions[0].count_parameter.is_some());
     }
 
@@ -1162,12 +1168,16 @@ mod tests {
             assert_eq!(directions[0].spacing.0, 15.0);
             match distance_form {
                 RectangularPatternDistanceForm::AdjacentSpacing => {
-                    assert!(directions[0].spacing_parameter.is_some());
-                    assert_eq!(directions[0].span_parameter, None);
+                    assert!(matches!(
+                        directions[0].distance,
+                        Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing(_))
+                    ));
                 }
                 RectangularPatternDistanceForm::SeedToFinalSpan => {
-                    assert_eq!(directions[0].spacing_parameter, None);
-                    assert!(directions[0].span_parameter.is_some());
+                    assert!(matches!(
+                        directions[0].distance,
+                        Some(cadmpeg_ir::sketches::SketchPatternDistance::Span(_))
+                    ));
                 }
             }
         }

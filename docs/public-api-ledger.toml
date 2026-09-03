@@ -3249,3 +3249,17 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::sketches::TextPlacement"
 reason = "the text anchor and rotation are constructed and transformed as one placement"
+
+[[change]]
+commit = "3a5706aa6d57bf472758b5e204bb3ea0714b33e9"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchPatternDirection"
+reason = "one optional typed distance parameter replaces mutually exclusive spacing and span options"
+
+[[change]]
+commit = "3a5706aa6d57bf472758b5e204bb3ea0714b33e9"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::sketches::SketchPatternDistance"
+reason = "the distance-form variant owns the only parameter meaningful for that form"
