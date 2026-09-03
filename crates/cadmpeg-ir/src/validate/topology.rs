@@ -1851,8 +1851,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         if let Definition::RectangularPattern { pattern } = &constraint.definition {
             for parameter in pattern.directions().iter().flat_map(|direction| {
                 [
-                    direction.spacing_parameter.as_ref(),
-                    direction.span_parameter.as_ref(),
+                    direction
+                        .distance
+                        .as_ref()
+                        .map(crate::sketches::SketchPatternDistance::parameter),
                     direction.count_parameter.as_ref(),
                 ]
                 .into_iter()

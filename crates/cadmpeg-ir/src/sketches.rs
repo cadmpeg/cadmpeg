@@ -975,13 +975,29 @@ pub struct SketchPatternDirection {
     pub direction: [f64; 2],
     /// Adjacent-instance spacing along `direction`.
     pub spacing: Length,
-    /// Driving adjacent-spacing parameter, when the source exposes it as a neutral parameter.
-    pub spacing_parameter: Option<ParameterId>,
-    /// Driving seed-to-final-span parameter, when the source exposes span
-    /// rather than adjacent spacing.
-    pub span_parameter: Option<ParameterId>,
+    /// Driving distance parameter and the distance form it controls.
+    pub distance: Option<SketchPatternDistance>,
     /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
     pub count_parameter: Option<ParameterId>,
+}
+
+/// Distance form controlled by a rectangular-pattern parameter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SketchPatternDistance {
+    /// The parameter controls adjacent-instance spacing.
+    Spacing(ParameterId),
+    /// The parameter controls the seed-to-final-instance span.
+    Span(ParameterId),
+}
+
+impl SketchPatternDistance {
+    /// Parameter that controls this distance form.
+    #[must_use]
+    pub fn parameter(&self) -> &ParameterId {
+        match self {
+            Self::Spacing(parameter) | Self::Span(parameter) => parameter,
+        }
+    }
 }
 
 /// One resolved rectangular-pattern instance.
@@ -1149,20 +1165,33 @@ impl SketchPatternDirectionWire {
             direction: value.direction,
             spacing: value.spacing,
             count,
-            spacing_parameter: value.spacing_parameter.clone(),
-            span_parameter: value.span_parameter.clone(),
+            spacing_parameter: match &value.distance {
+                Some(SketchPatternDistance::Spacing(parameter)) => Some(parameter.clone()),
+                _ => None,
+            },
+            span_parameter: match &value.distance {
+                Some(SketchPatternDistance::Span(parameter)) => Some(parameter.clone()),
+                _ => None,
+            },
             count_parameter: value.count_parameter.clone(),
         }
     }
 
-    fn into_direction(self) -> SketchPatternDirection {
-        SketchPatternDirection {
+    fn into_direction(self) -> Result<SketchPatternDirection, &'static str> {
+        let distance = match (self.spacing_parameter, self.span_parameter) {
+            (None, None) => None,
+            (Some(parameter), None) => Some(SketchPatternDistance::Spacing(parameter)),
+            (None, Some(parameter)) => Some(SketchPatternDistance::Span(parameter)),
+            (Some(_), Some(_)) => {
+                return Err("spacing_parameter and span_parameter are mutually exclusive")
+            }
+        };
+        Ok(SketchPatternDirection {
             direction: self.direction,
             spacing: self.spacing,
-            spacing_parameter: self.spacing_parameter,
-            span_parameter: self.span_parameter,
+            distance,
             count_parameter: self.count_parameter,
-        }
+        })
     }
 }
 
@@ -1260,9 +1289,11 @@ impl<'de> Deserialize<'de> for SketchRectangularPattern {
                 "rectangular pattern instance indices must match their positions",
             ));
         }
-        let directions = wire
-            .directions
-            .map(SketchPatternDirectionWire::into_direction);
+        let [first, second] = wire.directions;
+        let directions = [
+            first.into_direction().map_err(serde::de::Error::custom)?,
+            second.into_direction().map_err(serde::de::Error::custom)?,
+        ];
         let mut instances = wire.instances.into_iter();
         let rows = (0..row_count)
             .map(|_| {
