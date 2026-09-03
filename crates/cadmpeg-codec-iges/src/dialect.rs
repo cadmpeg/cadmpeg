@@ -153,10 +153,7 @@ pub(crate) const fn fixed_ascii_id(version: IgesVersion) -> DialectId {
 /// The row whose Global table parses a document this codec has not verified at
 /// its own version.
 const fn nearest_verified_id(representation: Representation) -> DialectId {
-    match representation {
-        Representation::Unknown => dialect_id(Representation::FixedAscii, Some(VersionFlag::V5_3)),
-        representation => dialect_id(representation, Some(VersionFlag::V5_3)),
-    }
+    dialect_id(representation, Some(VersionFlag::V5_3))
 }
 
 /// Classifies one document from its representation and resolved Global facts.
