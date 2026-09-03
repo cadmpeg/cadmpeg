@@ -2878,3 +2878,10 @@ crate = "cadmpeg-ir"
 kind = "trait_impl"
 item = "impl From<{&'static str,String}> for cadmpeg_ir::CoverageKey"
 reason = "coverage producers use statically declared keys or typed numeric templates, so runtime strings cannot enter the coverage map through the public key type"
+
+[[change]]
+commit = "19585d74b9bb63e2f634d9b5989df1ed924b3b41"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::DialectLayers::with duplicate-key contract"
+reason = "the builder now rejects a duplicate layer as a programming error instead of exposing a public last-wins replacement path"

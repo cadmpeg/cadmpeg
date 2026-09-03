@@ -395,10 +395,21 @@ struct DialectLayersWire {
 impl<'de> Deserialize<'de> for DialectLayers {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = DialectLayersWire::deserialize(deserializer)?;
-        Ok(wire
-            .extra
-            .into_iter()
-            .fold(Self::of(wire.primary), DialectLayers::with))
+        let mut layers = Self::of(wire.primary);
+        for layer in wire.extra {
+            if Self::same_key(&layers.primary, &layer) {
+                layers.primary = layer;
+            } else if let Some(existing) = layers
+                .extra
+                .iter_mut()
+                .find(|existing| Self::same_key(existing, &layer))
+            {
+                *existing = layer;
+            } else {
+                layers.extra.push(layer);
+            }
+        }
+        Ok(layers)
     }
 }
 
@@ -431,22 +442,18 @@ impl DialectLayers {
         Ok(())
     }
 
-    /// Adds a layer, replacing a layer with the same key.
+    /// Adds a layer and panics when its `(format, instance)` key is occupied.
     ///
-    /// This last-wins builder matches the deserialization policy for tolerant
-    /// wire reads. Use [`Self::insert`] when the first layer is authoritative.
+    /// A duplicate in builder code is a programming error. Fallible producer
+    /// paths use [`Self::insert`] to report the rejected layer.
     #[must_use]
     pub fn with(mut self, layer: DialectMatch) -> Self {
-        if Self::same_key(&self.primary, &layer) {
-            self.primary = layer;
-        } else if let Some(existing) = self
-            .extra
-            .iter_mut()
-            .find(|existing| Self::same_key(existing, &layer))
-        {
-            *existing = layer;
-        } else {
-            self.extra.push(layer);
+        if let Err(rejected) = self.insert(layer) {
+            let existing = self
+                .iter()
+                .find(|existing| Self::same_key(existing, &rejected))
+                .expect("insert rejected an occupied dialect-layer key");
+            panic!("duplicate dialect layer: existing {existing:?}; rejected {rejected:?}");
         }
         self
     }
@@ -945,6 +952,27 @@ mod tests {
         assert_eq!(layers.insert(replacement.clone()), Err(replacement));
         assert_eq!(layers.primary(), &layer("rhino"));
         assert_eq!(layers.into_parts().1, [layer("acis")]);
+    }
+
+    #[test]
+    fn dialect_layers_builder_panics_with_both_colliding_layers() {
+        let first = layer("acis").with_instance("body");
+        let replacement =
+            DialectMatch::residual(DialectId::pinned("acis:other")).with_instance("body");
+
+        let panic = std::panic::catch_unwind(|| {
+            let _ = DialectLayers::of(layer("rhino"))
+                .with(first)
+                .with(replacement);
+        })
+        .expect_err("the builder must reject a duplicate layer key");
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .expect("builder panic carries a string message");
+        assert!(message.contains("acis:known"), "{message}");
+        assert!(message.contains("acis:other"), "{message}");
     }
 
     #[test]
