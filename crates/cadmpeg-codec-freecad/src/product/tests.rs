@@ -143,18 +143,20 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     );
     assert_eq!(link_occurrences[0].scale, [2.0, 3.0, 4.0]);
     assert_eq!(link_occurrences[1].scale, [4.0, 6.0, 8.0]);
-    assert_eq!(link_occurrences[0].linked_subelements, ["Face1"]);
+    let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
+    assert_eq!(first_link.linked_subelements, ["Face1"]);
     assert_eq!(link_occurrences[0].visible, None);
     assert_eq!(link_occurrences[1].visible, None);
-    assert!(link_occurrences[0].element_component.is_some());
-    assert_eq!(link_occurrences[0].claim_child, Some(true));
-    assert_eq!(
-        link_occurrences[0].copy_on_change,
-        Some(cadmpeg_ir::CopyOnChangePolicy::Owned)
-    );
-    assert!(link_occurrences[0].copy_on_change_source.is_some());
-    assert!(link_occurrences[0].copy_on_change_group.is_some());
-    assert_eq!(link_occurrences[0].copy_on_change_touched, Some(true));
+    assert!(first_link.element_component.is_some());
+    assert_eq!(first_link.claim_child, Some(true));
+    let copy_on_change = first_link
+        .copy_on_change
+        .as_ref()
+        .expect("copy-on-change state");
+    assert_eq!(copy_on_change.policy, cadmpeg_ir::CopyOnChangePolicy::Owned);
+    assert!(copy_on_change.source.is_some());
+    assert!(copy_on_change.group.is_some());
+    assert_eq!(copy_on_change.touched, Some(true));
     assert!(matches!(
         &link_occurrences[0].prototype,
         cadmpeg_ir::PrototypeReference::Local { definition }

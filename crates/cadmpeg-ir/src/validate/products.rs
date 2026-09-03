@@ -68,14 +68,20 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str()),
         };
         let ordinal_unique = sibling_ordinals.insert((parent_key, occurrence.ordinal));
-        let auxiliary_definitions = [
-            occurrence.element_component.as_ref(),
-            occurrence.copy_on_change_source.as_ref(),
-            occurrence.copy_on_change_group.as_ref(),
-        ]
-        .into_iter()
-        .flatten()
-        .all(|definition| definitions.contains_key(definition.as_str()));
+        let auxiliary_definitions = occurrence.link.as_ref().is_none_or(|link| {
+            [
+                link.element_component.as_ref(),
+                link.copy_on_change
+                    .as_ref()
+                    .and_then(|copy| copy.source.as_ref()),
+                link.copy_on_change
+                    .as_ref()
+                    .and_then(|copy| copy.group.as_ref()),
+            ]
+            .into_iter()
+            .flatten()
+            .all(|definition| definitions.contains_key(definition.as_str()))
+        });
         let affine = occurrence.transform.is_affine()
             && occurrence
                 .linked_prototype
@@ -196,14 +202,8 @@ mod tests {
             linked_prototype: None,
             scale: [1.0; 3],
             name: None,
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
+            link: None,
             native_ref: None,
         });
         let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");

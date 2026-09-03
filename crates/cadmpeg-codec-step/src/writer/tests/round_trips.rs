@@ -451,14 +451,8 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         linked_prototype: None,
         scale: [1.0; 3],
         name: Some("Cube root".into()),
-        linked_subelements: Vec::new(),
         visible: None,
-        element_component: None,
-        claim_child: None,
-        copy_on_change: None,
-        copy_on_change_source: None,
-        copy_on_change_group: None,
-        copy_on_change_touched: None,
+        link: None,
         native_ref: None,
     });
     let options = StepWriteOptions {

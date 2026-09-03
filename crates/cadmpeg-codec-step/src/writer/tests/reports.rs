@@ -268,14 +268,8 @@ fn writer_reports_root_occurrence_scale() {
         linked_prototype: None,
         scale: [2.0, 1.0, 1.0],
         name: Some("Scaled root".into()),
-        linked_subelements: Vec::new(),
         visible: None,
-        element_component: None,
-        claim_child: None,
-        copy_on_change: None,
-        copy_on_change_source: None,
-        copy_on_change_group: None,
-        copy_on_change_touched: None,
+        link: None,
         native_ref: None,
     });
 
@@ -424,14 +418,8 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         linked_prototype: None,
         scale: [1.0; 3],
         name: None,
-        linked_subelements: Vec::new(),
         visible: None,
-        element_component: None,
-        claim_child: None,
-        copy_on_change: None,
-        copy_on_change_source: None,
-        copy_on_change_group: None,
-        copy_on_change_touched: None,
+        link: None,
         native_ref: None,
     });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
@@ -445,14 +433,8 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         linked_prototype: None,
         scale: [1.0; 3],
         name: None,
-        linked_subelements: Vec::new(),
         visible: None,
-        element_component: None,
-        claim_child: None,
-        copy_on_change: None,
-        copy_on_change_source: None,
-        copy_on_change_group: None,
-        copy_on_change_touched: None,
+        link: None,
         native_ref: None,
     });
 

@@ -10,8 +10,8 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    CopyOnChangePolicy, ExternalDocumentReference, ExternalResolution, Occurrence,
-    OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    CopyOnChange, CopyOnChangePolicy, ExternalDocumentReference, ExternalResolution, LinkState,
+    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
@@ -268,6 +268,26 @@ pub(crate) fn transfer_neutral(
                 .unwrap_or([1.0; 3]);
             let base_scale = record.scale.unwrap_or([1.0; 3]);
             let scale = std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
+            let copy_on_change = match record.copy_on_change.as_deref() {
+                Some(policy) => Some(CopyOnChange {
+                    policy: copy_on_change_policy(policy),
+                    source: record.copy_on_change_source.as_deref().map(&definition_id),
+                    group: record.copy_on_change_group.as_deref().map(&definition_id),
+                    touched: record.copy_on_change_touched,
+                }),
+                None if record.copy_on_change_source.is_none()
+                    && record.copy_on_change_group.is_none()
+                    && record.copy_on_change_touched.is_none() =>
+                {
+                    None
+                }
+                None => {
+                    return Err(CodecError::malformed(format_args!(
+                        "App::Link {} has copy-on-change payload without a policy",
+                        record.object
+                    )));
+                }
+            };
             occurrences.push(Occurrence {
                 id: OccurrenceId(crate::native::model_id(
                     "occurrence",
@@ -305,17 +325,16 @@ pub(crate) fn transfer_neutral(
                 }),
                 scale,
                 name: Some(record.object.clone()),
-                linked_subelements: record.linked_subelements.clone(),
                 visible: None,
-                element_component: record
-                    .element_objects
-                    .get(index)
-                    .map(|object| definition_id(object)),
-                claim_child: record.claim_child,
-                copy_on_change: record.copy_on_change.as_deref().map(copy_on_change_policy),
-                copy_on_change_source: record.copy_on_change_source.as_deref().map(&definition_id),
-                copy_on_change_group: record.copy_on_change_group.as_deref().map(&definition_id),
-                copy_on_change_touched: record.copy_on_change_touched,
+                link: Some(LinkState {
+                    linked_subelements: record.linked_subelements.clone(),
+                    element_component: record
+                        .element_objects
+                        .get(index)
+                        .map(|object| definition_id(object)),
+                    claim_child: record.claim_child,
+                    copy_on_change,
+                }),
                 native_ref: Some(record.object.clone()),
             });
         }
@@ -413,14 +432,8 @@ pub(crate) fn transfer_neutral(
             linked_prototype: None,
             scale: [1.0; 3],
             name: Some(object.clone()),
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
+            link: None,
             native_ref: Some(object.clone()),
         });
     }
