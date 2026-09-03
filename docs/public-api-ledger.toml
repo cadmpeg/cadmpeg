@@ -2990,3 +2990,10 @@ crate = "cadmpeg-ir"
 kind = "struct"
 item = "cadmpeg_ir::features::ScaleFactors"
 reason = "ScaleFactors is an enum whose variants represent exactly one unresolved, uniform, or complete per-axis construction"
+
+[[change]]
+commit = "21ca4736703d78122e241182abe9023237c2f286"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::products::Occurrence::{prototype_transform,link_transform}"
+reason = "linked_prototype carries the prototype transform exactly when link-transform evaluation applies, so no ignored non-identity transform can be constructed"

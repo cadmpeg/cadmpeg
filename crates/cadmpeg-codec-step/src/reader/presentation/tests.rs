@@ -1752,7 +1752,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             parent: OccurrenceParent::Root,
             ordinal: 0,
             transform: Transform::identity(),
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: Some("Root assembly".into()),
             linked_subelements: Vec::new(),
@@ -1763,7 +1763,6 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             copy_on_change_source: None,
             copy_on_change_group: None,
             copy_on_change_touched: None,
-            link_transform: None,
             native_ref: None,
         },
         Occurrence {
@@ -1781,7 +1780,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
                     [0.0, 0.0, 0.0, 1.0],
                 ],
             },
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: Some("Child occurrence".into()),
             linked_subelements: Vec::new(),
@@ -1792,7 +1791,6 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             copy_on_change_source: None,
             copy_on_change_group: None,
             copy_on_change_touched: None,
-            link_transform: None,
             native_ref: None,
         },
     ]);

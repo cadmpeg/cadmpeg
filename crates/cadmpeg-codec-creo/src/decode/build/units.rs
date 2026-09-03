@@ -93,7 +93,9 @@ pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
     }
     for occurrence in &mut ir.model.occurrences {
         scale_transform_translation(&mut occurrence.transform, length_scale_mm);
-        scale_transform_translation(&mut occurrence.prototype_transform, length_scale_mm);
+        if let Some(transform) = occurrence.linked_prototype.as_mut() {
+            scale_transform_translation(transform, length_scale_mm);
+        }
     }
     for tessellation in &mut ir.model.tessellations {
         for vertex in &mut tessellation.vertices {

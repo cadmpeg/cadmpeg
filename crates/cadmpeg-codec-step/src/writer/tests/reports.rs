@@ -265,7 +265,7 @@ fn writer_reports_root_occurrence_scale() {
         parent: cadmpeg_ir::products::OccurrenceParent::Root,
         ordinal: 0,
         transform: Transform::identity(),
-        prototype_transform: Transform::identity(),
+        linked_prototype: None,
         scale: [2.0, 1.0, 1.0],
         name: Some("Scaled root".into()),
         linked_subelements: Vec::new(),
@@ -276,7 +276,6 @@ fn writer_reports_root_occurrence_scale() {
         copy_on_change_source: None,
         copy_on_change_group: None,
         copy_on_change_touched: None,
-        link_transform: None,
         native_ref: None,
     });
 
@@ -422,7 +421,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         parent: cadmpeg_ir::products::OccurrenceParent::Root,
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
-        prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+        linked_prototype: None,
         scale: [1.0; 3],
         name: None,
         linked_subelements: Vec::new(),
@@ -433,7 +432,6 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         copy_on_change_source: None,
         copy_on_change_group: None,
         copy_on_change_touched: None,
-        link_transform: None,
         native_ref: None,
     });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
@@ -444,7 +442,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         parent: cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent },
         ordinal: 1,
         transform: cadmpeg_ir::transform::Transform::identity(),
-        prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+        linked_prototype: None,
         scale: [1.0; 3],
         name: None,
         linked_subelements: Vec::new(),
@@ -455,7 +453,6 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         copy_on_change_source: None,
         copy_on_change_group: None,
         copy_on_change_touched: None,
-        link_transform: None,
         native_ref: None,
     });
 

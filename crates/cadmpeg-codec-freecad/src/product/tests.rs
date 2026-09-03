@@ -887,9 +887,27 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
             })
             .expect("named occurrence")
     };
-    assert_eq!(occurrence("Inner").prototype_transform.rows[0][3], 5.0);
-    assert_eq!(occurrence("Outer").prototype_transform.rows[0][3], 8.0);
-    assert_eq!(occurrence("Override").prototype_transform.rows[0][3], 0.0);
+    assert_eq!(
+        occurrence("Inner")
+            .linked_prototype
+            .expect("linked prototype placement")
+            .rows[0][3],
+        5.0
+    );
+    assert_eq!(
+        occurrence("Outer")
+            .linked_prototype
+            .expect("linked prototype placement")
+            .rows[0][3],
+        8.0
+    );
+    assert_eq!(
+        occurrence("Override")
+            .linked_prototype
+            .expect("linked prototype placement")
+            .rows[0][3],
+        0.0
+    );
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(

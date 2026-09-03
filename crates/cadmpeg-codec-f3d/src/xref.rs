@@ -301,7 +301,7 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                 parent: OccurrenceParent::Root,
                 ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
                 transform: cadmpeg_ir::transform::Transform { rows: transform },
-                prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+                linked_prototype: None,
                 scale: [1.0; 3],
                 name: None,
                 linked_subelements: Vec::new(),
@@ -312,7 +312,6 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                 copy_on_change_source: None,
                 copy_on_change_group: None,
                 copy_on_change_touched: None,
-                link_transform: None,
                 native_ref: Some(reference.id.clone()),
             }
         })

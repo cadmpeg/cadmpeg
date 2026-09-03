@@ -198,7 +198,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len()))
                 .unwrap_or(u32::MAX),
             transform: neutral_transform(construction.transform),
-            prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: Some(construction.neutron_role.clone()),
             linked_subelements: Vec::new(),
@@ -209,7 +209,6 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             copy_on_change_source: None,
             copy_on_change_group: None,
             copy_on_change_touched: None,
-            link_transform: None,
             native_ref: Some(scope.id.clone()),
         });
     }
@@ -238,7 +237,7 @@ fn project_occurrence(
             parent: OccurrenceParent::Root,
             ordinal: 0,
             transform,
-            prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: None,
             linked_subelements: Vec::new(),
@@ -249,7 +248,6 @@ fn project_occurrence(
             copy_on_change_source: None,
             copy_on_change_group: None,
             copy_on_change_touched: None,
-            link_transform: None,
             native_ref: native_by_guid
                 .get(&occurrence_guid.to_ascii_lowercase())
                 .copied()

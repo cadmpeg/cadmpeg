@@ -77,7 +77,9 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         .flatten()
         .all(|definition| definitions.contains_key(definition.as_str()));
         let affine = occurrence.transform.is_affine()
-            && occurrence.prototype_transform.is_affine()
+            && occurrence
+                .linked_prototype
+                .is_none_or(|transform| transform.is_affine())
             && occurrence.scale.iter().all(|value| value.is_finite());
         if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions || !affine
         {
@@ -191,7 +193,7 @@ mod tests {
             parent: OccurrenceParent::Root,
             ordinal: 0,
             transform: Transform::identity(),
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: None,
             linked_subelements: Vec::new(),
@@ -202,7 +204,6 @@ mod tests {
             copy_on_change_source: None,
             copy_on_change_group: None,
             copy_on_change_touched: None,
-            link_transform: None,
             native_ref: None,
         });
         let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
