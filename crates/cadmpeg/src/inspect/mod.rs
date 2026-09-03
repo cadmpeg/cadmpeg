@@ -472,7 +472,7 @@ fn find(args: &FindArgs) -> Result<()> {
         });
         println!(
             "{}",
-            crate::commands::reporting::command_report_json("inspect find", &payload, None)?
+            crate::commands::reporting::command_report_json("inspect find", &payload)?
         );
         return Ok(());
     }

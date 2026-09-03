@@ -171,13 +171,44 @@ pub(super) fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote>
         .unwrap_or_default()
 }
 
-#[derive(Clone, Copy, Serialize)]
-pub(super) struct CommandReportBody<'a> {
-    pub(super) decode_report: Option<&'a DecodeReport>,
-    pub(super) check_report: Option<&'a ValidationReport>,
-    pub(super) export: Option<&'a ExportReport>,
-    #[serde(skip)]
-    pub(super) refusal: Option<&'a ConversionRefusal>,
+#[derive(Clone, Copy)]
+pub(super) enum CommandReportBody<'a> {
+    Ok {
+        decode_report: Option<&'a DecodeReport>,
+        check_report: Option<&'a ValidationReport>,
+        export: Option<&'a ExportReport>,
+    },
+    Refused(&'a ConversionRefusal),
+}
+
+impl<'a> CommandReportBody<'a> {
+    fn command_report(self, command: &'static str) -> CommandReport<'a, Self> {
+        match self {
+            Self::Ok { .. } => CommandReport::ok(command, self),
+            Self::Refused(refusal) => CommandReport::refused(command, self, refusal),
+        }
+    }
+}
+
+impl Serialize for CommandReportBody<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let reports = match self {
+            Self::Ok {
+                decode_report,
+                check_report,
+                export,
+            } => (*decode_report, *check_report, *export),
+            Self::Refused(refusal) => {
+                let reports = refusal.evidence().reports;
+                (reports.decode, reports.check, reports.export)
+            }
+        };
+        let mut state = serializer.serialize_struct("CommandReportBody", 3)?;
+        state.serialize_field("decode_report", &reports.0)?;
+        state.serialize_field("check_report", &reports.1)?;
+        state.serialize_field("export", &reports.2)?;
+        state.end()
+    }
 }
 
 pub(super) fn write_command_report(
@@ -187,7 +218,14 @@ pub(super) fn write_command_report(
     command: &'static str,
     body: CommandReportBody<'_>,
 ) -> Result<()> {
-    write_json_report(input, output, force, command, &body, body.refusal)
+    write_serialized_report(input, output, force, &body.command_report(command))
+}
+
+pub(super) fn command_body_json(
+    command: &'static str,
+    body: CommandReportBody<'_>,
+) -> Result<String> {
+    Ok(serde_json::to_string_pretty(&body.command_report(command))?)
 }
 
 fn generator() -> String {
@@ -250,33 +288,59 @@ enum CommandStatus {
     Refused,
 }
 
+enum Outcome<'a> {
+    Ok,
+    Refused(crate::application::refusal::RefusalReport<'a>),
+}
+
+impl Serialize for Outcome<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("CommandOutcome", 2)?;
+        match self {
+            Self::Ok => {
+                state.serialize_field("status", &CommandStatus::Ok)?;
+                state.serialize_field(
+                    "refusal",
+                    &Option::<&crate::application::refusal::RefusalReport<'_>>::None,
+                )?;
+            }
+            Self::Refused(refusal) => {
+                state.serialize_field("status", &CommandStatus::Refused)?;
+                state.serialize_field("refusal", refusal)?;
+            }
+        }
+        state.end()
+    }
+}
+
 #[derive(Serialize)]
-pub(super) struct CommandReport<'a, P> {
+struct CommandReport<'a, P> {
     schema_version: u32,
     command: &'static str,
     generator: String,
-    status: CommandStatus,
-    refusal: Option<crate::application::refusal::RefusalReport<'a>>,
+    #[serde(flatten)]
+    outcome: Outcome<'a>,
     #[serde(flatten)]
     payload: P,
 }
 
 impl<'a, P> CommandReport<'a, P> {
-    pub(super) fn new(
-        command: &'static str,
-        payload: P,
-        refusal: Option<&'a ConversionRefusal>,
-    ) -> Self {
+    fn ok(command: &'static str, payload: P) -> Self {
         Self {
             schema_version: CLI_SCHEMA_VERSION,
             command,
             generator: generator(),
-            status: if refusal.is_some() {
-                CommandStatus::Refused
-            } else {
-                CommandStatus::Ok
-            },
-            refusal: refusal.map(ConversionRefusal::report),
+            outcome: Outcome::Ok,
+            payload,
+        }
+    }
+
+    fn refused(command: &'static str, payload: P, refusal: &'a ConversionRefusal) -> Self {
+        Self {
+            schema_version: CLI_SCHEMA_VERSION,
+            command,
+            generator: generator(),
+            outcome: Outcome::Refused(refusal.report()),
             payload,
         }
     }
@@ -285,9 +349,18 @@ impl<'a, P> CommandReport<'a, P> {
 pub(crate) fn command_report_json<P: Serialize>(
     command: &'static str,
     payload: P,
-    refusal: Option<&ConversionRefusal>,
 ) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&CommandReport::new(
+    Ok(serde_json::to_string_pretty(&CommandReport::ok(
+        command, payload,
+    ))?)
+}
+
+pub(crate) fn refused_command_report_json<P: Serialize>(
+    command: &'static str,
+    payload: P,
+    refusal: &ConversionRefusal,
+) -> Result<String> {
+    Ok(serde_json::to_string_pretty(&CommandReport::refused(
         command, payload, refusal,
     ))?)
 }
@@ -298,12 +371,36 @@ pub(super) fn write_json_report<P: Serialize>(
     force: bool,
     command: &'static str,
     payload: &P,
-    refusal: Option<&ConversionRefusal>,
+) -> Result<()> {
+    write_serialized_report(input, output, force, &CommandReport::ok(command, payload))
+}
+
+pub(super) fn write_refused_json_report<P: Serialize>(
+    input: &Path,
+    output: Option<&Path>,
+    force: bool,
+    command: &'static str,
+    payload: &P,
+    refusal: &ConversionRefusal,
+) -> Result<()> {
+    write_serialized_report(
+        input,
+        output,
+        force,
+        &CommandReport::refused(command, payload, refusal),
+    )
+}
+
+fn write_serialized_report(
+    input: &Path,
+    output: Option<&Path>,
+    force: bool,
+    report: &impl Serialize,
 ) -> Result<()> {
     let Some(output) = output else {
         return Ok(());
     };
-    let mut bytes = serde_json::to_vec_pretty(&CommandReport::new(command, payload, refusal))?;
+    let mut bytes = serde_json::to_vec_pretty(report)?;
     bytes.push(b'\n');
     ArtifactStore::write_output(input, output, &bytes, force)?;
     eprintln!("wrote report {}", output.display());

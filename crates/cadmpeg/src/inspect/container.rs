@@ -249,7 +249,7 @@ pub fn render_json(listing: &Listing) -> String {
         "entries": entries,
     });
     let mut rendered =
-        crate::commands::reporting::command_report_json("inspect container", &payload, None)
+        crate::commands::reporting::command_report_json("inspect container", &payload)
             .expect("the command report serializes");
     rendered.push('\n');
     rendered
