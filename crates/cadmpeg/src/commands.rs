@@ -74,6 +74,8 @@ fn print_load_notice(document: &LoadedDocument) {
 }
 
 /// CLI-facing conversion arguments assembled from argv.
+// Independent argv flags are converted to typed policy and destination states in `convert`.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ConversionArgs {
     /// Decode and export loss refusal.
     pub losses: crate::application::LossPolicy,

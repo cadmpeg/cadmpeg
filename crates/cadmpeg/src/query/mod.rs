@@ -402,7 +402,10 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(
-            substituted.using().as_ref().map(|using| using.as_str()),
+            substituted
+                .using()
+                .as_ref()
+                .map(cadmpeg_core::dialect::DialectId::as_str),
             Some("acis:sab-22200")
         );
         assert!(matches!(
