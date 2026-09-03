@@ -12,8 +12,8 @@ use cadmpeg_ir::codec::{Codec, Confidence};
 /// Explicit input selection that bypasses content detection.
 #[derive(Debug, Clone, Copy)]
 pub enum ForcedInput {
-    /// Force the registered native codec described by this row.
-    Codec(&'static crate::descriptors::FormatDescriptor),
+    /// Force the registered native codec witnessed by this descriptor.
+    Codec(&'static crate::descriptors::NativeDescriptor),
     /// Force CADIR JSON parsing.
     Cadir,
 }
@@ -36,7 +36,7 @@ enum InputKind {
         descriptor: &'static crate::descriptors::FormatDescriptor,
     },
     Native {
-        descriptor: &'static crate::descriptors::FormatDescriptor,
+        native: &'static crate::descriptors::NativeDescriptor,
         codec: Box<dyn Codec>,
     },
 }
@@ -58,7 +58,10 @@ impl InputDescriptor {
 
     /// Recognized lowercase filename extensions.
     pub fn extensions(&self) -> &'static [&'static str] {
-        self.descriptor().input_extensions()
+        match &self.kind {
+            InputKind::Neutral { descriptor } => descriptor.input_extensions(),
+            InputKind::Native { native, .. } => native.input_extensions(),
+        }
     }
 
     /// Decoder and inspector implementation for a native format.
@@ -69,9 +72,12 @@ impl InputDescriptor {
         }
     }
 
-    fn descriptor(&self) -> &'static crate::descriptors::FormatDescriptor {
+    fn forced_codec(&self, forced: &crate::descriptors::NativeDescriptor) -> Option<&dyn Codec> {
         match &self.kind {
-            InputKind::Neutral { descriptor } | InputKind::Native { descriptor, .. } => descriptor,
+            InputKind::Native { native, codec, .. } if std::ptr::eq(*native, forced) => {
+                Some(codec.as_ref())
+            }
+            InputKind::Neutral { .. } | InputKind::Native { .. } => None,
         }
     }
 }
@@ -166,13 +172,13 @@ impl InputCatalog {
             descriptors: crate::descriptors::FORMAT_DESCRIPTORS
                 .iter()
                 .map(|descriptor| InputDescriptor {
-                    kind: match descriptor.kind {
-                        crate::descriptors::FormatKind::Neutral => {
+                    kind: match &descriptor.kind {
+                        crate::descriptors::FormatKind::Neutral { .. } => {
                             InputKind::Neutral { descriptor }
                         }
-                        crate::descriptors::FormatKind::Native { decoder } => InputKind::Native {
-                            descriptor,
-                            codec: decoder(),
+                        crate::descriptors::FormatKind::Native(native) => InputKind::Native {
+                            native,
+                            codec: (native.decoder)(),
                         },
                     },
                 })
@@ -254,15 +260,12 @@ impl InputCatalog {
         forced: Option<ForcedInput>,
     ) -> Result<ResolvedSource<'a>, ResolveSourceError> {
         match forced {
-            Some(ForcedInput::Codec(descriptor)) => {
-                let input = self
+            Some(ForcedInput::Codec(native)) => {
+                let codec = self
                     .descriptors
                     .iter()
-                    .find(|input| std::ptr::eq(input.descriptor(), descriptor))
-                    .expect("forced input descriptors come from this built-in catalog");
-                let codec = input
-                    .codec()
-                    .expect("a forced native descriptor always constructs a codec");
+                    .find_map(|input| input.forced_codec(native))
+                    .expect("forced native descriptors come from this built-in catalog");
                 Ok(ResolvedSource::Native {
                     codec,
                     selection: Selection::Forced,
