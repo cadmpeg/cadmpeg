@@ -1655,7 +1655,9 @@ impl F3dNative {
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        namespace.set_version(std::num::NonZeroU32::new(F3D_NATIVE_VERSION).unwrap());
+        namespace.set_version(
+            std::num::NonZeroU32::new(F3D_NATIVE_VERSION).expect("F3D native version is nonzero"),
+        );
         F3D_CATALOGUE.emit_all(self, namespace)?;
         debug_assert!(F3D_ARENA_NAMES
             .iter()

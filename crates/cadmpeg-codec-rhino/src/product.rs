@@ -273,7 +273,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     }
 
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.ensure_version_at_least(std::num::NonZeroU32::new(2).unwrap());
+    namespace.ensure_version_at_least(
+        std::num::NonZeroU32::new(2).expect("Rhino native version is nonzero"),
+    );
     namespace
         .set_arena("product_definitions", &definitions)
         .expect("Rhino definitions serialize");

@@ -350,7 +350,9 @@ pub(crate) fn attach(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.ensure_version_at_least(std::num::NonZeroU32::new(189).unwrap());
+    namespace.ensure_version_at_least(
+        std::num::NonZeroU32::new(189).expect("NX native version is nonzero"),
+    );
     NATIVE_CATALOGUE
         .emit_all(model, namespace)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;

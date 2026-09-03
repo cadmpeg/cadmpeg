@@ -4792,7 +4792,7 @@ fn build_geometry_ir(
         ctx,
         &mut ir,
         "f3d",
-        std::num::NonZeroU32::new(F3D_NATIVE_VERSION).unwrap(),
+        std::num::NonZeroU32::new(F3D_NATIVE_VERSION).expect("F3D native version is nonzero"),
         asm,
     )?;
     let mut native = F3dNative::load(

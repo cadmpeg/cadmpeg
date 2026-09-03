@@ -5739,7 +5739,9 @@ fn store_projection(
     projection: &CatiaArenaProjection,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    namespace.set_version(std::num::NonZeroU32::new(CATIA_NATIVE_VERSION).unwrap());
+    namespace.set_version(
+        std::num::NonZeroU32::new(CATIA_NATIVE_VERSION).expect("CATIA native version is nonzero"),
+    );
     CATIA_CATALOGUE.emit_all(projection, namespace)?;
     debug_assert!(CATIA_ARENA_NAMES
         .iter()

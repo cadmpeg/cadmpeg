@@ -1132,7 +1132,9 @@ impl CodecBackend for FcstdCodec {
             )?;
         }
         let namespace = ir.native.namespace_mut("fcstd");
-        namespace.set_version(std::num::NonZeroU32::new(native::VERSION).unwrap());
+        namespace.set_version(
+            std::num::NonZeroU32::new(native::VERSION).expect("FreeCAD native version is nonzero"),
+        );
         namespace.set_arena("document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena("physical_ledger", &scan.ledger)?;
         #[allow(clippy::if_not_else)]
@@ -1386,7 +1388,7 @@ impl CodecBackend for FcstdCodec {
             ir,
             body: DecodeBody {
                 geometry_transferred,
-                coverage: Default::default(),
+                coverage: cadmpeg_ir::Coverage::default(),
                 losses,
                 notes: summary_notes,
                 transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
