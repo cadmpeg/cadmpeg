@@ -167,8 +167,7 @@ pub(super) fn merge_member_layers(
         );
         let matched = matched.with_declared(declared).with_instance(instance);
         let format = matched.format().to_owned();
-        if let Some(displaced) = target.push(matched) {
-            target.push(displaced);
+        if target.insert(matched).is_err() {
             losses.push(F3dLossCode::DialectLayerCollision.note(format!(
                 "archive member {member_path} produced a duplicate {format} dialect layer at instance {collision_instance}; the later layer was omitted",
             )));
