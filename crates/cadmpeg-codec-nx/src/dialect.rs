@@ -115,8 +115,8 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
         // NX verifies no Parasolid schema itself; every kernel layer is residual.
         &[],
     );
-    let (host, matched) = classify_host(&scan.container);
-    let mut layers = DialectLayers::of(matched);
+    let host = NxDialect::of_container(&scan.container);
+    let mut layers = DialectLayers::of(host.matched(scan.container.version));
     let losses = cadmpeg_parasolid::push_extras(&mut layers, extra)
         .into_iter()
         .map(|message| NxLossCode::DialectLayerCollision.note(message))
@@ -126,26 +126,6 @@ pub(crate) fn classify_layers(scan: &crate::decode::Scan<'_>) -> LayerClassifica
         layers,
         losses,
     }
-}
-
-/// Construct the host row and its arm-owned declaration from one dispatch fact.
-fn classify_host(container: &Container<'_>) -> (NxDialect, DialectMatch) {
-    let dialect = NxDialect::of_container(container);
-    let (key, value) = match dialect {
-        NxDialect::LegacyCfb => (
-            DECLARED_UGII_VERSION,
-            format_version_byte(container.version),
-        ),
-        NxDialect::Splmsstr => (
-            DECLARED_SPLMSSTR_VERSION,
-            format_version_byte(container.version),
-        ),
-    };
-    let declared = BTreeMap::from([(key.to_owned(), value)]);
-    (
-        dialect,
-        DialectMatch::admitted(dialect.id()).with_declared(declared),
-    )
 }
 
 /// Losses charged by every unverified layer in a classified document.
@@ -182,6 +162,16 @@ impl NxDialect {
             Self::Splmsstr => "splmsstr",
             Self::LegacyCfb => "cfb",
         }
+    }
+
+    /// Construct this host row's identity and arm-owned declaration.
+    fn matched(self, version: u8) -> DialectMatch {
+        let (key, value) = match self {
+            Self::LegacyCfb => (DECLARED_UGII_VERSION, format_version_byte(version)),
+            Self::Splmsstr => (DECLARED_SPLMSSTR_VERSION, format_version_byte(version)),
+        };
+        let declared = BTreeMap::from([(key.to_owned(), value)]);
+        DialectMatch::admitted(self.id()).with_declared(declared)
     }
 
     /// The row for a parsed container.

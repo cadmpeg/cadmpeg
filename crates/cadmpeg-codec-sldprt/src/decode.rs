@@ -120,9 +120,7 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan(ctx, root)?;
     let classification = crate::dialect::classify_layers(&scan);
-    let dialects = classification.layers();
-    let form_padding = crate::dialect::SldprtDialect::from_match(dialects.primary())
-        .and_then(crate::dialect::SldprtDialect::form_code_padding);
+    let form_padding = classification.host().form_code_padding();
     // Charge container cardinality before BREP/IR construction so max_entities
     // can refuse the expensive path rather than only the finalizer.
     let container_entities =
