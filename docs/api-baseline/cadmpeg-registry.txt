@@ -1,4 +1,4 @@
-# generated at cf5d68a6f
+# generated at 4a8ab8e46
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -43,7 +43,7 @@ pub cadmpeg_registry::InspectError::Unresolved(cadmpeg_registry::ResolveSourceEr
 pub enum cadmpeg_registry::Inspection
 pub cadmpeg_registry::Inspection::Classified(cadmpeg_ir::container::ContainerSummary)
 pub cadmpeg_registry::Inspection::Failed(cadmpeg_core::error::CodecError)
-pub cadmpeg_registry::Inspection::Skipped
+pub cadmpeg_registry::Inspection::Skipped(cadmpeg_registry::SkipReason)
 pub enum cadmpeg_registry::ReadDisposition
 pub cadmpeg_registry::ReadDisposition::Detected
 pub cadmpeg_registry::ReadDisposition::Level(u8)
@@ -70,6 +70,9 @@ pub cadmpeg_registry::Selection::Detected::confidence: cadmpeg_ir::codec::Confid
 pub cadmpeg_registry::Selection::Forced
 impl cadmpeg_registry::Selection
 pub const fn cadmpeg_registry::Selection::confidence(self) -> core::option::Option<cadmpeg_ir::codec::Confidence>
+pub enum cadmpeg_registry::SkipReason
+pub cadmpeg_registry::SkipReason::Ambiguous
+pub cadmpeg_registry::SkipReason::Neutral
 pub enum cadmpeg_registry::WriteDisposition
 pub cadmpeg_registry::WriteDisposition::Emitted
 pub cadmpeg_registry::WriteDisposition::None

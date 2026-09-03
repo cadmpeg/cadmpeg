@@ -2836,3 +2836,10 @@ crate = "cadmpeg-registry"
 kind = "field"
 item = "cadmpeg_registry::ResolvedSource::Native::{confidence,selection}"
 reason = "a native resolution carries the detected-or-forced Selection directly instead of encoding forced selection as absent confidence"
+
+[[change]]
+commit = "4a8ab8e469c654cf7188148dce0b8dab97a7bd48"
+crate = "cadmpeg-registry"
+kind = "variant"
+item = "cadmpeg_registry::Inspection::Skipped"
+reason = "a skipped inspection carries a neutral-or-ambiguous reason instead of folding two distinct outcomes into one state"

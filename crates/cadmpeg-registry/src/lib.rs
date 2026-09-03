@@ -46,7 +46,7 @@ pub use encoders::build_encoder;
 pub use format::Format;
 pub use identify::{
     identify, identify_with, resolve_and_inspect_with, Identification, InspectError, Inspected,
-    Inspection, DETECTION_PREFIX_LEN,
+    Inspection, SkipReason, DETECTION_PREFIX_LEN,
 };
 pub use registry::{dialects, support, DialectEntry};
 pub use views::{
