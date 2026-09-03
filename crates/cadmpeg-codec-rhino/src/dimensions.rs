@@ -1336,8 +1336,9 @@ pub(crate) fn project(
 ) {
     use crate::loss::RhinoLossCode;
     use cadmpeg_ir::semantic_annotations::{
-        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind, SemanticAnnotationTarget,
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
     };
+    use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
     use std::collections::BTreeMap;
 
     let (runtime_type, value) = match dimension.definition {
@@ -1606,13 +1607,7 @@ pub(crate) fn project(
         Some(id) if id.is_nil() => {
             references.insert(
                 role.to_string(),
-                vec![SemanticAnnotationTarget {
-                    target: None,
-                    external_document: None,
-                    external_object: None,
-                    is_null: true,
-                    subelements: Vec::new(),
-                }],
+                vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
             );
         }
         Some(_) => unresolved.push(code),

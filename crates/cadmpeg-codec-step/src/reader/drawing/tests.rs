@@ -42,10 +42,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     assert_eq!(page.parameters["usage_7_sequence"], "1");
     assert!(page.relationships["items"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:drawing:presentation_view#4") }));
+        .any(|target| { target.local_target() == Some("step:drawing:presentation_view#4") }));
     assert!(page.relationships["drawing_revision"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:drawing:drawing_revision#2") }));
+        .any(|target| { target.local_target() == Some("step:drawing:drawing_revision#2") }));
 
     let view = result
         .ir()
@@ -56,10 +56,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .expect("presentation view");
     assert!(view.relationships["items"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:data:item#5") }));
+        .any(|target| { target.local_target() == Some("step:data:item#5") }));
     assert!(view.relationships["presentation_context"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:data:representation_context#3") }));
+        .any(|target| { target.local_target() == Some("step:data:representation_context#3") }));
     assert_eq!(view.parameters["presentation_context"], "#3");
 
     let model = result
@@ -71,10 +71,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .expect("draughting model");
     assert!(model.relationships["semantic_definition"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:data:item#11") }));
+        .any(|target| { target.local_target() == Some("step:data:item#11") }));
     assert!(model.relationships["associated_items"]
         .iter()
-        .any(|target| { target.target.as_deref() == Some("step:drawing:presentation_view#4") }));
+        .any(|target| { target.local_target() == Some("step:drawing:presentation_view#4") }));
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -109,7 +109,7 @@ fn complex_draughting_model_reads_inherited_representation_attributes() {
     assert_eq!(model.parameters["presentation_context"], "#1");
     assert!(model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:item#3")));
+        .any(|target| target.local_target() == Some("step:data:item#3")));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DrawingRecordTooFewParameters.kind()
             && loss.message.contains("#2")
@@ -132,7 +132,7 @@ fn complex_draughting_callout_reads_inherited_name() {
     assert_eq!(callout.parameters["name"], "Callout");
     assert!(callout.relationships["contents"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:item#2")));
+        .any(|target| target.local_target() == Some("step:data:item#2")));
     assert!(!result
         .report()
         .losses
@@ -192,7 +192,7 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         .expect("draughting model");
     assert!(model.relationships["semantic_definition"]
         .iter()
-        .filter_map(|target| target.target.as_deref())
+        .filter_map(cadmpeg_ir::ReferenceSelection::local_target)
         .any(|target| target == "step:data:shape_aspect#3"));
     let drawing_targets = &result
         .ir()
@@ -206,7 +206,7 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
     assert_eq!(
         model.relationships["associated_items"]
             .iter()
-            .filter_map(|target| target.target.as_deref())
+            .filter_map(cadmpeg_ir::ReferenceSelection::local_target)
             .filter(|target| *target == "step:drawing:draughting_callout#5")
             .count(),
         3
@@ -214,7 +214,7 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
     assert_eq!(
         model.relationships["annotation_placeholder"]
             .iter()
-            .filter_map(|target| target.target.as_deref())
+            .filter_map(cadmpeg_ir::ReferenceSelection::local_target)
             .filter(|target| *target == "step:presentation:pmi#7")
             .count(),
         2
@@ -264,7 +264,7 @@ fn drawing_association_uses_product_definition_shape_view_scope() {
             })
             .and_then(|drawing| drawing.relationships.get("semantic_definition"))
             .and_then(|targets| targets.first())
-            .and_then(|target| target.target.as_deref())
+            .and_then(cadmpeg_ir::ReferenceSelection::local_target)
             .map(str::to_owned)
     };
 
@@ -328,7 +328,7 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("annotation drawing model");
     assert!(annotation_model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:surface#4")));
+        .any(|target| target.local_target() == Some("step:data:surface#4")));
 
     let mapped_model = result
         .ir()
@@ -339,7 +339,7 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("mapped drawing model");
     assert!(mapped_model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:surface#4")));
+        .any(|target| target.local_target() == Some("step:data:surface#4")));
 
     let ambiguous_model = result
         .ir()
@@ -363,7 +363,7 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("cyclic drawing model");
     assert!(cyclic_model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:mapped_item#21")));
+        .any(|target| target.local_target() == Some("step:data:mapped_item#21")));
     let drawing_targets = &result
         .ir()
         .native
@@ -406,7 +406,7 @@ fn drawing_relationships_retain_unresolved_wrapper_identity() {
         .expect("unresolved mapped drawing model");
     assert!(model.relationships["items"]
         .iter()
-        .any(|target| target.target.as_deref() == Some("step:data:mapped_item#8")));
+        .any(|target| target.local_target() == Some("step:data:mapped_item#8")));
     let drawing_targets = &result
         .ir()
         .native

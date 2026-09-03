@@ -6,8 +6,9 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::semantic_annotations::{
-    SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind, SemanticAnnotationTarget,
+    SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
 };
+use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
 use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, SemanticAnnotationRecord};
 
@@ -94,27 +95,38 @@ pub(crate) fn transfer_neutral(
             .filter(|property| property.owner == record.object)
             .collect::<Vec<_>>();
         validate_text_carriers(&owned, &schema)?;
-        let target = |link: &crate::native::LinkTarget| SemanticAnnotationTarget {
-            target: link
-                .document
-                .is_none()
-                .then(|| {
-                    link.object
-                        .as_ref()
-                        .filter(|object| !object.is_empty())
-                        .map(|object| {
-                            drawing_ids
-                                .get(object.as_str())
-                                .cloned()
-                                .unwrap_or_else(|| object.clone())
-                        })
-                })
-                .flatten(),
-            external_document: link.document.clone(),
-            external_object: link.document.as_ref().and(link.object.clone()),
-            is_null: link.document.is_none() && link.object.as_deref() == Some(""),
-            subelements: link.subelements.clone(),
+        let target = |link: &crate::native::LinkTarget| {
+            let target = match (&link.document, &link.object) {
+                (Some(document), Some(object)) => ReferenceTarget::External {
+                    document: document.clone(),
+                    object: object.clone(),
+                },
+                (None, Some(object)) if object.is_empty() => ReferenceTarget::Null,
+                (None, Some(object)) => ReferenceTarget::Local(
+                    drawing_ids
+                        .get(object.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| object.clone()),
+                ),
+                _ => {
+                    return Err(CodecError::malformed(
+                        "semantic annotation reference has no complete target",
+                    ));
+                }
+            };
+            Ok(ReferenceSelection::new(target, link.subelements.clone()))
         };
+        let references = record
+            .references
+            .iter()
+            .map(|(role, references)| {
+                let references = references
+                    .iter()
+                    .map(&target)
+                    .collect::<Result<Vec<_>, CodecError>>()?;
+                Ok((role.clone(), references))
+            })
+            .collect::<Result<BTreeMap<_, _>, CodecError>>()?;
         model.semantic_annotations.push(SemanticAnnotation {
             id: SemanticAnnotationId(crate::native::model_id(
                 "semantic-annotation",
@@ -126,11 +138,7 @@ pub(crate) fn transfer_neutral(
             runtime_type: record.kind.clone(),
             order: order as u32,
             text: record.text.clone(),
-            references: record
-                .references
-                .iter()
-                .map(|(role, references)| (role.clone(), references.iter().map(target).collect()))
-                .collect(),
+            references,
             value: None,
             format: match schema.format {
                 Some(name) => string_property(&owned, name, "App::PropertyString")?,
@@ -1085,7 +1093,7 @@ pub(crate) mod tests {
             .find(|drawing| drawing.object.ends_with("#View"))
             .expect("neutral view");
         assert_eq!(
-            semantic_note.references["View"][0].target.as_deref(),
+            semantic_note.references["View"][0].local_target(),
             Some(neutral_view.id.0.as_str())
         );
         assert!(crate::validate_native(result.ir()).is_empty());

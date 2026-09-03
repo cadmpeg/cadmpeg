@@ -3060,3 +3060,24 @@ crate = "cadmpeg-ir"
 kind = "trait_impl"
 item = "Copy for cadmpeg_ir::features::TrimRegion"
 reason = "the Cells variant owns its selected-cell vector and therefore has value semantics that cannot implement Copy"
+
+[[change]]
+commit = "5dfed3b5d507f898a470f4ea10be2d51649ea18f"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::drawings::DrawingTarget"
+reason = "ReferenceTarget is the shared invariant-bearing identity form and ReferenceSelection retains orthogonal subelement selectors"
+
+[[change]]
+commit = "5dfed3b5d507f898a470f4ea10be2d51649ea18f"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::semantic_annotations::SemanticAnnotationTarget"
+reason = "semantic annotations use the same ReferenceTarget and ReferenceSelection types as drawing relationships"
+
+[[change]]
+commit = "5dfed3b5d507f898a470f4ea10be2d51649ea18f"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::{drawings::Drawing::relationships,semantic_annotations::SemanticAnnotation::references}"
+reason = "each entry now carries one local, external, or explicit-null ReferenceTarget instead of four independently writable discriminator fields"

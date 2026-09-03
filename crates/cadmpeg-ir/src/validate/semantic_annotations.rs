@@ -16,12 +16,11 @@ pub(super) fn check_semantic_annotations(
         let refs_valid = all_ids.contains(&annotation.object)
             && all_ids.contains(&annotation.native_ref)
             && annotation.assets.iter().all(|id| all_ids.contains(id))
-            && annotation.references.values().flatten().all(|target| {
-                target.target.as_ref().is_none_or(|id| all_ids.contains(id))
-                    && (target.is_null
-                        || target.target.is_some()
-                        || (target.external_document.is_some() && target.external_object.is_some()))
-            });
+            && annotation
+                .references
+                .values()
+                .flatten()
+                .all(|target| target.local_target().is_none_or(|id| all_ids.contains(id)));
         let numeric_valid = annotation
             .value
             .iter()

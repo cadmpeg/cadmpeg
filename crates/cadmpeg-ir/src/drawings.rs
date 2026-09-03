@@ -45,27 +45,6 @@ pub enum DrawingKind {
     Other,
 }
 
-/// One role-preserving drawing or model reference.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DrawingTarget {
-    /// Resolved local drawing, model, or application-object identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    /// External document token when the target is outside this document.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_document: Option<String>,
-    /// Stable source object token within an external document.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_object: Option<String>,
-    /// Whether the persisted relationship is an explicit null target.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub is_null: bool,
-    /// Ordered referenced model subelements.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub subelements: Vec<String>,
-}
-
 /// A page, template, view, projection, section, or drawing annotation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -85,7 +64,7 @@ pub struct Drawing {
     pub visible: Option<bool>,
     /// Ordered relationships grouped by exact source-property role.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub relationships: BTreeMap<String, Vec<DrawingTarget>>,
+    pub relationships: BTreeMap<String, Vec<crate::references::ReferenceSelection>>,
     /// Page template drawing identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
