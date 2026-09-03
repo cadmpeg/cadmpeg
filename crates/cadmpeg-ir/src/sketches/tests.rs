@@ -90,7 +90,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     use crate::features::{Length, ParameterId};
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
-        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+        OffsetParameter, Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
         SketchDistanceMeasurement, SketchDistancePair, SketchEntity, SketchEntityId,
         SketchGeometry, SketchId, SketchLocus, SketchOffsetPair,
     };
@@ -120,8 +120,10 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 source_reversed: false,
             }],
             distance: Length(2.0),
-            parameter: Some(parameter.clone()),
-            parameter_factor: Some(-1.0),
+            parameter: Some(OffsetParameter {
+                id: parameter.clone(),
+                negated: true,
+            }),
         },
         SketchConstraintDefinition::Concentric {
             first: entity.clone(),
@@ -471,7 +473,7 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
 fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::features::{DesignParameter, Length, ParameterId, ParameterValue};
     use crate::sketches::{
-        SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
+        OffsetParameter, SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
         SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
     };
@@ -708,8 +710,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                     1.0 / 6.0f64.sqrt(),
                 ),
                 distance: Length(2.0),
-                parameter: Some(distance.clone()),
-                parameter_factor: Some(1.0),
+                parameter: Some(OffsetParameter {
+                    id: distance.clone(),
+                    negated: false,
+                }),
             },
             native_ref: None,
         });
@@ -1032,4 +1036,39 @@ fn circular_pattern_derives_count_and_indices_on_the_wire() {
     let mut displaced = wire;
     displaced["instances"][1]["index"] = serde_json::json!(0);
     assert!(serde_json::from_value::<SketchConstraintDefinition>(displaced).is_err());
+}
+
+#[test]
+fn offset_parameter_keeps_the_paired_factor_wire_shape() {
+    use crate::features::{Length, ParameterId};
+    use crate::sketches::{
+        OffsetParameter, SketchConstraintDefinition, SketchEntityId, SketchOffsetPair,
+    };
+
+    let definition = SketchConstraintDefinition::Offset {
+        pairs: vec![SketchOffsetPair {
+            source: SketchEntityId("test:sketch-entity#source".into()),
+            result: SketchEntityId("test:sketch-entity#result".into()),
+            source_reversed: false,
+        }],
+        distance: Length(2.0),
+        parameter: Some(OffsetParameter {
+            id: ParameterId("test:parameter#offset".into()),
+            negated: true,
+        }),
+    };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["parameter"], "test:parameter#offset");
+    assert_eq!(wire["parameter_factor"], -1.0);
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut invalid_factor = wire.clone();
+    invalid_factor["parameter_factor"] = serde_json::json!(0.0);
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(invalid_factor).is_err());
+    let mut split = wire;
+    split.as_object_mut().unwrap().remove("parameter_factor");
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(split).is_err());
 }

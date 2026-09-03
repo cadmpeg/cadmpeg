@@ -287,7 +287,6 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             }],
             distance: Length(2.0),
             parameter: None,
-            parameter_factor: None,
         },
         name: None,
         driving: None,

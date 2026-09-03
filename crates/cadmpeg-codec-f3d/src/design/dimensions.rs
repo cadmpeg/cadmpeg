@@ -573,7 +573,6 @@ fn project_all_dimension_constraints(
                 let Definition::Offset {
                     distance,
                     parameter: driving_parameter,
-                    parameter_factor,
                     ..
                 } = &mut definition
                 else {
@@ -582,8 +581,10 @@ fn project_all_dimension_constraints(
                 if let Some(factor) =
                     offset_parameter_factor(distance.0, parameter.evaluated_value * 10.0)
                 {
-                    *driving_parameter = Some(parameter_id);
-                    *parameter_factor = Some(factor);
+                    *driving_parameter = Some(cadmpeg_ir::sketches::OffsetParameter {
+                        id: parameter_id,
+                        negated: factor.is_sign_negative(),
+                    });
                 }
                 return Some(definition);
             }
@@ -2188,9 +2189,10 @@ pub(crate) fn constraint_parameters(
     use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
 
     match definition {
-        Definition::Offset { parameter, .. } | Definition::Native { parameter, .. } => {
-            parameter.iter().collect()
+        Definition::Offset { parameter, .. } => {
+            parameter.iter().map(|parameter| &parameter.id).collect()
         }
+        Definition::Native { parameter, .. } => parameter.iter().collect(),
         Definition::PolarDistance {
             distance_parameter, ..
         } => distance_parameter.iter().collect(),
@@ -2322,7 +2324,6 @@ pub(crate) fn bind_offset_dimension_parameters(
                     pairs,
                     distance,
                     parameter: None,
-                    parameter_factor: None,
                 } = &constraint.definition
                 else {
                     return None;
@@ -2349,17 +2350,14 @@ pub(crate) fn bind_offset_dimension_parameters(
     for (_, offset_index, parameter, parameter_value) in &bindings {
         let Definition::Offset {
             parameter: driving_parameter,
-            parameter_factor,
             ..
         } = &mut constraints[*offset_index].definition
         else {
             unreachable!("offset binding index was selected from typed offsets")
         };
-        *driving_parameter = Some(parameter.clone());
-        *parameter_factor = Some(if parameter_value.is_sign_positive() {
-            1.0
-        } else {
-            -1.0
+        *driving_parameter = Some(cadmpeg_ir::sketches::OffsetParameter {
+            id: parameter.clone(),
+            negated: parameter_value.is_sign_negative(),
         });
     }
     let removed = bindings
@@ -2635,11 +2633,13 @@ pub fn project_spatial_dimension_constraints(
             | SpatialSketchConstraintDefinition::RepeatedParallelLineDistance {
                 parameter, ..
             }
-            | SpatialSketchConstraintDefinition::ParallelLineSetDistance { parameter, .. }
-            | SpatialSketchConstraintDefinition::Offset {
+            | SpatialSketchConstraintDefinition::ParallelLineSetDistance { parameter, .. } => {
+                Some(parameter)
+            }
+            SpatialSketchConstraintDefinition::Offset {
                 parameter: Some(parameter),
                 ..
-            } => Some(parameter),
+            } => Some(&parameter.id),
             _ => None,
         })
         .cloned()
@@ -3166,8 +3166,10 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
         results,
         normal,
         distance: Length(distance),
-        parameter: Some(parameter.clone()),
-        parameter_factor: Some(parameter_factor),
+        parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
+            id: parameter.clone(),
+            negated: parameter_factor.is_sign_negative(),
+        }),
     })
 }
 
@@ -3600,8 +3602,10 @@ pub(crate) fn annotation_offset_dimension_definition(
             source_reversed: distance.is_sign_negative(),
         }],
         distance: Length(distance.abs()),
-        parameter: Some(parameter_id.clone()),
-        parameter_factor: Some(parameter_factor),
+        parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
+            id: parameter_id.clone(),
+            negated: parameter_factor.is_sign_negative(),
+        }),
     })
 }
 
@@ -5475,7 +5479,6 @@ pub(crate) fn exact_counted_offset(
         pairs,
         distance: Length(canonical_distance?),
         parameter: None,
-        parameter_factor: None,
     })
 }
 
@@ -5604,7 +5607,6 @@ pub(crate) fn exact_offset_constraint(
         pairs,
         distance: Length(canonical_distance?),
         parameter: None,
-        parameter_factor: None,
     })
 }
 

@@ -1081,18 +1081,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 results,
                 normal,
                 distance,
-                parameter,
-                parameter_factor,
+                parameter: _,
             } => {
                 !sources.is_empty()
                     && !results.is_empty()
                     && (normal.norm() - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     && distance.0.is_finite()
                     && distance.0 > 0.0
-                    && matches!(
-                        (parameter, parameter_factor),
-                        (None, None) | (Some(_), Some(-1.0 | 1.0))
-                    )
             }
             _ => entities.len() >= 2,
         };
@@ -1426,7 +1421,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 results,
                 distance,
                 parameter,
-                parameter_factor,
                 ..
             } => {
                 let curves_match = sources.iter().chain(results).all(|entity| {
@@ -1440,17 +1434,16 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         )
                     })
                 });
-                let parameter_matches = match (parameter, parameter_factor) {
-                    (None, None) => true,
-                    (Some(parameter), Some(factor)) => match parameter_values.get(parameter) {
+                let parameter_matches = match parameter {
+                    None => true,
+                    Some(parameter) => match parameter_values.get(&parameter.id) {
                         Some(Some(crate::features::ParameterValue::Length(value))) => {
-                            let expected = value.0 * factor;
+                            let expected = if parameter.negated { -value.0 } else { value.0 };
                             let scale = 1.0 + expected.abs().max(distance.0);
                             (expected - distance.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                         }
                         _ => false,
                     },
-                    _ => false,
                 };
                 if !curves_match {
                     finding(
@@ -1872,16 +1865,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             Constraint::Offset {
                 pairs,
                 distance,
-                parameter,
-                parameter_factor,
+                parameter: _,
             } => {
                 let mut sources = HashSet::new();
                 let mut results = HashSet::new();
-                let valid_parameter = match (parameter, parameter_factor) {
-                    (None, None) => true,
-                    (Some(_), Some(factor)) => factor.abs() == 1.0,
-                    _ => false,
-                };
                 !pairs.is_empty()
                     && pairs.iter().all(|pair| {
                         pair.source != pair.result
@@ -1890,7 +1877,6 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     })
                     && distance.0.is_finite()
                     && distance.0 > 0.0
-                    && valid_parameter
             }
             Constraint::ProjectedCopy { source, result } => source != result,
             Constraint::Group { elements } | Constraint::Text { elements, .. } => {

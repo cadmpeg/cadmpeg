@@ -428,7 +428,6 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         pairs,
         distance,
         parameter,
-        parameter_factor,
     } = definition
     else {
         panic!("expected neutral offset constraint")
@@ -442,7 +441,6 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     assert!(pairs[0].source_reversed);
     assert!(!pairs[1].source_reversed);
     assert_eq!(parameter, None);
-    assert_eq!(parameter_factor, None);
 
     let mut repeated_pair = relation;
     repeated_pair.return_members.extend([1, 3]);
@@ -566,8 +564,10 @@ fn single_curve_annotation_projects_parameterized_offset() {
         SketchConstraintDefinition::Offset {
             pairs,
             distance: Length(distance),
-            parameter: Some(actual_parameter),
-            parameter_factor: Some(1.0),
+            parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
+                id: actual_parameter,
+                negated: false,
+            }),
         } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
             source: source.id.clone(),
             result: result.id.clone(),
@@ -615,8 +615,10 @@ fn single_curve_annotation_projects_parameterized_offset() {
         explicit_definition,
         SketchConstraintDefinition::Offset {
             pairs,
-            parameter: Some(actual_parameter),
-            parameter_factor: Some(1.0),
+            parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
+                id: actual_parameter,
+                negated: false,
+            }),
             ..
         } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
             source: source.id.clone(),
