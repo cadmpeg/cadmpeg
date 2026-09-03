@@ -2127,12 +2127,10 @@ pub struct G2BlendSide {
 pub enum G2BlendFirstShape {
     /// Full singularity with an optional BS3 support surface.
     Full {
-        /// Optional exact BS3 support surface.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        surface: Option<SurfaceId>,
-        /// Fit tolerance present exactly when `surface` is present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        tolerance: Option<f64>,
+        /// Exact BS3 support and fit tolerance, when serialized.
+        #[serde(flatten, with = "g2_blend_full_support_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "G2BlendFullSupportSchemaWire"))]
+        support: Option<G2BlendFullSupport>,
     },
     /// Non-singular nine-scalar frame and tertiary pcurve.
     None {
@@ -2147,6 +2145,73 @@ pub enum G2BlendFirstShape {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pcurve: Option<PcurveGeometry>,
     },
+}
+
+/// Exact support surface and fit tolerance of a full G2 first-side shape.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct G2BlendFullSupport {
+    /// Exact BS3 support surface.
+    pub surface: SurfaceId,
+    /// Fit tolerance of the support, in document length units.
+    pub tolerance: f64,
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the G2 full-support wire schema")]
+struct G2BlendFullSupportSchemaWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    surface: Option<SurfaceId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tolerance: Option<f64>,
+}
+
+mod g2_blend_full_support_wire {
+    use super::{G2BlendFullSupport, SurfaceId};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        surface: Option<SurfaceId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tolerance: Option<f64>,
+    }
+
+    pub fn serialize<S>(
+        value: &Option<G2BlendFullSupport>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = match value {
+            Some(value) => Wire {
+                surface: Some(value.surface.clone()),
+                tolerance: Some(value.tolerance),
+            },
+            None => Wire {
+                surface: None,
+                tolerance: None,
+            },
+        };
+        wire.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<G2BlendFullSupport>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.surface, wire.tolerance) {
+            (Some(surface), Some(tolerance)) => Ok(Some(G2BlendFullSupport { surface, tolerance })),
+            (None, None) => Ok(None),
+            _ => Err(serde::de::Error::custom(
+                "G2 full surface and tolerance must occur together",
+            )),
+        }
+    }
 }
 
 /// Full native G2 blend construction graph.

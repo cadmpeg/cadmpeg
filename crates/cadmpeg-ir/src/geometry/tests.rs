@@ -60,3 +60,38 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
         uses
     );
 }
+
+#[test]
+fn g2_full_support_keeps_the_flat_wire_shape() {
+    let shape = crate::geometry::G2BlendFirstShape::Full {
+        support: Some(crate::geometry::G2BlendFullSupport {
+            surface: crate::ids::SurfaceId("test:surface#support".into()),
+            tolerance: 0.02,
+        }),
+    };
+    let value = serde_json::to_value(&shape).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "kind": "full",
+            "surface": "test:surface#support",
+            "tolerance": 0.02
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::G2BlendFirstShape>(value).unwrap(),
+        shape
+    );
+}
+
+#[test]
+fn g2_full_support_rejects_split_wire_fields() {
+    let error = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(serde_json::json!({
+        "kind": "full",
+        "surface": "test:surface#support"
+    }))
+    .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("G2 full surface and tolerance must occur together"));
+}

@@ -49,9 +49,10 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 [vec![0.25], vec![], vec![0.5, 0.75]]
             );
             match &construction.first_shape {
-                G2BlendFirstShape::Full { surface, tolerance } if full => {
-                    assert!(surface.is_some());
-                    assert_eq!(*tolerance, Some(0.02));
+                G2BlendFirstShape::Full {
+                    support: Some(support),
+                } if full => {
+                    assert_eq!(support.tolerance, 0.02);
                 }
                 G2BlendFirstShape::None {
                     coefficients,
