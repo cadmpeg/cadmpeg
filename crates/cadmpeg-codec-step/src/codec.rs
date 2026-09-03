@@ -11,7 +11,7 @@ use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::archive;
-use crate::dialect::{refuse_alternate_encoding, StepDialect};
+use crate::dialect::refuse_alternate_encoding;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::parse;
 use crate::reader;
@@ -243,7 +243,13 @@ fn inspect_exchange(
     } else {
         identifiers.join(",")
     };
-    let matched = StepDialect::classify(&exchange);
+    let matched = decoded
+        .ir
+        .source
+        .as_ref()
+        .and_then(cadmpeg_ir::SourceMeta::dialect)
+        .cloned()
+        .expect("the STEP decode session always authors classified source metadata");
     let dialect = matched.dialect();
     let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
     notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
