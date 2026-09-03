@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Statically declared decode-coverage measures.
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use cadmpeg_ir::CoverageKey;
 
 pub(crate) const AMBIGUOUS_FORMULA_PARAMETER_DEPENDENCY_COUNT: CoverageKey =
@@ -904,6 +902,7 @@ pub(crate) const TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT: Coverage
 pub(crate) const TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT: CoverageKey =
     CoverageKey::new("typed_object_stream_loop_framing_controls_05_03_count");
 
+#[cfg(test)]
 pub(crate) const ALL: &[CoverageKey] = &[
     RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
     RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
