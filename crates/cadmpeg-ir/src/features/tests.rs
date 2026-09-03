@@ -921,6 +921,60 @@ fn draft_anchor_rejects_split_or_conflicting_wire_fields() {
 }
 
 #[test]
+fn wrap_mode_round_trips_through_the_flat_wire_shape() {
+    use crate::features::{FeatureDefinition, Length, WrapMode};
+
+    let wire = serde_json::json!({
+        "definition": "wrap",
+        "profile": {"kind": "native", "value": "wrap:profile"},
+        "face": {"kind": "native", "value": "wrap:face"},
+        "mode": "emboss",
+        "depth": 2.5
+    });
+    let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Wrap {
+            mode: WrapMode::Emboss { depth: Length(2.5) },
+            ..
+        }
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), wire);
+
+    let scribe = FeatureDefinition::Wrap {
+        profile: crate::features::ProfileRef::Native("wrap:profile".into()),
+        face: crate::features::FaceSelection::Native("wrap:face".into()),
+        mode: WrapMode::Scribe,
+    };
+    let encoded = serde_json::to_value(scribe).unwrap();
+    assert_eq!(encoded.get("mode"), Some(&serde_json::json!("scribe")));
+    assert_eq!(encoded.get("depth"), None);
+}
+
+#[test]
+fn wrap_mode_rejects_a_missing_or_forbidden_depth() {
+    use crate::features::FeatureDefinition;
+
+    for invalid in [
+        serde_json::json!({
+            "definition": "wrap",
+            "profile": {"kind": "native", "value": "wrap:profile"},
+            "face": {"kind": "native", "value": "wrap:face"},
+            "mode": "emboss"
+        }),
+        serde_json::json!({
+            "definition": "wrap",
+            "profile": {"kind": "native", "value": "wrap:profile"},
+            "face": {"kind": "native", "value": "wrap:face"},
+            "mode": "scribe",
+            "depth": 1.0
+        }),
+    ] {
+        assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
+    }
+}
+
+#[test]
 fn trim_cell_selection_requires_unique_in_range_ordinals() {
     let valid = TrimCellSelection {
         removed: vec![1, 4],

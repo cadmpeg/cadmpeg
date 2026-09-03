@@ -561,8 +561,7 @@ fn semantic_writer_round_trips_wrap() {
         FeatureDefinition::Wrap {
             profile: ProfileRef::Faces(faces),
             face: FaceSelection::Resolved { faces: targets, native },
-            mode: WrapMode::Emboss,
-            depth: Some(Length(2.0)),
+            mode: WrapMode::Emboss { depth: Length(2.0) },
         } if faces == std::slice::from_ref(&face_id) && targets == std::slice::from_ref(&face_id) && native == &face
     ));
 
@@ -572,15 +571,13 @@ fn semantic_writer_round_trips_wrap() {
             profile,
             face,
             mode,
-            depth,
         } = &mut ir_edit.model.features[0].definition
         else {
             panic!("typed wrap");
         };
         *profile = ProfileRef::Faces(vec![face_id.clone()]);
         *face = FaceSelection::Faces(vec![face_id.clone()]);
-        *mode = WrapMode::Deboss;
-        *depth = Some(Length(3.5));
+        *mode = WrapMode::Deboss { depth: Length(3.5) };
     }
 
     let mut encoded = Vec::new();
@@ -602,8 +599,7 @@ fn semantic_writer_round_trips_wrap() {
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
         FeatureDefinition::Wrap {
-            mode: WrapMode::Deboss,
-            depth: Some(Length(3.5)),
+            mode: WrapMode::Deboss { depth: Length(3.5) },
             ..
         }
     ));
@@ -612,12 +608,10 @@ fn semantic_writer_round_trips_wrap() {
     let mut scribed = cadmpeg_test_support::EditableDecodeResult::from(scribed);
     {
         let mut ir_edit = scribed.ir_mut();
-        let FeatureDefinition::Wrap { mode, depth, .. } = &mut ir_edit.model.features[0].definition
-        else {
+        let FeatureDefinition::Wrap { mode, .. } = &mut ir_edit.model.features[0].definition else {
             panic!("typed wrap");
         };
         *mode = WrapMode::Scribe;
-        *depth = None;
     }
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -636,7 +630,6 @@ fn semantic_writer_round_trips_wrap() {
         scribed.ir().model.features[0].definition,
         FeatureDefinition::Wrap {
             mode: WrapMode::Scribe,
-            depth: None,
             ..
         }
     ));

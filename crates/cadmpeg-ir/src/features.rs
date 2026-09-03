@@ -1170,10 +1170,9 @@ pub enum FeatureDefinition {
         /// Face receiving the mapped profile.
         face: FaceSelection,
         /// Material or imprint operation performed by the mapping.
+        #[serde(flatten, with = "wrap_mode_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "WrapModeSchemaWire"))]
         mode: WrapMode,
-        /// Normal offset for emboss and deboss operations.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        depth: Option<Length>,
     },
     /// Solved sketch node in the construction history.
     Sketch {
@@ -2434,16 +2433,94 @@ pub enum BodyRetentionMode {
 }
 
 /// Material effect of a wrapped profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WrapMode {
     /// Add material above the target face.
-    Emboss,
+    Emboss {
+        /// Positive normal offset above the target face.
+        depth: Length,
+    },
     /// Remove material below the target face.
-    Deboss,
+    Deboss {
+        /// Positive normal offset below the target face.
+        depth: Length,
+    },
     /// Imprint the profile without adding or removing material.
     Scribe,
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the wrap-mode wire schema")]
+struct WrapModeSchemaWire {
+    mode: WrapModeSchemaKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    depth: Option<Length>,
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "variants define the wrap-mode wire schema")]
+#[serde(rename_all = "snake_case")]
+enum WrapModeSchemaKind {
+    Emboss,
+    Deboss,
+    Scribe,
+}
+
+mod wrap_mode_wire {
+    use super::{Length, WrapMode};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum Kind {
+        Emboss,
+        Deboss,
+        Scribe,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        mode: Kind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        depth: Option<Length>,
+    }
+
+    pub fn serialize<S>(value: &WrapMode, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let (mode, depth) = match value {
+            WrapMode::Emboss { depth } => (Kind::Emboss, Some(*depth)),
+            WrapMode::Deboss { depth } => (Kind::Deboss, Some(*depth)),
+            WrapMode::Scribe => (Kind::Scribe, None),
+        };
+        Wire { mode, depth }.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<WrapMode, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.mode, wire.depth) {
+            (Kind::Emboss, Some(depth)) => Ok(WrapMode::Emboss { depth }),
+            (Kind::Deboss, Some(depth)) => Ok(WrapMode::Deboss { depth }),
+            (Kind::Scribe, None) => Ok(WrapMode::Scribe),
+            (Kind::Emboss, None) => Err(serde::de::Error::custom(
+                "wrap mode emboss requires the depth field",
+            )),
+            (Kind::Deboss, None) => Err(serde::de::Error::custom(
+                "wrap mode deboss requires the depth field",
+            )),
+            (Kind::Scribe, Some(_)) => Err(serde::de::Error::custom(
+                "wrap mode scribe forbids the depth field",
+            )),
+        }
+    }
 }
 
 /// Continuity order imposed at a generated surface boundary.

@@ -4193,19 +4193,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "binder construction is invalid");
                 }
             }
-            FeatureDefinition::Wrap {
-                face, mode, depth, ..
-            } => {
+            FeatureDefinition::Wrap { face, .. } => {
                 face_selections.push(face);
-                let valid = match mode {
-                    crate::features::WrapMode::Emboss | crate::features::WrapMode::Deboss => {
-                        depth.is_some_and(positive_feature_length)
-                    }
-                    crate::features::WrapMode::Scribe => depth.is_none(),
-                };
-                if !valid {
-                    feature_geometry_error(findings, feature, "wrap depth is invalid");
-                }
             }
             FeatureDefinition::Sphere { center, radius, .. } => {
                 if ![center.x, center.y, center.z]

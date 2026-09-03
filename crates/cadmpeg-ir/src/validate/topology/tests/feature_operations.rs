@@ -237,12 +237,6 @@ fn feature_operation_geometry_is_validated() {
                 context: None,
             },
         },
-        FeatureDefinition::Wrap {
-            profile: ProfileRef::Native("profile".into()),
-            face: FaceSelection::Unresolved,
-            mode: crate::features::WrapMode::Emboss,
-            depth: None,
-        },
         FeatureDefinition::MoveBody {
             bodies: crate::features::BodySelection::Unresolved,
             translation: Vector3::new(f64::NAN, 0.0, 0.0),
@@ -343,7 +337,6 @@ fn feature_operation_geometry_is_validated() {
         "torus primitive is invalid",
         "helical sweep is invalid",
         "binder construction is invalid",
-        "wrap depth is invalid",
         "body motion is invalid",
         "pattern geometry is invalid",
         "pattern geometry is invalid",

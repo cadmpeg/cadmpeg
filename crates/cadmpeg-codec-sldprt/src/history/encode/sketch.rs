@@ -7,7 +7,7 @@ use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
 use crate::history::classify::feature_input_class;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FaceSelection, FeatureId, Length, ProfileRef, WrapMode};
+use cadmpeg_ir::features::{FaceSelection, FeatureId, ProfileRef, WrapMode};
 
 #[allow(
     clippy::too_many_arguments,
@@ -91,7 +91,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         profile: &ProfileRef,
         face: &FaceSelection,
         mode: &WrapMode,
-        depth: &Option<Length>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -117,24 +116,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             match mode {
-                WrapMode::Emboss | WrapMode::Deboss => {
-                    let depth = depth
-                        .filter(|value| value.0.is_finite() && value.0 > 0.0)
-                        .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
-                                "SLDPRT feature {} has invalid wrap depth",
-                                feature.id
-                            ))
-                        })?;
-                    parameters.insert("Depth".into(), format_length_mm(depth.0));
-                }
-                WrapMode::Scribe => {
-                    if depth.is_some() {
+                WrapMode::Emboss { depth } | WrapMode::Deboss { depth } => {
+                    if !depth.0.is_finite() || depth.0 <= 0.0 {
                         return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} gives a scribe wrap a depth",
+                            "SLDPRT feature {} has invalid wrap depth",
                             feature.id
                         )));
                     }
+                    parameters.insert("Depth".into(), format_length_mm(depth.0));
+                }
+                WrapMode::Scribe => {
                     parameters.remove("Depth");
                 }
             }
@@ -144,8 +135,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert(
                 "Mode".into(),
                 match mode {
-                    WrapMode::Emboss => "Emboss",
-                    WrapMode::Deboss => "Deboss",
+                    WrapMode::Emboss { .. } => "Emboss",
+                    WrapMode::Deboss { .. } => "Deboss",
                     WrapMode::Scribe => "Scribe",
                 }
                 .into(),

@@ -180,8 +180,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 profile,
                 face,
                 mode,
-                depth,
-            } => self.encode_wrap(profile, face, mode, depth),
+            } => self.encode_wrap(profile, face, mode),
             FeatureDefinition::Sketch { .. } => self.encode_sketch(),
             FeatureDefinition::SpatialSketch { .. } => self.encode_spatial_sketch(),
             FeatureDefinition::Extrude {
