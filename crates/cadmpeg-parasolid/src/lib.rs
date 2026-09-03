@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, LayerInstance};
 
 include!("registry_ids.rs");
 
@@ -114,8 +114,8 @@ fn schema_row(schema: &str) -> DialectId {
 
 /// Classify one schema-bearing Parasolid stream and record its host carrier.
 ///
-/// `instance_tagged` identifies the carrier when the host contains more than
-/// one Parasolid stream. The schema and carrier are always retained verbatim as
+/// `instance` identifies the carrier when the host contains more than one
+/// Parasolid stream. The schema and carrier are always retained verbatim as
 /// declarations, independent of whether the schema has a named registry row.
 /// `verified` lists the rows whose grammar the host applied and verified; every
 /// other row, and the residual row, is admitted without verification.
@@ -123,7 +123,7 @@ fn schema_row(schema: &str) -> DialectId {
 pub fn classify_layer(
     schema: &str,
     carrier: &str,
-    instance_tagged: bool,
+    instance: LayerInstance,
     verified: &[DialectId],
 ) -> DialectMatch {
     let id = schema_row(schema);
@@ -137,10 +137,9 @@ pub fn classify_layer(
         DialectMatch::residual(id)
     }
     .with_declared(declared);
-    if instance_tagged {
-        matched.with_instance(carrier)
-    } else {
-        matched
+    match instance {
+        LayerInstance::Sole => matched,
+        LayerInstance::Tagged => matched.with_instance(carrier),
     }
 }
 
@@ -151,10 +150,14 @@ pub fn classify_layer(
 /// disambiguator.
 #[must_use]
 pub fn extra_layers(streams: Vec<(String, String)>, verified: &[DialectId]) -> Vec<DialectMatch> {
-    let instance_tagged = streams.len() > 1;
+    let instance = if streams.len() > 1 {
+        LayerInstance::Tagged
+    } else {
+        LayerInstance::Sole
+    };
     streams
         .into_iter()
-        .map(|(schema, carrier)| classify_layer(&schema, &carrier, instance_tagged, verified))
+        .map(|(schema, carrier)| classify_layer(&schema, &carrier, instance, verified))
         .collect()
 }
 
@@ -273,7 +276,7 @@ mod tests {
             ("Sch_Sw_32001_11000", "parasolid:sch-sw-32001"),
             ("SCH_3201255_32001_13006", "parasolid:format-13006"),
         ] {
-            let matched = classify_layer(schema, "stream@12", false, &ALL_ROWS);
+            let matched = classify_layer(schema, "stream@12", LayerInstance::Sole, &ALL_ROWS);
             assert_eq!(matched.dialect().as_str(), expected);
             assert_eq!(matched.admission(), &Admission::Admitted);
             assert_eq!(matched.declared()[DECLARED_SCHEMA], schema);
@@ -284,7 +287,12 @@ mod tests {
 
     #[test]
     fn residual_schemas_use_residual_admission_without_a_substitution() {
-        let matched = classify_layer("SCH_TEST_1_9999", "block@7:body+3", true, &ALL_ROWS);
+        let matched = classify_layer(
+            "SCH_TEST_1_9999",
+            "block@7:body+3",
+            LayerInstance::Tagged,
+            &ALL_ROWS,
+        );
 
         assert_eq!(matched.dialect().as_str(), "parasolid:unknown");
         assert_eq!(matched.admission(), &Admission::Residual);
@@ -320,8 +328,18 @@ mod tests {
         let mut layers = DialectLayers::of(DialectMatch::admitted(
             DialectId::parse("nx:splmsstr").expect("valid host dialect id"),
         ));
-        let first = classify_layer("SCH_SW_33103_11000", "stream@12", true, &[]);
-        let later = classify_layer("SCH_SW_32001_11000", "stream@12", true, &[]);
+        let first = classify_layer(
+            "SCH_SW_33103_11000",
+            "stream@12",
+            LayerInstance::Tagged,
+            &[],
+        );
+        let later = classify_layer(
+            "SCH_SW_32001_11000",
+            "stream@12",
+            LayerInstance::Tagged,
+            &[],
+        );
 
         let collisions = push_extras(&mut layers, [first.clone(), later]);
 
@@ -344,7 +362,7 @@ mod tests {
             "SCH_TEST_1_9999",
         ]
         .map(|schema| {
-            classify_layer(schema, "carrier", false, &ALL_ROWS)
+            classify_layer(schema, "carrier", LayerInstance::Sole, &ALL_ROWS)
                 .dialect()
                 .to_string()
         })
@@ -358,7 +376,7 @@ mod tests {
         let matched = classify_layer(
             "SCH_3501171_35102_13006",
             "stream@12",
-            false,
+            LayerInstance::Sole,
             &[PARASOLID_SCH_SW_33103],
         );
 

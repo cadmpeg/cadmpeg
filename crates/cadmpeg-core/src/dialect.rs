@@ -364,6 +364,15 @@ impl JsonSchema for DialectMatch {
     }
 }
 
+/// Whether a format layer is the sole instance or needs its carrier identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerInstance {
+    /// The host contains one layer of this format.
+    Sole,
+    /// The host contains several layers and the carrier disambiguates this one.
+    Tagged,
+}
+
 /// A report's primary format layer and any nested or carried format layers.
 ///
 /// Extra layers are unique by `(format, instance)`. An extra layer for the

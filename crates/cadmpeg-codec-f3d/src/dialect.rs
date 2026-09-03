@@ -32,7 +32,9 @@
 //! structural: a manifest whose bytes do not fit the anchors is refused by
 //! `crate::manifest::parse_top_level`, and no version is on an allowlist.
 //!
-use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, Grammar};
+use cadmpeg_core::dialect::{
+    Admission, DialectId, DialectLayers, DialectMatch, Grammar, LayerInstance,
+};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
@@ -237,7 +239,11 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 /// Kernel dialect layers from the binary and text B-rep streams.
 pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
     let text_names = crate::container::text_brep_names(scan);
-    let instance_tagged = scan.breps.len() + text_names.len() > 1;
+    let instance = if scan.breps.len() + text_names.len() > 1 {
+        LayerInstance::Tagged
+    } else {
+        LayerInstance::Sole
+    };
     let mut matches = Vec::new();
     for brep in &scan.breps {
         let header = brep
@@ -251,9 +257,7 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<D
             })
             .unwrap_or(cadmpeg_asm::dialect::KernelHeaderRef::Unknown);
         matches.push(cadmpeg_asm::dialect::classify_layer(
-            header,
-            &brep.name,
-            instance_tagged,
+            header, &brep.name, instance,
         ));
     }
     for name in text_names {
@@ -272,12 +276,12 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<D
                         cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
                     }
                 };
-                cadmpeg_asm::dialect::classify_layer(reference, name, instance_tagged)
+                cadmpeg_asm::dialect::classify_layer(reference, name, instance)
             }
             None => cadmpeg_asm::dialect::classify_layer(
                 cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
                 name,
-                instance_tagged,
+                instance,
             ),
         };
         matches.push(matched);

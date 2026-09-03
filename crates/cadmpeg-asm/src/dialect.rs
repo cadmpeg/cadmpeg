@@ -21,7 +21,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar};
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar, LayerInstance};
 
 use crate::kernel_header::KernelHeader;
 
@@ -103,23 +103,22 @@ pub fn classify(header: KernelHeaderRef<'_>) -> DialectMatch {
 
 /// Classify one kernel stream and retain its host carrier.
 ///
-/// `instance_tagged` identifies the carrier when a host reports several ACIS
+/// `instance` identifies the carrier when a host reports several ACIS
 /// layers. The kernel declaration and carrier stay attached to the same match,
 /// independent of whether the header selects a verified row.
 #[must_use]
 pub fn classify_layer(
     header: KernelHeaderRef<'_>,
     carrier: &str,
-    instance_tagged: bool,
+    instance: LayerInstance,
 ) -> DialectMatch {
     let matched = classify(header);
     let mut declared = matched.declared().clone();
     declared.insert(DECLARED_CARRIER.to_owned(), carrier.to_owned());
     let matched = matched.with_declared(declared);
-    if instance_tagged {
-        matched.with_instance(carrier)
-    } else {
-        matched
+    match instance {
+        LayerInstance::Sole => matched,
+        LayerInstance::Tagged => matched.with_instance(carrier),
     }
 }
 
@@ -232,7 +231,7 @@ mod tests {
         ACIS_TEXT_ASM, ACIS_UNKNOWN, DECLARED_CARRIER, FORMAT,
     };
     use crate::kernel_header::KernelHeader;
-    use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+    use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, LayerInstance};
     use std::collections::BTreeSet;
 
     fn header(width: u8, save_format_version: Option<u32>) -> KernelHeader {
@@ -320,7 +319,11 @@ mod tests {
     #[test]
     fn layer_classification_owns_carrier_identity() {
         let header = header(4, Some(21_804));
-        let matched = classify_layer(KernelHeaderRef::Acis(&header), "stream@12", true);
+        let matched = classify_layer(
+            KernelHeaderRef::Acis(&header),
+            "stream@12",
+            LayerInstance::Tagged,
+        );
         assert_eq!(matched.declared()[DECLARED_CARRIER], "stream@12");
         assert_eq!(matched.instance(), Some("stream@12"));
     }
