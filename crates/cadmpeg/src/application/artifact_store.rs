@@ -14,9 +14,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_container::compound::read_detection_prefix;
 use cadmpeg_ir::codec::write::ExportPlan;
-use cadmpeg_ir::report::{DecodeReport, ExportReport};
-use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar, SourceFidelity};
+use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
 use sha2::{Digest, Sha256};
+
+use super::document::LoadOrigin;
 
 /// Owner of bounded reads, sidecar paths, digest checks, and atomic writes.
 ///
@@ -175,12 +177,8 @@ impl ArtifactStore {
         Self::write_bytes_atomic(output, bytes)
     }
 
-    /// Stage an export plan, optionally hashing CADIR bytes for the sidecar.
-    pub fn write_plan_atomic(
-        output: &Path,
-        plan: ExportPlan,
-        with_digest: bool,
-    ) -> Result<(ExportReport, Option<String>)> {
+    /// Stage an export plan and hash the emitted bytes.
+    pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportReport, String)> {
         let parent = output
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
@@ -189,7 +187,7 @@ impl ArtifactStore {
             .with_context(|| format!("creating temporary output in {}", parent.display()))?;
         let mut sink = TempFileWriter {
             file: &mut temporary,
-            hasher: with_digest.then(Sha256::new),
+            hasher: Sha256::new(),
         };
         let mut writer = BufWriter::new(&mut sink);
         let report = plan
@@ -209,21 +207,17 @@ impl ArtifactStore {
 
     /// Persist or remove the decode-fidelity sidecar beside a CADIR file.
     ///
-    /// When both report and fidelity are present this is a second atomic rename
-    /// after the CADIR write. The pair is not transactional; see the module
-    /// docs. When origin metadata is absent, a stale sidecar is removed.
+    /// A decoded origin causes a second atomic rename after the CADIR write.
+    /// The pair is not transactional; see the module docs. A neutral origin
+    /// removes a stale sidecar.
     pub fn persist_decode_sidecar(
         cadir_path: &Path,
-        cadir_sha256: Option<&str>,
-        report: Option<&DecodeReport>,
-        fidelity: Option<&SourceFidelity>,
+        cadir_sha256: &str,
+        origin: &LoadOrigin,
     ) -> Result<SidecarPersistOutcome> {
         let path = Self::sidecar_path(cadir_path);
-        match (report, fidelity) {
-            (Some(report), Some(fidelity)) => {
-                let cadir_sha256 = cadir_sha256.ok_or_else(|| {
-                    anyhow!("missing CADIR digest while writing decode-fidelity sidecar")
-                })?;
+        match origin {
+            LoadOrigin::Decoded { report, fidelity } => {
                 let sidecar =
                     DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
                 let mut bytes = sidecar.to_canonical_json()?.into_bytes();
@@ -231,12 +225,12 @@ impl ArtifactStore {
                 Self::write_bytes_atomic(&path, &bytes)?;
                 Ok(SidecarPersistOutcome::Wrote(path))
             }
-            _ if path.exists() => {
+            LoadOrigin::Neutral if path.exists() => {
                 std::fs::remove_file(&path)
                     .with_context(|| format!("removing stale decode sidecar {}", path.display()))?;
                 Ok(SidecarPersistOutcome::RemovedStale(path))
             }
-            _ => Ok(SidecarPersistOutcome::Absent),
+            LoadOrigin::Neutral => Ok(SidecarPersistOutcome::Absent),
         }
     }
 }
@@ -254,28 +248,24 @@ pub enum SidecarPersistOutcome {
 
 struct TempFileWriter<'a> {
     file: &'a mut tempfile::NamedTempFile,
-    hasher: Option<Sha256>,
+    hasher: Sha256,
 }
 
 impl TempFileWriter<'_> {
-    fn finish(self) -> Option<String> {
-        self.hasher.map(|hasher| {
-            let digest = hasher.finalize();
-            let mut encoded = String::with_capacity(digest.len() * 2);
-            for byte in digest {
-                write!(encoded, "{byte:02x}").expect("writing a digest to a String");
-            }
-            encoded
-        })
+    fn finish(self) -> String {
+        let digest = self.hasher.finalize();
+        let mut encoded = String::with_capacity(digest.len() * 2);
+        for byte in digest {
+            write!(encoded, "{byte:02x}").expect("writing a digest to a String");
+        }
+        encoded
     }
 }
 
 impl Write for TempFileWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         let written = self.file.write(bytes)?;
-        if let Some(hasher) = &mut self.hasher {
-            hasher.update(&bytes[..written]);
-        }
+        self.hasher.update(&bytes[..written]);
         Ok(written)
     }
 

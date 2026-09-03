@@ -8,7 +8,6 @@ use anyhow::{anyhow, Result as AnyResult};
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::SourceFidelity;
 
 use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
@@ -269,7 +268,7 @@ impl DestinationPolicy {
     /// Resolves filesystem-dependent destination rules. A missing source is
     /// left for the loader; an existing destination still refuses before the
     /// potentially expensive decode.
-    fn resolve(&self, source: &Path) -> AnyResult<ResolvedDestination> {
+    pub(crate) fn resolve(&self, source: &Path) -> AnyResult<ResolvedDestination> {
         match self {
             Self::Stdout { .. } => Ok(ResolvedDestination::Stdout),
             Self::File { path, overwrite } => {
@@ -292,13 +291,13 @@ pub struct ConversionPolicy {
 }
 
 #[derive(Debug, Clone)]
-enum ResolvedDestination {
+pub(crate) enum ResolvedDestination {
     Stdout,
     File(PathBuf),
 }
 
 impl ResolvedDestination {
-    fn path(&self) -> Option<&Path> {
+    pub(crate) fn path(&self) -> Option<&Path> {
         match self {
             Self::Stdout => None,
             Self::File(path) => Some(path),
@@ -469,9 +468,8 @@ impl PlannedConversion {
         emit_export_plan(
             self.plan,
             self.prepared.selection.format,
-            self.prepared.destination.path(),
-            self.prepared.document.decode_report(),
-            self.prepared.document.fidelity(),
+            &self.prepared.destination,
+            &self.prepared.document.origin,
         )
     }
 }
@@ -549,22 +547,15 @@ fn decode_lossy_refusal(
 pub(crate) fn emit_export_plan(
     plan: ExportPlan,
     format: Format,
-    out: Option<&Path>,
-    decode_report: Option<&DecodeReport>,
-    source_fidelity: Option<&SourceFidelity>,
+    destination: &ResolvedDestination,
+    origin: &crate::application::LoadOrigin,
 ) -> AnyResult<ExportEmission> {
-    let needs_sidecar_digest =
-        format == Format::Cadir && decode_report.is_some() && source_fidelity.is_some();
-    if let Some(path) = out {
-        let (report, cadir_sha256) =
-            ArtifactStore::write_plan_atomic(path, plan, needs_sidecar_digest)?;
+    let needs_sidecar =
+        format == Format::Cadir && matches!(origin, crate::application::LoadOrigin::Decoded { .. });
+    if let ResolvedDestination::File(path) = destination {
+        let (report, cadir_sha256) = ArtifactStore::write_plan_atomic(path, plan)?;
         let sidecar = if format == Format::Cadir {
-            ArtifactStore::persist_decode_sidecar(
-                path,
-                cadir_sha256.as_deref(),
-                decode_report,
-                source_fidelity,
-            )?
+            ArtifactStore::persist_decode_sidecar(path, &cadir_sha256, origin)?
         } else {
             SidecarPersistOutcome::Absent
         };
@@ -582,7 +573,7 @@ pub(crate) fn emit_export_plan(
         writer.flush()?;
         Ok(ExportEmission {
             report,
-            artifact: if needs_sidecar_digest {
+            artifact: if needs_sidecar {
                 EmittedArtifact::StdoutWithoutSidecar
             } else {
                 EmittedArtifact::Stdout

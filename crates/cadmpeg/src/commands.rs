@@ -30,8 +30,8 @@ use crate::application::refusal::ApplicationError;
 use crate::application::transcoder::{emit_export_plan, TargetSelection};
 use crate::application::validators::validate_ir;
 use crate::application::{
-    export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, LoadedDocument,
-    NativeValidatorCatalog, SourceRequest, Transcoder,
+    export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, DestinationPolicy,
+    LoadedDocument, NativeValidatorCatalog, SourceRequest, Transcoder,
 };
 use crate::loader;
 use crate::DecodeArgs;
@@ -275,12 +275,11 @@ pub fn dump(
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
 ) -> CommandResult<()> {
-    if let Some(out) = out {
-        ArtifactStore::check_output_path(path, out, force)?;
-    }
+    let destination = DestinationPolicy::new(out.map(Path::to_path_buf), force, false);
+    let destination = destination.resolve(path)?;
     if let Some(report_path) = report_path {
         ArtifactStore::check_output_path(path, report_path, force)?;
-        if let Some(out) = out {
+        if let Some(out) = destination.path() {
             ArtifactStore::check_distinct_output_paths(
                 out,
                 "CADIR output",
@@ -307,13 +306,7 @@ pub fn dump(
         cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
         TargetRequest::Inherit,
     )?;
-    let emission = emit_export_plan(
-        plan,
-        Format::Cadir,
-        out,
-        loaded.decode_report(),
-        loaded.fidelity(),
-    )?;
+    let emission = emit_export_plan(plan, Format::Cadir, &destination, &loaded.origin)?;
     print_export_emission(&mut io::stderr(), &emission)?;
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
