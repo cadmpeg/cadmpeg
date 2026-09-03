@@ -13,7 +13,7 @@ use cadmpeg_registry::{
 };
 
 use crate::application::refusal::ApplicationError;
-use crate::application::{ArtifactStore, LoadOrigin, LoadedDocument};
+use crate::application::{ArtifactStore, LoadedDocument};
 
 /// Restates a detection failure with the flag that overrides it.
 ///
@@ -88,6 +88,7 @@ pub fn load_artifact(
 #[allow(clippy::default_trait_access, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::application::LoadOrigin;
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::{DecodeReport, DecodeSidecar, SourceFidelity};
 
