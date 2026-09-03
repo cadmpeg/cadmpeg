@@ -13,7 +13,7 @@ use clap::{Args, ValueEnum};
 use serde_json::{Map, Value};
 
 use super::document::CadirDocument;
-use super::item::{emit_values, ArenaTarget};
+use super::item::{emit_values, ArenaTarget, Output};
 
 /// How to emit matching rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
@@ -66,6 +66,19 @@ pub struct JoinArgs {
     pub json: bool,
 }
 
+impl JoinArgs {
+    /// Resolves the flat clap output fields into one output mode.
+    pub(crate) fn mode(&self) -> Output<'_> {
+        if self.json {
+            Output::Json
+        } else if let Some(paths) = self.fields.as_deref() {
+            Output::Tsv(paths)
+        } else {
+            Output::Pretty
+        }
+    }
+}
+
 struct JoinSpec<'a> {
     left: &'a [Value],
     right: &'a [Value],
@@ -79,7 +92,7 @@ struct JoinSpec<'a> {
 }
 
 /// Runs `query join` against one or two CADIR documents.
-pub fn run(args: &JoinArgs) -> Result<()> {
+pub fn run(args: &JoinArgs, output: Output<'_>) -> Result<()> {
     let left_doc = CadirDocument::load(&args.file, "join")?;
     let left_target = ArenaTarget::parse(&args.left_arena)?;
     let left_records;
@@ -130,7 +143,7 @@ pub fn run(args: &JoinArgs) -> Result<()> {
     if let Some(n) = args.head {
         rows.truncate(n);
     }
-    emit_values("join", args.json, args.fields.as_deref(), &rows)
+    emit_values("join", output, &rows)
 }
 
 fn join_records(spec: &JoinSpec<'_>) -> Vec<Value> {

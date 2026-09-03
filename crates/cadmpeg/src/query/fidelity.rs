@@ -10,7 +10,7 @@
 //! retained record identity, length, and digest before projecting or extracting.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
@@ -40,36 +40,74 @@ pub struct FidelityArgs {
     pub json: bool,
 }
 
+impl FidelityArgs {
+    /// Resolves the flat clap fields into one fidelity operation.
+    pub(crate) fn mode(&self) -> Result<FidelityMode<'_>> {
+        let Some(stream) = self.stream.as_deref() else {
+            return Ok(if self.json {
+                FidelityMode::Json
+            } else {
+                FidelityMode::Table
+            });
+        };
+        let sink = if let Some(path) = self.output.as_deref() {
+            Sink::File {
+                path,
+                force: self.force,
+            }
+        } else if self.binary_stdout {
+            Sink::Stdout
+        } else {
+            bail!(
+                "retained stream bytes are binary output that a terminal cannot read; \
+                 pass `-o FILE` or `--binary-stdout` to stream the bytes anyway"
+            );
+        };
+        Ok(FidelityMode::Extract { stream, sink })
+    }
+}
+
+/// One complete fidelity query operation.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum FidelityMode<'a> {
+    Table,
+    Json,
+    Extract { stream: &'a str, sink: Sink<'a> },
+}
+
+/// Destination for extracted retained bytes.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Sink<'a> {
+    File { path: &'a Path, force: bool },
+    Stdout,
+}
+
 /// Runs `query fidelity` against one artifact.
-pub fn run(args: &FidelityArgs) -> Result<()> {
-    let bytes = read_input(&args.file)?;
-    match detect(&bytes, &args.file)? {
+pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
+    let bytes = read_input(file)?;
+    match detect(&bytes, file)? {
         Artifact::Sidecar(_) => {}
         Artifact::Cadir(_) => bail!(
             "{} is a CADIR document; the fidelity payload lives in the \
              `<stem>.fidelity.json` decode sidecar `cadmpeg dump` writes \
              next to it",
-            args.file.display()
+            file.display()
         ),
         Artifact::Report(_) => bail!(
             "{} is a command report; the fidelity payload lives in the \
              `<stem>.fidelity.json` decode sidecar `cadmpeg dump` writes",
-            args.file.display()
+            file.display()
         ),
     }
-    let text = std::str::from_utf8(&bytes).with_context(|| {
-        format!(
-            "reading the decode sidecar {} as UTF-8",
-            args.file.display()
-        )
-    })?;
+    let text = std::str::from_utf8(&bytes)
+        .with_context(|| format!("reading the decode sidecar {} as UTF-8", file.display()))?;
     let sidecar = cadmpeg_ir::DecodeSidecar::from_json(text)
-        .with_context(|| format!("validating the decode sidecar {}", args.file.display()))?;
+        .with_context(|| format!("validating the decode sidecar {}", file.display()))?;
     let payload = &sidecar.fidelity;
 
-    match &args.stream {
-        Some(stream) => extract(args, payload, stream),
-        None if args.json => {
+    match mode {
+        FidelityMode::Extract { stream, sink } => extract(payload, stream, sink),
+        FidelityMode::Json => {
             let records: Vec<serde_json::Value> = payload
                 .retained_records
                 .iter()
@@ -94,7 +132,7 @@ pub fn run(args: &FidelityArgs) -> Result<()> {
             print_json("fidelity", &value);
             Ok(())
         }
-        None => {
+        FidelityMode::Table => {
             println!("stream\toffset\tbytes\tdata\tid");
             for record in &payload.retained_records {
                 println!(
@@ -123,7 +161,7 @@ pub fn run(args: &FidelityArgs) -> Result<()> {
 }
 
 /// Reassembles one stream's retained bytes and writes them byte-exactly.
-fn extract(args: &FidelityArgs, payload: &cadmpeg_ir::SourceFidelity, stream: &str) -> Result<()> {
+fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -> Result<()> {
     const SHOWN: usize = 20;
     let mut matched: Vec<&cadmpeg_ir::RetainedSourceRecord> = payload
         .retained_records
@@ -190,28 +228,24 @@ fn extract(args: &FidelityArgs, payload: &cadmpeg_ir::SourceFidelity, stream: &s
         assembled.extend_from_slice(data);
     }
 
-    if let Some(path) = &args.output {
-        if path.exists() && !args.force {
-            bail!("{} exists; pass --force to replace it", path.display());
+    match sink {
+        Sink::File { path, force } => {
+            if path.exists() && !force {
+                bail!("{} exists; pass --force to replace it", path.display());
+            }
+            std::fs::write(path, &assembled).with_context(|| {
+                format!("writing {} bytes to {}", assembled.len(), path.display())
+            })?;
+            eprintln!(
+                "wrote {} bytes from {} record(s) of stream {stream:?} to {}",
+                assembled.len(),
+                matched.len(),
+                path.display()
+            );
+            Ok(())
         }
-        std::fs::write(path, &assembled)
-            .with_context(|| format!("writing {} bytes to {}", assembled.len(), path.display()))?;
-        eprintln!(
-            "wrote {} bytes from {} record(s) of stream {stream:?} to {}",
-            assembled.len(),
-            matched.len(),
-            path.display()
-        );
-        return Ok(());
-    }
-    if args.binary_stdout {
-        std::io::stdout()
+        Sink::Stdout => std::io::stdout()
             .write_all(&assembled)
-            .context("writing extracted bytes to stdout")?;
-        return Ok(());
+            .context("writing extracted bytes to stdout"),
     }
-    bail!(
-        "retained stream bytes are binary output that a terminal cannot read; \
-         pass `-o FILE` or `--binary-stdout` to stream the bytes anyway"
-    )
 }

@@ -13,7 +13,7 @@ use clap::Args;
 use serde_json::{json, Value};
 
 use super::document::{select_records, CadirDocument};
-use super::item::{emit_values, ArenaTarget};
+use super::item::{emit_values, ArenaTarget, Output};
 
 /// Default cap on emitted walks. Truncation notes on stderr and exits 0.
 const DEFAULT_MAX_PATHS: usize = 10_000;
@@ -64,6 +64,19 @@ pub struct GraphArgs {
     pub json: bool,
 }
 
+impl GraphArgs {
+    /// Resolves the flat clap output fields into one output mode.
+    pub(crate) fn mode(&self) -> Output<'_> {
+        if self.json {
+            Output::Json
+        } else if let Some(paths) = self.fields.as_deref() {
+            Output::Tsv(paths)
+        } else {
+            Output::Pretty
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct NodeRef {
     arena: usize,
@@ -82,7 +95,7 @@ struct WalkOutcome {
 }
 
 /// Runs `query graph` against one CADIR document.
-pub fn run(args: &GraphArgs) -> Result<()> {
+pub fn run(args: &GraphArgs, output: Output<'_>) -> Result<()> {
     let doc = CadirDocument::load(&args.file, "graph")?;
     let target = ArenaTarget::parse(&args.arena)?;
     let arena_idx = doc.arena_index(&target)?;
@@ -105,7 +118,7 @@ pub fn run(args: &GraphArgs) -> Result<()> {
         args.reverse,
         args.max_paths,
     );
-    let emit_result = emit_values("graph", args.json, args.fields.as_deref(), &outcome.results);
+    let emit_result = emit_values("graph", output, &outcome.results);
     if outcome.truncated {
         eprintln!(
             "graph truncated at {} paths (--max-paths {}); raise --max-paths to continue",

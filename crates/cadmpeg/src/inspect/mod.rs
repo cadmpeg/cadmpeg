@@ -193,6 +193,50 @@ pub struct FindArgs {
     pub json: bool,
 }
 
+/// A search pattern with its selected encoding.
+#[derive(Debug, Clone, Copy)]
+enum Needle<'a> {
+    Hex(&'a str),
+    Ascii(&'a str),
+    Utf16le(&'a str),
+}
+
+impl FindArgs {
+    /// Resolves the flat clap fields into one search mode.
+    fn mode(&self) -> Result<Needle<'_>> {
+        let misplaced = match (&self.input_flag, &self.file) {
+            (Some(_), Some(stray)) => Some(stray.display().to_string()),
+            (Some(_), None) | (None, Some(_)) => self.misplaced_pattern.clone(),
+            (None, None) => unreachable!("clap requires one file spelling"),
+        };
+        if let Some(stray) = misplaced {
+            bail!(
+                "`{stray}` is an extra positional argument; the search pattern is named by a flag \
+                 because a bare word does not say how to encode it: pass `--hex {stray}` for a byte \
+                 pattern, `--ascii {stray}` for text, or `--utf16le {stray}` for UTF-16LE text"
+            );
+        }
+        if let Some(guessed) = &self.misplaced_type {
+            let flag = match guessed.to_ascii_lowercase().as_str() {
+                "hex" | "bytes" => "--hex PATTERN",
+                text if text.starts_with("utf16") || text.starts_with("utf-16") => "--utf16le TEXT",
+                _ => "--ascii TEXT",
+            };
+            bail!(
+                "`--type {guessed}` does not select an encoding here; `find` names the pattern \
+                 encoding by flag: pass `{flag}` (the choices are --hex, --ascii, and --utf16le)"
+            );
+        }
+        match (&self.hex, &self.ascii, &self.utf16le) {
+            (Some(text), None, None) => Ok(Needle::Hex(text)),
+            (None, Some(text), None) => Ok(Needle::Ascii(text)),
+            (None, None, Some(text)) => Ok(Needle::Utf16le(text)),
+            (None, None, None) => bail!("pass one of --hex, --ascii, or --utf16le"),
+            _ => unreachable!("clap rejects conflicting search encodings"),
+        }
+    }
+}
+
 /// Arguments for `cadmpeg inspect strings`.
 #[derive(Debug, Args)]
 pub struct StringsArgs {
@@ -301,8 +345,14 @@ pub fn run(command: ByteCommand) -> Result<ExitCode> {
     };
     match tool {
         ByteTool::Hex(args) => hex(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Read(args) => read(&args).map(|()| ExitCode::SUCCESS),
-        ByteTool::Find(args) => find(&args).map(|()| ExitCode::SUCCESS),
+        ByteTool::Read(args) => {
+            let mode = args.endian.mode();
+            read(&args, mode).map(|()| ExitCode::SUCCESS)
+        }
+        ByteTool::Find(args) => {
+            let mode = args.mode()?;
+            find(&args, mode).map(|()| ExitCode::SUCCESS)
+        }
         ByteTool::Strings(args) => strings(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Struct(args) => structure(&args).map(|()| ExitCode::SUCCESS),
         ByteTool::Container(args) => container_list(&args).map(|()| ExitCode::SUCCESS),
@@ -373,7 +423,7 @@ fn hex(args: &HexArgs) -> Result<()> {
     Ok(())
 }
 
-fn read(args: &ReadArgs) -> Result<()> {
+fn read(args: &ReadArgs, endian: numeric::Endian) -> Result<()> {
     if args.json {
         bail!(
             "`inspect read` has no JSON form; JSON lives on `inspect FILE --json` \
@@ -390,7 +440,6 @@ fn read(args: &ReadArgs) -> Result<()> {
     if stride == 0 {
         bail!("--stride 0 would read the same bytes forever");
     }
-    let endian = args.endian.endian();
     let file_path = args.file.path();
     let size = file_len(file_path)?;
     let name = args.ty.display_name(endian);
@@ -424,39 +473,16 @@ fn read(args: &ReadArgs) -> Result<()> {
     Ok(())
 }
 
-fn find(args: &FindArgs) -> Result<()> {
-    let (file, misplaced) = match (&args.input_flag, &args.file) {
-        (Some(input), Some(stray)) => (input, Some(stray.display().to_string())),
-        (Some(input), None) => (input, args.misplaced_pattern.clone()),
-        (None, Some(file)) => (file, args.misplaced_pattern.clone()),
+fn find(args: &FindArgs, needle: Needle<'_>) -> Result<()> {
+    let file = match (&args.input_flag, &args.file) {
+        (Some(input), _) => input,
+        (None, Some(file)) => file,
         (None, None) => unreachable!("clap requires one file spelling"),
     };
-    if let Some(stray) = &misplaced {
-        bail!(
-            "`{stray}` is an extra positional argument; the search pattern is named by a flag \
-             because a bare word does not say how to encode it: pass `--hex {stray}` for a byte \
-             pattern, `--ascii {stray}` for text, or `--utf16le {stray}` for UTF-16LE text"
-        );
-    }
-    if let Some(guessed) = &args.misplaced_type {
-        let flag = match guessed.to_ascii_lowercase().as_str() {
-            "hex" | "bytes" => "--hex PATTERN",
-            text if text.starts_with("utf16") || text.starts_with("utf-16") => "--utf16le TEXT",
-            _ => "--ascii TEXT",
-        };
-        bail!(
-            "`--type {guessed}` does not select an encoding here; `find` names the pattern \
-             encoding by flag: pass `{flag}` (the choices are --hex, --ascii, and --utf16le)"
-        );
-    }
-    let (pattern, described) = if let Some(text) = &args.hex {
-        (search::parse_pattern(text), format!("hex {text}"))
-    } else if let Some(text) = &args.ascii {
-        (search::ascii_pattern(text), format!("ascii {text:?}"))
-    } else if let Some(text) = &args.utf16le {
-        (search::utf16le_pattern(text), format!("utf16le {text:?}"))
-    } else {
-        bail!("pass one of --hex, --ascii, or --utf16le")
+    let (pattern, described) = match needle {
+        Needle::Hex(text) => (search::parse_pattern(text), format!("hex {text}")),
+        Needle::Ascii(text) => (search::ascii_pattern(text), format!("ascii {text:?}")),
+        Needle::Utf16le(text) => (search::utf16le_pattern(text), format!("utf16le {text:?}")),
     };
     let pattern = pattern.map_err(|message| anyhow::anyhow!(message))?;
     let bytes = read_whole(file)?;
