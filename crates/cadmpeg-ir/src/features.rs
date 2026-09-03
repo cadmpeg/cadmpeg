@@ -1806,7 +1806,8 @@ pub enum FeatureDefinition {
         /// Fixed locus of the scale transform.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         center: Option<ScaleCenter>,
-        /// Independently decoded uniform and axis scale factors.
+        /// Uniform, per-axis, or unresolved scale factors.
+        #[cfg_attr(feature = "schema", schemars(with = "ScaleFactorsWire"))]
         factors: ScaleFactors,
     },
     /// Drilled or machined hole.
@@ -2653,32 +2654,82 @@ pub enum ScaleCenter {
     Native(String),
 }
 
-/// Independently decoded factors of a body-scale transform.
+/// Factors of a body-scale transform.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct ScaleFactors {
-    /// Uniform factor, when resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub uniform: Option<f64>,
-    /// Model-space x factor, when resolved independently.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub x: Option<f64>,
-    /// Model-space y factor, when resolved independently.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub y: Option<f64>,
-    /// Model-space z factor, when resolved independently.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub z: Option<f64>,
+#[serde(try_from = "ScaleFactorsWire", into = "ScaleFactorsWire")]
+pub enum ScaleFactors {
+    /// No complete scale factor is available.
+    Unresolved,
+    /// One factor applies on all three axes.
+    Uniform(f64),
+    /// Independent factors apply on the model-space axes.
+    PerAxis(Vector3),
 }
 
 impl ScaleFactors {
     /// Resolve the effective model-space factors when construction is complete.
     #[must_use]
     pub fn resolved(self) -> Option<Vector3> {
-        if let Some(factor) = self.uniform {
-            return Some(Vector3::new(factor, factor, factor));
+        match self {
+            Self::Unresolved => None,
+            Self::Uniform(factor) => Some(Vector3::new(factor, factor, factor)),
+            Self::PerAxis(factors) => Some(factors),
         }
-        Some(Vector3::new(self.x?, self.y?, self.z?))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ScaleFactorsWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uniform: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    x: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    y: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    z: Option<f64>,
+}
+
+impl From<ScaleFactors> for ScaleFactorsWire {
+    fn from(value: ScaleFactors) -> Self {
+        match value {
+            ScaleFactors::Unresolved => Self {
+                uniform: None,
+                x: None,
+                y: None,
+                z: None,
+            },
+            ScaleFactors::Uniform(factor) => Self {
+                uniform: Some(factor),
+                x: None,
+                y: None,
+                z: None,
+            },
+            ScaleFactors::PerAxis(factors) => Self {
+                uniform: None,
+                x: Some(factors.x),
+                y: Some(factors.y),
+                z: Some(factors.z),
+            },
+        }
+    }
+}
+
+impl TryFrom<ScaleFactorsWire> for ScaleFactors {
+    type Error = String;
+
+    fn try_from(value: ScaleFactorsWire) -> Result<Self, Self::Error> {
+        match (value.uniform, value.x, value.y, value.z) {
+            (None, None, None, None) => Ok(Self::Unresolved),
+            (Some(factor), None, None, None) => Ok(Self::Uniform(factor)),
+            (None, Some(x), Some(y), Some(z)) => Ok(Self::PerAxis(Vector3::new(x, y, z))),
+            _ => Err(
+                "scale factors must be uniformly resolved, resolved on all axes, or absent"
+                    .to_string(),
+            ),
+        }
     }
 }
 

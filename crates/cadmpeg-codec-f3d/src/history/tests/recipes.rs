@@ -1064,12 +1064,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(group_id.into()),
             center: Some(ScaleCenter::ModelOrigin),
-            factors: ScaleFactors {
-                uniform: Some(1.5),
-                x: None,
-                y: None,
-                z: None,
-            },
+            factors: ScaleFactors::Uniform(1.5),
         },
     );
     feature.native_ref = Some(scale_scope.id.clone());

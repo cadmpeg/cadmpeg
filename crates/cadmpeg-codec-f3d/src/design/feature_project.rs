@@ -1064,12 +1064,9 @@ pub fn project_parameter_design_with_edge_identities(
                                     ))
                                 },
                             )),
-                            factors: cadmpeg_ir::features::ScaleFactors {
-                                uniform: Some(operation.uniform_factor),
-                                x: None,
-                                y: None,
-                                z: None,
-                            },
+                            factors: cadmpeg_ir::features::ScaleFactors::Uniform(
+                                operation.uniform_factor,
+                            ),
                         }
                     },
                 ),

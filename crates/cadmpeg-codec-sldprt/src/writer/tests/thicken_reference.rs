@@ -208,7 +208,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
 #[test]
 fn semantic_writer_round_trips_typed_scale() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, ScaleCenter, ScaleFactors};
-    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -230,12 +230,7 @@ fn semantic_writer_round_trips_typed_scale() {
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(selection),
             center: Some(ScaleCenter::Point(Point3 { x: 1.0, y: 2.0, z: 3.0 })),
-            factors: ScaleFactors {
-                uniform: Some(2.0),
-                x: None,
-                y: None,
-                z: None,
-            },
+            factors: ScaleFactors::Uniform(2.0),
         } if selection == "body:1"
     ));
     assert!(matches!(
@@ -272,12 +267,7 @@ fn semantic_writer_round_trips_typed_scale() {
         };
         *bodies = BodySelection::Native("body:2,body:3".into());
         *center = Some(ScaleCenter::Point(Point3::new(4.0, 5.0, 6.0)));
-        *factors = ScaleFactors {
-            uniform: None,
-            x: Some(1.5),
-            y: Some(2.0),
-            z: Some(2.5),
-        };
+        *factors = ScaleFactors::PerAxis(Vector3::new(1.5, 2.0, 2.5));
     }
 
     let mut encoded = Vec::new();
@@ -312,12 +302,11 @@ fn semantic_writer_round_trips_typed_scale() {
                 y: 5.0,
                 z: 6.0
             })),
-            factors: ScaleFactors {
-                uniform: None,
-                x: Some(1.5),
-                y: Some(2.0),
-                z: Some(2.5),
-            },
+            factors: ScaleFactors::PerAxis(Vector3 {
+                x: 1.5,
+                y: 2.0,
+                z: 2.5,
+            }),
             ..
         }
     ));
@@ -366,12 +355,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(bodies),
             center: None,
-            factors: ScaleFactors {
-                uniform: Some(2.0),
-                x: Some(3.0),
-                y: None,
-                z: None,
-            },
+            factors: ScaleFactors::Unresolved,
         } if bodies == "body:1"
     ));
     assert!(matches!(
@@ -379,12 +363,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
         FeatureDefinition::Scale {
             bodies: BodySelection::Unresolved,
             center: Some(ScaleCenter::Centroid),
-            factors: ScaleFactors {
-                uniform: None,
-                x: Some(1.5),
-                y: None,
-                z: Some(2.5),
-            },
+            factors: ScaleFactors::Unresolved,
         }
     ));
 

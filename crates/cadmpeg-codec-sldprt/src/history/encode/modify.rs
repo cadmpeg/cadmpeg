@@ -867,10 +867,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let factors_valid = [factors.uniform, factors.x, factors.y, factors.z]
-                .into_iter()
-                .flatten()
-                .all(|factor| factor.is_finite() && factor != 0.0);
+            let factors_valid = resolved_factors.is_none_or(|factors| {
+                [factors.x, factors.y, factors.z]
+                    .into_iter()
+                    .all(|factor| factor.is_finite() && factor != 0.0)
+            });
             if !factors_valid || !center_valid {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid scale transform",
@@ -880,23 +881,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
-            if let Some(factor) = factors.uniform {
-                parameters.insert("Factor".into(), factor.to_string());
-            } else {
-                if [factors.x, factors.y, factors.z]
-                    .into_iter()
-                    .all(|factor| factor.is_some())
-                {
+            match factors {
+                ScaleFactors::Unresolved => {}
+                ScaleFactors::Uniform(factor) => {
+                    parameters.insert("Factor".into(), factor.to_string());
+                    parameters.remove("ScaleX");
+                    parameters.remove("ScaleY");
+                    parameters.remove("ScaleZ");
+                }
+                ScaleFactors::PerAxis(factors) => {
                     parameters.remove("Factor");
-                }
-                if let Some(factor) = factors.x {
-                    parameters.insert("ScaleX".into(), factor.to_string());
-                }
-                if let Some(factor) = factors.y {
-                    parameters.insert("ScaleY".into(), factor.to_string());
-                }
-                if let Some(factor) = factors.z {
-                    parameters.insert("ScaleZ".into(), factor.to_string());
+                    parameters.insert("ScaleX".into(), factors.x.to_string());
+                    parameters.insert("ScaleY".into(), factors.y.to_string());
+                    parameters.insert("ScaleZ".into(), factors.z.to_string());
                 }
             }
             let mut properties = feature.source_properties.clone();

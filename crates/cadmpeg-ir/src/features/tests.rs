@@ -724,6 +724,32 @@ fn unresolved_hole_and_flex_wire_forms_reject_cross_family_payloads() {
 }
 
 #[test]
+fn scale_factor_forms_preserve_the_legacy_wire_layout() {
+    use crate::features::ScaleFactors;
+
+    for wire in [
+        serde_json::json!({}),
+        serde_json::json!({"uniform": 2.0}),
+        serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0}),
+    ] {
+        let factors: ScaleFactors = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(factors).unwrap(), wire);
+    }
+}
+
+#[test]
+fn scale_factor_wire_rejects_mixed_and_partial_forms() {
+    use crate::features::ScaleFactors;
+
+    for wire in [
+        serde_json::json!({"uniform": 2.0, "x": 1.0}),
+        serde_json::json!({"x": 1.0, "z": 3.0}),
+    ] {
+        assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
+    }
+}
+
+#[test]
 fn edge_selections_round_trip_through_json() {
     use crate::features::EdgeSelection;
     use crate::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};

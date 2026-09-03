@@ -487,6 +487,16 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .and_then(|value| value.trim().parse::<f64>().ok())
             .filter(|value| value.is_finite() && *value != 0.0)
     };
+    let factors = match (
+        factor("Factor"),
+        factor("ScaleX"),
+        factor("ScaleY"),
+        factor("ScaleZ"),
+    ) {
+        (Some(uniform), None, None, None) => ScaleFactors::Uniform(uniform),
+        (None, Some(x), Some(y), Some(z)) => ScaleFactors::PerAxis(Vector3::new(x, y, z)),
+        _ => ScaleFactors::Unresolved,
+    };
     FeatureDefinition::Scale {
         bodies: feature
             .properties
@@ -494,12 +504,7 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .cloned()
             .map_or(BodySelection::Unresolved, BodySelection::Native),
         center,
-        factors: ScaleFactors {
-            uniform: factor("Factor"),
-            x: factor("ScaleX"),
-            y: factor("ScaleY"),
-            z: factor("ScaleZ"),
-        },
+        factors,
     }
 }
 

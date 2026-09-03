@@ -94,9 +94,11 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
     {
         assert!((actual - expected).abs() < f64::EPSILON);
     }
-    assert!(factors
-        .uniform
-        .is_some_and(|uniform| (uniform - 2.5).abs() < f64::EPSILON));
+    assert!(matches!(
+        factors,
+        cadmpeg_ir::features::ScaleFactors::Uniform(uniform)
+            if (*uniform - 2.5).abs() < f64::EPSILON
+    ));
 }
 
 #[test]
