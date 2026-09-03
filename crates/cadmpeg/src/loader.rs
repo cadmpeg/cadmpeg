@@ -68,11 +68,8 @@ pub fn load_artifact(
         .map_err(|error| detection_failure(&error))?;
     let mut notices = Vec::new();
     match resolved {
-        ResolvedSource::Native {
-            codec,
-            format_id,
-            confidence,
-        } => {
+        ResolvedSource::Native { codec, confidence } => {
+            let format_id = codec.id();
             if let Some(confidence) = confidence.filter(|value| *value < Confidence::High) {
                 notices.push(LoadNotice::LowConfidenceDetection {
                     format_id,
