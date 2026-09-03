@@ -167,14 +167,8 @@ pub(super) fn transfer_part_product(
         linked_prototype: None,
         scale: [1.0; 3],
         name: Some(model_name.clone()),
-        linked_subelements: Vec::new(),
         visible: None,
-        element_component: None,
-        claim_child: None,
-        copy_on_change: None,
-        copy_on_change_source: None,
-        copy_on_change_group: None,
-        copy_on_change_touched: None,
+        link: None,
         native_ref: None,
     });
     true

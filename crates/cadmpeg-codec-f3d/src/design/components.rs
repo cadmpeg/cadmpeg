@@ -201,14 +201,8 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
             linked_prototype: None,
             scale: [1.0; 3],
             name: Some(construction.neutron_role.clone()),
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
+            link: None,
             native_ref: Some(scope.id.clone()),
         });
     }
@@ -240,14 +234,8 @@ fn project_occurrence(
             linked_prototype: None,
             scale: [1.0; 3],
             name: None,
-            linked_subelements: Vec::new(),
             visible: None,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
+            link: None,
             native_ref: native_by_guid
                 .get(&occurrence_guid.to_ascii_lowercase())
                 .copied()

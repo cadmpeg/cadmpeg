@@ -156,14 +156,8 @@ pub(crate) fn project_occurrences(
             linked_prototype: None,
             scale: [1.0; 3],
             name: source.title.clone().filter(|title| !title.is_empty()),
-            linked_subelements: Vec::new(),
             visible,
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-            copy_on_change_source: None,
-            copy_on_change_group: None,
-            copy_on_change_touched: None,
+            link: None,
             native_ref: Some(source.id.clone()),
         });
     }

@@ -4213,14 +4213,17 @@ impl<'a> Builder<'a> {
             .occurrences
             .iter()
             .map(|occurrence| {
-                usize::from(!occurrence.linked_subelements.is_empty())
-                    + usize::from(occurrence.visible.is_some())
-                    + usize::from(occurrence.element_component.is_some())
-                    + usize::from(occurrence.claim_child.is_some())
-                    + usize::from(occurrence.copy_on_change.is_some())
-                    + usize::from(occurrence.copy_on_change_source.is_some())
-                    + usize::from(occurrence.copy_on_change_group.is_some())
-                    + usize::from(occurrence.copy_on_change_touched.is_some())
+                let link_metadata = occurrence.link.as_ref().map_or(0, |link| {
+                    usize::from(!link.linked_subelements.is_empty())
+                        + usize::from(link.element_component.is_some())
+                        + usize::from(link.claim_child.is_some())
+                        + link.copy_on_change.as_ref().map_or(0, |copy| {
+                            1 + usize::from(copy.source.is_some())
+                                + usize::from(copy.group.is_some())
+                                + usize::from(copy.touched.is_some())
+                        })
+                });
+                usize::from(occurrence.visible.is_some()) + link_metadata
             })
             .sum::<usize>();
         if occurrence_metadata > 0 {
