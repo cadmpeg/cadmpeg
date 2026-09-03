@@ -93,7 +93,7 @@ pub fn load_artifact(
 
 /// Reject contradictory duplicate facts at the CADIR wire boundary.
 ///
-/// Native decoders author the FCStd source declaration and retained document
+/// Native decoders author the `FCStd` source declaration and retained document
 /// record from one scan. Only deserialization can produce different values.
 fn validate_cadir_witnesses(ir: &CadIr) -> anyhow::Result<()> {
     let Some(source) = ir
