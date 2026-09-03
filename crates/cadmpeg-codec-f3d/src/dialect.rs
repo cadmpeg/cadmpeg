@@ -178,7 +178,7 @@ impl F3dDialect {
 pub(crate) fn classify_layers(
     scan: &crate::container::ContainerScan<'_>,
 ) -> (DialectLayers, Vec<LossNote>) {
-    let mut layers = DialectLayers::of(scan.dialect.clone());
+    let mut layers = DialectLayers::of(scan.kind.dialect().clone());
     let mut losses = Vec::new();
     for layer in kernel_layers(scan) {
         let format = layer.format().to_owned();
