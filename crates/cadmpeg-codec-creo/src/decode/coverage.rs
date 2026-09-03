@@ -108,19 +108,24 @@ pub(crate) struct SketchSegmentTransferCoverage {
     pub(crate) decoded_rows: usize,
     pub(crate) resolved_geometry: usize,
     pub(crate) missing_rows: usize,
-    by_family: [(usize, usize); 9],
+    by_family: [Option<(usize, usize)>; 9],
 }
 
 impl SketchSegmentTransferCoverage {
-    pub(crate) fn family(&self, family: crate::coverage::SketchSegmentFamily) -> (usize, usize) {
-        self.by_family[family.index()]
+    pub(crate) fn families(
+        &self,
+    ) -> impl Iterator<Item = (crate::coverage::SketchSegmentFamily, (usize, usize))> + '_ {
+        crate::coverage::SketchSegmentFamily::ALL
+            .into_iter()
+            .zip(self.by_family)
+            .filter_map(|(family, counts)| counts.map(|counts| (family, counts)))
     }
 
     pub(crate) fn family_mut(
         &mut self,
         family: crate::coverage::SketchSegmentFamily,
     ) -> &mut (usize, usize) {
-        &mut self.by_family[family.index()]
+        self.by_family[family.index()].get_or_insert((0, 0))
     }
 }
 
