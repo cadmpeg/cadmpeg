@@ -380,8 +380,7 @@ fn generated_sketch_curve(
             major_angle,
             major_radius,
             minor_radius,
-            start_angle,
-            end_angle,
+            bounds,
         } => {
             let point = |parameter: f64| {
                 Point2::new(
@@ -392,11 +391,12 @@ fn generated_sketch_curve(
                         + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
                 )
             };
-            let start = start_angle.as_ref().map_or(0.0, |angle| angle.0);
-            let end = end_angle
+            let [start, end] = bounds
                 .as_ref()
-                .map_or(std::f64::consts::TAU, |angle| angle.0);
-            let full = start_angle.is_none() && end_angle.is_none();
+                .map_or([0.0, std::f64::consts::TAU], |[start, end]| {
+                    [start.0, end.0]
+                });
+            let full = bounds.is_none();
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Ellipse {
                     center: lift(*center),
@@ -643,8 +643,7 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
             major_angle,
             major_radius,
             minor_radius,
-            start_angle: Some(start),
-            end_angle: Some(end),
+            bounds: Some([start, end]),
         } => {
             let point = |parameter: f64| {
                 Point2::new(
@@ -913,8 +912,7 @@ fn patch_direct_ellipse(
         major_angle,
         major_radius,
         minor_radius,
-        start_angle,
-        end_angle,
+        bounds,
     } = request.geometry
     else {
         return Err(cadmpeg_core::CodecError::Malformed(
@@ -940,15 +938,7 @@ fn patch_direct_ellipse(
             "SLDPRT sketch ellipse carrier cannot be patched".into(),
         ));
     }
-    let parameters = match (start_angle, end_angle) {
-        (Some(start), Some(end)) => [start.0, end.0],
-        (None, None) => [0.0, 0.0],
-        _ => {
-            return Err(cadmpeg_core::CodecError::Malformed(
-                "SLDPRT sketch ellipse has only one bounded endpoint".into(),
-            ));
-        }
-    };
+    let parameters = bounds.map_or([0.0, 0.0], |[start, end]| [start.0, end.0]);
     for (attr, parameter) in [request.start_attr, request.end_attr]
         .into_iter()
         .zip(parameters)

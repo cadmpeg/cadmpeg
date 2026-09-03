@@ -1112,8 +1112,7 @@ fn sketch_geometry_parameter_range(
             ..
         } => Some([start_angle.0, end_angle.0]),
         SketchGeometry::Ellipse {
-            start_angle: Some(start),
-            end_angle: Some(end),
+            bounds: Some([start, end]),
             ..
         } => Some([start.0, end.0]),
         SketchGeometry::Nurbs {
@@ -2630,8 +2629,7 @@ pub(crate) fn point_on_sketch_entity(
             major_angle,
             major_radius,
             minor_radius,
-            start_angle,
-            end_angle,
+            bounds,
         } if major_radius.0 > 0.0 && minor_radius.0 > 0.0 => {
             let du = point.u - center.u;
             let dv = point.v - center.v;
@@ -2650,15 +2648,14 @@ pub(crate) fn point_on_sketch_entity(
             if point_distance(point, boundary) > tolerance {
                 return false;
             }
-            match (start_angle, end_angle) {
-                (None, None) => true,
-                (Some(start), Some(end)) => angle_in_sweep(
+            match bounds {
+                None => true,
+                Some([start, end]) => angle_in_sweep(
                     parameter,
                     start.0,
                     end.0,
                     tolerance / major_radius.0.min(minor_radius.0),
                 ),
-                _ => false,
             }
         }
         SketchGeometry::Nurbs {
@@ -2712,12 +2709,7 @@ pub(crate) fn closed_sketch_profiles(
         .filter(|entity| {
             matches!(
                 entity.geometry,
-                SketchGeometry::Circle { .. }
-                    | SketchGeometry::Ellipse {
-                        start_angle: None,
-                        end_angle: None,
-                        ..
-                    }
+                SketchGeometry::Circle { .. } | SketchGeometry::Ellipse { bounds: None, .. }
             )
         })
         .map(|entity| {
@@ -3221,8 +3213,7 @@ pub(crate) fn sketch_entity_endpoints(
             major_angle,
             major_radius,
             minor_radius,
-            start_angle: Some(start_angle),
-            end_angle: Some(end_angle),
+            bounds: Some([start_angle, end_angle]),
         } => {
             let point_at = |parameter: f64| {
                 let x = major_radius.0 * parameter.cos();

@@ -183,15 +183,15 @@ pub(super) fn project_edge(
                 major_angle: cadmpeg_ir::features::Angle(major_angle),
                 major_radius: cadmpeg_ir::features::Length(*major_radius),
                 minor_radius: cadmpeg_ir::features::Length(*minor_radius),
-                start_angle: (!full).then(|| {
-                    cadmpeg_ir::features::Angle(
-                        parameters.map_or_else(|| parameter(start), |range| range[0]),
-                    )
-                }),
-                end_angle: (!full).then(|| {
-                    cadmpeg_ir::features::Angle(
-                        parameters.map_or_else(|| parameter(end), |range| range[1]),
-                    )
+                bounds: (!full).then(|| {
+                    [
+                        cadmpeg_ir::features::Angle(
+                            parameters.map_or_else(|| parameter(start), |range| range[0]),
+                        ),
+                        cadmpeg_ir::features::Angle(
+                            parameters.map_or_else(|| parameter(end), |range| range[1]),
+                        ),
+                    ]
                 }),
             })
         }

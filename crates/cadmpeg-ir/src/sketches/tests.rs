@@ -1072,3 +1072,57 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
     split.as_object_mut().unwrap().remove("parameter_factor");
     assert!(serde_json::from_value::<SketchConstraintDefinition>(split).is_err());
 }
+
+#[test]
+fn conic_bounds_keep_the_paired_wire_fields() {
+    use crate::features::{Angle, Length};
+    use crate::math::Point2;
+    use crate::sketches::SketchGeometry;
+
+    let cases = [
+        SketchGeometry::Ellipse {
+            center: Point2::new(1.0, 2.0),
+            major_angle: Angle(0.25),
+            major_radius: Length(4.0),
+            minor_radius: Length(2.0),
+            bounds: Some([Angle(-0.5), Angle(1.5)]),
+        },
+        SketchGeometry::Hyperbola {
+            center: Point2::new(1.0, 2.0),
+            major_angle: Angle(0.25),
+            major_radius: Length(4.0),
+            minor_radius: Length(2.0),
+            bounds: Some([-0.5, 1.5]),
+        },
+        SketchGeometry::Parabola {
+            vertex: Point2::new(1.0, 2.0),
+            axis_angle: Angle(0.25),
+            focal_length: Length(2.0),
+            bounds: Some([-0.5, 1.5]),
+        },
+    ];
+
+    for geometry in cases {
+        let wire = serde_json::to_value(&geometry).unwrap();
+        let start_field = if matches!(&geometry, SketchGeometry::Ellipse { .. }) {
+            "start_angle"
+        } else {
+            "start_parameter"
+        };
+        let end_field = if matches!(&geometry, SketchGeometry::Ellipse { .. }) {
+            "end_angle"
+        } else {
+            "end_parameter"
+        };
+        assert_eq!(wire[start_field], -0.5);
+        assert_eq!(wire[end_field], 1.5);
+        assert_eq!(
+            serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap(),
+            geometry
+        );
+
+        let mut split = wire;
+        split.as_object_mut().unwrap().remove(end_field);
+        assert!(serde_json::from_value::<SketchGeometry>(split).is_err());
+    }
+}

@@ -5296,8 +5296,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
             major_angle,
             major_radius,
             minor_radius,
-            start_angle,
-            end_angle,
+            bounds,
         } => {
             if major_radius.0 <= 0.0 || minor_radius.0 <= 0.0 {
                 return false;
@@ -5307,15 +5306,14 @@ pub(crate) fn point_lies_on_sketch_geometry(
             let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.0;
             let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.0;
             close(x.mul_add(x, y * y), 1.0)
-                && match (start_angle, end_angle) {
-                    (Some(start), Some(end)) => angle_in_sweep(
+                && match bounds {
+                    Some([start, end]) => angle_in_sweep(
                         y.atan2(x),
                         start.0,
                         end.0,
                         EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9,
                     ),
-                    (None, None) => true,
-                    _ => false,
+                    None => true,
                 }
         }
         SketchGeometry::Hyperbola {
@@ -5323,8 +5321,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
             major_angle,
             major_radius,
             minor_radius,
-            start_parameter,
-            end_parameter,
+            bounds,
         } => {
             if major_radius.0 <= 0.0 || minor_radius.0 <= 0.0 {
                 return false;
@@ -5335,21 +5332,19 @@ pub(crate) fn point_lies_on_sketch_geometry(
             let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.0;
             let parameter = y.asinh();
             close(x, parameter.cosh())
-                && match (start_parameter, end_parameter) {
-                    (Some(start), Some(end)) => {
+                && match bounds {
+                    Some([start, end]) => {
                         parameter >= *start - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                             && parameter <= *end + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                     }
-                    (None, None) => true,
-                    _ => false,
+                    None => true,
                 }
         }
         SketchGeometry::Parabola {
             vertex,
             axis_angle,
             focal_length,
-            start_parameter,
-            end_parameter,
+            bounds,
         } => {
             if focal_length.0 <= 0.0 {
                 return false;
@@ -5360,13 +5355,12 @@ pub(crate) fn point_lies_on_sketch_geometry(
             let y = (-relative.u).mul_add(sin, relative.v * cos);
             let parameter = y / (2.0 * focal_length.0);
             close(x, focal_length.0 * parameter * parameter)
-                && match (start_parameter, end_parameter) {
-                    (Some(start), Some(end)) => {
+                && match bounds {
+                    Some([start, end]) => {
                         parameter >= *start - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                             && parameter <= *end + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                     }
-                    (None, None) => true,
-                    _ => false,
+                    None => true,
                 }
         }
         SketchGeometry::Nurbs {

@@ -187,8 +187,7 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             major_angle: Angle(0.0),
             major_radius: Length(2.0),
             minor_radius: Length(1.0),
-            start_angle: None,
-            end_angle: None,
+            bounds: None,
         },
     });
     assert_eq!(
@@ -863,8 +862,10 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         major_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
         major_radius: Length(4.0),
         minor_radius: Length(2.0),
-        start_angle: Some(cadmpeg_ir::features::Angle(0.0)),
-        end_angle: Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2)),
+        bounds: Some([
+            cadmpeg_ir::features::Angle(0.0),
+            cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+        ]),
     });
     assert!(point_on_sketch_entity(
         Point2::new(-1.0, -1.0),

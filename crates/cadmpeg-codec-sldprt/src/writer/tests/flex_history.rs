@@ -55,8 +55,7 @@ fn encoder_writes_source_less_curved_sketches() {
             major_angle: Angle(0.4),
             major_radius: Length(3.0),
             minor_radius: Length(1.5),
-            start_angle: None,
-            end_angle: None,
+            bounds: None,
         },
         SketchGeometry::Nurbs {
             degree: 2,
@@ -152,8 +151,7 @@ fn encoder_writes_source_less_curved_sketches() {
             major_angle: Angle(0.0),
             major_radius: Length(3.0),
             minor_radius: Length(1.5),
-            start_angle: Some(Angle(0.0)),
-            end_angle: Some(Angle(std::f64::consts::FRAC_PI_2)),
+            bounds: Some([Angle(0.0), Angle(std::f64::consts::FRAC_PI_2)]),
         },
         SketchGeometry::Line {
             start: Point2::new(60.0, 1.5),

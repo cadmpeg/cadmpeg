@@ -584,25 +584,24 @@ pub(crate) fn saved_section_entity_geometry(
                         let scale = first.abs().max(second.abs()).max(1.0);
                         (first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale
                     });
-            let (start_angle, end_angle) = match conic.parameters {
+            let bounds = match conic.parameters {
                 [Some(start), Some(end)]
                     if start.is_finite()
                         && end.is_finite()
                         && (end - start - std::f64::consts::TAU).abs()
                             <= EPS_PARAMETER_FULL_TURN =>
                 {
-                    (None, None)
+                    None
                 }
-                [Some(start), Some(end)] if start.is_finite() && end > start => (
-                    Some(Angle(start + parameter_shift)),
-                    Some(Angle(end + parameter_shift)),
-                ),
+                [Some(start), Some(end)] if start.is_finite() && end > start => {
+                    Some([Angle(start + parameter_shift), Angle(end + parameter_shift)])
+                }
                 [Some(start), None]
                     if start.is_finite()
                         && start.abs() <= EPS_PARAMETER_FULL_TURN
                         && coincident_endpoints =>
                 {
-                    (None, None)
+                    None
                 }
                 _ => return None,
             };
@@ -613,8 +612,7 @@ pub(crate) fn saved_section_entity_geometry(
                     major_angle: Angle(major_axis[1].atan2(major_axis[0])),
                     major_radius: Length(major_radius),
                     minor_radius: Length(minor_radius),
-                    start_angle,
-                    end_angle,
+                    bounds,
                 },
                 conic.offset,
             ))

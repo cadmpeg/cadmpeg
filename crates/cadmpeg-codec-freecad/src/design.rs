@@ -2834,9 +2834,9 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             number("StartAngle")
                 .or_else(|| number("FirstParameter"))
                 .zip(number("EndAngle").or_else(|| number("LastParameter")))
-                .map(|(start, end)| (Some(start), Some(end)))
+                .map(|(start, end)| Some([start, end]))
         } else {
-            Some((None, None))
+            Some(None)
         };
         match (
             number("CenterX"),
@@ -2846,7 +2846,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             number("MinorRadius"),
             bounds,
         ) {
-            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some((start, end)))
+            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
                 if major > 0.0 && minor > 0.0 =>
             {
                 SketchGeometry::Ellipse {
@@ -2854,8 +2854,12 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
                     major_angle: cadmpeg_ir::features::Angle(angle),
                     major_radius: Length(major),
                     minor_radius: Length(minor),
-                    start_angle: start.map(cadmpeg_ir::features::Angle),
-                    end_angle: end.map(cadmpeg_ir::features::Angle),
+                    bounds: bounds.map(|[start, end]| {
+                        [
+                            cadmpeg_ir::features::Angle(start),
+                            cadmpeg_ir::features::Angle(end),
+                        ]
+                    }),
                 }
             }
             _ => native(),
@@ -2868,9 +2872,9 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             number("StartAngle")
                 .or_else(|| number("FirstParameter"))
                 .zip(number("EndAngle").or_else(|| number("LastParameter")))
-                .map(|(start, end)| (Some(start), Some(end)))
+                .map(|(start, end)| Some([start, end]))
         } else {
-            Some((None, None))
+            Some(None)
         };
         match (
             number("CenterX"),
@@ -2880,7 +2884,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             number("MinorRadius"),
             bounds,
         ) {
-            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some((start, end)))
+            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some(bounds))
                 if major > 0.0 && minor > 0.0 =>
             {
                 SketchGeometry::Hyperbola {
@@ -2888,8 +2892,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
                     major_angle: cadmpeg_ir::features::Angle(angle),
                     major_radius: Length(major),
                     minor_radius: Length(minor),
-                    start_parameter: start,
-                    end_parameter: end,
+                    bounds,
                 }
             }
             _ => native(),
@@ -2902,9 +2905,9 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             number("StartAngle")
                 .or_else(|| number("FirstParameter"))
                 .zip(number("EndAngle").or_else(|| number("LastParameter")))
-                .map(|(start, end)| (Some(start), Some(end)))
+                .map(|(start, end)| Some([start, end]))
         } else {
-            Some((None, None))
+            Some(None)
         };
         match (
             number("CenterX"),
@@ -2913,13 +2916,12 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             number("Focal"),
             bounds,
         ) {
-            (Some(x), Some(y), Some(angle), Some(focal), Some((start, end))) if focal > 0.0 => {
+            (Some(x), Some(y), Some(angle), Some(focal), Some(bounds)) if focal > 0.0 => {
                 SketchGeometry::Parabola {
                     vertex: Point2::new(x, y),
                     axis_angle: cadmpeg_ir::features::Angle(angle),
                     focal_length: Length(focal),
-                    start_parameter: start,
-                    end_parameter: end,
+                    bounds,
                 }
             }
             _ => native(),
@@ -3163,8 +3165,7 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
             major_angle,
             major_radius,
             minor_radius,
-            start_angle: Some(start),
-            end_angle: Some(end),
+            bounds: Some([start, end]),
         } => {
             let major = Point2::new(major_angle.0.cos(), major_angle.0.sin());
             let minor = Point2::new(-major.v, major.u);
