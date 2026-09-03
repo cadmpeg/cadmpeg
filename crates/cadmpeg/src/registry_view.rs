@@ -91,7 +91,7 @@ pub fn dialect_lines(dialects: Option<&cadmpeg_core::dialect::DialectLayers>) ->
         id,
         read,
         write_targets,
-    } = dialect_provenance(Some(dialects)).expect("dialect layers always have a primary layer");
+    } = dialect_provenance(dialects);
     let id = id.as_str().to_owned();
 
     let mut clauses = Vec::new();

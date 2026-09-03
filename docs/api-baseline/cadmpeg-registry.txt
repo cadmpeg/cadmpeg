@@ -1,4 +1,4 @@
-# generated at 4a8ab8e46
+# generated at 47726e1a8
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -132,7 +132,7 @@ pub struct cadmpeg_registry::UnknownDisposition
 pub struct cadmpeg_registry::UnknownFormat
 pub const cadmpeg_registry::DETECTION_PREFIX_LEN: usize
 pub fn cadmpeg_registry::build_encoder(cadmpeg_registry::Format) -> alloc::boxed::Box<dyn cadmpeg_ir::codec::write::backend::Encoder>
-pub fn cadmpeg_registry::dialect_provenance(core::option::Option<&cadmpeg_core::dialect::DialectLayers>) -> core::option::Option<cadmpeg_registry::DialectProvenance>
+pub fn cadmpeg_registry::dialect_provenance(&cadmpeg_core::dialect::DialectLayers) -> cadmpeg_registry::DialectProvenance
 pub fn cadmpeg_registry::dialect_table(core::option::Option<&str>) -> core::result::Result<alloc::vec::Vec<cadmpeg_registry::FormatDialects>, cadmpeg_registry::UnknownFormat>
 pub fn cadmpeg_registry::dialects(&str) -> alloc::vec::Vec<&'static cadmpeg_registry::DialectEntry>
 pub fn cadmpeg_registry::forced_input(&str) -> core::option::Option<cadmpeg_registry::ForcedInput>
