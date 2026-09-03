@@ -10,28 +10,69 @@
 use cadmpeg_ir::codec::{Codec, Confidence};
 
 /// Explicit input selection that bypasses content detection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum ForcedInput {
-    /// Force a registered native codec by stable id.
-    Codec(&'static str),
+    /// Force the registered native codec described by this row.
+    Codec(&'static crate::descriptors::FormatDescriptor),
     /// Force CADIR JSON parsing.
     Cadir,
 }
 
-/// One registered input format: extensions plus optional decoder.
+impl PartialEq for ForcedInput {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Codec(left), Self::Codec(right)) => std::ptr::eq(*left, *right),
+            (Self::Cadir, Self::Cadir) => true,
+            (Self::Codec(_), Self::Cadir) | (Self::Cadir, Self::Codec(_)) => false,
+        }
+    }
+}
+
+impl Eq for ForcedInput {}
+
+/// A built input descriptor's neutral or native capability.
+enum InputKind {
+    Neutral {
+        descriptor: &'static crate::descriptors::FormatDescriptor,
+    },
+    Native {
+        descriptor: &'static crate::descriptors::FormatDescriptor,
+        codec: Box<dyn Codec>,
+    },
+}
+
+/// One registered input format.
 pub struct InputDescriptor {
-    /// Stable format identifier when no codec is present (CADIR).
-    id: &'static str,
-    /// Recognized lowercase filename extensions.
-    pub extensions: &'static [&'static str],
-    /// Decoder and inspector implementation.
-    pub codec: Option<Box<dyn Codec>>,
+    kind: InputKind,
 }
 
 impl InputDescriptor {
-    /// Stable format identifier derived from the codec when present.
+    /// Stable format identifier derived from the native codec or neutral
+    /// descriptor.
     pub fn format_id(&self) -> &'static str {
-        self.codec.as_ref().map_or(self.id, |codec| codec.id())
+        match &self.kind {
+            InputKind::Neutral { descriptor } => descriptor.id(),
+            InputKind::Native { codec, .. } => codec.id(),
+        }
+    }
+
+    /// Recognized lowercase filename extensions.
+    pub fn extensions(&self) -> &'static [&'static str] {
+        self.descriptor().input_extensions()
+    }
+
+    /// Decoder and inspector implementation for a native format.
+    pub fn codec(&self) -> Option<&dyn Codec> {
+        match &self.kind {
+            InputKind::Neutral { .. } => None,
+            InputKind::Native { codec, .. } => Some(codec.as_ref()),
+        }
+    }
+
+    fn descriptor(&self) -> &'static crate::descriptors::FormatDescriptor {
+        match &self.kind {
+            InputKind::Neutral { descriptor } | InputKind::Native { descriptor, .. } => descriptor,
+        }
     }
 }
 
@@ -84,9 +125,6 @@ pub enum ResolvedSource<'a> {
 /// a CLI names its own override flag, and an embedder has no flag to name.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveSourceError {
-    /// Forced format id is not registered.
-    #[error("unsupported input format {0}")]
-    UnsupportedFormat(&'static str),
     /// Multiple codecs tied at the strongest confidence.
     #[error("ambiguous {confidence}-confidence input format: {candidates}")]
     Ambiguous {
@@ -109,16 +147,22 @@ impl InputCatalog {
             descriptors: crate::descriptors::FORMAT_DESCRIPTORS
                 .iter()
                 .map(|descriptor| InputDescriptor {
-                    id: descriptor.id,
-                    extensions: descriptor.input_extensions,
-                    codec: descriptor.decoder.map(|constructor| constructor()),
+                    kind: match descriptor.kind {
+                        crate::descriptors::FormatKind::Neutral => {
+                            InputKind::Neutral { descriptor }
+                        }
+                        crate::descriptors::FormatKind::Native { decoder } => InputKind::Native {
+                            descriptor,
+                            codec: decoder(),
+                        },
+                    },
                 })
                 .collect(),
         };
         debug_assert!(catalog
             .descriptors
             .iter()
-            .all(|descriptor| !descriptor.extensions.is_empty()));
+            .all(|descriptor| !descriptor.extensions().is_empty()));
         catalog
     }
 
@@ -134,7 +178,7 @@ impl InputCatalog {
             .descriptors
             .iter()
             .filter_map(|descriptor| {
-                let codec = descriptor.codec.as_deref()?;
+                let codec = descriptor.codec()?;
                 let confidence = codec.detect(prefix);
                 (confidence > Confidence::No).then_some((codec, confidence))
             })
@@ -179,7 +223,7 @@ impl InputCatalog {
 
     /// Returns the decoder with the stable format identifier.
     pub fn by_id(&self, id: &str) -> Option<&dyn Codec> {
-        self.descriptor(id)?.codec.as_deref()
+        self.descriptor(id)?.codec()
     }
 
     /// Resolves a forced format or content detection into a source selection.
@@ -192,13 +236,18 @@ impl InputCatalog {
         forced: Option<ForcedInput>,
     ) -> Result<ResolvedSource<'a>, ResolveSourceError> {
         match forced {
-            Some(ForcedInput::Codec(id)) => {
-                let codec = self
-                    .by_id(id)
-                    .ok_or(ResolveSourceError::UnsupportedFormat(id))?;
+            Some(ForcedInput::Codec(descriptor)) => {
+                let input = self
+                    .descriptors
+                    .iter()
+                    .find(|input| std::ptr::eq(input.descriptor(), descriptor))
+                    .expect("forced input descriptors come from this built-in catalog");
+                let codec = input
+                    .codec()
+                    .expect("a forced native descriptor always constructs a codec");
                 Ok(ResolvedSource::Native {
                     codec,
-                    format_id: id,
+                    format_id: codec.id(),
                     confidence: None,
                 })
             }
@@ -252,7 +301,7 @@ mod tests {
             let input = catalog
                 .descriptor(row.id)
                 .expect("each format row comes from an input descriptor");
-            assert_eq!(row.extensions, input.extensions);
+            assert_eq!(row.extensions, input.extensions());
         }
     }
 
@@ -289,8 +338,8 @@ mod tests {
         let descriptor = catalog
             .descriptor("inventor")
             .expect("Inventor descriptor exists");
-        assert_eq!(descriptor.extensions, ["ipt", "iam"]);
-        assert!(descriptor.codec.is_some());
+        assert_eq!(descriptor.extensions(), ["ipt", "iam"]);
+        assert!(descriptor.codec().is_some());
         assert_eq!(descriptor.format_id(), "inventor");
     }
 
@@ -316,7 +365,10 @@ mod tests {
                 confidence,
                 ..
             } = catalog
-                .resolve_source(b"", Some(ForcedInput::Codec("step")))
+                .resolve_source(
+                    b"",
+                    Some(crate::forced_input("step").expect("step is registered")),
+                )
                 .unwrap()
             else {
                 panic!("forced step must resolve to native");

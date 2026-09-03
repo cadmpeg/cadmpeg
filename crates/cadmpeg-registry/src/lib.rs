@@ -40,7 +40,7 @@ pub use catalog::{
     DetectionOutcome, ForcedInput, InputCatalog, InputDescriptor, ResolveSourceError,
     ResolvedSource,
 };
-pub use descriptors::{forced_input, input_names};
+pub use descriptors::{forced_input, input_names, FormatDescriptor};
 pub use disposition::{Disposition, ReadDisposition, UnknownDisposition, WriteDisposition};
 pub use encoders::build_encoder;
 pub use format::Format;

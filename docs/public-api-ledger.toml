@@ -2794,3 +2794,24 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::codec::write::{TargetDomain::resolve,TargetResolution}"
 reason = "each resolved domain value exposes the export identity it proves, so target resolution no longer returns an independently variable optional identity"
+
+[[change]]
+commit = "40fe31a58a5e532fbd5ad96de20f27d2cd41c151"
+crate = "cadmpeg-registry"
+kind = "variant"
+item = "cadmpeg_registry::ForcedInput::Codec"
+reason = "a forced native selection carries the registered format descriptor that owns its decoder instead of a format string that can fail to resolve"
+
+[[change]]
+commit = "40fe31a58a5e532fbd5ad96de20f27d2cd41c151"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::InputDescriptor::{extensions,codec}"
+reason = "a private neutral-or-native discriminant owns the descriptor and decoder together; read-only accessors project the public facts"
+
+[[change]]
+commit = "40fe31a58a5e532fbd5ad96de20f27d2cd41c151"
+crate = "cadmpeg-registry"
+kind = "variant"
+item = "cadmpeg_registry::ResolveSourceError::UnsupportedFormat"
+reason = "forced native selections are minted from the compiled descriptor table, so an unregistered forced format cannot reach source resolution"

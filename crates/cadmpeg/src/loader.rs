@@ -39,13 +39,9 @@ pub struct LoadOutcome {
 /// Restates a detection failure with the flag that overrides it.
 ///
 /// The registry states the fact; naming `--input-format` is this crate's job,
-/// because the flag is this crate's. An ambiguity is the only outcome the flag
-/// resolves: an unregistered forced id is already the caller naming a format.
+/// because the flag is this crate's. Ambiguity is the only resolution error.
 pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
-    match error {
-        ResolveSourceError::Ambiguous { .. } => anyhow!("{error}; pass --input-format"),
-        ResolveSourceError::UnsupportedFormat(_) => anyhow!("{error}"),
-    }
+    anyhow!("{error}; pass --input-format")
 }
 
 /// Load CADIR from a native CAD file or CADIR JSON.

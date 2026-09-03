@@ -64,7 +64,7 @@ pub fn format_rows(inputs: &InputCatalog) -> Vec<FormatRow> {
                 // because the neutral document is parsed, not decoded.
                 id,
                 write: Format::from_name(id).is_some(),
-                extensions: descriptor.extensions,
+                extensions: descriptor.extensions(),
             }
         })
         .collect()
