@@ -1140,7 +1140,7 @@ pub(crate) fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
 
 /// The source metadata a container-only decode records; `primary` is the one
 /// author of the document's identity.
-fn source_meta(scan: &Scan<'_>, primary: DialectMatch) -> SourceMeta {
+pub(crate) fn source_meta(scan: &Scan<'_>, primary: DialectMatch) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),
