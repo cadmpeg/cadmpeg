@@ -2843,3 +2843,10 @@ crate = "cadmpeg-registry"
 kind = "variant"
 item = "cadmpeg_registry::Inspection::Skipped"
 reason = "a skipped inspection carries a neutral-or-ambiguous reason instead of folding two distinct outcomes into one state"
+
+[[change]]
+commit = "47726e1a816f19aba6f06b00f410753d436caf1c"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::dialect_provenance"
+reason = "DialectLayers always has a primary layer, so provenance takes and returns present values instead of encoding an impossible absence"

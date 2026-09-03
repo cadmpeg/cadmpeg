@@ -27,17 +27,14 @@ pub struct DialectProvenance {
 }
 
 /// The provenance of the primary dialect the codec matched.
-///
-/// Returns `None` when the codec reported no dialects at all, which is the
-/// honest answer for a codec that does not classify.
 #[must_use]
-pub fn dialect_provenance(dialects: Option<&DialectLayers>) -> Option<DialectProvenance> {
-    let entry = dialects?.primary();
-    Some(DialectProvenance {
+pub fn dialect_provenance(dialects: &DialectLayers) -> DialectProvenance {
+    let entry = dialects.primary();
+    DialectProvenance {
         id: entry.dialect().clone(),
         read: support(entry.dialect()).map(|disposition| disposition.read),
         write_targets: catalog_of(entry.format()),
-    })
+    }
 }
 
 /// One row of the format table: what this build does with one readable format.
@@ -139,7 +136,7 @@ mod tests {
         let dialects = DialectLayers::of(DialectMatch::admitted(DialectId::pinned(
             "rhino:archive-50",
         )));
-        let provenance = dialect_provenance(Some(&dialects)).expect("a primary layer exists");
+        let provenance = dialect_provenance(&dialects);
         assert_eq!(provenance.id.as_str(), "rhino:archive-50");
         assert!(provenance.read.is_some());
         assert!(provenance
@@ -152,11 +149,6 @@ mod tests {
             .expect("Rhino has an encoder")
             .iter()
             .any(|target| target.id.as_str() == "rhino:archive-80"));
-    }
-
-    #[test]
-    fn no_dialects_is_no_provenance() {
-        assert!(dialect_provenance(None).is_none());
     }
 
     #[test]
