@@ -576,28 +576,29 @@ struct NativeNamespaceProbe {
 /// bytes.
 #[derive(Deserialize)]
 struct SidecarProbe {
-    version: String,
-    #[serde(skip)]
-    input_version: Option<String>,
+    #[serde(deserialize_with = "deserialize_sidecar_version")]
+    version: SidecarVersion,
     #[serde(default)]
     report: Option<DecodeReportProbe>,
 }
 
-impl SidecarProbe {
-    fn migrate_projection(&mut self) -> Result<()> {
-        match self.version.as_str() {
-            cadmpeg_ir::DECODE_SIDECAR_VERSION => Ok(()),
-            cadmpeg_ir::DECODE_SIDECAR_VERSION_V1
-            | cadmpeg_ir::DECODE_SIDECAR_VERSION_V2
-            | cadmpeg_ir::DECODE_SIDECAR_VERSION_V3 => {
-                self.input_version = Some(std::mem::replace(
-                    &mut self.version,
-                    cadmpeg_ir::DECODE_SIDECAR_VERSION.to_owned(),
-                ));
-                Ok(())
-            }
-            found => bail!("unsupported decode-sidecar version: {found}"),
-        }
+enum SidecarVersion {
+    Current,
+    Migrated { from: String },
+}
+
+fn deserialize_sidecar_version<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<SidecarVersion, D::Error> {
+    let found = String::deserialize(deserializer)?;
+    match found.as_str() {
+        cadmpeg_ir::DECODE_SIDECAR_VERSION => Ok(SidecarVersion::Current),
+        cadmpeg_ir::DECODE_SIDECAR_VERSION_V1
+        | cadmpeg_ir::DECODE_SIDECAR_VERSION_V2
+        | cadmpeg_ir::DECODE_SIDECAR_VERSION_V3 => Ok(SidecarVersion::Migrated { from: found }),
+        _ => Err(serde::de::Error::custom(format_args!(
+            "unsupported decode-sidecar version: {found}"
+        ))),
     }
 }
 
@@ -732,10 +733,7 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
         return Ok(Artifact::Cadir(cadir));
     }
     if sniff.version.is_some() && sniff.ir_sha256.is_some() {
-        let mut sidecar: SidecarProbe = serde_json::from_slice(bytes)
-            .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
-        sidecar
-            .migrate_projection()
+        let sidecar: SidecarProbe = serde_json::from_slice(bytes)
             .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
         return Ok(Artifact::Sidecar(sidecar));
     }
@@ -903,9 +901,12 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
             }
         }
         Artifact::Sidecar(sidecar) => {
-            rows.push(("sidecar_version".to_owned(), cell(&sidecar.version)));
-            if let Some(input_version) = &sidecar.input_version {
-                rows.push(("sidecar_input_version".to_owned(), cell(input_version)));
+            rows.push((
+                "sidecar_version".to_owned(),
+                cell(cadmpeg_ir::DECODE_SIDECAR_VERSION),
+            ));
+            if let SidecarVersion::Migrated { from } = &sidecar.version {
+                rows.push(("sidecar_input_version".to_owned(), cell(from)));
             }
             rows.push((
                 "sidecar_fidelity_validation".to_owned(),
