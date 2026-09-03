@@ -71,15 +71,6 @@ impl InputDescriptor {
             InputKind::Native { codec, .. } => Some(codec.as_ref()),
         }
     }
-
-    fn forced_codec(&self, forced: &crate::descriptors::NativeDescriptor) -> Option<&dyn Codec> {
-        match &self.kind {
-            InputKind::Native { native, codec, .. } if std::ptr::eq(*native, forced) => {
-                Some(codec.as_ref())
-            }
-            InputKind::Neutral { .. } | InputKind::Native { .. } => None,
-        }
-    }
 }
 
 /// Result of content-based detection.
@@ -264,7 +255,13 @@ impl InputCatalog {
                 let codec = self
                     .descriptors
                     .iter()
-                    .find_map(|input| input.forced_codec(native))
+                    .find_map(|input| match &input.kind {
+                        InputKind::Native {
+                            native: candidate,
+                            codec,
+                        } if std::ptr::eq(*candidate, native) => Some(codec.as_ref()),
+                        InputKind::Neutral { .. } | InputKind::Native { .. } => None,
+                    })
                     .expect("forced native descriptors come from this built-in catalog");
                 Ok(ResolvedSource::Native {
                     codec,
