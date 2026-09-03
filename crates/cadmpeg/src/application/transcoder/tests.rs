@@ -80,9 +80,10 @@ fn prepared(
     encoder: Box<dyn Encoder>,
     loss_policy: LossPolicy,
 ) -> PreparedConversion {
+    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
     PreparedConversion {
         document: LoadedDocument::neutral(ir),
-        validation: None,
+        validation,
         encoder,
         selection: TargetSelection::new(format, None),
         destination: ResolvedDestination::Stdout,
