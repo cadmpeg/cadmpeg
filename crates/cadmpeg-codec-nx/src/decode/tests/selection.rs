@@ -936,7 +936,7 @@ fn decode_retains_unsupported_named_stream_payloads() {
             .source_fidelity()
             .retained_records
             .iter()
-            .map(|record| record.byte_len())
+            .map(cadmpeg_ir::RetainedSourceRecord::byte_len)
             .collect::<Vec<_>>(),
         vec![
             structure.len() as u64,

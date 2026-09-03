@@ -945,7 +945,10 @@ mod tests {
 
     #[test]
     fn coverage_keys_are_unique() {
-        let unique = ALL.iter().map(|key| key.as_str()).collect::<BTreeSet<_>>();
+        let unique = ALL
+            .iter()
+            .map(cadmpeg_ir::CoverageKey::as_str)
+            .collect::<BTreeSet<_>>();
         assert_eq!(unique.len(), ALL.len());
     }
 }
