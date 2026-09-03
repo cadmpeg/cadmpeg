@@ -1322,33 +1322,26 @@ fn encode_native_g2_blend(
     native_g2_side(bytes, target, &construction.first)?;
     native_enum(bytes, construction.singularity);
     match &construction.first_shape {
-        cadmpeg_ir::geometry::G2BlendFirstShape::Full { surface, tolerance } => {
-            match (surface, tolerance) {
-                (None, None) => native_ident(bytes, "nullbs")?,
-                (Some(surface), Some(tolerance)) => {
-                    let surface = target
-                        .model
-                        .surfaces
-                        .iter()
-                        .find(|candidate| candidate.id == *surface)
-                        .ok_or_else(|| {
-                            CodecError::Malformed("G2 first exact surface is missing".into())
-                        })?;
-                    let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
-                        return Err(CodecError::NotImplemented(
-                            "source-less G2 full branch requires a NURBS exact surface".into(),
-                        ));
-                    };
-                    native_nurbs_surface(bytes, surface)?;
-                    native_f64(bytes, *tolerance / LEN_TO_MM);
-                }
-                _ => {
-                    return Err(CodecError::Malformed(
-                        "G2 full surface and tolerance must be paired".into(),
+        cadmpeg_ir::geometry::G2BlendFirstShape::Full { support } => match support {
+            None => native_ident(bytes, "nullbs")?,
+            Some(support) => {
+                let surface = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|candidate| candidate.id == support.surface)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("G2 first exact surface is missing".into())
+                    })?;
+                let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
+                    return Err(CodecError::NotImplemented(
+                        "source-less G2 full branch requires a NURBS exact surface".into(),
                     ));
-                }
+                };
+                native_nurbs_surface(bytes, surface)?;
+                native_f64(bytes, support.tolerance / LEN_TO_MM);
             }
-        }
+        },
         cadmpeg_ir::geometry::G2BlendFirstShape::None {
             coefficients,
             tolerance,

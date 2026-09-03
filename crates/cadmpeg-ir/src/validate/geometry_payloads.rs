@@ -1573,9 +1573,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite()
             };
             let first_shape_valid = match &construction.first_shape {
-                crate::geometry::G2BlendFirstShape::Full { surface, tolerance } => {
-                    surface.is_some() == tolerance.is_some()
-                        && tolerance.is_none_or(|value| value.is_finite() && value >= 0.0)
+                crate::geometry::G2BlendFirstShape::Full { support } => {
+                    support.as_ref().is_none_or(|support| {
+                        support.tolerance.is_finite() && support.tolerance >= 0.0
+                    })
                 }
                 crate::geometry::G2BlendFirstShape::None {
                     coefficients,

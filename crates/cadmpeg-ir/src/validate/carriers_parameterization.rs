@@ -323,11 +323,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 surfaces.insert(&construction.second_exact_surface.0);
                 curves.insert(&construction.center_curve.0);
                 if let crate::geometry::G2BlendFirstShape::Full {
-                    surface: Some(surface),
-                    ..
+                    support: Some(support),
                 } = &construction.first_shape
                 {
-                    surfaces.insert(&surface.0);
+                    surfaces.insert(&support.surface.0);
                 }
             }
             ProceduralSurfaceDefinition::VariableBlend { construction } => {

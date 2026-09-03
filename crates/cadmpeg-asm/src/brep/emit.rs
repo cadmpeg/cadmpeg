@@ -1971,7 +1971,7 @@ fn emit_g2_blend_surface(
     let second = add_side("second", embedded.second);
     let first_shape = match embedded.first_shape {
         EmbeddedG2FirstShape::Full { surface, tolerance } => {
-            let surface = surface.map(|geometry| {
+            let support = surface.zip(tolerance).map(|(geometry, tolerance)| {
                 let id = SurfaceId(format!(
                     "{format}:brep:procedural_surface#{i}:g2:first_exact"
                 ));
@@ -1980,9 +1980,12 @@ fn emit_g2_blend_surface(
                     geometry: SurfaceGeometry::Nurbs(geometry),
                     source_object: None,
                 });
-                id
+                cadmpeg_ir::geometry::G2BlendFullSupport {
+                    surface: id,
+                    tolerance,
+                }
             });
-            cadmpeg_ir::geometry::G2BlendFirstShape::Full { surface, tolerance }
+            cadmpeg_ir::geometry::G2BlendFirstShape::Full { support }
         }
         EmbeddedG2FirstShape::None {
             coefficients,

@@ -824,12 +824,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
                 if let crate::geometry::G2BlendFirstShape::Full {
-                    surface: Some(surface),
-                    ..
+                    support: Some(support),
                 } = &construction.first_shape
                 {
-                    if ids.surfaces(&surface.0).is_none() {
-                        ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                    if ids.surfaces(&support.surface.0).is_none() {
+                        ref_error(findings, &procedural.id.0, "surface", &support.surface.0);
                     }
                 }
                 for curve in [
