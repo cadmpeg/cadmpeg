@@ -3263,3 +3263,10 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::sketches::SketchPatternDistance"
 reason = "the distance-form variant owns the only parameter meaningful for that form"
+
+[[change]]
+commit = "85e5e334173159b5c9b8d1bf1fa0aebbf5e0f436"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::{SketchInternalAlignment,SketchConstraintDefinition::InternalAlignment}"
+reason = "B-spline alignment variants now own their required index and other families cannot carry one"

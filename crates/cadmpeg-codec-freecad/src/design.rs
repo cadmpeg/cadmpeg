@@ -2145,6 +2145,10 @@ fn parse_constraints(
         };
         let internal_alignment = || {
             use cadmpeg_ir::sketches::SketchInternalAlignment as Alignment;
+            let index = || {
+                node.attribute("InternalAlignmentIndex")
+                    .and_then(|value| value.parse::<u32>().ok())
+            };
             let alignment = match int_attr(node, "InternalAlignmentType")? {
                 1 => Alignment::EllipseMajorDiameter,
                 2 => Alignment::EllipseMinorDiameter,
@@ -2154,8 +2158,8 @@ fn parse_constraints(
                 6 => Alignment::HyperbolaMinor,
                 7 => Alignment::HyperbolaFocus,
                 8 => Alignment::ParabolaFocus,
-                9 => Alignment::BsplineControlPoint,
-                10 => Alignment::BsplineKnotPoint,
+                9 => Alignment::BsplineControlPoint(index()?),
+                10 => Alignment::BsplineKnotPoint(index()?),
                 11 => Alignment::ParabolaFocalAxis,
                 _ => return None,
             };
@@ -2163,9 +2167,6 @@ fn parse_constraints(
                 helper: locus_entity(resolved.first()?).clone(),
                 parent: locus_entity(resolved.get(1)?).clone(),
                 alignment,
-                index: node
-                    .attribute("InternalAlignmentIndex")
-                    .and_then(|value| value.parse::<u32>().ok()),
             })
         };
         let grouped_geometry = || {
