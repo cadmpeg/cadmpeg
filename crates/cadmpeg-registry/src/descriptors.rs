@@ -234,19 +234,19 @@ writable!(
 reader!(SAT, "sat", &["sat", "sab", "smt", "smb"], || Box::new(
     cadmpeg_codec_sat::SatCodec
 ));
-writable!(
-    CADIR,
-    CADIR_OUTPUT,
-    "cadir",
-    &["cadir", "json"],
-    FormatKind::Neutral,
-    Format::Cadir,
-    0,
-    &["cadir", "json"],
-    OutputPhysics::NeutralText,
-    || Box::new(CadirEncoder)
-);
-
+static CADIR_OUTPUT: OutputDescriptor = OutputDescriptor {
+    format: Format::Cadir,
+    order: 0,
+    extensions: &["cadir", "json"],
+    physics: OutputPhysics::NeutralText,
+    encoder: || Box::new(CadirEncoder),
+};
+pub(crate) static CADIR: FormatDescriptor = FormatDescriptor {
+    id: "cadir",
+    input_extensions: &["cadir", "json"],
+    kind: FormatKind::Neutral,
+    output: Some(&CADIR_OUTPUT),
+};
 pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     #[cfg(feature = "fcstd")]
     &FCSTD,
