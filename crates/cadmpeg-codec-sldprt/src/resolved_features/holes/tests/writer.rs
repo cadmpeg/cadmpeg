@@ -68,7 +68,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
 #[test]
 fn semantic_writer_retains_partial_native_hole_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleForm, HoleKind, Length, Termination};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, Termination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -97,12 +97,9 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Unresolved {
-                form: Some(HoleForm::Counterbore),
-                counterbore_diameter: Some(Length(10.0)),
-                counterbore_depth: None,
-                countersink_diameter: None,
-                countersink_angle: None,
+            kind: HoleKind::PartialCounterbore {
+                diameter: Some(Length(10.0)),
+                depth: None,
             },
             diameter: Some(Length(6.0)),
             extent: Some(Termination::ThroughAll),
@@ -113,13 +110,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         &decoded.ir().model.features[2].definition,
         FeatureDefinition::Hole {
             ref placements,
-            kind: HoleKind::Unresolved {
-                form: None,
-                counterbore_diameter: Some(Length(11.0)),
-                counterbore_depth: Some(Length(3.0)),
-                countersink_diameter: Some(Length(9.0)),
-                countersink_angle: Some(_),
-            },
+            kind: HoleKind::Unresolved(None),
             diameter: Some(Length(5.0)),
             extent: None,
             ..

@@ -721,7 +721,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             extent,
             ..
         } => {
-            use cadmpeg_ir::features::{HoleKind, HolePlacement};
+            use cadmpeg_ir::features::HolePlacement;
 
             let support_is_resolved = profile.as_ref().is_some_and(profile_ref_is_resolved)
                 || face.as_ref().is_some_and(face_selection_is_resolved);
@@ -737,7 +737,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 
             !support_is_resolved
                 || (!shared_placement_is_resolved && !placements_are_resolved)
-                || matches!(kind, HoleKind::Unresolved { .. })
+                || kind.is_unresolved()
                 || diameter.is_none()
                 || extent
                     .as_ref()

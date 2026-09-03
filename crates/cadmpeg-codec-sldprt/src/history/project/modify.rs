@@ -453,25 +453,12 @@ pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
             _ => None,
         }
     });
-    let mode = match form {
-        Some(FlexForm::Bending) if angle.is_some() => FlexMode::Bending {
-            angle: angle.expect("guarded above"),
-        },
-        Some(FlexForm::Twisting) if angle.is_some() => FlexMode::Twisting {
-            angle: angle.expect("guarded above"),
-        },
-        Some(FlexForm::Tapering) if factor.is_some() => FlexMode::Tapering {
-            factor: factor.expect("guarded above"),
-        },
-        Some(FlexForm::Stretching) if distance.is_some() => FlexMode::Stretching {
-            distance: distance.expect("guarded above"),
-        },
-        _ => FlexMode::Unresolved {
-            form,
-            angle,
-            factor,
-            distance,
-        },
+    let mode = match (form, angle, factor, distance) {
+        (Some(FlexForm::Bending), Some(angle), _, _) => FlexMode::Bending { angle },
+        (Some(FlexForm::Twisting), Some(angle), _, _) => FlexMode::Twisting { angle },
+        (Some(FlexForm::Tapering), _, Some(factor), _) => FlexMode::Tapering { factor },
+        (Some(FlexForm::Stretching), _, _, Some(distance)) => FlexMode::Stretching { distance },
+        (form, _, _, _) => FlexMode::Unresolved(form),
     };
     FeatureDefinition::Flex { axis, mode }
 }

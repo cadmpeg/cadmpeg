@@ -5,7 +5,7 @@ use crate::classification::{classify, native_object_class, FeatureClass, NativeC
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, HoleBottom,
-    HoleForm, HoleKind, Length, ProfileRef, Termination, VertexSelection,
+    HoleKind, Length, ProfileRef, Termination, VertexSelection,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -302,13 +302,7 @@ pub(crate) fn project_hole(
             },
         );
     let kind = if has_counterbore && has_countersink {
-        HoleKind::Unresolved {
-            form: None,
-            counterbore_diameter,
-            counterbore_depth,
-            countersink_diameter,
-            countersink_angle,
-        }
+        HoleKind::Unresolved(None)
     } else if has_counterbore {
         match (counterbore_diameter, counterbore_depth) {
             (Some(diameter), Some(depth)) => drill_point_angle.map_or(
@@ -319,24 +313,12 @@ pub(crate) fn project_hole(
                     drill_point_angle,
                 },
             ),
-            (diameter, depth) => HoleKind::Unresolved {
-                form: Some(HoleForm::Counterbore),
-                counterbore_diameter: diameter,
-                counterbore_depth: depth,
-                countersink_diameter: None,
-                countersink_angle: None,
-            },
+            (diameter, depth) => HoleKind::PartialCounterbore { diameter, depth },
         }
     } else if has_countersink {
         match (countersink_diameter, countersink_angle) {
             (Some(diameter), Some(angle)) => HoleKind::Countersink { diameter, angle },
-            (diameter, angle) => HoleKind::Unresolved {
-                form: Some(HoleForm::Countersink),
-                counterbore_diameter: None,
-                counterbore_depth: None,
-                countersink_diameter: diameter,
-                countersink_angle: angle,
-            },
+            (diameter, angle) => HoleKind::PartialCountersink { diameter, angle },
         }
     } else if let Some(thread) = thread {
         thread

@@ -3564,16 +3564,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     });
                 }
                 let valid = match mode {
-                    FlexMode::Unresolved {
-                        angle,
-                        factor,
-                        distance,
-                        ..
-                    } => {
-                        angle.is_none_or(|value| value.0.is_finite())
-                            && factor.is_none_or(|value| value.is_finite() && value > 0.0)
-                            && distance.is_none_or(|value| value.0.is_finite())
-                    }
+                    FlexMode::Unresolved(_) => true,
                     FlexMode::Bending { angle } | FlexMode::Twisting { angle } => {
                         angle.0.is_finite()
                     }
@@ -3667,17 +3658,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     positive_feature_length(value) && diameter.is_some_and(|bore| value.0 > bore.0)
                 };
                 let kind_valid = |kind: &HoleKind| match kind {
-                    HoleKind::Unresolved {
-                        counterbore_diameter,
-                        counterbore_depth,
-                        countersink_diameter,
-                        countersink_angle,
-                        ..
-                    } => {
-                        counterbore_diameter.is_none_or(positive_feature_length)
-                            && counterbore_depth.is_none_or(positive_feature_length)
-                            && countersink_diameter.is_none_or(positive_feature_length)
-                            && countersink_angle.is_none_or(|value| {
+                    HoleKind::Unresolved(_) => true,
+                    HoleKind::PartialCounterbore { diameter, depth } => {
+                        diameter.is_none_or(positive_feature_length)
+                            && depth.is_none_or(positive_feature_length)
+                    }
+                    HoleKind::PartialCountersink { diameter, angle } => {
+                        diameter.is_none_or(positive_feature_length)
+                            && angle.is_none_or(|value| {
                                 value.0.is_finite()
                                     && value.0 > 0.0
                                     && value.0 < std::f64::consts::PI

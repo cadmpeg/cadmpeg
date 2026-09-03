@@ -6061,13 +6061,7 @@ fn non_boolean_feature_definition_with_parameters(
             let (template_kind, template_exit_kind, template_extent) = hole_template.map_or(
                 (
                     if matches!(kind, "CBORE_HOLE" | "CSUNK_HOLE") {
-                        HoleKind::Unresolved {
-                            form: None,
-                            counterbore_diameter: None,
-                            counterbore_depth: None,
-                            countersink_diameter: None,
-                            countersink_angle: None,
-                        }
+                        HoleKind::Unresolved(None)
                     } else {
                         HoleKind::Simple
                     },
@@ -6077,45 +6071,21 @@ fn non_boolean_feature_definition_with_parameters(
                 |(_, form, extent, start_treatment, end_treatment)| {
                     let kind = match start_treatment {
                         crate::native::features::SimpleHoleEndTreatment::Chamfer => {
-                            HoleKind::Unresolved {
-                                form: Some(HoleForm::Chamfer),
-                                counterbore_diameter: None,
-                                counterbore_depth: None,
-                                countersink_diameter: None,
-                                countersink_angle: None,
-                            }
+                            HoleKind::Unresolved(Some(HoleForm::Chamfer))
                         }
                         crate::native::features::SimpleHoleEndTreatment::None => match form {
                             crate::native::features::SimpleHoleForm::Simple => HoleKind::Simple,
                             crate::native::features::SimpleHoleForm::Counterbored => {
-                                HoleKind::Unresolved {
-                                    form: Some(HoleForm::Counterbore),
-                                    counterbore_diameter: None,
-                                    counterbore_depth: None,
-                                    countersink_diameter: None,
-                                    countersink_angle: None,
-                                }
+                                HoleKind::Unresolved(Some(HoleForm::Counterbore))
                             }
                             crate::native::features::SimpleHoleForm::Countersunk => {
-                                HoleKind::Unresolved {
-                                    form: Some(HoleForm::Countersink),
-                                    counterbore_diameter: None,
-                                    counterbore_depth: None,
-                                    countersink_diameter: None,
-                                    countersink_angle: None,
-                                }
+                                HoleKind::Unresolved(Some(HoleForm::Countersink))
                             }
                         },
                     };
                     let exit_kind = match end_treatment {
                         crate::native::features::SimpleHoleEndTreatment::Chamfer => {
-                            Some(HoleKind::Unresolved {
-                                form: Some(HoleForm::Chamfer),
-                                counterbore_diameter: None,
-                                counterbore_depth: None,
-                                countersink_diameter: None,
-                                countersink_angle: None,
-                            })
+                            Some(HoleKind::Unresolved(Some(HoleForm::Chamfer)))
                         }
                         crate::native::features::SimpleHoleEndTreatment::None => None,
                     };
@@ -6132,10 +6102,8 @@ fn non_boolean_feature_definition_with_parameters(
                 hole.counterbore,
                 matches!(
                     &template_kind,
-                    HoleKind::Unresolved {
-                        form: Some(HoleForm::Counterbore),
-                        ..
-                    }
+                    HoleKind::Unresolved(Some(HoleForm::Counterbore))
+                        | HoleKind::PartialCounterbore { .. }
                 ),
             ) {
                 (Some(dimensions), true) => HoleKind::Counterbore {
@@ -6195,13 +6163,7 @@ fn non_boolean_feature_definition_with_parameters(
             kind: if hole.grouped_simple_through {
                 hole.chamfer.unwrap_or(HoleKind::Simple)
             } else {
-                HoleKind::Unresolved {
-                    form: None,
-                    counterbore_diameter: None,
-                    counterbore_depth: None,
-                    countersink_diameter: None,
-                    countersink_angle: None,
-                }
+                HoleKind::Unresolved(None)
             },
             exit_kind: hole
                 .grouped_simple_through

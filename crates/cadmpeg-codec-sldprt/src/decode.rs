@@ -1598,7 +1598,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             }
             FeatureDefinition::Flex { axis, mode } => {
                 axis.is_none()
-                    || matches!(mode, cadmpeg_ir::features::FlexMode::Unresolved { .. })
+                || matches!(mode, cadmpeg_ir::features::FlexMode::Unresolved(_))
             }
             FeatureDefinition::Scale {
                 bodies,
@@ -1618,14 +1618,17 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 kind,
                 exit_kind,
                 diameter,
-                extent,
-                ..
+            extent,
+            ..
             } => {
+                let exit_kind_is_unresolved = exit_kind
+                    .as_ref()
+                    .is_some_and(cadmpeg_ir::features::HoleKind::is_unresolved);
                 profile.as_ref().is_some_and(incomplete_profile)
                     || face.as_ref().is_some_and(incomplete_face_selection)
                     || placements.is_empty()
-                    || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. })
-                    || matches!(exit_kind, Some(cadmpeg_ir::features::HoleKind::Unresolved { .. }))
+                    || kind.is_unresolved()
+                    || exit_kind_is_unresolved
                     || diameter.is_none()
                     || extent.as_ref().is_none_or(incomplete_termination)
             }
@@ -3969,14 +3972,16 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
             || extent.as_ref().is_none_or(|extent| {
                 matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
             })
-            || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. });
+            || kind.is_unresolved();
         let resolved_complete = resolved_diameter.is_some()
             && resolved_extent.as_ref().is_some_and(|extent| {
                 !matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
             })
             && !matches!(
                 resolved_kind,
-                cadmpeg_ir::features::HoleKind::Unresolved { .. }
+                cadmpeg_ir::features::HoleKind::Unresolved(_)
+                    | cadmpeg_ir::features::HoleKind::PartialCounterbore { .. }
+                    | cadmpeg_ir::features::HoleKind::PartialCountersink { .. }
             );
         if incomplete && resolved_complete {
             *kind = resolved_kind;

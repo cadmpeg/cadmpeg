@@ -1383,12 +1383,7 @@ fn semantic_writer_retains_partial_native_flex_construction() {
             decoded.ir().model.features[index + 1].definition,
             FeatureDefinition::Flex {
                 axis: Some(_),
-                mode: FlexMode::Unresolved {
-                    form: Some(actual),
-                    angle: None,
-                    factor: None,
-                    distance: None,
-                },
+                mode: FlexMode::Unresolved(Some(actual)),
             } if actual == form
         ));
     }
