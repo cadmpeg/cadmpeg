@@ -38,20 +38,60 @@ pub(crate) fn plan(
             Preservation::Written { bytes, write_path } => {
                 Ok(preserved_body(input.ir, write_path, bytes))
             }
-            Preservation::Declined => Err(target.unavailable(
-                "its retained source image is unavailable for preservation and the generator \
-                 cannot synthesize it",
-            )),
+            Preservation::Declined(reason) => Err(target.unavailable(reason.unavailable_message())),
         };
     }
-    let preservation_eligible = target.source_preservation_eligible();
     if target.preserves_source() {
-        if let Preservation::Written { bytes, write_path } = preserve(input)? {
-            return Ok(preserved_body(input.ir, write_path, bytes));
-        }
-        return synthesized_body(input, None, preservation_eligible);
+        return match preserve(input)? {
+            Preservation::Written { bytes, write_path } => {
+                Ok(preserved_body(input.ir, write_path, bytes))
+            }
+            Preservation::Declined(reason) => {
+                synthesized_body(input, SynthesisCause::PreservationDeclined(reason))
+            }
+        };
     }
-    synthesized_body(input, target.displacement_message(), preservation_eligible)
+    let cause = if let Some(message) = target.displacement_message() {
+        SynthesisCause::Displaced(message)
+    } else if target.source_preservation_eligible()
+        && input
+            .fidelity
+            .and_then(|fidelity| fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID))
+            .is_none()
+    {
+        SynthesisCause::PreservationDeclined(PreservationDecline::SourceImageUnavailable)
+    } else {
+        SynthesisCause::Fresh
+    };
+    synthesized_body(input, cause)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreservationDecline {
+    SourceImageUnavailable,
+}
+
+impl PreservationDecline {
+    fn into_fidelity(self) -> (Consumption, cadmpeg_ir::LossNote) {
+        match self {
+            Self::SourceImageUnavailable => (
+                Consumption::Degraded {
+                    reason: "preserved F3D source image is unavailable".into(),
+                },
+                F3dLossCode::SourcePreservedImageUnavailable
+                    .note("preserved F3D source image is unavailable; regenerated from IR"),
+            ),
+        }
+    }
+
+    fn unavailable_message(self) -> &'static str {
+        match self {
+            Self::SourceImageUnavailable => {
+                "its retained source image is unavailable for preservation and the generator \
+                 cannot synthesize it"
+            }
+        }
+    }
 }
 
 enum Preservation {
@@ -59,7 +99,7 @@ enum Preservation {
         bytes: Vec<u8>,
         write_path: PreservedWritePath,
     },
-    Declined,
+    Declined(PreservationDecline),
 }
 
 fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
@@ -67,7 +107,9 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
         .fidelity
         .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
     else {
-        return Ok(Preservation::Declined);
+        return Ok(Preservation::Declined(
+            PreservationDecline::SourceImageUnavailable,
+        ));
     };
     let Some(data) = record.data() else {
         return Err(CodecError::Malformed(
@@ -89,34 +131,36 @@ fn preserved_body(ir: &CadIr, write_path: PreservedWritePath, bytes: Vec<u8>) ->
     body(ir, write_path, Vec::new(), bytes)
 }
 
+enum SynthesisCause {
+    Fresh,
+    Displaced(String),
+    PreservationDeclined(PreservationDecline),
+}
+
+impl SynthesisCause {
+    fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::LossNote>) {
+        match self {
+            Self::Fresh => (Consumption::NotConsumed, None),
+            Self::Displaced(message) => (
+                Consumption::NotConsumed,
+                Some(F3dLossCode::SourceDialectDisplaced.note(message)),
+            ),
+            Self::PreservationDeclined(reason) => {
+                let (consumption, loss) = reason.into_fidelity();
+                (consumption, Some(loss))
+            }
+        }
+    }
+}
+
 fn synthesized_body(
     input: EncodeInput<'_>,
-    displacement: Option<String>,
-    preservation_eligible: bool,
+    cause: SynthesisCause,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
     super::generate::write_new(input.ir, &mut bytes)?;
-    let source_available = input
-        .fidelity
-        .and_then(|fidelity| fidelity.retained_record(ids::FILE_SOURCE_IMAGE_ID))
-        .is_some();
-    let consumption = if preservation_eligible && !source_available {
-        Consumption::Degraded {
-            reason: "preserved F3D source image is unavailable".into(),
-        }
-    } else {
-        Consumption::NotConsumed
-    };
-    let mut losses: Vec<_> = (preservation_eligible && !source_available)
-        .then(|| {
-            F3dLossCode::SourcePreservedImageUnavailable
-                .note("preserved F3D source image is unavailable; regenerated from IR")
-        })
-        .into_iter()
-        .collect();
-    if let Some(message) = displacement {
-        losses.push(F3dLossCode::SourceDialectDisplaced.note(message));
-    }
+    let (consumption, loss) = cause.into_fidelity();
+    let losses = loss.into_iter().collect();
     Ok(body(
         input.ir,
         WritePath::Synthesized { consumption },
