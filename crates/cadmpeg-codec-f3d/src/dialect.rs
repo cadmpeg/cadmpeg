@@ -182,8 +182,7 @@ pub(crate) fn classify_layers(
     for layer in kernel_layers(scan) {
         let format = layer.format().to_owned();
         let instance = layer.instance().unwrap_or("unidentified").to_owned();
-        if let Some(displaced) = layers.push(layer) {
-            layers.push(displaced);
+        if layers.insert(layer).is_err() {
             losses.push(F3dLossCode::DialectLayerCollision.note(format!(
                 "the document produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted"
             )));

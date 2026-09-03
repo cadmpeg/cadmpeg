@@ -171,8 +171,7 @@ pub fn push_extras(
     for layer in extras {
         let format = layer.format().to_owned();
         let carrier = layer.instance().unwrap_or("unidentified").to_owned();
-        if let Some(displaced) = layers.push(layer) {
-            layers.push(displaced);
+        if layers.insert(layer).is_err() {
             collisions.push(format!(
                 "the container produced a duplicate {format} dialect layer at carrier {carrier}; \
                  the later classification was omitted"

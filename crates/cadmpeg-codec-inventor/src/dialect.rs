@@ -394,7 +394,7 @@ pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<D
 pub(crate) fn layers(primary: DialectMatch, carrier: &ActiveCarrierState<'_>) -> DialectLayers {
     let mut layers = DialectLayers::of(primary);
     if let Some(kernel) = kernel_layer_for_state(carrier) {
-        layers.push(kernel);
+        let _ = layers.insert(kernel);
     }
     layers
 }

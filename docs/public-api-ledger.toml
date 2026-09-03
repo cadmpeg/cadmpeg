@@ -2703,3 +2703,10 @@ crate = "cadmpeg-core"
 kind = "field"
 item = "cadmpeg_core::CodecError::Truncated::{context,operation}"
 reason = "a truncation stores its source location once and carries the operation directly instead of embedding a second copy in ErrorContext"
+
+[[change]]
+commit = "22ffe1e06d10157d1e8f891acb563d1c476b9378"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::DialectLayers::{push,insert}"
+reason = "codec insertion keeps the first layer for a format and instance key and returns the rejected duplicate instead of replacing and returning the authoritative layer"

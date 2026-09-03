@@ -403,32 +403,42 @@ impl DialectLayers {
         }
     }
 
-    /// Adds a layer keyed by `(format, instance)`.
+    /// Inserts a layer keyed by `(format, instance)`.
     ///
-    /// A layer whose key is already present replaces the existing layer, and
-    /// the displaced layer is returned. A layer that keys the primary replaces
-    /// the primary. Never fails.
-    pub fn push(&mut self, layer: DialectMatch) -> Option<DialectMatch> {
+    /// The first layer for a key remains authoritative. A duplicate is
+    /// returned unchanged so its producer can report the collision.
+    pub fn insert(&mut self, layer: DialectMatch) -> Result<(), DialectMatch> {
         if Self::same_key(&self.primary, &layer) {
-            return Some(std::mem::replace(&mut self.primary, layer));
+            return Err(layer);
         }
-        match self
+        if self
+            .extra
+            .iter()
+            .any(|existing| Self::same_key(existing, &layer))
+        {
+            return Err(layer);
+        }
+        self.extra.push(layer);
+        Ok(())
+    }
+
+    /// Adds a layer, replacing a layer with the same key.
+    ///
+    /// This last-wins builder matches the deserialization policy for tolerant
+    /// wire reads. Use [`Self::insert`] when the first layer is authoritative.
+    #[must_use]
+    pub fn with(mut self, layer: DialectMatch) -> Self {
+        if Self::same_key(&self.primary, &layer) {
+            self.primary = layer;
+        } else if let Some(existing) = self
             .extra
             .iter_mut()
             .find(|existing| Self::same_key(existing, &layer))
         {
-            Some(existing) => Some(std::mem::replace(existing, layer)),
-            None => {
-                self.extra.push(layer);
-                None
-            }
+            *existing = layer;
+        } else {
+            self.extra.push(layer);
         }
-    }
-
-    /// Adds a layer with [`Self::push`], discarding any displaced layer.
-    #[must_use]
-    pub fn with(mut self, layer: DialectMatch) -> Self {
-        self.push(layer);
         self
     }
 
@@ -908,23 +918,23 @@ mod tests {
     }
 
     #[test]
-    fn dialect_layers_push_replaces_the_layer_with_the_same_format_and_instance() {
+    fn dialect_layers_insert_keeps_the_first_extra_layer_for_a_key() {
         let first = layer("acis").with_instance("body");
         let replacement =
             DialectMatch::residual(DialectId::pinned("acis:other")).with_instance("body");
         let mut layers = DialectLayers::of(layer("rhino")).with(first.clone());
 
-        assert_eq!(layers.push(replacement.clone()), Some(first));
-        assert_eq!(layers.into_parts().1, [replacement]);
+        assert_eq!(layers.insert(replacement.clone()), Err(replacement));
+        assert_eq!(layers.into_parts().1, [first]);
     }
 
     #[test]
-    fn dialect_layers_push_replaces_the_primary_on_its_own_key() {
+    fn dialect_layers_insert_keeps_the_primary_on_its_own_key() {
         let replacement = DialectMatch::residual(DialectId::pinned("rhino:other"));
         let mut layers = DialectLayers::of(layer("rhino")).with(layer("acis"));
 
-        assert_eq!(layers.push(replacement.clone()), Some(layer("rhino")));
-        assert_eq!(layers.primary(), &replacement);
+        assert_eq!(layers.insert(replacement.clone()), Err(replacement));
+        assert_eq!(layers.primary(), &layer("rhino"));
         assert_eq!(layers.into_parts().1, [layer("acis")]);
     }
 
@@ -934,8 +944,8 @@ mod tests {
         let named = layer("acis").with_instance("body");
         let mut layers = DialectLayers::of(layer("rhino"));
 
-        assert_eq!(layers.push(anonymous.clone()), None);
-        assert_eq!(layers.push(named.clone()), None);
+        assert_eq!(layers.insert(anonymous.clone()), Ok(()));
+        assert_eq!(layers.insert(named.clone()), Ok(()));
         assert_eq!(layers.into_parts().1, [anonymous, named]);
     }
 
