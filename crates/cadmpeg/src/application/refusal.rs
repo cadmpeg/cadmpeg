@@ -120,8 +120,7 @@ impl ApplicationError {
 }
 
 /// Stable refusal code written into command reports and used by tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefusalCode {
     /// Native input decoding failed with a classified codec error.
     DecodeFailed,
@@ -146,23 +145,6 @@ pub enum RefusalCode {
 }
 
 impl RefusalCode {
-    /// `snake_case` wire form for `refusal.code`.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::DecodeFailed => "decode_failed",
-            Self::UnsupportedDialect => "unsupported_dialect",
-            Self::StrictDecodeRejected => "strict_decode_rejected",
-            Self::CheckFailed => "check_failed",
-            Self::DecodeLossRejected => "decode_loss_rejected",
-            Self::ExportLossRejected => "export_loss_rejected",
-            Self::EmptyGeometry => "empty_geometry",
-            Self::UnsupportedTarget => "unsupported_target",
-            Self::UnsupportedOutputFormat => "unsupported_output_format",
-            Self::BinaryStdoutRejected => "binary_stdout_rejected",
-        }
-    }
-
     /// Stable workflow metadata shared by every refusal carrying this code.
     const fn disposition(self) -> RefusalDisposition {
         let (stage, may_write_report, exit_code) = match self {
@@ -187,13 +169,29 @@ impl RefusalCode {
 
 impl fmt::Display for RefusalCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+        f.write_str(match self {
+            Self::DecodeFailed => "decode_failed",
+            Self::UnsupportedDialect => "unsupported_dialect",
+            Self::StrictDecodeRejected => "strict_decode_rejected",
+            Self::CheckFailed => "check_failed",
+            Self::DecodeLossRejected => "decode_loss_rejected",
+            Self::ExportLossRejected => "export_loss_rejected",
+            Self::EmptyGeometry => "empty_geometry",
+            Self::UnsupportedTarget => "unsupported_target",
+            Self::UnsupportedOutputFormat => "unsupported_output_format",
+            Self::BinaryStdoutRejected => "binary_stdout_rejected",
+        })
+    }
+}
+
+impl Serialize for RefusalCode {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
     }
 }
 
 /// Workflow stage that produced the refusal (`refusal.stage` on the wire).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefusalStage {
     /// Input resolved but conversion planning rejected the request.
     Plan,
@@ -205,22 +203,20 @@ pub enum RefusalStage {
     Export,
 }
 
-impl RefusalStage {
-    /// `snake_case` wire form for `refusal.stage`.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
+impl fmt::Display for RefusalStage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
             Self::Plan => "plan",
             Self::Decode => "decode",
             Self::Check => "check",
             Self::Export => "export",
-        }
+        })
     }
 }
 
-impl fmt::Display for RefusalStage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
+impl Serialize for RefusalStage {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
     }
 }
 
@@ -730,6 +726,6 @@ mod tests {
             },
         };
         assert_eq!(report_value(&refusal)["stage"], "check");
-        assert_eq!(refusal.code().as_str(), "check_failed");
+        assert_eq!(refusal.code().to_string(), "check_failed");
     }
 }
