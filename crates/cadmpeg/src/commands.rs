@@ -10,6 +10,7 @@ use reporting::{
 };
 
 use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::Confidence;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -21,17 +22,17 @@ use serde::Serialize;
 
 use cadmpeg_registry::{
     build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog, InspectError,
-    Inspected,
+    Inspected, Selection,
 };
 
 use crate::application::refusal::ApplicationError;
 use crate::application::transcoder::{emit_export_plan, TargetSelection};
 use crate::application::validators::validate_ir;
 use crate::application::{
-    export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, NativeValidatorCatalog,
-    SourceRequest, Transcoder,
+    export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, LoadedDocument,
+    NativeValidatorCatalog, SourceRequest, Transcoder,
 };
-use crate::loader::{self, LoadNotice};
+use crate::loader;
 use crate::DecodeArgs;
 
 /// CLI command-report envelope version.
@@ -55,18 +56,18 @@ pub struct AppCatalogs {
     pub validators: NativeValidatorCatalog,
 }
 
-fn print_load_notices(notices: &[LoadNotice]) {
-    for notice in notices {
-        match notice {
-            LoadNotice::LowConfidenceDetection {
-                format_id,
-                confidence,
-            } => {
-                eprintln!(
-                    "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
-                );
-            }
-        }
+fn print_load_notice(document: &LoadedDocument) {
+    let Some(Selection::Detected { confidence }) = document.selection() else {
+        return;
+    };
+    if confidence < Confidence::High {
+        let format_id = document
+            .decode_report()
+            .expect("a native selection always has a decode report")
+            .format();
+        eprintln!(
+            "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
+        );
     }
 }
 
@@ -295,8 +296,8 @@ pub fn dump(
             )?;
         }
     }
-    let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
-        Ok(outcome) => outcome,
+    let loaded = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
+        Ok(loaded) => loaded,
         Err(error) => {
             let Some(report_path) = report_path else {
                 return Err(error);
@@ -307,8 +308,7 @@ pub fn dump(
             return Err(error);
         }
     };
-    print_load_notices(&outcome.notices);
-    let loaded = &outcome.document;
+    print_load_notice(&loaded);
     let encoder = build_encoder(Format::Cadir);
     let plan = encoder.plan(
         cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
@@ -353,8 +353,8 @@ pub fn check_cmd(
     report_path: Option<&Path>,
     force: bool,
 ) -> CommandResult<()> {
-    let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
-        Ok(outcome) => outcome,
+    let loaded = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
+        Ok(loaded) => loaded,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
                 write_refusal_command_report(path, report_path, force, "check", refusal);
@@ -362,8 +362,7 @@ pub fn check_cmd(
             return Err(error);
         }
     };
-    print_load_notices(&outcome.notices);
-    let loaded = &outcome.document;
+    print_load_notice(&loaded);
     let mut stdout = io::stdout();
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
@@ -493,7 +492,7 @@ pub fn convert(
 
     let (decode_report, validation) = {
         let prepared = planned.prepared();
-        print_load_notices(&prepared.notices);
+        print_load_notice(&prepared.document);
         let mut stderr = io::stderr();
         if let Some(report) = prepared.document.decode_report() {
             print_decode_report(&mut stderr, report)?;
@@ -538,12 +537,10 @@ pub fn diff(
     report_path: Option<&Path>,
     force: bool,
 ) -> CommandResult<ExitCode> {
-    let left_outcome = loader::load_artifact(&catalogs.inputs, a.path, args.options(), a.forced)?;
-    print_load_notices(&left_outcome.notices);
-    let right_outcome = loader::load_artifact(&catalogs.inputs, b.path, args.options(), b.forced)?;
-    print_load_notices(&right_outcome.notices);
-    let left = &left_outcome.document;
-    let right = &right_outcome.document;
+    let left = loader::load_artifact(&catalogs.inputs, a.path, args.options(), a.forced)?;
+    print_load_notice(&left);
+    let right = loader::load_artifact(&catalogs.inputs, b.path, args.options(), b.forced)?;
+    print_load_notice(&right);
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
     let different = !result.is_empty() || fidelity_differs(&fidelity);

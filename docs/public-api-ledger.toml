@@ -2829,3 +2829,10 @@ crate = "cadmpeg-registry"
 kind = "field"
 item = "cadmpeg_registry::ResolvedSource::Native::format_id"
 reason = "the resolved codec is the single carrier of its stable format id"
+
+[[change]]
+commit = "cf5d68a6fcef29e6778e089475d4107032caf75b"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::ResolvedSource::Native::{confidence,selection}"
+reason = "a native resolution carries the detected-or-forced Selection directly instead of encoding forced selection as absent confidence"

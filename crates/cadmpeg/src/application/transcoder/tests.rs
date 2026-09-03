@@ -82,7 +82,6 @@ fn prepared(
 ) -> PreparedConversion {
     PreparedConversion {
         document: LoadedDocument::neutral(ir),
-        notices: Vec::new(),
         validation: None,
         encoder,
         selection: TargetSelection::new(format, None),
