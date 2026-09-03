@@ -7,7 +7,7 @@ use super::super::feature_definition_is_incomplete;
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     let mut report = cadmpeg_ir::codec::DecodeBody {
         geometry_transferred: true,
-        coverage: Default::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

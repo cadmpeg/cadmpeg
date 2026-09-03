@@ -3265,7 +3265,7 @@ fn build_geometry_report(
     classification.append_losses(&mut losses);
     DecodeBody {
         geometry_transferred: true,
-        coverage: Default::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: container::notes(scan),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
@@ -4588,7 +4588,7 @@ fn build_container_report(
 
     DecodeBody {
         geometry_transferred: false,
-        coverage: Default::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: container::notes(scan),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

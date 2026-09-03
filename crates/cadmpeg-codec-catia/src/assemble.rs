@@ -546,7 +546,7 @@ pub(crate) fn build_geometry_report(
 
     DecodeBody {
         geometry_transferred: true,
-        coverage: Default::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: Vec::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
@@ -655,7 +655,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
 
     DecodeBody {
         geometry_transferred: false,
-        coverage: Default::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: Vec::new(),
         transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),

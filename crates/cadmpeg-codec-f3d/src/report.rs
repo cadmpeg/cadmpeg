@@ -30,7 +30,7 @@ pub(crate) fn build_decode_report(
 ) -> DecodeBody {
     DecodeBody {
         geometry_transferred,
-        coverage: Default::default(),
+        coverage: cadmpeg_ir::Coverage::default(),
         losses,
         notes: crate::container::summary_notes(
             scan,

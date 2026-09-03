@@ -135,6 +135,8 @@ fn incoming_entity_incidence_counts<'a>(
     counts
 }
 
+// Keep the single classified match explicit beside the independently built decode artifacts.
+#[allow(clippy::too_many_arguments)]
 fn finish_decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
