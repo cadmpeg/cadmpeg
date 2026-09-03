@@ -2983,3 +2983,10 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::features::{HoleKind::Unresolved,FlexMode::Unresolved}"
 reason = "unresolved hole and flex forms retain only payloads owned by their selected family, while partial counterbore and countersink variants cannot mix the two dimension sets"
+
+[[change]]
+commit = "1d633c3e6490d1b6355ec7e4ed22fdaa985558ae"
+crate = "cadmpeg-ir"
+kind = "struct"
+item = "cadmpeg_ir::features::ScaleFactors"
+reason = "ScaleFactors is an enum whose variants represent exactly one unresolved, uniform, or complete per-axis construction"

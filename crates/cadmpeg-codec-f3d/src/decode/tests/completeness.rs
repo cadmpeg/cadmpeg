@@ -382,24 +382,14 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
         &FeatureDefinition::Scale {
             bodies: BodySelection::Bodies(vec![BodyId("body:scale".into())]),
             center: Some(ScaleCenter::ModelOrigin),
-            factors: ScaleFactors {
-                uniform: Some(1.5),
-                x: None,
-                y: None,
-                z: None,
-            },
+            factors: ScaleFactors::Uniform(1.5),
         }
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Scale {
             bodies: BodySelection::Bodies(vec![BodyId("body:scale".into())]),
             center: Some(ScaleCenter::Native("native:center".into())),
-            factors: ScaleFactors {
-                uniform: Some(1.5),
-                x: None,
-                y: None,
-                z: None,
-            },
+            factors: ScaleFactors::Uniform(1.5),
         }
     ));
 }

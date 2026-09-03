@@ -3593,12 +3593,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     ScaleCenter::Native(reference) => !reference.is_empty(),
                     ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
                 });
-                if !center_valid
-                    || ![factors.uniform, factors.x, factors.y, factors.z]
+                let factors_valid = factors.resolved().is_none_or(|factors| {
+                    [factors.x, factors.y, factors.z]
                         .into_iter()
-                        .flatten()
                         .all(|factor| factor.is_finite() && factor != 0.0)
-                {
+                });
+                if !center_valid || !factors_valid {
                     feature_geometry_error(findings, feature, "scale transform is invalid");
                 }
             }

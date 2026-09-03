@@ -3976,19 +3976,13 @@ fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition>
     let factor =
         |name| scalar_named(properties, name).filter(|factor| factor.is_finite() && *factor != 0.0);
     let factors = if bool_selector(properties, "Uniform", true)? {
-        ScaleFactors {
-            uniform: Some(factor("UniformScale")?),
-            x: None,
-            y: None,
-            z: None,
-        }
+        ScaleFactors::Uniform(factor("UniformScale")?)
     } else {
-        ScaleFactors {
-            uniform: None,
-            x: Some(factor("XScale")?),
-            y: Some(factor("YScale")?),
-            z: Some(factor("ZScale")?),
-        }
+        ScaleFactors::PerAxis(Vector3::new(
+            factor("XScale")?,
+            factor("YScale")?,
+            factor("ZScale")?,
+        ))
     };
     Some(FeatureDefinition::Scale {
         bodies: BodySelection::Native(base.id.clone()),

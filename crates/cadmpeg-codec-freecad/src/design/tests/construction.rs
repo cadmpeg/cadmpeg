@@ -7,6 +7,7 @@ use cadmpeg_ir::features::{
     FeatureDefinition, Length, ShellJoin, ShellMode, SweepOrientation, SweepTransformation,
     SweepTransition,
 };
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -445,24 +446,18 @@ fn transfers_uniform_and_anisotropic_part_scale() {
         definition("Uniform"),
         cadmpeg_ir::features::FeatureDefinition::Scale {
             center: Some(cadmpeg_ir::features::ScaleCenter::ModelOrigin),
-            factors: cadmpeg_ir::features::ScaleFactors {
-                uniform: Some(-2.0),
-                x: None,
-                y: None,
-                z: None
-            },
+            factors: cadmpeg_ir::features::ScaleFactors::Uniform(-2.0),
             ..
         }
     ));
     assert!(matches!(
         definition("Anisotropic"),
         cadmpeg_ir::features::FeatureDefinition::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors {
-                uniform: None,
-                x: Some(2.0),
-                y: Some(3.0),
-                z: Some(4.0)
-            },
+            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(Vector3 {
+                x: 2.0,
+                y: 3.0,
+                z: 4.0,
+            }),
             ..
         }
     ));
@@ -515,12 +510,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
     assert!(matches!(
         definition(&absent, "Scale"),
         FeatureDefinition::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors {
-                uniform: Some(2.0),
-                x: None,
-                y: None,
-                z: None,
-            },
+            factors: cadmpeg_ir::features::ScaleFactors::Uniform(2.0),
             ..
         }
     ));
@@ -537,12 +527,11 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
     assert!(matches!(
         definition(&valid, "Scale"),
         FeatureDefinition::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors {
-                uniform: None,
-                x: Some(3.0),
-                y: Some(4.0),
-                z: Some(5.0),
-            },
+            factors: cadmpeg_ir::features::ScaleFactors::PerAxis(Vector3 {
+                x: 3.0,
+                y: 4.0,
+                z: 5.0,
+            }),
             ..
         }
     ));
