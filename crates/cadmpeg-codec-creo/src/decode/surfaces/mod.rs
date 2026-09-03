@@ -164,7 +164,7 @@ pub(super) fn transfer_part_product(
         parent: OccurrenceParent::Root,
         ordinal: 0,
         transform: Transform::identity(),
-        prototype_transform: Transform::identity(),
+        linked_prototype: None,
         scale: [1.0; 3],
         name: Some(model_name.clone()),
         linked_subelements: Vec::new(),
@@ -175,7 +175,6 @@ pub(super) fn transfer_part_product(
         copy_on_change_source: None,
         copy_on_change_group: None,
         copy_on_change_touched: None,
-        link_transform: None,
         native_ref: None,
     });
     true

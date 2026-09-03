@@ -580,7 +580,7 @@ impl_entity_schema!(
 );
 impl_entity_schema!(crate::spreadsheets::Spreadsheet, Spreadsheet, id.0; id, feature, cells, column_widths, row_heights, merged_ranges, native_ref);
 impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id.0; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
-impl_entity_schema!(crate::products::Occurrence, Occurrence, id.0; id, prototype, parent, ordinal, transform, prototype_transform, scale, name, linked_subelements, visible, element_component, claim_child, copy_on_change, copy_on_change_source, copy_on_change_group, copy_on_change_touched, link_transform, native_ref);
+impl_entity_schema!(crate::products::Occurrence, Occurrence, id.0; id, prototype, parent, ordinal, transform, linked_prototype, scale, name, linked_subelements, visible, element_component, claim_child, copy_on_change, copy_on_change_source, copy_on_change_group, copy_on_change_touched, native_ref);
 impl EntitySchema for crate::products::AssemblyJoint {
     const KIND: EntityKind = EntityKind::AssemblyJoint;
 

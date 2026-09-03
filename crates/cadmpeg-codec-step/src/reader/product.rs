@@ -323,7 +323,7 @@ pub(super) fn decode(
             parent: OccurrenceParent::Root,
             ordinal: root_ordinal,
             transform: Transform::identity(),
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: None,
             linked_subelements: Vec::new(),
@@ -334,7 +334,6 @@ pub(super) fn decode(
             copy_on_change_source: None,
             copy_on_change_group: None,
             copy_on_change_touched: None,
-            link_transform: None,
             native_ref: None,
         });
         admit_occurrence(ctx, ir, admitted_ir_entities)?;
@@ -457,7 +456,7 @@ pub(super) fn decode(
                 },
                 ordinal: *ordinal,
                 transform,
-                prototype_transform: Transform::identity(),
+                linked_prototype: None,
                 scale: [1.0; 3],
                 name: usage.name.clone(),
                 linked_subelements: Vec::new(),
@@ -468,7 +467,6 @@ pub(super) fn decode(
                 copy_on_change_source: None,
                 copy_on_change_group: None,
                 copy_on_change_touched: None,
-                link_transform: None,
                 native_ref: Some(format!("#{usage_id}")),
             });
             admit_occurrence(ctx, ir, admitted_ir_entities)?;

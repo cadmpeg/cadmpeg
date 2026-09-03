@@ -153,7 +153,7 @@ pub(crate) fn project_occurrences(
             parent: OccurrenceParent::Root,
             ordinal: source.ordinal,
             transform,
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: source.title.clone().filter(|title| !title.is_empty()),
             linked_subelements: Vec::new(),
@@ -164,7 +164,6 @@ pub(crate) fn project_occurrences(
             copy_on_change_source: None,
             copy_on_change_group: None,
             copy_on_change_touched: None,
-            link_transform: None,
             native_ref: Some(source.id.clone()),
         });
     }

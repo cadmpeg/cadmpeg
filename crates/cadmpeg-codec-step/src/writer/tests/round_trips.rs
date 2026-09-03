@@ -448,7 +448,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         parent: cadmpeg_ir::products::OccurrenceParent::Root,
         ordinal: 0,
         transform: cadmpeg_ir::transform::Transform::identity(),
-        prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+        linked_prototype: None,
         scale: [1.0; 3],
         name: Some("Cube root".into()),
         linked_subelements: Vec::new(),
@@ -459,7 +459,6 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         copy_on_change_source: None,
         copy_on_change_group: None,
         copy_on_change_touched: None,
-        link_transform: None,
         native_ref: None,
     });
     let options = StepWriteOptions {

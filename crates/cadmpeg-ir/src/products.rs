@@ -257,9 +257,10 @@ pub struct Occurrence {
     pub ordinal: u32,
     /// Placement relative to the direct container.
     pub transform: Transform,
-    /// Linked prototype placement contribution selected by link-transform policy.
-    #[serde(default)]
-    pub prototype_transform: Transform,
+    /// Linked prototype placement contribution when link-transform policy applies.
+    #[serde(flatten, with = "linked_prototype_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "LinkedPrototypeWire"))]
+    pub linked_prototype: Option<Transform>,
     /// Per-axis instance scale.
     pub scale: [f64; 3],
     /// Source occurrence identifier or display name.
@@ -289,12 +290,59 @@ pub struct Occurrence {
     /// Whether the tracked source was persisted as changed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copy_on_change_touched: Option<bool>,
-    /// Whether the prototype placement participates in evaluation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link_transform: Option<bool>,
     /// Format-native object supplying this instance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+impl Occurrence {
+    /// Placement after applying the linked prototype contribution, when present.
+    #[must_use]
+    pub fn effective_transform(&self) -> Transform {
+        self.linked_prototype.map_or(self.transform, |prototype| {
+            self.transform.compose(prototype)
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct LinkedPrototypeWire {
+    #[serde(default)]
+    prototype_transform: Transform,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    link_transform: Option<bool>,
+}
+
+mod linked_prototype_wire {
+    use super::LinkedPrototypeWire;
+    use crate::transform::Transform;
+    use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Option<Transform>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        LinkedPrototypeWire {
+            prototype_transform: value.unwrap_or_else(Transform::identity),
+            link_transform: value.map(|_| true),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Transform>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = LinkedPrototypeWire::deserialize(deserializer)?;
+        match wire.link_transform {
+            Some(true) => Ok(Some(wire.prototype_transform)),
+            None | Some(false) if wire.prototype_transform == Transform::identity() => Ok(None),
+            None | Some(false) => Err(D::Error::custom(
+                "prototype_transform must be identity unless link_transform is true",
+            )),
+        }
+    }
 }
 
 /// Failure to construct a canonical occurrence graph.
@@ -353,7 +401,7 @@ mod tests {
             parent,
             ordinal: 0,
             transform: translation(x),
-            prototype_transform: translation(10.0),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: None,
             linked_subelements: Vec::new(),
@@ -364,7 +412,6 @@ mod tests {
             copy_on_change_source: None,
             copy_on_change_group: None,
             copy_on_change_touched: None,
-            link_transform: None,
             native_ref: None,
         }
     }
@@ -379,7 +426,7 @@ mod tests {
             },
             2.0,
         );
-        child.link_transform = Some(true);
+        child.linked_prototype = Some(translation(10.0));
         let occurrences = [child, root];
         let graph = AssemblyGraph::new(&occurrences).expect("valid graph");
         assert_eq!(
@@ -389,6 +436,36 @@ mod tests {
                 .rows[0][3],
             13.0
         );
+    }
+
+    #[test]
+    fn linked_prototype_wire_preserves_the_legacy_fields_and_rejects_ignored_transforms() {
+        let plain = occurrence("plain", OccurrenceParent::Root, 1.0);
+        let mut plain_wire = serde_json::to_value(&plain).expect("plain occurrence wire");
+        assert_eq!(
+            plain_wire.get("prototype_transform"),
+            Some(&serde_json::to_value(Transform::identity()).unwrap())
+        );
+        assert!(plain_wire.get("link_transform").is_none());
+
+        plain_wire["link_transform"] = serde_json::json!(false);
+        let decoded: Occurrence = serde_json::from_value(plain_wire.clone()).unwrap();
+        assert_eq!(decoded.linked_prototype, None);
+
+        let mut linked = plain;
+        linked.linked_prototype = Some(translation(10.0));
+        let linked_wire = serde_json::to_value(&linked).expect("linked occurrence wire");
+        assert_eq!(
+            linked_wire.get("link_transform"),
+            Some(&serde_json::json!(true))
+        );
+        assert_eq!(
+            serde_json::from_value::<Occurrence>(linked_wire).unwrap(),
+            linked
+        );
+
+        plain_wire["prototype_transform"] = serde_json::to_value(translation(10.0)).unwrap();
+        assert!(serde_json::from_value::<Occurrence>(plain_wire).is_err());
     }
 
     #[test]
@@ -490,10 +567,7 @@ fn resolve_occurrence<'a>(
             resolve_occurrence(parent_occurrence, occurrences, resolved, active)?
         }
     };
-    let mut transform = parent.compose(occurrence.transform);
-    if occurrence.link_transform.unwrap_or(false) {
-        transform = transform.compose(occurrence.prototype_transform);
-    }
+    let transform = parent.compose(occurrence.effective_transform());
     active.remove(occurrence.id.as_str());
     resolved.insert(occurrence.id.as_str(), transform);
     Ok(transform)

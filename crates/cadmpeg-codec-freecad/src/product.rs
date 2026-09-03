@@ -300,9 +300,9 @@ pub(crate) fn transfer_neutral(
                 transform: Transform {
                     rows: local_transform,
                 },
-                prototype_transform: Transform {
+                linked_prototype: (record.link_transform == Some(true)).then_some(Transform {
                     rows: prototype_transform,
-                },
+                }),
                 scale,
                 name: Some(record.object.clone()),
                 linked_subelements: record.linked_subelements.clone(),
@@ -316,7 +316,6 @@ pub(crate) fn transfer_neutral(
                 copy_on_change_source: record.copy_on_change_source.as_deref().map(&definition_id),
                 copy_on_change_group: record.copy_on_change_group.as_deref().map(&definition_id),
                 copy_on_change_touched: record.copy_on_change_touched,
-                link_transform: record.link_transform,
                 native_ref: Some(record.object.clone()),
             });
         }
@@ -411,7 +410,7 @@ pub(crate) fn transfer_neutral(
             transform: Transform {
                 rows: local_transform,
             },
-            prototype_transform: Transform::identity(),
+            linked_prototype: None,
             scale: [1.0; 3],
             name: Some(object.clone()),
             linked_subelements: Vec::new(),
@@ -422,7 +421,6 @@ pub(crate) fn transfer_neutral(
             copy_on_change_source: None,
             copy_on_change_group: None,
             copy_on_change_touched: None,
-            link_transform: Some(false),
             native_ref: Some(object.clone()),
         });
     }

@@ -1166,11 +1166,7 @@ impl<'a> Builder<'a> {
             let Some(&from) = product_origins.get(child_product) else {
                 continue;
             };
-            let transform = if occurrence.link_transform.unwrap_or(false) {
-                occurrence.transform.compose(occurrence.prototype_transform)
-            } else {
-                occurrence.transform
-            };
+            let transform = occurrence.effective_transform();
             if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 continue;
             }
@@ -1259,11 +1255,7 @@ impl<'a> Builder<'a> {
 
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                let transform = if occurrence.link_transform.unwrap_or(false) {
-                    occurrence.transform.compose(occurrence.prototype_transform)
-                } else {
-                    occurrence.transform
-                };
+                let transform = occurrence.effective_transform();
                 if !is_identity(&transform.rows) || occurrence.scale != [1.0; 3] {
                     self.loss(
                         StepLossCode::RootOccurrencePlacementNotRepresentable,
@@ -1310,11 +1302,7 @@ impl<'a> Builder<'a> {
             else {
                 continue;
             };
-            let transform = if occurrence.link_transform.unwrap_or(false) {
-                occurrence.transform.compose(occurrence.prototype_transform)
-            } else {
-                occurrence.transform
-            };
+            let transform = occurrence.effective_transform();
             if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
