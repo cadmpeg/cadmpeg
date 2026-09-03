@@ -10,18 +10,46 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLim
 
 const CFB_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
-/// One CFB directory row in a container listing.
-pub struct CfbRow {
-    /// `"storage"` or `"stream"`.
-    pub kind: &'static str,
-    /// Hierarchy path with source spelling preserved.
-    pub path: String,
-    /// Logical stream size; `None` for storages.
-    pub size: Option<u64>,
-    /// `"fat"` or `"mini-fat"`; `None` for storages.
-    pub allocation: Option<&'static str>,
-    /// CFB directory-entry index.
-    pub directory_id: u32,
+/// One typed CFB directory entry in a container listing.
+pub enum CfbEntry {
+    /// A hierarchy node with no byte stream.
+    Storage { path: String, directory_id: u32 },
+    /// A logical stream and its allocation route.
+    Stream {
+        path: String,
+        directory_id: u32,
+        size: u64,
+        allocation: Allocation,
+    },
+}
+
+impl CfbEntry {
+    fn path(&self) -> &str {
+        match self {
+            Self::Storage { path, .. } | Self::Stream { path, .. } => path,
+        }
+    }
+
+    const fn directory_id(&self) -> u32 {
+        match self {
+            Self::Storage { directory_id, .. } | Self::Stream { directory_id, .. } => *directory_id,
+        }
+    }
+}
+
+/// CFB stream allocation table.
+pub enum Allocation {
+    Fat,
+    MiniFat,
+}
+
+impl Allocation {
+    const fn label(&self) -> &'static str {
+        match self {
+            Self::Fat => "fat",
+            Self::MiniFat => "mini-fat",
+        }
+    }
 }
 
 /// Container members listed from a ZIP archive or a CFB file.
@@ -29,7 +57,7 @@ pub enum Listing {
     /// ZIP central-directory entries.
     Zip(Vec<EntryRecord>),
     /// CFB directory rows (storages and streams).
-    Cfb(Vec<CfbRow>),
+    Cfb(Vec<CfbEntry>),
 }
 
 /// Lists ZIP entries or CFB directory members in `bytes`.
@@ -52,21 +80,17 @@ pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
             .entries()
             .iter()
             .map(|entry| match entry {
-                CompoundEntry::Storage(storage) => CfbRow {
-                    kind: "storage",
+                CompoundEntry::Storage(storage) => CfbEntry::Storage {
                     path: storage.path().to_string(),
-                    size: None,
-                    allocation: None,
                     directory_id: entry.directory_id(),
                 },
-                CompoundEntry::Stream(stream) => CfbRow {
-                    kind: "stream",
+                CompoundEntry::Stream(stream) => CfbEntry::Stream {
                     path: stream.path().to_string(),
-                    size: Some(stream.logical_size()),
-                    allocation: Some(match stream.allocation() {
-                        CompoundAllocation::Regular => "fat",
-                        CompoundAllocation::Mini => "mini-fat",
-                    }),
+                    size: stream.logical_size(),
+                    allocation: match stream.allocation() {
+                        CompoundAllocation::Regular => Allocation::Fat,
+                        CompoundAllocation::Mini => Allocation::MiniFat,
+                    },
                     directory_id: entry.directory_id(),
                 },
             })
@@ -232,14 +256,26 @@ pub fn render_json(listing: &Listing) -> String {
         Listing::Cfb(rows) => (
             "cfb",
             rows.iter()
-                .map(|row| {
-                    serde_json::json!({
-                        "kind": row.kind,
-                        "path": row.path,
-                        "size": row.size,
-                        "allocation": row.allocation,
-                        "directory_id": row.directory_id,
-                    })
+                .map(|entry| match entry {
+                    CfbEntry::Storage { path, directory_id } => serde_json::json!({
+                        "kind": "storage",
+                        "path": path,
+                        "size": null,
+                        "allocation": null,
+                        "directory_id": directory_id,
+                    }),
+                    CfbEntry::Stream {
+                        path,
+                        directory_id,
+                        size,
+                        allocation,
+                    } => serde_json::json!({
+                        "kind": "stream",
+                        "path": path,
+                        "size": size,
+                        "allocation": allocation.label(),
+                        "directory_id": directory_id,
+                    }),
                 })
                 .collect(),
         ),
@@ -287,17 +323,21 @@ pub fn render(listing: &Listing) -> String {
                 "{:>4}  {:>8}  {:>12}  {:>8}  path",
                 "id", "kind", "size", "alloc"
             );
-            for row in rows {
-                let size = row.size.map(|n| n.to_string()).unwrap_or_default();
-                let alloc = row.allocation.unwrap_or("");
+            for entry in rows {
+                let (kind, size, allocation) = match entry {
+                    CfbEntry::Storage { .. } => ("storage", String::new(), ""),
+                    CfbEntry::Stream {
+                        size, allocation, ..
+                    } => ("stream", size.to_string(), allocation.label()),
+                };
                 let _ = writeln!(
                     out,
                     "{:>4}  {:>8}  {:>12}  {:>8}  {}",
-                    row.directory_id,
-                    row.kind,
+                    entry.directory_id(),
+                    kind,
                     size,
-                    alloc,
-                    shell_quote(&row.path)
+                    allocation,
+                    shell_quote(entry.path())
                 );
             }
             out
@@ -355,10 +395,9 @@ mod tests {
         };
         let payload = rows
             .iter()
-            .find(|row| row.path == "Payload")
+            .find(|entry| entry.path() == "Payload")
             .expect("Payload row");
-        assert_eq!(payload.kind, "stream");
-        assert_eq!(payload.size, Some(4096));
+        assert!(matches!(payload, CfbEntry::Stream { size: 4096, .. }));
     }
 
     fn compound_fixture() -> Vec<u8> {
