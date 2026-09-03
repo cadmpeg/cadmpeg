@@ -201,7 +201,7 @@ fn semantic_writer_round_trips_equation_driven_curve() {
 
 #[test]
 fn semantic_writer_round_trips_helix() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::features::{FeatureDefinition, HelixPitch, HelixShape, Length};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -228,11 +228,13 @@ fn semantic_writer_round_trips_helix() {
                 z: 1.0
             },
             radius: Length(4.0),
-            pitch: Length(-2.0),
+            shape: HelixShape::Cylindrical {
+                pitch,
+            },
             revolutions: 3.5,
             clockwise: true,
             ..
-        }
+        } if pitch.get() == Length(-2.0)
     ));
 
     {
@@ -241,7 +243,7 @@ fn semantic_writer_round_trips_helix() {
             axis_origin,
             axis_direction,
             radius,
-            pitch,
+            shape: HelixShape::Cylindrical { pitch },
             revolutions,
             clockwise,
             ..
@@ -252,7 +254,7 @@ fn semantic_writer_round_trips_helix() {
         *axis_origin = Point3::new(4.0, 5.0, 6.0);
         *axis_direction = Vector3::new(0.0, 1.0, 0.0);
         *radius = Length(7.0);
-        *pitch = Length(8.0);
+        *pitch = HelixPitch::new(Length(8.0)).unwrap();
         *revolutions = 9.25;
         *clockwise = false;
     }
@@ -291,17 +293,17 @@ fn semantic_writer_round_trips_helix() {
                 z: 0.0
             },
             radius: Length(7.0),
-            pitch: Length(8.0),
+            shape: HelixShape::Cylindrical { pitch },
             revolutions: 9.25,
             clockwise: false,
             ..
-        }
+        } if pitch.get() == Length(8.0)
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_slash_named_helix() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::features::{FeatureDefinition, HelixPitch, HelixShape, Length};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -323,10 +325,10 @@ fn semantic_writer_round_trips_slash_named_helix() {
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Helix {
             radius: Length(4.0),
-            pitch: Length(2.0),
+            shape: HelixShape::Cylindrical { pitch },
             revolutions: 3.5,
             ..
-        }
+        } if pitch.get() == Length(2.0)
     ));
 
     {
@@ -335,7 +337,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
             axis_origin,
             axis_direction,
             radius,
-            pitch,
+            shape: HelixShape::Cylindrical { pitch },
             revolutions,
             clockwise,
             ..
@@ -346,7 +348,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
         *axis_origin = Point3::new(4.0, 5.0, 6.0);
         *axis_direction = Vector3::new(0.0, 1.0, 0.0);
         *radius = Length(7.0);
-        *pitch = Length(8.0);
+        *pitch = HelixPitch::new(Length(8.0)).unwrap();
         *revolutions = 9.25;
         *clockwise = true;
     }

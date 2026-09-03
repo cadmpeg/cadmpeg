@@ -3984,14 +3984,21 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 axis_origin,
                 axis_direction,
                 radius,
-                pitch,
+                shape,
                 revolutions,
-                radial_growth,
-                cone_angle,
                 segment_turns,
                 ..
             } => {
-                let valid = [axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
+                let shape_valid = match shape {
+                    crate::features::HelixShape::Cylindrical { .. } => true,
+                    crate::features::HelixShape::Conical { cone_angle, .. } => {
+                        cone_angle.0.is_finite() && cone_angle.0.abs() < std::f64::consts::FRAC_PI_2
+                    }
+                    crate::features::HelixShape::Spiral { radial_growth } => {
+                        radial_growth.0.is_finite()
+                    }
+                };
+                let valid = [axis_origin.x, axis_origin.y, axis_origin.z]
                     .into_iter()
                     .all(f64::is_finite)
                     && valid_feature_direction(*axis_direction)
@@ -3999,12 +4006,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     && radius.0 > 0.0
                     && revolutions.is_finite()
                     && *revolutions > 0.0
-                    && radial_growth.is_none_or(|value| value.0.is_finite())
-                    && cone_angle.is_none_or(|value| {
-                        value.0.is_finite() && value.0.abs() < std::f64::consts::FRAC_PI_2
-                    })
-                    && segment_turns.is_none_or(|value| value.is_finite() && value > 0.0)
-                    && !(radial_growth.is_some() && cone_angle.is_some());
+                    && shape_valid
+                    && segment_turns.is_none_or(|value| value.is_finite() && value > 0.0);
                 if !valid {
                     feature_geometry_error(findings, feature, "helix geometry is invalid");
                 }

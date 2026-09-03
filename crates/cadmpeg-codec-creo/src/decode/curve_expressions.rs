@@ -130,21 +130,18 @@ fn curve_expression_helix_feature_definition(
         return None;
     };
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
-    axial_pitch
-        .is_finite()
-        .then_some(IrFeatureDefinition::Helix {
-            axis_origin: *center,
-            axis_direction: *axis,
-            radius: Length(helix.radius),
-            pitch: Length(axial_pitch),
-            revolutions: helix.revolutions,
-            start_angle: Angle(helix.start_angle),
-            clockwise: helix.clockwise,
-            radial_growth: None,
-            cone_angle: None,
-            segment_turns: None,
-            construction_style: None,
-        })
+    let pitch = cadmpeg_ir::features::HelixPitch::new(Length(axial_pitch))?;
+    Some(IrFeatureDefinition::Helix {
+        axis_origin: *center,
+        axis_direction: *axis,
+        radius: Length(helix.radius),
+        shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
+        revolutions: helix.revolutions,
+        start_angle: Angle(helix.start_angle),
+        clockwise: helix.clockwise,
+        segment_turns: None,
+        construction_style: None,
+    })
 }
 
 pub(crate) fn expression_dependency_reaches(

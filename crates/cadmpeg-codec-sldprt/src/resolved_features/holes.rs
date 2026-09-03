@@ -113,16 +113,18 @@ pub(crate) fn project_helix_axes(
             last_point.z - points[0].z,
         )
         .dot(axis_direction);
+        let Some(pitch) = cadmpeg_ir::features::HelixPitch::new(Length(signed_rise / *revolutions))
+        else {
+            continue;
+        };
         model_feature.definition = FeatureDefinition::Helix {
             axis_origin,
             axis_direction,
             radius: Length(radius),
-            pitch: Length(signed_rise / *revolutions),
+            shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
             revolutions: *revolutions,
             start_angle: *start_angle,
             clockwise: *clockwise,
-            radial_growth: None,
-            cone_angle: None,
             segment_turns: None,
             construction_style: None,
         };
