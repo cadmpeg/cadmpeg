@@ -2284,49 +2284,35 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::Spring {
-            context,
-            surface_parameter_ranges,
-            first_pcurve_parameter_range,
-            cache_first,
-            ..
-        } = procedural.definition()
-        {
-            // The conditional inline ranges belong to the context-first
-            // layout: a cache-first record stores its bounds in the shared
-            // context form and never stores inline ranges, independently of
-            // whether a referenced support resolved a cache.
-            let context_first = cache_first.is_none();
-            let surface_ranges_valid =
-                surface_parameter_ranges
-                    .iter()
-                    .enumerate()
-                    .all(|(side, ranges)| {
-                        (if context_first {
-                            ranges.is_some() == context.sides[side].surface.is_none()
-                        } else {
-                            ranges.is_none()
-                        }) && ranges.is_none_or(|ranges| {
-                            ranges.into_iter().all(|range| {
+        if let ProceduralCurveDefinition::Spring { layout, .. } = procedural.definition() {
+            let context = layout.support_context();
+            let inline_ranges_finite = match layout {
+                crate::geometry::SpringLayout::ContextFirst {
+                    supports,
+                    first_pcurve,
+                    ..
+                } => {
+                    supports.iter().all(|support| match support {
+                        crate::geometry::SpringSupport::Surface(_) => true,
+                        crate::geometry::SpringSupport::Ranges(ranges) => {
+                            ranges.iter().all(|range| {
                                 range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
                             })
-                        })
-                    });
-            let first_pcurve_range_valid = (if context_first {
-                first_pcurve_parameter_range.is_some() == context.sides[0].pcurve.is_none()
-            } else {
-                first_pcurve_parameter_range.is_none()
-            }) && first_pcurve_parameter_range.is_none_or(|range| {
-                range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
-            });
-            if !support_context_is_finite(context)
-                || !surface_ranges_valid
-                || !first_pcurve_range_valid
-            {
+                        }
+                    }) && match first_pcurve {
+                        crate::geometry::SpringPcurve::Pcurve(_) => true,
+                        crate::geometry::SpringPcurve::Range(range) => {
+                            range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                        }
+                    }
+                }
+                crate::geometry::SpringLayout::CacheFirst { .. } => true,
+            };
+            if !support_context_is_finite(&context) || !inline_ranges_finite {
                 bounds_err(
                     findings,
                     &procedural.id.0,
-                    "spring context or conditional null-support ranges are invalid",
+                    "spring context or null-support ranges are invalid",
                 );
             }
             continue;

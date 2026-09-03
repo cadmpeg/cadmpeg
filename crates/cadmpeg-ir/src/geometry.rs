@@ -4199,6 +4199,221 @@ pub struct CacheFirstCurveForm {
     pub extension: i64,
 }
 
+/// One support slot in a context-first spring construction.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum SpringSupport {
+    /// Resolved support surface.
+    Surface(SurfaceId),
+    /// Native U/V ranges stored in place of `null_surface`.
+    Ranges([[f64; 2]; 2]),
+}
+
+/// First pcurve slot in a context-first spring construction.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum SpringPcurve {
+    /// Resolved parameter-space curve.
+    Pcurve(PcurveGeometry),
+    /// Native interval stored in place of `nullbs`.
+    Range([f64; 2]),
+}
+
+/// Mutually exclusive spring construction layouts.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum SpringLayout {
+    /// Support-first layout with inline null-carrier replacement ranges.
+    ContextFirst {
+        /// Two ordered support slots.
+        supports: [SpringSupport; 2],
+        /// First pcurve or its null replacement range.
+        first_pcurve: SpringPcurve,
+        /// Nullable second pcurve slot.
+        second_pcurve: Option<PcurveGeometry>,
+        /// Native solved-curve parameter interval.
+        parameter_range: [f64; 2],
+        /// Three ordered discontinuity arrays.
+        discontinuities: [Vec<f64>; 3],
+        /// Native boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
+    },
+    /// Cache-first layout, which carries no inline replacement ranges or
+    /// context-first discontinuity flag.
+    CacheFirst {
+        /// Shared support context following the solved cache.
+        context: IntcurveSupportContext,
+        /// Cache-first serializer fields.
+        form: CacheFirstCurveForm,
+    },
+}
+
+impl SpringLayout {
+    /// Return the support context, deriving it for the context-first layout.
+    #[must_use]
+    pub fn support_context(&self) -> std::borrow::Cow<'_, IntcurveSupportContext> {
+        match self {
+            Self::CacheFirst { context, .. } => std::borrow::Cow::Borrowed(context),
+            Self::ContextFirst {
+                supports,
+                first_pcurve,
+                second_pcurve,
+                parameter_range,
+                discontinuities,
+                ..
+            } => std::borrow::Cow::Owned(IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: match &supports[0] {
+                            SpringSupport::Surface(surface) => Some(surface.clone()),
+                            SpringSupport::Ranges(_) => None,
+                        },
+                        pcurve: match first_pcurve {
+                            SpringPcurve::Pcurve(pcurve) => Some(pcurve.clone()),
+                            SpringPcurve::Range(_) => None,
+                        },
+                        pcurve_parameter_range: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: match &supports[1] {
+                            SpringSupport::Surface(surface) => Some(surface.clone()),
+                            SpringSupport::Ranges(_) => None,
+                        },
+                        pcurve: second_pcurve.clone(),
+                        pcurve_parameter_range: None,
+                    },
+                ],
+                parameter_range: *parameter_range,
+                discontinuities: discontinuities.clone(),
+            }),
+        }
+    }
+
+    fn cache_first(&self) -> Option<&CacheFirstCurveForm> {
+        match self {
+            Self::CacheFirst { form, .. } => Some(form),
+            Self::ContextFirst { .. } => None,
+        }
+    }
+
+    fn cache_first_mut(&mut self) -> Option<&mut CacheFirstCurveForm> {
+        match self {
+            Self::CacheFirst { form, .. } => Some(form),
+            Self::ContextFirst { .. } => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SpringLayoutWire {
+    context: IntcurveSupportContext,
+    surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_pcurve_parameter_range: Option<[f64; 2]>,
+    discontinuity_flag: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_first: Option<CacheFirstCurveForm>,
+}
+
+mod spring_layout_wire {
+    use super::{SpringLayout, SpringLayoutWire, SpringPcurve, SpringSupport};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &SpringLayout, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = match value {
+            SpringLayout::ContextFirst {
+                supports,
+                first_pcurve,
+                discontinuity_flag,
+                ..
+            } => SpringLayoutWire {
+                context: value.support_context().into_owned(),
+                surface_parameter_ranges: std::array::from_fn(|side| match &supports[side] {
+                    SpringSupport::Surface(_) => None,
+                    SpringSupport::Ranges(ranges) => Some(*ranges),
+                }),
+                first_pcurve_parameter_range: match first_pcurve {
+                    SpringPcurve::Pcurve(_) => None,
+                    SpringPcurve::Range(range) => Some(*range),
+                },
+                discontinuity_flag: *discontinuity_flag,
+                cache_first: None,
+            },
+            SpringLayout::CacheFirst { context, form } => SpringLayoutWire {
+                context: context.clone(),
+                surface_parameter_ranges: [None, None],
+                first_pcurve_parameter_range: None,
+                discontinuity_flag: false,
+                cache_first: Some(form.clone()),
+            },
+        };
+        wire.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<SpringLayout, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = SpringLayoutWire::deserialize(deserializer)?;
+        if let Some(form) = wire.cache_first {
+            if wire.surface_parameter_ranges.iter().any(Option::is_some)
+                || wire.first_pcurve_parameter_range.is_some()
+                || wire.discontinuity_flag
+            {
+                return Err(serde::de::Error::custom(
+                    "cache_first spring cannot carry inline ranges or discontinuity_flag",
+                ));
+            }
+            return Ok(SpringLayout::CacheFirst {
+                context: wire.context,
+                form,
+            });
+        }
+        let [first_side, second_side] = wire.context.sides;
+        if first_side.pcurve_parameter_range.is_some()
+            || second_side.pcurve_parameter_range.is_some()
+        {
+            return Err(serde::de::Error::custom(
+                "spring context sides cannot carry pcurve_parameter_range",
+            ));
+        }
+        let [first_ranges, second_ranges] = wire.surface_parameter_ranges;
+        let support = |surface, ranges, side| {
+            match (surface, ranges) {
+            (Some(surface), None) => Ok(SpringSupport::Surface(surface)),
+            (None, Some(ranges)) => Ok(SpringSupport::Ranges(ranges)),
+            _ => Err(serde::de::Error::custom(format_args!(
+                "spring support side {side} requires exactly one of surface or surface_parameter_ranges"
+            ))),
+        }
+        };
+        let first_pcurve = match (first_side.pcurve, wire.first_pcurve_parameter_range) {
+            (Some(pcurve), None) => SpringPcurve::Pcurve(pcurve),
+            (None, Some(range)) => SpringPcurve::Range(range),
+            _ => {
+                return Err(serde::de::Error::custom(
+                    "spring first pcurve requires exactly one of pcurve or first_pcurve_parameter_range",
+                ));
+            }
+        };
+        Ok(SpringLayout::ContextFirst {
+            supports: [
+                support(first_side.surface, first_ranges, 0)?,
+                support(second_side.surface, second_ranges, 1)?,
+            ],
+            first_pcurve,
+            second_pcurve: second_side.pcurve,
+            parameter_range: wire.context.parameter_range,
+            discontinuities: wire.context.discontinuities,
+            discontinuity_flag: wire.discontinuity_flag,
+        })
+    }
+}
+
 /// Parameterization carried by cache form `2` of the shared cache-first
 /// intcurve context. This form stores no solved curve cache and no fit
 /// tolerance; it stores the curve interval followed by the closed-form enum, in
@@ -4484,22 +4699,10 @@ pub enum ProceduralCurveDefinition {
     },
     /// Blend spring guide between two support sides.
     Spring {
-        /// Ordered support surfaces, UV curves, interval, and discontinuities.
-        context: IntcurveSupportContext,
-        /// Conditional U/V intervals, present exactly when the corresponding
-        /// support surface is the native `null_surface` sentinel.
-        surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
-        /// Conditional interval present exactly when the first support pcurve
-        /// is the native `nullbs` sentinel.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        first_pcurve_parameter_range: Option<[f64; 2]>,
-        /// Native boolean following the discontinuity arrays; unused by the
-        /// cache-first layout.
-        discontinuity_flag: bool,
-        /// Cache-first shared-context fields; absent from the context-first
-        /// layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cache_first: Option<CacheFirstCurveForm>,
+        /// Structurally selected context-first or cache-first representation.
+        #[serde(flatten, with = "spring_layout_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "SpringLayoutWire"))]
+        layout: SpringLayout,
         /// Native `CURV_DIR` enum value.
         direction: i64,
     },
@@ -4628,11 +4831,8 @@ impl ProceduralCurveDefinition {
             Self::SurfaceOffset {
                 cache_first: Some(form),
                 ..
-            }
-            | Self::Spring {
-                cache_first: Some(form),
-                ..
             } => Some(&form.cache),
+            Self::Spring { layout, .. } => layout.cache_first().map(|form| &form.cache),
             Self::Deformable { cache_first, .. } => Some(&cache_first.cache),
             _ => None,
         }
@@ -4648,11 +4848,8 @@ impl ProceduralCurveDefinition {
             Self::SurfaceOffset {
                 cache_first: Some(form),
                 ..
-            }
-            | Self::Spring {
-                cache_first: Some(form),
-                ..
             } => Some(&mut form.cache),
+            Self::Spring { layout, .. } => layout.cache_first_mut().map(|form| &mut form.cache),
             Self::Deformable { cache_first, .. } => Some(&mut cache_first.cache),
             _ => None,
         }

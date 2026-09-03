@@ -156,16 +156,18 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             | crate::geometry::ProceduralCurveDefinition::Intersection { context, .. }
             | crate::geometry::ProceduralCurveDefinition::SurfaceCurve { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Silhouette { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::Spring { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Projection { context, .. }
             | crate::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
-                (context, None)
+                (std::borrow::Cow::Borrowed(context), None)
+            }
+            crate::geometry::ProceduralCurveDefinition::Spring { layout, .. } => {
+                (layout.support_context(), None)
             }
             crate::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
                 context,
                 third,
                 ..
-            } => (context, Some(third)),
+            } => (std::borrow::Cow::Borrowed(context), Some(third)),
             _ => continue,
         };
         let Some(curve) = curves.get(procedural.curve.0.as_str()) else {
@@ -180,7 +182,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         let bound =
             procedural_support_allowance(ir.tolerances.linear, procedural.cache_fit_tolerance());
         check_support_sides(
-            context,
+            &context,
             third,
             SupportEndpointContract::Coincident([solved_start, solved_end]),
             &index,

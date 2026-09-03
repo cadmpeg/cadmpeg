@@ -606,25 +606,18 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
             &DecodeOptions::default(),
         )
         .expect("cache-first spring decode");
-    let ProceduralCurveDefinition::Spring {
-        context,
-        surface_parameter_ranges,
-        first_pcurve_parameter_range,
-        discontinuity_flag,
-        cache_first,
-        direction,
-    } = &result.ir().model.procedural_curves[0].definition()
+    let ProceduralCurveDefinition::Spring { layout, direction } =
+        &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
-    let form = cache_first.as_ref().expect("cache-first spring form");
+    let cadmpeg_ir::geometry::SpringLayout::CacheFirst { context, form } = layout else {
+        panic!("expected cache-first spring layout")
+    };
     assert_eq!(form.revision, 23100);
     assert_eq!(form.solved_range, [Some(-1.0), Some(2.0)]);
     assert_eq!(form.extension, 7);
     assert_eq!(*direction, 4);
-    assert!(!discontinuity_flag);
-    assert_eq!(*surface_parameter_ranges, [None, None]);
-    assert_eq!(*first_pcurve_parameter_range, None);
     assert_eq!(context.parameter_range, [-1.0, 2.0]);
 
     let (mut source_less, _, _) = result.into_parts();

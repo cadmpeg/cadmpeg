@@ -3523,25 +3523,14 @@ pub(crate) fn validate_procedural_curve_edits(
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-                    context: before_context,
-                    surface_parameter_ranges: before_surface_ranges,
-                    first_pcurve_parameter_range: before_pcurve_range,
+                    layout: before_layout,
                     ..
                 },
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-                    context: after_context,
-                    surface_parameter_ranges: after_surface_ranges,
-                    first_pcurve_parameter_range: after_pcurve_range,
+                    layout: after_layout,
                     ..
                 },
-            ) if before_context.sides == after_context.sides
-                && before_context
-                    .discontinuities
-                    .iter()
-                    .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
-                && before_surface_ranges == after_surface_ranges
-                && before_pcurve_range == after_pcurve_range
+            ) if spring_patch_shape_agrees(before_layout, after_layout)
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3720,4 +3709,54 @@ pub(crate) fn validate_procedural_curve_edits(
         }
     }
     Ok(edits)
+}
+
+fn spring_patch_shape_agrees(
+    before: &cadmpeg_ir::geometry::SpringLayout,
+    after: &cadmpeg_ir::geometry::SpringLayout,
+) -> bool {
+    match (before, after) {
+        (
+            cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+                supports: before_supports,
+                first_pcurve: before_first,
+                second_pcurve: before_second,
+                discontinuities: before_discontinuities,
+                ..
+            },
+            cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+                supports: after_supports,
+                first_pcurve: after_first,
+                second_pcurve: after_second,
+                discontinuities: after_discontinuities,
+                ..
+            },
+        ) => {
+            before_supports == after_supports
+                && before_first == after_first
+                && before_second == after_second
+                && before_discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_discontinuities.iter().map(Vec::len))
+        }
+        (
+            cadmpeg_ir::geometry::SpringLayout::CacheFirst {
+                context: before_context,
+                ..
+            },
+            cadmpeg_ir::geometry::SpringLayout::CacheFirst {
+                context: after_context,
+                ..
+            },
+        ) => {
+            before_context.sides == after_context.sides
+                && before_context
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(after_context.discontinuities.iter().map(Vec::len))
+        }
+        _ => false,
+    }
 }

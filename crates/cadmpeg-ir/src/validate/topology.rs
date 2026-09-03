@@ -1275,7 +1275,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::Spring { context, .. } => {
+            ProceduralCurveDefinition::Spring { layout, .. } => {
+                let context = layout.support_context();
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(&surface.0).is_none() {

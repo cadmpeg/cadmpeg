@@ -1168,15 +1168,19 @@ fn patch_spring_definition(
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
-        context,
-        discontinuity_flag,
-        direction,
-        ..
+        layout, direction, ..
     } = definition
     else {
         return Err(CodecError::Malformed(
             "spring patch received another definition".into(),
         ));
+    };
+    let context = layout.support_context();
+    let discontinuity_flag = match layout {
+        cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+            discontinuity_flag, ..
+        } => *discontinuity_flag,
+        cadmpeg_ir::geometry::SpringLayout::CacheFirst { .. } => false,
     };
     if context
         .parameter_range
@@ -1214,7 +1218,7 @@ fn patch_spring_definition(
                     .chain(context.discontinuities.iter().flatten().copied()),
             ),
     );
-    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(discontinuity_flag);
     AsmEditSet::patch_tagged_integer_at(
         bytes,
         record.offset + layout.direction,

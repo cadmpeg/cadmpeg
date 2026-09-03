@@ -258,24 +258,52 @@ pub struct EmbeddedSurfaceOffset {
     pub scale: f64,
 }
 
-/// Spring support context, conditional null-carrier ranges, and direction enum.
+/// One context-first spring support slot.
+pub enum EmbeddedSpringSupport {
+    /// Embedded support surface.
+    Surface(SurfaceGeometry),
+    /// U/V ranges stored in place of a null support.
+    Ranges([[f64; 2]; 2]),
+}
+
+/// First context-first spring pcurve slot.
+pub enum EmbeddedSpringPcurve {
+    /// Embedded pcurve.
+    Pcurve(NurbsPcurve),
+    /// Parameter range stored in place of a null pcurve.
+    Range([f64; 2]),
+}
+
+/// Structurally selected spring layout.
+pub enum EmbeddedSpringLayout {
+    /// Context-first form with inline replacement ranges.
+    ContextFirst {
+        /// Ordered support slots.
+        supports: [EmbeddedSpringSupport; 2],
+        /// First pcurve slot.
+        first_pcurve: EmbeddedSpringPcurve,
+        /// Nullable second pcurve slot.
+        second_pcurve: Option<NurbsPcurve>,
+        /// Shared parameter interval.
+        parameter_range: [f64; 2],
+        /// Three discontinuity arrays.
+        discontinuities: [Vec<f64>; 3],
+        /// Boolean following the discontinuity arrays.
+        discontinuity_flag: bool,
+    },
+    /// Cache-first form with no inline replacement ranges.
+    CacheFirst {
+        /// Shared embedded support context.
+        context: EmbeddedIntersection,
+        /// Cache-first serializer fields.
+        form: cadmpeg_ir::geometry::CacheFirstCurveForm,
+    },
+}
+
+/// Spring construction and direction enum.
 pub struct EmbeddedSpring {
-    /// Two ordered embedded support surfaces.
-    pub surfaces: [Option<SurfaceGeometry>; 2],
-    /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [Option<NurbsPcurve>; 2],
-    /// UV parameter rectangles serialized in place of null surfaces.
-    pub surface_parameter_ranges: [Option<[[f64; 2]; 2]>; 2],
-    /// Parameter interval serialized in place of a null first pcurve.
-    pub first_pcurve_parameter_range: Option<[f64; 2]>,
-    /// Shared native parameter interval.
-    pub parameter_range: [f64; 2],
-    /// Three discontinuity arrays.
-    pub discontinuities: [Vec<f64>; 3],
-    /// The boolean serialized after the discontinuity arrays.
-    pub discontinuity_flag: bool,
-    /// Layout form when the cache precedes the construction.
-    pub cache_first: Option<cadmpeg_ir::geometry::CacheFirstCurveForm>,
+    /// Context-first or cache-first payload.
+    pub layout: EmbeddedSpringLayout,
     /// The direction enum serialized at the construction tail.
     pub direction: i64,
 }
@@ -591,7 +619,26 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Nurb
         return selected_optional_pcurve(&context.context.surfaces, &context.context.pcurves, slot);
     }
     if let Some(context) = decoded.embedded_spring.as_ref() {
-        return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
+        return match &context.layout {
+            EmbeddedSpringLayout::CacheFirst { context, .. } => {
+                selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
+            }
+            EmbeddedSpringLayout::ContextFirst {
+                supports,
+                first_pcurve,
+                second_pcurve,
+                ..
+            } => matches!(supports.get(slot), Some(EmbeddedSpringSupport::Surface(_)))
+                .then(|| match slot {
+                    0 => match first_pcurve {
+                        EmbeddedSpringPcurve::Pcurve(pcurve) => Some(pcurve.clone()),
+                        EmbeddedSpringPcurve::Range(_) => None,
+                    },
+                    1 => second_pcurve.clone(),
+                    _ => None,
+                })
+                .flatten(),
+        };
     }
     if let Some(context) = decoded.embedded_deformable.as_ref() {
         return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
@@ -959,46 +1006,43 @@ fn embedded_spring(
         let context = cache_first_curve_context(&mut cur, solved, table)?;
         let direction = cur.take_enum()?;
         return Some(EmbeddedSpring {
-            surfaces: context.surfaces,
-            pcurves: context.pcurves,
-            surface_parameter_ranges: [None, None],
-            first_pcurve_parameter_range: None,
-            parameter_range: context.parameter_range,
-            discontinuities: context.discontinuities,
-            discontinuity_flag: false,
-            cache_first: Some(context.form),
+            layout: EmbeddedSpringLayout::CacheFirst {
+                context: EmbeddedIntersection {
+                    support_present: [context.surfaces[0].is_some(), context.surfaces[1].is_some()],
+                    surfaces: context.surfaces,
+                    pcurves: context.pcurves,
+                    parameter_range: context.parameter_range,
+                    discontinuities: context.discontinuities,
+                },
+                form: context.form,
+            },
             direction,
         });
     }
-    let mut surfaces = [None, None];
+    let mut supports = Vec::with_capacity(2);
     let mut surface_charts = [NativeSupportChart::Canonical; 2];
-    let mut surface_parameter_ranges = [None, None];
     for side in 0..2 {
         let saved = cur.pos();
         if cur.take_ident() == Some("null_surface") {
-            surface_parameter_ranges[side] = Some([
+            supports.push(EmbeddedSpringSupport::Ranges([
                 [cur.take_range_value()?, cur.take_range_value()?],
                 [cur.take_range_value()?, cur.take_range_value()?],
-            ]);
+            ]));
         } else {
             cur.set_pos(saved);
             surface_charts[side] = native_support_chart(toks, cur.pos());
-            surfaces[side] = Some(embedded_surface(&mut cur)?);
+            supports.push(EmbeddedSpringSupport::Surface(embedded_surface(&mut cur)?));
         }
     }
-    let first_pcurve;
-    let first_pcurve_parameter_range;
     let saved = cur.pos();
-    if cur.take_ident() == Some("nullbs") {
-        first_pcurve = None;
-        first_pcurve_parameter_range = Some([cur.take_range_value()?, cur.take_range_value()?]);
+    let mut first_pcurve = if cur.take_ident() == Some("nullbs") {
+        EmbeddedSpringPcurve::Range([cur.take_range_value()?, cur.take_range_value()?])
     } else {
         cur.set_pos(saved);
         let (pcurve, end) = pcurve_block_with_end(toks, cur.pos())?;
         cur.set_pos(end);
-        first_pcurve = Some(pcurve);
-        first_pcurve_parameter_range = None;
-    }
+        EmbeddedSpringPcurve::Pcurve(pcurve)
+    };
     let saved = cur.pos();
     let second_pcurve = if cur.take_ident() == Some("nullbs") {
         None
@@ -1008,11 +1052,12 @@ fn embedded_spring(
         cur.set_pos(end);
         Some(pcurve)
     };
-    let mut pcurves = [first_pcurve, second_pcurve];
-    for (pcurve, chart) in pcurves.iter_mut().zip(surface_charts) {
-        if let Some(pcurve) = pcurve {
-            normalize_support_pcurve(chart, pcurve);
-        }
+    if let EmbeddedSpringPcurve::Pcurve(pcurve) = &mut first_pcurve {
+        normalize_support_pcurve(surface_charts[0], pcurve);
+    }
+    let mut second_pcurve = second_pcurve;
+    if let Some(pcurve) = &mut second_pcurve {
+        normalize_support_pcurve(surface_charts[1], pcurve);
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
@@ -1023,14 +1068,14 @@ fn embedded_spring(
     let discontinuity_flag = cur.take_bool()?;
     let direction = cur.take_enum()?;
     Some(EmbeddedSpring {
-        surfaces,
-        pcurves,
-        surface_parameter_ranges,
-        first_pcurve_parameter_range,
-        parameter_range,
-        discontinuities,
-        discontinuity_flag,
-        cache_first: None,
+        layout: EmbeddedSpringLayout::ContextFirst {
+            supports: supports.try_into().ok()?,
+            first_pcurve,
+            second_pcurve,
+            parameter_range,
+            discontinuities,
+            discontinuity_flag,
+        },
         direction,
     })
 }
