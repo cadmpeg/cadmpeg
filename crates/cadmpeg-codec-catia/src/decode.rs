@@ -11,6 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::codec::Decoded;
@@ -18,7 +19,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 
-use crate::assemble::{build_container_report, build_metadata_ir};
+use crate::assemble::{build_container_report, build_metadata_fallback};
 use crate::container::{self, ContainerScan};
 use crate::design_feature;
 use crate::entity_table;
@@ -51,11 +52,12 @@ fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usiz
 /// exhausting the table yields the metadata-only fallback.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window());
+    let matched = crate::dialect::classify(&scan);
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_ir(&scan);
+        let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
         let report = build_container_report(&scan);
-        return decode_result(&scan, ir, report, annotations, unknowns);
+        return decode_result(&scan, &matched, ir, report, annotations, unknowns);
     }
 
     for route in families::ROUTES {
@@ -64,6 +66,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
                 return finish_decode(
                     ctx,
                     &scan,
+                    &matched,
                     out.ir,
                     out.report,
                     out.annotations,
@@ -74,9 +77,18 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_ir(&scan);
+    let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
     let report = build_container_report(&scan);
-    finish_decode(ctx, &scan, ir, report, annotations, unknowns, false)
+    finish_decode(
+        ctx,
+        &scan,
+        &matched,
+        ir,
+        report,
+        annotations,
+        unknowns,
+        false,
+    )
 }
 
 #[derive(Default)]
@@ -126,6 +138,7 @@ fn incoming_entity_incidence_counts<'a>(
 fn finish_decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    matched: &DialectMatch,
     mut ir: CadIr,
     mut report: DecodeBody,
     mut annotations: Annotations,
@@ -3473,7 +3486,7 @@ fn finish_decode(
         &mut admitted_entities,
         "admit CATIA entities",
     )?;
-    decode_result(scan, ir, report, annotations, unknowns)
+    decode_result(scan, matched, ir, report, annotations, unknowns)
 }
 
 fn modeling_graph_scope(
@@ -3497,23 +3510,20 @@ fn modeling_graph_scope(
 
 /// The single site that finishes a decode and charges dialect admission loss.
 ///
-/// Identity is authored once, in `ir.source` by [`crate::assemble::source_meta`];
+/// Identity is authored once from the match classified at the decode entry;
 /// the sealed wrapper stamps it onto the report. This function merges the
-/// container-level notes and charges the dialect-unverified loss from that same
-/// layer, so a residual admission can lack its loss only if this function is
-/// bypassed.
+/// container-level notes and charges dialect loss from that same match.
 fn decode_result(
     scan: &ContainerScan,
+    matched: &DialectMatch,
     mut ir: CadIr,
     mut body: DecodeBody,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<Decoded, CodecError> {
-    body.notes = crate::container::summarize(scan).notes;
-    body.losses
-        .extend(crate::dialect::dialect_loss(&crate::dialect::classify(
-            scan,
-        )));
+    ir.source = Some(crate::assemble::source_meta(scan, matched));
+    body.notes = crate::container::notes(scan);
+    body.losses.extend(crate::dialect::dialect_loss(matched));
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
     Ok(Decoded {

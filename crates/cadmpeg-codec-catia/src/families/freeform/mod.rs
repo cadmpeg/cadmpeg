@@ -23,7 +23,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::assemble::{
     annotate, insert_unresolved_carrier_loss, link_payload_carriers, neutral_model_is_admissible,
-    preserve_raw_payload, quintic_jet_pcurve, source_meta,
+    preserve_raw_payload, quintic_jet_pcurve,
 };
 use crate::assemble::{cgm_source, cgm_source_key};
 use crate::container::{self, ContainerScan};
@@ -443,7 +443,6 @@ pub(crate) fn try_decode_freeform_surfaces(
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
     let payload_id = UnknownId("catia:payload:unknown#freeform".to_string());
     preserve_raw_payload(&mut unknowns, &mut annotations, scan, &payload_id.0);
     let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);

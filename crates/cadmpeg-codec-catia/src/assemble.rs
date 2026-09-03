@@ -5,6 +5,7 @@
 //! loss accounting, neutral-model admissibility, source metadata, generic
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
@@ -384,7 +385,7 @@ pub(crate) struct GeometryReportCounts {
     pub(crate) admitted_standard_face_rows: usize,
 }
 
-pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
+pub(crate) fn source_meta(scan: &ContainerScan, matched: &DialectMatch) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("file_size".to_string(), scan.data.len().to_string());
     attributes.insert(
@@ -447,7 +448,7 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
         );
     }
     SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::classify(scan)),
+        cadmpeg_core::dialect::DialectLayers::of(matched.clone()),
         attributes,
     )
 }
@@ -552,13 +553,12 @@ pub(crate) fn build_geometry_report(
     }
 }
 
-pub(crate) fn build_metadata_ir(
+pub(crate) fn build_metadata_fallback(
     scan: &ContainerScan,
 ) -> (CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>) {
-    let mut ir = CadIr::empty(Units::default());
+    let ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan));
 
     // Preserve the reconstructed BREP stream (or, absent one, the whole file) as
     // an unknown passthrough so no recognized data is silently dropped.
