@@ -797,8 +797,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
     assert!(matches!(
         constraint(6).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::InternalAlignment {
-            alignment: cadmpeg_ir::sketches::SketchInternalAlignment::BsplineControlPoint,
-            index: Some(2),
+            alignment: cadmpeg_ir::sketches::SketchInternalAlignment::BsplineControlPoint(2),
             ..
         }
     ));

@@ -1460,9 +1460,7 @@ pub struct SketchSolverScalar {
 }
 
 /// Meaning of an internal sketch alignment helper relation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SketchInternalAlignment {
     /// Major diameter helper for an ellipse.
     EllipseMajorDiameter,
@@ -1481,11 +1479,90 @@ pub enum SketchInternalAlignment {
     /// Parabola focus helper.
     ParabolaFocus,
     /// B-spline control-point helper.
-    BsplineControlPoint,
+    BsplineControlPoint(u32),
     /// B-spline knot-point helper.
-    BsplineKnotPoint,
+    BsplineKnotPoint(u32),
     /// Parabola focal-axis helper.
     ParabolaFocalAxis,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum SketchInternalAlignmentWireKind {
+    EllipseMajorDiameter,
+    EllipseMinorDiameter,
+    EllipseFocus1,
+    EllipseFocus2,
+    HyperbolaMajor,
+    HyperbolaMinor,
+    HyperbolaFocus,
+    ParabolaFocus,
+    BsplineControlPoint,
+    BsplineKnotPoint,
+    ParabolaFocalAxis,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchInternalAlignmentWire {
+    alignment: SketchInternalAlignmentWireKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    index: Option<u32>,
+}
+
+mod internal_alignment_wire {
+    use super::{
+        SketchInternalAlignment as Alignment, SketchInternalAlignmentWire as Wire,
+        SketchInternalAlignmentWireKind as Kind,
+    };
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Alignment, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let (alignment, index) = match *value {
+            Alignment::EllipseMajorDiameter => (Kind::EllipseMajorDiameter, None),
+            Alignment::EllipseMinorDiameter => (Kind::EllipseMinorDiameter, None),
+            Alignment::EllipseFocus1 => (Kind::EllipseFocus1, None),
+            Alignment::EllipseFocus2 => (Kind::EllipseFocus2, None),
+            Alignment::HyperbolaMajor => (Kind::HyperbolaMajor, None),
+            Alignment::HyperbolaMinor => (Kind::HyperbolaMinor, None),
+            Alignment::HyperbolaFocus => (Kind::HyperbolaFocus, None),
+            Alignment::ParabolaFocus => (Kind::ParabolaFocus, None),
+            Alignment::BsplineControlPoint(index) => (Kind::BsplineControlPoint, Some(index)),
+            Alignment::BsplineKnotPoint(index) => (Kind::BsplineKnotPoint, Some(index)),
+            Alignment::ParabolaFocalAxis => (Kind::ParabolaFocalAxis, None),
+        };
+        Wire { alignment, index }.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Alignment, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.alignment, wire.index) {
+            (Kind::EllipseMajorDiameter, None) => Ok(Alignment::EllipseMajorDiameter),
+            (Kind::EllipseMinorDiameter, None) => Ok(Alignment::EllipseMinorDiameter),
+            (Kind::EllipseFocus1, None) => Ok(Alignment::EllipseFocus1),
+            (Kind::EllipseFocus2, None) => Ok(Alignment::EllipseFocus2),
+            (Kind::HyperbolaMajor, None) => Ok(Alignment::HyperbolaMajor),
+            (Kind::HyperbolaMinor, None) => Ok(Alignment::HyperbolaMinor),
+            (Kind::HyperbolaFocus, None) => Ok(Alignment::HyperbolaFocus),
+            (Kind::ParabolaFocus, None) => Ok(Alignment::ParabolaFocus),
+            (Kind::BsplineControlPoint, Some(index)) => Ok(Alignment::BsplineControlPoint(index)),
+            (Kind::BsplineKnotPoint, Some(index)) => Ok(Alignment::BsplineKnotPoint(index)),
+            (Kind::ParabolaFocalAxis, None) => Ok(Alignment::ParabolaFocalAxis),
+            (Kind::BsplineControlPoint | Kind::BsplineKnotPoint, None) => Err(
+                serde::de::Error::custom("B-spline internal alignment requires index"),
+            ),
+            (_, Some(_)) => Err(serde::de::Error::custom(
+                "internal alignment index is only valid for B-spline families",
+            )),
+        }
+    }
 }
 
 /// Neutral geometric and dimensional sketch relations.
@@ -1932,11 +2009,10 @@ pub enum SketchConstraintDefinition {
         helper: SketchEntityId,
         /// Parent geometry receiving the alignment.
         parent: SketchEntityId,
-        /// Exact helper relation family.
+        /// Exact helper relation family, including its B-spline index when required.
+        #[serde(flatten, with = "internal_alignment_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "SketchInternalAlignmentWire"))]
         alignment: SketchInternalAlignment,
-        /// Control-point or knot index when carried by the family.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        index: Option<u32>,
     },
     /// Ordered geometry grouped under a sketch construction handle.
     Group {

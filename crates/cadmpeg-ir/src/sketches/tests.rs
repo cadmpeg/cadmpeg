@@ -220,8 +220,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         SketchConstraintDefinition::InternalAlignment {
             helper: entity.clone(),
             parent: entity.clone(),
-            alignment: crate::sketches::SketchInternalAlignment::BsplineControlPoint,
-            index: Some(2),
+            alignment: crate::sketches::SketchInternalAlignment::BsplineControlPoint(2),
         },
         SketchConstraintDefinition::Group {
             elements: vec![SketchLocus::Entity(entity.clone())],
@@ -1170,4 +1169,29 @@ fn text_placement_keeps_the_paired_wire_fields() {
     let mut split = wire;
     split.as_object_mut().unwrap().remove("rotation");
     assert!(serde_json::from_value::<SketchGeometry>(split).is_err());
+}
+
+#[test]
+fn internal_alignment_index_stays_with_bspline_variants() {
+    use crate::sketches::{SketchConstraintDefinition, SketchEntityId, SketchInternalAlignment};
+
+    let definition = SketchConstraintDefinition::InternalAlignment {
+        helper: SketchEntityId("test:sketch-entity#helper".into()),
+        parent: SketchEntityId("test:sketch-entity#parent".into()),
+        alignment: SketchInternalAlignment::BsplineControlPoint(2),
+    };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["alignment"], "bspline_control_point");
+    assert_eq!(wire["index"], 2);
+    assert_eq!(
+        serde_json::from_value::<SketchConstraintDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut missing_index = wire.clone();
+    missing_index.as_object_mut().unwrap().remove("index");
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(missing_index).is_err());
+    let mut extraneous_index = wire;
+    extraneous_index["alignment"] = serde_json::json!("ellipse_focus1");
+    assert!(serde_json::from_value::<SketchConstraintDefinition>(extraneous_index).is_err());
 }
