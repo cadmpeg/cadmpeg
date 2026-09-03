@@ -43,7 +43,7 @@ use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, DecodeOptions, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
@@ -1066,10 +1066,6 @@ impl CodecBackend for FcstdCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        let options = DecodeOptions {
-            container_only: ctx.container_only(),
-            policy: *ctx.policy(),
-        };
         let scan = container::scan(ctx, root)?;
         // Charge document object cardinality before persistence/geometry work.
         ctx.charge_entities(
@@ -1140,7 +1136,7 @@ impl CodecBackend for FcstdCodec {
         namespace.set_arena("document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena("physical_ledger", &scan.ledger)?;
         #[allow(clippy::if_not_else)]
-        if !options.container_only {
+        if !ctx.container_only() {
             let document_bytes = scan
                 .data
                 .get("Document.xml")
@@ -1371,7 +1367,7 @@ impl CodecBackend for FcstdCodec {
                 .namespace_mut("fcstd")
                 .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
         }
-        let mut losses = if options.container_only {
+        let mut losses = if ctx.container_only() {
             Vec::new()
         } else {
             semantic_losses(&ir, &cycle_affected_design_objects, &gui_losses)

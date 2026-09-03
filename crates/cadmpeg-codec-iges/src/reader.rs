@@ -6,7 +6,9 @@ use crate::representation::Representation;
 use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{DecodeBody, DecodeOptions, Decoded};
+#[cfg(test)]
+use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::{document_local_sha256_with_charge, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{LossNote, Severity, TransferLedger, TransferOutcome};
 use cadmpeg_ir::units::Units;
@@ -252,7 +254,6 @@ pub(crate) fn decode(
     parse_bytes: &[u8],
     source_bytes: &[u8],
     representation: Representation,
-    options: DecodeOptions,
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
     let output = usize::try_from(ctx.policy().limits.max_collection_items)
@@ -269,7 +270,6 @@ pub(crate) fn decode(
         parse_bytes,
         source_bytes,
         representation,
-        options,
         output,
         depth,
         Some(ctx),
@@ -280,7 +280,6 @@ fn decode_with_occurrence_limits(
     parse_bytes: &[u8],
     source_bytes: &[u8],
     representation: Representation,
-    options: DecodeOptions,
     product_occurrence_output_limit: usize,
     product_occurrence_depth_limit: usize,
     ctx: Option<&DecodeContext<'_>>,
@@ -322,21 +321,23 @@ fn decode_with_occurrence_limits(
     }
     let primary = crate::dialect::classify(representation, &parse.global);
     ir.source = Some(source_meta(&parse.global, representation, primary));
-    let projection = match length_context.filter(|_| !options.container_only) {
-        Some(context) => {
-            charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
-            entities::geometry::project_geometry(
-                &mut ir,
-                projected_directory,
-                &parse.parameters,
-                &parse.trailing_pointer_analysis,
-                &context,
-                ctx,
-            )?
-        }
-        None => entities::geometry::Projection::default(),
-    };
-    let semantic_structure_admitted = (!options.container_only).then_some(&projection.decoded);
+    let projection =
+        match length_context.filter(|_| !ctx.is_some_and(DecodeContext::container_only)) {
+            Some(context) => {
+                charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;
+                entities::geometry::project_geometry(
+                    &mut ir,
+                    projected_directory,
+                    &parse.parameters,
+                    &parse.trailing_pointer_analysis,
+                    &context,
+                    ctx,
+                )?
+            }
+            None => entities::geometry::Projection::default(),
+        };
+    let semantic_structure_admitted =
+        (!ctx.is_some_and(DecodeContext::container_only)).then_some(&projection.decoded);
     charge_work(ctx, parameter_tokens, "iges_native_projection")?;
     let native::NativeStoreResult {
         occurrence_expansion: product_occurrence_expansion,
@@ -438,7 +439,7 @@ fn decode_with_occurrence_limits(
         ));
     }
     let global_table = parse.global.global_table();
-    if !options.container_only {
+    if !ctx.is_some_and(DecodeContext::container_only) {
         let attributed_before_generic = attributed_sequences(&losses);
         let generic_losses = parse
             .directory
@@ -476,7 +477,7 @@ fn decode_with_occurrence_limits(
         )?;
         reject_invalid_semantic_ir(&ir)?;
     }
-    let attributed = if options.container_only {
+    let attributed = if ctx.is_some_and(DecodeContext::container_only) {
         BTreeSet::new()
     } else {
         attributed_sequences(&losses)
@@ -488,7 +489,7 @@ fn decode_with_occurrence_limits(
         .filter(|entry| entry.entity_type != 0)
     {
         let attributed_loss = attributed.contains(&entry.sequence);
-        let note = if options.container_only {
+        let note = if ctx.is_some_and(DecodeContext::container_only) {
             "native record retained; semantic projection was not requested"
         } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
             "native record retained; entity is outside the declared read envelope"
@@ -631,10 +632,6 @@ pub(crate) fn decode_with_test_occurrence_limits(
                 root.window(),
                 root.window(),
                 Representation::FixedAscii,
-                DecodeOptions {
-                    container_only: ctx.container_only(),
-                    policy: *ctx.policy(),
-                },
                 self.output_limit,
                 self.depth_limit,
                 Some(ctx),

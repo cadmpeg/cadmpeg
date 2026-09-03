@@ -38,7 +38,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeOptions, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::hash::document_local_sha256;
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::ContainerSummary;
@@ -156,21 +156,17 @@ impl CodecBackend for IgesCodec {
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let mut source = Cursor::new(root.window());
         let representation = representation::classify(&mut source)?;
-        let options = DecodeOptions {
-            container_only: ctx.container_only(),
-            policy: *ctx.policy(),
-        };
         match representation {
             representation::Representation::FixedAscii => {
-                reader::decode(root.window(), root.window(), representation, options, ctx)
+                reader::decode(root.window(), root.window(), representation, ctx)
             }
             representation::Representation::CompressedAscii => {
                 let normalized = compressed::normalize(root.window(), Some(ctx))?;
-                reader::decode(&normalized, root.window(), representation, options, ctx)
+                reader::decode(&normalized, root.window(), representation, ctx)
             }
             representation::Representation::Binary => {
                 let normalized = binary::normalize(root.window(), Some(ctx))?;
-                reader::decode(&normalized, root.window(), representation, options, ctx)
+                reader::decode(&normalized, root.window(), representation, ctx)
             }
             representation::Representation::Unknown => Err(CodecError::WrongFormat(
                 "unrecognized IGES representation".into(),
