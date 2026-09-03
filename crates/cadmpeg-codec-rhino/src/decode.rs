@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -2564,7 +2564,9 @@ impl<'a> DecodeContext<'a> {
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
-        self.ir.source = Some(source_meta(self.scan, primary));
+        let mut source = crate::container::source_meta(self.scan, primary);
+        extend_source_meta(self.scan, &mut source.attributes);
+        self.ir.source = Some(source);
         Decoded {
             ir: self.ir,
             body: DecodeBody {
@@ -5598,15 +5600,8 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
     ir
 }
 
-/// The source metadata `commit` records; `primary` is the one author of the
-/// document's identity.
-fn source_meta(scan: &Scan<'_>, primary: cadmpeg_core::dialect::DialectMatch) -> SourceMeta {
-    let mut attributes = BTreeMap::new();
-    attributes.insert(
-        "archive_version".to_string(),
-        scan.archive.value().to_string(),
-    );
-    attributes.insert("container_kind".to_string(), "3dm-chunks".to_string());
+/// Extends the container source metadata with facts available after full decoding.
+fn extend_source_meta(scan: &Scan<'_>, attributes: &mut BTreeMap<String, String>) {
     let settings = &scan.metadata.settings;
     if let Some(units) = &settings.units {
         attributes.insert("unit_value".to_string(), units.unit_value.to_string());
@@ -5712,10 +5707,6 @@ fn source_meta(scan: &Scan<'_>, primary: cadmpeg_core::dialect::DialectMatch) ->
             attributes.insert(format!("{prefix}.uuid"), id.to_string());
         }
     }
-    SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(primary),
-        attributes,
-    )
 }
 
 #[cfg(test)]
