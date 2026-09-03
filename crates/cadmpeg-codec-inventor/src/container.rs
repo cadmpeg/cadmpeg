@@ -118,10 +118,11 @@ impl<'a> InventorContainer<'a> {
                 }
             }
         }
-        let classification = crate::dialect::DialectRecovery::of(self).classify();
-        let dialects = crate::dialect::layers(classification.matched, &self.rse.active_carrier);
+        let recovery = crate::dialect::DialectRecovery::of(self);
+        let matched = recovery.classify();
         let mut losses = Vec::new();
-        losses.extend(classification.loss);
+        losses.extend(crate::dialect::dialect_loss(&matched, &recovery));
+        let dialects = crate::dialect::layers(matched, &self.rse.active_carrier);
         losses.extend(
             dialects
                 .iter()
