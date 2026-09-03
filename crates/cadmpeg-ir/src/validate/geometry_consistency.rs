@@ -342,14 +342,12 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .map(|edge| (edge.id.0.as_str(), edge))
         .collect::<HashMap<_, _>>();
     for coedge in &ir.model.coedges {
-        let Some([start_t, end_t]) = coedge.use_curve_parameter_range else {
+        let Some(use_curve) = &coedge.use_curve else {
             continue;
         };
-        let Some((curve_id, geometry)) = coedge
-            .use_curve
-            .as_ref()
-            .and_then(|id| curves.get(id.0.as_str()).map(|geometry| (id, geometry)))
-        else {
+        let [start_t, end_t] = use_curve.parameter_range;
+        let curve_id = &use_curve.curve;
+        let Some(geometry) = curves.get(curve_id.0.as_str()) else {
             continue;
         };
         let Some(edge) = edges.get(coedge.edge.0.as_str()) else {

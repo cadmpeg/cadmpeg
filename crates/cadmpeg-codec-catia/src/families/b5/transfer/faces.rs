@@ -583,7 +583,6 @@ pub(super) fn emit_faces(
                         .into_iter()
                         .collect(),
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
             }
         }

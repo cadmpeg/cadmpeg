@@ -243,11 +243,76 @@ pub struct Coedge {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
     /// Optional coedge-local 3D carrier used instead of the shared edge curve.
+    #[serde(flatten, with = "coedge_use_curve_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "CoedgeUseCurveSchemaWire"))]
+    pub use_curve: Option<CoedgeUseCurve>,
+}
+
+/// A coedge-local curve and its loop-traversal interval.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CoedgeUseCurve {
+    /// Local 3D curve carrier.
+    pub curve: CurveId,
+    /// Interval on the carrier in loop-traversal order.
+    pub parameter_range: [f64; 2],
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the coedge use-curve wire schema")]
+struct CoedgeUseCurveSchemaWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub use_curve: Option<CurveId>,
-    /// Interval on the coedge-local 3D carrier in loop-traversal order.
+    use_curve: Option<CurveId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub use_curve_parameter_range: Option<[f64; 2]>,
+    use_curve_parameter_range: Option<[f64; 2]>,
+}
+
+mod coedge_use_curve_wire {
+    use super::{CoedgeUseCurve, CurveId};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        use_curve: Option<CurveId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        use_curve_parameter_range: Option<[f64; 2]>,
+    }
+
+    pub fn serialize<S>(value: &Option<CoedgeUseCurve>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = match value {
+            Some(value) => Wire {
+                use_curve: Some(value.curve.clone()),
+                use_curve_parameter_range: Some(value.parameter_range),
+            },
+            None => Wire {
+                use_curve: None,
+                use_curve_parameter_range: None,
+            },
+        };
+        wire.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<CoedgeUseCurve>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.use_curve, wire.use_curve_parameter_range) {
+            (Some(curve), Some(parameter_range)) => Ok(Some(CoedgeUseCurve {
+                curve,
+                parameter_range,
+            })),
+            (None, None) => Ok(None),
+            _ => Err(serde::de::Error::custom(
+                "use_curve and use_curve_parameter_range must occur together",
+            )),
+        }
+    }
 }
 
 /// An edge: a bounded segment of a 3D curve between two vertices.
@@ -302,4 +367,50 @@ pub struct Point {
     /// Source object carrying this free point, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Coedge, CoedgeUseCurve};
+
+    fn coedge_json() -> serde_json::Value {
+        serde_json::json!({
+            "id": "test:model:coedge#0",
+            "owner_loop": "test:model:loop#0",
+            "edge": "test:model:edge#0",
+            "next": "test:model:coedge#0",
+            "previous": "test:model:coedge#0",
+            "radial_next": "test:model:coedge#0",
+            "sense": "forward",
+            "use_curve": "test:model:curve#0",
+            "use_curve_parameter_range": [0.25, 0.75]
+        })
+    }
+
+    #[test]
+    fn coedge_use_curve_preserves_the_flat_wire_fields() {
+        let coedge: Coedge = serde_json::from_value(coedge_json()).unwrap();
+        assert_eq!(
+            coedge.use_curve,
+            Some(CoedgeUseCurve {
+                curve: "test:model:curve#0".into(),
+                parameter_range: [0.25, 0.75],
+            })
+        );
+        let encoded = serde_json::to_value(coedge).unwrap();
+        assert_eq!(encoded["use_curve"], "test:model:curve#0");
+        assert_eq!(
+            encoded["use_curve_parameter_range"],
+            serde_json::json!([0.25, 0.75])
+        );
+    }
+
+    #[test]
+    fn coedge_use_curve_rejects_a_split_wire_pair() {
+        let mut json = coedge_json();
+        json.as_object_mut()
+            .unwrap()
+            .remove("use_curve_parameter_range");
+        assert!(serde_json::from_value::<Coedge>(json).is_err());
+    }
 }

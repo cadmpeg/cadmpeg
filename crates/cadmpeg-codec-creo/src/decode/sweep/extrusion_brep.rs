@@ -436,7 +436,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         parameter_range: None,
                     }],
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
                 let id = top_coedges[ring_index].clone();
                 let (geometry, reversed, start, end) = &profile[ring_index];
@@ -465,7 +464,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         parameter_range: None,
                     }],
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
             }
 
@@ -555,7 +553,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             parameter_range: None,
                         }],
                         use_curve: None,
-                        use_curve_parameter_range: None,
                     });
                 }
                 ir.model.faces.push(Face {

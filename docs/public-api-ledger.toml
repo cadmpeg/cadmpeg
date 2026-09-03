@@ -2927,3 +2927,10 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::examples::directed_subd_sum"
 reason = "the public fixture propagates checked procedural-surface construction instead of assuming that independently supplied cache fields agree"
+
+[[change]]
+commit = "b7a25cf6a112bc4e912a7d853348e2beeaec71aa"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::topology::Coedge::{use_curve,use_curve_parameter_range}"
+reason = "CoedgeUseCurve owns the local carrier and traversal range together, so a coedge cannot carry only half of the pair"

@@ -1029,7 +1029,6 @@ pub(super) fn project(
                             sense: *sense,
                             pcurves: projected,
                             use_curve: None,
-                            use_curve_parameter_range: None,
                         });
                     }
                     if !valid {

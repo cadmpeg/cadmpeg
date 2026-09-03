@@ -217,7 +217,6 @@ fn untrimmed_surface_curve() -> CadIr {
             parameter_range: None,
         }],
         use_curve: None,
-        use_curve_parameter_range: None,
     });
     ir.model.loops.push(Loop {
         id: "loop".into(),

@@ -2235,7 +2235,6 @@ fn build_one(
                             },
                             pcurves: Vec::new(),
                             use_curve: None,
-                            use_curve_parameter_range: None,
                         });
                         radial.entry(edge_id).or_default().push(coedges.len() - 1);
                         typed.insert(loop_step);
@@ -2436,7 +2435,6 @@ fn build_one(
                             })
                             .collect(),
                         use_curve: None,
-                        use_curve_parameter_range: None,
                     });
                     radial
                         .entry(scoped_edge_id(

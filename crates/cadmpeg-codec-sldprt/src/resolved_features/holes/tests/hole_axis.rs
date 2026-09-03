@@ -429,7 +429,6 @@ fn hole_topology_uses_exact_cylinder_spans() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
-        use_curve_parameter_range: None,
     };
     let edge = Edge {
         id: EdgeId("edge".into()),

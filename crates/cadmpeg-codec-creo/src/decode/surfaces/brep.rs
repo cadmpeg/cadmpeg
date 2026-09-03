@@ -1980,7 +1980,6 @@ pub(in super::super) fn transfer_native_brep(
                         },
                         pcurves,
                         use_curve: None,
-                        use_curve_parameter_range: None,
                     });
                 }
             }

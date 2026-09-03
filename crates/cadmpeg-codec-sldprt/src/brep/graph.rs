@@ -1519,7 +1519,6 @@ fn decode_graph(
                     radial_next: partner.unwrap_or_else(|| CoedgeId(id_coedge(ce_attr))),
                     sense,
                     use_curve: None,
-                    use_curve_parameter_range: None,
                     pcurves,
                 });
             }
@@ -4902,7 +4901,6 @@ fn synthesize_cylinder_seams(
             radial_next: seam_b.clone(),
             sense: Sense::Forward,
             use_curve: None,
-            use_curve_parameter_range: None,
             pcurves: Vec::new(),
         });
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
@@ -4915,7 +4913,6 @@ fn synthesize_cylinder_seams(
             radial_next: seam_a.clone(),
             sense: Sense::Reversed,
             use_curve: None,
-            use_curve_parameter_range: None,
             pcurves: Vec::new(),
         });
         let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
@@ -5217,7 +5214,6 @@ fn synthesize_sphere_seams(
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
             use_curve: None,
-            use_curve_parameter_range: None,
             pcurves: vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,
@@ -5802,7 +5798,6 @@ mod tests {
             radial_next: CoedgeId(radial.into()),
             sense,
             use_curve: None,
-            use_curve_parameter_range: None,
             pcurves: Vec::new(),
         };
         let mut brep = super::Brep {
@@ -6510,7 +6505,6 @@ mod tests {
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             }],
             edges: vec![Edge {
                 id: edge_id,

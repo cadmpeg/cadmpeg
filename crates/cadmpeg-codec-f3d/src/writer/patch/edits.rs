@@ -567,9 +567,7 @@ pub(crate) fn validate_tolerant_coedge_edits(
     }
     for (id, before) in &baseline_coedges {
         let after = target_coedges[id];
-        if after.use_curve != before.use_curve
-            || after.use_curve_parameter_range != before.use_curve_parameter_range
-        {
+        if after.use_curve != before.use_curve {
             return Err(CodecError::NotImplemented(format!(
                 "F3D coedge use-curve edit changes embedded record structure: {id}"
             )));

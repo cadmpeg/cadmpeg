@@ -2509,7 +2509,7 @@ pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> Owned
             ir.model
                 .coedges
                 .iter()
-                .filter_map(|coedge| coedge.use_curve.as_ref()),
+                .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| &use_.curve)),
         )
         .filter_map(|curve| step_instance_id(&curve.0))
         .filter_map(|id| index.curves.get(&id).copied())

@@ -196,7 +196,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     parameter_range: None,
                 }],
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
             ir.model.faces.push(Face {
                 id: cap_face.clone(),
@@ -266,7 +265,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     parameter_range: None,
                 }],
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
             side_loops.push(loop_id);
         }

@@ -1855,7 +1855,6 @@ fn emit_e5_faces_loops_coedges(
                         parameter_range: pcurve_parameter_range,
                     }],
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
             }
         }

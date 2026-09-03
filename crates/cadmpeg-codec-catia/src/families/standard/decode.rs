@@ -497,7 +497,6 @@ mod consolidated_revolution_binding_tests {
                 },
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
         }
         ir.model.procedural_curves.push(ProceduralCurve::new(
@@ -5095,7 +5094,6 @@ fn emit_standard_topology(
                         .into_iter()
                         .collect(),
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
             }
             annotate(

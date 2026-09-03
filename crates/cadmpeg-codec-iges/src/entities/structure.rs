@@ -1730,7 +1730,6 @@ fn plane_face_draft(
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
-            use_curve_parameter_range: None,
         });
         candidate.model_mut().loops.push(Loop {
             id: loop_id.clone(),

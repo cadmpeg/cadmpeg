@@ -105,7 +105,6 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                     sense: Sense::Forward,
                     pcurves: Vec::new(),
                     use_curve: None,
-                    use_curve_parameter_range: None,
                 });
                 loop_id
             };
@@ -369,7 +368,6 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 sense: Sense::Forward,
                 pcurves: Vec::new(),
                 use_curve: None,
-                use_curve_parameter_range: None,
             });
             loop_id
         };

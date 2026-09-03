@@ -1014,18 +1014,21 @@ pub(crate) fn validate_source_less_design_links(
                     .get(parameters.coedge.as_str())
                     .copied()
                     .expect("validated tolerant-coedge target");
-                let curve_id = coedge.use_curve.as_ref().ok_or_else(|| {
+                let use_curve = coedge.use_curve.as_ref().ok_or_else(|| {
                     CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has no use curve",
                         parameters.id
                     ))
                 })?;
-                let curve = curve_by_id.get(curve_id.as_str()).copied().ok_or_else(|| {
-                    CodecError::InvalidInput(format!(
-                        "F3D tolerant-coedge extension {} references missing use curve {curve_id}",
-                        parameters.id
-                    ))
-                })?;
+                let curve = curve_by_id
+                    .get(use_curve.curve.as_str())
+                    .copied()
+                    .ok_or_else(|| {
+                        CodecError::InvalidInput(format!(
+                            "F3D tolerant-coedge extension {} references missing use curve {}",
+                            parameters.id, use_curve.curve
+                        ))
+                    })?;
                 if !matches!(curve.geometry, CurveGeometry::Nurbs(_)) {
                     return Err(CodecError::NotImplemented(format!(
                         "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
@@ -1034,7 +1037,7 @@ pub(crate) fn validate_source_less_design_links(
                 }
                 let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
                 if effective_range.iter().any(|value| !value.is_finite())
-                    || coedge.use_curve_parameter_range != Some(effective_range)
+                    || use_curve.parameter_range != effective_range
                 {
                     return Err(CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",

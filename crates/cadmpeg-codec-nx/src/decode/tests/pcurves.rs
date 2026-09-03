@@ -1086,7 +1086,6 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 parameter_range: Some([0.0, 10.0]),
             }],
             use_curve: None,
-            use_curve_parameter_range: None,
         });
     }
     let serialized = [0, 1]
