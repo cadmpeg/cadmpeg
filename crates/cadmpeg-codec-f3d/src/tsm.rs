@@ -164,20 +164,12 @@ struct DerivedGripConnectivity {
 }
 
 #[derive(Clone, Copy)]
-struct FanSlot {
-    half_edge: Option<usize>,
-    face: Option<usize>,
-    phantom: bool,
-}
-
-impl FanSlot {
-    fn phantom() -> Self {
-        Self {
-            half_edge: None,
-            face: None,
-            phantom: true,
-        }
-    }
+enum FanSlot {
+    Phantom,
+    Slot {
+        half_edge: usize,
+        face: Option<usize>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -411,10 +403,9 @@ fn build_fan(
                 ))
             }
         };
-        fan.push(FanSlot {
-            half_edge: Some(current),
+        fan.push(FanSlot::Slot {
+            half_edge: current,
             face,
-            phantom: false,
         });
 
         let next = half_edges
@@ -449,7 +440,10 @@ fn build_fan(
     let gap_positions = fan
         .iter()
         .enumerate()
-        .filter_map(|(index, slot)| slot.face.is_none().then_some(index))
+        .filter_map(|(index, slot)| match slot {
+            FanSlot::Slot { face: None, .. } => Some(index),
+            FanSlot::Phantom | FanSlot::Slot { face: Some(_), .. } => None,
+        })
         .collect::<Vec<_>>();
     if gap_positions.len() > 1 {
         return Err(malformed(
@@ -460,7 +454,7 @@ fn build_fan(
     if let Some(gap) = gap_positions.first().copied() {
         let phantom_count = 4usize.saturating_sub(fan.len());
         for _ in 0..phantom_count {
-            fan.insert(gap + 1, FanSlot::phantom());
+            fan.insert(gap + 1, FanSlot::Phantom);
         }
     }
     Ok(fan)
@@ -621,24 +615,25 @@ fn build_secondary_layouts(
                 .checked_mul(connectivity.spoke_lengths[(wedge + 1) % connectivity.wedges])
                 .ok_or_else(|| malformed(name, "derived-grip sector arity overflows"))?;
             let slot = fan[(wedge + offset) % fan.len()];
-            if slot.phantom && spoke_count != 0 {
-                return Err(malformed(
-                    name,
-                    "phantom wedge carries a nonzero spoke length",
-                ));
-            }
-            let edge = match slot.half_edge {
-                Some(half) => Some(
-                    edge_by_half
-                        .get(half)
-                        .copied()
-                        .flatten()
-                        .map(|(edge, _)| edge)
-                        .ok_or_else(|| malformed(name, "fan half-edge has no owning edge"))?,
-                ),
-                None => None,
+            let FanSlot::Slot { half_edge, face } = slot else {
+                if spoke_count != 0 {
+                    return Err(malformed(
+                        name,
+                        "phantom wedge carries a nonzero spoke length",
+                    ));
+                }
+                wedges.push(SubdGripWedge::Phantom);
+                continue;
             };
-            let sector_face = match slot.face {
+            let edge = Some(
+                edge_by_half
+                    .get(half_edge)
+                    .copied()
+                    .flatten()
+                    .map(|(edge, _)| edge)
+                    .ok_or_else(|| malformed(name, "fan half-edge has no owning edge"))?,
+            );
+            let sector_face = match face {
                 Some(face) => Some(
                     face_ir
                         .get(face)
@@ -659,10 +654,9 @@ fn build_secondary_layouts(
                 grip_context.block(&connectivity.grip_indices, &mut cursor, spoke_count)?;
             let sectors =
                 grip_context.block(&connectivity.grip_indices, &mut cursor, sector_count)?;
-            wedges.push(SubdGripWedge {
+            wedges.push(SubdGripWedge::Slot {
                 edge,
                 sector_face,
-                phantom: slot.phantom,
                 spokes,
                 sectors,
             });
@@ -1435,6 +1429,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 
 #[cfg(test)]
 mod tests {
+    use super::SubdGripWedge;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     const EPS_KNOT_INTERVAL: f64 = 1.0e-12;
@@ -1519,11 +1514,20 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             .expect("secondary grip layout");
         assert_eq!(layout.direction, cadmpeg_ir::SubdGripDirection::North);
         assert_eq!(layout.wedges.len(), 4);
-        assert_eq!(layout.wedges[0].spokes[0].as_ref().unwrap().source_index, 4);
+        let SubdGripWedge::Slot { spokes, .. } = &layout.wedges[0] else {
+            panic!("first wedge is a fan slot");
+        };
+        assert_eq!(spokes[0].as_ref().unwrap().source_index, 4);
         assert!(layout.wedges[2..]
             .iter()
-            .all(|wedge| wedge.phantom && wedge.spokes.is_empty()));
-        assert!(layout.wedges[1].sector_face.is_none());
+            .all(|wedge| matches!(wedge, SubdGripWedge::Phantom)));
+        assert!(matches!(
+            &layout.wedges[1],
+            SubdGripWedge::Slot {
+                sector_face: None,
+                ..
+            }
+        ));
 
         assert_eq!(cage.surface.symmetries.len(), 1);
         let symmetry = &cage.surface.symmetries[0];
@@ -1579,16 +1583,31 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             .secondary_grips
             .as_ref()
             .expect("secondary grip layout");
-        assert_eq!(layout.wedges[0].spokes.len(), 2);
-        assert_eq!(layout.wedges[0].sectors.len(), 2);
-        assert_eq!(layout.wedges[1].spokes.len(), 1);
-        assert!(layout.wedges[1].sectors.is_empty());
+        let SubdGripWedge::Slot {
+            spokes: first_spokes,
+            sectors: first_sectors,
+            ..
+        } = &layout.wedges[0]
+        else {
+            panic!("first wedge is a fan slot");
+        };
+        let SubdGripWedge::Slot {
+            spokes: second_spokes,
+            sectors: second_sectors,
+            ..
+        } = &layout.wedges[1]
+        else {
+            panic!("second wedge is a fan slot");
+        };
+        assert_eq!(first_spokes.len(), 2);
+        assert_eq!(first_sectors.len(), 2);
+        assert_eq!(second_spokes.len(), 1);
+        assert!(second_sectors.is_empty());
         assert_eq!(
-            layout.wedges[0]
-                .spokes
+            first_spokes
                 .iter()
-                .chain(layout.wedges[0].sectors.iter())
-                .chain(layout.wedges[1].spokes.iter())
+                .chain(first_sectors)
+                .chain(second_spokes)
                 .map(|grip| grip.as_ref().unwrap().source_index)
                 .collect::<Vec<_>>(),
             vec![4, 5, 6, 7, 8]
