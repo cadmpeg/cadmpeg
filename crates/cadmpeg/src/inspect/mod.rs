@@ -418,7 +418,7 @@ fn read(args: &ReadArgs) -> Result<()> {
         println!(
             "0x{offset:08x}  {name:<6}  {:<24}  {}",
             value.decimal(),
-            value.hex(args.ty)
+            value.hex()
         );
     }
     Ok(())
