@@ -21,6 +21,7 @@
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#asmacis-bare-satsmtsmbsab-streams)).
 //! <!-- /generated: capability sat -->
 
+mod coverage;
 mod decode;
 mod detect;
 mod dialect;

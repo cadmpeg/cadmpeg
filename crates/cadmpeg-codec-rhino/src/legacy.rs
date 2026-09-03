@@ -2439,14 +2439,17 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
             geometry_transferred:
                 decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
             coverage: [
-                ("legacy_v1_points".into(), decoded),
-                ("legacy_v1_curve_segments".into(), decoded_curves),
-                ("legacy_v1_meshes".into(), decoded_meshes),
-                ("legacy_v1_breps".into(), decoded_breps),
-                ("legacy_v1_annotations".into(), decoded_annotations),
-                ("legacy_v1_nurbs_curves".into(), decoded_nurbs_curves),
-                ("legacy_v1_nurbs_surfaces".into(), decoded_nurbs_surfaces),
-                ("legacy_v1_nurbs_breps".into(), decoded_nurbs_breps),
+                (crate::coverage::LEGACY_V1_POINTS, decoded),
+                (crate::coverage::LEGACY_V1_CURVE_SEGMENTS, decoded_curves),
+                (crate::coverage::LEGACY_V1_MESHES, decoded_meshes),
+                (crate::coverage::LEGACY_V1_BREPS, decoded_breps),
+                (crate::coverage::LEGACY_V1_ANNOTATIONS, decoded_annotations),
+                (crate::coverage::LEGACY_V1_NURBS_CURVES, decoded_nurbs_curves),
+                (
+                    crate::coverage::LEGACY_V1_NURBS_SURFACES,
+                    decoded_nurbs_surfaces,
+                ),
+                (crate::coverage::LEGACY_V1_NURBS_BREPS, decoded_nurbs_breps),
             ]
             .into_iter()
             .collect(),

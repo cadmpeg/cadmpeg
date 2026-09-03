@@ -602,67 +602,76 @@ pub(crate) fn try_decode_freeform_surfaces(
     let annotations = annotations.build();
     let mut coverage = cadmpeg_ir::Coverage::default();
     coverage.record(
-        "decoded_object_stream_run_count".into(),
+        crate::coverage::DECODED_OBJECT_STREAM_RUN_COUNT,
         object_stream_run_count,
     );
     coverage.record(
-        "selected_object_stream_run_count".into(),
+        crate::coverage::SELECTED_OBJECT_STREAM_RUN_COUNT,
         selected_object_stream_run_count,
     );
     coverage.record(
-        "unselected_object_stream_run_count".into(),
+        crate::coverage::UNSELECTED_OBJECT_STREAM_RUN_COUNT,
         object_stream_run_count - selected_object_stream_run_count,
     );
     coverage.record(
-        "exhausted_object_stream_selection_count".into(),
+        crate::coverage::EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT,
         usize::from(object_stream_selection_exhausted),
     );
-    coverage.record("decoded_b2_nurbs_curve_count".into(), b2_nurbs_curve_count);
-    coverage.record("decoded_a5_nurbs_curve_count".into(), a5_nurbs_curve_count);
     coverage.record(
-        "decoded_b2_spatial_circle_count".into(),
+        crate::coverage::DECODED_B2_NURBS_CURVE_COUNT,
+        b2_nurbs_curve_count,
+    );
+    coverage.record(
+        crate::coverage::DECODED_A5_NURBS_CURVE_COUNT,
+        a5_nurbs_curve_count,
+    );
+    coverage.record(
+        crate::coverage::DECODED_B2_SPATIAL_CIRCLE_COUNT,
         b2_spatial_circle_count,
     );
     coverage.record(
-        "attached_standalone_wire_edge_count".into(),
+        crate::coverage::ATTACHED_STANDALONE_WIRE_EDGE_COUNT,
         usize::from(wire_topology_transferred) * standalone_wires.len(),
     );
     if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
         coverage.record(
-            "resolved_object_stream_face_terminal_control_03_count".into(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
             control_03,
         );
         coverage.record(
-            "resolved_object_stream_face_terminal_control_05_count".into(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
             control_05,
         );
         coverage.record(
-            "resolved_object_stream_uncounted_face_count".into(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
             uncounted,
         );
     }
     if topology_transferred {
         coverage.record(
-            "transferred_object_stream_face_count".into(),
+            crate::coverage::TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
             ir.model.faces.len(),
         );
         coverage.record(
-            "transferred_object_stream_loop_count".into(),
+            crate::coverage::TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
             ir.model.loops.len(),
         );
     }
     if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
         coverage.record(
-            "typed_object_stream_face_terminal_control_03_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
             control_03,
         );
         coverage.record(
-            "typed_object_stream_face_terminal_control_05_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
             control_05,
         );
-        coverage.record("typed_object_stream_uncounted_face_count".into(), uncounted);
         coverage.record(
-            "typed_unresolved_object_stream_face_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
+            uncounted,
+        );
+        coverage.record(
+            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT,
             unresolved,
         );
     }
@@ -674,28 +683,28 @@ pub(crate) fn try_decode_freeform_surfaces(
     }
     if let Some(counts) = edge_terminal_controls {
         for (key, count) in [
-            "typed_object_stream_edge_terminal_control_01_count",
-            "typed_object_stream_edge_terminal_control_02_count",
-            "typed_object_stream_edge_terminal_control_21_count",
-            "typed_object_stream_edge_terminal_control_22_count",
-            "typed_object_stream_edge_terminal_control_25_count",
-            "typed_object_stream_edge_terminal_control_26_count",
-            "typed_object_stream_edge_terminal_control_29_count",
-            "typed_object_stream_edge_terminal_control_2a_count",
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_01_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_02_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_22_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_25_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_26_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_29_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT,
         ]
         .into_iter()
         .zip(counts)
         {
-            coverage.record(key.into(), count);
+            coverage.record(key, count);
         }
     }
     if let Some([control_00, control_04]) = vertex_incidence_terminal_controls {
         coverage.record(
-            "typed_object_stream_vertex_incidence_terminal_control_00_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_00_COUNT,
             control_00,
         );
         coverage.record(
-            "typed_object_stream_vertex_incidence_terminal_control_04_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT,
             control_04,
         );
     }
@@ -704,79 +713,79 @@ pub(crate) fn try_decode_freeform_surfaces(
     {
         for (key, count) in [
             (
-                "resolved_object_stream_loop_framing_controls_03_03_count",
+                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
                 controls_03_03,
             ),
             (
-                "resolved_object_stream_loop_framing_controls_03_05_count",
+                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
                 controls_03_05,
             ),
             (
-                "resolved_object_stream_loop_framing_controls_05_03_count",
+                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
                 controls_05_03,
             ),
             (
-                "resolved_object_stream_loop_framing_controls_05_05_count",
+                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
                 controls_05_05,
             ),
         ] {
-            coverage.record(key.into(), count);
+            coverage.record(key, count);
         }
         coverage.record(
-            "resolved_object_stream_extended_loop_metadata_count".into(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
             extended,
         );
     }
     if let Some((counts, unresolved)) = typed_loop_metadata_counts {
         for (key, count) in [
-            "typed_object_stream_loop_framing_controls_03_03_count",
-            "typed_object_stream_loop_framing_controls_03_05_count",
-            "typed_object_stream_loop_framing_controls_05_03_count",
-            "typed_object_stream_loop_framing_controls_05_05_count",
+            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
+            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
         ]
         .into_iter()
         .zip(counts[..4].iter().copied())
         {
-            coverage.record(key.into(), count);
+            coverage.record(key, count);
         }
         coverage.record(
-            "typed_object_stream_extended_loop_metadata_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
             counts[4],
         );
         coverage.record(
-            "typed_unresolved_object_stream_loop_count".into(),
+            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT,
             unresolved,
         );
     }
     if let Some(count) = class_21_suffix_scalar_count {
         coverage.record(
-            "resolved_object_stream_class_21_pcurve_suffix_scalar_count".into(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
             count,
         );
     }
     if typed_class_21_pcurve_count != 0 {
         coverage.record(
-            "typed_object_stream_class_21_pcurve_suffix_scalar_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
             typed_class_21_pcurve_count,
         );
     }
     if !typed_parameter_incidences.is_empty() {
         coverage.record(
-            "typed_object_stream_parameter_incidence_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT,
             typed_parameter_incidences.len(),
         );
         coverage.record(
-            "typed_object_stream_parameter_incidence_member_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT,
             typed_parameter_incidence_member_count,
         );
     }
     if !typed_vertex_incidence_rosters.is_empty() {
         coverage.record(
-            "typed_object_stream_vertex_incidence_roster_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT,
             typed_vertex_incidence_rosters.len(),
         );
         coverage.record(
-            "typed_object_stream_vertex_incidence_roster_member_count".into(),
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT,
             typed_vertex_incidence_roster_member_count,
         );
     }

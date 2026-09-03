@@ -115,8 +115,9 @@ pub use provenance::{
 
 pub use report::{
     CensusBasis, Check, Coverage, CoverageKey, DecodeReport, DecodeTransfer, EntityCensus,
-    ExportReport, FidelityResolution, Finding, LossCategory, LossKind, LossNote, LossTaxonomy,
-    Severity, StrictConsequence, ValidationReport, WritePath, SHARED_LOSS_NAMESPACE,
+    ExportReport, FidelityResolution, Finding, HexByteCoverageKey, IndexedCoverageKey,
+    LossCategory, LossKind, LossNote, LossTaxonomy, Severity, StrictConsequence, ValidationReport,
+    WritePath, SHARED_LOSS_NAMESPACE,
 };
 pub use sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,

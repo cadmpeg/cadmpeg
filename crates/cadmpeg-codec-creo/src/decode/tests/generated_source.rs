@@ -1462,10 +1462,16 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     assert_eq!(coverage.unique_rows, 3);
     assert_eq!(coverage.transferred_rows, 2);
     assert_eq!(coverage.ambiguous_rows, 2);
-    assert_eq!(coverage.by_family["plane"], (1, 1));
-    assert_eq!(coverage.by_family["cylinder"], (1, 0));
-    assert_eq!(coverage.by_family["cone"], (0, 0));
-    assert_eq!(coverage.by_family["extrusion"], (1, 1));
+    assert_eq!(coverage.family(crate::surface::SurfaceKind::Plane), (1, 1));
+    assert_eq!(
+        coverage.family(crate::surface::SurfaceKind::Cylinder),
+        (1, 0)
+    );
+    assert_eq!(coverage.family(crate::surface::SurfaceKind::Cone), (0, 0));
+    assert_eq!(
+        coverage.family(crate::surface::SurfaceKind::Extrusion),
+        (1, 1)
+    );
 }
 
 #[test]
@@ -1572,22 +1578,22 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     assert_eq!(coverage.active_typed(), 1);
     assert_eq!(coverage.native_by_kind, BTreeMap::from([(9, 1)]));
     assert_eq!(coverage.active_native_by_kind, BTreeMap::from([(9, 1)]));
-    let report_coverage = [
-        (
-            "active_native_feature_relation_type_1_constraint_count".into(),
-            2,
-        ),
-        (
-            "active_native_feature_relation_type_9_constraint_count".into(),
-            1,
-        ),
-        (
-            "transferred_native_feature_relation_type_9_constraint_count".into(),
-            4,
-        ),
-    ]
-    .into_iter()
-    .collect::<cadmpeg_ir::Coverage>();
+    let mut report_coverage = cadmpeg_ir::Coverage::default();
+    report_coverage.record_indexed(
+        crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
+        1,
+        2,
+    );
+    report_coverage.record_indexed(
+        crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
+        9,
+        1,
+    );
+    report_coverage.record_indexed(
+        crate::coverage::TRANSFERRED_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
+        9,
+        4,
+    );
     assert_eq!(
         constraint_kind_breakdown(&report_coverage, "active_native_feature_relation_type_",),
         "type 1=2, type 9=1"
