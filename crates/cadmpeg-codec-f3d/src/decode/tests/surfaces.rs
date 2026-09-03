@@ -757,14 +757,14 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         );
         assert!(sections.iter().all(|section| section.entries.len() == 1));
         assert_eq!(
-            sections[0].entries[0].profile[0].data.subdata.type_code,
+            sections[0].entries[0].profile[0].form.subdata().type_code,
             211
         );
         assert_eq!(
-            sections[0].entries[0].profile[0].data.direction,
+            sections[0].entries[0].profile[0].form.direction().copied(),
             Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
         );
-        assert!(sections[1].entries[0].profile[0].data.direction.is_none());
+        assert!(sections[1].entries[0].profile[0].form.direction().is_none());
         assert!(sections
             .iter()
             .flat_map(|section| &section.entries)
@@ -818,10 +818,10 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 && section.entries[0].path.auxiliaries.len() == 1
         }));
         assert_eq!(
-            sections[0].entries[0].profile[0].data.direction,
+            sections[0].entries[0].profile[0].form.direction().copied(),
             Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
         );
-        assert!(sections[1].entries[0].profile[0].data.direction.is_none());
+        assert!(sections[1].entries[0].profile[0].form.direction().is_none());
         let profile = &sections[0].entries[0].profile[0].curve;
         assert!(matches!(
             round_trip

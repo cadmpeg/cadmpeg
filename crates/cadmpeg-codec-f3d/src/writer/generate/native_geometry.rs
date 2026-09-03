@@ -1456,6 +1456,35 @@ fn native_loft_profile_tail(
     Ok(())
 }
 
+fn native_loft_member_tail(
+    bytes: &mut Vec<u8>,
+    form: &cadmpeg_ir::geometry::LoftMemberForm,
+) -> Result<(), CodecError> {
+    let (asm_extension, subdata, direction) = match form {
+        cadmpeg_ir::geometry::LoftMemberForm::Support {
+            asm_extension,
+            subdata,
+            direction,
+            ..
+        }
+        | cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
+            asm_extension,
+            subdata,
+            direction,
+            ..
+        } => (asm_extension, subdata, direction),
+    };
+    if let Some(asm_extension) = asm_extension {
+        native_i64(bytes, *asm_extension);
+    }
+    native_loft_subdata(bytes, subdata)?;
+    bytes.push(native_bool(direction.is_some()));
+    if let Some(direction) = direction {
+        native_vector(bytes, [direction.x, direction.y, direction.z]);
+    }
+    Ok(())
+}
+
 /// The first native constraint flag, required by every member form that stores
 /// a support surface.
 fn required_first_flag(
@@ -1488,7 +1517,7 @@ fn native_loft_section(
                 .map_err(|_| CodecError::NotImplemented("loft profile count exceeds i64".into()))?,
         );
         for member in &entry.profile {
-            native_i64(bytes, member.type_code);
+            native_i64(bytes, member.form.type_code());
             let curve = native_loft_curve_in_range(target, &member.curve, parameter_range)?;
             native_nurbs_curve(bytes, &curve)?;
             if let Some(endpoints) = member.endpoints {
@@ -1496,39 +1525,50 @@ fn native_loft_section(
                     native_optional_f64(bytes, value);
                 }
             }
-            // A type-zero member stores two nullable UV curve slots in place of
-            // the support surface and the first flag.
-            if member.type_code == 0 && member.data.first_flag.is_none() {
-                native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
-                native_optional_pcurve(bytes, member.data.secondary_pcurve.as_ref())?;
-            } else {
-                if let Some(surface_id) = &member.data.surface {
-                    let surface = target
-                        .model
-                        .surfaces
-                        .iter()
-                        .find(|surface| surface.id == *surface_id)
-                        .ok_or_else(|| {
-                            CodecError::malformed(format_args!(
-                                "loft references missing surface {surface_id}"
-                            ))
-                        })?;
-                    if member.endpoints.is_some() {
-                        native_embedded_surface_with_bounds(
-                            bytes,
-                            &surface.geometry,
-                            &member.data.support_bounds,
-                        )?;
+            match &member.form {
+                cadmpeg_ir::geometry::LoftMemberForm::Support {
+                    surface,
+                    support_bounds,
+                    pcurve,
+                    first_flag,
+                    ..
+                } => {
+                    if let Some(surface_id) = surface {
+                        let surface = target
+                            .model
+                            .surfaces
+                            .iter()
+                            .find(|surface| surface.id == *surface_id)
+                            .ok_or_else(|| {
+                                CodecError::malformed(format_args!(
+                                    "loft references missing surface {surface_id}"
+                                ))
+                            })?;
+                        if member.endpoints.is_some() {
+                            native_embedded_surface_with_bounds(
+                                bytes,
+                                &surface.geometry,
+                                support_bounds,
+                            )?;
+                        } else {
+                            native_embedded_surface(bytes, &surface.geometry)?;
+                        }
                     } else {
-                        native_embedded_surface(bytes, &surface.geometry)?;
+                        native_ident(bytes, "null_surface")?;
                     }
-                } else {
-                    native_ident(bytes, "null_surface")?;
+                    native_optional_pcurve(bytes, pcurve.as_ref())?;
+                    bytes.push(native_bool(*first_flag));
                 }
-                native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
-                bytes.push(required_first_flag(&member.data, "loft")?);
+                cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
+                    pcurve,
+                    secondary_pcurve,
+                    ..
+                } => {
+                    native_optional_pcurve(bytes, pcurve.as_ref())?;
+                    native_optional_pcurve(bytes, secondary_pcurve.as_ref())?;
+                }
             }
-            native_loft_profile_tail(bytes, &member.data)?;
+            native_loft_member_tail(bytes, &member.form)?;
         }
         if let Some(path_curve) = &entry.path.curve {
             let path = native_loft_curve_in_range(target, path_curve, parameter_range)?;
@@ -3664,7 +3704,7 @@ fn native_revision_cl_scale(
         })?,
     );
     for member in profile {
-        native_i64(bytes, member.type_code);
+        native_i64(bytes, member.form.type_code());
         let curve = native_loft_curve_in_range(target, &member.curve, None)?;
         native_nurbs_curve(bytes, &curve)?;
         let endpoints = member.endpoints.ok_or_else(|| {
@@ -3675,35 +3715,42 @@ fn native_revision_cl_scale(
         for value in endpoints {
             native_optional_f64(bytes, value);
         }
-        // A type-zero member stores two nullable UV curve slots in place of the
-        // support surface and the first flag.
-        if member.type_code == 0 && member.data.first_flag.is_none() {
-            native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
-            native_optional_pcurve(bytes, member.data.secondary_pcurve.as_ref())?;
-        } else {
-            if let Some(surface_id) = &member.data.surface {
-                let surface = target
-                    .model
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == *surface_id)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "compound loft references missing surface {surface_id}"
-                        ))
-                    })?;
-                native_embedded_surface_with_bounds(
-                    bytes,
-                    &surface.geometry,
-                    &member.data.support_bounds,
-                )?;
-            } else {
-                native_ident(bytes, "null_surface")?;
+        match &member.form {
+            cadmpeg_ir::geometry::LoftMemberForm::Support {
+                surface,
+                support_bounds,
+                pcurve,
+                first_flag,
+                ..
+            } => {
+                if let Some(surface_id) = surface {
+                    let surface = target
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|surface| surface.id == *surface_id)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "compound loft references missing surface {surface_id}"
+                            ))
+                        })?;
+                    native_embedded_surface_with_bounds(bytes, &surface.geometry, support_bounds)?;
+                } else {
+                    native_ident(bytes, "null_surface")?;
+                }
+                native_optional_pcurve(bytes, pcurve.as_ref())?;
+                bytes.push(native_bool(*first_flag));
             }
-            native_optional_pcurve(bytes, member.data.pcurve.as_ref())?;
-            bytes.push(required_first_flag(&member.data, "revision compound loft")?);
+            cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
+                pcurve,
+                secondary_pcurve,
+                ..
+            } => {
+                native_optional_pcurve(bytes, pcurve.as_ref())?;
+                native_optional_pcurve(bytes, secondary_pcurve.as_ref())?;
+            }
         }
-        native_loft_profile_tail(bytes, &member.data)?;
+        native_loft_member_tail(bytes, &member.form)?;
     }
     if let Some(path_curve) = &path.curve {
         let curve = native_loft_curve_in_range(target, path_curve, None)?;

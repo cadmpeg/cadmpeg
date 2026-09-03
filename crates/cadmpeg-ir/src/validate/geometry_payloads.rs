@@ -710,7 +710,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .all(|entry| {
                         entry.parameter.is_finite()
                             && entry.profile.iter().all(|member| {
-                                let table = &member.data.subdata;
+                                let table = member.form.subdata();
                                 let expected_rows = if table.type_code == 211 {
                                     1
                                 } else {
@@ -1143,7 +1143,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 section.entries.iter().all(|entry| {
                     entry.parameter.is_finite()
                         && entry.profile.iter().all(|member| {
-                            let table = &member.data.subdata;
+                            let table = member.form.subdata();
                             let expected_rows = if table.type_code == 211 {
                                 1
                             } else {

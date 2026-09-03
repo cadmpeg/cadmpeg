@@ -18,12 +18,12 @@ use crate::nurbs::proc_surface::{
     EmbeddedCompoundLoftScale, EmbeddedCompoundLoftTail, EmbeddedDeformableSurface,
     EmbeddedDeformableSurfaceData, EmbeddedG2Blend, EmbeddedG2FirstShape, EmbeddedG2Side,
     EmbeddedLawExpression, EmbeddedLawFormula, EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftPath,
-    EmbeddedLoftProfileMember, EmbeddedNetSurface, EmbeddedRevisionCompoundLoft,
-    EmbeddedRevisionG2Blend, EmbeddedRollingBall, EmbeddedRollingBallRadiusSelector,
-    EmbeddedScaledCompoundLoft, EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape,
-    EmbeddedSkinSurface, EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface,
-    EmbeddedSweepSurfaceLayout, EmbeddedVariableBlend, EmbeddedVertexBlend,
-    EmbeddedVertexBlendBoundaryGeometry,
+    EmbeddedLoftProfileData, EmbeddedLoftProfileMember, EmbeddedNetSurface,
+    EmbeddedRevisionCompoundLoft, EmbeddedRevisionG2Blend, EmbeddedRollingBall,
+    EmbeddedRollingBallRadiusSelector, EmbeddedScaledCompoundLoft,
+    EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape, EmbeddedSkinSurface,
+    EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface, EmbeddedSweepSurfaceLayout,
+    EmbeddedVariableBlend, EmbeddedVertexBlend, EmbeddedVertexBlendBoundaryGeometry,
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
@@ -500,6 +500,55 @@ fn emit_deformable_surface(
     }
 }
 
+fn emit_loft_member_form(
+    out: &mut AsmBrep,
+    type_code: i64,
+    data: EmbeddedLoftProfileData,
+    support_id: String,
+) -> cadmpeg_ir::geometry::LoftMemberForm {
+    let EmbeddedLoftProfileData {
+        surface,
+        support_bounds,
+        pcurve,
+        secondary_pcurve,
+        first_flag,
+        asm_extension,
+        subdata,
+        direction,
+    } = data;
+    let pcurve = pcurve.map(embedded_pcurve_geometry);
+    match first_flag {
+        Some(first_flag) => {
+            let surface = surface.map(|geometry| {
+                let surface = SurfaceId(support_id);
+                out.surfaces.push(Surface {
+                    id: surface.clone(),
+                    geometry,
+                    source_object: None,
+                });
+                surface
+            });
+            cadmpeg_ir::geometry::LoftMemberForm::Support {
+                type_code,
+                surface,
+                support_bounds,
+                pcurve,
+                first_flag,
+                asm_extension,
+                subdata,
+                direction,
+            }
+        }
+        None => cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
+            pcurve,
+            secondary_pcurve: secondary_pcurve.map(embedded_pcurve_geometry),
+            asm_extension,
+            subdata,
+            direction,
+        },
+    }
+}
+
 fn emit_loft_surface(
     out: &mut AsmBrep,
     i: i64,
@@ -520,36 +569,17 @@ fn emit_loft_surface(
                                                         geometry: CurveGeometry::Nurbs(member.curve),
                                                         source_object: None,
                                                     });
-                                                    let surface = member.data.surface.map(|geometry| {
-                                                        let surface = SurfaceId(format!(
-                                                            "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:support:{member_index}"
-                                                        ));
-                                                        out.surfaces.push(Surface {
-                                                            id: surface.clone(),
-                                                            geometry,
-                                                            source_object: None,
-                                                        });
-                                                        surface
-                                                    });
-                                                    let pcurve = member.data.pcurve.map(embedded_pcurve_geometry);
-                                                    let secondary_pcurve = member
-                                                        .data
-                                                        .secondary_pcurve
-                                                        .map(embedded_pcurve_geometry);
                                                     cadmpeg_ir::geometry::LoftProfileMember {
-                                                        type_code: member.type_code,
                                                         curve,
                                                         endpoints: member.endpoints,
-                                                        data: cadmpeg_ir::geometry::LoftProfileData {
-                                                            surface,
-                                                            support_bounds: member.data.support_bounds,
-                                                            pcurve,
-                                                            secondary_pcurve,
-                                                            first_flag: member.data.first_flag,
-                                                            asm_extension: member.data.asm_extension,
-                                                            subdata: member.data.subdata,
-                                                            direction: member.data.direction,
-                                                        },
+                                                        form: emit_loft_member_form(
+                                                            out,
+                                                            member.type_code,
+                                                            member.data,
+                                                            format!(
+                                                                "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:support:{member_index}"
+                                                            ),
+                                                        ),
                                                     }
                                                 },
                                             ).collect();
@@ -1439,38 +1469,17 @@ fn emit_net_surface(
                                                         geometry: CurveGeometry::Nurbs(member.curve),
                                                         source_object: None,
                                                     });
-                                                    let surface = member.data.surface.map(|geometry| {
-                                                            let surface = SurfaceId(format!(
-                                                                "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:surface"
-                                                            ));
-                                                            out.surfaces.push(Surface {
-                                                                id: surface.clone(),
-                                                                geometry,
-                                                                source_object: None,
-                                                            });
-                                                            surface
-                                                        });
                                                     cadmpeg_ir::geometry::LoftProfileMember {
-                                                        type_code: member.type_code,
                                                         curve,
                                                         endpoints: member.endpoints,
-                                                        data: cadmpeg_ir::geometry::LoftProfileData {
-                                                            surface,
-                                                            support_bounds: member.data.support_bounds,
-                                                            pcurve: member.data.pcurve.map(
-                                                                embedded_pcurve_geometry,
+                                                        form: emit_loft_member_form(
+                                                            out,
+                                                            member.type_code,
+                                                            member.data,
+                                                            format!(
+                                                                "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:surface"
                                                             ),
-                                                            secondary_pcurve: member
-                                                                .data
-                                                                .secondary_pcurve
-                                                                .map(embedded_pcurve_geometry),
-                                                            first_flag: member.data.first_flag,
-                                                            asm_extension: member
-                                                                .data
-                                                                .asm_extension,
-                                                            subdata: member.data.subdata,
-                                                            direction: member.data.direction,
-                                                        },
+                                                        ),
                                                     }
                                                 })
                                                 .collect();
@@ -2154,32 +2163,15 @@ fn emit_revision_compound_loft_surface(
                     geometry: CurveGeometry::Nurbs(member.curve),
                     source_object: None,
                 });
-                let surface = member.data.surface.map(|geometry| {
-                    let surface = SurfaceId(format!("{scope}:support:{member_index}"));
-                    out.surfaces.push(Surface {
-                        id: surface.clone(),
-                        geometry,
-                        source_object: None,
-                    });
-                    surface
-                });
                 cadmpeg_ir::geometry::LoftProfileMember {
-                    type_code: member.type_code,
                     curve,
                     endpoints: member.endpoints,
-                    data: cadmpeg_ir::geometry::LoftProfileData {
-                        surface,
-                        support_bounds: member.data.support_bounds,
-                        pcurve: member.data.pcurve.map(embedded_pcurve_geometry),
-                        secondary_pcurve: member
-                            .data
-                            .secondary_pcurve
-                            .map(embedded_pcurve_geometry),
-                        first_flag: member.data.first_flag,
-                        asm_extension: member.data.asm_extension,
-                        subdata: member.data.subdata,
-                        direction: member.data.direction,
-                    },
+                    form: emit_loft_member_form(
+                        out,
+                        member.type_code,
+                        member.data,
+                        format!("{scope}:support:{member_index}"),
+                    ),
                 }
             })
             .collect()
