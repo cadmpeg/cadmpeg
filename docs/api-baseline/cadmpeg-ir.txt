@@ -1,4 +1,4 @@
-# generated at 216b40ea4
+# generated at 50e4a7273
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -366,6 +366,12 @@ pub struct cadmpeg_ir::diff::AttributeChange
 pub cadmpeg_ir::diff::AttributeChange::key: alloc::string::String
 pub cadmpeg_ir::diff::AttributeChange::left: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::diff::AttributeChange::right: core::option::Option<alloc::string::String>
+pub struct cadmpeg_ir::diff::FormatChange
+impl cadmpeg_ir::diff::FormatChange
+pub fn cadmpeg_ir::diff::FormatChange::after(&self) -> core::option::Option<&str>
+pub fn cadmpeg_ir::diff::FormatChange::before(&self) -> core::option::Option<&str>
+impl serde_core::ser::Serialize for cadmpeg_ir::diff::FormatChange
+pub fn cadmpeg_ir::diff::FormatChange::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 pub struct cadmpeg_ir::diff::IrDiff
 pub cadmpeg_ir::diff::IrDiff::per_arena: alloc::vec::Vec<cadmpeg_ir::diff::ArenaDiff>
 pub cadmpeg_ir::diff::IrDiff::source: cadmpeg_ir::diff::SourceDiff
@@ -379,7 +385,7 @@ pub cadmpeg_ir::diff::ModifiedEntity::id: alloc::string::String
 pub struct cadmpeg_ir::diff::SourceDiff
 pub cadmpeg_ir::diff::SourceDiff::attributes: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
 pub cadmpeg_ir::diff::SourceDiff::dialects_change: core::option::Option<(core::option::Option<cadmpeg_core::dialect::DialectLayers>, core::option::Option<cadmpeg_core::dialect::DialectLayers>)>
-pub cadmpeg_ir::diff::SourceDiff::format_change: core::option::Option<(alloc::string::String, alloc::string::String)>
+pub cadmpeg_ir::diff::SourceDiff::format_change: core::option::Option<cadmpeg_ir::diff::FormatChange>
 pub cadmpeg_ir::diff::SourceDiff::local_digests: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
 impl cadmpeg_ir::diff::SourceDiff
 pub fn cadmpeg_ir::diff::SourceDiff::is_empty(&self) -> bool
@@ -7897,7 +7903,7 @@ pub cadmpeg_ir::SketchSolverScalar::variable_type: u32
 pub struct cadmpeg_ir::SourceDiff
 pub cadmpeg_ir::SourceDiff::attributes: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
 pub cadmpeg_ir::SourceDiff::dialects_change: core::option::Option<(core::option::Option<cadmpeg_core::dialect::DialectLayers>, core::option::Option<cadmpeg_core::dialect::DialectLayers>)>
-pub cadmpeg_ir::SourceDiff::format_change: core::option::Option<(alloc::string::String, alloc::string::String)>
+pub cadmpeg_ir::SourceDiff::format_change: core::option::Option<cadmpeg_ir::diff::FormatChange>
 pub cadmpeg_ir::SourceDiff::local_digests: alloc::vec::Vec<cadmpeg_ir::diff::AttributeChange>
 impl cadmpeg_ir::diff::SourceDiff
 pub fn cadmpeg_ir::diff::SourceDiff::is_empty(&self) -> bool

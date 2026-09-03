@@ -36,24 +36,6 @@ fn loss_policy_assigns_each_refusal_phase() {
 }
 
 #[test]
-fn cli_admission_flags_resolve_to_distinct_modes() {
-    assert_eq!(
-        [
-            ValidationAdmission::new(false, false),
-            ValidationAdmission::new(true, false),
-            ValidationAdmission::new(false, true),
-            ValidationAdmission::new(true, true),
-        ],
-        [
-            ValidationAdmission::Strict,
-            ValidationAdmission::AllowErrors,
-            ValidationAdmission::AllowEmpty,
-            ValidationAdmission::AllowErrorsAndEmpty,
-        ]
-    );
-}
-
-#[test]
 fn destination_policy_discards_flags_irrelevant_to_the_destination() {
     let file = DestinationPolicy::new(Some(PathBuf::from("part.step")), true, true);
     assert_eq!(

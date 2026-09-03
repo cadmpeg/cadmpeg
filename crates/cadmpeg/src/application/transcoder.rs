@@ -8,6 +8,7 @@ use anyhow::{anyhow, Result as AnyResult};
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
+use clap::ValueEnum;
 
 use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
@@ -145,16 +146,20 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
 }
 
 /// Which conversion losses refuse the conversion.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub enum LossPolicy {
     /// Permit losses at both phases.
     #[default]
+    #[value(skip)]
     Allow,
     /// Refuse decode losses only.
+    #[value(name = "decode")]
     RejectDecode,
     /// Refuse export losses only.
+    #[value(name = "export")]
     RejectExport,
     /// Refuse losses at either phase.
+    #[value(name = "any")]
     RejectAny,
 }
 
@@ -169,41 +174,6 @@ impl LossPolicy {
     #[must_use]
     pub const fn rejects_export(self) -> bool {
         matches!(self, Self::RejectExport | Self::RejectAny)
-    }
-}
-
-/// Validation and geometry admission for a conversion.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ValidationAdmission {
-    /// Require a valid document with transferred geometry.
-    #[default]
-    Strict,
-    /// Admit validation errors.
-    AllowErrors,
-    /// Admit a geometry export with no transferred geometry.
-    AllowEmpty,
-    /// Admit both validation errors and empty geometry.
-    AllowErrorsAndEmpty,
-}
-
-impl ValidationAdmission {
-    /// Constructs the admission mode from the independent CLI overrides.
-    #[must_use]
-    pub const fn new(allow_errors: bool, allow_empty: bool) -> Self {
-        match (allow_errors, allow_empty) {
-            (false, false) => Self::Strict,
-            (true, false) => Self::AllowErrors,
-            (false, true) => Self::AllowEmpty,
-            (true, true) => Self::AllowErrorsAndEmpty,
-        }
-    }
-
-    const fn admits_errors(self) -> bool {
-        matches!(self, Self::AllowErrors | Self::AllowErrorsAndEmpty)
-    }
-
-    const fn admits_empty(self) -> bool {
-        matches!(self, Self::AllowEmpty | Self::AllowErrorsAndEmpty)
     }
 }
 
@@ -282,8 +252,10 @@ impl DestinationPolicy {
 pub struct ConversionPolicy {
     /// Decode and export loss refusal.
     pub losses: LossPolicy,
-    /// Validation and empty-geometry admission.
-    pub admission: ValidationAdmission,
+    /// Permit export when validation reports errors.
+    pub allow_errors: bool,
+    /// Permit a geometry export when decode transferred no geometry.
+    pub allow_empty: bool,
     /// Output destination rules.
     pub destination: DestinationPolicy,
 }
@@ -362,7 +334,7 @@ impl<'a> Transcoder<'a> {
             loaded.fidelity(),
             losses(decode_report.as_ref()),
         );
-        if !validation.is_ok() && !policy.admission.admits_errors() {
+        if !validation.is_ok() && !policy.allow_errors {
             return Err(ConversionRefusal::CheckFailed {
                 message: format!(
                     "check found {} error(s); refusing to export (use --allow-errors to override)",
@@ -378,7 +350,7 @@ impl<'a> Transcoder<'a> {
             && decode_report
                 .as_ref()
                 .is_some_and(|report| !report.geometry_transferred())
-            && !policy.admission.admits_empty()
+            && !policy.allow_empty
         {
             return Err(ConversionRefusal::EmptyGeometry {
                 message: format!(
