@@ -2864,3 +2864,10 @@ crate = "cadmpeg-container"
 kind = "field"
 item = "cadmpeg_container::{PhysicalSpan,compound::CompoundPhysicalSpan}::{role,entry}"
 reason = "a closed SpanRole carries an entry name only for entry-owned physical ranges instead of permitting arbitrary role strings and independent optional entries"
+
+[[change]]
+commit = "84febe4565dc2207d4232465b7df1e271e6a89ec"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::decode::SpaceDerivation::Concatenated::{parents,first_parent,additional_parents}"
+reason = "a concatenated address space carries its required first parent structurally, and concat_views refuses an empty input"

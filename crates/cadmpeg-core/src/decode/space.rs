@@ -63,8 +63,10 @@ pub enum SpaceDerivation {
     },
     /// Concatenation of several parent windows.
     Concatenated {
-        /// Parent spaces, in concatenation order.
-        parents: Vec<SpaceId>,
+        /// First parent space.
+        first_parent: SpaceId,
+        /// Remaining parent spaces, in concatenation order.
+        additional_parents: Vec<SpaceId>,
     },
 }
 
@@ -181,22 +183,10 @@ pub fn resolve_address(
             | SpaceDerivation::Expanded { parent, .. } => {
                 current = parent;
             }
-            SpaceDerivation::Concatenated { ref parents } => {
-                if let Some(parent) = parents.first().copied() {
-                    current = parent;
-                } else {
-                    break;
-                }
-            }
+            SpaceDerivation::Concatenated { first_parent, .. } => current = first_parent,
         }
     }
     steps.reverse();
-    if steps.is_empty() {
-        steps.push(AddressStep {
-            label: "root".into(),
-            kind: AddressStepKind::Root,
-        });
-    }
     ResolvedAddress {
         steps,
         offset: location.offset,

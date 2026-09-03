@@ -1,4 +1,4 @@
-# generated at 082e47db2
+# generated at 84febe456
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -61,7 +61,8 @@ pub cadmpeg_core::decode::ResourceFailure::AllocationFailed
 pub cadmpeg_core::decode::ResourceFailure::BudgetExceeded
 pub enum cadmpeg_core::decode::SpaceDerivation
 pub cadmpeg_core::decode::SpaceDerivation::Concatenated
-pub cadmpeg_core::decode::SpaceDerivation::Concatenated::parents: alloc::vec::Vec<cadmpeg_core::decode::SpaceId>
+pub cadmpeg_core::decode::SpaceDerivation::Concatenated::additional_parents: alloc::vec::Vec<cadmpeg_core::decode::SpaceId>
+pub cadmpeg_core::decode::SpaceDerivation::Concatenated::first_parent: cadmpeg_core::decode::SpaceId
 pub cadmpeg_core::decode::SpaceDerivation::Expanded
 pub cadmpeg_core::decode::SpaceDerivation::Expanded::parent: cadmpeg_core::decode::SpaceId
 pub cadmpeg_core::decode::SpaceDerivation::Expanded::source_range: cadmpeg_core::decode::ByteRange

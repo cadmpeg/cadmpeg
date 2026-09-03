@@ -423,7 +423,10 @@ impl<'a> DecodeContext<'a> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        let location = inputs.first().copied().map(View::location);
+        let (first, additional) = inputs
+            .split_first()
+            .ok_or_else(|| CodecError::Malformed("cannot concatenate an empty view list".into()))?;
+        let location = Some(first.location());
         let total = inputs.iter().try_fold(0usize, |total, view| {
             total.checked_add(view.window().len()).ok_or_else(|| {
                 self.budget.refuse(
@@ -457,8 +460,11 @@ impl<'a> DecodeContext<'a> {
         }
         let bytes = self.arena.alloc(buffer.into_boxed_slice());
         reservation.commit()?;
-        let parents = inputs.iter().map(|view| view.space()).collect();
-        let space = self.allocate_space("concat".into(), SpaceDerivation::Concatenated { parents });
+        let derivation = SpaceDerivation::Concatenated {
+            first_parent: first.space(),
+            additional_parents: additional.iter().map(|view| view.space()).collect(),
+        };
+        let space = self.allocate_space("concat".into(), derivation);
         Ok(View::over_space(bytes, space))
     }
 
