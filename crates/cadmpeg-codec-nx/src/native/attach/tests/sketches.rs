@@ -55,11 +55,11 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     ));
     assert_eq!(ir.model.sketch_entities.len(), 1);
     assert_eq!(
-        ir.model.sketch_entities[0].id.0,
+        ir.model.sketch_entities[0].id().0,
         "nx:feature-history:sketch-entity#coordinate-pair-section-9-0000000000"
     );
     assert!(cadmpeg_ir::ids::is_valid_identity(
-        &ir.model.sketch_entities[0].id.0
+        &ir.model.sketch_entities[0].id().0
     ));
     assert_eq!(
         ir.model.sketch_entities[0].native_ref.as_deref(),
@@ -119,7 +119,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     ));
     assert_eq!(ir.model.sketch_entities.len(), 1);
     assert_eq!(
-        ir.model.sketch_entities[0].id.0,
+        ir.model.sketch_entities[0].id().0,
         "nx:feature-history:sketch-entity#fixed-point-section-11-0000000000"
     );
     assert_eq!(

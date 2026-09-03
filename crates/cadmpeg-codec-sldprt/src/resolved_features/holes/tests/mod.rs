@@ -168,15 +168,11 @@ fn cylinder(id: usize, x: f64) -> Surface {
 }
 
 fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -> SketchEntity {
-    SketchEntity {
-        id: SketchEntityId(format!("profile-line-{ordinal}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
-    }
+    SketchEntity::new(
+        SketchEntityId(format!("profile-line-{ordinal}")),
+        sketch.clone(),
+        SketchGeometry::Line { start, end },
+    )
 }
 
 mod axial_profile;

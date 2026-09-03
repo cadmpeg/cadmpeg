@@ -32,9 +32,9 @@ pub(super) fn project_endpoint_constraints(
         }
         for (index, endpoint) in entity.endpoint_refs.iter().enumerate() {
             let locus = if index == 0 {
-                SketchLocus::Start(entity.id.clone())
+                SketchLocus::Start(entity.id().clone())
             } else {
-                SketchLocus::End(entity.id.clone())
+                SketchLocus::End(entity.id().clone())
             };
             loci_by_endpoint.entry(endpoint).or_default().push(locus);
         }

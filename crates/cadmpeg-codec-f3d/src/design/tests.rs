@@ -379,7 +379,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     assert_eq!(
         entities
             .iter()
-            .map(|item| &item.id)
+            .map(|item| item.id())
             .collect::<HashSet<_>>()
             .len(),
         2

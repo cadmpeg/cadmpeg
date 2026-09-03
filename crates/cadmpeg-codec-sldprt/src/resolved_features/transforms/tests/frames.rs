@@ -105,16 +105,15 @@ fn circle_dimension_driver_supplies_the_center_operand() {
 #[test]
 fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     let sketch = SketchId("sketch".into());
-    let point = |id: &str, u: f64| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(id.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, 0.0),
-        },
+    let point = |id: &str, u: f64| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, 0.0),
+            },
+        )
+        .with_native_ref(Some(id.into()))
     };
     let entities = vec![
         point("hint-a", 0.0),
@@ -727,30 +726,22 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         native_ref: Some("feature-native".into()),
     };
     let mut entities = vec![
-        SketchEntity {
-            id: SketchEntityId("horizontal".into()),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            SketchEntityId("horizontal".into()),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(10.0, 20.0),
                 end: Point2::new(30.0, 20.0),
             },
-        },
-        SketchEntity {
-            id: SketchEntityId("vertical".into()),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            SketchEntityId("vertical".into()),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(30.0, 20.0),
                 end: Point2::new(30.0, 50.0),
             },
-        },
+        ),
     ];
     let mut horizontal = marker("horizontal-marker", Some([0.020, 0.020]));
     horizontal.kind = SketchInputKind::LineOrCircle;
@@ -1082,18 +1073,14 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
         profiles: Vec::new(),
         native_ref: Some("lane".into()),
     };
-    let circle = SketchEntity {
-        id: SketchEntityId("circle".into()),
-        sketch: sketch_id,
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let circle = SketchEntity::new(
+        SketchEntityId("circle".into()),
+        sketch_id,
+        SketchGeometry::Circle {
             center: Point2::new(10.0, 20.0),
             radius: Length(5.0),
         },
-    };
+    );
     let declared = [([0.010, 0.020], 5.0)];
 
     assert!(nested_profile_contains_declared_circular_carriers(
@@ -1260,18 +1247,14 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         profiles: Vec::new(),
         native_ref: Some("lane".into()),
     }];
-    let mut entities = vec![SketchEntity {
-        id: entity_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    let mut entities = vec![SketchEntity::new(
+        entity_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    }];
+    )];
     let mut constraints = vec![SketchConstraint {
         id: constraint_id.clone(),
         sketch: sketch_id.clone(),

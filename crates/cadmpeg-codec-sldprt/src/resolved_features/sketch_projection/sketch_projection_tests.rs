@@ -10,30 +10,27 @@ use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchId};
 #[test]
 fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
     let sketch = SketchId("sketch".into());
-    let point = |id: &str, offset: u64, position| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(format!("native:{offset}")),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |id: &str, offset: u64, position| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
+        .with_native_ref(Some(format!("native:{offset}")))
     };
     let mut entities = vec![
         point("start", 100, Point2::new(1.0, 0.0)),
         point("center", 200, Point2::new(0.0, 0.0)),
         point("end", 300, Point2::new(0.0, 1.0)),
-        cadmpeg_ir::sketches::SketchEntity {
-            id: SketchEntityId("arc".into()),
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId("arc".into()),
             sketch,
-            construction: false,
-            native_ref: Some("native:400".into()),
-            geometry_ref: None,
-            endpoint_refs: vec!["native:100".into(), "native:300".into()],
-            geometry: SketchGeometry::Native {
+            SketchGeometry::Native {
                 native_kind: "sldprt:marker-geometry:2".into(),
             },
-        },
+        )
+        .with_native_ref(Some("native:400".into()))
+        .with_endpoint_refs(vec!["native:100".into(), "native:300".into()]),
     ];
 
     resolve_connected_marker_arcs(&mut entities, 1.0e-9);
@@ -125,23 +122,22 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
     ];
     let markers = inputs.iter().collect::<Vec<_>>();
     let sketch = SketchId("sketch".into());
-    let point = |id: &str, position| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(format!("model:{id}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(id.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |id: &str, position| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(format!("model:{id}")),
+            sketch.clone(),
+            SketchGeometry::Point { position },
+        )
+        .with_native_ref(Some(id.into()))
     };
-    let curve = |id: &str, geometry, endpoint_refs: &[&str]| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(format!("model:{id}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(id.into()),
-        geometry_ref: None,
-        endpoint_refs: endpoint_refs.iter().map(|id| (*id).into()).collect(),
-        geometry,
+    let curve = |id: &str, geometry, endpoint_refs: &[&str]| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(format!("model:{id}")),
+            sketch.clone(),
+            geometry,
+        )
+        .with_native_ref(Some(id.into()))
+        .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
     };
     let mut entities = vec![
         point("center-left", Point2::new(0.0, 0.0)),

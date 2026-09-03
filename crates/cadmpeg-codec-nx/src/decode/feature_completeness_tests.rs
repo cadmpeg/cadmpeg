@@ -1296,17 +1296,13 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
         native_ref: None,
     });
     let entity_id = SketchEntityId("test:sketch-entity#0".into());
-    ir.model.sketch_entities.push(SketchEntity {
-        id: entity_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Native {
             native_kind: "test".into(),
         },
-    });
+    ));
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId("test:sketch-constraint#0".into()),
         sketch: sketch_id,

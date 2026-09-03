@@ -638,7 +638,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral sketch entity does not resolve to its PmDc source records".into(),
-                Some(entity.id.0.clone()),
+                Some(entity.id().0.clone()),
             ));
         }
     }

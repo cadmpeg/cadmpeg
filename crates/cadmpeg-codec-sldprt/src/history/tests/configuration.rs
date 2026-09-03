@@ -292,18 +292,17 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         profiles: Vec::new(),
         native_ref: Some("lane".into()),
     });
-    ir.model.sketch_entities.push(SketchEntity {
-        id: SketchEntityId("configuration-line".into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: Some("line-marker".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        },
-    });
+    ir.model.sketch_entities.push(
+        SketchEntity::new(
+            SketchEntityId("configuration-line".into()),
+            sketch_id.clone(),
+            SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            },
+        )
+        .with_native_ref(Some("line-marker".into())),
+    );
     ir.model.spatial_sketches.push(SpatialSketch {
         id: spatial_sketch_id.clone(),
         name: Some("spatial-native".into()),

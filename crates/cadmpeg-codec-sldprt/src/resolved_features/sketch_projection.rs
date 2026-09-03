@@ -164,21 +164,19 @@ fn project_brep(
                         "feature_input_profile_edge",
                         Exactness::Derived,
                     );
-                    entities.push(SketchEntity {
-                        id: id.clone(),
-                        sketch: sketch_id.clone(),
-                        construction: false,
-                        native_ref: Some(format!("{stream_ordinal}:{}", edge.id.0)),
-                        geometry_ref: edge
-                            .curve
-                            .as_ref()
-                            .map(|id| format!("{stream_ordinal}:{}", id.0)),
-                        endpoint_refs: vec![
-                            format!("{stream_ordinal}:{}", start_point.0),
-                            format!("{stream_ordinal}:{}", end_point.0),
-                        ],
-                        geometry,
-                    });
+                    entities.push(
+                        SketchEntity::new(id.clone(), sketch_id.clone(), geometry)
+                            .with_native_ref(Some(format!("{stream_ordinal}:{}", edge.id.0)))
+                            .with_geometry_ref(
+                                edge.curve
+                                    .as_ref()
+                                    .map(|id| format!("{stream_ordinal}:{}", id.0)),
+                            )
+                            .with_endpoint_refs(vec![
+                                format!("{stream_ordinal}:{}", start_point.0),
+                                format!("{stream_ordinal}:{}", end_point.0),
+                            ]),
+                    );
                     edge_entities.insert(&edge.id, id.clone());
                     id
                 };
@@ -217,17 +215,17 @@ fn project_brep(
                 "feature_input_profile_point",
                 Exactness::Derived,
             );
-            entities.push(SketchEntity {
-                id,
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: Some(format!("{stream_ordinal}:{}", vertex.id.0)),
-                geometry_ref: None,
-                endpoint_refs: vec![format!("{stream_ordinal}:{}", vertex.point.0)],
-                geometry: SketchGeometry::Point {
-                    position: project_point(*position, *origin, *u_axis, v_axis),
-                },
-            });
+            entities.push(
+                SketchEntity::new(
+                    id,
+                    sketch_id.clone(),
+                    SketchGeometry::Point {
+                        position: project_point(*position, *origin, *u_axis, v_axis),
+                    },
+                )
+                .with_native_ref(Some(format!("{stream_ordinal}:{}", vertex.id.0)))
+                .with_endpoint_refs(vec![format!("{stream_ordinal}:{}", vertex.point.0)]),
+            );
         }
         if profiles.is_empty() && !entities.iter().any(|entity| entity.sketch == sketch_id) {
             continue;
@@ -272,7 +270,7 @@ fn orient_closed_profile_by_topology(profile: &mut [SketchEntityUse], entities: 
     }
     let entities = entities
         .iter()
-        .map(|entity| (&entity.id, entity))
+        .map(|entity| (entity.id(), entity))
         .collect::<HashMap<_, _>>();
     let orientations = profile
         .iter()
@@ -317,18 +315,15 @@ mod projected_profile_orientation_tests {
     };
 
     fn line(id: &str, start_ref: &str, end_ref: &str) -> SketchEntity {
-        SketchEntity {
-            id: SketchEntityId(id.into()),
-            sketch: SketchId("sketch".into()),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: vec![start_ref.into(), end_ref.into()],
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("sketch".into()),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             },
-        }
+        )
+        .with_endpoint_refs(vec![start_ref.into(), end_ref.into()])
     }
 
     #[test]
@@ -341,7 +336,7 @@ mod projected_profile_orientation_tests {
         let mut profile = entities
             .iter()
             .map(|entity| SketchEntityUse {
-                entity: entity.id.clone(),
+                entity: entity.id().clone(),
                 reversed: true,
             })
             .collect::<Vec<_>>();
@@ -364,7 +359,7 @@ mod projected_profile_orientation_tests {
         let mut profile = entities
             .iter()
             .map(|entity| SketchEntityUse {
-                entity: entity.id.clone(),
+                entity: entity.id().clone(),
                 reversed: true,
             })
             .collect::<Vec<_>>();

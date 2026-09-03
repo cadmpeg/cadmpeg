@@ -375,7 +375,7 @@ fn project_all_dimension_constraints(
             .filter_map(|(_, _, record_index)| {
                 projected
                     .get(&(scope, *record_index))
-                    .map(|entity| entity.id.clone())
+                    .map(|entity| entity.id().clone())
             })
             .collect(),
         parameter: Some(parameter),
@@ -406,7 +406,7 @@ fn project_all_dimension_constraints(
             }
         }
         if let [first, second] = entities.as_slice() {
-            if first.id == second.id {
+            if first.id() == second.id() {
                 return None;
             }
         }
@@ -435,7 +435,7 @@ fn project_all_dimension_constraints(
                 )
             {
                 return Some(Definition::Distance {
-                    entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+                    entities: entities.iter().map(|entity| entity.id().clone()).collect(),
                     parameter,
                 });
             }
@@ -454,8 +454,8 @@ fn project_all_dimension_constraints(
                 (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
             if linear_measurement_matches(measured, evaluated_mm, linear_tolerance) {
                 return Some(Definition::DistanceLoci {
-                    first: cadmpeg_ir::sketches::SketchLocus::Entity(entities[0].id.clone()),
-                    second: cadmpeg_ir::sketches::SketchLocus::Entity(entities[1].id.clone()),
+                    first: cadmpeg_ir::sketches::SketchLocus::Entity(entities[0].id().clone()),
+                    second: cadmpeg_ir::sketches::SketchLocus::Entity(entities[1].id().clone()),
                     parameter,
                 });
             }
@@ -473,8 +473,8 @@ fn project_all_dimension_constraints(
             )
         {
             return Some(Definition::Angle {
-                first: entities[0].id.clone(),
-                second: entities[1].id.clone(),
+                first: entities[0].id().clone(),
+                second: entities[1].id().clone(),
                 parameter,
             });
         }
@@ -877,7 +877,7 @@ fn project_all_dimension_constraints(
                             .filter_map(|record_index| {
                                 projected
                                     .get(&(scope, *record_index))
-                                    .map(|entity| entity.id.clone())
+                                    .map(|entity| entity.id().clone())
                             })
                             .collect(),
                         parameter: Some(parameter_id),
@@ -968,7 +968,7 @@ fn project_all_dimension_constraints(
                         .filter_map(|record_index| {
                             projected
                                 .get(&(scope, *record_index))
-                                .map(|entity| entity.id.clone())
+                                .map(|entity| entity.id().clone())
                         })
                         .collect(),
                     parameter: Some(parameter_id),
@@ -1149,8 +1149,8 @@ fn project_all_dimension_constraints(
                     return None;
                 };
                 let members = [
-                    entities.iter().find(|entity| entity.id == first)?,
-                    entities.iter().find(|entity| entity.id == second)?,
+                    entities.iter().find(|entity| entity.id() == &first)?,
+                    entities.iter().find(|entity| entity.id() == &second)?,
                 ];
                 parallel_group_axis_angle_definition(&members, parameter, &parameter_id)
             })
@@ -1340,8 +1340,8 @@ fn presentation_dimension_definition(
             let measured = (end.u - start.u).hypot(end.v - start.v);
             linear_measurement_matches(measured, parameter.evaluated_value * 10.0, linear_tolerance)
                 .then(|| Definition::DistanceLoci {
-                    first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id.clone()),
-                    second: cadmpeg_ir::sketches::SketchLocus::End(entity.id.clone()),
+                    first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id().clone()),
+                    second: cadmpeg_ir::sketches::SketchLocus::End(entity.id().clone()),
                     parameter: parameter_id.clone(),
                 })
         }),
@@ -1366,8 +1366,8 @@ fn presentation_dimension_definition(
         [first, second] if parameter.source_kind.starts_with("Angular Dimension") => {
             line_angle_matches(&first.geometry, &second.geometry, parameter.evaluated_value).then(
                 || Definition::Angle {
-                    first: first.id.clone(),
-                    second: second.id.clone(),
+                    first: first.id().clone(),
+                    second: second.id().clone(),
                     parameter: parameter_id.clone(),
                 },
             )
@@ -1390,7 +1390,7 @@ fn tangent_radius_dimension_definition(
     };
     linear_measurement_matches(radius, parameter.evaluated_value * 10.0, linear_tolerance).then(
         || Definition::Radius {
-            entity: entity.id.clone(),
+            entity: entity.id().clone(),
             parameter: parameter_id.clone(),
         },
     )
@@ -1476,7 +1476,7 @@ fn tangent_entity_distance_definition(
         return None;
     };
     Some(Definition::Distance {
-        entities: vec![first.id.clone(), second.id.clone()],
+        entities: vec![first.id().clone(), second.id().clone()],
         parameter: parameter_id.clone(),
     })
 }
@@ -1506,7 +1506,7 @@ fn explicit_linear_dimension_definition(
         || concentric_circle_separation(first, second, expected, linear_tolerance)
     {
         return Some(Definition::Distance {
-            entities: vec![first.id.clone(), second.id.clone()],
+            entities: vec![first.id().clone(), second.id().clone()],
             parameter: parameter_id.clone(),
         });
     }
@@ -1525,8 +1525,8 @@ fn explicit_linear_dimension_definition(
         (first_position.u - second_position.u).hypot(first_position.v - second_position.v);
     linear_measurement_matches(measured, expected, linear_tolerance).then(|| {
         Definition::DistanceLoci {
-            first: SketchLocus::Entity(first.id.clone()),
-            second: SketchLocus::Entity(second.id.clone()),
+            first: SketchLocus::Entity(first.id().clone()),
+            second: SketchLocus::Entity(second.id().clone()),
             parameter: parameter_id.clone(),
         }
     })
@@ -1610,8 +1610,8 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
     }
     let (_, _, first, second) = matched?;
     Some(Definition::Angle {
-        first: first.id.clone(),
-        second: second.id.clone(),
+        first: first.id().clone(),
+        second: second.id().clone(),
         parameter: parameter_id.clone(),
     })
 }
@@ -1656,8 +1656,8 @@ pub(crate) fn owner_scoped_angular_dimension_definition(
     }
     let (first, second) = matched?;
     Some(Definition::Angle {
-        first: first.id.clone(),
-        second: second.id.clone(),
+        first: first.id().clone(),
+        second: second.id().clone(),
         parameter: parameter_id.clone(),
     })
 }
@@ -1693,7 +1693,7 @@ pub(crate) fn parallel_group_axis_angle_definition(
             parameter.evaluated_value,
         ))
     .then(|| Definition::AngleToAxis {
-        entity: first.id.clone(),
+        entity: first.id().clone(),
         axis: SketchAxis::Horizontal,
         parameter: parameter_id.clone(),
     })
@@ -1738,8 +1738,8 @@ pub(crate) fn concentric_circle_dimension_definition(
             ) {
                 continue;
             }
-            if !paired_entities.insert(circles[first].id.clone())
-                || !paired_entities.insert(circles[second].id.clone())
+            if !paired_entities.insert(circles[first].id().clone())
+                || !paired_entities.insert(circles[second].id().clone())
             {
                 return None;
             }
@@ -1749,15 +1749,15 @@ pub(crate) fn concentric_circle_dimension_definition(
     match pairs.as_slice() {
         [] => None,
         [(first, second)] => Some(Definition::Distance {
-            entities: vec![first.id.clone(), second.id.clone()],
+            entities: vec![first.id().clone(), second.id().clone()],
             parameter: parameter_id.clone(),
         }),
         _ => Some(Definition::RepeatedDistance {
             measurements: pairs
                 .into_iter()
                 .map(|(first, second)| Measurement::Distance {
-                    first: SketchLocus::Entity(first.id.clone()),
-                    second: SketchLocus::Entity(second.id.clone()),
+                    first: SketchLocus::Entity(first.id().clone()),
+                    second: SketchLocus::Entity(second.id().clone()),
                 })
                 .collect(),
             parameter: parameter_id.clone(),
@@ -1808,7 +1808,7 @@ pub(crate) fn unique_point_line_dimension_definition(
     }
     let (point, line) = matched?;
     Some(Definition::Distance {
-        entities: vec![point.id.clone(), line.id.clone()],
+        entities: vec![point.id().clone(), line.id().clone()],
         parameter: parameter_id.clone(),
     })
 }
@@ -1851,7 +1851,7 @@ pub(crate) fn unique_parallel_line_dimension_definition(
     }
     let (first, second) = matched?;
     Some(Definition::Distance {
-        entities: vec![first.id.clone(), second.id.clone()],
+        entities: vec![first.id().clone(), second.id().clone()],
         parameter: parameter_id.clone(),
     })
 }
@@ -1937,11 +1937,11 @@ pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
     Some(Definition::ParallelLineSetDistance {
         first: carriers[first]
             .iter()
-            .map(|entity| entity.id.clone())
+            .map(|entity| entity.id().clone())
             .collect(),
         second: carriers[second]
             .iter()
-            .map(|entity| entity.id.clone())
+            .map(|entity| entity.id().clone())
             .collect(),
         parameter: parameter_id.clone(),
     })
@@ -1990,14 +1990,14 @@ pub(crate) fn owner_scoped_line_length_dimension_definition(
     match matches.as_slice() {
         [] => None,
         [entity] => Some(Definition::DistanceLoci {
-            first: SketchLocus::Start(entity.id.clone()),
-            second: SketchLocus::End(entity.id.clone()),
+            first: SketchLocus::Start(entity.id().clone()),
+            second: SketchLocus::End(entity.id().clone()),
             parameter: parameter_id.clone(),
         }),
         _ => Some(Definition::RepeatedLength {
             entities: matches
                 .into_iter()
-                .map(|entity| entity.id.clone())
+                .map(|entity| entity.id().clone())
                 .collect(),
             parameter: parameter_id.clone(),
         }),
@@ -2095,8 +2095,8 @@ pub(crate) fn unique_point_class_dimension_definition(
         }
     }
     let (first, second, du, dv, tolerance) = matched?;
-    let first = SketchLocus::Entity(first.id.clone());
-    let second = SketchLocus::Entity(second.id.clone());
+    let first = SketchLocus::Entity(first.id().clone());
+    let second = SketchLocus::Entity(second.id().clone());
     Some(if du.abs() <= tolerance {
         Definition::VerticalDistance {
             first,
@@ -2522,7 +2522,7 @@ pub fn project_spatial_dimension_constraints(
                         if !native_kind.starts_with("Linear Dimension")
                             || first.sketch != sketch
                             || second.sketch != sketch
-                            || first.id == second.id
+                            || first.id() == second.id()
                         {
                             return None;
                         }
@@ -2532,8 +2532,8 @@ pub fn project_spatial_dimension_constraints(
                             expected,
                         ) {
                             Some(SpatialSketchConstraintDefinition::PointDistance {
-                                first: first.id.clone(),
-                                second: second.id.clone(),
+                                first: first.id().clone(),
+                                second: second.id().clone(),
                                 parameter: parameter.clone(),
                             })
                         } else if spatial_parallel_line_distance_matches(
@@ -2542,8 +2542,8 @@ pub fn project_spatial_dimension_constraints(
                             expected,
                         ) {
                             Some(SpatialSketchConstraintDefinition::ParallelLineDistance {
-                                first: first.id.clone(),
-                                second: second.id.clone(),
+                                first: first.id().clone(),
+                                second: second.id().clone(),
                                 parameter: parameter.clone(),
                             })
                         } else {
@@ -2732,7 +2732,7 @@ pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
             );
             (measured - expected).abs() <= tolerance
         })
-        .map(|entity| entity.id.clone())
+        .map(|entity| entity.id().clone())
         .collect::<Vec<_>>();
     match matches.as_slice() {
         [] => None,
@@ -2788,8 +2788,8 @@ pub(crate) fn unique_spatial_parallel_line_dimension_definition(
     }
     let (first, second) = matched?;
     Some(Definition::ParallelLineDistance {
-        first: first.id.clone(),
-        second: second.id.clone(),
+        first: first.id().clone(),
+        second: second.id().clone(),
         parameter: parameter_id.clone(),
     })
 }
@@ -2815,7 +2815,7 @@ pub(crate) fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     let entities = entities
         .iter()
         .filter(|entity| &entity.sketch == sketch)
-        .map(|entity| (&entity.id, entity))
+        .map(|entity| (entity.id(), entity))
         .collect::<HashMap<_, _>>();
     let sketch = sketches.iter().find(|candidate| &candidate.id == sketch)?;
     let mut seen_pairs = HashSet::new();
@@ -2944,11 +2944,11 @@ pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     Some(Definition::ParallelLineSetDistance {
         first: carriers[first]
             .iter()
-            .map(|entity| entity.id.clone())
+            .map(|entity| entity.id().clone())
             .collect(),
         second: carriers[second]
             .iter()
-            .map(|entity| entity.id.clone())
+            .map(|entity| entity.id().clone())
             .collect(),
         parameter: parameter_id.clone(),
     })
@@ -2993,9 +2993,9 @@ fn spatial_reflection_symmetry(
         return None;
     };
     if entities.iter().any(|entity| &entity.sketch != sketch)
-        || first.id == second.id
-        || first.id == third.id
-        || second.id == third.id
+        || first.id() == second.id()
+        || first.id() == third.id()
+        || second.id() == third.id()
     {
         return None;
     }
@@ -3021,9 +3021,9 @@ fn spatial_reflection_symmetry(
         axis_end,
     )
     .then(|| Definition::Symmetric {
-        first: first.id.clone(),
-        second: second.id.clone(),
-        axis: axis.id.clone(),
+        first: first.id().clone(),
+        second: second.id().clone(),
+        axis: axis.id().clone(),
     })
 }
 
@@ -3105,7 +3105,7 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
         .filter_map(|record| {
             spatial_by_record
                 .get(&(scope, *record))
-                .map(|entity| &entity.id)
+                .map(|entity| entity.id())
         })
         .collect::<HashSet<_>>();
     if result_ids.len() != result_records.len() {
@@ -3153,8 +3153,8 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
         {
             return None;
         }
-        sources.push(source.id.clone());
-        results.push(result.id.clone());
+        sources.push(source.id().clone());
+        results.push(result.id().clone());
     }
     if used.len() != loci.len() {
         return None;
@@ -3393,7 +3393,7 @@ pub(crate) fn null_locus_dimension_definition(
     };
     line_angle_matches(&entity.geometry, &horizontal_axis, evaluated_value).then(|| {
         Definition::AngleToAxis {
-            entity: entity.id.clone(),
+            entity: entity.id().clone(),
             axis: SketchAxis::Horizontal,
             parameter,
         }
@@ -3446,12 +3446,12 @@ fn radial_dimension_definition_at_tolerance(
     }
     Some(if is_radius {
         Definition::Radius {
-            entity: entity.id.clone(),
+            entity: entity.id().clone(),
             parameter,
         }
     } else {
         Definition::Diameter {
-            entity: entity.id.clone(),
+            entity: entity.id().clone(),
             parameter,
         }
     })
@@ -3595,8 +3595,8 @@ pub(crate) fn annotation_offset_dimension_definition(
     let parameter_factor = offset_parameter_factor(distance.abs(), expected)?;
     Some(Definition::Offset {
         pairs: vec![SketchOffsetPair {
-            source: source.id.clone(),
-            result: result.id.clone(),
+            source: source.id().clone(),
+            result: result.id().clone(),
             source_reversed: distance.is_sign_negative(),
         }],
         distance: Length(distance.abs()),
@@ -3944,15 +3944,15 @@ pub(crate) fn exact_atomic_constraint(
 
     let lines = || {
         (entities.len() == 2
-            && entities[0].id != entities[1].id
+            && entities[0].id() != entities[1].id()
             && entities
                 .iter()
                 .all(|entity| matches!(entity.geometry, Geometry::Line { .. })))
-        .then(|| (entities[0].id.clone(), entities[1].id.clone()))
+        .then(|| (entities[0].id().clone(), entities[1].id().clone()))
     };
     let curves = || {
         (entities.len() == 2
-            && entities[0].id != entities[1].id
+            && entities[0].id() != entities[1].id()
             && entities.iter().all(|entity| {
                 matches!(
                     entity.geometry,
@@ -3963,13 +3963,13 @@ pub(crate) fn exact_atomic_constraint(
                         | Geometry::Nurbs { .. }
                 )
             }))
-        .then(|| (entities[0].id.clone(), entities[1].id.clone()))
+        .then(|| (entities[0].id().clone(), entities[1].id().clone()))
     };
     let equal_size_entities = || {
         let [first, second] = entities else {
             return None;
         };
-        (first.id != second.id
+        (first.id() != second.id()
             && matches!(
                 (&first.geometry, &second.geometry),
                 (Geometry::Line { .. }, Geometry::Line { .. })
@@ -3979,20 +3979,20 @@ pub(crate) fn exact_atomic_constraint(
                     )
                     | (Geometry::Ellipse { .. }, Geometry::Ellipse { .. })
             ))
-        .then(|| (first.id.clone(), second.id.clone()))
+        .then(|| (first.id().clone(), second.id().clone()))
     };
     match kind {
         SketchConstraintKind::Coincident
             if entities.len() >= 2
                 && entities
                     .iter()
-                    .map(|entity| &entity.id)
+                    .map(|entity| entity.id())
                     .collect::<HashSet<_>>()
                     .len()
                     == entities.len() =>
         {
             Some(Definition::Coincident {
-                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+                entities: entities.iter().map(|entity| entity.id().clone()).collect(),
             })
         }
         SketchConstraintKind::Colinear => {
@@ -4000,7 +4000,7 @@ pub(crate) fn exact_atomic_constraint(
         }
         SketchConstraintKind::Concentric => {
             if entities.len() == 2
-                && entities[0].id != entities[1].id
+                && entities[0].id() != entities[1].id()
                 && entities.iter().all(|entity| {
                     matches!(
                         entity.geometry,
@@ -4009,23 +4009,23 @@ pub(crate) fn exact_atomic_constraint(
                 })
             {
                 return Some(Definition::Concentric {
-                    first: entities[0].id.clone(),
-                    second: entities[1].id.clone(),
+                    first: entities[0].id().clone(),
+                    second: entities[1].id().clone(),
                 });
             }
             let (first, second, axis) = reflected_symmetry(entities)?;
             Some(Definition::Symmetric {
-                first: cadmpeg_ir::sketches::SketchLocus::Entity(first.id.clone()),
-                second: cadmpeg_ir::sketches::SketchLocus::Entity(second.id.clone()),
-                axis: axis.id.clone(),
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(first.id().clone()),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(second.id().clone()),
+                axis: axis.id().clone(),
             })
         }
         SketchConstraintKind::Symmetry => {
             let (first, second, axis) = reflected_symmetry(entities)?;
             Some(Definition::Symmetric {
-                first: cadmpeg_ir::sketches::SketchLocus::Entity(first.id.clone()),
-                second: cadmpeg_ir::sketches::SketchLocus::Entity(second.id.clone()),
-                axis: axis.id.clone(),
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(first.id().clone()),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(second.id().clone()),
+                axis: axis.id().clone(),
             })
         }
         SketchConstraintKind::EqualLength => {
@@ -4041,19 +4041,19 @@ pub(crate) fn exact_atomic_constraint(
             if entities.len() == 1 && matches!(entities[0].geometry, Geometry::Line { .. }) =>
         {
             Some(Definition::Horizontal {
-                entity: entities[0].id.clone(),
+                entity: entities[0].id().clone(),
             })
         }
         SketchConstraintKind::Horizontal
             if entities.len() == 2
-                && entities[0].id != entities[1].id
+                && entities[0].id() != entities[1].id()
                 && entities
                     .iter()
                     .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
         {
             Some(Definition::SameCoordinate {
-                first: SketchLocus::Entity(entities[0].id.clone()),
-                second: SketchLocus::Entity(entities[1].id.clone()),
+                first: SketchLocus::Entity(entities[0].id().clone()),
+                second: SketchLocus::Entity(entities[1].id().clone()),
                 axis: SketchCoordinateAxis::V,
             })
         }
@@ -4061,19 +4061,19 @@ pub(crate) fn exact_atomic_constraint(
             if entities.len() == 1 && matches!(entities[0].geometry, Geometry::Line { .. }) =>
         {
             Some(Definition::Vertical {
-                entity: entities[0].id.clone(),
+                entity: entities[0].id().clone(),
             })
         }
         SketchConstraintKind::Vertical
             if entities.len() == 2
-                && entities[0].id != entities[1].id
+                && entities[0].id() != entities[1].id()
                 && entities
                     .iter()
                     .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
         {
             Some(Definition::SameCoordinate {
-                first: SketchLocus::Entity(entities[0].id.clone()),
-                second: SketchLocus::Entity(entities[1].id.clone()),
+                first: SketchLocus::Entity(entities[0].id().clone()),
+                second: SketchLocus::Entity(entities[1].id().clone()),
                 axis: SketchCoordinateAxis::U,
             })
         }
@@ -4091,26 +4091,26 @@ pub(crate) fn exact_atomic_constraint(
             if entities.len() >= 3
                 && entities
                     .iter()
-                    .map(|entity| &entity.id)
+                    .map(|entity| entity.id())
                     .collect::<HashSet<_>>()
                     .len()
                     == entities.len() =>
         {
             Some(Definition::Polygon {
-                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+                entities: entities.iter().map(|entity| entity.id().clone()).collect(),
             })
         }
         SketchConstraintKind::SplineGroup
             if entities.len() >= 2
                 && entities
                     .iter()
-                    .map(|entity| &entity.id)
+                    .map(|entity| entity.id())
                     .collect::<HashSet<_>>()
                     .len()
                     == entities.len() =>
         {
             Some(Definition::SplineGroup {
-                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+                entities: entities.iter().map(|entity| entity.id().clone()).collect(),
             })
         }
         _ => None,
@@ -4127,18 +4127,18 @@ pub(crate) fn exact_coincident_loci(
     let loci = |entity: &cadmpeg_ir::sketches::SketchEntity| {
         let mut loci = Vec::new();
         if let Some([start, end]) = sketch_entity_endpoints(entity) {
-            loci.push((SketchLocus::Start(entity.id.clone()), start));
-            loci.push((SketchLocus::End(entity.id.clone()), end));
+            loci.push((SketchLocus::Start(entity.id().clone()), start));
+            loci.push((SketchLocus::End(entity.id().clone()), end));
         }
         match &entity.geometry {
             Geometry::Point { position } => {
-                loci.push((SketchLocus::Entity(entity.id.clone()), *position));
+                loci.push((SketchLocus::Entity(entity.id().clone()), *position));
             }
             Geometry::Circle { center, .. }
             | Geometry::Arc { center, .. }
             | Geometry::Ellipse { center, .. }
             | Geometry::Hyperbola { center, .. } => {
-                loci.push((SketchLocus::Center(entity.id.clone()), *center));
+                loci.push((SketchLocus::Center(entity.id().clone()), *center));
             }
             Geometry::Line { .. }
             | Geometry::ReferenceLine { .. }
@@ -4154,7 +4154,7 @@ pub(crate) fn exact_coincident_loci(
     if entities.len() < 2
         || entities
             .iter()
-            .map(|entity| &entity.id)
+            .map(|entity| entity.id())
             .collect::<HashSet<_>>()
             .len()
             != entities.len()
@@ -4224,8 +4224,8 @@ fn midpoint_constraint(
     ((position.u - midpoint.u).abs() <= EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
         && (position.v - midpoint.v).abs() <= EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9)
         .then(|| Definition::Midpoint {
-            point: SketchLocus::Entity(point.id.clone()),
-            entity: line.id.clone(),
+            point: SketchLocus::Entity(point.id().clone()),
+            entity: line.id().clone(),
         })
 }
 
@@ -4266,7 +4266,7 @@ pub(crate) fn indirect_angular_lines(
         .filter(|((candidate_scope, _), candidate)| {
             *candidate_scope == scope
                 && candidate.sketch == explicit_line.sketch
-                && candidate.id != explicit_line.id
+                && candidate.id() != explicit_line.id()
         })
         .filter_map(|(_, candidate)| {
             let SketchGeometry::Line { start, end } = &candidate.geometry else {
@@ -4283,13 +4283,13 @@ pub(crate) fn indirect_angular_lines(
             )
         })
         .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| left.id.0.cmp(&right.id.0));
-    candidates.dedup_by(|left, right| left.id == right.id);
+    candidates.sort_by(|left, right| left.id().cmp(right.id()));
+    candidates.dedup_by(|left, right| left.id() == right.id());
     let candidate = (candidates.len() == 1).then(|| candidates.remove(0))?;
     Some(if point_ordinal == 0 {
-        (candidate.id.clone(), explicit_line.id.clone())
+        (candidate.id().clone(), explicit_line.id().clone())
     } else {
-        (explicit_line.id.clone(), candidate.id.clone())
+        (explicit_line.id().clone(), candidate.id().clone())
     })
 }
 
@@ -4318,8 +4318,8 @@ pub(crate) fn directional_point_dimension(
     else {
         return None;
     };
-    let first_locus = SketchLocus::Entity(first.id.clone());
-    let second_locus = SketchLocus::Entity(second.id.clone());
+    let first_locus = SketchLocus::Entity(first.id().clone());
+    let second_locus = SketchLocus::Entity(second.id().clone());
     let horizontal = linear_measurement_matches(
         first_position.u - second_position.u,
         evaluated_mm,
@@ -4434,7 +4434,7 @@ pub(crate) fn recipe_linear_dimension_candidates(
         line_pairs
             .iter()
             .map(|(first, second)| Definition::Distance {
-                entities: vec![first.id.clone(), second.id.clone()],
+                entities: vec![first.id().clone(), second.id().clone()],
                 parameter: parameter.clone(),
             }),
     );
@@ -4492,7 +4492,7 @@ pub(crate) fn recipe_extension_point_dimension(
         .collect::<Vec<_>>();
     let point = |id: &cadmpeg_ir::sketches::SketchEntityId| {
         sketch_entities.iter().copied().find(|entity| {
-            entity.id == *id && matches!(entity.geometry, SketchGeometry::Point { .. })
+            entity.id() == id && matches!(entity.geometry, SketchGeometry::Point { .. })
         })
     };
     let is_any_line_endpoint = |position: Point2| {
@@ -4616,7 +4616,7 @@ pub(crate) fn symmetric_parallel_line_dimension_definition(
     let expected = parameter.evaluated_value * 10.0;
     linear_measurement_matches(2.0 * separation, expected, linear_tolerance).then(|| {
         Definition::Distance {
-            entities: vec![first.id.clone(), second.id.clone()],
+            entities: vec![first.id().clone(), second.id().clone()],
             parameter: parameter_id,
         }
     })
@@ -4774,8 +4774,8 @@ pub(crate) fn two_locus_distance_dimension(
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
 
-    (entities.len() == 2 && entities[0].id != entities[1].id).then(|| Definition::Distance {
-        entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+    (entities.len() == 2 && entities[0].id() != entities[1].id()).then(|| Definition::Distance {
+        entities: entities.iter().map(|entity| entity.id().clone()).collect(),
         parameter,
     })
 }
@@ -4816,14 +4816,14 @@ pub(crate) fn counted_role_relation_at_tolerance(
                     <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
                     Some(Definition::Horizontal {
-                        entity: entity.id.clone(),
+                        entity: entity.id().clone(),
                     })
                 }
                 0x80 if du.abs()
                     <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
                 {
                     Some(Definition::Vertical {
-                        entity: entity.id.clone(),
+                        entity: entity.id().clone(),
                     })
                 }
                 _ => None,
@@ -4837,8 +4837,8 @@ pub(crate) fn counted_role_relation_at_tolerance(
                 unreachable!("exact curve tangency requires two entities")
             };
             Some(Definition::Tangent {
-                first: first.id.clone(),
-                second: second.id.clone(),
+                first: first.id().clone(),
+                second: second.id().clone(),
             })
         }
         0x800 if exact_equal_size(entities) => {
@@ -4846,8 +4846,8 @@ pub(crate) fn counted_role_relation_at_tolerance(
                 unreachable!("exact equal size requires two entities")
             };
             Some(Definition::Equal {
-                first: first.id.clone(),
-                second: second.id.clone(),
+                first: first.id().clone(),
+                second: second.id().clone(),
             })
         }
         _ => None,
@@ -4939,7 +4939,7 @@ fn exact_circular_tangency(
     let [first, second] = entities else {
         return false;
     };
-    if first.id == second.id {
+    if first.id() == second.id() {
         return false;
     }
     let circular = |geometry: &Geometry| match geometry {
@@ -5037,7 +5037,7 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
     let [first, second] = entities else {
         return false;
     };
-    if first.id == second.id {
+    if first.id() == second.id() {
         return false;
     }
     let close = |first: f64, second: f64| {
@@ -5093,7 +5093,7 @@ fn exact_centered_entity_relation(
     let [first, second] = entities else {
         return None;
     };
-    if first.id == second.id {
+    if first.id() == second.id() {
         return None;
     }
     let centered_geometry = |entity: &cadmpeg_ir::sketches::SketchEntity| match &entity.geometry {
@@ -5124,14 +5124,14 @@ fn exact_centered_entity_relation(
         let scale = 1.0 + first_radius.abs().max(second_radius.abs());
         if (first_radius - second_radius).abs() <= EPS_CENTERED_RELATION * scale {
             return Some(Definition::Coradial {
-                first: first.id.clone(),
-                second: second.id.clone(),
+                first: first.id().clone(),
+                second: second.id().clone(),
             });
         }
     }
     Some(Definition::Concentric {
-        first: first.id.clone(),
-        second: second.id.clone(),
+        first: first.id().clone(),
+        second: second.id().clone(),
     })
 }
 
@@ -5147,15 +5147,15 @@ pub(crate) fn exact_counted_dimension_relation(
     }
     if let Some((first, second, axis)) = reflected_symmetry(entities) {
         return Some(Definition::Symmetric {
-            first: SketchLocus::Entity(first.id.clone()),
-            second: SketchLocus::Entity(second.id.clone()),
-            axis: axis.id.clone(),
+            first: SketchLocus::Entity(first.id().clone()),
+            second: SketchLocus::Entity(second.id().clone()),
+            axis: axis.id().clone(),
         });
     }
     let [first, second] = entities else {
         return None;
     };
-    if first.id == second.id {
+    if first.id() == second.id() {
         return None;
     }
     let point_on_geometry =
@@ -5168,7 +5168,7 @@ pub(crate) fn exact_counted_dimension_relation(
         };
     if point_on_geometry(first, second) || point_on_geometry(second, first) {
         return Some(Definition::Coincident {
-            entities: vec![first.id.clone(), second.id.clone()],
+            entities: vec![first.id().clone(), second.id().clone()],
         });
     }
     let (
@@ -5211,13 +5211,13 @@ pub(crate) fn exact_counted_dimension_relation(
                 <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 * (1.0 + first_length)
             {
                 Definition::Collinear {
-                    first: first.id.clone(),
-                    second: second.id.clone(),
+                    first: first.id().clone(),
+                    second: second.id().clone(),
                 }
             } else {
                 Definition::Parallel {
-                    first: first.id.clone(),
-                    second: second.id.clone(),
+                    first: first.id().clone(),
+                    second: second.id().clone(),
                 }
             },
         );
@@ -5227,8 +5227,8 @@ pub(crate) fn exact_counted_dimension_relation(
         .mul_add(second_direction.u, first_direction.v * second_direction.v);
     (dot.abs() <= scale * EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9).then(|| {
         Definition::Perpendicular {
-            first: first.id.clone(),
-            second: second.id.clone(),
+            first: first.id().clone(),
+            second: second.id().clone(),
         }
     })
 }
@@ -5462,8 +5462,8 @@ pub(crate) fn exact_counted_offset(
         }
         let source_reversed = offset_source_reversed(distance, &mut canonical_distance)?;
         pairs.push(SketchOffsetPair {
-            source: source.id.clone(),
-            result: result.id.clone(),
+            source: source.id().clone(),
+            result: result.id().clone(),
             source_reversed,
         });
     }
@@ -5584,7 +5584,8 @@ pub(crate) fn exact_offset_constraint(
             };
         let source = projected.get(&(scope, source_record_index))?;
         let result = projected.get(&(scope, result_record_index))?;
-        if !used_entities.insert(source.id.clone()) || !used_entities.insert(result.id.clone()) {
+        if !used_entities.insert(source.id().clone()) || !used_entities.insert(result.id().clone())
+        {
             return None;
         }
         let distance = parallel_line_offset(&source.geometry, &result.geometry)?;
@@ -5593,8 +5594,8 @@ pub(crate) fn exact_offset_constraint(
         }
         let source_reversed = offset_source_reversed(distance, &mut canonical_distance)?;
         pairs.push(SketchOffsetPair {
-            source: source.id.clone(),
-            result: result.id.clone(),
+            source: source.id().clone(),
+            result: result.id().clone(),
             source_reversed,
         });
     }
@@ -5824,7 +5825,7 @@ fn reflected_symmetry<'a>(
     if entities.len() != 3
         || entities
             .iter()
-            .map(|entity| &entity.id)
+            .map(|entity| entity.id())
             .collect::<HashSet<_>>()
             .len()
             != 3

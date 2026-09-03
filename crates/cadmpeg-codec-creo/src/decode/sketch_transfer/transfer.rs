@@ -440,7 +440,7 @@ pub(in super::super) fn transfer_sketches(
         );
         for (external_id, offset) in solver_only_section_entities(definition) {
             let id = sketch_entity_id(&sketch_id, external_id);
-            if entities.iter().any(|entity| entity.id == id) {
+            if entities.iter().any(|entity| entity.id() == &id) {
                 continue;
             }
             annotate(
@@ -451,33 +451,36 @@ pub(in super::super) fn transfer_sketches(
                 "solver_only_section_entity",
                 Exactness::ByteExact,
             );
-            entities.push(SketchEntity {
-                id,
-                sketch: sketch_id.clone(),
-                construction: true,
-                native_ref: Some(sketch_native_ref(&sketch_id)),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Native {
-                    native_kind: match solver_only_section_entity_family(definition, external_id) {
-                        Some(SectionEntityIncidenceFamily::Point) => "point",
-                        Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
-                        Some(SectionEntityIncidenceFamily::Line) => "line",
-                        Some(SectionEntityIncidenceFamily::Arc) => "arc",
-                        Some(SectionEntityIncidenceFamily::Circular) => "circle",
-                        None => "solver_only_section_entity",
-                    }
-                    .to_string(),
-                },
-            });
+            entities.push(
+                SketchEntity::new(
+                    id,
+                    sketch_id.clone(),
+                    SketchGeometry::Native {
+                        native_kind: match solver_only_section_entity_family(
+                            definition,
+                            external_id,
+                        ) {
+                            Some(SectionEntityIncidenceFamily::Point) => "point",
+                            Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
+                            Some(SectionEntityIncidenceFamily::Line) => "line",
+                            Some(SectionEntityIncidenceFamily::Arc) => "arc",
+                            Some(SectionEntityIncidenceFamily::Circular) => "circle",
+                            None => "solver_only_section_entity",
+                        }
+                        .to_string(),
+                    },
+                )
+                .with_construction(true)
+                .with_native_ref(Some(sketch_native_ref(&sketch_id))),
+            );
         }
         let emitted_entity_ids = entities
             .iter()
-            .map(|entity| entity.id.clone())
+            .map(|entity| entity.id().clone())
             .collect::<BTreeSet<_>>();
         let emitted_entity_geometry = entities
             .iter()
-            .map(|entity| (entity.id.clone(), entity.geometry.clone()))
+            .map(|entity| (entity.id().clone(), entity.geometry.clone()))
             .collect::<BTreeMap<_, _>>();
         let verhor_definitions = segments
             .iter()

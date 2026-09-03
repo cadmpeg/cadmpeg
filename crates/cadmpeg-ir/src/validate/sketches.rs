@@ -504,7 +504,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .sketch_entities
         .iter()
-        .map(|entity| (&entity.id, &entity.geometry))
+        .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     for sketch in &ir.model.sketches {
         let Some((origin, normal_axis, u_axis)) = sketch.resolved_placement() else {
@@ -571,7 +571,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 
     for entity in &ir.model.sketch_entities {
-        let id = &entity.id.0;
+        let id = entity.id().0.as_str();
         match &entity.geometry {
             SketchGeometry::Point { position } => {
                 if !finite2(*position) {
@@ -753,7 +753,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (&entity.id, (&entity.sketch, &entity.geometry)))
+        .map(|entity| (entity.id(), (&entity.sketch, &entity.geometry)))
         .collect::<HashMap<_, _>>();
     for sketch in &ir.model.spatial_sketches {
         for profile in &sketch.profiles {
@@ -843,7 +843,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for entity in &ir.model.spatial_sketch_entities {
-        let id = &entity.id.0;
+        let id = entity.id().0.as_str();
         if !spatial_sketches.contains(&entity.sketch) {
             finding(
                 findings,
@@ -998,13 +998,13 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (entity.id.clone(), entity.sketch.clone()))
+        .map(|entity| (entity.id().clone(), entity.sketch.clone()))
         .collect::<HashMap<_, _>>();
     let spatial_geometry = ir
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (&entity.id, &entity.geometry))
+        .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     let parameter_values = ir
         .model
@@ -1496,7 +1496,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .sketch_entities
         .iter()
-        .map(|entity| (&entity.id, &entity.geometry))
+        .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     for constraint in &ir.model.sketch_constraints {
         if constraint

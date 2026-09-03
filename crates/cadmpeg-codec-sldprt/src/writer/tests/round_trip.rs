@@ -38,15 +38,13 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
         profiles: Vec::new(),
         native_ref: None,
     });
-    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: entity_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line { start, end },
-    });
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            entity_id,
+            sketch_id.clone(),
+            SpatialSketchGeometry::Line { start, end },
+        ));
     ir.model.features.push(Feature {
         id: FeatureId("synthetic:test:feature#spatial-path".into()),
         ordinal: 0,

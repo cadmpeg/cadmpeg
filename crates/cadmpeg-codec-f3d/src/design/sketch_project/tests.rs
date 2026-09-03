@@ -12,7 +12,7 @@ use crate::records::{
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
+    SketchConstraintDefinition, SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry,
 };
 use cadmpeg_ir::sketches::{
     SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
@@ -652,8 +652,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .iter()
         .find(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
         .unwrap();
-    let mut other_point = point.clone();
-    other_point.id = SketchEntityId("generated:point#other".into());
+    let other_point = SketchEntity::new(
+        SketchEntityId("generated:point#other".into()),
+        point.sketch.clone(),
+        point.geometry.clone(),
+    )
+    .with_construction(point.construction)
+    .with_native_ref(point.native_ref.clone())
+    .with_geometry_ref(point.geometry_ref.clone())
+    .with_endpoint_refs(point.endpoint_refs.clone());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
         Some(SketchConstraintDefinition::SameCoordinate {
@@ -680,8 +687,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     ] {
         assert!(exact_atomic_constraint(kind, &[line, point]).is_none());
     }
-    let mut other_line = line.clone();
-    other_line.id = SketchEntityId("generated:line#other".into());
+    let other_line = SketchEntity::new(
+        SketchEntityId("generated:line#other".into()),
+        line.sketch.clone(),
+        line.geometry.clone(),
+    )
+    .with_construction(line.construction)
+    .with_native_ref(line.native_ref.clone())
+    .with_geometry_ref(line.geometry_ref.clone())
+    .with_endpoint_refs(line.endpoint_refs.clone());
     assert!(matches!(
         exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line]),
         Some(SketchConstraintDefinition::Tangent { .. })

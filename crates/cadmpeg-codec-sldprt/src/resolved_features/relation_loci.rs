@@ -83,7 +83,7 @@ pub(super) fn linked_single_ellipse_entity(
     };
     sketch_entities
         .iter()
-        .find(|candidate| candidate.id == *entity)
+        .find(|candidate| candidate.id() == entity)
         .filter(|candidate| matches!(candidate.geometry, SketchGeometry::Ellipse { .. }))?;
     Some(entity.clone())
 }
@@ -172,7 +172,7 @@ pub(super) fn relation_constraint_is_inactive(
     let Some(parameter) = parameter else {
         return false;
     };
-    let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id == *id);
+    let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id() == id);
     match definition {
         SketchConstraintDefinition::DistanceLoci { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
@@ -369,7 +369,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             .iter()
             .find(|entity| entity.geometry_ref.as_deref() == Some(scoped_ref.as_str()))
             .filter(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
-            .map(|entity| SketchLocus::Entity(entity.id.clone()))
+            .map(|entity| SketchLocus::Entity(entity.id().clone()))
             .or_else(|| {
                 let marker = marker(index)?;
                 if matches!(
@@ -389,7 +389,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     entity.native_ref.as_deref() == Some(marker)
                         && matches!(entity.geometry, SketchGeometry::Point { .. })
                 }) {
-                    return Some(SketchLocus::Entity(entity.id.clone()));
+                    return Some(SketchLocus::Entity(entity.id().clone()));
                 }
                 if dynamic && dynamic_point_operand(relation, index) {
                     dynamic_marker_point_locus(
@@ -882,7 +882,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 return None;
             };
             let point_position = profile_locus_point(&point, sketch_entities)?;
-            let line_entity = sketch_entities.iter().find(|entity| entity.id == line)?;
+            let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
             if !point_line_distance_value(point_position, line_entity)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
             {
@@ -1008,8 +1008,12 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             else {
                 return None;
             };
-            let first_line = sketch_entities.iter().find(|entity| entity.id == first)?;
-            let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
+            let first_line = sketch_entities
+                .iter()
+                .find(|entity| entity.id() == &first)?;
+            let second_line = sketch_entities
+                .iter()
+                .find(|entity| entity.id() == &second)?;
             if !line_line_distance(first_line, second_line)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
             {
@@ -1069,8 +1073,12 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             else {
                 return None;
             };
-            let first_line = sketch_entities.iter().find(|entity| entity.id == first)?;
-            let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
+            let first_line = sketch_entities
+                .iter()
+                .find(|entity| entity.id() == &first)?;
+            let second_line = sketch_entities
+                .iter()
+                .find(|entity| entity.id() == &second)?;
             let angle = if dynamic {
                 unoriented_line_line_angle(first_line, second_line)
             } else {
@@ -1126,7 +1134,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                             SketchGeometry::Circle { .. } | SketchGeometry::Arc { .. }
                         )
                 })
-                .map(|entity| entity.id.clone())
+                .map(|entity| entity.id().clone())
                 .or_else(|| {
                     marker(0).and_then(|marker| {
                         marker_center_dimensioned_entity(marker, sketch, sketch_entities, parameter)
@@ -1155,7 +1163,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 };
                 let geometry = &sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id == entity)?
+                    .find(|candidate| candidate.id() == &entity)?
                     .geometry;
                 let radius = match geometry {
                     SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
@@ -1208,7 +1216,7 @@ fn solver_line_entity(
                 && matches!(entity.geometry, SketchGeometry::Line { .. })
         });
         match (explicit_lines.next(), explicit_lines.next()) {
-            (Some(entity), None) => return Some(entity.id.clone()),
+            (Some(entity), None) => return Some(entity.id().clone()),
             (Some(_), Some(_)) => return None,
             (None, None) => {}
             (None, Some(_)) => return None,
@@ -1224,7 +1232,7 @@ fn solver_line_entity(
             && matches!(entity.geometry, SketchGeometry::Line { .. })
     });
     match (solver_lines.next(), solver_lines.next()) {
-        (Some(entity), None) => Some(entity.id.clone()),
+        (Some(entity), None) => Some(entity.id().clone()),
         _ => None,
     }
 }
@@ -1276,7 +1284,7 @@ fn repeated_dimensioned_circular_entities(
                 }
                 _ => return None,
             };
-            same_dimension_length(radius, expected_radius).then(|| entity.id.clone())
+            same_dimension_length(radius, expected_radius).then(|| entity.id().clone())
         })
         .collect::<Vec<_>>();
     (entities.len() >= 2 && entities.len() <= relation.scalar_refs.len()).then_some(entities)
@@ -1447,8 +1455,8 @@ pub(super) fn doubled_profile_distance_loci(
             };
             same_dimension_length((end.u - start.u).hypot(end.v - start.v), expected.0).then(|| {
                 (
-                    SketchLocus::Start(entity.id.clone()),
-                    SketchLocus::End(entity.id.clone()),
+                    SketchLocus::Start(entity.id().clone()),
+                    SketchLocus::End(entity.id().clone()),
                 )
             })
         })
@@ -1574,12 +1582,12 @@ fn unique_profile_matched_entity(
     sketch_entities: &[SketchEntity],
     matches: impl Fn(&SketchEntity, &SketchEntity) -> bool,
 ) -> Option<SketchEntityId> {
-    let known = sketch_entities.iter().find(|entity| entity.id == *known)?;
+    let known = sketch_entities.iter().find(|entity| entity.id() == known)?;
     let candidates = sketch_entities
         .iter()
-        .filter(|entity| entity.sketch == *sketch && entity.id != known.id)
+        .filter(|entity| entity.sketch == *sketch && entity.id() != known.id())
         .filter(|candidate| matches(known, candidate))
-        .map(|candidate| candidate.id.clone())
+        .map(|candidate| candidate.id().clone())
         .collect::<Vec<_>>();
     sole_sorted(candidates)
 }
@@ -1601,7 +1609,7 @@ fn unique_profile_matched_line_pair(
     for (first_index, first) in lines.iter().enumerate() {
         for second in &lines[first_index + 1..] {
             if matches(first, second) {
-                candidates.push((first.id.clone(), second.id.clone()));
+                candidates.push((first.id().clone(), second.id().clone()));
             }
         }
     }
@@ -1656,18 +1664,18 @@ fn unique_marker_line_distance_entity(
     };
     let marker_locus = marker_point_locus(marker, markers_by_id, loci_by_marker)?;
     let marker_point = profile_locus_point(&marker_locus, sketch_entities)?;
-    let known = sketch_entities.iter().find(|entity| entity.id == *known)?;
+    let known = sketch_entities.iter().find(|entity| entity.id() == known)?;
     sole_sorted(
         sketch_entities
             .iter()
-            .filter(|candidate| candidate.sketch == *sketch && candidate.id != known.id)
+            .filter(|candidate| candidate.sketch == *sketch && candidate.id() != known.id())
             .filter(|candidate| matches!(candidate.geometry, SketchGeometry::Line { .. }))
             .filter(|candidate| sketch_entity_contains_point(candidate, marker_point))
             .filter(|candidate| {
                 line_line_distance(known, candidate)
                     .is_some_and(|measured| same_dimension_length(measured, distance.0))
             })
-            .map(|candidate| candidate.id.clone())
+            .map(|candidate| candidate.id().clone())
             .collect(),
     )
 }
@@ -1786,12 +1794,14 @@ fn unique_dynamic_marker_line_angle_pair(
     }
     let mut pairs = Vec::new();
     for first in &first_candidates {
-        let first_entity = sketch_entities.iter().find(|entity| entity.id == *first)?;
+        let first_entity = sketch_entities.iter().find(|entity| entity.id() == first)?;
         for second in &second_candidates {
             if first == second {
                 continue;
             }
-            let second_entity = sketch_entities.iter().find(|entity| entity.id == *second)?;
+            let second_entity = sketch_entities
+                .iter()
+                .find(|entity| entity.id() == second)?;
             if unoriented_line_line_angle(first_entity, second_entity)
                 .is_some_and(|measured| same_dimension_angle(measured, expected.0))
             {
@@ -1961,7 +1971,7 @@ fn unique_dynamic_direct_point_roster_pair(
                 .as_deref()
                 .is_some_and(|marker| direct_marker_ids.contains(marker))
         })
-        .map(|entity| SketchLocus::Entity(entity.id.clone()))
+        .map(|entity| SketchLocus::Entity(entity.id().clone()))
         .collect::<Vec<_>>();
     loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     loci.dedup();
@@ -2064,11 +2074,11 @@ fn unique_dynamic_roster_point_line_pair(
             candidates.extend(lines.iter().filter_map(|line| {
                 point_line_distance_value(position, line)
                     .filter(|measured| same_dimension_length(*measured, distance.0))
-                    .map(|_| (point.clone(), line.id.clone()))
+                    .map(|_| (point.clone(), line.id().clone()))
             }));
         }
         (None, Some(line)) => {
-            let line_entity = sketch_entities.iter().find(|entity| entity.id == line)?;
+            let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
             candidates.extend(points.into_iter().filter_map(|point| {
                 let position = profile_locus_point(&point, sketch_entities)?;
                 point_line_distance_value(position, line_entity)
@@ -2077,7 +2087,7 @@ fn unique_dynamic_roster_point_line_pair(
             }));
         }
         (Some(point), Some(line)) => {
-            let line_entity = sketch_entities.iter().find(|entity| entity.id == line)?;
+            let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
             let position = profile_locus_point(&point, sketch_entities)?;
             if point_line_distance_value(position, line_entity)
                 .is_some_and(|measured| same_dimension_length(measured, distance.0))
@@ -2133,7 +2143,7 @@ fn unique_roster_point_line_pair(
             if point_line_distance_value(point, line)
                 .is_some_and(|measured| same_dimension_length(measured, distance.0))
             {
-                candidates.push((locus.clone(), line.id.clone()));
+                candidates.push((locus.clone(), line.id().clone()));
             }
         }
     }
@@ -2192,7 +2202,7 @@ fn unique_dynamic_marker_point_line_pair(
     for point in &point_candidates {
         let point_position = profile_locus_point(point, sketch_entities)?;
         for line in &line_candidates {
-            let line_entity = sketch_entities.iter().find(|entity| entity.id == *line)?;
+            let line_entity = sketch_entities.iter().find(|entity| entity.id() == line)?;
             if point_line_distance_value(point_position, line_entity)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
             {
@@ -2246,12 +2256,14 @@ fn unique_dynamic_marker_line_distance_pair(
     }
     let mut pairs = Vec::new();
     for first in &first_candidates {
-        let first_entity = sketch_entities.iter().find(|entity| entity.id == *first)?;
+        let first_entity = sketch_entities.iter().find(|entity| entity.id() == first)?;
         for second in &second_candidates {
             if first == second {
                 continue;
             }
-            let second_entity = sketch_entities.iter().find(|entity| entity.id == *second)?;
+            let second_entity = sketch_entities
+                .iter()
+                .find(|entity| entity.id() == second)?;
             if line_line_distance(first_entity, second_entity)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
             {
@@ -2308,7 +2320,7 @@ fn dynamic_line_operand_candidates(
         .into_iter()
         .filter(|id| {
             sketch_entities.iter().any(|entity| {
-                entity.id == *id
+                entity.id() == id
                     && entity.sketch == *sketch
                     && matches!(entity.geometry, SketchGeometry::Line { .. })
             })
@@ -2344,7 +2356,7 @@ fn dynamic_marker_point_candidates(
             .filter(|locus| {
                 sketch_entities
                     .iter()
-                    .find(|entity| entity.id == locus_entity(locus))
+                    .find(|entity| entity.id() == &locus_entity(locus))
                     .is_some_and(|entity| {
                         entity.sketch == *sketch
                             && profile_locus_point(locus, sketch_entities).is_some()
@@ -2373,7 +2385,7 @@ fn dynamic_marker_point_candidates(
             .endpoint_refs
             .iter()
             .any(|reference| marker_ids.contains(reference.as_str()));
-        (identity || endpoint).then(|| SketchLocus::Entity(entity.id.clone()))
+        (identity || endpoint).then(|| SketchLocus::Entity(entity.id().clone()))
     }));
     candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     candidates.dedup();
@@ -2426,9 +2438,9 @@ fn dynamic_marker_center_candidates(
             let locus = marker_point_locus(marker_id, markers_by_id, loci_by_marker)?;
             let entity = sketch_entities
                 .iter()
-                .find(|entity| entity.id == locus_entity(&locus))?;
+                .find(|entity| entity.id() == &locus_entity(&locus))?;
             (entity.sketch == *sketch && matches!(entity.geometry, SketchGeometry::Arc { .. }))
-                .then(|| SketchLocus::Center(entity.id.clone()))
+                .then(|| SketchLocus::Center(entity.id().clone()))
         })
         .collect::<Vec<_>>();
     centers.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
@@ -2467,7 +2479,7 @@ fn dynamic_marker_line_candidates(
             .endpoint_refs
             .iter()
             .any(|reference| marker_ids.contains(reference.as_str()));
-        (identity || endpoint).then(|| entity.id.clone())
+        (identity || endpoint).then(|| entity.id().clone())
     }));
     if candidates.is_empty() {
         if let Some(entity) =
@@ -2588,7 +2600,7 @@ pub(super) fn unique_profile_point_line_entity(
         .filter_map(|line| {
             point_line_distance_value(point, line)
                 .filter(|measured| same_dimension_length(*measured, distance.0))
-                .map(|_| line.id.clone())
+                .map(|_| line.id().clone())
         })
         .collect::<Vec<_>>();
     candidates.sort();
@@ -2608,7 +2620,7 @@ pub(super) fn unique_profile_line_point_locus(
     let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
         return None;
     };
-    let line = sketch_entities.iter().find(|entity| entity.id == *line)?;
+    let line = sketch_entities.iter().find(|entity| entity.id() == line)?;
     let mut candidates = sketch_entities
         .iter()
         .filter(|entity| entity.sketch == *sketch)
@@ -2651,7 +2663,7 @@ pub(super) fn unique_profile_point_line_pair(
             if point_line_distance_value(point, line)
                 .is_some_and(|measured| same_dimension_length(measured, distance.0))
             {
-                candidates.push((locus.clone(), line.id.clone()));
+                candidates.push((locus.clone(), line.id().clone()));
             }
         }
     }
@@ -2703,7 +2715,7 @@ pub(super) fn profile_locus_point(
 ) -> Option<Point2> {
     let entity = sketch_entities
         .iter()
-        .find(|entity| entity.id == locus_entity(locus))?;
+        .find(|entity| entity.id() == &locus_entity(locus))?;
     sketch_entity_loci(entity)
         .into_iter()
         .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
@@ -2977,7 +2989,7 @@ fn marker_center_dimensioned_entity(
                 center,
                 EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8,
             ) && same_dimension_length(radius, expected_radius))
-            .then_some(entity.id.clone())
+            .then_some(entity.id().clone())
         })
         .collect::<Vec<_>>();
     let [candidate] = candidates.as_slice() else {
@@ -3007,7 +3019,7 @@ fn unique_dimensioned_circle_entity(
             SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => radius.0,
             _ => return None,
         };
-        same_dimension_length(radius, expected_radius).then_some(entity.id.clone())
+        same_dimension_length(radius, expected_radius).then_some(entity.id().clone())
     });
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
@@ -3094,7 +3106,7 @@ fn qualified_or_linked_point_locus(
             .filter(|locus| {
                 sketch_entities
                     .iter()
-                    .find(|entity| entity.id == locus_entity(locus))
+                    .find(|entity| entity.id() == &locus_entity(locus))
                     .is_some_and(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
             })
             .collect::<Vec<_>>();
@@ -3110,7 +3122,7 @@ fn qualified_or_linked_point_locus(
     let locus = marker_point_locus(marker_id, markers_by_id, loci_by_marker)?;
     let entity = sketch_entities
         .iter()
-        .find(|entity| entity.id == locus_entity(&locus))?;
+        .find(|entity| entity.id() == &locus_entity(&locus))?;
     matches!(entity.geometry, SketchGeometry::Point { .. }).then_some(locus)
 }
 
@@ -3190,7 +3202,7 @@ fn single_marker_circular_entity(
         .filter(|id| {
             sketch_entities
                 .iter()
-                .find(|entity| entity.id == *id)
+                .find(|entity| entity.id() == id)
                 .is_some_and(|entity| {
                     matches!(
                         entity.geometry,
@@ -3267,7 +3279,7 @@ pub(super) fn single_marker_line_entity(
     let second_entity = locus_entity(&second_locus);
     let Some(sketch) = sketch_entities
         .iter()
-        .find(|entity| entity.id == first_entity)
+        .find(|entity| entity.id() == &first_entity)
         .map(|entity| entity.sketch.clone())
     else {
         return unique_line_containing_marker_point(
@@ -3279,7 +3291,7 @@ pub(super) fn single_marker_line_entity(
     };
     if sketch_entities
         .iter()
-        .find(|entity| entity.id == second_entity)
+        .find(|entity| entity.id() == &second_entity)
         .is_none_or(|entity| entity.sketch != sketch)
     {
         return unique_line_containing_marker_point(
@@ -3309,7 +3321,7 @@ pub(super) fn single_marker_line_entity(
                 sketch_entity_contains_point(entity, first)
                     && sketch_entity_contains_point(entity, second)
             })
-            .map(|entity| entity.id.clone())
+            .map(|entity| entity.id().clone())
             .collect(),
     )
     .or_else(|| {
@@ -3339,7 +3351,7 @@ fn unique_line_containing_marker_point(
     let point = profile_locus_point(&locus, sketch_entities)?;
     let sketch = sketch_entities
         .iter()
-        .find(|entity| entity.id == locus_entity(&locus))
+        .find(|entity| entity.id() == &locus_entity(&locus))
         .map(|entity| entity.sketch.clone())?;
     sole_sorted(
         sketch_entities
@@ -3347,7 +3359,7 @@ fn unique_line_containing_marker_point(
             .filter(|entity| entity.sketch == sketch)
             .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
             .filter(|entity| sketch_entity_contains_point(entity, point))
-            .map(|entity| entity.id.clone())
+            .map(|entity| entity.id().clone())
             .collect(),
     )
 }
@@ -3362,7 +3374,7 @@ fn marker_line_entities_inner(
     let is_line = |id: &SketchEntityId| {
         sketch_entities
             .iter()
-            .find(|entity| entity.id == *id)
+            .find(|entity| entity.id() == id)
             .is_some_and(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
     };
     let direct = loci_by_marker.get(marker_id).map(|loci| {
@@ -3458,7 +3470,7 @@ pub(super) fn profile_loci_by_marker(
     let mut line_midpoints = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
     let geometry_by_entity = sketch_entities
         .iter()
-        .map(|entity| (&entity.id, &entity.geometry))
+        .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     let transforms =
         marker_transform_candidates_by_feature(features, sketches, sketch_entities, lanes);
@@ -3482,7 +3494,7 @@ pub(super) fn profile_loci_by_marker(
         if let SketchGeometry::Line { start, end } = &entity.geometry {
             line_midpoints.entry(&entity.sketch).or_default().push((
                 Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
-                SketchLocus::Entity(entity.id.clone()),
+                SketchLocus::Entity(entity.id().clone()),
             ));
         }
     }
@@ -3505,10 +3517,10 @@ pub(super) fn profile_loci_by_marker(
                 )
             };
             markers_by_id.contains_key(marker.as_str()).then(|| {
-                let locus = if entity.id.0.contains("sketch-entity#compact:")
+                let locus = if entity.id().0.contains("sketch-entity#compact:")
                     && matches!(entity.geometry, SketchGeometry::Line { .. })
                 {
-                    SketchLocus::Start(entity.id.clone())
+                    SketchLocus::Start(entity.id().clone())
                 } else if markers_by_id.get(marker.as_str()).is_some_and(|marker| {
                     matches!(
                         marker.kind,
@@ -3520,9 +3532,9 @@ pub(super) fn profile_loci_by_marker(
                         | SketchGeometry::Arc { .. }
                         | SketchGeometry::Ellipse { .. }
                 ) {
-                    SketchLocus::Center(entity.id.clone())
+                    SketchLocus::Center(entity.id().clone())
                 } else {
-                    SketchLocus::Entity(entity.id.clone())
+                    SketchLocus::Entity(entity.id().clone())
                 };
                 let marker = if qualified_point {
                     qualified_point_marker_key(marker)
@@ -3539,8 +3551,8 @@ pub(super) fn profile_loci_by_marker(
             continue;
         };
         for (marker, locus) in [
-            (start, SketchLocus::Start(entity.id.clone())),
-            (end, SketchLocus::End(entity.id.clone())),
+            (start, SketchLocus::Start(entity.id().clone())),
+            (end, SketchLocus::End(entity.id().clone())),
         ] {
             if !markers_by_id.contains_key(marker.as_str()) {
                 continue;
@@ -3671,7 +3683,7 @@ pub(super) fn profile_loci_by_marker(
                                     quantize(*start, QUANTUM),
                                     quantize(*end, QUANTUM),
                                 )
-                                .then(|| SketchLocus::Entity(entity.id.clone()))
+                                .then(|| SketchLocus::Entity(entity.id().clone()))
                             }));
                         }
                         marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
@@ -3754,7 +3766,7 @@ pub(super) fn profile_loci_by_marker(
                     let candidate_end = quantize(candidate_end, QUANTUM);
                     ((candidate_start == start && candidate_end == end)
                         || (candidate_start == end && candidate_end == start))
-                        .then_some(entity.id.clone())
+                        .then_some(entity.id().clone())
                 })
                 .collect::<Vec<_>>();
             let [entity] = candidates.as_slice() else {
@@ -3771,7 +3783,7 @@ pub(super) fn profile_loci_by_marker(
     }
     let entities_by_id = sketch_entities
         .iter()
-        .map(|entity| (&entity.id, entity))
+        .map(|entity| (entity.id(), entity))
         .collect::<HashMap<_, _>>();
     loop {
         let additions = markers_by_id

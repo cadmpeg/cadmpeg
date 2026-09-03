@@ -54,18 +54,15 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
         })
     );
     let sketch = SketchId("sketch".into());
-    let mut projected = SketchEntity {
-        id: line,
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    let mut projected = SketchEntity::new(
+        line,
+        sketch.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(0.0, 2.0),
         },
-    };
+    )
+    .with_construction(true);
     let definition = typed_marker_relation_definition_in_sketch(
         &relation,
         &sketch,
@@ -227,28 +224,24 @@ fn axis_relation_expands_intermediate_relation_handle() {
 
     let sketch = SketchId("axis-sketch".into());
     let entities = vec![
-        SketchEntity {
-            id: SketchEntityId("first-entity".into()),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: Some(first.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        SketchEntity::new(
+            SketchEntityId("first-entity".into()),
+            sketch.clone(),
+            SketchGeometry::Point {
                 position: Point2::new(0.0, 1.0),
             },
-        },
-        SketchEntity {
-            id: SketchEntityId("second-entity".into()),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: Some(second.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        )
+        .with_construction(true)
+        .with_native_ref(Some(first.id.clone())),
+        SketchEntity::new(
+            SketchEntityId("second-entity".into()),
+            sketch.clone(),
+            SketchGeometry::Point {
                 position: Point2::new(2.0, 1.0),
             },
-        },
+        )
+        .with_construction(true)
+        .with_native_ref(Some(second.id.clone())),
     ];
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
@@ -265,10 +258,18 @@ fn axis_relation_expands_intermediate_relation_handle() {
         })
     );
     let mut ambiguous_entities = entities.clone();
-    ambiguous_entities.push(SketchEntity {
-        id: SketchEntityId("second-duplicate".into()),
-        ..ambiguous_entities[1].clone()
-    });
+    let duplicate = ambiguous_entities[1].clone();
+    ambiguous_entities.push(
+        SketchEntity::new(
+            SketchEntityId("second-duplicate".into()),
+            duplicate.sketch.clone(),
+            duplicate.geometry.clone(),
+        )
+        .with_construction(duplicate.construction)
+        .with_native_ref(duplicate.native_ref.clone())
+        .with_geometry_ref(duplicate.geometry_ref.clone())
+        .with_endpoint_refs(duplicate.endpoint_refs.clone()),
+    );
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
             &horizontal,
@@ -318,37 +319,33 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
         (reverse_first.id.as_str(), &reverse_first),
         (reverse_second.id.as_str(), &reverse_second),
     ]);
-    let first_entity = SketchEntity {
-        id: SketchEntityId("first-entity".into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: Some(first.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let first_entity = SketchEntity::new(
+        SketchEntityId("first-entity".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(0.0, 1.0),
         },
-    };
-    let second_entity = SketchEntity {
-        id: SketchEntityId("second-entity".into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: Some(second.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    )
+    .with_construction(true)
+    .with_native_ref(Some(first.id.clone()));
+    let second_entity = SketchEntity::new(
+        SketchEntityId("second-entity".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(2.0, 1.0),
         },
-    };
+    )
+    .with_construction(true)
+    .with_native_ref(Some(second.id.clone()));
     let entities = [first_entity.clone(), second_entity.clone()];
     let loci = HashMap::from([
         (
             first.id.clone(),
-            vec![SketchLocus::Entity(first_entity.id.clone())],
+            vec![SketchLocus::Entity(first_entity.id().clone())],
         ),
         (
             second.id.clone(),
-            vec![SketchLocus::Entity(second_entity.id.clone())],
+            vec![SketchLocus::Entity(second_entity.id().clone())],
         ),
     ]);
 
@@ -361,8 +358,8 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
             &loci,
         ),
         Some(SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(first_entity.id),
-            second: SketchLocus::Entity(second_entity.id),
+            first: SketchLocus::Entity(first_entity.id().clone()),
+            second: SketchLocus::Entity(second_entity.id().clone()),
             axis: SketchCoordinateAxis::V,
         })
     );
@@ -397,14 +394,10 @@ fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
     ]);
     let second_locus = SketchLocus::Entity(second_id.clone());
     let loci = HashMap::from([(proxy.id.clone(), vec![second_locus.clone()])]);
-    let point = |id, native_ref, position| SketchEntity {
-        id,
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |id, native_ref, position| {
+        SketchEntity::new(id, sketch.clone(), SketchGeometry::Point { position })
+            .with_construction(true)
+            .with_native_ref(native_ref)
     };
     let entities = vec![
         point(
@@ -475,15 +468,8 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
         })
     );
     let sketch = SketchId("sketch".into());
-    let line = |id, start, end| SketchEntity {
-        id,
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
-    };
+    let line =
+        |id, start, end| SketchEntity::new(id, sketch.clone(), SketchGeometry::Line { start, end });
     let first_line = line(first, Point2::new(0.0, 0.0), Point2::new(4.0, 0.0));
     let mut second_line = line(second, Point2::new(0.0, 2.0), Point2::new(4.0, 2.0));
     assert!(matches!(
@@ -574,18 +560,14 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         },
         native_ref: Some("feature-native".into()),
     };
-    let entity = SketchEntity {
-        id: line_id.clone(),
-        sketch: sketch_id,
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    let entity = SketchEntity::new(
+        line_id.clone(),
+        sketch_id,
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    };
+    );
     let mut line = marker("line", Some([0.0005, 0.0]));
     line.kind = SketchInputKind::LineOrCircle;
     let mut first = marker("first", Some([0.0, 0.0]));
@@ -654,18 +636,15 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         },
         native_ref: Some("feature-native".into()),
     };
-    let entity = SketchEntity {
-        id: circle_id.clone(),
-        sketch: sketch_id,
-        construction: false,
-        native_ref: Some("circle-marker".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let entity = SketchEntity::new(
+        circle_id.clone(),
+        sketch_id,
+        SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
             radius: Length(3.0),
         },
-    };
+    )
+    .with_native_ref(Some("circle-marker".into()));
     let mut circle_marker = marker("circle-marker", Some([1.0, 2.0]));
     circle_marker.kind = SketchInputKind::Point;
     circle_marker.feature_ref = Some("feature-native".into());
@@ -727,30 +706,24 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
     };
     let first_id = SketchEntityId("a-first".into());
     let second_id = SketchEntityId("z-second".into());
-    let first = SketchEntity {
-        id: first_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: vec!["first-start".into(), "shared".into()],
-        geometry: SketchGeometry::Line {
+    let first = SketchEntity::new(
+        first_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 0.0),
         },
-    };
-    let second = SketchEntity {
-        id: second_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: vec!["shared".into(), "second-end".into()],
-        geometry: SketchGeometry::Line {
+    )
+    .with_endpoint_refs(vec!["first-start".into(), "shared".into()]);
+    let second = SketchEntity::new(
+        second_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Line {
             start: Point2::new(1.0, 0.0),
             end: Point2::new(1.0, 1.0),
         },
-    };
+    )
+    .with_endpoint_refs(vec!["shared".into(), "second-end".into()]);
     let mut first_start = marker("first-start", Some([0.0, 0.0]));
     first_start.offset = 1;
     let mut shared = marker("shared", Some([0.001, 0.0]));
@@ -810,16 +783,14 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
 #[test]
 fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
     let sketch = SketchId("sketch".into());
-    let point = |id: &str, u: f64, v: f64| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, v),
-        },
+    let point = |id: &str, u: f64, v: f64| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        )
     };
     let known = point("known", 0.0, 0.0);
     let candidate = point("candidate", 3.0, 4.0);
@@ -836,7 +807,7 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
         pmi: None,
         native_ref: None,
     };
-    let known_locus = SketchLocus::Entity(known.id.clone());
+    let known_locus = SketchLocus::Entity(known.id().clone());
     assert_eq!(
         unique_profile_distance_locus(
             &sketch,
@@ -844,7 +815,7 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
             &parameter,
             &[known.clone(), candidate.clone()],
         ),
-        Some(SketchLocus::Entity(candidate.id.clone()))
+        Some(SketchLocus::Entity(candidate.id().clone()))
     );
 
     let ambiguous = point("ambiguous", -3.0, -4.0);
@@ -865,30 +836,24 @@ fn line_operand_rejects_a_circular_geometry_alias() {
     let line_id = SketchEntityId("line".into());
     let circle_id = SketchEntityId("circle".into());
     let entities = vec![
-        SketchEntity {
-            id: line_id.clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: Some("line-marker".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            line_id.clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: circle_id.clone(),
-            sketch: SketchId("sketch".into()),
-            construction: false,
-            native_ref: Some("circle-marker".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Circle {
+        )
+        .with_native_ref(Some("line-marker".into())),
+        SketchEntity::new(
+            circle_id.clone(),
+            SketchId("sketch".into()),
+            SketchGeometry::Circle {
                 center: Point2::new(0.0, 0.0),
                 radius: Length(1.0),
             },
-        },
+        )
+        .with_native_ref(Some("circle-marker".into())),
     ];
     let loci = HashMap::from([
         (
@@ -920,75 +885,57 @@ fn line_operand_uses_linked_endpoint_incidence_beside_a_direct_point_locus() {
     let first_point_id = SketchEntityId("first-point".into());
     let second_point_id = SketchEntityId("second-point".into());
     let entities = vec![
-        SketchEntity {
-            id: line_id.clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            line_id.clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: point_id.clone(),
+        ),
+        SketchEntity::new(
+            point_id.clone(),
             sketch,
-            construction: true,
-            native_ref: Some("handle".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+            SketchGeometry::Point {
                 position: Point2::new(0.5, 0.0),
             },
-        },
-        SketchEntity {
-            id: misleading_line_id.clone(),
-            sketch: SketchId("sketch".into()),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        )
+        .with_construction(true)
+        .with_native_ref(Some("handle".into())),
+        SketchEntity::new(
+            misleading_line_id.clone(),
+            SketchId("sketch".into()),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 1.0),
                 end: Point2::new(1.0, 1.0),
             },
-        },
-        SketchEntity {
-            id: SketchEntityId("other-sketch-line".into()),
-            sketch: SketchId("other-sketch".into()),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            SketchEntityId("other-sketch-line".into()),
+            SketchId("other-sketch".into()),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: first_point_id.clone(),
-            sketch: SketchId("sketch".into()),
-            construction: true,
-            native_ref: Some("first".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        ),
+        SketchEntity::new(
+            first_point_id.clone(),
+            SketchId("sketch".into()),
+            SketchGeometry::Point {
                 position: Point2::new(0.25, 0.0),
             },
-        },
-        SketchEntity {
-            id: second_point_id.clone(),
-            sketch: SketchId("sketch".into()),
-            construction: true,
-            native_ref: Some("second".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        )
+        .with_construction(true)
+        .with_native_ref(Some("first".into())),
+        SketchEntity::new(
+            second_point_id.clone(),
+            SketchId("sketch".into()),
+            SketchGeometry::Point {
                 position: Point2::new(0.75, 0.0),
             },
-        },
+        )
+        .with_construction(true)
+        .with_native_ref(Some("second".into())),
     ];
     let mut first = marker("first", Some([0.0, 0.0]));
     let second = marker("second", Some([0.001, 0.0]));
@@ -1036,29 +983,23 @@ fn line_operand_uses_the_unique_profile_line_through_a_point_handle() {
     let line_id = SketchEntityId("line".into());
     let point_id = SketchEntityId("point-entity".into());
     let entities = vec![
-        SketchEntity {
-            id: line_id.clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            line_id.clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(2.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: point_id.clone(),
+        ),
+        SketchEntity::new(
+            point_id.clone(),
             sketch,
-            construction: true,
-            native_ref: Some("point-handle".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+            SketchGeometry::Point {
                 position: Point2::new(1.0, 0.0),
             },
-        },
+        )
+        .with_construction(true)
+        .with_native_ref(Some("point-handle".into())),
     ];
     let point = marker("point-handle", Some([1.0, 0.0]));
     let markers = HashMap::from([(point.id.as_str(), &point)]);
@@ -1075,14 +1016,8 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     let sketch = SketchId("sketch".into());
     let first_id = SketchEntityId("first".into());
     let second_id = SketchEntityId("second".into());
-    let line = |id: SketchEntityId, start: Point2, end: Point2| SketchEntity {
-        id,
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let line = |id: SketchEntityId, start: Point2, end: Point2| {
+        SketchEntity::new(id, sketch.clone(), SketchGeometry::Line { start, end })
     };
     let entities = vec![
         line(
@@ -1182,14 +1117,9 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     second_owner.links = first_owner.links.clone();
     let first_point = SketchEntityId("first-point".into());
     let second_point = SketchEntityId("second-point".into());
-    let point = |id, position| SketchEntity {
-        id,
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let point = |id, position| {
+        SketchEntity::new(id, sketch.clone(), SketchGeometry::Point { position })
+            .with_construction(true)
     };
     let owner_entities = [
         point(first_point.clone(), Point2::new(0.0, 0.0)),
@@ -1258,28 +1188,24 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
         (second.id.as_str(), &second),
         (relation.id.as_str(), &relation),
     ]);
-    let first_entity = SketchEntity {
-        id: SketchEntityId("first-entity".into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: Some(first.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let first_entity = SketchEntity::new(
+        SketchEntityId("first-entity".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(0.0, 10.0),
         },
-    };
-    let second_entity = SketchEntity {
-        id: SketchEntityId("second-entity".into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: Some(second.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    )
+    .with_construction(true)
+    .with_native_ref(Some(first.id.clone()));
+    let second_entity = SketchEntity::new(
+        SketchEntityId("second-entity".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(20.0, 10.0),
         },
-    };
+    )
+    .with_construction(true)
+    .with_native_ref(Some(second.id.clone()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
     let definition = typed_marker_relation_definition_in_sketch(
         &relation,
@@ -1292,8 +1218,8 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
     assert_eq!(
         definition,
         SketchConstraintDefinition::SameCoordinate {
-            first: SketchLocus::Entity(first_entity.id.clone()),
-            second: SketchLocus::Entity(second_entity.id.clone()),
+            first: SketchLocus::Entity(first_entity.id().clone()),
+            second: SketchLocus::Entity(second_entity.id().clone()),
             axis: SketchCoordinateAxis::V,
         }
     );
@@ -1321,28 +1247,22 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
 fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
     let sketch = SketchId("sketch".into());
     let entities = [
-        SketchEntity {
-            id: SketchEntityId("first".into()),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        SketchEntity::new(
+            SketchEntityId("first".into()),
+            sketch.clone(),
+            SketchGeometry::Point {
                 position: Point2::new(0.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: SketchEntityId("second".into()),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        )
+        .with_construction(true),
+        SketchEntity::new(
+            SketchEntityId("second".into()),
+            sketch.clone(),
+            SketchGeometry::Point {
                 position: Point2::new(3.0, 4.0),
             },
-        },
+        )
+        .with_construction(true),
     ];
     let first = marker("first-marker", None);
     let second = marker("second-marker", None);
@@ -1350,11 +1270,11 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
     let loci = HashMap::from([
         (
             first.id.clone(),
-            vec![SketchLocus::Entity(entities[0].id.clone())],
+            vec![SketchLocus::Entity(entities[0].id().clone())],
         ),
         (
             second.id.clone(),
-            vec![SketchLocus::Entity(entities[1].id.clone())],
+            vec![SketchLocus::Entity(entities[1].id().clone())],
         ),
     ]);
     let relation = FeatureInputRelationInstance {
@@ -1429,31 +1349,30 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
             ..
-        }) if first == exact_entities[0].id && second == exact_entities[1].id
+        }) if first == exact_entities[0].id().clone() && second == exact_entities[1].id().clone()
     ));
 }
 
 #[test]
 fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
     let sketch = SketchId("sketch".into());
-    let line = |id: &str, v| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
-            start: Point2::new(0.0, v),
-            end: Point2::new(10.0, v),
-        },
+    let line = |id: &str, v| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Line {
+                start: Point2::new(0.0, v),
+                end: Point2::new(10.0, v),
+            },
+        )
+        .with_construction(true)
     };
     let entities = [line("resolved", 0.0), line("unique-partner", 5.0)];
     let marker = marker("collapsed-marker", None);
     let markers = HashMap::from([(marker.id.as_str(), &marker)]);
     let loci = HashMap::from([(
         marker.id.clone(),
-        vec![SketchLocus::Entity(entities[0].id.clone())],
+        vec![SketchLocus::Entity(entities[0].id().clone())],
     )]);
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
@@ -1501,39 +1420,35 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
             &loci,
         ),
         Some(SketchConstraintDefinition::Distance { entities: pair, .. })
-            if pair == entities.iter().map(|entity| entity.id.clone()).collect::<Vec<_>>()
+            if pair == entities.iter().map(|entity| entity.id().clone()).collect::<Vec<_>>()
     ));
 }
 
 #[test]
 fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
     let sketch = SketchId("sketch".into());
-    let line = |id: &str, v| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
-            start: Point2::new(0.0, v),
-            end: Point2::new(10.0, v),
-        },
+    let line = |id: &str, v| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Line {
+                start: Point2::new(0.0, v),
+                end: Point2::new(10.0, v),
+            },
+        )
     };
     let known = line("known", 0.0);
     let intended = line("intended", 5.0);
     let distractor = line("distractor", -5.0);
-    let point = SketchEntity {
-        id: SketchEntityId("addressed-point".into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: Some("point-marker".into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let point = SketchEntity::new(
+        SketchEntityId("addressed-point".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(3.0, 5.0),
         },
-    };
+    )
+    .with_construction(true)
+    .with_native_ref(Some("point-marker".into()));
     let known_marker = marker("known-marker", None);
     let mut point_marker = marker("point-marker", Some([0.003, 0.005]));
     point_marker.local_id = Some(13);
@@ -1544,11 +1459,11 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
     let loci = HashMap::from([
         (
             known_marker.id.clone(),
-            vec![SketchLocus::Entity(known.id.clone())],
+            vec![SketchLocus::Entity(known.id().clone())],
         ),
         (
             point_marker.id.clone(),
-            vec![SketchLocus::Entity(point.id.clone())],
+            vec![SketchLocus::Entity(point.id().clone())],
         ),
     ]);
     let relation = FeatureInputRelationInstance {
@@ -1604,6 +1519,6 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
             &loci,
         ),
         Some(SketchConstraintDefinition::Distance { entities: pair, .. })
-            if pair == vec![intended.id, known.id]
+            if pair == vec![intended.id().clone(), known.id().clone()]
     ));
 }

@@ -1904,15 +1904,11 @@ fn circle_remains_a_closed_extrusion_profile() {
         }]],
         native_ref: None,
     });
-    ir.model.sketch_entities.push(SketchEntity {
-        id: entity_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: circle.clone(),
-    });
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity_id,
+        sketch_id.clone(),
+        circle.clone(),
+    ));
 
     let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("one circle profile");
     assert_eq!(profiles, vec![vec![(circle.clone(), false, seam, seam)]]);

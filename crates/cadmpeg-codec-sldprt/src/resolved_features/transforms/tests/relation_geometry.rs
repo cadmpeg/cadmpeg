@@ -18,15 +18,8 @@ fn binary_relations_require_matching_evaluated_geometry() {
         Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
     };
     let sketch = SketchId("sketch".into());
-    let entity = |id: &str, geometry| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
-    };
+    let entity =
+        |id: &str, geometry| SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry);
     let horizontal = entity(
         "horizontal",
         SketchGeometry::Line {
@@ -104,14 +97,9 @@ fn binary_relations_require_matching_evaluated_geometry() {
 #[test]
 fn locus_relations_require_matching_evaluated_geometry() {
     let sketch = SketchId("sketch".into());
-    let entity = |id: &str, geometry| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry| {
+        SketchEntity::new(SketchEntityId(id.into()), sketch.clone(), geometry)
+            .with_construction(true)
     };
     let mut first = entity(
         "first",
@@ -240,31 +228,31 @@ fn locus_relations_require_matching_evaluated_geometry() {
     let loci = HashMap::from([
         (
             first_marker.id.clone(),
-            vec![SketchLocus::Entity(first.id.clone())],
+            vec![SketchLocus::Entity(first.id().clone())],
         ),
         (
             second_marker.id.clone(),
-            vec![SketchLocus::Entity(second.id.clone())],
+            vec![SketchLocus::Entity(second.id().clone())],
         ),
         (
             line_marker.id.clone(),
-            vec![SketchLocus::Entity(line.id.clone())],
+            vec![SketchLocus::Entity(line.id().clone())],
         ),
         (
             arc_marker.id.clone(),
-            vec![SketchLocus::Entity(arc.id.clone())],
+            vec![SketchLocus::Entity(arc.id().clone())],
         ),
         (
             symmetric_first_marker.id.clone(),
-            vec![SketchLocus::Entity(symmetric_first.id.clone())],
+            vec![SketchLocus::Entity(symmetric_first.id().clone())],
         ),
         (
             symmetric_second_marker.id.clone(),
-            vec![SketchLocus::Entity(symmetric_second.id.clone())],
+            vec![SketchLocus::Entity(symmetric_second.id().clone())],
         ),
         (
             symmetry_axis_marker.id.clone(),
-            vec![SketchLocus::Entity(symmetry_axis.id.clone())],
+            vec![SketchLocus::Entity(symmetry_axis.id().clone())],
         ),
     ]);
     assert!(matches!(
@@ -320,9 +308,9 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &loci,
         ),
         Some(SketchConstraintDefinition::Symmetric {
-            first: SketchLocus::Entity(symmetric_first.id.clone()),
-            second: SketchLocus::Entity(symmetric_second.id.clone()),
-            axis: symmetry_axis.id.clone(),
+            first: SketchLocus::Entity(symmetric_first.id().clone()),
+            second: SketchLocus::Entity(symmetric_second.id().clone()),
+            axis: symmetry_axis.id().clone(),
         })
     );
     assert_eq!(
@@ -334,9 +322,9 @@ fn locus_relations_require_matching_evaluated_geometry() {
             &loci,
         ),
         Some(SketchConstraintDefinition::AtIntersection {
-            point: SketchLocus::Entity(first.id.clone()),
-            first: line.id.clone(),
-            second: symmetry_axis.id.clone(),
+            point: SketchLocus::Entity(first.id().clone()),
+            first: line.id().clone(),
+            second: symmetry_axis.id().clone(),
         })
     );
 
@@ -420,16 +408,14 @@ fn locus_relations_require_matching_evaluated_geometry() {
 #[test]
 fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
     let sketch = SketchId("sketch".into());
-    let point = |id: &str, u: f64, v: f64| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, v),
-        },
+    let point = |id: &str, u: f64, v: f64| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        )
     };
     let parameter = DesignParameter {
         id: ParameterId("distance".into()),
@@ -460,8 +446,8 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
             ],
         ),
         Some((
-            SketchLocus::Entity(first.id.clone()),
-            SketchLocus::Entity(second.id.clone()),
+            SketchLocus::Entity(first.id().clone()),
+            SketchLocus::Entity(second.id().clone()),
         ))
     );
 
@@ -479,16 +465,14 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
 #[test]
 fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
     let sketch = SketchId("sketch".into());
-    let point = |id: &str, u: f64, v: f64| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, v),
-        },
+    let point = |id: &str, u: f64, v: f64| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        )
     };
     let first = point("first", 0.0, 0.0);
     let second = point("second", 5.0, 20.0);
@@ -506,8 +490,8 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
         pmi: None,
         native_ref: None,
     };
-    let first_locus = SketchLocus::Entity(first.id.clone());
-    let second_locus = SketchLocus::Entity(second.id.clone());
+    let first_locus = SketchLocus::Entity(first.id().clone());
+    let second_locus = SketchLocus::Entity(second.id().clone());
     let entities = [first.clone(), second.clone(), unrelated.clone()];
     assert_eq!(
         unique_profile_axis_distance_locus(&sketch, &first_locus, &parameter, &entities, true,),
@@ -533,14 +517,12 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
 #[test]
 fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
     let sketch = SketchId("sketch".into());
-    let line = |id: &str, start: Point2, end: Point2| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let line = |id: &str, start: Point2, end: Point2| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Line { start, end },
+        )
     };
     let first = line("first", Point2::new(0.0, 0.0), Point2::new(10.0, 0.0));
     let second = line("second", Point2::new(0.0, 5.0), Point2::new(10.0, 5.0));
@@ -564,20 +546,20 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
     };
     let entities = [first.clone(), second.clone(), unrelated.clone()];
     assert_eq!(
-        unique_profile_line_distance_entity(&sketch, &first.id, &parameter, &entities),
-        Some(second.id.clone())
+        unique_profile_line_distance_entity(&sketch, first.id(), &parameter, &entities),
+        Some(second.id().clone())
     );
     assert_eq!(
         unique_profile_line_distance_pair(&sketch, &parameter, &entities),
-        Some((first.id.clone(), second.id.clone()))
+        Some((first.id().clone(), second.id().clone()))
     );
 
     let wrong = line("wrong", Point2::new(0.0, 2.0), Point2::new(10.0, 2.0));
     assert_eq!(
         unique_repaired_profile_line_distance_pair(
             &sketch,
-            &first.id,
-            &wrong.id,
+            first.id(),
+            wrong.id(),
             &parameter,
             &[
                 first.clone(),
@@ -586,7 +568,7 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
                 unrelated.clone(),
             ],
         ),
-        Some((first.id.clone(), second.id.clone()))
+        Some((first.id().clone(), second.id().clone()))
     );
 
     let other_solved = line(
@@ -597,8 +579,8 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
     assert_eq!(
         unique_repaired_profile_line_distance_pair(
             &sketch,
-            &first.id,
-            &wrong.id,
+            first.id(),
+            wrong.id(),
             &parameter,
             &[first.clone(), wrong.clone(), second.clone(), other_solved,],
         ),
@@ -618,8 +600,8 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
     assert_eq!(
         unique_repaired_profile_line_distance_pair(
             &sketch,
-            &first.id,
-            &wrong.id,
+            first.id(),
+            wrong.id(),
             &parameter,
             &[
                 first.clone(),
@@ -645,14 +627,12 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
 #[test]
 fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
     let sketch = SketchId("sketch".into());
-    let line = |id: &str, start: Point2, end: Point2| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let line = |id: &str, start: Point2, end: Point2| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Line { start, end },
+        )
     };
     let horizontal = line("horizontal", Point2::new(0.0, 0.0), Point2::new(10.0, 0.0));
     let vertical = line("vertical", Point2::new(0.0, 0.0), Point2::new(0.0, 10.0));
@@ -672,12 +652,12 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
     };
     let entities = [horizontal.clone(), vertical.clone(), diagonal.clone()];
     assert_eq!(
-        unique_profile_line_angle_entity(&sketch, &horizontal.id, &parameter, &entities),
-        Some(vertical.id.clone())
+        unique_profile_line_angle_entity(&sketch, horizontal.id(), &parameter, &entities),
+        Some(vertical.id().clone())
     );
     assert_eq!(
         unique_profile_line_angle_pair(&sketch, &parameter, &entities),
-        Some((horizontal.id.clone(), vertical.id.clone()))
+        Some((horizontal.id().clone(), vertical.id().clone()))
     );
 
     let wrong = line(
@@ -688,8 +668,8 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
     assert_eq!(
         unique_repaired_profile_line_angle_pair(
             &sketch,
-            &horizontal.id,
-            &wrong.id,
+            horizontal.id(),
+            wrong.id(),
             &parameter,
             &[
                 horizontal.clone(),
@@ -698,15 +678,15 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
                 diagonal.clone(),
             ],
         ),
-        Some((horizontal.id.clone(), vertical.id.clone()))
+        Some((horizontal.id().clone(), vertical.id().clone()))
     );
 
     let ambiguous = line("ambiguous", Point2::new(5.0, 0.0), Point2::new(5.0, 10.0));
     assert_eq!(
         unique_repaired_profile_line_angle_pair(
             &sketch,
-            &horizontal.id,
-            &wrong.id,
+            horizontal.id(),
+            wrong.id(),
             &parameter,
             &[
                 horizontal.clone(),
@@ -731,8 +711,8 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
     assert_eq!(
         unique_repaired_profile_line_angle_pair(
             &sketch,
-            &horizontal.id,
-            &wrong.id,
+            horizontal.id(),
+            wrong.id(),
             &parameter,
             &[
                 horizontal.clone(),
@@ -756,25 +736,19 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
 #[test]
 fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
     let sketch = SketchId("sketch".into());
-    let point = SketchEntity {
-        id: SketchEntityId("point".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let point = SketchEntity::new(
+        SketchEntityId("point".into()),
+        sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(0.0, 5.0),
         },
-    };
-    let line = |id: &str, start: Point2, end: Point2| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    );
+    let line = |id: &str, start: Point2, end: Point2| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Line { start, end },
+        )
     };
     let horizontal = line("horizontal", Point2::new(0.0, 0.0), Point2::new(10.0, 0.0));
     let unrelated = line(
@@ -795,27 +769,27 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         pmi: None,
         native_ref: None,
     };
-    let point_locus = SketchLocus::Entity(point.id.clone());
+    let point_locus = SketchLocus::Entity(point.id().clone());
     let entities = [point.clone(), horizontal.clone(), unrelated.clone()];
     assert_eq!(
         unique_profile_point_line_entity(&sketch, &point_locus, &parameter, &entities),
-        Some(horizontal.id.clone())
+        Some(horizontal.id().clone())
     );
     assert_eq!(
-        unique_profile_line_point_locus(&sketch, &horizontal.id, &parameter, &entities),
+        unique_profile_line_point_locus(&sketch, horizontal.id(), &parameter, &entities),
         Some(point_locus.clone())
     );
     assert_eq!(
         unique_profile_point_line_pair(&sketch, &parameter, &entities),
-        Some((point_locus, horizontal.id.clone()))
+        Some((point_locus, horizontal.id().clone()))
     );
 
     let wrong = line("wrong", Point2::new(0.0, 2.0), Point2::new(10.0, 2.0));
     assert_eq!(
         unique_repaired_profile_point_line_pair(
             &sketch,
-            &SketchLocus::Entity(point.id.clone()),
-            &wrong.id,
+            &SketchLocus::Entity(point.id().clone()),
+            wrong.id(),
             &parameter,
             &[
                 point.clone(),
@@ -824,15 +798,18 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
                 unrelated.clone(),
             ],
         ),
-        Some((SketchLocus::Entity(point.id.clone()), horizontal.id.clone(),))
+        Some((
+            SketchLocus::Entity(point.id().clone()),
+            horizontal.id().clone(),
+        ))
     );
 
     let ambiguous = line("ambiguous", Point2::new(0.0, 10.0), Point2::new(10.0, 10.0));
     assert_eq!(
         unique_repaired_profile_point_line_pair(
             &sketch,
-            &SketchLocus::Entity(point.id.clone()),
-            &wrong.id,
+            &SketchLocus::Entity(point.id().clone()),
+            wrong.id(),
             &parameter,
             &[
                 point.clone(),
@@ -844,13 +821,17 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         None
     );
 
-    let unrelated_point = SketchEntity {
-        id: SketchEntityId("unrelated-point".into()),
-        geometry: SketchGeometry::Point {
+    let unrelated_point = SketchEntity::new(
+        SketchEntityId("unrelated-point".into()),
+        point.sketch.clone(),
+        SketchGeometry::Point {
             position: Point2::new(20.0, 25.0),
         },
-        ..point.clone()
-    };
+    )
+    .with_construction(point.construction)
+    .with_native_ref(point.native_ref.clone())
+    .with_geometry_ref(point.geometry_ref.clone())
+    .with_endpoint_refs(point.endpoint_refs.clone());
     let unrelated_line = line(
         "unrelated-line",
         Point2::new(20.0, 20.0),
@@ -859,8 +840,8 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
     assert_eq!(
         unique_repaired_profile_point_line_pair(
             &sketch,
-            &SketchLocus::Entity(point.id.clone()),
-            &wrong.id,
+            &SketchLocus::Entity(point.id().clone()),
+            wrong.id(),
             &parameter,
             &[
                 point.clone(),
@@ -884,16 +865,14 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
 #[test]
 fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
     let sketch = SketchId("sketch".into());
-    let point = |id: &str, u: f64, v: f64| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, v),
-        },
+    let point = |id: &str, u: f64, v: f64| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        )
     };
     let first_entity = point("first-entity", 1.0, 2.0);
     let second_entity = point("second-entity", 4.0, 2.0);
@@ -926,7 +905,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
     ]);
     let loci = HashMap::from([(
         first.id.clone(),
-        vec![SketchLocus::Entity(first_entity.id.clone())],
+        vec![SketchLocus::Entity(first_entity.id().clone())],
     )]);
     assert_eq!(
         unique_axis_aligned_linked_loci(
@@ -942,8 +921,8 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             true,
         ),
         Some(vec![
-            SketchLocus::Entity(first_entity.id.clone()),
-            SketchLocus::Entity(second_entity.id.clone()),
+            SketchLocus::Entity(first_entity.id().clone()),
+            SketchLocus::Entity(second_entity.id().clone()),
         ])
     );
 
@@ -991,17 +970,14 @@ fn fixed_relation_ignores_self_identifying_geometry_link() {
         point.id.clone(),
         vec![SketchLocus::Entity(point_id.clone())],
     )]);
-    let point_entity = SketchEntity {
-        id: point_id.clone(),
-        sketch: SketchId("sketch".into()),
-        construction: false,
-        native_ref: Some(point.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
+    let point_entity = SketchEntity::new(
+        point_id.clone(),
+        SketchId("sketch".into()),
+        SketchGeometry::Point {
             position: Point2::new(1.0, 2.0),
         },
-    };
+    )
+    .with_native_ref(Some(point.id.clone()));
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
@@ -1021,26 +997,17 @@ fn relation_line_identity_ignores_self_identifying_geometry_link() {
     let line_id = SketchEntityId("line".into());
     let first_id = SketchEntityId("first".into());
     let second_id = SketchEntityId("second".into());
-    let line = SketchEntity {
-        id: line_id.clone(),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    let line = SketchEntity::new(
+        line_id.clone(),
+        sketch.clone(),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 0.0),
         },
-    };
-    let point_entity = |id: SketchEntityId, position: Point2| SketchEntity {
-        id,
-        sketch: sketch.clone(),
-        construction: true,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    );
+    let point_entity = |id: SketchEntityId, position: Point2| {
+        SketchEntity::new(id, sketch.clone(), SketchGeometry::Point { position })
+            .with_construction(true)
     };
     let first_entity = point_entity(first_id.clone(), Point2::new(0.0, 0.0));
     let second_entity = point_entity(second_id.clone(), Point2::new(2.0, 0.0));

@@ -195,7 +195,7 @@ fn saved_line_joins_through_order_table() {
         &BTreeSet::new(),
     );
     assert_eq!(offset, 20);
-    assert_eq!(native_entity.id.0, "creo:featdefs:sketch_entity#5:42");
+    assert_eq!(native_entity.id().0, "creo:featdefs:sketch_entity#5:42");
     assert!(matches!(
         native_entity.geometry,
         SketchGeometry::Native { ref native_kind } if native_kind == "saved_line"

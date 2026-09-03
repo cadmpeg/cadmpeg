@@ -326,7 +326,7 @@ pub(in super::super) fn resolved_circular_extrusion_profile(
             if let [entity_use] = profile.as_slice() {
                 if let Some(SketchGeometry::Circle { center, radius }) =
                     exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
-                        entity.id == entity_use.entity && entity.sketch == *sketch_id
+                        entity.id() == &entity_use.entity && entity.sketch == *sketch_id
                     }))
                     .map(|entity| &entity.geometry)
                 {

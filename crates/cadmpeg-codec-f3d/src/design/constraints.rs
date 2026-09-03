@@ -165,7 +165,7 @@ pub fn project_sketch_constraints(
                 .filter_map(|record_index| {
                     projected
                         .get(&(scope, *record_index))
-                        .map(|entity| entity.id.clone())
+                        .map(|entity| entity.id().clone())
                 })
                 .collect()
         };
@@ -430,7 +430,7 @@ fn exact_rectangular_pattern_instances(
                 return None;
             }
             Some(cadmpeg_ir::sketches::SketchPatternInstance {
-                entities: instance.iter().map(|entity| entity.id.clone()).collect(),
+                entities: instance.iter().map(|entity| entity.id().clone()).collect(),
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -472,11 +472,15 @@ pub(crate) fn exact_text_relation(
                 .collect::<Option<Vec<_>>>()?;
             (!frame.is_empty()
                 && frame.iter().all(|entity| {
-                    entity.id != text.id && !matches!(entity.geometry, SketchGeometry::Text { .. })
+                    entity.id() != text.id()
+                        && !matches!(entity.geometry, SketchGeometry::Text { .. })
                 }))
             .then(|| Definition::TextFrame {
-                text: text.id.clone(),
-                frame: frame.into_iter().map(|entity| entity.id.clone()).collect(),
+                text: text.id().clone(),
+                frame: frame
+                    .into_iter()
+                    .map(|entity| entity.id().clone())
+                    .collect(),
             })
         }
         SketchPatternDefinition::TextPath {
@@ -491,7 +495,7 @@ pub(crate) fn exact_text_relation(
         {
             let path = projected.get(&(scope, relation.members[0]))?;
             let text = projected.get(&(scope, *text_reference))?;
-            if path.id == text.id
+            if path.id() == text.id()
                 || matches!(
                     path.geometry,
                     SketchGeometry::Point { .. } | SketchGeometry::Text { .. }
@@ -517,8 +521,8 @@ pub(crate) fn exact_text_relation(
                 })
                 .collect();
             Some(Definition::TextPath {
-                text: text.id.clone(),
-                path: path.id.clone(),
+                text: text.id().clone(),
+                path: path.id().clone(),
                 glyph_transforms,
             })
         }
@@ -579,11 +583,11 @@ pub(crate) fn exact_circular_pattern(
     // geometry when the member and returned id sets match.
     let member_ids = members
         .iter()
-        .map(|entity| &entity.id)
+        .map(|entity| entity.id())
         .collect::<HashSet<_>>();
     let returned_ids = returned
         .iter()
-        .map(|entity| &entity.id)
+        .map(|entity| entity.id())
         .collect::<HashSet<_>>();
     if member_ids.len() != members.len()
         || returned_ids.len() != returned.len()
@@ -602,7 +606,7 @@ pub(crate) fn exact_circular_pattern(
         let patterned = returned
             .iter()
             .copied()
-            .filter(|entity| entity.id != center.id)
+            .filter(|entity| entity.id() != center.id())
             .collect::<Vec<_>>();
         let count = usize::try_from(*evaluated_count).ok()?;
         if patterned.is_empty() || !patterned.len().is_multiple_of(count) {
@@ -636,12 +640,12 @@ pub(crate) fn exact_circular_pattern(
                         })
                         .then(|| SketchCircularPatternInstance {
                             angle: cadmpeg_ir::features::Angle(rotation),
-                            entities: instance.iter().map(|entity| entity.id.clone()).collect(),
+                            entities: instance.iter().map(|entity| entity.id().clone()).collect(),
                         })
                 })
                 .collect::<Option<Vec<_>>>();
             if let Some(instances) = instances {
-                candidates.push((center.id.clone(), instances));
+                candidates.push((center.id().clone(), instances));
             }
         }
     }
@@ -963,17 +967,13 @@ mod tests {
     }
 
     fn point_entity(id: &str, u: f64) -> cadmpeg_ir::sketches::SketchEntity {
-        cadmpeg_ir::sketches::SketchEntity {
-            id: SketchEntityId(id.into()),
-            sketch: SketchId("generated:sketch#0".into()),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            SketchGeometry::Point {
                 position: Point2::new(u, 4.0),
             },
-        }
+        )
     }
 
     fn rectangular_point_relation(
@@ -1185,14 +1185,12 @@ mod tests {
 
     #[test]
     fn circular_pattern_resolves_full_and_partial_instance_distributions() {
-        let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
-            id: SketchEntityId(id.into()),
-            sketch: SketchId("generated:sketch#0".into()),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry,
+        let entity = |id: &str, geometry| {
+            cadmpeg_ir::sketches::SketchEntity::new(
+                SketchEntityId(id.into()),
+                SketchId("generated:sketch#0".into()),
+                geometry,
+            )
         };
         let center = entity(
             "generated:point#center",
@@ -1254,7 +1252,7 @@ mod tests {
         ) else {
             panic!("partial circular pattern did not resolve");
         };
-        assert_eq!(pattern.center(), &center.id);
+        assert_eq!(pattern.center(), center.id());
         assert_eq!(pattern.angle().0, std::f64::consts::PI);
         assert_eq!(pattern.count(), 3);
         assert_eq!(
@@ -1288,14 +1286,12 @@ mod tests {
 
     #[test]
     fn circular_pattern_resolves_independently_of_relation_ordinals() {
-        let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
-            id: SketchEntityId(id.into()),
-            sketch: SketchId("generated:sketch#0".into()),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry,
+        let entity = |id: &str, geometry| {
+            cadmpeg_ir::sketches::SketchEntity::new(
+                SketchEntityId(id.into()),
+                SketchId("generated:sketch#0".into()),
+                geometry,
+            )
         };
         let center = entity(
             "generated:point#center",
@@ -1354,7 +1350,7 @@ mod tests {
         else {
             panic!("role-agnostic circular pattern did not resolve");
         };
-        assert_eq!(pattern.center(), &center.id);
+        assert_eq!(pattern.center(), center.id());
         assert_eq!(pattern.count(), 3);
     }
 
@@ -1367,26 +1363,18 @@ mod tests {
         };
 
         let sketch = SketchId("sketch".into());
-        let path = SketchEntity {
-            id: SketchEntityId("path".into()),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        let path = SketchEntity::new(
+            SketchEntityId("path".into()),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(10.0, 0.0),
             },
-        };
-        let text = SketchEntity {
-            id: SketchEntityId("text".into()),
+        );
+        let text = SketchEntity::new(
+            SketchEntityId("text".into()),
             sketch,
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Text {
+            SketchGeometry::Text {
                 text: "A".into(),
                 font_family: "Arial".into(),
                 font_weight: 400,
@@ -1396,7 +1384,7 @@ mod tests {
                 horizontal_alignment: None,
                 vertical_alignment: None,
             },
-        };
+        );
         let mut glyph = [[0.0; 4]; 4];
         for ordinal in 0..4 {
             glyph[ordinal][ordinal] = 1.0;
@@ -1441,8 +1429,8 @@ mod tests {
                 text: ref text_id,
                 path: ref path_id,
                 ref glyph_transforms,
-            } if text_id == &text.id
-                && path_id == &path.id
+            } if text_id == text.id()
+                && path_id == path.id()
                 && glyph_transforms[0].rows[0][3] == 5.0
         ));
     }

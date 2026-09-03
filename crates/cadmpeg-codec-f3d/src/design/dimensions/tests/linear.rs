@@ -49,14 +49,12 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         &dimension("Radius Dimension-2", "native-unit")
     ));
 
-    let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry: SketchGeometry| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let first = entity(
         "generated:point#0",
@@ -267,14 +265,13 @@ fn dimension_proofs_require_the_evaluated_measurement() {
 #[test]
 fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
     let sketch = SketchId("generated:sketch#presentation".into());
-    let entity = |record_index: u32, geometry: SketchGeometry| SketchEntity {
-        id: SketchEntityId(format!("generated:entity#{record_index}")),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(format!("stream:geometry#{record_index}")),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |record_index: u32, geometry: SketchGeometry| {
+        SketchEntity::new(
+            SketchEntityId(format!("generated:entity#{record_index}")),
+            sketch.clone(),
+            geometry,
+        )
+        .with_native_ref(Some(format!("stream:geometry#{record_index}")))
     };
     let line = entity(
         306,
@@ -457,14 +454,12 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
 
 #[test]
 fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
-    let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#symmetric-distance".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#symmetric-distance".into()),
+            geometry,
+        )
     };
     let first = entity(
         "generated:line#first",
@@ -502,7 +497,7 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
             1.0e-6,
         ),
         Some(SketchConstraintDefinition::Distance { entities, parameter: actual })
-            if entities == vec![first.id.clone(), second.id.clone()] && actual == parameter_id
+            if entities == vec![first.id().clone(), second.id().clone()] && actual == parameter_id
     ));
 
     let mut direct_parameter = parameter.clone();
@@ -535,14 +530,12 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
 
 #[test]
 fn counted_linear_graph_selects_one_parameter_backed_direction() {
-    let entity = |id: &str, position| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point { position },
+    let entity = |id: &str, position| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            SketchGeometry::Point { position },
+        )
     };
     let first = entity("generated:point#first", Point2::new(4.0, 16.0));
     let second = entity("generated:point#second", Point2::new(4.0, 14.0));
@@ -556,7 +549,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
             second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
             parameter: ref parameter_id,
-        } if first_id == &first.id && second_id == &second.id && parameter_id == &parameter
+        } if first_id == first.id() && second_id == second.id() && parameter_id == &parameter
     ));
     assert!(directional_point_dimension(&[&first, &second], 3.0, parameter, 0.0).is_none());
 
@@ -582,14 +575,12 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
 
 #[test]
 fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
-    let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let point = entity(
         "generated:point#dimension",
@@ -612,20 +603,18 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
         Some(SketchConstraintDefinition::Distance {
             ref entities,
             parameter: ref actual_parameter,
-        }) if entities == &[point.id, line.id] && actual_parameter == &parameter
+        }) if entities == &[point.id().clone(), line.id().clone()] && actual_parameter == &parameter
     ));
 }
 
 #[test]
 fn counted_linear_graph_projects_exact_auxiliary_relations() {
-    let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: SketchId("generated:sketch#0".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
+    let entity = |id: &str, geometry| {
+        cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId(id.into()),
+            SketchId("generated:sketch#0".into()),
+            geometry,
+        )
     };
     let horizontal = entity(
         "generated:line#horizontal",
@@ -841,16 +830,15 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let sketch = neutral_sketch_id(&placement);
     let entities = points
         .iter()
-        .map(|point| SketchEntity {
-            id: SketchEntityId(format!("point-{}", point.record_index)),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: Some(point.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: point.coordinates,
-            },
+        .map(|point| {
+            SketchEntity::new(
+                SketchEntityId(format!("point-{}", point.record_index)),
+                sketch.clone(),
+                SketchGeometry::Point {
+                    position: point.coordinates,
+                },
+            )
+            .with_native_ref(Some(point.id.clone()))
         })
         .collect::<Vec<_>>();
 
@@ -888,19 +876,18 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     };
     let spatial_entities = points
         .iter()
-        .map(|point| cadmpeg_ir::sketches::SpatialSketchEntity {
-            id: cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
-                "spatial-point-{}",
-                point.record_index
-            )),
-            sketch: spatial_sketch.id.clone(),
-            construction: false,
-            native_ref: Some(point.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: cadmpeg_ir::sketches::SpatialSketchGeometry::Point {
-                position: Point3::new(0.0, point.coordinates.v, 0.0),
-            },
+        .map(|point| {
+            cadmpeg_ir::sketches::SpatialSketchEntity::new(
+                cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
+                    "spatial-point-{}",
+                    point.record_index
+                )),
+                spatial_sketch.id.clone(),
+                cadmpeg_ir::sketches::SpatialSketchGeometry::Point {
+                    position: Point3::new(0.0, point.coordinates.v, 0.0),
+                },
+            )
+            .with_native_ref(Some(point.id.clone()))
         })
         .collect::<Vec<_>>();
     assert!(project_dimension_constraints(
@@ -952,8 +939,8 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             ..
         } if actual_sketch == &spatial_sketch.id
             && actual_parameter == &neutral_parameter_id_parts(stream, 20)
-            && first == &spatial_entities[0].id
-            && second == &spatial_entities[1].id
+            && first == spatial_entities[0].id()
+            && second == spatial_entities[1].id()
     ));
 
     let axis_record = SketchCurveIdentity {
@@ -968,18 +955,16 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         secondary_id: 0,
         geometry: None,
     };
-    let axis_entity = cadmpeg_ir::sketches::SpatialSketchEntity {
-        id: cadmpeg_ir::sketches::SpatialSketchEntityId("spatial-axis".into()),
-        sketch: spatial_sketch.id.clone(),
-        construction: true,
-        native_ref: Some(axis_record.id.clone()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: cadmpeg_ir::sketches::SpatialSketchGeometry::Line {
+    let axis_entity = cadmpeg_ir::sketches::SpatialSketchEntity::new(
+        cadmpeg_ir::sketches::SpatialSketchEntityId("spatial-axis".into()),
+        spatial_sketch.id.clone(),
+        cadmpeg_ir::sketches::SpatialSketchGeometry::Line {
             start: Point3::new(-1.0, 1.0, 0.0),
             end: Point3::new(1.0, 1.0, 0.0),
         },
-    };
+    )
+    .with_construction(true)
+    .with_native_ref(Some(axis_record.id.clone()));
     let symmetry_group = DesignDimensionLocusGroup {
         id: format!("{stream}:design-dimension-locus-group#31"),
         companion_record_index: 22,
@@ -1050,9 +1035,9 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             first,
             second,
             axis,
-        } if first == &spatial_entities[0].id
-            && second == &spatial_entities[1].id
-            && axis == &axis_entity.id
+        } if first == spatial_entities[0].id()
+            && second == spatial_entities[1].id()
+            && axis == axis_entity.id()
     )));
     assert!(symmetry_constraints.iter().any(|constraint| matches!(
         constraint.definition,

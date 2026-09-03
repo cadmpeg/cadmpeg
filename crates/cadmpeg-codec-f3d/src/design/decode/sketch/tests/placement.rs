@@ -251,7 +251,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
             if position == Point2::new(120.0, 30.0)
     ));
     assert_eq!(
-        entities[1].id,
+        entities[1].id().clone(),
         crate::ids::neutral_sketch_record_id(&sketches[0].id, 21)
     );
 

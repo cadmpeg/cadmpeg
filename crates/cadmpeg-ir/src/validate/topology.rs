@@ -1499,13 +1499,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         .model
         .sketch_entities
         .iter()
-        .map(|entity| entity.id.0.as_str())
+        .map(|entity| entity.id().0.as_str())
         .collect::<HashSet<_>>();
     let sketch_entity_owners = ir
         .model
         .sketch_entities
         .iter()
-        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .map(|entity| (entity.id().0.as_str(), entity.sketch.0.as_str()))
         .collect::<HashMap<_, _>>();
     let parameters = ir
         .model
@@ -1527,7 +1527,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
     }
     for entity in &ir.model.sketch_entities {
         if !sketches.contains(entity.sketch.0.as_str()) {
-            ref_error(findings, &entity.id.0, "sketch", &entity.sketch.0);
+            ref_error(findings, entity.id().0.as_str(), "sketch", &entity.sketch.0);
         }
     }
     for constraint in &ir.model.sketch_constraints {
@@ -2198,13 +2198,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .model
         .sketch_entities
         .iter()
-        .map(|entity| entity.id.0.clone())
+        .map(|entity| entity.id().0.clone())
         .collect::<HashSet<_>>();
     let spatial_sketch_entity_owners = ir
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .map(|entity| (entity.id().0.as_str(), entity.sketch.0.as_str()))
         .collect::<HashMap<_, _>>();
     let mut reported_plane_cycles = HashSet::new();
     for feature in &ir.model.features {
@@ -5804,13 +5804,13 @@ fn check_feature_sketch_references(
         .model
         .sketch_entities
         .iter()
-        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .map(|entity| (entity.id().0.as_str(), entity.sketch.0.as_str()))
         .collect::<HashMap<_, _>>();
     let spatial_sketch_entity_owners = ir
         .model
         .spatial_sketch_entities
         .iter()
-        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .map(|entity| (entity.id().0.as_str(), entity.sketch.0.as_str()))
         .collect::<HashMap<_, _>>();
     let mut owners = HashMap::new();
     for feature in &ir.model.features {
@@ -5861,7 +5861,7 @@ fn check_feature_sketch_references(
                         .get(point.0.as_str())
                         .is_some_and(|owner| *owner == sketch.0.as_str())
                     && ir.model.sketch_entities.iter().any(|entity| {
-                        entity.id == *point
+                        entity.id() == point
                             && entity.sketch == *sketch
                             && matches!(
                                 &entity.geometry,
@@ -5880,7 +5880,7 @@ fn check_feature_sketch_references(
                         .get(point.0.as_str())
                         .is_some_and(|owner| *owner == sketch.0.as_str())
                     && ir.model.spatial_sketch_entities.iter().any(|entity| {
-                        entity.id == *point
+                        entity.id() == point
                             && entity.sketch == *sketch
                             && matches!(
                                 &entity.geometry,
@@ -6134,7 +6134,7 @@ fn check_feature_sketch_references(
                                                         != use_.parameter_range[1]
                                                     && ir.model.sketch_entities.iter().any(
                                                         |entity| {
-                                                            entity.id == use_.entity
+                                                            entity.id() == &use_.entity
                                                                 && entity.sketch == *sketch
                                                         },
                                                     )

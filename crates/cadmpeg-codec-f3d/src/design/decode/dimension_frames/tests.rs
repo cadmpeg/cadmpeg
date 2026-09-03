@@ -691,18 +691,14 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     let mut axis_pair = pair.clone();
     axis_pair.null_role = 14;
     axis_pair.geometry_role = 3;
-    let entity = SketchEntity {
-        id: SketchEntityId("f3d:model:sketch-entity#line".into()),
-        sketch: SketchId("f3d:model:sketch#axis-angle".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    let entity = SketchEntity::new(
+        SketchEntityId("f3d:model:sketch-entity#line".into()),
+        SketchId("f3d:model:sketch#axis-angle".into()),
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(1.0, 1.0),
         },
-    };
+    );
     let parameter = cadmpeg_ir::features::ParameterId("f3d:model:parameter#angle".into());
     assert!(matches!(
         null_locus_dimension_definition(
@@ -717,7 +713,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             entity: ref actual_entity,
             axis: SketchAxis::Horizontal,
             parameter: ref actual_parameter,
-        }) if actual_entity == &entity.id && actual_parameter == &parameter
+        }) if actual_entity == entity.id() && actual_parameter == &parameter
     ));
     assert!(null_locus_dimension_definition(
         &axis_pair,
@@ -739,18 +735,14 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     )
     .is_none());
 
-    let radial_entity = SketchEntity {
-        id: SketchEntityId("f3d:model:sketch-entity:circle".into()),
-        sketch: SketchId("f3d:model:sketch#radial".into()),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let radial_entity = SketchEntity::new(
+        SketchEntityId("f3d:model:sketch-entity:circle".into()),
+        SketchId("f3d:model:sketch#radial".into()),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: cadmpeg_ir::features::Length(1.000_000_014_901_161_2),
         },
-    };
+    );
     assert!(matches!(
         null_locus_dimension_definition(
             &pair,
@@ -763,7 +755,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         Some(SketchConstraintDefinition::Diameter {
             entity: ref actual_entity,
             parameter: ref actual_parameter,
-        }) if actual_entity == &radial_entity.id && actual_parameter == &parameter
+        }) if actual_entity == radial_entity.id() && actual_parameter == &parameter
     ));
     assert!(null_locus_dimension_definition(
         &pair,

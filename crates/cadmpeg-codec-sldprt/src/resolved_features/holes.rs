@@ -3392,17 +3392,13 @@ pub(crate) fn project_bore_backed_position_sketches(
             .map(|(ordinal, (point, _))| {
                 let delta =
                     Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-                SketchEntity {
-                    id: SketchEntityId(format!("{}:entity:{ordinal}", sketch_id.0)),
-                    sketch: sketch_id.clone(),
-                    construction: false,
-                    native_ref: None,
-                    geometry_ref: None,
-                    endpoint_refs: Vec::new(),
-                    geometry: SketchGeometry::Point {
+                SketchEntity::new(
+                    SketchEntityId(format!("{}:entity:{ordinal}", sketch_id.0)),
+                    sketch_id.clone(),
+                    SketchGeometry::Point {
                         position: Point2::new(delta.dot(*u_axis), delta.dot(v_axis)),
                     },
-                }
+                )
             })
             .collect();
         projections.push(Projection {

@@ -140,33 +140,25 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         native_ref: None,
     });
     ir.model.sketch_entities.extend([
-        SketchEntity {
-            id: circle_id.clone(),
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Circle {
+        SketchEntity::new(
+            circle_id.clone(),
+            sketch_id.clone(),
+            SketchGeometry::Circle {
                 center: Point2::new(0.0, 0.0),
                 radius: Length(-1.0),
             },
-        },
-        SketchEntity {
-            id: nurbs_id,
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Nurbs {
+        ),
+        SketchEntity::new(
+            nurbs_id,
+            sketch_id.clone(),
+            SketchGeometry::Nurbs {
                 degree: 3,
                 knots: vec![0.0, 1.0],
                 control_points: vec![Point2::new(0.0, 0.0)],
                 weights: Some(vec![0.0]),
                 periodic: false,
             },
-        },
+        ),
     ]);
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId("synthetic:test:sketch-constraint#0".into()),
@@ -235,14 +227,10 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     let result_start = Point2::new(-1.2, 1.6);
     let result_end = Point2::new(10.0 + 2.0 / 5.0_f64.sqrt(), 4.0 / 5.0_f64.sqrt());
     ir.model.sketch_entities.extend([
-        SketchEntity {
-            id: source.clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Nurbs {
+        SketchEntity::new(
+            source.clone(),
+            sketch.clone(),
+            SketchGeometry::Nurbs {
                 degree: 2,
                 knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 control_points: vec![
@@ -253,15 +241,11 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 weights: None,
                 periodic: false,
             },
-        },
-        SketchEntity {
-            id: result.clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Nurbs {
+        ),
+        SketchEntity::new(
+            result.clone(),
+            sketch.clone(),
+            SketchGeometry::Nurbs {
                 degree: 3,
                 knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
                 control_points: vec![
@@ -273,7 +257,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 weights: None,
                 periodic: false,
             },
-        },
+        ),
     ]);
     let constraint = SketchConstraintId("synthetic:test:constraint#nurbs-offset".into());
     ir.model.sketch_constraints.push(SketchConstraint {
@@ -304,13 +288,13 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         .model
         .sketch_entities
         .iter()
-        .position(|entity| entity.id == source)
+        .position(|entity| entity.id() == &source)
         .expect("source entity");
     let result_ordinal = ir
         .model
         .sketch_entities
         .iter()
-        .position(|entity| entity.id == result)
+        .position(|entity| entity.id() == &result)
         .expect("result entity");
     let offset_mismatch = |report: &crate::report::ValidationReport| {
         report.findings.iter().any(|finding| {
@@ -394,15 +378,8 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         ),
         plane(second_sketch.clone(), Vec::new()),
     ]);
-    let line = |id, sketch, start, end| SketchEntity {
-        id,
-        sketch,
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
-    };
+    let line =
+        |id, sketch, start, end| SketchEntity::new(id, sketch, SketchGeometry::Line { start, end });
     ir.model.sketch_entities.extend([
         line(
             first.clone(),
@@ -457,7 +434,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         .model
         .sketch_entities
         .iter_mut()
-        .find(|entity| entity.id == disconnected)
+        .find(|entity| entity.id() == &disconnected)
         .expect("disconnected entity remains present")
         .geometry;
     let SketchGeometry::Line { start, .. } = disconnected_geometry else {

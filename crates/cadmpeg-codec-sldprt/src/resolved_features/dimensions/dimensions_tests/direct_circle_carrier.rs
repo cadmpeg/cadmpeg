@@ -85,17 +85,14 @@ fn sketch(sketch: &SketchId, profiles: Vec<Vec<SketchEntityUse>>) -> Sketch {
 }
 
 fn native_entity(sketch: &SketchId, id: &str, native_ref: &str) -> SketchEntity {
-    SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: Some(native_ref.into()),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Native {
+    SketchEntity::new(
+        SketchEntityId(id.into()),
+        sketch.clone(),
+        SketchGeometry::Native {
             native_kind: "native-circle".into(),
         },
-    }
+    )
+    .with_native_ref(Some(native_ref.into()))
 }
 
 #[test]
@@ -109,18 +106,16 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
     let other_id = SketchEntityId("other-native".into());
     let lane = lane(feature_ref, marker_ref, relation_ref);
     let feature = feature(feature_ref, &sketch_id);
-    let typed = SketchEntity {
-        id: typed_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: Some(marker_ref.into()),
-        geometry_ref: Some(relation_ref.into()),
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let typed = SketchEntity::new(
+        typed_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),
             radius: Length(2.0),
         },
-    };
+    )
+    .with_native_ref(Some(marker_ref.into()))
+    .with_geometry_ref(Some(relation_ref.into()));
     let native = native_entity(&sketch_id, native_id.0.as_str(), marker_ref);
     let other = native_entity(&sketch_id, other_id.0.as_str(), "other-marker");
     let mut entities = vec![typed, native, other];
@@ -154,11 +149,13 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
 
     assert!(!entities
         .iter()
-        .any(|entity| entity.id == SketchEntityId("native-circle".into())));
-    assert!(entities.iter().any(|entity| entity.id == typed_id));
+        .any(|entity| entity.id().clone() == SketchEntityId("native-circle".into())));
     assert!(entities
         .iter()
-        .any(|entity| entity.id == SketchEntityId("other-native".into())));
+        .any(|entity| entity.id().clone() == typed_id));
+    assert!(entities
+        .iter()
+        .any(|entity| entity.id().clone() == SketchEntityId("other-native".into())));
     assert_eq!(sketches[0].profiles.len(), 2);
     assert_eq!(sketches[0].profiles[0].len(), 1);
     assert_eq!(

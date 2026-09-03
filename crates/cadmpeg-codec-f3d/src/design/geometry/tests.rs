@@ -16,14 +16,13 @@ fn local_arrangement_budget() -> WorkBudget<'static> {
 #[test]
 fn empty_profile_table_arranges_face_around_open_sketch_branch() {
     let sketch_id = SketchId("sketch-with-overhang".into());
-    let line = |id: &str, start: Point2, end: Point2, construction: bool| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch_id.clone(),
-        construction,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let line = |id: &str, start: Point2, end: Point2, construction: bool| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch_id.clone(),
+            SketchGeometry::Line { start, end },
+        )
+        .with_construction(construction)
     };
     let entities = vec![
         line(
@@ -113,15 +112,11 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             entity: id.clone(),
             reversed: false,
         });
-        entities.push(SketchEntity {
+        entities.push(SketchEntity::new(
             id,
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line { start, end },
-        });
+            sketch_id.clone(),
+            SketchGeometry::Line { start, end },
+        ));
     }
     let circle_id = SketchEntityId("unrelated-circle".into());
     let profiles = vec![
@@ -131,18 +126,14 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
             reversed: false,
         }],
     ];
-    entities.push(SketchEntity {
-        id: circle_id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    entities.push(SketchEntity::new(
+        circle_id,
+        sketch_id.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(20.0, 20.0),
             radius: Length(1.0),
         },
-    });
+    ));
     let sketch = Sketch {
         id: sketch_id,
         name: None,
@@ -175,21 +166,17 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
         entity: ellipse.clone(),
         reversed: false,
     }]);
-    entities.push(SketchEntity {
-        id: ellipse,
-        sketch: incomplete.id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Ellipse {
+    entities.push(SketchEntity::new(
+        ellipse,
+        incomplete.id.clone(),
+        SketchGeometry::Ellipse {
             center: Point2::new(30.0, 30.0),
             major_angle: Angle(0.0),
             major_radius: Length(2.0),
             minor_radius: Length(1.0),
             bounds: None,
         },
-    });
+    ));
     assert_eq!(
         region_containing_points(
             &incomplete,
@@ -227,18 +214,14 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
                 entity: id.clone(),
                 reversed: false,
             });
-            entities.push(SketchEntity {
+            entities.push(SketchEntity::new(
                 id,
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: None,
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Line {
+                sketch_id.clone(),
+                SketchGeometry::Line {
                     start: corners[edge_index],
                     end: corners[(edge_index + 1) % corners.len()],
                 },
-            });
+            ));
         }
         profiles.push(profile);
     }
@@ -329,15 +312,7 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
         .enumerate()
         .map(|(index, geometry)| {
             let id = SketchEntityId(format!("outer-{index}"));
-            entities.push(SketchEntity {
-                id: id.clone(),
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: None,
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry,
-            });
+            entities.push(SketchEntity::new(id.clone(), sketch_id.clone(), geometry));
             SketchEntityUse {
                 entity: id,
                 reversed: false,
@@ -353,18 +328,14 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
     let inner = (0..corners.len())
         .map(|index| {
             let id = SketchEntityId(format!("inner-{index}"));
-            entities.push(SketchEntity {
-                id: id.clone(),
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: None,
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Line {
+            entities.push(SketchEntity::new(
+                id.clone(),
+                sketch_id.clone(),
+                SketchGeometry::Line {
                     start: corners[index],
                     end: corners[(index + 1) % corners.len()],
                 },
-            });
+            ));
             SketchEntityUse {
                 entity: id,
                 reversed: false,
@@ -400,15 +371,7 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
     let line_id = SketchEntityId("diameter".into());
     let arc_id = SketchEntityId("left-arc".into());
     let circle_id = SketchEntityId("circle".into());
-    let entity = |id, geometry| SketchEntity {
-        id,
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
-    };
+    let entity = |id, geometry| SketchEntity::new(id, sketch_id.clone(), geometry);
     let entities = vec![
         entity(
             line_id.clone(),
@@ -556,32 +519,24 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
             entity: id.clone(),
             reversed: false,
         });
-        entities.push(SketchEntity {
+        entities.push(SketchEntity::new(
             id,
-            sketch: sketch_id.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+            sketch_id.clone(),
+            SketchGeometry::Line {
                 start: corners[index],
                 end: corners[(index + 1) % corners.len()],
             },
-        });
+        ));
     }
     let circle = SketchEntityId("circle".into());
-    entities.push(SketchEntity {
-        id: circle.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    entities.push(SketchEntity::new(
+        circle.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
         },
-    });
+    ));
     let sketch = Sketch {
         id: sketch_id,
         name: None,
@@ -821,15 +776,8 @@ fn historical_region_faces_follow_complete_ownership_hierarchy() {
 #[test]
 fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     let sketch = SketchId("sketch".into());
-    let entity = |geometry| SketchEntity {
-        id: SketchEntityId("curve".into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry,
-    };
+    let entity =
+        |geometry| SketchEntity::new(SketchEntityId("curve".into()), sketch.clone(), geometry);
     let arc = entity(SketchGeometry::Arc {
         center: Point2::new(0.0, 0.0),
         radius: Length(2.0),
@@ -928,14 +876,12 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
 #[test]
 fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
     let sketch = SketchId("f3d:model:sketch#profile".into());
-    let line = |id: &str, start: Point2, end: Point2| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let line = |id: &str, start: Point2, end: Point2| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Line { start, end },
+        )
     };
     let entities = vec![
         line("line-a", Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)),
@@ -947,18 +893,14 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
             Point2::new(0.0, 0.0),
         ),
         line("open-line", Point2::new(10.0, 0.0), Point2::new(11.0, 0.0)),
-        SketchEntity {
-            id: SketchEntityId("circle".into()),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Circle {
+        SketchEntity::new(
+            SketchEntityId("circle".into()),
+            sketch.clone(),
+            SketchGeometry::Circle {
                 center: Point2::new(20.0, 20.0),
                 radius: Length(3.0),
             },
-        },
+        ),
     ];
 
     let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
@@ -982,17 +924,15 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
 #[test]
 fn branched_line_graph_projects_each_bounded_face() {
     let sketch = SketchId("f3d:model:sketch#branched-profile".into());
-    let line = |id: &str, start: (f64, f64), end: (f64, f64)| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
-            start: Point2::new(start.0, start.1),
-            end: Point2::new(end.0, end.1),
-        },
+    let line = |id: &str, start: (f64, f64), end: (f64, f64)| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Line {
+                start: Point2::new(start.0, start.1),
+                end: Point2::new(end.0, end.1),
+            },
+        )
     };
     let entities = vec![
         line("bottom-left", (0.0, 0.0), (1.0, 0.0)),
@@ -1015,17 +955,15 @@ fn branched_line_graph_projects_each_bounded_face() {
 #[test]
 fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
     let sketch = SketchId("f3d:model:sketch#shared-corner-profile".into());
-    let line = |id: &str, start: (f64, f64), end: (f64, f64)| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
-            start: Point2::new(start.0, start.1),
-            end: Point2::new(end.0, end.1),
-        },
+    let line = |id: &str, start: (f64, f64), end: (f64, f64)| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Line {
+                start: Point2::new(start.0, start.1),
+                end: Point2::new(end.0, end.1),
+            },
+        )
     };
     let entities = vec![
         line("outer-bottom", (0.0, 0.0), (31.0, 0.0)),

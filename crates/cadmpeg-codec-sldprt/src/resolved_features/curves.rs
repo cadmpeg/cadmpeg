@@ -341,17 +341,16 @@ pub(super) fn resolve_two_center_semicircle_profile(
     .into_iter()
     .enumerate()
     {
-        entities.push(SketchEntity {
-            id: SketchEntityId(format!(
-                "sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"
-            )),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: vec![start_ref.clone(), end_ref.clone()],
-            geometry: SketchGeometry::Line { start, end },
-        });
+        entities.push(
+            SketchEntity::new(
+                SketchEntityId(format!(
+                    "sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"
+                )),
+                sketch.clone(),
+                SketchGeometry::Line { start, end },
+            )
+            .with_endpoint_refs(vec![start_ref.clone(), end_ref.clone()]),
+        );
     }
 }
 
@@ -1083,7 +1082,7 @@ fn closed_marker_profiles_with_policy(
         })
         .map(|entity| {
             vec![SketchEntityUse {
-                entity: entity.id.clone(),
+                entity: entity.id().clone(),
                 reversed: false,
             }]
         })
@@ -1156,7 +1155,7 @@ fn closed_marker_profiles_with_policy(
                 break;
             };
             profile.push(SketchEntityUse {
-                entity: entities[curve].id.clone(),
+                entity: entities[curve].id().clone(),
                 reversed,
             });
             current = next;

@@ -173,15 +173,11 @@ fn spatial_line(
     start: Point3,
     end: Point3,
 ) -> SpatialSketchEntity {
-    SpatialSketchEntity {
-        id: neutral_spatial_sketch_curve_id(sketch, primary_id, 0),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Line { start, end },
-    }
+    SpatialSketchEntity::new(
+        neutral_spatial_sketch_curve_id(sketch, primary_id, 0),
+        sketch.clone(),
+        SpatialSketchGeometry::Line { start, end },
+    )
 }
 
 fn spatial_profile(
@@ -524,14 +520,10 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
         ),
     ];
     let arc_id = neutral_spatial_sketch_curve_id(&sketch_id, 200, 0);
-    entities.push(SpatialSketchEntity {
-        id: arc_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Arc {
+    entities.push(SpatialSketchEntity::new(
+        arc_id.clone(),
+        sketch_id.clone(),
+        SpatialSketchGeometry::Arc {
             center: Point3::new(10.0, 10.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
@@ -539,7 +531,7 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
             start_angle: Angle(0.0),
             end_angle: Angle(std::f64::consts::PI),
         },
-    });
+    ));
     let sketch = SpatialSketch {
         id: sketch_id.clone(),
         name: None,
@@ -585,19 +577,17 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     let sketch_id = neutral_spatial_sketch_id(&placement);
     let curves = [curve(30, 100, 0), curve(31, 200, 0), curve(32, 201, 0)];
     let entity_id = |primary| neutral_spatial_sketch_curve_id(&sketch_id, primary, 0);
-    let circle = |primary, radius, normal| SpatialSketchEntity {
-        id: entity_id(primary),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SpatialSketchGeometry::Circle {
-            center: Point3::new(0.0, 0.0, 0.0),
-            normal,
-            reference_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: Length(radius),
-        },
+    let circle = |primary, radius, normal| {
+        SpatialSketchEntity::new(
+            entity_id(primary),
+            sketch_id.clone(),
+            SpatialSketchGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                normal,
+                reference_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: Length(radius),
+            },
+        )
     };
     let spatial_entities = [
         circle(100, 2.0, Vector3::new(0.0, 0.0, 1.0)),
@@ -733,30 +723,22 @@ fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_pr
     let sketch = neutral_sketch_id(&placement);
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let sketch_entities = [
-        SketchEntity {
-            id: neutral_sketch_curve_id(&sketch, 100, 101),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            neutral_sketch_curve_id(&sketch, 100, 101),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: neutral_sketch_curve_id(&sketch, 200, 201),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            neutral_sketch_curve_id(&sketch, 200, 201),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(1.0, 0.0),
                 end: Point2::new(1.0, 1.0),
             },
-        },
+        ),
     ];
     let sketches = [Sketch {
         id: sketch.clone(),
@@ -816,21 +798,20 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
     let curves = [curve(30, 100, 101), curve(31, 200, 201)];
     let spatial_entities = curves
         .iter()
-        .map(|curve| SpatialSketchEntity {
-            id: neutral_spatial_sketch_curve_id(
-                &spatial_sketch,
-                curve.primary_id,
-                curve.secondary_id,
-            ),
-            sketch: spatial_sketch.clone(),
-            construction: false,
-            native_ref: Some(curve.id.clone()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SpatialSketchGeometry::Line {
-                start: Point3::new(0.0, 0.0, 0.0),
-                end: Point3::new(1.0, 0.0, 0.0),
-            },
+        .map(|curve| {
+            SpatialSketchEntity::new(
+                neutral_spatial_sketch_curve_id(
+                    &spatial_sketch,
+                    curve.primary_id,
+                    curve.secondary_id,
+                ),
+                spatial_sketch.clone(),
+                SpatialSketchGeometry::Line {
+                    start: Point3::new(0.0, 0.0, 0.0),
+                    end: Point3::new(1.0, 0.0, 0.0),
+                },
+            )
+            .with_native_ref(Some(curve.id.clone()))
         })
         .collect::<Vec<_>>();
     let group = group();
@@ -882,30 +863,22 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         .map(|curve| neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id))
         .collect::<Vec<_>>();
     let sketch_entities = [
-        SketchEntity {
-            id: curve_ids[0].clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        SketchEntity::new(
+            curve_ids[0].clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(0.0, 0.0),
                 end: Point2::new(1.0, 0.0),
             },
-        },
-        SketchEntity {
-            id: curve_ids[1].clone(),
-            sketch: sketch.clone(),
-            construction: false,
-            native_ref: None,
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Line {
+        ),
+        SketchEntity::new(
+            curve_ids[1].clone(),
+            sketch.clone(),
+            SketchGeometry::Line {
                 start: Point2::new(1.0, 0.0),
                 end: Point2::new(0.0, 0.0),
             },
-        },
+        ),
     ];
     let mut sketches = [Sketch {
         id: sketch.clone(),
@@ -1139,18 +1112,14 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
         }]],
         native_ref: None,
     };
-    let entity = SketchEntity {
-        id: entity_id,
-        sketch: sketch_id,
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
+    let entity = SketchEntity::new(
+        entity_id,
+        sketch_id,
+        SketchGeometry::Line {
             start: Point2::new(0.0, 0.0),
             end: Point2::new(2.0, 0.0),
         },
-    };
+    );
     let point = Point3::new(11.0, 20.0, 9.0);
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
     assert_eq!(
@@ -1181,14 +1150,12 @@ fn historical_points_on_profile_boundaries_are_ambiguous() {
             reversed: false,
         }],
     ]);
-    let branch_entity = |id, start, end| SketchEntity {
-        id,
-        sketch: branched_sketch.id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line { start, end },
+    let branch_entity = |id, start, end| {
+        SketchEntity::new(
+            id,
+            branched_sketch.id.clone(),
+            SketchGeometry::Line { start, end },
+        )
     };
     let branched_entities = [
         entity.clone(),
@@ -1517,18 +1484,14 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
 
     let sketch_id = SketchId("sketch".into());
     let circle_id = SketchEntityId("circle".into());
-    let circle = SketchEntity {
-        id: circle_id.clone(),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Circle {
+    let circle = SketchEntity::new(
+        circle_id.clone(),
+        sketch_id.clone(),
+        SketchGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             radius: Length(2.0),
         },
-    };
+    );
     let sketch = Sketch {
         id: sketch_id,
         name: None,
@@ -1764,18 +1727,14 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
             });
             let [start_u, start_v] = corners[edge_index];
             let [end_u, end_v] = corners[(edge_index + 1) % corners.len()];
-            entities.push(SketchEntity {
+            entities.push(SketchEntity::new(
                 id,
-                sketch: sketch_id.clone(),
-                construction: false,
-                native_ref: None,
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Line {
+                sketch_id.clone(),
+                SketchGeometry::Line {
                     start: Point2::new(start_u, start_v),
                     end: Point2::new(end_u, end_v),
                 },
-            });
+            ));
         }
         profiles.push(profile);
     }

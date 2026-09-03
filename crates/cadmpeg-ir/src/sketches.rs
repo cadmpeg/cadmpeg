@@ -162,9 +162,10 @@ pub struct SketchEntityUse {
 /// public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SketchEntityWire")]
 pub struct SketchEntity {
     /// Globally unique entity id.
-    pub id: SketchEntityId,
+    id: SketchEntityId,
     /// Owning sketch.
     pub sketch: SketchId,
     /// Whether the entity is construction geometry.
@@ -186,6 +187,7 @@ pub struct SketchEntity {
 impl SketchEntity {
     /// Construct a sketch entity from its id, owning sketch, and geometry.
     pub fn new(id: SketchEntityId, sketch: SketchId, geometry: SketchGeometry) -> Self {
+        assert!(!id.0.is_empty(), "SketchEntity.id must not be empty");
         Self {
             id,
             sketch,
@@ -195,6 +197,70 @@ impl SketchEntity {
             endpoint_refs: Vec::new(),
             geometry,
         }
+    }
+
+    /// Return the globally unique entity id.
+    pub fn id(&self) -> &SketchEntityId {
+        &self.id
+    }
+
+    /// Set whether this entity is construction geometry.
+    pub fn with_construction(mut self, construction: bool) -> Self {
+        self.construction = construction;
+        self
+    }
+
+    /// Set the source-native geometry record.
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
+    /// Set the source-native curve carrier.
+    pub fn with_geometry_ref(mut self, geometry_ref: Option<String>) -> Self {
+        self.geometry_ref = geometry_ref;
+        self
+    }
+
+    /// Set the source-native endpoint records.
+    pub fn with_endpoint_refs(mut self, endpoint_refs: Vec<String>) -> Self {
+        self.endpoint_refs = endpoint_refs;
+        self
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchEntityWire {
+    id: SketchEntityId,
+    sketch: SketchId,
+    #[serde(default)]
+    construction: bool,
+    #[serde(default)]
+    native_ref: Option<String>,
+    #[serde(default)]
+    geometry_ref: Option<String>,
+    #[serde(default)]
+    endpoint_refs: Vec<String>,
+    geometry: SketchGeometry,
+}
+
+impl TryFrom<SketchEntityWire> for SketchEntity {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchEntityWire) -> Result<Self, Self::Error> {
+        if wire.id.0.is_empty() {
+            return Err("SketchEntity.id must not be empty");
+        }
+        Ok(Self {
+            id: wire.id,
+            sketch: wire.sketch,
+            construction: wire.construction,
+            native_ref: wire.native_ref,
+            geometry_ref: wire.geometry_ref,
+            endpoint_refs: wire.endpoint_refs,
+            geometry: wire.geometry,
+        })
     }
 }
 
@@ -528,9 +594,10 @@ pub struct SpatialSketchEntityUse {
 /// is no public [`Default`]: an empty id is illegal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SpatialSketchEntityWire")]
 pub struct SpatialSketchEntity {
     /// Globally unique spatial entity id.
-    pub id: SpatialSketchEntityId,
+    id: SpatialSketchEntityId,
     /// Owning spatial sketch.
     pub sketch: SpatialSketchId,
     /// Whether the entity is construction geometry.
@@ -556,6 +623,7 @@ impl SpatialSketchEntity {
         sketch: SpatialSketchId,
         geometry: SpatialSketchGeometry,
     ) -> Self {
+        assert!(!id.0.is_empty(), "SpatialSketchEntity.id must not be empty");
         Self {
             id,
             sketch,
@@ -565,6 +633,70 @@ impl SpatialSketchEntity {
             endpoint_refs: Vec::new(),
             geometry,
         }
+    }
+
+    /// Return the globally unique spatial entity id.
+    pub fn id(&self) -> &SpatialSketchEntityId {
+        &self.id
+    }
+
+    /// Set whether this entity is construction geometry.
+    pub fn with_construction(mut self, construction: bool) -> Self {
+        self.construction = construction;
+        self
+    }
+
+    /// Set the source-native geometry record.
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
+    /// Set the source-native curve carrier.
+    pub fn with_geometry_ref(mut self, geometry_ref: Option<String>) -> Self {
+        self.geometry_ref = geometry_ref;
+        self
+    }
+
+    /// Set the source-native endpoint records.
+    pub fn with_endpoint_refs(mut self, endpoint_refs: Vec<String>) -> Self {
+        self.endpoint_refs = endpoint_refs;
+        self
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SpatialSketchEntityWire {
+    id: SpatialSketchEntityId,
+    sketch: SpatialSketchId,
+    #[serde(default)]
+    construction: bool,
+    #[serde(default)]
+    native_ref: Option<String>,
+    #[serde(default)]
+    geometry_ref: Option<String>,
+    #[serde(default)]
+    endpoint_refs: Vec<String>,
+    geometry: SpatialSketchGeometry,
+}
+
+impl TryFrom<SpatialSketchEntityWire> for SpatialSketchEntity {
+    type Error = &'static str;
+
+    fn try_from(wire: SpatialSketchEntityWire) -> Result<Self, Self::Error> {
+        if wire.id.0.is_empty() {
+            return Err("SpatialSketchEntity.id must not be empty");
+        }
+        Ok(Self {
+            id: wire.id,
+            sketch: wire.sketch,
+            construction: wire.construction,
+            native_ref: wire.native_ref,
+            geometry_ref: wire.geometry_ref,
+            endpoint_refs: wire.endpoint_refs,
+            geometry: wire.geometry,
+        })
     }
 }
 

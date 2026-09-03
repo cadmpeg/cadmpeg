@@ -186,7 +186,7 @@ pub(super) fn append_generated_sketch_markers(
                 next_id,
             );
             marker_ids
-                .entry(entity.id.clone())
+                .entry(entity.id().clone())
                 .or_default()
                 .push(local_id);
             marker_loci.push((
@@ -575,7 +575,7 @@ pub(super) fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEn
     ir.model
         .sketch_entities
         .iter()
-        .find(|candidate| candidate.id == *entity)
+        .find(|candidate| candidate.id() == entity)
         .is_some_and(|candidate| matches!(candidate.geometry, SketchGeometry::Point { .. }))
 }
 
@@ -647,7 +647,7 @@ fn unique_generated_entity_marker(
                     .iter()
                     .any(|(candidate, _)| same_point2(*point, *candidate))
             })
-            .map(|candidate| &candidate.id);
+            .map(|candidate| candidate.id());
         if candidates.next() == Some(entity) && candidates.next().is_none() {
             return Ok(*local_id);
         }

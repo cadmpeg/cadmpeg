@@ -563,15 +563,30 @@ impl_entity_schema!(
 );
 impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id.0; id, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
 impl_entity_schema!(crate::sketches::Sketch, Sketch, id.0; id, name, configuration, visible, placement, profiles, native_ref);
-impl_entity_schema!(crate::sketches::SketchEntity, SketchEntity, id.0; id, sketch, construction, native_ref, geometry_ref, endpoint_refs, geometry);
+impl EntitySchema for crate::sketches::SketchEntity {
+    const KIND: EntityKind = EntityKind::SketchEntity;
+
+    fn identity(&self) -> &str {
+        self.id().0.as_str()
+    }
+
+    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
+        visit_typed_references(self, visitor);
+    }
+}
 impl_entity_schema!(crate::sketches::SketchConstraint, SketchConstraint, id.0; id, sketch, definition, name, driving, active, virtual_space, visible, orientation, label_distance, label_position, metadata, native_ref);
 impl_entity_schema!(crate::sketches::SpatialSketch, SpatialSketch, id.0; id, name, configuration, visible, profiles, native_ref);
-impl_entity_schema!(
-    crate::sketches::SpatialSketchEntity,
-    SpatialSketchEntity,
-    id.0;
-    id, sketch, construction, native_ref, geometry_ref, endpoint_refs, geometry
-);
+impl EntitySchema for crate::sketches::SpatialSketchEntity {
+    const KIND: EntityKind = EntityKind::SpatialSketchEntity;
+
+    fn identity(&self) -> &str {
+        self.id().0.as_str()
+    }
+
+    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
+        visit_typed_references(self, visitor);
+    }
+}
 impl_entity_schema!(
     crate::sketches::SpatialSketchConstraint,
     SpatialSketchConstraint,

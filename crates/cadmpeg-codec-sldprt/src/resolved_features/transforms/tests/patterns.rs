@@ -959,17 +959,14 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         .take(3)
         .map(|marker| {
             let [u, v] = marker.coordinates_m.unwrap();
-            SketchEntity {
-                id: SketchEntityId(format!("bound-{}", marker.id)),
-                sketch: sketch.clone(),
-                construction: false,
-                native_ref: Some(marker.id.clone()),
-                geometry_ref: None,
-                endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Point {
+            SketchEntity::new(
+                SketchEntityId(format!("bound-{}", marker.id)),
+                sketch.clone(),
+                SketchGeometry::Point {
                     position: Point2::new(u * 1000.0, v * 1000.0),
                 },
-            }
+            )
+            .with_native_ref(Some(marker.id.clone()))
         })
         .collect::<Vec<_>>();
     let operand = |offset: u64, index: u16| FeatureInputOperand {
@@ -1055,7 +1052,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
 
     let solver_lines = entities
         .iter()
-        .filter(|entity| entity.id.0.contains("#solver-line:"))
+        .filter(|entity| entity.id().0.contains("#solver-line:"))
         .collect::<Vec<_>>();
     assert_eq!(solver_lines.len(), 4);
     assert_eq!(
@@ -1139,16 +1136,16 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .into_iter()
         .take(3)
         .enumerate()
-        .map(|(index, [u, v])| SketchEntity {
-            id: SketchEntityId(format!("bound-point-{index}")),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: Some(format!("point-{index}")),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(u * 1000.0, v * 1000.0),
-            },
+        .map(|(index, [u, v])| {
+            SketchEntity::new(
+                SketchEntityId(format!("bound-point-{index}")),
+                sketch.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(u * 1000.0, v * 1000.0),
+                },
+            )
+            .with_construction(true)
+            .with_native_ref(Some(format!("point-{index}")))
         })
         .collect::<Vec<_>>();
     let relation = FeatureInputRelationInstance {
@@ -1224,7 +1221,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         SketchGeometry::Line { start, end }
             if start == Point2::new(36.0, -5.0) && end == Point2::new(36.0, -150.0)
     ));
-    let solver_line_id = solver_line.id.clone();
+    let solver_line_id = solver_line.id().clone();
 
     let mut constraints = Vec::new();
     project_relation_bindings(
@@ -1287,34 +1284,30 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         },
         native_ref: Some("feature-native".into()),
     };
-    let line = |id: &str, start: [f64; 2], end: [f64; 2]| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch_id.clone(),
-        construction: false,
-        native_ref: None,
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Line {
-            start: Point2::new(start[0], start[1]),
-            end: Point2::new(end[0], end[1]),
-        },
+    let line = |id: &str, start: [f64; 2], end: [f64; 2]| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch_id.clone(),
+            SketchGeometry::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            },
+        )
     };
     let mut entities = vec![
         line("profile-bottom", [0.0, -20.0], [70.0, -20.0]),
         line("profile-top", [0.0, 0.0], [70.0, 0.0]),
         line("profile-left", [0.0, -20.0], [0.0, 0.0]),
         line("profile-right", [70.0, 0.0], [70.0, -20.0]),
-        SketchEntity {
-            id: SketchEntityId("resolved-point".into()),
-            sketch: sketch_id.clone(),
-            construction: true,
-            native_ref: Some("point-4".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
+        SketchEntity::new(
+            SketchEntityId("resolved-point".into()),
+            sketch_id.clone(),
+            SketchGeometry::Point {
                 position: Point2::new(85.0, -10.0),
             },
-        },
+        )
+        .with_construction(true)
+        .with_native_ref(Some("point-4".into())),
     ];
     let coordinates_m = [
         [0.0, 0.0],
@@ -1429,7 +1422,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         &constraint.definition,
         SketchConstraintDefinition::DistanceLoci { first, second, .. }
             if first == &SketchLocus::Entity(SketchEntityId("resolved-point".into()))
-                && second == &SketchLocus::Entity(solver_line.id.clone())
+                && second == &SketchLocus::Entity(solver_line.id().clone())
     ));
 }
 
@@ -1453,16 +1446,15 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         },
         native_ref: Some("feature-native".into()),
     };
-    let point = |id: &str, marker: Option<&str>, u: f64| SketchEntity {
-        id: SketchEntityId(id.into()),
-        sketch: sketch.clone(),
-        construction: false,
-        native_ref: marker.map(str::to_owned),
-        geometry_ref: None,
-        endpoint_refs: Vec::new(),
-        geometry: SketchGeometry::Point {
-            position: Point2::new(u, 0.0),
-        },
+    let point = |id: &str, marker: Option<&str>, u: f64| {
+        SketchEntity::new(
+            SketchEntityId(id.into()),
+            sketch.clone(),
+            SketchGeometry::Point {
+                position: Point2::new(u, 0.0),
+            },
+        )
+        .with_native_ref(marker.map(str::to_owned))
     };
     let mut entities = vec![
         point("origin", Some("known-a"), 0.0),
@@ -1569,7 +1561,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
 
     let solved = entities
         .iter()
-        .filter(|entity| entity.id.0.contains("dimension-point:"))
+        .filter(|entity| entity.id().0.contains("dimension-point:"))
         .collect::<Vec<_>>();
     assert_eq!(solved.len(), 3);
     assert!(matches!(
@@ -1614,6 +1606,6 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
             ) => second,
             other => panic!("unexpected relation definition: {other:?}"),
         };
-        assert_eq!(second, SketchLocus::Entity(solved[index].id.clone()));
+        assert_eq!(second, SketchLocus::Entity(solved[index].id().clone()));
     }
 }
