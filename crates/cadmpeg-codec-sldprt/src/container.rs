@@ -796,6 +796,21 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
         });
     }
 
+    ContainerSummary::classified(
+        dialects,
+        if scan.compound_streams.is_empty() {
+            "sldprt-blocks"
+        } else {
+            "compound-file-binary"
+        },
+        entries,
+        Vec::new(),
+        notes(scan),
+    )
+}
+
+/// Describe the decoded container without constructing its entry inventory.
+pub(crate) fn notes(scan: &ContainerScan<'_>) -> Vec<String> {
     let mut notes = vec![format!(
         "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
          entry/entries, {} cache-cell(s), {} compound stream(s)",
@@ -819,18 +834,7 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
         "Parasolid body streams supply the typed topology and analytic carriers used by decode"
             .to_string(),
     );
-
-    ContainerSummary::classified(
-        dialects,
-        if scan.compound_streams.is_empty() {
-            "sldprt-blocks"
-        } else {
-            "compound-file-binary"
-        },
-        entries,
-        Vec::new(),
-        notes,
-    )
+    notes
 }
 
 pub(crate) fn active_parasolid_summary<'a>(
