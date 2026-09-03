@@ -260,8 +260,15 @@ impl TargetRefusal {
         kind: TargetRefusalKind,
         available: TargetCatalog,
     ) -> Self {
+        let format = format.into();
+        debug_assert!(
+            available
+                .iter()
+                .all(|target| target.id.namespace() == format),
+            "target refusal format must own every available target"
+        );
         Self {
-            format: format.into(),
+            format,
             kind,
             available,
         }
@@ -445,6 +452,16 @@ mod tests {
                     "default": false
                 }]
             })
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "target refusal format must own every available target")]
+    fn target_refusal_rejects_a_foreign_catalog() {
+        let _ = TargetRefusal::new(
+            "step",
+            TargetRefusalKind::UnrecordedSource,
+            TargetCatalog::new(TARGETS, None),
         );
     }
 
