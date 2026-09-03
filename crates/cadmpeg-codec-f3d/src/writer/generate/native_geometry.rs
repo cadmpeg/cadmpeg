@@ -465,19 +465,6 @@ fn native_procedural_surface_definition(
                     separator,
                     values,
                 } => {
-                    let parsed = cadmpeg_ir::geometry::TSplineProgram::parse(program);
-                    if construction.program_graph.as_ref() != Some(&parsed) {
-                        return Err(CodecError::Malformed(
-                            "T-spline parsed program graph diverges from its native program".into(),
-                        ));
-                    }
-                    if construction.values_graph.as_ref()
-                        != Some(&cadmpeg_ir::geometry::TSplineProgram::parse(values))
-                    {
-                        return Err(CodecError::Malformed(
-                            "T-spline parsed values graph diverges from its native program".into(),
-                        ));
-                    }
                     native_ident(bytes, "t_spl_subtrans_object")?;
                     native_u16_string(bytes, program)?;
                     if let Some(separator) = separator {
@@ -499,21 +486,6 @@ fn native_procedural_surface_definition(
                             "resolved T-spline subtransform must be inline".into(),
                         ));
                     };
-                    let parsed = cadmpeg_ir::geometry::TSplineProgram::parse(program);
-                    if construction.program_graph.as_ref() != Some(&parsed) {
-                        return Err(CodecError::Malformed(
-                            "T-spline parsed program graph diverges from its resolved program"
-                                .into(),
-                        ));
-                    }
-                    if construction.values_graph.as_ref()
-                        != Some(&cadmpeg_ir::geometry::TSplineProgram::parse(values))
-                    {
-                        return Err(CodecError::Malformed(
-                            "T-spline parsed values graph diverges from its resolved program"
-                                .into(),
-                        ));
-                    }
                     native_ident(bytes, "t_spl_subtrans_object")?;
                     native_u16_string(bytes, program)?;
                     if let Some(separator) = separator {

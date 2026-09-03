@@ -1385,34 +1385,13 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             let source_valid = match &construction.subtransform {
                 crate::geometry::TSplineSubtransform::Inline {
                     program, values, ..
-                } => {
-                    !program.is_empty()
-                        && !values.is_empty()
-                        && construction.program_graph.as_ref()
-                            == Some(&crate::geometry::TSplineProgram::parse(program))
-                        && construction.values_graph.as_ref()
-                            == Some(&crate::geometry::TSplineProgram::parse(values))
-                }
+                } => !program.is_empty() && !values.is_empty(),
                 crate::geometry::TSplineSubtransform::Reference { index, resolved } => {
-                    let resolved_program =
-                        resolved.as_deref().and_then(|resolved| match resolved {
-                            crate::geometry::TSplineSubtransform::Inline { program, .. } => {
-                                Some(program)
-                            }
-                            crate::geometry::TSplineSubtransform::Reference { .. } => None,
-                        });
                     *index >= 0
-                        && resolved_program.is_some_and(|program| {
-                            construction.program_graph.as_ref()
-                                == Some(&crate::geometry::TSplineProgram::parse(program))
-                        })
-                        && resolved.as_deref().is_some_and(|resolved| match resolved {
-                            crate::geometry::TSplineSubtransform::Inline { values, .. } => {
-                                construction.values_graph.as_ref()
-                                    == Some(&crate::geometry::TSplineProgram::parse(values))
-                            }
-                            crate::geometry::TSplineSubtransform::Reference { .. } => false,
-                        })
+                        && matches!(
+                            resolved.as_deref(),
+                            Some(crate::geometry::TSplineSubtransform::Inline { .. })
+                        )
                 }
             };
             if !ranges_valid || !source_valid {

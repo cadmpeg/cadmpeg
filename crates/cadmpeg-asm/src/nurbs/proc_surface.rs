@@ -3795,26 +3795,12 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     cur.bump();
     let trailing_value = cur.take_long()?;
     cur.at_scope_end().then_some(())?;
-    let program_graph = match &subtransform {
-        TSplineSubtransform::Inline { program, .. } => {
-            Some(cadmpeg_ir::geometry::TSplineProgram::parse(program))
-        }
-        TSplineSubtransform::Reference { .. } => None,
-    };
-    let values_graph = match &subtransform {
-        TSplineSubtransform::Inline { values, .. } => {
-            Some(cadmpeg_ir::geometry::TSplineProgram::parse(values))
-        }
-        TSplineSubtransform::Reference { .. } => None,
-    };
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::TSpline(Box::new(
             TSplineSurfaceConstruction {
                 parameter_ranges,
                 type_code,
                 subtransform,
-                program_graph,
-                values_graph,
                 trailing_value,
                 discontinuities,
                 discontinuity_flag,
@@ -4299,18 +4285,12 @@ fn procedural_resolving_refs(
                     table,
                     &mut Vec::new(),
                 )?;
-                let program = match &inline {
-                    cadmpeg_ir::geometry::TSplineSubtransform::Inline { program, .. } => program,
-                    cadmpeg_ir::geometry::TSplineSubtransform::Reference { .. } => return None,
-                };
-                construction.program_graph =
-                    Some(cadmpeg_ir::geometry::TSplineProgram::parse(program));
-                let values = match &inline {
-                    cadmpeg_ir::geometry::TSplineSubtransform::Inline { values, .. } => values,
-                    cadmpeg_ir::geometry::TSplineSubtransform::Reference { .. } => return None,
-                };
-                construction.values_graph =
-                    Some(cadmpeg_ir::geometry::TSplineProgram::parse(values));
+                if !matches!(
+                    inline,
+                    cadmpeg_ir::geometry::TSplineSubtransform::Inline { .. }
+                ) {
+                    return None;
+                }
                 *resolved = Some(Box::new(inline));
             }
         }
