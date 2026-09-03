@@ -242,7 +242,7 @@ mod tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("test:model:configuration#default".into()),
             ordinal: 0,
-            active: true.into(),
+            active: true,
             source_index: None,
             name: "Default".into(),
             material: None,

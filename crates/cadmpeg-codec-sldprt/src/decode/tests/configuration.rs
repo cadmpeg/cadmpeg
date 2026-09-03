@@ -18,7 +18,7 @@ fn configuration_partitions_require_explicit_source_identity() {
     let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
         id: ConfigurationId(id.into()),
         ordinal,
-        active: false.into(),
+        active: false,
         source_index,
         name: id.into(),
         material: None,
@@ -70,7 +70,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId(format!("configuration:{ordinal}")),
             ordinal,
-            active: false.into(),
+            active: false,
             source_index: Some(5),
             name: format!("Configuration {ordinal}").into(),
             material: None,
@@ -116,7 +116,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
 
     assert_eq!(ir.model.configurations.len(), 1);
     let configuration = &ir.model.configurations[0];
-    assert!(configuration.active.is_inactive());
+    assert!(!configuration.active);
     assert_eq!(configuration.source_index, Some(3));
     assert_eq!(configuration.bodies, vec![body]);
 
@@ -146,7 +146,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),
         ordinal: 0,
-        active: false.into(),
+        active: false,
         source_index: None,
         name: "Default".into(),
         material: None,
@@ -165,7 +165,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));
     assert!(configuration.bodies.is_unresolved());
-    assert!(configuration.active.is_active());
+    assert!(configuration.active);
 
     let mut report = super::empty_report(false);
     append_design_losses(&ir, &mut report);
@@ -182,7 +182,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId(id.into()),
             ordinal: ir.model.configurations.len() as u32,
-            active: false.into(),
+            active: false,
             source_index: Some(5),
             name: id.into(),
             material: None,
@@ -214,7 +214,7 @@ fn incomplete_configuration_names_are_reported() {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId(format!("configuration:{position}")),
             ordinal,
-            active: (position == 1).into(),
+            active: position == 1,
             source_index: Some(position as u32),
             name: name.into(),
             material: None,
@@ -252,7 +252,7 @@ fn active_configuration_partition_disagreement_is_reported() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(5),
         name: "Default".into(),
         material: None,
@@ -281,7 +281,7 @@ fn incoherent_configuration_bodies_are_reported() {
     let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
         id: ConfigurationId(id.into()),
         ordinal,
-        active: (ordinal == 0).into(),
+        active: ordinal == 0,
         source_index: Some(ordinal),
         name: id.into(),
         material: None,
@@ -335,7 +335,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Default".into(),
         material: None,
@@ -385,7 +385,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("configuration".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Default".into(),
         material: None,

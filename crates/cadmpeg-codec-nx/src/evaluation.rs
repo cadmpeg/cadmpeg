@@ -190,7 +190,7 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active.is_active());
+        .filter(|configuration| configuration.active);
     let Some(configuration) = active.next() else {
         return false;
     };
@@ -1156,7 +1156,7 @@ mod tests {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId("active".to_string()),
             ordinal: 0,
-            active: true.into(),
+            active: true,
             source_index: Some(0),
             name: "Model".into(),
             material: None,

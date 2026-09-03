@@ -415,7 +415,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("active".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Model".into(),
         material: None,
@@ -464,7 +464,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
     let configuration = || DesignConfiguration {
         id: ConfigurationId("active".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Model".into(),
         material: None,

@@ -372,7 +372,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.active.is_active())
+        .filter(|configuration| configuration.active)
         .count();
     if !ir.model.configurations.is_empty() && active_configurations != 1 {
         report.losses.push(SldprtLossCode::ConfigActiveIdentityUnresolved.note(format!(
@@ -390,7 +390,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         ir.model
             .configurations
             .iter()
-            .find(|configuration| configuration.active.is_active())
+            .find(|configuration| configuration.active)
             .is_some_and(|configuration| {
                 configuration.source_index.as_ref() != Some(active_partition)
             })
@@ -3835,7 +3835,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| configuration.active.is_active())
+        .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
         return;
@@ -3899,7 +3899,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| configuration.active.is_active())
+        .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
         return;
@@ -4203,7 +4203,7 @@ fn assign_configuration_bodies(
                     "sldprt:model:configuration#partition:{source_index}"
                 )),
                 ordinal,
-                active: false.into(),
+                active: false,
                 source_index: Some(source_index),
                 name: format!("Config-{source_index}").into(),
                 material: None,

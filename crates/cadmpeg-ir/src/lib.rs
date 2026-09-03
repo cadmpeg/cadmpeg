@@ -86,8 +86,8 @@ pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use draft::ModelDraft;
 pub use features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,
-    CoilResult, CoilSection, CoilSectionPlacement, ConfigurationActivation, ConfigurationBodies,
-    ConfigurationId, ConfigurationName, CurveProjectionDirection, CurveProjectionDirectionState,
+    CoilResult, CoilSection, CoilSectionPlacement, ConfigurationBodies, ConfigurationId,
+    ConfigurationName, CurveProjectionDirection, CurveProjectionDirectionState,
     DesignConfiguration, DesignParameter, FaceMotion, Feature, FeatureDefinition, FeatureId,
     ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
 };

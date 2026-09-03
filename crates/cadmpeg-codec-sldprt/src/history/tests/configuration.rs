@@ -315,7 +315,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
     ir.model.configurations.push(DesignConfiguration {
         id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Default".into(),
         material: None,
@@ -544,7 +544,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         ir.model.configurations.push(DesignConfiguration {
             id: cadmpeg_ir::features::ConfigurationId(format!("configuration-{ordinal}")),
             ordinal,
-            active: (ordinal == 0).into(),
+            active: ordinal == 0,
             source_index: Some(ordinal),
             name: format!("Configuration {ordinal}").into(),
             material: None,
@@ -709,7 +709,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
     ir.model.configurations.push(DesignConfiguration {
         id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(1),
         name: "Default".into(),
         material: None,
@@ -1365,7 +1365,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("test:model:configuration#default".into()),
         ordinal: 0,
-        active: true.into(),
+        active: true,
         source_index: Some(0),
         name: "Default".into(),
         material: None,

@@ -839,7 +839,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
                     .unwrap_or(&configuration.id)
             )),
             ordinal: configuration.ordinal,
-            active: false.into(),
+            active: false,
             source_index: configuration.source_index,
             name: configuration.name.clone().into(),
             material: configuration.material.clone(),

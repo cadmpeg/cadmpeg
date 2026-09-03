@@ -429,7 +429,7 @@ pub fn project_configurations(
             projected.push(NeutralConfiguration {
                 id: neutral_configuration_id(&table.entry_name, name),
                 ordinal,
-                active: (active == Some(name.as_str())).into(),
+                active: active == Some(name.as_str()),
                 source_index: None,
                 name: name.clone().into(),
                 material,
