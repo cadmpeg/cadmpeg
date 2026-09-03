@@ -1443,19 +1443,18 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
         plane("wrong-family", 42),
         plane("extrusion-carrier", 44),
     ];
-    let procedural_surfaces = vec![ProceduralSurface {
-        id: ProceduralSurfaceId("extrusion-construction".to_string()),
-        surface: SurfaceId("extrusion-carrier".to_string()),
-        definition: ProceduralSurfaceDefinition::Extrusion {
+    let procedural_surfaces = vec![ProceduralSurface::new(
+        ProceduralSurfaceId("extrusion-construction".to_string()),
+        SurfaceId("extrusion-carrier".to_string()),
+        ProceduralSurfaceDefinition::Extrusion {
             directrix: CurveId("directrix".to_string()),
             parameter_interval: None,
             direction: Vector3::new(0.0, 0.0, 1.0),
             native_position: None,
             revision_form: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    }];
+        None,
+    )];
 
     let coverage = surface_transfer_coverage(&rows, &surfaces, &procedural_surfaces);
 

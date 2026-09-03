@@ -136,7 +136,7 @@ pub(crate) fn build_geometry_report(
         .iter()
         .filter_map(|procedural| {
             let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-                &procedural.definition
+                procedural.definition()
             else {
                 return None;
             };

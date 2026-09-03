@@ -58,7 +58,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     for surface in &ir.model.procedural_surfaces {
         if let ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves, ..
-        } = &surface.definition
+        } = surface.definition()
         {
             pcurves.extend(boundary_pcurves.iter().map(|pcurve| pcurve.0.as_str()));
         }
@@ -112,7 +112,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
 
     for procedural in &ir.model.procedural_surfaces {
         surfaces.insert(&procedural.surface.0);
-        match &procedural.definition {
+        match procedural.definition() {
             ProceduralSurfaceDefinition::Exact { .. } => {}
             ProceduralSurfaceDefinition::Compound { components, .. } => {
                 surfaces.extend(components.iter().map(|component| component.0.as_str()));
@@ -552,7 +552,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     }
     for procedural in &ir.model.procedural_curves {
         curves.insert(&procedural.curve.0);
-        match &procedural.definition {
+        match procedural.definition() {
             ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
             ProceduralCurveDefinition::Law {
                 context,

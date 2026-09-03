@@ -160,12 +160,12 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
         } if id == &construction.id
     ));
     assert_eq!(construction.curve, curve.id);
-    assert_eq!(construction.cache_fit_tolerance, None);
+    assert_eq!(construction.cache_fit_tolerance(), None);
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
         family,
         context,
         tail: None,
-    } = &construction.definition
+    } = construction.definition()
     else {
         panic!("parametric surface-curve construction")
     };

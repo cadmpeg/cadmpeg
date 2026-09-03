@@ -197,7 +197,7 @@ impl Brep {
         for procedural in &mut self.procedural_surfaces {
             procedural.id.0 = qualify(&procedural.id.0);
             procedural.surface.0 = qualify(&procedural.surface.0);
-            match &mut procedural.definition {
+            procedural.edit_definition(|definition| match definition {
                 ProceduralSurfaceDefinition::Blend {
                     supports, spine, ..
                 } => {
@@ -212,7 +212,7 @@ impl Brep {
                     support.0 = qualify(&support.0);
                 }
                 _ => {}
-            }
+            });
         }
         for curve in &mut self.curves {
             curve.id.0 = qualify(&curve.id.0);
@@ -514,10 +514,10 @@ fn emit_offset_surface(
     annotations
         .note(&surface, source_stream, offset.offset as u64)
         .tag("00_3c");
-    out.procedural_surfaces.push(ProceduralSurface {
-        id: construction.clone(),
-        surface: surface.clone(),
-        definition: ProceduralSurfaceDefinition::Offset {
+    out.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        surface.clone(),
+        ProceduralSurfaceDefinition::Offset {
             support,
             distance: offset.distance,
             u_sense: None,
@@ -526,9 +526,8 @@ fn emit_offset_surface(
             extension_flags: Vec::new(),
             revision_form: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+        None,
+    ));
     out.surfaces.push(Surface {
         id: surface,
         source_object: None,
@@ -1746,10 +1745,10 @@ fn decode_graph(
                         "sldprt:brep:blend-construction#{}",
                         f.bridge_attr
                     ));
-                    out.procedural_surfaces.push(ProceduralSurface {
-                        id: procedural_id.clone(),
-                        surface: SurfaceId(id_surf(f.bridge_attr)),
-                        definition: ProceduralSurfaceDefinition::Blend {
+                    out.procedural_surfaces.push(ProceduralSurface::new(
+                        procedural_id.clone(),
+                        SurfaceId(id_surf(f.bridge_attr)),
+                        ProceduralSurfaceDefinition::Blend {
                             supports: [
                                 Some(BlendSupport {
                                     surface: first,
@@ -1767,9 +1766,8 @@ fn decode_graph(
                             cross_section: BlendCrossSection::Circular,
                             native: None,
                         },
-                        cache_fit_tolerance: None,
-                        record_bounds: None,
-                    });
+                        None,
+                    ));
                     annotations
                         .note(id_surf(f.bridge_attr), source_stream, blend.offset as u64)
                         .tag("00_38");
@@ -2145,7 +2143,7 @@ fn prune_rejected_topology(out: &mut Brep) {
         .filter_map(|edge| edge.curve.clone())
         .collect::<HashSet<_>>();
     kept_curves.extend(out.procedural_surfaces.iter().filter_map(|surface| {
-        if let ProceduralSurfaceDefinition::Blend { spine, .. } = &surface.definition {
+        if let ProceduralSurfaceDefinition::Blend { spine, .. } = surface.definition() {
             spine.clone()
         } else {
             None
@@ -5968,19 +5966,18 @@ mod tests {
                 },
                 source_object: None,
             }],
-            procedural_surfaces: vec![ProceduralSurface {
-                id: ProceduralSurfaceId("blend".into()),
-                surface: SurfaceId("surface".into()),
-                definition: ProceduralSurfaceDefinition::Blend {
+            procedural_surfaces: vec![ProceduralSurface::new(
+                ProceduralSurfaceId("blend".into()),
+                SurfaceId("surface".into()),
+                ProceduralSurfaceDefinition::Blend {
                     supports: [None, None],
                     spine: Some(spine.clone()),
                     radius: BlendRadiusLaw::Constant { signed_radius: 0.5 },
                     cross_section: BlendCrossSection::Circular,
                     native: None,
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            }],
+                None,
+            )],
             ..Default::default()
         };
 

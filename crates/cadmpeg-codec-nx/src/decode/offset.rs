@@ -918,7 +918,7 @@ fn offset_support_control_hull_excludes_point(
                 SurfaceGeometry::Procedural { construction } => index
                     .procedural_surfaces(construction.0.as_str())
                     .filter(|procedural| &procedural.surface == surface)
-                    .and_then(|procedural| match &procedural.definition {
+                    .and_then(|procedural| match procedural.definition() {
                         ProceduralSurfaceDefinition::Offset {
                             support,
                             distance,
@@ -1008,7 +1008,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         distance,
         support_extension,
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return None;
     };
@@ -1205,7 +1205,7 @@ pub(crate) fn refine_offset_surface_parameters_with_index_and_budget(
         .filter(|candidate| &candidate.surface == surface)?;
     let ProceduralSurfaceDefinition::Offset {
         support_extension, ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return None;
     };
@@ -1364,7 +1364,7 @@ fn coarse_surface_sample_counts(
             else {
                 return [9, 9];
             };
-            match &procedural.definition {
+            match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     coarse_surface_sample_counts(index, support, depth + 1)
                 }
@@ -1403,7 +1403,7 @@ pub(crate) fn initial_surface_parameters_with_index_and_budget(
                 .filter(|candidate| &candidate.surface == surface)?;
             let ProceduralSurfaceDefinition::Offset {
                 support, distance, ..
-            } = &procedural.definition
+            } = procedural.definition()
             else {
                 return None;
             };
@@ -1444,7 +1444,8 @@ pub(crate) fn surface_parameter_domain_with_index(
             let procedural = index
                 .procedural_surfaces(construction.0.as_str())
                 .filter(|candidate| &candidate.surface == surface)?;
-            let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
+            let ProceduralSurfaceDefinition::Offset { support, .. } = procedural.definition()
+            else {
                 return None;
             };
             surface_parameter_domain_with_index(index, support)
@@ -1866,7 +1867,7 @@ fn surface_parameter_periods_inner(
         SurfaceGeometry::Procedural { construction } => index
             .procedural_surfaces(construction.0.as_str())
             .filter(|candidate| &candidate.surface == surface)
-            .and_then(|procedural| match &procedural.definition {
+            .and_then(|procedural| match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     Some(surface_parameter_periods_inner(index, support, visiting))
                 }
@@ -2450,10 +2451,10 @@ mod tests {
         });
         ir.model
             .procedural_surfaces
-            .push(cadmpeg_ir::geometry::ProceduralSurface {
-                id: construction,
-                surface: offset.clone(),
-                definition: ProceduralSurfaceDefinition::Offset {
+            .push(cadmpeg_ir::geometry::ProceduralSurface::new(
+                construction,
+                offset.clone(),
+                ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: 1.0,
                     u_sense: None,
@@ -2462,9 +2463,8 @@ mod tests {
                     extension_flags: Vec::new(),
                     revision_form: None,
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+                None,
+            ));
 
         let fit_tolerance = f64::EPSILON.sqrt();
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);

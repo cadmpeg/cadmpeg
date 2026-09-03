@@ -1203,16 +1203,15 @@ impl<'a> Builder<'a> {
                 source_object: base.source_object,
             });
             if has_procedural_construction {
-                ir.model.procedural_surfaces.push(ProceduralSurface {
-                    id: ProceduralSurfaceId(format!("{}:construction", id.0)),
-                    surface: id.clone(),
-                    definition: ProceduralSurfaceDefinition::Replica {
+                ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                    ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    id.clone(),
+                    ProceduralSurfaceDefinition::Replica {
                         source: base_id,
                         transform,
                     },
-                    record_bounds: None,
-                    cache_fit_tolerance: None,
-                });
+                    None,
+                ));
             }
         }
         Ok(id)

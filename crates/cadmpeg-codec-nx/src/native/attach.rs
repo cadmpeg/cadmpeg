@@ -5118,7 +5118,7 @@ fn blend_feature_definition(
             radius,
             cross_section,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             continue;
         };
@@ -5346,7 +5346,7 @@ fn owned_offset_carriers<'a>(
             support,
             distance: candidate,
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             continue;
         };

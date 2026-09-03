@@ -134,7 +134,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .iter()
             .find(|procedural| {
                 matches!(
-                    &procedural.definition,
+                    procedural.definition(),
                     cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
                 )
             })
@@ -142,7 +142,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
             parameter_interval: Some(parameter_interval),
             ..
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("expected a revolution definition");
         };
@@ -161,7 +161,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
                     .any(|procedural| {
                         procedural.surface == surface.id
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
                             )
                     })
@@ -238,7 +238,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
                     .any(|procedural| {
                         procedural.surface == surface.id
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
@@ -280,7 +280,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .iter()
             .find(|procedural| {
                 matches!(
-                    &procedural.definition,
+                    procedural.definition(),
                     cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                 )
             })
@@ -293,7 +293,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
             parameter_interval: Some(parameter_interval),
             ..
-        } = &round_procedural.definition
+        } = round_procedural.definition()
         else {
             panic!("expected an extrusion definition");
         };
@@ -572,7 +572,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                     .any(|procedural| {
                         procedural.surface == surface.id
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
@@ -592,7 +592,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                     .any(|procedural| {
                         procedural.surface == surface.id
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
@@ -604,7 +604,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.surface == source_surface.id)
-            .and_then(|procedural| match &procedural.definition {
+            .and_then(|procedural| match procedural.definition() {
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
                     parameter_interval: Some(range),
                     ..
@@ -618,7 +618,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.surface == round_surface.id)
-            .and_then(|procedural| match &procedural.definition {
+            .and_then(|procedural| match procedural.definition() {
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
                     parameter_interval: Some(range),
                     ..
@@ -714,7 +714,7 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                     .any(|procedural| {
                         procedural.surface == surface.id
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
@@ -734,7 +734,7 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                     .any(|procedural| {
                         procedural.surface == surface.id
                             && matches!(
-                                &procedural.definition,
+                                procedural.definition(),
                                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
                             )
                     })
@@ -746,7 +746,7 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.surface == source_surface.id)
-            .and_then(|procedural| match &procedural.definition {
+            .and_then(|procedural| match procedural.definition() {
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
                     parameter_interval: Some(range),
                     ..
@@ -760,7 +760,7 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.surface == round_surface.id)
-            .and_then(|procedural| match &procedural.definition {
+            .and_then(|procedural| match procedural.definition() {
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
                     parameter_interval: Some(range),
                     ..
@@ -922,7 +922,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
                 .any(|procedural| {
                     procedural.surface == surface.id
                         && matches!(
-                            &procedural.definition,
+                            procedural.definition(),
                             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
                         )
                 })
@@ -937,7 +937,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
             .any(|procedural| {
                 procedural.surface == surface.id
                     && matches!(
-                        &procedural.definition,
+                        procedural.definition(),
                         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
                     )
             })
@@ -955,7 +955,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.surface == source_surface.id)
-        .and_then(|procedural| match &procedural.definition {
+        .and_then(|procedural| match procedural.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
                 parameter_interval: Some(range),
                 ..
@@ -969,7 +969,7 @@ fn assert_type120_round_trip(version: IgesVersion) {
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.surface == round_surface.id)
-        .and_then(|procedural| match &procedural.definition {
+        .and_then(|procedural| match procedural.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
                 parameter_interval: Some(range),
                 ..

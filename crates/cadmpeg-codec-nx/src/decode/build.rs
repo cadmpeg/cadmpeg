@@ -406,10 +406,10 @@ pub(crate) fn try_decode_geometry(
                 .note(&procedural_id, source_stream, offset.pos as u64)
                 .tag("OFFSET_SURF");
             annotations.derived(&procedural_id, "definition");
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id.clone(),
-                definition: ProceduralSurfaceDefinition::Offset {
+            if let Ok(procedural) = ProceduralSurface::try_new(
+                procedural_id,
+                surface_id.clone(),
+                ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: offset.distance,
                     // OFFSET_SURF status fields do not select parameter direction.
@@ -420,8 +420,10 @@ pub(crate) fn try_decode_geometry(
                     revision_form: None,
                 },
                 cache_fit_tolerance,
-                record_bounds: None,
-            });
+                None,
+            ) {
+                ir.model.procedural_surfaces.push(procedural);
+            }
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
         }
@@ -453,10 +455,10 @@ pub(crate) fn try_decode_geometry(
                 .tag("BLEND_SURF");
             annotations.derived(&procedural_id, "definition");
             let procedural_index = ir.model.procedural_surfaces.len();
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id.clone(),
-                definition: ProceduralSurfaceDefinition::Blend {
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                procedural_id,
+                surface_id.clone(),
+                ProceduralSurfaceDefinition::Blend {
                     supports: [None, None],
                     spine: None,
                     radius: BlendRadiusLaw::Constant {
@@ -465,9 +467,8 @@ pub(crate) fn try_decode_geometry(
                     cross_section: BlendCrossSection::Circular,
                     native: None,
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+                None,
+            ));
             pending_blend_supports.push((procedural_index, blend.supports, blend.offsets));
             if blend.spine > 1 {
                 pending_blend_spines.push((procedural_index, blend.spine));
@@ -485,17 +486,17 @@ pub(crate) fn try_decode_geometry(
                         reversed: offsets[side].is_sign_negative(),
                     })
             });
-            let Some(ProceduralSurface {
-                definition:
-                    ProceduralSurfaceDefinition::Blend {
-                        supports: slots, ..
-                    },
-                ..
-            }) = ir.model.procedural_surfaces.get_mut(procedural_index)
-            else {
+            let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            *slots = supports;
+            procedural.edit_definition(|definition| {
+                if let ProceduralSurfaceDefinition::Blend {
+                    supports: slots, ..
+                } = definition
+                {
+                    *slots = supports;
+                }
+            });
         }
 
         for (ci, (geometry, node)) in ordered_curve_candidates(semantic, graph)
@@ -701,61 +702,64 @@ pub(crate) fn try_decode_geometry(
             } else {
                 annotations.exactness(&procedural_id, Exactness::Unknown);
             }
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedural_id,
-                curve: curve_id.clone(),
-                definition: if let Some(charted) = charted {
-                    let support_uv = intersection_support_uv
-                        .get(&construction.xmt)
-                        .cloned()
-                        .unwrap_or([None, None]);
-                    let first = intersection_side(
-                        &ir,
-                        &surfaces_by_xmt,
-                        charted.supports[0],
-                        support_uv[0]
-                            .as_deref()
-                            .filter(|uv| uv.len() == charted.parameters.len())
-                            .map(|uv| (uv, charted.parameters.as_slice())),
-                    );
-                    let second = intersection_side(
-                        &ir,
-                        &surfaces_by_xmt,
-                        charted.supports[1],
-                        support_uv[1]
-                            .as_deref()
-                            .filter(|uv| uv.len() == charted.parameters.len())
-                            .map(|uv| (uv, charted.parameters.as_slice())),
-                    );
-                    ProceduralCurveDefinition::Intersection {
-                        context: IntcurveSupportContext {
-                            sides: [first, second],
-                            parameter_range: [
-                                charted.parameters[0],
-                                *charted
-                                    .parameters
-                                    .last()
-                                    .expect("validated chart has points"),
-                            ],
-                            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                        },
-                        discontinuity_flag: false,
-                    }
-                } else if let Some((supports, endpoints, tolerance)) = uncharted {
-                    ProceduralCurveDefinition::TolerantIntersection {
-                        supports,
-                        endpoints,
-                        tolerance,
-                        parameterization: None,
-                    }
-                } else {
-                    ProceduralCurveDefinition::Unknown {
-                        native_kind: Some("nx:intersection".into()),
-                        record: Some(unknown_id),
-                    }
-                },
-                cache_fit_tolerance: charted.map(|charted| charted.fit_tolerance),
-            });
+            let definition = if let Some(charted) = charted {
+                let support_uv = intersection_support_uv
+                    .get(&construction.xmt)
+                    .cloned()
+                    .unwrap_or([None, None]);
+                let first = intersection_side(
+                    &ir,
+                    &surfaces_by_xmt,
+                    charted.supports[0],
+                    support_uv[0]
+                        .as_deref()
+                        .filter(|uv| uv.len() == charted.parameters.len())
+                        .map(|uv| (uv, charted.parameters.as_slice())),
+                );
+                let second = intersection_side(
+                    &ir,
+                    &surfaces_by_xmt,
+                    charted.supports[1],
+                    support_uv[1]
+                        .as_deref()
+                        .filter(|uv| uv.len() == charted.parameters.len())
+                        .map(|uv| (uv, charted.parameters.as_slice())),
+                );
+                ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext {
+                        sides: [first, second],
+                        parameter_range: [
+                            charted.parameters[0],
+                            *charted
+                                .parameters
+                                .last()
+                                .expect("validated chart has points"),
+                        ],
+                        discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                    },
+                    discontinuity_flag: false,
+                }
+            } else if let Some((supports, endpoints, tolerance)) = uncharted {
+                ProceduralCurveDefinition::TolerantIntersection {
+                    supports,
+                    endpoints,
+                    tolerance,
+                    parameterization: None,
+                }
+            } else {
+                ProceduralCurveDefinition::Unknown {
+                    native_kind: Some("nx:intersection".into()),
+                    record: Some(unknown_id),
+                }
+            };
+            if let Ok(procedural) = ProceduralCurve::try_new(
+                procedural_id,
+                curve_id.clone(),
+                definition,
+                charted.map(|charted| charted.fit_tolerance),
+            ) {
+                ir.model.procedural_curves.push(procedural);
+            }
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
         }
@@ -763,14 +767,14 @@ pub(crate) fn try_decode_geometry(
             let Some(spine) = curves_by_xmt.get(&spine_xmt).cloned() else {
                 continue;
             };
-            let Some(ProceduralSurface {
-                definition: ProceduralSurfaceDefinition::Blend { spine: slot, .. },
-                ..
-            }) = ir.model.procedural_surfaces.get_mut(procedural_index)
-            else {
+            let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
-            *slot = Some(spine);
+            procedural.edit_definition(|definition| {
+                if let ProceduralSurfaceDefinition::Blend { spine: slot, .. } = definition {
+                    *slot = Some(spine);
+                }
+            });
         }
         let trimmed_curves = &view.trimmed_curves;
         let mut normalized_pcurves = BTreeSet::new();
@@ -1146,7 +1150,7 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             if !used_surfaces.contains(&procedural.surface) {
                 continue;
             }
-            match &procedural.definition {
+            match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     used_surfaces.insert(support.clone());
                 }
@@ -1168,7 +1172,7 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             if !used_curves.contains(&procedural.curve) {
                 continue;
             }
-            match &procedural.definition {
+            match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. }
                 | ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
                     used_surfaces
@@ -1565,7 +1569,7 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
             if !surfaces.contains(&procedural.surface) {
                 continue;
             }
-            match &procedural.definition {
+            match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset { support, .. } => {
                     surfaces.insert(support.clone());
                 }
@@ -1587,7 +1591,7 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
             if !curves.contains(&procedural.curve) {
                 continue;
             }
-            match &procedural.definition {
+            match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. }
                 | ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
                     surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));

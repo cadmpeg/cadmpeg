@@ -311,7 +311,7 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
     assert!((radius - 1.5).abs() < EPS_PLACED_OFFSET);
     let procedural = &result.ir().model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { source, normal, .. } =
-        &procedural.definition
+        procedural.definition()
     else {
         panic!("expected an offset construction");
     };
@@ -540,7 +540,7 @@ fn decode_solves_a_parameter_linear_line_offset() {
                     control_range,
                 }),
             ..
-        } = &result.ir().model.procedural_curves[0].definition
+        } = &result.ir().model.procedural_curves[0].definition()
         else {
             panic!("expected a retained linear offset law");
         };
@@ -590,7 +590,7 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
                 function_parameter_scale,
             }),
         ..
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected a retained coordinate-function offset law");
     };

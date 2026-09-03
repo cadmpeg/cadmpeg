@@ -42,7 +42,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         shift,
         scale,
         ..
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected surface-offset construction")
     };
@@ -60,26 +60,28 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         .any(|curve| curve.id == *base));
 
     let mut edited = result.ir().clone();
-    let ProceduralCurveDefinition::SurfaceOffset {
-        context,
-        discontinuity_flag,
-        base_u_range,
-        base_v_range,
-        base_range,
-        distance,
-        shift,
-        scale,
-        ..
-    } = &mut edited.model.procedural_curves[0].definition
-    else {
-        unreachable!()
-    };
-    context.parameter_range = [-1.5, 2.5];
-    *discontinuity_flag = false;
-    *base_u_range = [-2.0, 5.0];
-    *base_v_range = [-6.0, 7.0];
-    *base_range = [-0.75, 1.75];
-    (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
+    edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::SurfaceOffset {
+            context,
+            discontinuity_flag,
+            base_u_range,
+            base_v_range,
+            base_range,
+            distance,
+            shift,
+            scale,
+            ..
+        } = definition
+        else {
+            unreachable!()
+        };
+        context.parameter_range = [-1.5, 2.5];
+        *discontinuity_flag = false;
+        *base_u_range = [-2.0, 5.0];
+        *base_v_range = [-6.0, 7.0];
+        *base_range = [-0.75, 1.75];
+        (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
+    });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("surface-offset scalar regeneration");
@@ -87,7 +89,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated surface-offset decode");
     assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition,
+        regenerated.ir().model.procedural_curves[0].definition(),
         ProceduralCurveDefinition::SurfaceOffset {
             ref context,
             discontinuity_flag: false,
@@ -121,7 +123,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         shift,
         scale,
         ..
-    } = &round_trip.ir().model.procedural_curves[0].definition
+    } = &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip surface offset")
     };
@@ -144,7 +146,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .expect("spring decode");
     let ProceduralCurveDefinition::Spring {
         context, direction, ..
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
@@ -155,19 +157,22 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .all(|side| side.surface.is_some() && side.pcurve.is_some()));
 
     let mut edited = result.ir().clone();
-    let ProceduralCurveDefinition::Spring {
-        context,
-        discontinuity_flag,
-        direction,
-        ..
-    } = &mut edited.model.procedural_curves[0].definition
-    else {
-        unreachable!()
-    };
-    context.parameter_range = [-2.0, 3.0];
-    let expected_flag = !*discontinuity_flag;
-    *discontinuity_flag = expected_flag;
-    *direction = 4;
+    let expected_flag = edited.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::Spring {
+            context,
+            discontinuity_flag,
+            direction,
+            ..
+        } = definition
+        else {
+            unreachable!()
+        };
+        context.parameter_range = [-2.0, 3.0];
+        let expected_flag = !*discontinuity_flag;
+        *discontinuity_flag = expected_flag;
+        *direction = 4;
+        expected_flag
+    });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
         .expect("spring tail regeneration");
@@ -175,13 +180,13 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated spring decode");
     assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition,
+        regenerated.ir().model.procedural_curves[0].definition(),
         ProceduralCurveDefinition::Spring {
             ref context,
             discontinuity_flag,
             direction: 4,
             ..
-        } if discontinuity_flag == expected_flag && context.parameter_range == [-2.0, 3.0]
+        } if *discontinuity_flag == expected_flag && context.parameter_range == [-2.0, 3.0]
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -196,7 +201,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less spring round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_curves[0].definition,
+        round_trip.ir().model.procedural_curves[0].definition(),
         ProceduralCurveDefinition::Spring { direction: -3, .. }
     ));
 }
@@ -220,7 +225,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
         discontinuity_flag,
         cache_first,
         direction,
-    } = &result.ir().model.procedural_curves[0].definition
+    } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected spring construction")
     };
@@ -254,8 +259,8 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less null-support spring round trip");
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].definition,
-        source_less.model.procedural_curves[0].definition
+        round_trip.ir().model.procedural_curves[0].definition(),
+        source_less.model.procedural_curves[0].definition()
     );
 }
 
@@ -278,7 +283,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             source,
             source_parameter_range,
             data,
-        } = &result.ir().model.procedural_curves[0].definition
+        } = &result.ir().model.procedural_curves[0].definition()
         else {
             panic!("expected deformable construction")
         };
@@ -338,7 +343,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             source: round_source,
             data: round_data,
             ..
-        } = &round_trip.ir().model.procedural_curves[0].definition
+        } = &round_trip.ir().model.procedural_curves[0].definition()
         else {
             panic!("expected round-trip deformable construction")
         };
@@ -392,15 +397,15 @@ fn generated_deformable_curves_decode_and_write_source_less() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let ProceduralCurveDefinition::Deformable { source, .. } =
-        &mut source_less.model.procedural_curves[0].definition
-    else {
-        panic!("expected deformable construction")
-    };
-    *source = cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
-        flag: false,
-        index: 10_000,
-    };
+    source_less.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::Deformable { source, .. } = definition else {
+            panic!("expected deformable construction")
+        };
+        *source = cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
+            flag: false,
+            index: 10_000,
+        };
+    });
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -409,7 +414,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("native-reference deformable round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_curves[0].definition,
+        &round_trip.ir().model.procedural_curves[0].definition(),
         ProceduralCurveDefinition::Deformable {
             source: cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
                 flag: false,
@@ -427,7 +432,9 @@ fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated procedural-curve decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    edited.model.procedural_curves[0].cache_fit_tolerance = Some(0.025);
+    edited.model.procedural_curves[0]
+        .set_cache_fit_tolerance(Some(0.025))
+        .unwrap();
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
@@ -436,7 +443,7 @@ fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated procedural-curve decode");
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].cache_fit_tolerance,
+        round_trip.ir().model.procedural_curves[0].cache_fit_tolerance(),
         Some(0.025)
     );
 }
@@ -456,9 +463,11 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    source_less.model.procedural_curves[0].definition = ProceduralCurveDefinition::BlendSpine {
-        blend_surface: None,
-    };
+    source_less.model.procedural_curves[0].replace_definition(
+        ProceduralCurveDefinition::BlendSpine {
+            blend_surface: None,
+        },
+    );
     let mut encoded = Vec::new();
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -468,10 +477,10 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
         .to_string()
         .contains("lacks its native blend construction"));
 
-    source_less.model.procedural_curves[0].definition = ProceduralCurveDefinition::Unknown {
+    source_less.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Unknown {
         native_kind: None,
         record: None,
-    };
+    });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))

@@ -77,7 +77,8 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
         match &curve.geometry {
             CurveGeometry::Nurbs(_) => {}
             CurveGeometry::Procedural { construction }
-                if *construction == procedural.id && procedural.cache_fit_tolerance.is_none() => {}
+                if *construction == procedural.id && procedural.cache_fit_tolerance().is_none() => {
+            }
             CurveGeometry::Procedural { construction } => {
                 return Err(CodecError::InvalidInput(format!(
                     "curve {} links construction {construction} but is produced by {} or carries a cache fit",

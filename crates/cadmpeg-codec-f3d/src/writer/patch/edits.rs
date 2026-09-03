@@ -3282,7 +3282,7 @@ pub(crate) fn validate_procedural_surface_edits(
                 "F3D procedural-surface edit changes immutable carrier fields: {id}"
             )));
         }
-        let edit = match (&before.definition, &after.definition) {
+        let edit = match (before.definition(), after.definition()) {
             (
                 ProceduralSurfaceDefinition::Extrusion {
                     directrix: before_directrix,
@@ -3402,15 +3402,15 @@ pub(crate) fn validate_procedural_surface_fit_edits(
     let mut edits = BTreeMap::new();
     for (id, before) in baseline {
         let after = target[id];
-        if after.cache_fit_tolerance == before.cache_fit_tolerance {
+        if after.cache_fit_tolerance() == before.cache_fit_tolerance() {
             continue;
         }
-        let tolerance = after.cache_fit_tolerance.ok_or_else(|| {
+        let tolerance = after.cache_fit_tolerance().ok_or_else(|| {
             CodecError::NotImplemented(format!(
                 "cannot remove F3D procedural-surface fit tolerance: {id}"
             ))
         })?;
-        if before.cache_fit_tolerance.is_none() || !tolerance.is_finite() || tolerance < 0.0 {
+        if before.cache_fit_tolerance().is_none() || !tolerance.is_finite() || tolerance < 0.0 {
             return Err(CodecError::malformed(format_args!(
                 "F3D procedural-surface fit tolerance must replace a finite nonnegative value: {id}"
             )));
@@ -3445,11 +3445,11 @@ pub(crate) fn validate_procedural_curve_edits(
                 "F3D procedural-curve edit changes its solved curve: {id}"
             )));
         }
-        let definition = match (&before.definition, &after.definition) {
+        let definition = match (before.definition(), after.definition()) {
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix { .. },
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix { .. },
-            ) if before.definition != after.definition => Some(after.definition.clone()),
+            ) if before.definition() != after.definition() => Some(after.definition().clone()),
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
                     source: before_source,
@@ -3466,9 +3466,9 @@ pub(crate) fn validate_procedural_curve_edits(
             ) if before_source == after_source
                 && before_labels == after_labels
                 && before_codes == after_codes
-                && before.definition != after.definition =>
+                && before.definition() != after.definition() =>
             {
-                Some(after.definition.clone())
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
@@ -3479,8 +3479,8 @@ pub(crate) fn validate_procedural_curve_edits(
                     source: after_source,
                     ..
                 },
-            ) if before_source == after_source && before.definition != after.definition => {
-                Some(after.definition.clone())
+            ) if before_source == after_source && before.definition() != after.definition() => {
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
@@ -3497,9 +3497,9 @@ pub(crate) fn validate_procedural_curve_edits(
                     .iter()
                     .map(Vec::len)
                     .eq(after_context.discontinuities.iter().map(Vec::len))
-                && before.definition != after.definition =>
+                && before.definition() != after.definition() =>
             {
-                Some(after.definition.clone())
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset {
@@ -3519,9 +3519,9 @@ pub(crate) fn validate_procedural_curve_edits(
                     .map(Vec::len)
                     .eq(after_context.discontinuities.iter().map(Vec::len))
                 && before_base == after_base
-                && before.definition != after.definition =>
+                && before.definition() != after.definition() =>
             {
-                Some(after.definition.clone())
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring {
@@ -3544,9 +3544,9 @@ pub(crate) fn validate_procedural_curve_edits(
                     .eq(after_context.discontinuities.iter().map(Vec::len))
                 && before_surface_ranges == after_surface_ranges
                 && before_pcurve_range == after_pcurve_range
-                && before.definition != after.definition =>
+                && before.definition() != after.definition() =>
             {
-                Some(after.definition.clone())
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection {
@@ -3586,9 +3586,9 @@ pub(crate) fn validate_procedural_curve_edits(
                     }
                     _ => false,
                 }
-                && before.definition != after.definition =>
+                && before.definition() != after.definition() =>
             {
-                Some(after.definition.clone())
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
@@ -3605,9 +3605,9 @@ pub(crate) fn validate_procedural_curve_edits(
                     .iter()
                     .map(Vec::len)
                     .eq(after_context.discontinuities.iter().map(Vec::len))
-                && before.definition != after.definition =>
+                && before.definition() != after.definition() =>
             {
-                Some(after.definition.clone())
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
@@ -3627,9 +3627,9 @@ pub(crate) fn validate_procedural_curve_edits(
                     .map(Vec::len)
                     .eq(after_context.discontinuities.iter().map(Vec::len))
                 && before_third == after_third
-                && before.definition != after.definition =>
+                && before.definition() != after.definition() =>
             {
-                Some(after.definition.clone())
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
@@ -3650,9 +3650,9 @@ pub(crate) fn validate_procedural_curve_edits(
                     .iter()
                     .map(Vec::len)
                     .eq(after_context.discontinuities.iter().map(Vec::len))
-                && before.definition != after.definition =>
+                && before.definition() != after.definition() =>
             {
-                Some(after.definition.clone())
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette {
@@ -3671,9 +3671,9 @@ pub(crate) fn validate_procedural_curve_edits(
                 && std::mem::discriminant(before_silhouette)
                     == std::mem::discriminant(after_silhouette)
                 && before_cast == after_cast
-                && before.definition != after.definition =>
+                && before.definition() != after.definition() =>
             {
-                Some(after.definition.clone())
+                Some(after.definition().clone())
             }
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
@@ -3684,8 +3684,10 @@ pub(crate) fn validate_procedural_curve_edits(
                     components: after_components,
                     ..
                 },
-            ) if before_components == after_components && before.definition != after.definition => {
-                Some(after.definition.clone())
+            ) if before_components == after_components
+                && before.definition() != after.definition() =>
+            {
+                Some(after.definition().clone())
             }
             (before, after) if before == after => None,
             _ => {
@@ -3694,15 +3696,15 @@ pub(crate) fn validate_procedural_curve_edits(
                 )))
             }
         };
-        let fit_tolerance = if after.cache_fit_tolerance == before.cache_fit_tolerance {
+        let fit_tolerance = if after.cache_fit_tolerance() == before.cache_fit_tolerance() {
             None
         } else {
-            let tolerance = after.cache_fit_tolerance.ok_or_else(|| {
+            let tolerance = after.cache_fit_tolerance().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "cannot remove F3D procedural-curve fit tolerance: {id}"
                 ))
             })?;
-            if before.cache_fit_tolerance.is_none() || !tolerance.is_finite() || tolerance < 0.0 {
+            if before.cache_fit_tolerance().is_none() || !tolerance.is_finite() || tolerance < 0.0 {
                 return Err(CodecError::malformed(format_args!(
                     "F3D procedural-curve fit tolerance must replace a finite nonnegative value: {id}"
                 )));

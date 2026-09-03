@@ -300,10 +300,10 @@ pub(super) fn emit_topology(
                     },
                     source_object: None,
                 });
-                ir.model.procedural_curves.push(ProceduralCurve {
-                    id: construction,
-                    curve: carrier.clone(),
-                    definition: ProceduralCurveDefinition::SurfaceCurve {
+                ir.model.procedural_curves.push(ProceduralCurve::new(
+                    construction,
+                    carrier.clone(),
+                    ProceduralCurveDefinition::SurfaceCurve {
                         family: SurfaceCurveFamily::Parametric,
                         context: IntcurveSupportContext {
                             sides: [
@@ -323,10 +323,7 @@ pub(super) fn emit_topology(
                         },
                         tail: None,
                     },
-                    // The pcurve carries this fit contract; this construction has no
-                    // independent solved 3D cache to qualify.
-                    cache_fit_tolerance: None,
-                });
+                ));
                 curve = Some(carrier);
                 param_range = None;
             }
@@ -528,7 +525,7 @@ pub(super) fn emit_topology(
         .procedural_curves
         .iter()
         .filter_map(|procedural| {
-            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 return None;
             };
@@ -538,7 +535,7 @@ pub(super) fn emit_topology(
                     (
                         side.pcurve.clone()?,
                         context.parameter_range,
-                        procedural.cache_fit_tolerance,
+                        procedural.cache_fit_tolerance(),
                     ),
                 ))
             }))

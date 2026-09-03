@@ -70,7 +70,7 @@ fn variable_blend_eval_fixture(
             radii,
         },
     };
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId("variable-blend-construction".into()),
         surface: blend_surface.clone(),
         definition: ProceduralSurfaceDefinition::VariableBlend {
@@ -94,12 +94,13 @@ fn variable_blend_eval_fixture(
                 shape_parameter: 0.0,
                 shape_length: 0.0,
                 shape_tail: 0,
-                tail_enum: 2,
-                tail_parameterization: Some(RevisionSurfaceParameterization {
-                    u_interval: [Some(0.0), Some(1.0)],
-                    v_interval: [Some(0.0), Some(1.0)],
-                    ..Default::default()
-                }),
+                cache: crate::geometry::RevisionCacheForm::Parameterization(
+                    RevisionSurfaceParameterization {
+                        u_interval: [Some(0.0), Some(1.0)],
+                        v_interval: [Some(0.0), Some(1.0)],
+                        ..Default::default()
+                    },
+                ),
                 discontinuities: std::array::from_fn(|_| Vec::new()),
                 tail_flag: false,
                 tail_extensions: [0; 3],
@@ -149,15 +150,13 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     assert_eq!(partials.du, Vector3::new(8.0, 3.5, 8.5));
     assert_eq!(partials.dv, Vector3::new(1.5, 3.75, 1.75));
 
-    {
-        let ProceduralSurfaceDefinition::VariableBlend { construction } =
-            &mut ir.model.procedural_surfaces[0].definition
-        else {
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
             unreachable!()
         };
         construction.radius_kind = VariableBlendRadiusKind::TwoRadii;
         construction.second_value = Some(construction.first_value.clone());
-    }
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
@@ -174,15 +173,14 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             radii: [0.0, 0.0],
         },
     };
-    if let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &mut ir.model.procedural_surfaces[0].definition
-    {
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
+            unreachable!()
+        };
         construction.cross_section = Some(VariableBlendCrossSection::RoundedChamfer {
             radius: Some(Box::new(zero_radius.clone())),
         });
-    } else {
-        unreachable!()
-    }
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
@@ -217,16 +215,17 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         }),
     );
     ir.model.surfaces[2].geometry = SurfaceGeometry::Nurbs(bilinear_surface());
-    {
-        let ProceduralSurfaceDefinition::VariableBlend { construction } =
-            &mut ir.model.procedural_surfaces[0].definition
-        else {
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
             unreachable!()
         };
         construction.shape_prefix = 1;
-        construction.tail_enum = 0;
-        construction.tail_parameterization = None;
-    }
+        construction.cache = crate::geometry::RevisionCacheForm::SolvedCache {
+            fit_tolerance: crate::geometry::VariableBlendSolvedCache::Current {
+                fit_tolerance: 0.0,
+            },
+        };
+    });
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -239,13 +238,12 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
 
-    if let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &mut ir.model.procedural_surfaces[0].definition
-    {
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
+            unreachable!()
+        };
         construction.shape_prefix = 0;
-    } else {
-        unreachable!()
-    }
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
@@ -309,18 +307,18 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
         [2.0, 4.0],
         Some(VariableBlendCrossSection::Circular),
     );
-    let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &mut ir.model.procedural_surfaces[0].definition
-    else {
-        unreachable!()
-    };
-    construction.sides[0].pcurve = Some(crate::geometry::PcurveGeometry::Line {
-        origin: Point2::new(3.0, 0.0),
-        direction: Point2::new(0.0, 1.0),
-    });
-    construction.sides[1].pcurve = Some(crate::geometry::PcurveGeometry::Line {
-        origin: Point2::new(0.5, 2.0),
-        direction: Point2::new(0.0, 2.0),
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
+            unreachable!()
+        };
+        construction.sides[0].pcurve = Some(crate::geometry::PcurveGeometry::Line {
+            origin: Point2::new(3.0, 0.0),
+            direction: Point2::new(0.0, 1.0),
+        });
+        construction.sides[1].pcurve = Some(crate::geometry::PcurveGeometry::Line {
+            origin: Point2::new(0.5, 2.0),
+            direction: Point2::new(0.0, 2.0),
+        });
     });
 
     let index = crate::index::ModelIndex::new(&ir);
@@ -350,7 +348,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         direction: Vector3::new(0.0, 1.0, 0.0),
     };
     let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &ir.model.procedural_surfaces[0].definition
+        ir.model.procedural_surfaces[0].definition()
     else {
         unreachable!()
     };
@@ -362,7 +360,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             reversed: false,
         })
     });
-    ir.model.procedural_surfaces[0].definition = ProceduralSurfaceDefinition::Blend {
+    ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Blend {
         supports,
         spine: Some(slice.clone()),
         radius: BlendRadiusLaw::Constant { signed_radius: 3.0 },
@@ -379,18 +377,19 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             shape_prefix: 0,
             parameters: [0.0, 0.0],
             tail: 0,
-            tail_enum: 2,
-            tail_parameterization: Some(RevisionSurfaceParameterization {
-                u_interval: [Some(0.0), Some(1.0)],
-                v_interval: [Some(0.0), Some(1.0)],
-                ..Default::default()
-            }),
+            cache: crate::geometry::RevisionCacheForm::Parameterization(
+                RevisionSurfaceParameterization {
+                    u_interval: [Some(0.0), Some(1.0)],
+                    v_interval: [Some(0.0), Some(1.0)],
+                    ..Default::default()
+                },
+            ),
             discontinuities: std::array::from_fn(|_| Vec::new()),
             tail_flag: false,
             third: None,
             tail_extensions: [0; 3],
         })),
-    };
+    });
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -431,7 +430,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface {
+    ir.model.procedural_surfaces.push(procedural_surface! {
         id: replica_construction,
         surface: replica_surface.clone(),
         definition: ProceduralSurfaceDefinition::Replica {
@@ -468,14 +467,16 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert!(model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5).is_some());
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());
 
-    let ProceduralSurfaceDefinition::Blend {
-        native: Some(native),
-        ..
-    } = &mut ir.model.procedural_surfaces[0].definition
-    else {
-        unreachable!()
-    };
-    native.offsets = [4.0, 4.0];
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Blend {
+            native: Some(native),
+            ..
+        } = definition
+        else {
+            unreachable!()
+        };
+        native.offsets = [4.0, 4.0];
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5),
@@ -483,18 +484,17 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     );
 
     ir.model.surfaces[2].geometry = SurfaceGeometry::Nurbs(bilinear_surface());
-    {
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Blend {
             native: Some(native),
             ..
-        } = &mut ir.model.procedural_surfaces[0].definition
+        } = definition
         else {
             unreachable!()
         };
         native.offsets = [3.0, 3.0];
-        native.tail_enum = 0;
-        native.tail_parameterization = None;
-    }
+        native.cache = crate::geometry::RevisionCacheForm::SolvedCache { fit_tolerance: 0.0 };
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
@@ -506,18 +506,19 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert_eq!(cached_partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(cached_partials.dv, Vector3::new(0.0, 1.0, 0.0));
 
-    {
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Blend {
             native: Some(native),
             ..
-        } = &mut ir.model.procedural_surfaces[0].definition
+        } = definition
         else {
             unreachable!()
         };
         native.offsets = [4.0, 4.0];
-        native.tail_enum = 2;
-        native.tail_parameterization = Some(RevisionSurfaceParameterization::default());
-    }
+        native.cache = crate::geometry::RevisionCacheForm::Parameterization(
+            RevisionSurfaceParameterization::default(),
+        );
+    });
     let index = crate::index::ModelIndex::new(&ir);
     assert!(model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_none());

@@ -94,7 +94,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
     loop {
         let mut changed = false;
         for procedural in &ir.model.procedural_surfaces {
-            let resolved = match &procedural.definition {
+            let resolved = match procedural.definition() {
                 ProceduralSurfaceDefinition::Exact { .. }
                 | ProceduralSurfaceDefinition::Helix { .. }
                 | ProceduralSurfaceDefinition::RollingBallJet { .. } => true,
@@ -115,7 +115,7 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
             }
         }
         for procedural in &ir.model.procedural_curves {
-            let resolved = match &procedural.definition {
+            let resolved = match procedural.definition() {
                 ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => true,
                 ProceduralCurveDefinition::Intersection { context, .. } => {
                     context.sides.iter().all(|side| {
@@ -997,15 +997,14 @@ mod route_tests {
             },
             source_object: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: ProceduralCurveId("catia:test:procedural-curve#0".into()),
-            curve: curve_id,
-            definition: ProceduralCurveDefinition::Unknown {
+        ir.model.procedural_curves.push(ProceduralCurve::new(
+            ProceduralCurveId("catia:test:procedural-curve#0".into()),
+            curve_id,
+            ProceduralCurveDefinition::Unknown {
                 native_kind: None,
                 record: Some(record_id.clone()),
             },
-            cache_fit_tolerance: None,
-        });
+        ));
         let unknowns = [UnknownRecord::retained(
             record_id,
             0,
@@ -1039,28 +1038,26 @@ mod route_tests {
         });
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: ProceduralCurveId("procedural-curve-0".to_string()),
-            curve: curve_id,
-            definition: ProceduralCurveDefinition::Unknown {
+        ir.model.procedural_curves.push(ProceduralCurve::new(
+            ProceduralCurveId("procedural-curve-0".to_string()),
+            curve_id,
+            ProceduralCurveDefinition::Unknown {
                 native_kind: None,
                 record: Some(UnknownId("record-0".to_string())),
             },
-            cache_fit_tolerance: None,
-        });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId("procedural-surface-0".to_string()),
-            surface: surface_id.clone(),
-            definition: ProceduralSurfaceDefinition::Unknown {
+        ));
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            ProceduralSurfaceId("procedural-surface-0".to_string()),
+            surface_id.clone(),
+            ProceduralSurfaceDefinition::Unknown {
                 record: Some(UnknownId("record-1".to_string())),
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId("procedural-surface-1".to_string()),
-            surface: offset_id,
-            definition: ProceduralSurfaceDefinition::Offset {
+            None,
+        ));
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            ProceduralSurfaceId("procedural-surface-1".to_string()),
+            offset_id,
+            ProceduralSurfaceDefinition::Offset {
                 support: surface_id,
                 distance: 2.0,
                 u_sense: Some(1),
@@ -1069,19 +1066,18 @@ mod route_tests {
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+            None,
+        ));
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
-        ir.model.procedural_curves[0].definition = ProceduralCurveDefinition::Exact;
-        ir.model.procedural_surfaces[0].definition = ProceduralSurfaceDefinition::Exact {
+        ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Exact);
+        ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Exact {
             parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
             },
             extension: 0,
             revision_form: None,
-        };
+        });
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }
 }

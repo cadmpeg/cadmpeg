@@ -54,7 +54,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir().model.procedural_curves.len(), 3);
     assert!(result.ir().model.procedural_curves.iter().all(|curve| {
         matches!(
-            curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
                 ref context,
                 ..

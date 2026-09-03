@@ -599,20 +599,21 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
     let output = BodyId("nx:s4:body#3".into());
-    let make_offset = |ordinal: u32, distance: f64| ProceduralSurface {
-        id: ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
-        surface: SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
-        definition: ProceduralSurfaceDefinition::Offset {
-            support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
-            distance,
-            u_sense: Some(1),
-            v_sense: Some(1),
-            support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
+    let make_offset = |ordinal: u32, distance: f64| {
+        ProceduralSurface::new(
+            ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
+            SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
+            ProceduralSurfaceDefinition::Offset {
+                support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+                distance,
+                u_sense: Some(1),
+                v_sense: Some(1),
+                support_extension: None,
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            None,
+        )
     };
     for ordinal in 0..2 {
         let procedural = make_offset(ordinal, 30.0);
@@ -719,20 +720,21 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
     let output = BodyId("nx:s4:body#3".into());
-    let make_offset = |ordinal: u32, distance: f64| ProceduralSurface {
-        id: ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
-        surface: SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
-        definition: ProceduralSurfaceDefinition::Offset {
-            support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
-            distance,
-            u_sense: Some(1),
-            v_sense: Some(1),
-            support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
+    let make_offset = |ordinal: u32, distance: f64| {
+        ProceduralSurface::new(
+            ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
+            SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
+            ProceduralSurfaceDefinition::Offset {
+                support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+                distance,
+                u_sense: Some(1),
+                v_sense: Some(1),
+                support_extension: None,
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            None,
+        )
     };
     for ordinal in 0..2 {
         let procedural = make_offset(ordinal, -12.5);
@@ -828,20 +830,21 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     let input = BodyId("nx:s4:body#input".into());
     let support = SurfaceId("nx:s4:nurbs-surf#0".into());
     attach_test_body_surface(&mut ir, &input, support.clone());
-    let make_offset = |ordinal: u32, support: SurfaceId, distance: f64| ProceduralSurface {
-        id: ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
-        surface: SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
-        definition: ProceduralSurfaceDefinition::Offset {
-            support,
-            distance,
-            u_sense: Some(1),
-            v_sense: Some(1),
-            support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
+    let make_offset = |ordinal: u32, support: SurfaceId, distance: f64| {
+        ProceduralSurface::new(
+            ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
+            SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
+            ProceduralSurfaceDefinition::Offset {
+                support,
+                distance,
+                u_sense: Some(1),
+                v_sense: Some(1),
+                support_extension: None,
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            None,
+        )
     };
     for (ordinal, distance) in [(0, -6.25), (1, 6.25)] {
         let procedural = make_offset(ordinal, support.clone(), distance);
@@ -863,31 +866,32 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     ));
 
     let mut mismatched_support = ir.clone();
-    let ProceduralSurfaceDefinition::Offset { support, .. } = &mut mismatched_support
+    mismatched_support
         .model
         .procedural_surfaces
         .last_mut()
         .expect("positive offset")
-        .definition
-    else {
-        unreachable!()
-    };
-    *support = SurfaceId("nx:s4:nurbs-surf#other".into());
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Offset { support, .. } = definition else {
+                unreachable!()
+            };
+            *support = SurfaceId("nx:s4:nurbs-surf#other".into());
+        });
     assert!(
         super::thicken_feature_definition(&mismatched_support, std::slice::from_ref(&output))
             .is_none()
     );
 
-    let ProceduralSurfaceDefinition::Offset { distance, .. } = &mut ir
-        .model
+    ir.model
         .procedural_surfaces
         .last_mut()
         .expect("positive offset")
-        .definition
-    else {
-        unreachable!()
-    };
-    *distance = 7.0;
+        .edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Offset { distance, .. } = definition else {
+                unreachable!()
+            };
+            *distance = 7.0;
+        });
     assert!(super::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none());
 }
 
@@ -926,18 +930,19 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         [SurfaceId("c".into()), SurfaceId("d".into())],
     ])
     .is_none());
-    let make_blend = |ordinal: u32, radius: BlendRadiusLaw| ProceduralSurface {
-        id: ProceduralSurfaceId(format!("nx:s4:blend-construction#{ordinal}")),
-        surface: SurfaceId(format!("nx:s4:blend-surf#{ordinal}")),
-        definition: ProceduralSurfaceDefinition::Blend {
-            supports: [None, None],
-            spine: None,
-            radius,
-            cross_section: BlendCrossSection::Circular,
-            native: None,
-        },
-        cache_fit_tolerance: None,
-        record_bounds: None,
+    let make_blend = |ordinal: u32, radius: BlendRadiusLaw| {
+        ProceduralSurface::new(
+            ProceduralSurfaceId(format!("nx:s4:blend-construction#{ordinal}")),
+            SurfaceId(format!("nx:s4:blend-surf#{ordinal}")),
+            ProceduralSurfaceDefinition::Blend {
+                supports: [None, None],
+                spine: None,
+                radius,
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            None,
+        )
     };
     let first = make_blend(0, BlendRadiusLaw::Constant { signed_radius: 5.0 });
     attach_test_body_surface(&mut ir, &output, first.surface.clone());
@@ -986,19 +991,21 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let first_support = SurfaceId("nx:s4:blend-support#a".into());
     let second_support = SurfaceId("nx:s4:blend-support#b".into());
     for procedural in &mut face_blend_ir.model.procedural_surfaces {
-        let ProceduralSurfaceDefinition::Blend { supports, .. } = &mut procedural.definition else {
-            unreachable!()
-        };
-        *supports = [
-            Some(BlendSupport {
-                surface: first_support.clone(),
-                reversed: false,
-            }),
-            Some(BlendSupport {
-                surface: second_support.clone(),
-                reversed: true,
-            }),
-        ];
+        procedural.edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
+                unreachable!()
+            };
+            *supports = [
+                Some(BlendSupport {
+                    surface: first_support.clone(),
+                    reversed: false,
+                }),
+                Some(BlendSupport {
+                    surface: second_support.clone(),
+                    reversed: true,
+                }),
+            ];
+        });
     }
     attach_test_body_surface(&mut face_blend_ir, &output, first_support);
     attach_test_body_surface(&mut face_blend_ir, &output, second_support);
@@ -1075,19 +1082,18 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     ));
     assert!(super::blend_feature_definition(&ir, &[], super::NxBlendFamily::Edge,).is_none());
 
-    let conic = ProceduralSurface {
-        id: ProceduralSurfaceId("nx:s4:blend-construction#3".into()),
-        surface: SurfaceId("nx:s4:blend-surf#3".into()),
-        definition: ProceduralSurfaceDefinition::Blend {
+    let conic = ProceduralSurface::new(
+        ProceduralSurfaceId("nx:s4:blend-construction#3".into()),
+        SurfaceId("nx:s4:blend-surf#3".into()),
+        ProceduralSurfaceDefinition::Blend {
             supports: [None, None],
             spine: None,
             radius: BlendRadiusLaw::Constant { signed_radius: 7.0 },
             cross_section: BlendCrossSection::Conic,
             native: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    };
+        None,
+    );
     attach_test_body_surface(
         &mut ir,
         &BodyId("nx:s4:body#3".into()),

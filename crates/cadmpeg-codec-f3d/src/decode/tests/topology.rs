@@ -1208,7 +1208,7 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
             .unwrap_or_else(|| panic!("{family} must retain its construction identity"));
         let ProceduralSurfaceDefinition::Unknown {
             record: Some(record),
-        } = &procedural.definition
+        } = procedural.definition()
         else {
             panic!("{family} must retain its opaque construction")
         };

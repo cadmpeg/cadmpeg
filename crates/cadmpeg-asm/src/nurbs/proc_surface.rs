@@ -16,7 +16,8 @@ use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, RevisionCacheForm,
+    RevisionSurfaceParameterization, SurfaceGeometry, VariableBlendSolvedCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -230,10 +231,8 @@ pub struct EmbeddedRevisionG2Blend {
     /// Signed integer immediately before the shared tail's enum, taking the
     /// values `-1` and `1`.
     pub shape_tail: i64,
-    /// Enum opening the shared revision-gated surface tail.
-    pub tail_enum: i64,
-    /// Parameterization stored by tail-enum form `2` in place of a solved cache.
-    pub tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Approximation-cache form selected by the shared tail enum.
+    pub cache: RevisionCacheForm,
     /// Six discontinuity arrays of the shared tail.
     pub discontinuities: [Vec<f64>; 6],
     /// The boolean serialized after the discontinuity arrays.
@@ -300,10 +299,8 @@ pub struct EmbeddedVariableBlend {
     /// Signed integer immediately before the shared tail's enum, taking the
     /// values `-1` and `1`.
     pub shape_tail: i64,
-    /// Enum opening the shared revision-gated surface tail.
-    pub tail_enum: i64,
-    /// Parameterization stored by tail-enum form `2` in place of a solved cache.
-    pub tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Approximation-cache form selected by the shared tail enum.
+    pub cache: RevisionCacheForm<RevisionSurfaceParameterization, VariableBlendSolvedCache>,
     /// Six discontinuity arrays of the shared tail.
     pub discontinuities: [Vec<f64>; 6],
     /// The boolean serialized after the discontinuity arrays.
@@ -436,10 +433,8 @@ pub struct EmbeddedRollingBall {
     pub parameters: [f64; 2],
     /// The integer closing the shape block.
     pub tail: i64,
-    /// Enum opening the shared revision-gated surface tail.
-    pub tail_enum: i64,
-    /// Parameterization stored by tail-enum form `2` in place of a solved cache.
-    pub tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Approximation-cache form selected by the shared tail enum.
+    pub cache: RevisionCacheForm,
     /// Six discontinuity arrays of the shared tail.
     pub discontinuities: [Vec<f64>; 6],
     /// The boolean serialized after the discontinuity arrays.
@@ -652,8 +647,7 @@ fn g2_blend_spl_sur(
                     shape_parameter,
                     shape_length,
                     shape_tail,
-                    tail_enum,
-                    tail_parameterization: parameterization,
+                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
                     discontinuities,
                     tail_flag,
                     tail_extensions,
@@ -790,10 +784,8 @@ pub struct EmbeddedLoftPath {
 pub struct EmbeddedRevisionCompoundLoft {
     /// The revision integer that gates the layout.
     pub revision: i64,
-    /// Enum opening the shared revision-gated surface tail.
-    pub tail_enum: i64,
-    /// Parameterization stored by tail-enum form `2` in place of a solved cache.
-    pub tail_parameterization: Option<cadmpeg_ir::geometry::RevisionSurfaceParameterization>,
+    /// Approximation-cache form selected by the shared tail enum.
+    pub cache: RevisionCacheForm,
     /// Six discontinuity arrays of the shared tail.
     pub discontinuities: [Vec<f64>; 6],
     /// The boolean serialized after the discontinuity arrays.
@@ -1837,8 +1829,7 @@ fn revision_loft(
                 revision,
                 flags,
                 ints,
-                tail_enum,
-                tail_parameterization: parameterization,
+                cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
                 discontinuities,
                 tail_flag,
             }),
@@ -2037,8 +2028,7 @@ fn revision_compound_loft(
         definition: DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
             EmbeddedRevisionCompoundLoft {
                 revision,
-                tail_enum,
-                tail_parameterization: parameterization,
+                cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
                 discontinuities,
                 tail_flag,
                 base_profile,
@@ -3062,8 +3052,7 @@ fn revision_sweep_sur(
                 primary_flag,
                 profile_endpoints,
                 path_endpoints,
-                tail_enum,
-                tail_parameterization,
+                cache: revision_cache_form(tail_enum, cache_fit_tolerance, tail_parameterization)?,
             }),
             layout,
             discontinuities,
@@ -3138,8 +3127,7 @@ fn taper_spl_sur(
                     reference_endpoints,
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    tail_enum,
-                    tail_parameterization: parameterization,
+                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3316,6 +3304,20 @@ pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
     })
 }
 
+pub(crate) fn revision_cache_form(
+    selector: i64,
+    fit_tolerance: Option<f64>,
+    parameterization: Option<RevisionSurfaceParameterization>,
+) -> Option<RevisionCacheForm> {
+    match (selector, fit_tolerance, parameterization) {
+        (0, Some(fit_tolerance), None) => Some(RevisionCacheForm::SolvedCache { fit_tolerance }),
+        (2, None, Some(parameterization)) => {
+            Some(RevisionCacheForm::Parameterization(parameterization))
+        }
+        _ => None,
+    }
+}
+
 fn off_spl_sur(
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
@@ -3365,8 +3367,7 @@ fn off_spl_sur(
                     reference_endpoints: [None; 2],
                     second_endpoints: [None; 2],
                     flags,
-                    tail_enum,
-                    tail_parameterization: parameterization,
+                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3460,8 +3461,7 @@ fn rot_spl_sur(
                     reference_endpoints: profile_endpoints,
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    tail_enum,
-                    tail_parameterization: parameterization,
+                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3549,8 +3549,7 @@ fn sum_spl_sur(
                     reference_endpoints: first_endpoints,
                     second_endpoints,
                     flags: Vec::new(),
-                    tail_enum,
-                    tail_parameterization: parameterization,
+                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3657,8 +3656,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                     reference_endpoints: [None; 2],
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    tail_enum,
-                    tail_parameterization: parameterization,
+                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
                     discontinuities,
                     tail_flag,
                     trailing_flags: Vec::new(),
@@ -3735,8 +3733,7 @@ fn t_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             reference_endpoints: [None; 2],
             second_endpoints: [None; 2],
             flags: Vec::new(),
-            tail_enum,
-            tail_parameterization: parameterization,
+            cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
             discontinuities: tail_discontinuities,
             tail_flag,
             trailing_flags: Vec::new(),
@@ -4066,8 +4063,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                     reference_endpoints: [None; 2],
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
-                    tail_enum,
-                    tail_parameterization,
+                    cache: revision_cache_form(tail_enum, fit_tolerance, tail_parameterization)?,
                     discontinuities: discontinuities.clone(),
                     tail_flag,
                     trailing_flags: Vec::new(),

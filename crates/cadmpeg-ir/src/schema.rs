@@ -517,8 +517,29 @@ impl_entity_schema!(crate::geometry::Surface, Surface, id.0; id, geometry, sourc
 impl_entity_schema!(crate::geometry::Curve, Curve, id.0; id, geometry, source_object);
 impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id.0; id, scheme, vertices, edges, faces, symmetries, source_object);
 impl_entity_schema!(crate::geometry::Pcurve, Pcurve, id.0; id, geometry, wrapper_reversed, native_tail_flags, parameter_range, fit_tolerance);
-impl_entity_schema!(crate::geometry::ProceduralSurface, ProceduralSurface, id.0; id, surface, definition, cache_fit_tolerance, record_bounds);
-impl_entity_schema!(crate::geometry::ProceduralCurve, ProceduralCurve, id.0; id, curve, definition, cache_fit_tolerance);
+impl EntitySchema for crate::geometry::ProceduralSurface {
+    const KIND: EntityKind = EntityKind::ProceduralSurface;
+
+    fn identity(&self) -> &str {
+        self.id.0.as_str()
+    }
+
+    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
+        visit_typed_references(self, visitor);
+    }
+}
+
+impl EntitySchema for crate::geometry::ProceduralCurve {
+    const KIND: EntityKind = EntityKind::ProceduralCurve;
+
+    fn identity(&self) -> &str {
+        self.id.0.as_str()
+    }
+
+    fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
+        visit_typed_references(self, visitor);
+    }
+}
 impl_entity_schema!(crate::assets::Asset, Asset, id.0; id, name, media_type, content, native_ref);
 impl_entity_schema!(crate::features::Feature, Feature, id.0; id, ordinal, name, suppressed, parent, dependencies, source_properties, source_tag, source_text, source_content, outputs, definition, native_ref);
 impl_entity_schema!(

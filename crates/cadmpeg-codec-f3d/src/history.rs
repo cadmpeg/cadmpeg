@@ -8524,7 +8524,7 @@ pub(crate) fn historical_topology(
         .collect::<Vec<_>>();
     for procedural in &brep.procedural_surfaces {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { radius, .. } =
-            &procedural.definition
+            procedural.definition()
         else {
             continue;
         };

@@ -357,23 +357,24 @@ fn emit_carrier_surface(
                 format,
             ),
         };
-        out.procedural_surfaces.push(ProceduralSurface {
-            id: format!("{format}:brep:procedural_surface#{i}").into(),
-            surface: SurfaceId(id(format, i)),
+        if let Ok(procedural) = ProceduralSurface::try_new(
+            format!("{format}:brep:procedural_surface#{i}").into(),
+            SurfaceId(id(format, i)),
             definition,
-            cache_fit_tolerance: procedural.cache_fit_tolerance,
-            record_bounds: nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
-        });
+            procedural.cache_fit_tolerance,
+            nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
+        ) {
+            out.procedural_surfaces.push(procedural);
+        }
     } else if cached_unknown_procedural_surfaces.contains(&i) {
-        out.procedural_surfaces.push(ProceduralSurface {
-            id: format!("{format}:brep:procedural_surface#{i}").into(),
-            surface: SurfaceId(id(format, i)),
-            definition: ProceduralSurfaceDefinition::Unknown {
+        out.procedural_surfaces.push(ProceduralSurface::new(
+            format!("{format}:brep:procedural_surface#{i}").into(),
+            SurfaceId(id(format, i)),
+            ProceduralSurfaceDefinition::Unknown {
                 record: Some(UnknownId(unknown_record_id(r, format))),
             },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+            None,
+        ));
     }
 }
 
@@ -2111,8 +2112,7 @@ fn emit_variable_blend_surface(
             shape_parameter: construction.shape_parameter,
             shape_length: construction.shape_length,
             shape_tail: construction.shape_tail,
-            tail_enum: construction.tail_enum,
-            tail_parameterization: construction.tail_parameterization,
+            cache: construction.cache,
             discontinuities: construction.discontinuities,
             tail_flag: construction.tail_flag,
             tail_extensions: construction.tail_extensions,
@@ -2252,8 +2252,7 @@ fn emit_revision_compound_loft_surface(
     ProceduralSurfaceDefinition::RevisionCompoundLoft {
         construction: Box::new(cadmpeg_ir::geometry::RevisionCompoundLoftConstruction {
             revision: construction.revision,
-            tail_enum: construction.tail_enum,
-            tail_parameterization: construction.tail_parameterization,
+            cache: construction.cache,
             discontinuities: construction.discontinuities,
             tail_flag: construction.tail_flag,
             base_profile,
@@ -2335,8 +2334,7 @@ fn emit_revision_g2_blend_surface(
             shape_parameter: construction.shape_parameter,
             shape_length: construction.shape_length,
             shape_tail: construction.shape_tail,
-            tail_enum: construction.tail_enum,
-            tail_parameterization: construction.tail_parameterization,
+            cache: construction.cache,
             discontinuities: construction.discontinuities,
             tail_flag: construction.tail_flag,
             tail_extensions: construction.tail_extensions,
@@ -2571,8 +2569,7 @@ fn emit_blend_surface(
             shape_prefix: native.shape_prefix,
             parameters: native.parameters,
             tail: native.tail,
-            tail_enum: native.tail_enum,
-            tail_parameterization: native.tail_parameterization,
+            cache: native.cache,
             discontinuities: native.discontinuities,
             tail_flag: native.tail_flag,
             third,
@@ -2956,19 +2953,20 @@ fn emit_carrier_curve(
                     record: None,
                 })
         };
-        out.procedural_curves.push(ProceduralCurve {
-            id: format!("{format}:brep:procedural_curve#{i}").into(),
-            curve: CurveId(id(format, i)),
+        if let Ok(procedural) = ProceduralCurve::try_new(
+            format!("{format}:brep:procedural_curve#{i}").into(),
+            CurveId(id(format, i)),
             definition,
-            cache_fit_tolerance: procedural.15,
-        });
+            procedural.15,
+        ) {
+            out.procedural_curves.push(procedural);
+        }
     } else if let Some((_native_kind, definition)) = cacheless_procedural_curve_defs.remove(&i) {
-        out.procedural_curves.push(ProceduralCurve {
-            id: format!("{format}:brep:procedural_curve#{i}").into(),
-            curve: CurveId(id(format, i)),
+        out.procedural_curves.push(ProceduralCurve::new(
+            format!("{format}:brep:procedural_curve#{i}").into(),
+            CurveId(id(format, i)),
             definition,
-            cache_fit_tolerance: None,
-        });
+        ));
     }
 }
 

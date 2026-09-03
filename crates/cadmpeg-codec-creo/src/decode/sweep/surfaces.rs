@@ -672,10 +672,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     instance_path: Vec::new(),
                 }),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id,
-                surface: surface_id,
-                definition: ProceduralSurfaceDefinition::Extrusion {
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                procedural_id,
+                surface_id,
+                ProceduralSurfaceDefinition::Extrusion {
                     directrix: curve_id,
                     parameter_interval: Some([
                         *directrix.knots.first().expect("validated spline knots"),
@@ -685,9 +685,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     native_position: None,
                     revision_form: None,
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+                None,
+            ));
             transferred += 1;
         }
     }

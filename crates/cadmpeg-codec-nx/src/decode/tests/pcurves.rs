@@ -244,10 +244,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     }
 
     let construction = ProceduralCurveId("nx:test:closed-intersection".into());
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: construction,
-        curve: sphere_circle.clone(),
-        definition: ProceduralCurveDefinition::TolerantIntersection {
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        construction,
+        sphere_circle.clone(),
+        ProceduralCurveDefinition::TolerantIntersection {
             supports: [sphere, plane],
             endpoints: [
                 Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
@@ -256,8 +256,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             tolerance: 1.0e-8,
             parameterization: None,
         },
-        cache_fit_tolerance: None,
-    });
+    ));
     let point = PointId("nx:test:closed-point".into());
     let vertex = VertexId("nx:test:closed-vertex".into());
     ir.model.points.push(Point {
@@ -292,7 +291,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     );
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization, ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("closed intersection construction");
     };
@@ -308,7 +307,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         supports,
         parameterization: Some(parameterization),
         ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("closed intersection parameterization");
     };
@@ -937,21 +936,24 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: ProceduralSurfaceId("nx:test:offset".into()),
-        surface: cache.clone(),
-        definition: ProceduralSurfaceDefinition::Offset {
-            support: support.clone(),
-            distance: 4.0,
-            u_sense: Some(0),
-            v_sense: Some(0),
-            support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
-        },
-        cache_fit_tolerance: Some(0.0),
-        record_bounds: None,
-    });
+    ir.model.procedural_surfaces.push(
+        ProceduralSurface::try_new(
+            ProceduralSurfaceId("nx:test:offset".into()),
+            cache.clone(),
+            ProceduralSurfaceDefinition::Offset {
+                support: support.clone(),
+                distance: 4.0,
+                u_sense: Some(0),
+                v_sense: Some(0),
+                support_extension: None,
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            Some(0.0),
+            None,
+        )
+        .unwrap(),
+    );
 
     assert_eq!(
         super::surface_offset_lineage(&ir, &cache, 0),
@@ -986,17 +988,16 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: procedural,
-        curve: curve.clone(),
-        definition: ProceduralCurveDefinition::TolerantIntersection {
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        procedural,
+        curve.clone(),
+        ProceduralCurveDefinition::TolerantIntersection {
             supports: surfaces.clone(),
             endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             tolerance: 0.01,
             parameterization: None,
         },
-        cache_fit_tolerance: None,
-    });
+    ));
     let points = [
         PointId("nx:test:point#0".into()),
         PointId("nx:test:point#1".into()),
@@ -1104,7 +1105,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         &mut AnnotationBuilder::new(),
     );
     assert!(matches!(
-        ir.model.procedural_curves[0].definition,
+        ir.model.procedural_curves[0].definition(),
         ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
@@ -1122,7 +1123,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization: Some(parameterization),
         ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("serialized branch transferred");
     };
@@ -1143,13 +1144,15 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         )
     );
 
-    let ProceduralCurveDefinition::TolerantIntersection {
-        parameterization, ..
-    } = &mut ir.model.procedural_curves[0].definition
-    else {
-        unreachable!();
-    };
-    *parameterization = None;
+    ir.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            parameterization, ..
+        } = definition
+        else {
+            unreachable!();
+        };
+        *parameterization = None;
+    });
     let edge = &mut ir.model.edges[0];
     edge.param_range = None;
     std::mem::swap(&mut edge.start, &mut edge.end);
@@ -1167,7 +1170,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization: Some(parameterization),
         ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("reversed serialized branch transferred");
     };
@@ -1194,16 +1197,18 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
         point.position = position;
     }
-    let ProceduralCurveDefinition::TolerantIntersection {
-        endpoints: stored_endpoints,
-        parameterization,
-        ..
-    } = &mut ir.model.procedural_curves[0].definition
-    else {
-        unreachable!();
-    };
-    *stored_endpoints = endpoints;
-    *parameterization = None;
+    ir.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            endpoints: stored_endpoints,
+            parameterization,
+            ..
+        } = definition
+        else {
+            unreachable!();
+        };
+        *stored_endpoints = endpoints;
+        *parameterization = None;
+    });
     ir.model.edges[0].param_range = None;
     for coedge in &mut ir.model.coedges {
         coedge.pcurves[0].parameter_range = Some(range);
@@ -1226,7 +1231,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     let ProceduralCurveDefinition::TolerantIntersection {
         parameterization: Some(parameterization),
         ..
-    } = &ir.model.procedural_curves[0].definition
+    } = ir.model.procedural_curves[0].definition()
     else {
         panic!("reversed symmetric conic branches transferred");
     };
@@ -1236,16 +1241,18 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         PcurveGeometry::Ellipse { y_axis, .. } if y_axis.v == 1.0
     )));
 
-    let ProceduralCurveDefinition::TolerantIntersection {
-        tolerance,
-        parameterization,
-        ..
-    } = &mut ir.model.procedural_curves[0].definition
-    else {
-        unreachable!();
-    };
-    *tolerance = 10.0;
-    *parameterization = None;
+    ir.model.procedural_curves[0].edit_definition(|definition| {
+        let ProceduralCurveDefinition::TolerantIntersection {
+            tolerance,
+            parameterization,
+            ..
+        } = definition
+        else {
+            unreachable!();
+        };
+        *tolerance = 10.0;
+        *parameterization = None;
+    });
     ir.model.edges[0].param_range = None;
     super::complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
@@ -1253,7 +1260,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         &mut AnnotationBuilder::new(),
     );
     assert!(matches!(
-        ir.model.procedural_curves[0].definition,
+        ir.model.procedural_curves[0].definition(),
         ProceduralCurveDefinition::TolerantIntersection {
             parameterization: Some(_),
             ..
@@ -1550,30 +1557,33 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         }),
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: ProceduralCurveId("nx:test:intersection#0".into()),
-        curve: curve_id.clone(),
-        definition: ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: None,
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    },
-                    IntcurveSupportSide {
-                        surface: None,
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+    ir.model.procedural_curves.push(
+        ProceduralCurve::try_new(
+            ProceduralCurveId("nx:test:intersection#0".into()),
+            curve_id.clone(),
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
             },
-            discontinuity_flag: false,
-        },
-        cache_fit_tolerance: Some(2.0),
-    });
+            Some(2.0),
+        )
+        .unwrap(),
+    );
 
     let start_point = PointId("nx:test:point#0".into());
     let end_point = PointId("nx:test:point#1".into());
@@ -1633,10 +1643,10 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(ProceduralSurface {
-        id: construction,
-        surface: surface.clone(),
-        definition: ProceduralSurfaceDefinition::Offset {
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        surface.clone(),
+        ProceduralSurfaceDefinition::Offset {
             support,
             distance: 1.0,
             u_sense: Some(0),
@@ -1645,9 +1655,8 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             extension_flags: Vec::new(),
             revision_form: None,
         },
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
+        None,
+    ));
     let pcurve = PcurveGeometry::Nurbs {
         degree: 1,
         knots: vec![0.0, 0.0, 1.0, 1.0],

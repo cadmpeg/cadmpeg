@@ -924,15 +924,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 },
                 source_object: None,
             });
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: ProceduralCurveId(StepIdentity::construction("curve_replica", id)),
+            ir.model.procedural_curves.push(ProceduralCurve::new(
+                ProceduralCurveId(StepIdentity::construction("curve_replica", id)),
                 curve,
-                definition: ProceduralCurveDefinition::Replica {
+                ProceduralCurveDefinition::Replica {
                     source: CurveId(StepIdentity::data("curve", parent_step)),
                     transform,
                 },
-                cache_fit_tolerance: None,
-            });
+            ));
             carrier_index.curves.insert(id, curve_index);
             if let Some(offset) = curve_parameter_offsets.get(&parent_step).copied() {
                 curve_parameter_offsets.insert(id, offset);
@@ -1004,16 +1003,18 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 geometry,
                 source_object: None,
             });
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: ProceduralCurveId(StepIdentity::construction("trimmed_curve", id)),
-                curve: curve.clone(),
-                definition: ProceduralCurveDefinition::Subset {
+            if let Ok(procedural) = ProceduralCurve::try_new(
+                ProceduralCurveId(StepIdentity::construction("trimmed_curve", id)),
+                curve.clone(),
+                ProceduralCurveDefinition::Subset {
                     source: basis,
                     parameter_range,
                     sense,
                 },
-                cache_fit_tolerance: Some(0.0),
-            });
+                Some(0.0),
+            ) {
+                ir.model.procedural_curves.push(procedural);
+            }
             carrier_index.curves.insert(id, curve_index);
             if parameter_offset != 0.0 {
                 curve_parameter_offsets.insert(id, parameter_offset);
@@ -1102,17 +1103,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             geometry,
             source_object: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: ProceduralCurveId(StepIdentity::construction("offset_curve", id)),
-            curve: curve.clone(),
-            definition: ProceduralCurveDefinition::SpatialOffset {
+        ir.model.procedural_curves.push(ProceduralCurve::new(
+            ProceduralCurveId(StepIdentity::construction("offset_curve", id)),
+            curve.clone(),
+            ProceduralCurveDefinition::SpatialOffset {
                 source,
                 distance: distance * unit_scales.length(id, scale),
                 reference_direction,
                 self_intersect,
             },
-            cache_fit_tolerance: None,
-        });
+        ));
         carrier_index.curves.insert(id, curve_index);
         if let Some(offset) = curve_parameter_offsets.get(&source_step).copied() {
             curve_parameter_offsets.insert(id, offset);
@@ -1268,13 +1268,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId(StepIdentity::construction("swept_surface", id)),
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            ProceduralSurfaceId(StepIdentity::construction("swept_surface", id)),
             surface,
             definition,
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+            None,
+        ));
         typed.insert(id);
     }
 
@@ -1521,21 +1520,20 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 geometry,
                 source_object: None,
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: ProceduralSurfaceId(StepIdentity::construction(
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                ProceduralSurfaceId(StepIdentity::construction(
                     "rectangular_trimmed_surface",
                     id,
                 )),
                 surface,
-                definition: ProceduralSurfaceDefinition::Subset {
+                ProceduralSurfaceDefinition::Subset {
                     support: SurfaceId(StepIdentity::data("surface", support_step)),
                     parameter_ranges,
                     u_sense: Some(u_sense),
                     v_sense: Some(v_sense),
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+                None,
+            ));
             carrier_index
                 .surfaces
                 .insert(id, ir.model.surfaces.len() - 1);
@@ -1597,18 +1595,17 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 geometry,
                 source_object: None,
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: ProceduralSurfaceId(StepIdentity::construction("curve_bounded_surface", id)),
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                ProceduralSurfaceId(StepIdentity::construction("curve_bounded_surface", id)),
                 surface,
-                definition: ProceduralSurfaceDefinition::CurveBounded {
+                ProceduralSurfaceDefinition::CurveBounded {
                     support,
                     boundaries,
                     boundary_pcurves,
                     implicit_outer,
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+                None,
+            ));
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
             true
@@ -1640,17 +1637,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 geometry: SurfaceGeometry::Unknown { record: None },
                 source_object: None,
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: ProceduralSurfaceId(StepIdentity::construction("offset_surface", id)),
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                ProceduralSurfaceId(StepIdentity::construction("offset_surface", id)),
                 surface,
-                definition: ProceduralSurfaceDefinition::ParallelOffset {
+                ProceduralSurfaceDefinition::ParallelOffset {
                     support,
                     distance: distance * record_scale,
                     self_intersect,
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+                None,
+            ));
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
             true
@@ -1690,16 +1686,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 },
                 source_object: None,
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: ProceduralSurfaceId(StepIdentity::construction("surface_replica", id)),
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                ProceduralSurfaceId(StepIdentity::construction("surface_replica", id)),
                 surface,
-                definition: ProceduralSurfaceDefinition::Replica {
+                ProceduralSurfaceDefinition::Replica {
                     source: SurfaceId(StepIdentity::data("surface", parent_step)),
                     transform,
                 },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+                None,
+            ));
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
             typed.insert(operator_step);
@@ -1905,14 +1900,17 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .filter_map(|pcurve| step_instance_id(&pcurve.id.0))
         .collect::<BTreeSet<_>>();
     for surface in &mut ir.model.procedural_surfaces {
-        if let ProceduralSurfaceDefinition::CurveBounded {
-            boundary_pcurves, ..
-        } = &mut surface.definition
-        {
+        surface.edit_definition(|definition| {
+            let ProceduralSurfaceDefinition::CurveBounded {
+                boundary_pcurves, ..
+            } = definition
+            else {
+                return;
+            };
             boundary_pcurves.retain(|pcurve| {
                 step_instance_id(&pcurve.0).is_some_and(|id| decoded_pcurve_steps.contains(&id))
             });
-        }
+        });
     }
 
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
@@ -1931,13 +1929,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if !carrier_index.surfaces.contains_key(&id) {
             continue;
         }
-        ir.model.procedural_surfaces.push(ProceduralSurface {
-            id: ProceduralSurfaceId(StepIdentity::construction("degenerate_torus", id)),
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            ProceduralSurfaceId(StepIdentity::construction("degenerate_torus", id)),
             surface,
-            definition: ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+            ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
+            None,
+        ));
     }
 
     for (&id, record) in &exchange.records {
@@ -2688,7 +2685,7 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
                 .filter_map(|surface| {
                     let ProceduralSurfaceDefinition::CurveBounded {
                         boundary_pcurves, ..
-                    } = &surface.definition
+                    } = surface.definition()
                     else {
                         return None;
                     };
@@ -4575,7 +4572,7 @@ fn surface_geometry_parameter_scales(
             .and_then(|procedural| {
                 procedural_definition_parameter_scales(
                     ir,
-                    &procedural.definition,
+                    procedural.definition(),
                     length_scale,
                     angle_scale,
                     source_curve_parameter_scales,
@@ -4594,7 +4591,7 @@ fn surface_geometry_parameter_scales(
             }
             procedural_definition_parameter_scales(
                 ir,
-                &procedural.definition,
+                procedural.definition(),
                 length_scale,
                 angle_scale,
                 source_curve_parameter_scales,
@@ -4753,7 +4750,7 @@ fn directrix_geometry_parameter_scale(
             .procedural_curves
             .iter()
             .find(|procedural| procedural.id == *construction)
-            .and_then(|procedural| match &procedural.definition {
+            .and_then(|procedural| match procedural.definition() {
                 ProceduralCurveDefinition::Offset { source, .. }
                 | ProceduralCurveDefinition::SpatialOffset { source, .. }
                 | ProceduralCurveDefinition::Subset { source, .. }

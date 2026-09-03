@@ -39,10 +39,10 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .collect::<Vec<_>>();
     assert_eq!(incident.len(), 2);
     let curve = edge.curve.expect("cube edge curve");
-    ir.model.procedural_curves.push(ProceduralCurve {
-        id: ProceduralCurveId("nx:test:intersection#0".into()),
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        ProceduralCurveId("nx:test:intersection#0".into()),
         curve,
-        definition: ProceduralCurveDefinition::Intersection {
+        ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext {
                 sides: [
                     IntcurveSupportSide {
@@ -61,12 +61,11 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
             },
             discontinuity_flag: false,
         },
-        cache_fit_tolerance: None,
-    });
+    ));
 
     crate::decode::complete_intersection_supports_from_edge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
+        ir.model.procedural_curves[0].definition()
     else {
         panic!("intersection");
     };
@@ -114,7 +113,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
 
     crate::decode::complete_intersection_pcurves_from_coedge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
+        ir.model.procedural_curves[0].definition()
     else {
         panic!("intersection");
     };

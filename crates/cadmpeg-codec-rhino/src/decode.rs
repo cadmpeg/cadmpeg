@@ -3008,13 +3008,15 @@ impl<'a> DecodeContext<'a> {
                     }
                 }
             };
-            candidate.model.procedural_surfaces.push(ProceduralSurface {
-                id: procedural_id.clone(),
-                surface: surface_id.clone(),
-                definition: ir_definition,
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
+            candidate
+                .model
+                .procedural_surfaces
+                .push(ProceduralSurface::new(
+                    procedural_id.clone(),
+                    surface_id.clone(),
+                    ir_definition,
+                    None,
+                ));
             for id in [surface_id.to_string(), procedural_id.to_string()] {
                 candidate_annotations.exactness.insert(
                     id,
@@ -3089,19 +3091,21 @@ impl<'a> DecodeContext<'a> {
                     geometry: SurfaceGeometry::Nurbs(geometry),
                     source_object: Some(association.clone()),
                 });
-                candidate.model.procedural_surfaces.push(ProceduralSurface {
-                    id: procedure_id.clone(),
-                    surface: surface_id.clone(),
-                    definition: ProceduralSurfaceDefinition::Extrusion {
-                        directrix: directrices[index].clone(),
-                        parameter_interval: None,
-                        direction: extrusion.direction,
-                        native_position: None,
-                        revision_form: None,
-                    },
-                    cache_fit_tolerance: None,
-                    record_bounds: None,
-                });
+                candidate
+                    .model
+                    .procedural_surfaces
+                    .push(ProceduralSurface::new(
+                        procedure_id.clone(),
+                        surface_id.clone(),
+                        ProceduralSurfaceDefinition::Extrusion {
+                            directrix: directrices[index].clone(),
+                            parameter_interval: None,
+                            direction: extrusion.direction,
+                            native_position: None,
+                            revision_form: None,
+                        },
+                        None,
+                    ));
                 annotate_derived(candidate_annotations, &surface_id.to_string());
                 annotate_derived(candidate_annotations, &procedure_id.to_string());
                 links.push(surface_id.to_string());
@@ -4709,13 +4713,12 @@ fn stage_brep_procedural_surface(
         .draft
         .model_mut()
         .procedural_surfaces
-        .push(ProceduralSurface {
-            id: procedural_id.clone(),
-            surface: surface_id.clone(),
+        .push(ProceduralSurface::new(
+            procedural_id.clone(),
+            surface_id.clone(),
             definition,
-            cache_fit_tolerance: None,
-            record_bounds: None,
-        });
+            None,
+        ));
     staged
         .draft
         .exactness(surface_id.to_string(), Exactness::Derived);
@@ -4771,17 +4774,16 @@ fn stage_curve_tree(
             .exactness(procedure_id.to_string(), Exactness::Derived);
         staged_links_procedure(
             staged,
-            ProceduralCurve {
-                id: procedure_id,
-                curve: id.clone(),
-                definition: ProceduralCurveDefinition::Compound {
+            ProceduralCurve::new(
+                procedure_id,
+                id.clone(),
+                ProceduralCurveDefinition::Compound {
                     parameters: compound.parameters.clone(),
                     component_parameters: compound.parameters[..compound.parameters.len() - 1]
                         .to_vec(),
                     components: component_ids,
                 },
-                cache_fit_tolerance: None,
-            },
+            ),
         );
     }
     id
@@ -5200,16 +5202,15 @@ fn commit_curve_tree(
         } else {
             format!("rhino:object:procedural-curve#{key}.{path}").into()
         };
-        ir.model.procedural_curves.push(ProceduralCurve {
-            id: procedure_id,
-            curve: id.clone(),
-            definition: ProceduralCurveDefinition::Compound {
+        ir.model.procedural_curves.push(ProceduralCurve::new(
+            procedure_id,
+            id.clone(),
+            ProceduralCurveDefinition::Compound {
                 parameters: compound.parameters.clone(),
                 component_parameters: compound.parameters[..compound.parameters.len() - 1].to_vec(),
                 components: component_ids,
             },
-            cache_fit_tolerance: None,
-        });
+        ));
     }
     id
 }

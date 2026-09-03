@@ -138,7 +138,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     assert_eq!(result.ir().model.surfaces.len(), 3);
     assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
         matches!(
-            surface.definition,
+            surface.definition(),
             ProceduralSurfaceDefinition::Offset { distance, .. }
                 if (distance - 2.0).abs() < f64::EPSILON
         )
@@ -175,7 +175,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(result.ir().model.surfaces.len(), 3);
     let ProceduralSurfaceDefinition::Blend { supports, .. } =
-        &result.ir().model.procedural_surfaces[0].definition
+        result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("rolling-ball construction");
     };

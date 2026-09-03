@@ -626,7 +626,7 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .iter()
         .find(|surface| surface.surface == face.surface)
         .unwrap();
-    match &procedural.definition {
+    match procedural.definition() {
         ProceduralSurfaceDefinition::CurveBounded {
             support,
             boundaries,
@@ -1506,7 +1506,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
     let ProceduralSurfaceDefinition::Revolution {
         parameter_interval: Some(parameter_interval),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected a bounded procedural revolution");
     };

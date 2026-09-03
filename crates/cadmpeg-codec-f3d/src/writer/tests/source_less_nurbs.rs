@@ -806,7 +806,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
-    let directrix_id = match &expected.definition {
+    let directrix_id = match expected.definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { directrix, .. } => {
             directrix.clone()
         }
@@ -833,15 +833,15 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .expect("source-less extrusion round trip");
     assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
     let actual = &round_trip.ir().model.procedural_surfaces[0];
-    assert_eq!(actual.definition, expected.definition);
-    assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
+    assert_eq!(actual.definition(), expected.definition());
+    assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
         directrix,
         direction,
         parameter_interval,
         native_position,
         revision_form: None,
-    } = &actual.definition
+    } = actual.definition()
     else {
         panic!("expected extrusion definition")
     };
@@ -896,20 +896,20 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     let ProceduralSurfaceDefinition::Extrusion {
         revision_form: Some(form),
         ..
-    } = &expected.definition
+    } = expected.definition()
     else {
         panic!("expected a revision-gated extrusion")
     };
     assert_eq!(form.revision, 23100);
     assert_eq!(form.flags, [true]);
-    assert_eq!(form.tail_enum, 0);
-    assert_eq!(form.tail_parameterization, None);
+    assert_eq!(form.cache.selector(), 0);
+    assert_eq!(form.cache.parameterization(), None);
     assert_eq!(
         form.discontinuities,
         expected_revision_surface_tail_discontinuities()
     );
     assert!(!form.tail_flag);
-    assert_eq!(expected.cache_fit_tolerance, Some(0.02));
+    assert_eq!(expected.cache_fit_tolerance(), Some(0.02));
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -919,19 +919,21 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("revision-gated extrusion round trip");
     let actual = &round_trip.ir().model.procedural_surfaces[0];
-    assert_eq!(actual.definition, expected.definition);
-    assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
+    assert_eq!(actual.definition(), expected.definition());
+    assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
 
     // The directrix sense Boolean is stored, not assumed: the opposite value
     // survives the same round trip.
-    let ProceduralSurfaceDefinition::Extrusion {
-        revision_form: Some(form),
-        ..
-    } = &mut source_less.model.procedural_surfaces[0].definition
-    else {
-        unreachable!("revision-gated extrusion")
-    };
-    form.flags = vec![false];
+    source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Extrusion {
+            revision_form: Some(form),
+            ..
+        } = definition
+        else {
+            unreachable!("revision-gated extrusion")
+        };
+        form.flags = vec![false];
+    });
     let expected = source_less.model.procedural_surfaces[0].clone();
     let mut encoded = Vec::new();
     F3dCodec
@@ -941,8 +943,8 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("reversed-directrix extrusion round trip");
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].definition,
-        expected.definition
+        round_trip.ir().model.procedural_surfaces[0].definition(),
+        expected.definition()
     );
 }
 
@@ -964,7 +966,7 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = source_less.model.procedural_surfaces[0].clone();
-    assert_eq!(expected.cache_fit_tolerance, None);
+    assert_eq!(expected.cache_fit_tolerance(), None);
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -974,20 +976,20 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("parameterized extrusion round trip");
     let actual = &round_trip.ir().model.procedural_surfaces[0];
-    assert_eq!(actual.cache_fit_tolerance, None);
+    assert_eq!(actual.cache_fit_tolerance(), None);
     let ProceduralSurfaceDefinition::Extrusion {
         revision_form: Some(form),
         ..
-    } = &actual.definition
+    } = actual.definition()
     else {
         panic!("expected a parameterized revision-gated extrusion")
     };
-    assert_eq!(form.tail_enum, 2);
+    assert_eq!(form.cache.selector(), 2);
     assert_eq!(
-        form.tail_parameterization,
-        Some(expected_revision_surface_tail_parameterization())
+        form.cache.parameterization(),
+        Some(&expected_revision_surface_tail_parameterization())
     );
-    assert_eq!(actual.definition, expected.definition);
+    assert_eq!(actual.definition(), expected.definition());
 }
 
 #[test]
@@ -1003,14 +1005,14 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
 
     assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
     let procedural = &decoded.ir().model.procedural_surfaces[0];
-    assert_eq!(procedural.cache_fit_tolerance, None);
+    assert_eq!(procedural.cache_fit_tolerance(), None);
     let ProceduralSurfaceDefinition::Extrusion {
         directrix,
         direction,
         parameter_interval,
         native_position,
         revision_form: None,
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         panic!("expected extrusion definition")
     };
@@ -1060,7 +1062,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         Some(SurfaceGeometry::Procedural { construction }) if *construction == procedural.id
     ));
 
-    let expected_definition = procedural.definition.clone();
+    let expected_definition = procedural.definition().clone();
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
@@ -1074,11 +1076,11 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         .expect("source-less cache-less extrusion round trip");
     assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].definition,
-        expected_definition
+        round_trip.ir().model.procedural_surfaces[0].definition(),
+        &expected_definition
     );
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance,
+        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
         None
     );
     assert!(matches!(
@@ -1093,7 +1095,9 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
             if *construction == round_trip.ir().model.procedural_surfaces[0].id
     ));
 
-    source_less.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.01);
+    source_less.model.procedural_surfaces[0]
+        .set_cache_fit_tolerance(Some(0.01))
+        .unwrap();
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -1117,22 +1121,25 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let ProceduralSurfaceDefinition::Extrusion {
-        directrix,
-        parameter_interval,
-        direction,
-        ..
-    } = &mut source_less.model.procedural_surfaces[0].definition
-    else {
-        panic!("expected extrusion definition")
-    };
-    *parameter_interval = Some([0.0, std::f64::consts::TAU]);
-    *direction = Vector3::new(0.0, 0.0, -20.0);
+    let directrix = source_less.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            parameter_interval,
+            direction,
+            ..
+        } = definition
+        else {
+            panic!("expected extrusion definition")
+        };
+        *parameter_interval = Some([0.0, std::f64::consts::TAU]);
+        *direction = Vector3::new(0.0, 0.0, -20.0);
+        directrix.clone()
+    });
     source_less
         .model
         .curves
         .iter_mut()
-        .find(|curve| curve.id == *directrix)
+        .find(|curve| curve.id == directrix)
         .expect("extrusion directrix")
         .geometry = CurveGeometry::Circle {
         center: Point3::new(2.0, 3.0, 4.0),
@@ -1184,7 +1191,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let supports = match &source_less.model.procedural_surfaces[0].definition {
+    let supports = match source_less.model.procedural_surfaces[0].definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { supports, .. } => {
             supports.each_ref().map(|support| {
                 support
@@ -1196,7 +1203,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         }
         _ => panic!("expected rolling-ball definition"),
     };
-    let spine = match &source_less.model.procedural_surfaces[0].definition {
+    let spine = match source_less.model.procedural_surfaces[0].definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { spine, .. } => {
             spine.clone().expect("rolling-ball spine")
         }
@@ -1246,11 +1253,11 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         .expect("source-less rolling-ball round trip");
     assert_eq!(round_trip.ir().model.procedural_surfaces.len(), 1);
     let actual = &round_trip.ir().model.procedural_surfaces[0];
-    assert_eq!(actual.definition, expected.definition);
-    assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
+    assert_eq!(actual.definition(), expected.definition());
+    assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend {
         supports, spine, ..
-    } = &actual.definition
+    } = actual.definition()
     else {
         unreachable!()
     };

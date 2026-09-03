@@ -28,7 +28,8 @@ use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, RevisionCacheForm,
+    SurfaceGeometry, VariableBlendSolvedCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -93,8 +94,11 @@ pub(crate) fn cyl_spl_sur(
                 reference_endpoints: [None; 2],
                 second_endpoints: [None; 2],
                 flags: vec![directrix_sense],
-                tail_enum,
-                tail_parameterization: parameterization,
+                cache: super::proc_surface::revision_cache_form(
+                    tail_enum,
+                    fit_tolerance,
+                    parameterization,
+                )?,
                 discontinuities,
                 tail_flag,
                 trailing_flags: Vec::new(),
@@ -1145,8 +1149,24 @@ pub(crate) fn var_blend_spl_sur(
                 shape_parameter,
                 shape_length,
                 shape_tail,
-                tail_enum,
-                tail_parameterization,
+                cache: match super::proc_surface::revision_cache_form(
+                    tail_enum,
+                    stored_cache_fit_tolerance,
+                    tail_parameterization,
+                )? {
+                    RevisionCacheForm::SolvedCache { fit_tolerance } => {
+                        RevisionCacheForm::SolvedCache {
+                            fit_tolerance: if shape_prefix == 0 {
+                                VariableBlendSolvedCache::Stale
+                            } else {
+                                VariableBlendSolvedCache::Current { fit_tolerance }
+                            },
+                        }
+                    }
+                    RevisionCacheForm::Parameterization(parameterization) => {
+                        RevisionCacheForm::Parameterization(parameterization)
+                    }
+                },
                 discontinuities,
                 tail_flag,
                 tail_extensions,
@@ -1505,8 +1525,11 @@ pub(crate) fn full_rb_blend_spl_sur(
                 shape_prefix,
                 parameters,
                 tail,
-                tail_enum,
-                tail_parameterization,
+                cache: super::proc_surface::revision_cache_form(
+                    tail_enum,
+                    cache_fit_tolerance,
+                    tail_parameterization,
+                )?,
                 discontinuities,
                 tail_flag,
                 third,

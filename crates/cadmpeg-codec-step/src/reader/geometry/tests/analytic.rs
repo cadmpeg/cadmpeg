@@ -119,7 +119,7 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
-            surface.definition,
+            surface.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { .. }
         )));
 }
@@ -467,7 +467,7 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
     assert!((end.y - 6.0).abs() < 1.0e-12);
     assert!(result.ir().model.procedural_curves.iter().any(|curve| {
         matches!(
-            &curve.definition,
+            curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 parameter_range: [start, end],
                 ..
@@ -543,7 +543,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
             .find(|curve| curve.id == construction_id)
             .expect("trimmed ellipse construction");
         assert!(matches!(
-            &construction.definition,
+            construction.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 parameter_range,
                 ..

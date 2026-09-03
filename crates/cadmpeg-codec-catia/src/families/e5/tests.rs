@@ -433,7 +433,7 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
         SurfaceGeometry::Procedural { construction } if construction == &procedural.id
     ));
     assert!(matches!(
-        procedural.definition,
+        procedural.definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
             degree: 5,
             ref knots,
@@ -485,7 +485,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     assert_eq!(result.ir().model.curves.len(), 4);
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
     assert!(matches!(
-        result.ir().model.procedural_curves[0].definition,
+        result.ir().model.procedural_curves[0].definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
             family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
             ..

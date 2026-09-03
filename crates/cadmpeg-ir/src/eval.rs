@@ -3284,7 +3284,7 @@ fn model_curve_differential_by_id_inner(
         .iter()
         .find(|procedural| procedural.curve == *curve_id)
     {
-        match &procedural.definition {
+        match procedural.definition() {
             ProceduralCurveDefinition::Replica { source, transform } => {
                 let differential = model_curve_differential_by_id_inner(
                     index,
@@ -3328,7 +3328,7 @@ fn model_curve_differential_by_id_inner(
                 });
             }
             ProceduralCurveDefinition::Helix { .. } => {
-                return helix_differential(&procedural.definition, parameter);
+                return helix_differential(procedural.definition(), parameter);
             }
             _ => {}
         }
@@ -3719,7 +3719,7 @@ fn model_curve_point_by_id_inner(
     if procedural.curve != *curve_id {
         return None;
     }
-    match &procedural.definition {
+    match procedural.definition() {
         ProceduralCurveDefinition::Replica { source, transform } => {
             model_curve_point_by_id_inner(index, source, parameter, depth + 1, budget)
                 .map(|point| affine_point(*transform, point))
@@ -3746,7 +3746,7 @@ fn model_curve_point_by_id_inner(
             model_curve_point_by_id_inner(index, source, source_parameter, depth + 1, budget)
         }
         ProceduralCurveDefinition::Helix { .. } => {
-            helix_differential(&procedural.definition, parameter)
+            helix_differential(procedural.definition(), parameter)
                 .map(|differential| differential.point)
         }
         ProceduralCurveDefinition::TolerantIntersection {
@@ -3871,7 +3871,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         .iter()
         .find(|procedural| procedural.curve == *curve_id)
     {
-        match &procedural.definition {
+        match procedural.definition() {
             ProceduralCurveDefinition::Replica { source, transform } => {
                 let (basis_point, tolerance_scale) = inverse_affine_point(*transform, point)?;
                 let basis_tolerance = tolerance * tolerance_scale;
@@ -3931,7 +3931,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                     point,
                     seed,
                     tolerance,
-                    &procedural.definition,
+                    procedural.definition(),
                 );
             }
             _ => {}
@@ -3952,7 +3952,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         tolerance,
         parameterization: Some(parameterization),
         ..
-    } = &procedural.definition
+    } = procedural.definition()
     else {
         return None;
     };
@@ -5056,7 +5056,7 @@ pub fn model_surface_point(
         .find(|procedural| procedural.id == *construction)?;
     let carrier_interval = record_u_interval(procedural.record_bounds);
     let index = crate::index::ModelIndex::new(ir);
-    match &procedural.definition {
+    match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction,
@@ -5151,7 +5151,7 @@ pub fn model_surface_point(
             v,
         ),
         ProceduralSurfaceDefinition::RollingBallJet { .. } => {
-            rolling_ball_jet_point(&procedural.definition, u, v)
+            rolling_ball_jet_point(procedural.definition(), u, v)
         }
         _ => None,
     }
@@ -5630,9 +5630,7 @@ fn cacheless_law_sweep_differentials(
     Point3,
 )> {
     let form = construction.revision_form.as_ref()?;
-    if form.tail_enum != 2 {
-        return None;
-    }
+    let parameterization = form.cache.parameterization()?;
     let path_origin = straight_sweep_path_origin(index, spine)?;
     let SweepSurfaceLayout::LawDriven {
         profile_range,
@@ -5650,7 +5648,6 @@ fn cacheless_law_sweep_differentials(
     else {
         return None;
     };
-    let parameterization = form.tail_parameterization.as_ref()?;
     let rail_basis = sweep_rail_basis(formula)?;
     let scale = sweep_scale(second_law)?;
     if *path_mode != 1
@@ -5765,34 +5762,45 @@ fn cacheless_variable_blend_domain_contains(
     u: f64,
     v: f64,
 ) -> bool {
-    let exact_construction = construction.tail_enum == 2 || construction.shape_prefix == 0;
+    let exact_construction = matches!(
+        construction.cache,
+        crate::geometry::RevisionCacheForm::Parameterization(_)
+    ) || construction.shape_prefix == 0;
     exact_construction
         && (0.0..=1.0).contains(&u)
         && sweep_tail_interval_contains(construction.slice_range, v)
-        && construction
-            .tail_parameterization
-            .as_ref()
-            .is_none_or(|tail| {
-                sweep_tail_interval_contains(tail.u_interval, u)
-                    && sweep_tail_interval_contains(tail.v_interval, v)
-            })
+        && construction.cache.parameterization().is_none_or(|tail| {
+            sweep_tail_interval_contains(tail.u_interval, u)
+                && sweep_tail_interval_contains(tail.v_interval, v)
+        })
 }
 
 fn variable_blend_has_current_cache(
     construction: &crate::geometry::VariableBlendConstruction,
 ) -> bool {
-    construction.shape_prefix > 0 && revision_surface_tail_has_current_cache(construction.tail_enum)
+    construction.shape_prefix > 0
+        && matches!(
+            construction.cache,
+            crate::geometry::RevisionCacheForm::SolvedCache {
+                fit_tolerance: crate::geometry::VariableBlendSolvedCache::Current { .. }
+            }
+        )
 }
 
 fn sweep_has_current_cache(construction: &crate::geometry::SweepSurfaceConstruction) -> bool {
     construction
         .revision_form
         .as_ref()
-        .is_some_and(|form| revision_surface_tail_has_current_cache(form.tail_enum))
+        .is_some_and(|form| revision_surface_tail_has_current_cache(&form.cache))
 }
 
-fn revision_surface_tail_has_current_cache(tail_enum: i64) -> bool {
-    tail_enum == 0
+fn revision_surface_tail_has_current_cache<P>(
+    cache: &crate::geometry::RevisionCacheForm<P>,
+) -> bool {
+    matches!(
+        cache,
+        crate::geometry::RevisionCacheForm::SolvedCache { .. }
+    )
 }
 
 fn surface_cache_evaluation(
@@ -6118,14 +6126,16 @@ fn cacheless_constant_rolling_ball_section(
     let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
         return None;
     };
-    if native.tail_enum != 2
-        || native.third.is_some()
+    if !matches!(
+        native.cache,
+        crate::geometry::RevisionCacheForm::Parameterization(_)
+    ) || native.third.is_some()
         || *cross_section != crate::geometry::BlendCrossSection::Circular
         || !(0.0..=1.0).contains(&u)
         || !sweep_tail_interval_contains(native.slice_range, v)
         || !sweep_tail_interval_contains(native.u_range, u)
         || !sweep_tail_interval_contains(native.v_range, v)
-        || !native.tail_parameterization.as_ref().is_some_and(|tail| {
+        || !native.cache.parameterization().is_some_and(|tail| {
             sweep_tail_interval_contains(tail.u_interval, u)
                 && sweep_tail_interval_contains(tail.v_interval, v)
         })
@@ -6616,7 +6626,7 @@ fn model_surface_point_by_id_inner(
         let procedural = index.procedural_surface_for_surface(&surface_id.0);
         let carrier_interval =
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
-        let result = match procedural.map(|procedural| &procedural.definition) {
+        let result = match procedural.map(|procedural| procedural.definition()) {
             Some(ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
                 axis_origin,
@@ -6783,7 +6793,7 @@ fn model_surface_point_by_id_inner(
                         point,
                         oriented_normal,
                     })
-                } else if revision_surface_tail_has_current_cache(native.tail_enum) {
+                } else if revision_surface_tail_has_current_cache(&native.cache) {
                     let (point, oriented_normal) =
                         surface_cache_evaluation(&surface.geometry, u, v)?;
                     Some(SurfaceEvaluation {
@@ -6795,7 +6805,7 @@ fn model_surface_point_by_id_inner(
                 }
             }
             Some(ProceduralSurfaceDefinition::RollingBallJet { .. }) => procedural
-                .and_then(|procedural| rolling_ball_jet_point(&procedural.definition, u, v))
+                .and_then(|procedural| rolling_ball_jet_point(procedural.definition(), u, v))
                 .map(|point| SurfaceEvaluation {
                     point,
                     oriented_normal: None,
@@ -6936,7 +6946,7 @@ pub fn model_surface_partials_by_id(
         ..
     }) = index
         .procedural_surface_for_surface(&surface.0)
-        .map(|procedural| &procedural.definition)
+        .map(|procedural| procedural.definition())
     {
         if let Some(partials) = cacheless_constant_rolling_ball_partials(
             index,
@@ -6949,13 +6959,13 @@ pub fn model_surface_partials_by_id(
         ) {
             return Some(partials);
         }
-        if !revision_surface_tail_has_current_cache(native.tail_enum) {
+        if !revision_surface_tail_has_current_cache(&native.cache) {
             return None;
         }
     }
     if let Some(ProceduralSurfaceDefinition::VariableBlend { construction }) = index
         .procedural_surface_for_surface(&surface.0)
-        .map(|procedural| &procedural.definition)
+        .map(|procedural| procedural.definition())
     {
         if let Some(partials) = cacheless_ruled_variable_blend_partials(index, construction, u, v) {
             return Some(partials);
@@ -6975,7 +6985,7 @@ pub fn model_surface_partials_by_id(
         native: Some(construction),
     }) = index
         .procedural_surface_for_surface(&surface.0)
-        .map(|procedural| &procedural.definition)
+        .map(|procedural| procedural.definition())
     {
         if let Some(partials) =
             cacheless_law_sweep_partials(index, profile, spine, construction, u, v)
@@ -7076,7 +7086,7 @@ fn model_surface_mapping(
     let procedural = index.procedural_surface_for_surface(&surface.0);
     let carrier_interval =
         procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
-    let result = match procedural.map(|procedural| &procedural.definition) {
+    let result = match procedural.map(|procedural| procedural.definition()) {
         Some(ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
             axis_origin,

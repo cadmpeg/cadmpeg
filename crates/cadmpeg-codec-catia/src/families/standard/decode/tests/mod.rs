@@ -46,8 +46,8 @@ pub(super) use cadmpeg_ir::document::CadIr;
 pub(super) use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 pub(super) use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, RollingBallJetDerivative,
+    RollingBallJetSite, Surface, SurfaceGeometry,
 };
 pub(super) use cadmpeg_ir::ids::{FaceId, PointId, ShellId, SurfaceId, VertexId};
 pub(super) use cadmpeg_ir::math::{Point2, Point3, Vector3};
