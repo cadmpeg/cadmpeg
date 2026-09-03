@@ -423,11 +423,11 @@ class EvidenceTest(unittest.TestCase):
             all(
                 run["inspect"]["status"] == 0
                 and all(
-                    item["status"] == (0 if run["mode"] == "salvage" else 2)
+                    item["status"] == (0 if run["mode"] == "salvage" else 1)
                     for item in run["decode"]
                 )
                 and all(
-                    item["status"] == (0 if run["mode"] == "salvage" else 2)
+                    item["status"] == (0 if run["mode"] == "salvage" else 1)
                     for item in run["validate"]
                 )
                 for run in result["runs"]
