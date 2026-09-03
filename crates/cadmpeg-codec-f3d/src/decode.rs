@@ -3770,22 +3770,25 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image]);
-    ir.source = Some(crate::report::classify_document(
+    let source = crate::report::classify_document(
         scan,
         report_scope,
         retained.source_attributes,
         &mut report,
-    ));
+    );
+    ir.source = Some(source);
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
     ir.finalize();
     let hash = document_local_sha256(&ir);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
+    ir.source
+        .as_mut()
+        .expect("F3D decode just authored source metadata")
+        .attributes
+        .insert(
             cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(),
             hash,
         );
-    }
     Ok(Decoded {
         ir,
         body: report,

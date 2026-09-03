@@ -97,6 +97,7 @@ impl CodecBackend for StepCodec {
                 policy: *ctx.policy(),
             },
             ctx,
+            reader::Packaging::Bare,
         )
     }
 }
@@ -367,22 +368,11 @@ fn decode_zip(
             policy: *ctx.policy(),
         },
         ctx,
+        reader::Packaging::Zip {
+            entry_count,
+            root_data_offset,
+        },
     )?;
-    if let Some(source) = &mut decoded.ir.source {
-        source
-            .attributes
-            .insert("container_kind".into(), "iso-10303-21-zip".into());
-        source
-            .attributes
-            .insert("archive_root".into(), archive::ROOT_NAME.into());
-        source
-            .attributes
-            .insert("archive_entries".into(), entry_count.to_string());
-        source.attributes.insert(
-            "archive_root_data_offset".into(),
-            root_data_offset.to_string(),
-        );
-    }
     decoded.body.notes.push(format!(
         "container root {}; archive entries={entry_count}",
         archive::ROOT_NAME

@@ -33,6 +33,37 @@ mod validation;
 
 pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 
+/// Container facts available when the STEP source identity is authored.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Packaging {
+    /// A bare ISO 10303-21 exchange.
+    Bare,
+    /// A ZIP-packaged exchange and its selected root entry.
+    Zip {
+        entry_count: usize,
+        root_data_offset: u64,
+    },
+}
+
+impl Packaging {
+    fn add_source_attributes(self, attributes: &mut BTreeMap<String, String>) {
+        let Self::Zip {
+            entry_count,
+            root_data_offset,
+        } = self
+        else {
+            return;
+        };
+        attributes.insert("container_kind".into(), "iso-10303-21-zip".into());
+        attributes.insert("archive_root".into(), crate::archive::ROOT_NAME.into());
+        attributes.insert("archive_entries".into(), entry_count.to_string());
+        attributes.insert(
+            "archive_root_data_offset".into(),
+            root_data_offset.to_string(),
+        );
+    }
+}
+
 pub(super) fn record_graph_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
     ctx.and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
         .map_or(MAX_RECORD_GRAPH_DEPTH, |policy| {
@@ -76,6 +107,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         exchange: &Exchange,
         diagnostics: &[ParseDiagnostic],
         ctx: Option<&'ctx DecodeContext<'arena>>,
+        packaging: Packaging,
     ) -> Self {
         let mut ir = CadIr::empty(Units::default());
         let mut attributes = BTreeMap::new();
@@ -85,6 +117,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             "entity_instances".into(),
             exchange.records.len().to_string(),
         );
+        packaging.add_source_attributes(&mut attributes);
         // The `schema` attribute above stays: it is the joined identifier list,
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
@@ -190,9 +223,10 @@ pub fn decode(
     input: &[u8],
     options: DecodeOptions,
     ctx: &DecodeContext<'_>,
+    packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
-    decode_exchange(input, options, exchange, &diagnostics, Some(ctx))
+    decode_exchange(input, options, exchange, &diagnostics, Some(ctx), packaging)
 }
 
 pub(super) fn decode_exchange(
@@ -201,9 +235,18 @@ pub(super) fn decode_exchange(
     mut exchange: Exchange,
     diagnostics: &[ParseDiagnostic],
     ctx: Option<&DecodeContext<'_>>,
+    packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
-    decode_exchange_mode(input, options, &mut exchange, diagnostics, true, ctx)
-        .map(|(result, _)| result)
+    decode_exchange_mode(
+        input,
+        options,
+        &mut exchange,
+        diagnostics,
+        true,
+        ctx,
+        packaging,
+    )
+    .map(|(result, _)| result)
 }
 
 /// Deep semantic analysis used by STEP `inspect`.
@@ -224,6 +267,7 @@ pub(super) fn analyze_exchange(
         diagnostics,
         false,
         ctx,
+        Packaging::Bare,
     )
 }
 
@@ -234,8 +278,9 @@ fn decode_exchange_mode(
     diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
     ctx: Option<&DecodeContext<'_>>,
+    packaging: Packaging,
 ) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
-    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx);
+    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, packaging);
     if options.container_only {
         return Ok((
             session.into_result(SourceFidelity::default()),
