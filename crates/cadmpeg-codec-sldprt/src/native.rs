@@ -66,7 +66,6 @@ macro_rules! lane_family {
             tag: None,
             exactness: (),
             phase: Phase::ArenaOnly,
-            note: None,
             emit: |model, row, namespace| {
                 emit_owned(
                     model
@@ -96,7 +95,6 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| {
             emit_owned(
                 model
@@ -121,7 +119,6 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| emit_owned(model.pmi_dimensions.clone(), row, namespace),
         len: |model| model.pmi_dimensions.len(),
         counts_toward_emptiness: true,
@@ -131,7 +128,6 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| {
             emit_owned(
                 model
@@ -157,7 +153,6 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| {
             emit_owned(
                 model
@@ -183,7 +178,6 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
         tag: None,
         exactness: (),
         phase: Phase::ArenaOnly,
-        note: None,
         emit: |model, row, namespace| {
             emit_owned(
                 model

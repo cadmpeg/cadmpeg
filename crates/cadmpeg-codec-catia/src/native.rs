@@ -5534,7 +5534,6 @@ macro_rules! define_catia_arenas {
             tag: None,
             exactness: (),
             phase: Phase::ArenaOnly,
-            note: None,
             emit: |projection, row, namespace| {
                 namespace.set_arena(row.arena, &projection.$field)
             },
