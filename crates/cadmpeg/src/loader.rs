@@ -5,7 +5,7 @@ use std::fs::File;
 use std::path::Path;
 
 use anyhow::{anyhow, Context};
-use cadmpeg_ir::codec::{Confidence, DecodeOptions};
+use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::CadIr;
 
 use cadmpeg_registry::{
@@ -14,27 +14,6 @@ use cadmpeg_registry::{
 
 use crate::application::refusal::ApplicationError;
 use crate::application::{ArtifactStore, LoadOrigin, LoadedDocument};
-
-/// Non-fatal notice produced while loading an input.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LoadNotice {
-    /// Content detection succeeded below high confidence.
-    LowConfidenceDetection {
-        /// Selected codec id.
-        format_id: &'static str,
-        /// Detection confidence.
-        confidence: Confidence,
-    },
-}
-
-/// A loaded document plus presentation notices for the CLI.
-#[derive(Debug)]
-pub struct LoadOutcome {
-    /// Loaded document.
-    pub document: LoadedDocument,
-    /// Notices the presentation layer may print.
-    pub notices: Vec<LoadNotice>,
-}
 
 /// Restates a detection failure with the flag that overrides it.
 ///
@@ -57,7 +36,7 @@ pub fn load_artifact(
     path: &Path,
     options: DecodeOptions,
     forced: Option<ForcedInput>,
-) -> Result<LoadOutcome, ApplicationError> {
+) -> Result<LoadedDocument, ApplicationError> {
     let prefix = ArtifactStore::read_detection_input(
         path,
         DETECTION_PREFIX_LEN,
@@ -66,24 +45,14 @@ pub fn load_artifact(
     let resolved = catalog
         .resolve_source(&prefix, forced)
         .map_err(|error| detection_failure(&error))?;
-    let mut notices = Vec::new();
     match resolved {
-        ResolvedSource::Native { codec, confidence } => {
+        ResolvedSource::Native { codec, selection } => {
             let format_id = codec.id();
-            if let Some(confidence) = confidence.filter(|value| *value < Confidence::High) {
-                notices.push(LoadNotice::LowConfidenceDetection {
-                    format_id,
-                    confidence,
-                });
-            }
             let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
             let result = codec.decode(&mut f, &options).map_err(|failure| {
                 ApplicationError::from_decode_failure(path, format_id, failure)
             })?;
-            return Ok(LoadOutcome {
-                document: LoadedDocument::decoded(result),
-                notices,
-            });
+            return Ok(LoadedDocument::decoded(result, selection));
         }
         ResolvedSource::Cadir => {}
         ResolvedSource::Unrecognized => {
@@ -106,21 +75,13 @@ pub fn load_artifact(
     })?;
     let Some(sidecar) = ArtifactStore::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
     else {
-        return Ok(LoadOutcome {
-            document: LoadedDocument::neutral(ir),
-            notices,
-        });
+        return Ok(LoadedDocument::neutral(ir));
     };
-    Ok(LoadOutcome {
-        document: LoadedDocument {
-            ir,
-            origin: LoadOrigin::Decoded {
-                report: sidecar.report,
-                fidelity: sidecar.fidelity,
-            },
-        },
-        notices,
-    })
+    Ok(LoadedDocument::restored(
+        ir,
+        sidecar.report,
+        sidecar.fidelity,
+    ))
 }
 
 #[cfg(test)]
@@ -159,10 +120,7 @@ mod tests {
             Some(ForcedInput::Cadir),
         )
         .unwrap();
-        assert!(matches!(
-            outcome.document.origin,
-            LoadOrigin::Decoded { .. }
-        ));
+        assert!(matches!(outcome.origin, LoadOrigin::Decoded { .. }));
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
         let error = load_artifact(

@@ -1,4 +1,4 @@
-# generated at 3a61a7d4d
+# generated at cf5d68a6f
 pub mod cadmpeg_registry
 pub enum cadmpeg_registry::DetectionOutcome<'a>
 pub cadmpeg_registry::DetectionOutcome::Ambiguous
@@ -62,7 +62,7 @@ pub enum cadmpeg_registry::ResolvedSource<'a>
 pub cadmpeg_registry::ResolvedSource::Cadir
 pub cadmpeg_registry::ResolvedSource::Native
 pub cadmpeg_registry::ResolvedSource::Native::codec: &'a dyn cadmpeg_ir::codec::Codec
-pub cadmpeg_registry::ResolvedSource::Native::confidence: core::option::Option<cadmpeg_ir::codec::Confidence>
+pub cadmpeg_registry::ResolvedSource::Native::selection: cadmpeg_registry::Selection
 pub cadmpeg_registry::ResolvedSource::Unrecognized
 pub enum cadmpeg_registry::Selection
 pub cadmpeg_registry::Selection::Detected

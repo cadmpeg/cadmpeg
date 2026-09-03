@@ -9,7 +9,9 @@ use cadmpeg_core::{CodecError, ReadSeek};
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::ContainerSummary;
 
-use crate::{DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource};
+use crate::{
+    DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection,
+};
 
 /// Leading byte window offered to prefix detection.
 ///
@@ -47,29 +49,6 @@ pub struct Identification {
     /// Inspection outcome, including the complete successful summary or the
     /// typed error that prevented classification.
     pub inspection: Inspection,
-}
-
-/// How the inspected codec was selected.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Selection {
-    /// Content detection named the codec at this confidence.
-    Detected {
-        /// Detection confidence of the byte prefix.
-        confidence: Confidence,
-    },
-    /// The caller forced the codec; no detection ran.
-    Forced,
-}
-
-impl Selection {
-    /// Detection confidence, or `None` when the codec was forced.
-    #[must_use]
-    pub const fn confidence(self) -> Option<Confidence> {
-        match self {
-            Self::Detected { confidence } => Some(confidence),
-            Self::Forced => None,
-        }
-    }
 }
 
 /// A successfully inspected source: the selected codec's format, how it was
@@ -198,10 +177,7 @@ pub fn resolve_and_inspect_with(
 ) -> Result<Inspected, InspectError> {
     let prefix = read_prefix(source, options)?;
     match catalog.resolve_source(&prefix, forced)? {
-        ResolvedSource::Native { codec, confidence } => {
-            let selection = confidence.map_or(Selection::Forced, |confidence| {
-                Selection::Detected { confidence }
-            });
+        ResolvedSource::Native { codec, selection } => {
             match inspect_codec(codec, source, options)? {
                 Ok(summary) => Ok(Inspected {
                     format: codec.id(),
@@ -466,7 +442,7 @@ mod tests {
                 let resolved = catalog
                     .resolve_source(case.bytes, None)
                     .unwrap_or_else(|error| panic!("{}: {error}", case.format));
-                let crate::ResolvedSource::Native { codec, confidence } = resolved else {
+                let crate::ResolvedSource::Native { codec, selection } = resolved else {
                     panic!("{}: resolver did not select a native codec", case.format);
                 };
                 assert_eq!(
@@ -477,7 +453,7 @@ mod tests {
                 );
                 assert_eq!(
                     Some(winner.confidence),
-                    confidence,
+                    selection.confidence(),
                     "{}: resolver confidence",
                     case.format
                 );

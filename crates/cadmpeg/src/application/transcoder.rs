@@ -17,7 +17,7 @@ use crate::application::validators::validate_ir;
 use crate::application::{
     ArtifactStore, ConversionRefusal, LoadedDocument, NativeValidatorCatalog, SidecarPersistOutcome,
 };
-use crate::loader::{self, LoadNotice};
+use crate::loader;
 
 /// Input path and decode options for one conversion.
 pub struct SourceRequest<'a> {
@@ -310,8 +310,6 @@ impl ResolvedDestination {
 pub struct PreparedConversion {
     /// Loaded source document.
     pub document: LoadedDocument,
-    /// Notices for the presentation layer.
-    pub notices: Vec<LoadNotice>,
     /// Validation report.
     pub validation: Option<ValidationReport>,
     encoder: Box<dyn Encoder>,
@@ -353,10 +351,8 @@ impl<'a> Transcoder<'a> {
             .resolve(source.path)
             .map_err(ApplicationError::from)?;
 
-        let outcome =
+        let loaded =
             loader::load_artifact(self.inputs, source.path, source.options, source.forced)?;
-        let loaded = outcome.document;
-        let notices = outcome.notices;
         let decode_report = loaded.decode_report().cloned();
 
         if let Some(refusal) = decode_lossy_refusal(policy.losses, decode_report.as_ref(), format) {
@@ -403,7 +399,6 @@ impl<'a> Transcoder<'a> {
 
         Ok(PreparedConversion {
             document: loaded,
-            notices,
             validation,
             encoder: target.encoder,
             selection: target.selection,

@@ -100,14 +100,37 @@ pub enum DetectionOutcome<'a> {
     },
 }
 
+/// How a native codec was selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Selection {
+    /// Content detection named the codec at this confidence.
+    Detected {
+        /// Detection confidence of the byte prefix.
+        confidence: Confidence,
+    },
+    /// The caller forced the codec; no detection ran.
+    Forced,
+}
+
+impl Selection {
+    /// Detection confidence, or `None` when the codec was forced.
+    #[must_use]
+    pub const fn confidence(self) -> Option<Confidence> {
+        match self {
+            Self::Detected { confidence } => Some(confidence),
+            Self::Forced => None,
+        }
+    }
+}
+
 /// Resolved input after forced selection or content detection.
 pub enum ResolvedSource<'a> {
     /// A native codec will decode or inspect the file.
     Native {
         /// Selected codec.
         codec: &'a dyn Codec,
-        /// Detection confidence when not forced.
-        confidence: Option<Confidence>,
+        /// How the codec was selected.
+        selection: Selection,
     },
     /// No native codec selected; the caller may parse CADIR JSON.
     Cadir,
@@ -242,7 +265,7 @@ impl InputCatalog {
                     .expect("a forced native descriptor always constructs a codec");
                 Ok(ResolvedSource::Native {
                     codec,
-                    confidence: None,
+                    selection: Selection::Forced,
                 })
             }
             Some(ForcedInput::Cadir) => Ok(ResolvedSource::Cadir),
@@ -251,7 +274,7 @@ impl InputCatalog {
                 DetectionOutcome::None => Ok(ResolvedSource::Unrecognized),
                 DetectionOutcome::Detected { codec, confidence } => Ok(ResolvedSource::Native {
                     codec,
-                    confidence: Some(confidence),
+                    selection: Selection::Detected { confidence },
                 }),
                 DetectionOutcome::Ambiguous {
                     confidence,
@@ -349,7 +372,7 @@ mod tests {
         ));
         #[cfg(feature = "step")]
         {
-            let ResolvedSource::Native { codec, confidence } = catalog
+            let ResolvedSource::Native { codec, selection } = catalog
                 .resolve_source(
                     b"",
                     Some(crate::forced_input("step").expect("step is registered")),
@@ -359,7 +382,7 @@ mod tests {
                 panic!("forced step must resolve to native");
             };
             assert_eq!(codec.id(), "step");
-            assert!(confidence.is_none());
+            assert_eq!(selection, Selection::Forced);
         }
     }
 

@@ -38,7 +38,7 @@ mod integration_tests;
 
 pub use catalog::{
     DetectionOutcome, ForcedInput, InputCatalog, InputDescriptor, ResolveSourceError,
-    ResolvedSource,
+    ResolvedSource, Selection,
 };
 pub use descriptors::{forced_input, input_names, FormatDescriptor};
 pub use disposition::{Disposition, ReadDisposition, UnknownDisposition, WriteDisposition};
@@ -46,7 +46,7 @@ pub use encoders::build_encoder;
 pub use format::Format;
 pub use identify::{
     identify, identify_with, resolve_and_inspect_with, Identification, InspectError, Inspected,
-    Inspection, Selection, DETECTION_PREFIX_LEN,
+    Inspection, DETECTION_PREFIX_LEN,
 };
 pub use registry::{dialects, support, DialectEntry};
 pub use views::{
