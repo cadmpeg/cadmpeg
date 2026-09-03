@@ -186,17 +186,6 @@ impl<'a> DecodeContext<'a> {
         resolve_address(&self.spaces.borrow(), location)
     }
 
-    fn charge_decompressed(
-        &self,
-        scope: LimitScope,
-        amount: u64,
-        operation: &'static str,
-        location: Option<SourceLocation>,
-    ) -> Result<(), CodecError> {
-        debug_assert_eq!(scope, LimitScope::Global);
-        self.budget.charge_decompressed(amount, operation, location)
-    }
-
     /// Records a permanent fuse and returns the resource error to propagate.
     fn fuse(
         &self,
@@ -598,12 +587,9 @@ impl<'a> ExpandWriter<'_, 'a> {
                 Some(self.location),
             ));
         }
-        self.ctx.charge_decompressed(
-            LimitScope::Global,
-            len,
-            "expand_write",
-            Some(self.location),
-        )?;
+        self.ctx
+            .budget
+            .charge_decompressed(len, "expand_write", Some(self.location))?;
         self.buffer.try_reserve(data.len()).map_err(|_| {
             self.ctx.fuse(
                 ResourceFailure::AllocationFailed,
