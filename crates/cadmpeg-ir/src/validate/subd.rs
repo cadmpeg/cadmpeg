@@ -98,14 +98,20 @@ fn check_symmetries(
                 &format!("SubD symmetry {symmetry_index} plane frame is invalid"),
             );
         }
-        if let SubdSymmetryKind::Radial { segments, sweep } = symmetry.kind {
-            if segments == 0 || !sweep.is_finite() {
+        if let SubdSymmetryKind::Radial {
+            segments,
+            sweep,
+            radial_maps,
+        } = &symmetry.kind
+        {
+            if *segments == 0 || !sweep.is_finite() {
                 bounds_err(
                     findings,
                     &subd.id.0,
                     &format!("SubD symmetry {symmetry_index} radial controls are invalid"),
                 );
             }
+            check_radial_maps(&subd.id.0, symmetry_index, radial_maps, findings);
         }
         check_symmetry_pairs(
             &subd.id.0,
@@ -131,15 +137,6 @@ fn check_symmetries(
             vertex_count,
             findings,
         );
-        if let SubdSymmetryKind::Radial { .. } = symmetry.kind {
-            check_radial_maps(&subd.id.0, symmetry_index, &symmetry.radial_maps, findings);
-        } else if !symmetry.radial_maps.is_empty() {
-            bounds_err(
-                findings,
-                &subd.id.0,
-                &format!("SubD symmetry {symmetry_index} has radial maps in correspondence mode"),
-            );
-        }
     }
 }
 
