@@ -393,8 +393,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 } else {
                     cadmpeg_ir::topology::LoopBoundaryRole::Inner
                 },
-                coedges: bottom_coedges.clone(),
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: bottom_coedges.clone(),
+                    vertex_uses: Vec::new(),
+                },
             });
             ir.model.loops.push(IrLoop {
                 id: top_loop.clone(),
@@ -404,8 +406,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 } else {
                     cadmpeg_ir::topology::LoopBoundaryRole::Inner
                 },
-                coedges: top_coedges.clone(),
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: top_coedges.clone(),
+                    vertex_uses: Vec::new(),
+                },
             });
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
@@ -507,8 +511,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     id: loop_id.clone(),
                     face: face_id.clone(),
                     boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-                    coedges: coedges.to_vec(),
-                    vertex_uses: Vec::new(),
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                        coedges: coedges.to_vec(),
+                        vertex_uses: Vec::new(),
+                    },
                 });
                 let edge_uses = [
                     (bottom_edges[index].clone(), Sense::Forward),

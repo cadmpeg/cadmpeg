@@ -23,7 +23,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Region, Sense, Shell,
-    Vertex, VertexUse,
+    Vertex,
 };
 use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 
@@ -2147,8 +2147,7 @@ fn build_one(
                         } else {
                             LoopBoundaryRole::Inner
                         },
-                        coedges: Vec::new(),
-                        vertex_uses: vec![VertexUse {
+                        boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
                             vertex: scoped_vertex_id(
                                 vertex_step,
                                 id,
@@ -2156,9 +2155,8 @@ fn build_one(
                                 scope_edges,
                                 scope_root,
                             ),
-                            after: None,
                             pcurves: Vec::new(),
-                        }],
+                        },
                     });
                     loop_ids.push((is_outer_bound, lid));
                     used_v.insert((shell_step, vertex_step));
@@ -2253,8 +2251,10 @@ fn build_one(
                         } else {
                             LoopBoundaryRole::Inner
                         },
-                        coedges: coedge_ids,
-                        vertex_uses: Vec::new(),
+                        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                            coedges: coedge_ids,
+                            vertex_uses: Vec::new(),
+                        },
                     });
                     loop_ids.push((is_outer_bound, lid));
                     typed.insert(bound_step);
@@ -2467,8 +2467,10 @@ fn build_one(
                     } else {
                         LoopBoundaryRole::Inner
                     },
-                    coedges: coedge_ids,
-                    vertex_uses: Vec::new(),
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                        coedges: coedge_ids,
+                        vertex_uses: Vec::new(),
+                    },
                 });
                 loop_ids.push((is_outer_bound, lid));
                 typed.extend([bound_step, loop_step]);
@@ -2651,12 +2653,12 @@ fn build_one(
         .map(|coedge| (coedge.id.clone(), coedge))
         .collect::<BTreeMap<_, _>>();
     for loop_ in &loops {
-        if loop_.coedges.is_empty() {
+        if loop_.coedges().is_empty() {
             continue;
         }
         let loop_source = source_numeric_id(loop_.id.as_str(), "loop").unwrap_or(0);
-        for (index, current_id) in loop_.coedges.iter().enumerate() {
-            let next_id = &loop_.coedges[(index + 1) % loop_.coedges.len()];
+        for (index, current_id) in loop_.coedges().iter().enumerate() {
+            let next_id = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
             let current =
                 require_carrier(coedge_by_id.get(current_id), failure, loop_source, "coedge")?;
             let next = require_carrier(coedge_by_id.get(next_id), failure, loop_source, "coedge")?;
@@ -2742,7 +2744,7 @@ fn connected_face_components(
         let Some(&face_index) = face_indices.get(&loop_.face.0) else {
             continue;
         };
-        for coedge_id in &loop_.coedges {
+        for coedge_id in loop_.coedges() {
             let Some(edge_id) = coedge_edges.get(&coedge_id.0) else {
                 continue;
             };
@@ -2761,9 +2763,9 @@ fn connected_face_components(
                     .insert(face_index);
             }
         }
-        for vertex_use in &loop_.vertex_uses {
+        for vertex in loop_.vertices() {
             faces_by_vertex
-                .entry(vertex_use.vertex.0.clone())
+                .entry(vertex.0.clone())
                 .or_default()
                 .insert(face_index);
         }

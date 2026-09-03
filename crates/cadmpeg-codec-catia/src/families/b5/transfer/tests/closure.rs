@@ -549,7 +549,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
     assert_eq!(ir.model.loops.len(), 1);
     assert_eq!(
         ir.model.loops[0]
-            .vertex_uses
+            .anchored_vertex_uses()
             .iter()
             .map(|use_| use_.vertex.0.as_str())
             .collect::<Vec<_>>(),
@@ -561,9 +561,9 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
     );
     assert_eq!(
         ir.model.loops[0]
-            .vertex_uses
+            .anchored_vertex_uses()
             .iter()
-            .map(|use_| use_.after.as_ref().map(|coedge| coedge.0.as_str()))
+            .map(|use_| Some(use_.after.0.as_str()))
             .collect::<Vec<_>>(),
         [
             Some("catia:b5:coedge#2-0"),

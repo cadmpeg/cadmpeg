@@ -3152,12 +3152,12 @@ fn cylindrical_bore_face_spans(
                 .filter_map(|loop_id| loops.get(loop_id))
                 .flat_map(|loop_| {
                     loop_
-                        .coedges
+                        .coedges()
                         .iter()
                         .filter_map(|coedge_id| coedges.get(coedge_id))
                         .filter_map(|coedge| edges.get(&coedge.edge))
                         .flat_map(|edge| [&edge.start, &edge.end])
-                        .chain(loop_.vertex_uses.iter().map(|use_| &use_.vertex))
+                        .chain(loop_.vertices())
                 })
                 .filter_map(|vertex_id| vertices.get(vertex_id))
                 .filter_map(|vertex| points.get(&vertex.point))

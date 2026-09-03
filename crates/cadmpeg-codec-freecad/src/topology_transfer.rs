@@ -857,9 +857,11 @@ impl<'a> Builder<'a> {
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                coedges: coedge_ids,
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: coedge_ids,
+                    vertex_uses: Vec::new(),
+                },
             });
             self.bind_topology(
                 TextShapeKind::Wire,

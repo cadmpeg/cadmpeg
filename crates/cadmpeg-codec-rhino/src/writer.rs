@@ -355,7 +355,7 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             .loops
             .iter()
             .filter(|loop_| loops.contains(&loop_.id.0))
-            .flat_map(|loop_| loop_.coedges.iter().map(|id| id.0.clone()))
+            .flat_map(|loop_| loop_.coedges().iter().map(|id| id.0.clone()))
             .collect::<BTreeSet<_>>();
         let edges = model
             .coedges
@@ -984,10 +984,10 @@ fn planar_sheet_brep_payload(
         || model
             .loops
             .iter()
-            .map(|loop_| loop_.coedges.len())
+            .map(|loop_| loop_.coedges().len())
             .sum::<usize>()
             != edge_count
-        || model.loops.iter().any(|loop_| loop_.coedges.len() < 3)
+        || model.loops.iter().any(|loop_| loop_.coedges().len() < 3)
     {
         return Err(CodecError::Malformed(
             "planar sheet ownership graph is inconsistent".into(),
@@ -1035,7 +1035,7 @@ fn planar_sheet_brep_payload(
     let mut loop_ranges = Vec::with_capacity(model.loops.len());
     for loop_ in &model.loops {
         let start = ordered_coedges.len();
-        for id in &loop_.coedges {
+        for id in loop_.coedges() {
             let coedge = model
                 .coedges
                 .iter()
@@ -1619,13 +1619,13 @@ fn multi_face_brep_payload(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("face {} is missing", loop_.face.0))
             })?;
-        if !face.loops.contains(&loop_.id) || loop_.coedges.len() < 3 {
+        if !face.loops.contains(&loop_.id) || loop_.coedges().len() < 3 {
             return Err(CodecError::malformed(format_args!(
                 "loop {} ownership or boundary is invalid",
                 loop_.id.0
             )));
         }
-        for (offset, id) in loop_.coedges.iter().enumerate() {
+        for (offset, id) in loop_.coedges().iter().enumerate() {
             let coedge = model
                 .coedges
                 .iter()
@@ -1633,9 +1633,9 @@ fn multi_face_brep_payload(
                 .ok_or_else(|| CodecError::malformed(format_args!("coedge {} is missing", id.0)))?;
             if !owned_coedges.insert(id.0.clone())
                 || coedge.owner_loop != loop_.id
-                || coedge.next != loop_.coedges[(offset + 1) % loop_.coedges.len()]
+                || coedge.next != loop_.coedges()[(offset + 1) % loop_.coedges().len()]
                 || coedge.previous
-                    != loop_.coedges[(offset + loop_.coedges.len() - 1) % loop_.coedges.len()]
+                    != loop_.coedges()[(offset + loop_.coedges().len() - 1) % loop_.coedges().len()]
             {
                 return Err(CodecError::NotImplemented(format!(
                     "coedge {} ownership or ring is not writable",
@@ -1762,7 +1762,7 @@ fn multi_face_brep_payload(
         let face_position = *face_index.get(&loop_.face.0).expect("owned face") as usize;
         if let WritableFaceSurface::Nurbs(surface) = face_surfaces[face_position] {
             let coedges = loop_
-                .coedges
+                .coedges()
                 .iter()
                 .map(|id| &model.coedges[*coedge_index.get(&id.0).expect("owned coedge") as usize])
                 .collect::<Vec<_>>();
@@ -1796,8 +1796,8 @@ fn multi_face_brep_payload(
             .tolerance
             .unwrap_or(ir.tolerances.linear)
             .max(EPS_WRITE_DEGENERATE);
-        let mut boundary = Vec::with_capacity(loop_.coedges.len());
-        for coedge_id in &loop_.coedges {
+        let mut boundary = Vec::with_capacity(loop_.coedges().len());
+        for coedge_id in loop_.coedges() {
             let coedge =
                 &model.coedges[*coedge_index.get(&coedge_id.0).expect("owned coedge") as usize];
             let edge = &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize];
@@ -2006,7 +2006,7 @@ fn multi_face_brep_payload(
             let mut record = (index as i32).to_le_bytes().to_vec();
             record.extend(indexes(
                 &loop_
-                    .coedges
+                    .coedges()
                     .iter()
                     .map(|coedge| coedge_index[&coedge.0])
                     .collect::<Vec<_>>(),
@@ -2095,8 +2095,8 @@ fn planar_solid_orientation(model: &cadmpeg_ir::document::Model) -> i32 {
 
     let mut volume6 = 0.0;
     for loop_ in &model.loops {
-        let mut ring = Vec::with_capacity(loop_.coedges.len());
-        for coedge_id in &loop_.coedges {
+        let mut ring = Vec::with_capacity(loop_.coedges().len());
+        for coedge_id in loop_.coedges() {
             let Some(coedge) = model.coedges.iter().find(|coedge| coedge.id == *coedge_id) else {
                 return 0;
             };

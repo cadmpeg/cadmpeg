@@ -253,7 +253,7 @@ impl<'a> Builder<'a> {
             })
             .flat_map(|(loop_, surface)| {
                 loop_
-                    .coedges
+                    .coedges()
                     .iter()
                     .map(move |coedge| (coedge.as_str(), surface))
             })
@@ -2147,8 +2147,8 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        if lp.coedges.is_empty() && lp.vertex_uses.len() == 1 {
-            let vertex_id = lp.vertex_uses[0].vertex.as_str();
+        if let cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } = &lp.boundary {
+            let vertex_id = vertex.as_str();
             let Some(vertex) = self.emit_vertex(vertex_id) else {
                 self.topology_relation_loss(
                     format!("loop:{loop_id}:vertex:{vertex_id}"),
@@ -2203,10 +2203,10 @@ impl<'a> Builder<'a> {
     }
 
     fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {
-        let mut segments = Vec::with_capacity(lp.coedges.len());
+        let mut segments = Vec::with_capacity(lp.coedges().len());
         let mut seen = BTreeSet::new();
 
-        for coedge_id in &lp.coedges {
+        for coedge_id in lp.coedges() {
             let coedge_key = coedge_id.as_str();
             if !seen.insert(coedge_key) {
                 self.topology_relation_loss(
@@ -3580,14 +3580,11 @@ impl<'a> Builder<'a> {
                         let Some(loop_) = self.loops.get(loop_id.as_str()).copied() else {
                             continue;
                         };
-                        referenced_vertices
-                            .extend(loop_.vertex_uses.iter().map(|use_| use_.vertex.as_str()));
-                        for vertex_use in &loop_.vertex_uses {
-                            if let Some(after) = &vertex_use.after {
-                                referenced_coedges.insert(after.as_str());
-                            }
+                        referenced_vertices.extend(loop_.vertices().map(|vertex| vertex.as_str()));
+                        for vertex_use in loop_.anchored_vertex_uses() {
+                            referenced_coedges.insert(vertex_use.after.as_str());
                         }
-                        for coedge_id in &loop_.coedges {
+                        for coedge_id in loop_.coedges() {
                             if !referenced_coedges.insert(coedge_id.as_str()) {
                                 continue;
                             }
@@ -3945,14 +3942,7 @@ impl<'a> Builder<'a> {
             .coedges
             .iter()
             .flat_map(|coedge| &coedge.pcurves)
-            .chain(
-                self.ir
-                    .model
-                    .loops
-                    .iter()
-                    .flat_map(|loop_| &loop_.vertex_uses)
-                    .flat_map(|vertex_use| &vertex_use.pcurves),
-            )
+            .chain(self.ir.model.loops.iter().flat_map(Loop::vertex_pcurves))
             .filter(|use_| use_.isoparametric.is_some() || use_.parameter_range.is_some())
             .count();
         if pcurve_use_metadata_count > 0 {

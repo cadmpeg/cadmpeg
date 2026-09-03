@@ -129,7 +129,7 @@ fn project_brep(
                 continue;
             };
             let mut profile = Vec::new();
-            for coedge_id in &loop_.coedges {
+            for coedge_id in loop_.coedges() {
                 let Some(coedge) = coedges.get(coedge_id) else {
                     continue;
                 };

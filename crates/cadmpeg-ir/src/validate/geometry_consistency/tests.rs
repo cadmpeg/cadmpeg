@@ -222,8 +222,10 @@ fn untrimmed_surface_curve() -> CadIr {
         id: "loop".into(),
         face: "face".into(),
         boundary_role: LoopBoundaryRole::Outer,
-        coedges: vec!["coedge".into()],
-        vertex_uses: Vec::new(),
+        boundary: crate::topology::LoopBoundary::Ring {
+            coedges: vec!["coedge".into()],
+            vertex_uses: Vec::new(),
+        },
     });
     ir.model.faces.push(Face {
         id: "face".into(),

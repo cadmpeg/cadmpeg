@@ -159,11 +159,10 @@ fn decode_builds_a_vertex_only_pole_loop() {
                 result.report().losses
             )
         });
-    assert!(loop_.coedges.is_empty());
-    assert_eq!(loop_.vertex_uses.len(), 1);
-    assert_eq!(loop_.vertex_uses[0].vertex.0, "iges:model:vertex#D11:D5:1");
-    assert!(loop_.vertex_uses[0].after.is_none());
-    assert!(loop_.vertex_uses[0].pcurves.is_empty());
+    assert!(loop_.coedges().is_empty());
+    let (vertex, pcurves) = loop_.singular_vertex().expect("vertex-loop boundary");
+    assert_eq!(vertex.0, "iges:model:vertex#D11:D5:1");
+    assert!(pcurves.is_empty());
     assert_eq!(
         loop_.boundary_role,
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
@@ -432,7 +431,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         loop_.boundary_role,
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
-    assert_eq!(loop_.coedges.len(), 4);
+    assert_eq!(loop_.coedges().len(), 4);
     let explicit_edges = result
         .ir()
         .model

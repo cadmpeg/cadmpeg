@@ -244,8 +244,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: loop_id.clone(),
                     face: face_id.clone(),
                     boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                    coedges: vec![coedge_id.clone()],
-                    vertex_uses: Vec::new(),
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                        coedges: vec![coedge_id.clone()],
+                        vertex_uses: Vec::new(),
+                    },
                 });
                 ir.model.coedges.push(Coedge {
                     id: coedge_id.clone(),

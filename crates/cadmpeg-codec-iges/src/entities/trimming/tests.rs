@@ -856,7 +856,7 @@ fn decode_uses_model_curve_when_type_142_prefers_it() {
         .iter()
         .find(|loop_| loop_.id == face.loops[0])
         .expect("outer loop");
-    assert!(outer_loop.coedges.iter().all(|id| result
+    assert!(outer_loop.coedges().iter().all(|id| result
         .ir()
         .model
         .coedges
@@ -998,9 +998,9 @@ fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
         .iter()
         .find(|loop_| loop_.id.0 == "iges:model:loop#D21:D17")
         .unwrap();
-    assert_eq!(loop_.coedges.len(), 2);
+    assert_eq!(loop_.coedges().len(), 2);
     let coedges = loop_
-        .coedges
+        .coedges()
         .iter()
         .map(|id| {
             result
@@ -1069,9 +1069,11 @@ fn decode_preserves_ordered_loop_pcurve_collection_and_isoparametric_flags() {
         .iter()
         .find(|loop_| loop_.id.0 == "iges:model:loop#D27:D23")
         .unwrap();
-    assert_eq!(loop_.vertex_uses.len(), 1);
-    assert_eq!(loop_.vertex_uses[0].vertex.0, "iges:model:vertex#D27:D15:2");
-    assert_eq!(loop_.vertex_uses[0].after.as_ref(), Some(&coedge.id));
+    let [vertex_use] = loop_.anchored_vertex_uses() else {
+        panic!("edge loop retains one anchored vertex use");
+    };
+    assert_eq!(vertex_use.vertex.0, "iges:model:vertex#D27:D15:2");
+    assert_eq!(vertex_use.after, coedge.id);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1141,7 +1143,7 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(
         loop_.boundary_role,
@@ -1181,9 +1183,9 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         .iter()
         .find(|loop_| loop_.id == face.loops[0])
         .unwrap();
-    assert_eq!(loop_.coedges.len(), 4);
+    assert_eq!(loop_.coedges().len(), 4);
     let senses = loop_
-        .coedges
+        .coedges()
         .iter()
         .map(|id| {
             result
@@ -1244,7 +1246,7 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
         .iter()
         .find(|loop_| loop_.id == face.loops[0])
         .expect("bounded loop");
-    assert_eq!(loop_.coedges.len(), 4);
+    assert_eq!(loop_.coedges().len(), 4);
     assert_eq!(face.tolerance, Some(0.001));
     assert!(result
         .ir()
@@ -1410,13 +1412,13 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         loop_.boundary_role,
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
-    assert_eq!(loop_.coedges.len(), 1);
+    assert_eq!(loop_.coedges().len(), 1);
     let coedge = result
         .ir()
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(coedge.radial_next, coedge.id);
     assert_eq!(coedge.pcurves.len(), 1);
@@ -1458,7 +1460,7 @@ fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(coedge.pcurves.len(), 1);
     assert!(
@@ -1526,7 +1528,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(coedge.pcurves.len(), 1);
     let pcurve = result
@@ -1582,7 +1584,7 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     let pcurve = result
         .ir()
@@ -1650,7 +1652,7 @@ fn decode_builds_a_model_curve_only_trimmed_sheet() {
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.id == loop_.coedges[0])
+        .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert!(coedge.pcurves.is_empty());
     assert!(

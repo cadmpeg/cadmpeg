@@ -1065,8 +1065,13 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             pcurves: Vec::new(),
             use_curve: None,
         });
-    source_less.model.loops[0].coedges.push(coedge_id);
-    let ring = source_less.model.loops[0].coedges.clone();
+    let ring = source_less.model.loops[0]
+        .ring_mut()
+        .map(|(coedges, _)| {
+            coedges.push(coedge_id);
+            coedges.clone()
+        })
+        .expect("source-less fixture loop is a ring");
     for (index, id) in ring.iter().enumerate() {
         let coedge = source_less
             .model
@@ -1440,9 +1445,11 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         source_less.model.loops.push(Loop {
             id: loops[index].clone(),
             face: face.clone(),
-            coedges: vec![coedges[index].clone()],
             boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: vec![coedges[index].clone()],
+                vertex_uses: Vec::new(),
+            },
         });
         source_less.model.coedges.push(Coedge {
             id: coedges[index].clone(),
@@ -1515,13 +1522,13 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         round_trip.ir().model.edges
     );
     assert!(round_trip.ir().model.loops.iter().all(|loop_| {
-        loop_.coedges.len() == 1
+        loop_.coedges().len() == 1
             && round_trip
                 .ir()
                 .model
                 .coedges
                 .iter()
-                .find(|coedge| coedge.id == loop_.coedges[0])
+                .find(|coedge| coedge.id == loop_.coedges()[0])
                 .is_some_and(|coedge| {
                     coedge.next == coedge.id
                         && coedge.previous == coedge.id

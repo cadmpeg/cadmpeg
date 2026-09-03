@@ -493,8 +493,10 @@ pub(super) fn emit_topology(
             id: id.clone(),
             face: face.clone(),
             boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: Vec::new(),
+                vertex_uses: Vec::new(),
+            },
         });
         if let Some(parent) = ir
             .model
@@ -731,7 +733,9 @@ pub(super) fn emit_topology(
             .iter_mut()
             .find(|candidate| candidate.id == loop_id)
         {
-            parent.coedges.push(id);
+            if let cadmpeg_ir::topology::LoopBoundary::Ring { coedges, .. } = &mut parent.boundary {
+                coedges.push(id);
+            }
         }
     }
     attach_tolerant_edge_intersections_with_budget(

@@ -83,7 +83,7 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                         let lp = loops.get(loop_id.0.as_str()).ok_or_else(|| {
                             CodecError::Malformed("face references missing loop".into())
                         })?;
-                        for coedge_id in &lp.coedges {
+                        for coedge_id in lp.coedges() {
                             let coedge = coedges.get(coedge_id.0.as_str()).ok_or_else(|| {
                                 CodecError::Malformed("loop references missing coedge".into())
                             })?;

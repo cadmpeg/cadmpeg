@@ -63,8 +63,8 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             .iter()
             .find(|loop_| loop_.id == model_only_loop_id)
             .expect("the first face loop resolves")
-            .coedges
-            .clone();
+            .coedges()
+            .to_vec();
         for coedge_id in coedge_ids {
             ir.model
                 .coedges
@@ -799,15 +799,19 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
             id: inner_id,
             face: face_id.clone(),
             boundary_role: LoopBoundaryRole::Inner,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: Vec::new(),
+                vertex_uses: Vec::new(),
+            },
         },
         Loop {
             id: outer_id.clone(),
             face: face_id,
             boundary_role: LoopBoundaryRole::Outer,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: Vec::new(),
+                vertex_uses: Vec::new(),
+            },
         },
     ];
 
@@ -840,15 +844,19 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
             id: inner_id,
             face: face_id.clone(),
             boundary_role: LoopBoundaryRole::Inner,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: Vec::new(),
+                vertex_uses: Vec::new(),
+            },
         },
         Loop {
             id: unclassified_id.clone(),
             face: face_id,
             boundary_role: LoopBoundaryRole::Unspecified,
-            coedges: Vec::new(),
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges: Vec::new(),
+                vertex_uses: Vec::new(),
+            },
         },
     ];
 

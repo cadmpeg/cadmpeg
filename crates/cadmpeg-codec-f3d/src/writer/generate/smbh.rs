@@ -1047,7 +1047,7 @@ fn encode_face_topology_smbh(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("loop references missing face {}", loop_.face))
             })?;
-        let first = loop_.coedges.first().ok_or_else(|| {
+        let first = loop_.coedges().first().ok_or_else(|| {
             CodecError::malformed(format_args!("loop {} has no coedges", loop_.id))
         })?;
         let coedge_position = model

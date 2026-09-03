@@ -1825,8 +1825,10 @@ pub(in super::super) fn transfer_native_brep(
                     } else {
                         cadmpeg_ir::topology::LoopBoundaryRole::Inner
                     },
-                    coedges: coedge_ids.clone(),
-                    vertex_uses: Vec::new(),
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                        coedges: coedge_ids.clone(),
+                        vertex_uses: Vec::new(),
+                    },
                 });
                 for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
                     let id = coedge_ids[index].clone();

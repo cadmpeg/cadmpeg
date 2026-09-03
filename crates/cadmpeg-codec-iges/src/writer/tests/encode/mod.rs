@@ -951,8 +951,10 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary_role: LoopBoundaryRole::Outer,
-        coedges: coedge_ids.clone(),
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+            coedges: coedge_ids.clone(),
+            vertex_uses: Vec::new(),
+        },
     });
     ir.model.faces.push(Face {
         id: face_id.clone(),
@@ -992,7 +994,9 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         coedge_ids[1].clone(),
         coedge_ids[0].clone(),
     ];
-    ir.model.loops[0].coedges = reversed_order.to_vec();
+    if let Some((coedges, _)) = ir.model.loops[0].ring_mut() {
+        *coedges = reversed_order.to_vec();
+    }
     for (index, coedge_id) in reversed_order.iter().enumerate() {
         let coedge = ir
             .model
@@ -1435,7 +1439,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
                     .loops
                     .iter()
                     .find(|loop_| loop_.id == *loop_id)
-                    .is_some_and(|loop_| loop_.coedges.contains(&coedge_id))
+                    .is_some_and(|loop_| loop_.coedges().contains(&coedge_id))
             })
         })
         .unwrap();
@@ -1513,8 +1517,8 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
     assert_eq!(round_trip.ir().model.faces.len(), 1);
     assert_eq!(round_trip.ir().model.loops.len(), 1);
     let loop_ = &round_trip.ir().model.loops[0];
-    assert!(loop_.coedges.is_empty());
-    assert_eq!(loop_.vertex_uses.len(), 1);
+    assert!(loop_.coedges().is_empty());
+    assert!(loop_.singular_vertex().is_some());
     assert!(
         round_trip.report().losses.is_empty(),
         "{:#?}",

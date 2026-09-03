@@ -1280,7 +1280,7 @@ pub(crate) fn validate_source_less_body_kinds(
             .loops
             .iter()
             .filter(|loop_| loop_ids.contains(&loop_.id))
-            .flat_map(|loop_| &loop_.coedges)
+            .flat_map(|loop_| loop_.coedges())
             .collect::<BTreeSet<_>>();
         let mut uses = BTreeMap::<&cadmpeg_ir::ids::EdgeId, usize>::new();
         for coedge in model

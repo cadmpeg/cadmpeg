@@ -8675,7 +8675,7 @@ pub(crate) fn historical_topology(
         loop_coedges: relations(brep.loops.iter().map(|loop_| {
             (
                 loop_.id.0.as_str(),
-                loop_.coedges.iter().map(|id| id.0.as_str()).collect(),
+                loop_.coedges().iter().map(|id| id.0.as_str()).collect(),
             )
         }))?,
         coedge_topology: brep

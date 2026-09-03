@@ -3057,8 +3057,10 @@ mod tests {
                 id: loop_id.clone(),
                 face: face_id,
                 boundary_role: LoopBoundaryRole::Unspecified,
-                coedges: vec![coedge_id.clone()],
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: vec![coedge_id.clone()],
+                    vertex_uses: Vec::new(),
+                },
             });
             ir.model.coedges.push(Coedge {
                 id: coedge_id.clone(),

@@ -3750,8 +3750,10 @@ fn stage_extrusion_caps(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                coedges: vec![coedge_id.clone()],
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: vec![coedge_id.clone()],
+                    vertex_uses: Vec::new(),
+                },
             });
             loop_ids.push(loop_id.clone());
             for id in [
@@ -4338,8 +4340,10 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             id: id.clone(),
             face: face_id.clone(),
             boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-            coedges,
-            vertex_uses: Vec::new(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                coedges,
+                vertex_uses: Vec::new(),
+            },
         });
         staged.draft.model_mut().faces[loop_record.face as usize]
             .loops

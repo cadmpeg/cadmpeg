@@ -5754,12 +5754,7 @@ pub(crate) fn pcurve_support_geometry<'a>(
         }
     }
     for loop_ in &model.loops {
-        if loop_.vertex_uses.iter().any(|vertex_use| {
-            vertex_use
-                .pcurves
-                .iter()
-                .any(|use_| use_.pcurve == *pcurve_id)
-        }) {
+        if loop_.vertex_pcurves().any(|use_| use_.pcurve == *pcurve_id) {
             let surface = surface_for_loop(model, &loop_.id, pcurve_id)?;
             record_surface(&mut surface_id, surface, pcurve_id)?;
         }

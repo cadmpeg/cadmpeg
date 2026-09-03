@@ -416,8 +416,10 @@ fn hole_topology_uses_exact_cylinder_spans() {
         id: LoopId("loop".into()),
         face: face.id.clone(),
         boundary_role: LoopBoundaryRole::Outer,
-        coedges: vec![CoedgeId("coedge".into())],
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+            coedges: vec![CoedgeId("coedge".into())],
+            vertex_uses: Vec::new(),
+        },
     };
     let coedge = Coedge {
         id: CoedgeId("coedge".into()),

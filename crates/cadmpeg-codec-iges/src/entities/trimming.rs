@@ -2222,8 +2222,10 @@ pub(super) fn project(
                 } else {
                     cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
                 },
-                coedges: coedge_ids,
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: coedge_ids,
+                    vertex_uses: Vec::new(),
+                },
             });
             loop_ids.push(loop_id);
         }

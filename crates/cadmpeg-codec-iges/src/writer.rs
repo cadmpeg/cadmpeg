@@ -387,7 +387,7 @@ fn has_brep_topology(ir: &CadIr) -> bool {
                 .loops
                 .iter()
                 .find(|loop_| loop_.id == *loop_id)
-                .is_some_and(|loop_| !loop_.vertex_uses.is_empty())
+                .is_some_and(|loop_| loop_.vertices().next().is_some())
         })
     }) {
         return true;
@@ -724,9 +724,9 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                         else {
                             return false;
                         };
-                        loop_.coedges.len() == 2
+                        loop_.coedges().len() == 2
                             && loop_
-                                .coedges
+                                .coedges()
                                 .iter()
                                 .filter_map(|coedge_id| {
                                     ir.model
@@ -757,18 +757,10 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                                 face.id, loop_id
                             ))
                         })?;
-                    if loop_.face != face.id
-                        || (loop_.coedges.is_empty() && loop_.vertex_uses.len() != 1)
-                    {
+                    if loop_.face != face.id {
                         return Err(CodecError::malformed(format_args!(
                             "IGES loop {} is not a valid loop of face {}",
                             loop_.id, face.id
-                        )));
-                    }
-                    if loop_.coedges.is_empty() && loop_.vertex_uses[0].after.is_some() {
-                        return Err(CodecError::malformed(format_args!(
-                            "IGES vertex-only loop {} has a preceding coedge",
-                            loop_.id
                         )));
                     }
                     if !used_loops.insert(loop_.id.as_str().to_owned()) {
@@ -777,7 +769,7 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                             loop_.id
                         )));
                     }
-                    for (index, coedge_id) in loop_.coedges.iter().enumerate() {
+                    for (index, coedge_id) in loop_.coedges().iter().enumerate() {
                         let coedge = ir
                             .model
                             .coedges
@@ -789,9 +781,9 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                                     loop_.id, coedge_id
                                 ))
                             })?;
-                        let next = &loop_.coedges[(index + 1) % loop_.coedges.len()];
-                        let previous =
-                            &loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()];
+                        let next = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
+                        let previous = &loop_.coedges()
+                            [(index + loop_.coedges().len() - 1) % loop_.coedges().len()];
                         if coedge.owner_loop != loop_.id
                             || coedge.next != *next
                             || coedge.previous != *previous
@@ -882,18 +874,8 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                         );
                         validate_brep_pcurve_uses(&orientation, &coedge.pcurves)?;
                     }
-                    for vertex_use in &loop_.vertex_uses {
-                        if !loop_.coedges.is_empty() && vertex_use.after.is_none() {
-                            return Err(CodecError::malformed(format_args!(
-                                "IGES loop {} vertex use has no preceding coedge",
-                                loop_.id
-                            )));
-                        }
-                        if vertex_use
-                            .after
-                            .as_ref()
-                            .is_some_and(|coedge_id| !loop_.coedges.contains(coedge_id))
-                        {
+                    for (vertex_id, after, pcurves) in loop_.vertex_occurrences() {
+                        if after.is_some_and(|coedge_id| !loop_.coedges().contains(coedge_id)) {
                             return Err(CodecError::malformed(format_args!(
                                 "IGES loop {} vertex use references a coedge outside the loop",
                                 loop_.id
@@ -903,11 +885,11 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                             .model
                             .vertices
                             .iter()
-                            .find(|vertex| vertex.id == vertex_use.vertex)
+                            .find(|vertex| vertex.id == *vertex_id)
                             .ok_or_else(|| {
                                 CodecError::malformed(format_args!(
                                     "IGES loop {} references missing vertex {}",
-                                    loop_.id, vertex_use.vertex
+                                    loop_.id, vertex_id
                                 ))
                             })?;
                         used_vertices.insert(vertex.id.as_str().to_owned());
@@ -921,7 +903,7 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                             cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
                             loop_.id.as_str(),
                         );
-                        validate_brep_pcurve_uses(&orientation, &vertex_use.pcurves)?;
+                        validate_brep_pcurve_uses(&orientation, pcurves)?;
                     }
                 }
             }
@@ -1071,12 +1053,12 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
         }
     }
     for loop_ in &ir.model.loops {
-        for vertex_use in &loop_.vertex_uses {
+        for vertex_id in loop_.vertices() {
             if let Some(vertex) = ir
                 .model
                 .vertices
                 .iter()
-                .find(|vertex| vertex.id == vertex_use.vertex)
+                .find(|vertex| vertex.id == *vertex_id)
             {
                 topology_point_ids.insert(vertex.point.as_str().to_owned());
             }
@@ -1267,7 +1249,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                             ))
                         })?;
                     body_loop_ids.push(loop_.id.clone());
-                    for coedge_id in &loop_.coedges {
+                    for coedge_id in loop_.coedges() {
                         let coedge = ir
                             .model
                             .coedges
@@ -1294,8 +1276,8 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                         body_vertex_ids.insert(edge.start.as_str().to_owned());
                         body_vertex_ids.insert(edge.end.as_str().to_owned());
                     }
-                    for vertex_use in &loop_.vertex_uses {
-                        body_vertex_ids.insert(vertex_use.vertex.as_str().to_owned());
+                    for vertex in loop_.vertices() {
+                        body_vertex_ids.insert(vertex.as_str().to_owned());
                     }
                 }
             }
@@ -1414,12 +1396,12 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                     ))
                 })?;
             let use_count = loop_
-                .coedges
+                .coedges()
                 .len()
-                .checked_add(loop_.vertex_uses.len())
+                .checked_add(loop_.vertices().count())
                 .ok_or_else(|| CodecError::Malformed("IGES loop use count overflows".into()))?;
             let mut parameters = format!("508,{use_count}");
-            for coedge_id in &loop_.coedges {
+            for coedge_id in loop_.coedges() {
                 let coedge = ir
                     .model
                     .coedges
@@ -1500,9 +1482,9 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                     );
                 }
                 for vertex_use in loop_
-                    .vertex_uses
+                    .anchored_vertex_uses()
                     .iter()
-                    .filter(|vertex_use| vertex_use.after.as_ref() == Some(&coedge.id))
+                    .filter(|vertex_use| vertex_use.after == coedge.id)
                 {
                     let vertex_index = vertex_indices[vertex_use.vertex.as_str()];
                     let _ = write!(
@@ -1523,25 +1505,23 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                     }
                 }
             }
-            if loop_.coedges.is_empty() {
-                for vertex_use in &loop_.vertex_uses {
-                    let vertex_index = vertex_indices[vertex_use.vertex.as_str()];
+            if let Some((vertex, pcurves)) = loop_.singular_vertex() {
+                let vertex_index = vertex_indices[vertex.as_str()];
+                let _ = write!(
+                    parameters,
+                    ",1,{},{},{},{}",
+                    reference_marker(vertex_list_index),
+                    vertex_index + 1,
+                    0,
+                    pcurves.len()
+                );
+                for pcurve_use in pcurves {
                     let _ = write!(
                         parameters,
-                        ",1,{},{},{},{}",
-                        reference_marker(vertex_list_index),
-                        vertex_index + 1,
-                        0,
-                        vertex_use.pcurves.len()
+                        ",{},{}",
+                        isoparametric_flag(pcurve_use, loop_.id.as_str())?,
+                        reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
                     );
-                    for pcurve_use in &vertex_use.pcurves {
-                        let _ = write!(
-                            parameters,
-                            ",{},{}",
-                            isoparametric_flag(pcurve_use, loop_.id.as_str())?,
-                            reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
-                        );
-                    }
                 }
             }
             parameters.push(';');
@@ -1691,8 +1671,7 @@ fn used_brep_pcurve_ids(ir: &CadIr) -> std::collections::BTreeSet<String> {
         ir.model
             .loops
             .iter()
-            .flat_map(|loop_| loop_.vertex_uses.iter())
-            .flat_map(|vertex_use| vertex_use.pcurves.iter())
+            .flat_map(Loop::vertex_pcurves)
             .map(|use_| use_.pcurve.as_str().to_owned()),
     );
     ids
@@ -1975,7 +1954,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
                 .iter()
                 .find(|candidate| candidate.id == *loop_id)
                 .expect("validated loop reference");
-            for coedge_id in &loop_.coedges {
+            for coedge_id in loop_.coedges() {
                 let coedge = ir
                     .model
                     .coedges
@@ -2067,7 +2046,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
         let mut parameters = if bounded {
             let representation = loops
                 .first()
-                .and_then(|loop_| loop_.coedges.first())
+                .and_then(|loop_| loop_.coedges().first())
                 .and_then(|coedge_id| {
                     ir.model
                         .coedges
@@ -2315,13 +2294,13 @@ fn validate_trimmed_sheet_topology(
                     face.id, loop_.id
                 )));
             }
-            if loop_.coedges.is_empty() || !loop_.vertex_uses.is_empty() {
+            if loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
                 return Err(CodecError::NotImplemented(format!(
                     "IGES semantic writer only encodes edge loops without pole vertices ({})",
                     loop_.id
                 )));
             }
-            let first_pcurve_count = loop_.coedges.first().and_then(|coedge_id| {
+            let first_pcurve_count = loop_.coedges().first().and_then(|coedge_id| {
                 ir.model
                     .coedges
                     .iter()
@@ -2344,7 +2323,7 @@ fn validate_trimmed_sheet_topology(
                 }
                 bounded_representation = Some(loop_has_pcurves);
             }
-            for (index, coedge_id) in loop_.coedges.iter().enumerate() {
+            for (index, coedge_id) in loop_.coedges().iter().enumerate() {
                 let coedge = ir
                     .model
                     .coedges
@@ -2362,9 +2341,9 @@ fn validate_trimmed_sheet_topology(
                         coedge.id
                     )));
                 }
-                let next = &loop_.coedges[(index + 1) % loop_.coedges.len()];
+                let next = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
                 let previous =
-                    &loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()];
+                    &loop_.coedges()[(index + loop_.coedges().len() - 1) % loop_.coedges().len()];
                 if coedge.owner_loop != loop_.id
                     || coedge.next != *next
                     || coedge.previous != *previous
@@ -2602,7 +2581,7 @@ fn boundary_entity(
     entities: &mut Vec<Entity>,
 ) -> Result<Entity, CodecError> {
     let coedges = loop_
-        .coedges
+        .coedges()
         .iter()
         .map(|coedge_id| {
             ir.model
@@ -2624,7 +2603,7 @@ fn boundary_entity(
     let mut parameters = format!(
         "141,{representation},{BOUNDARY_PREFERENCE_MODEL_CURVES},{},{}",
         reference_marker(surface_index),
-        loop_.coedges.len()
+        loop_.coedges().len()
     );
     for coedge in coedges {
         let edge_index = edge_indices
@@ -2726,9 +2705,9 @@ fn curve_on_surface_entity(
         edge_indices,
         pcurve_indices,
     } = request;
-    let mut model_children = Vec::with_capacity(loop_.coedges.len());
+    let mut model_children = Vec::with_capacity(loop_.coedges().len());
     let mut pcurve_children = Vec::new();
-    for coedge_id in &loop_.coedges {
+    for coedge_id in loop_.coedges() {
         let coedge = ir
             .model
             .coedges
@@ -3296,7 +3275,7 @@ fn pcurve_support_surfaces(ir: &CadIr, pcurve_id: &cadmpeg_ir::ids::PcurveId) ->
             let Some(loop_) = ir.model.loops.iter().find(|loop_| loop_.id == *loop_id) else {
                 continue;
             };
-            if loop_.coedges.iter().any(|coedge_id| {
+            if loop_.coedges().iter().any(|coedge_id| {
                 ir.model
                     .coedges
                     .iter()

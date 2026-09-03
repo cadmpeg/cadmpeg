@@ -175,8 +175,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
-                coedges: vec![cap_coedge.clone()],
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: vec![cap_coedge.clone()],
+                    vertex_uses: Vec::new(),
+                },
             });
             ir.model.coedges.push(Coedge {
                 id: cap_coedge.clone(),
@@ -244,8 +246,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 id: loop_id.clone(),
                 face: side_face.clone(),
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-                coedges: vec![coedge.clone()],
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: vec![coedge.clone()],
+                    vertex_uses: Vec::new(),
+                },
             });
             ir.model.coedges.push(Coedge {
                 id: coedge.clone(),

@@ -12,8 +12,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Point, Region, Sense,
-    Shell, Vertex, VertexUse,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse,
+    Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -541,9 +541,9 @@ pub(crate) fn transfer_closed_face_topology(
                 .enumerate()
                 .map(|(member_index, support_record_ordinal)| {
                     let occurrence_index = *occurrence_by_support.get(support_record_ordinal)?;
-                    Some(VertexUse {
+                    Some(AnchoredVertexUse {
                         vertex: occurrence_vertex_pairs[occurrence_index].0[1].clone(),
-                        after: Some(coedge_ids[member_index].clone()),
+                        after: coedge_ids[member_index].clone(),
                         pcurves: Vec::new(),
                     })
                 })
@@ -569,8 +569,10 @@ pub(crate) fn transfer_closed_face_topology(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary_role,
-                coedges: coedge_ids.clone(),
-                vertex_uses,
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: coedge_ids.clone(),
+                    vertex_uses,
+                },
             });
 
             for (member_index, support_record_ordinal) in loop_record

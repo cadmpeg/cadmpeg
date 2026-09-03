@@ -1733,8 +1733,10 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary_role: loop_record.role,
-                coedges: coedge_ids,
-                vertex_uses: Vec::new(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+                    coedges: coedge_ids,
+                    vertex_uses: Vec::new(),
+                },
             });
             face_loops.push(loop_id);
         }

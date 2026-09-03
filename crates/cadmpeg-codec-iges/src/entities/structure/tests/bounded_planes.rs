@@ -57,13 +57,13 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
             loop_.boundary_role,
             cadmpeg_ir::topology::LoopBoundaryRole::Outer
         );
-        assert_eq!(loop_.coedges.len(), 1);
+        assert_eq!(loop_.coedges().len(), 1);
         let coedge = result
             .ir()
             .model
             .coedges
             .iter()
-            .find(|coedge| coedge.id == loop_.coedges[0])
+            .find(|coedge| coedge.id == loop_.coedges()[0])
             .unwrap();
         assert_eq!(coedge.edge.0, "iges:model:edge#bounded-plane-D1");
         assert!(!has_entity_projection_loss(&result), "{expected_version}");

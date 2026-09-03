@@ -1192,9 +1192,11 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     brep.loops.push(Loop {
         id: LoopId(id(5)),
         face: FaceId(id(4)),
-        coedges: vec![CoedgeId(id(6))],
         boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
-        vertex_uses: Vec::new(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
+            coedges: vec![CoedgeId(id(6))],
+            vertex_uses: Vec::new(),
+        },
     });
     brep.coedges.push(Coedge {
         id: CoedgeId(id(6)),
