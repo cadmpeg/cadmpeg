@@ -7,7 +7,7 @@ use std::io::Cursor;
 
 use cadmpeg_codec_inventor::InventorCodec;
 use cadmpeg_core::decode::{DecodePolicy, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

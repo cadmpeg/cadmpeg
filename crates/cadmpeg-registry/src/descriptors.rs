@@ -97,6 +97,13 @@ impl FormatDescriptor {
     }
 }
 
+#[cfg(any(
+    feature = "inventor",
+    feature = "catia",
+    feature = "creo",
+    feature = "nx",
+    feature = "sat"
+))]
 macro_rules! reader {
     ($name:ident, $id:literal, $input_exts:expr, $decoder:expr) => {
         static $name: FormatDescriptor = FormatDescriptor {
