@@ -226,6 +226,7 @@ fn subd_rejects_invalid_symmetry_carriers() {
             kind: SubdSymmetryKind::Radial {
                 segments: 0,
                 sweep: f64::NAN,
+                radial_maps: Vec::new(),
             },
             plane: SubdPlaneFrame {
                 origin: Point3::new(0.0, 0.0, 0.0),
@@ -235,7 +236,6 @@ fn subd_rejects_invalid_symmetry_carriers() {
             face_pairs: vec![[0, 1]],
             edge_pairs: vec![[0, 1]],
             vertex_pairs: vec![[0, 3]],
-            radial_maps: Vec::new(),
         }],
         vertices: vec![
             SubdVertex {

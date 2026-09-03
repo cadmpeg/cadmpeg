@@ -2,10 +2,11 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::ids::SubdId;
-use crate::math::Point3;
+use crate::math::{Point3, Vector3};
 use crate::subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripWedge, SubdScheme, SubdSurface,
-    SubdVertex, SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripWedge, SubdPlaneFrame,
+    SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSurface, SubdSymmetry,
+    SubdSymmetryKind, SubdVertex, SubdVertexTag,
 };
 use crate::validate::validate_neutral;
 use crate::CadIr;
@@ -133,4 +134,58 @@ fn grip_wedge_rejects_phantom_payload() {
     }))
     .unwrap_err();
     assert!(error.to_string().contains("phantom SubD grip wedge"));
+}
+
+#[test]
+fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
+    let symmetry = SubdSymmetry {
+        kind: SubdSymmetryKind::Radial {
+            segments: 4,
+            sweep: 1.0,
+            radial_maps: vec![SubdRadialSymmetryMap {
+                selector: SubdRadialMapSelector::Ef,
+                pairs: vec![[1, 2]],
+            }],
+        },
+        plane: SubdPlaneFrame {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            first_axis: Vector3::new(1.0, 0.0, 0.0),
+            second_axis: Vector3::new(0.0, 1.0, 0.0),
+        },
+        face_pairs: Vec::new(),
+        edge_pairs: Vec::new(),
+        vertex_pairs: Vec::new(),
+    };
+    let wire = serde_json::to_value(&symmetry).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::json!({
+            "kind": { "kind": "radial", "segments": 4, "sweep": 1.0 },
+            "plane": {
+                "origin": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 },
+                "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 },
+            },
+            "radial_maps": [{ "selector": "ef", "pairs": [[1, 2]] }],
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<SubdSymmetry>(wire).unwrap(),
+        symmetry
+    );
+}
+
+#[test]
+fn correspondence_symmetry_rejects_radial_maps() {
+    let error = serde_json::from_value::<SubdSymmetry>(serde_json::json!({
+        "kind": { "kind": "correspondence" },
+        "plane": {
+            "origin": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "first_axis": { "x": 1.0, "y": 0.0, "z": 0.0 },
+            "second_axis": { "x": 0.0, "y": 1.0, "z": 0.0 },
+        },
+        "radial_maps": [{ "selector": "ef", "pairs": [[1, 2]] }],
+    }))
+    .unwrap_err();
+    assert!(error.to_string().contains("cannot carry radial_maps"));
 }

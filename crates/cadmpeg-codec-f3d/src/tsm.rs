@@ -1205,29 +1205,26 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     .plane
                     .ok_or_else(|| malformed(name, "symmetry block has no plane"))?,
             )?;
-            let kind = match block.mode {
-                SymmetryMode::Correspondence => SubdSymmetryKind::Correspondence,
-                SymmetryMode::Radial => SubdSymmetryKind::Radial {
-                    segments: block.radial_segments.ok_or_else(|| {
-                        malformed(name, "radial symmetry block has no segment count")
-                    })?,
-                    sweep: block
-                        .radial_sweep
-                        .ok_or_else(|| malformed(name, "radial symmetry block has no sweep"))?,
-                },
-            };
-            let (face_pairs, edge_pairs, vertex_pairs, radial_maps) = match block.mode {
+            let (kind, face_pairs, edge_pairs, vertex_pairs) = match block.mode {
                 SymmetryMode::Correspondence => (
+                    SubdSymmetryKind::Correspondence,
                     remap_symmetry_pairs(name, &block.face_forward, &face_ir, "face")?,
                     remap_symmetry_pairs(name, &block.edge_forward, &edge_ir, "edge")?,
                     remap_symmetry_pairs(name, &block.vertex_forward, &vertex_ir, "vertex")?,
-                    Vec::new(),
                 ),
                 SymmetryMode::Radial => (
+                    SubdSymmetryKind::Radial {
+                        segments: block.radial_segments.ok_or_else(|| {
+                            malformed(name, "radial symmetry block has no segment count")
+                        })?,
+                        sweep: block
+                            .radial_sweep
+                            .ok_or_else(|| malformed(name, "radial symmetry block has no sweep"))?,
+                        radial_maps: block.radial_maps.clone(),
+                    },
                     Vec::new(),
                     Vec::new(),
                     Vec::new(),
-                    block.radial_maps.clone(),
                 ),
             };
             Ok(SubdSymmetry {
@@ -1236,7 +1233,6 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 face_pairs,
                 edge_pairs,
                 vertex_pairs,
-                radial_maps,
             })
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
@@ -1715,13 +1711,15 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         assert_quad(&cage.surface);
         assert_eq!(cage.surface.symmetries.len(), 1);
         let symmetry = &cage.surface.symmetries[0];
-        assert_eq!(
-            symmetry.kind,
-            cadmpeg_ir::SubdSymmetryKind::Radial {
-                segments: 4,
-                sweep: 1.0
-            }
-        );
+        let cadmpeg_ir::SubdSymmetryKind::Radial {
+            segments,
+            sweep,
+            radial_maps,
+        } = &symmetry.kind
+        else {
+            panic!("radial symmetry kind");
+        };
+        assert_eq!((*segments, *sweep), (4, 1.0));
         assert_eq!(
             symmetry.plane.origin,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
@@ -1738,7 +1736,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         assert!(symmetry.edge_pairs.is_empty());
         assert!(symmetry.vertex_pairs.is_empty());
         assert_eq!(
-            symmetry.radial_maps,
+            *radial_maps,
             vec![
                 cadmpeg_ir::SubdRadialSymmetryMap {
                     selector: cadmpeg_ir::SubdRadialMapSelector::Ef,
@@ -1782,8 +1780,12 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let replacement = format!("105r ef {native_id} {native_id}\n");
         let native = source.replace("105r ef 0 1\n", &replacement);
         let cage = parse_cage(native.as_bytes()).expect("opaque radial native id");
-        let ef = cage.surface.symmetries[0]
-            .radial_maps
+        let cadmpeg_ir::SubdSymmetryKind::Radial { radial_maps, .. } =
+            &cage.surface.symmetries[0].kind
+        else {
+            panic!("radial symmetry kind");
+        };
+        let ef = radial_maps
             .iter()
             .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
             .expect("ef radial map");
