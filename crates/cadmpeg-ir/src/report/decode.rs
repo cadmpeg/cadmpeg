@@ -626,6 +626,8 @@ impl DecodeReport {
     }
 
     /// Returns a coverage measure, treating an unobserved measure as zero.
+    // A by-value key accepts declared constants and temporary dynamic keys uniformly.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn coverage_count(&self, key: CoverageKey) -> usize {
         self.coverage.count(&key)
     }
