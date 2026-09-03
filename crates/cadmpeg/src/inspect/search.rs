@@ -133,15 +133,13 @@ fn matches_at(haystack: &[u8], at: usize, pattern: &[PatternByte]) -> bool {
         .all(|(expected, actual)| expected.is_none_or(|byte| byte == *actual))
 }
 
-/// Character encoding recognised by the string extractor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+/// Concrete character encoding of one extracted string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StringEncoding {
-    /// Runs of printable single-byte ASCII.
+    /// A run of printable single-byte ASCII.
     Ascii,
-    /// Runs of printable ASCII widened to UTF-16LE code units.
+    /// A run of printable ASCII widened to UTF-16LE code units.
     Utf16le,
-    /// Both of the above, merged and sorted by offset.
-    Both,
 }
 
 impl StringEncoding {
@@ -150,9 +148,19 @@ impl StringEncoding {
         match self {
             Self::Ascii => "ascii",
             Self::Utf16le => "utf16le",
-            Self::Both => "both",
         }
     }
+}
+
+/// Character encodings selected for one string-extraction scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum StringScan {
+    /// Runs of printable single-byte ASCII.
+    Ascii,
+    /// Runs of printable ASCII widened to UTF-16LE code units.
+    Utf16le,
+    /// Both of the above, merged and sorted by offset.
+    Both,
 }
 
 /// One printable run found in a file.
@@ -169,16 +177,16 @@ pub struct FoundString {
 /// Extracts printable runs of at least `min_len` characters.
 ///
 /// Runs are maximal: a longer run is never reported as several shorter ones. For
-/// [`StringEncoding::Both`] the ASCII and UTF-16LE passes run independently and
+/// [`StringScan::Both`] the ASCII and UTF-16LE passes run independently and
 /// the results are sorted by offset, so a UTF-16LE run is also visible as the
 /// ASCII characters interleaved with its zero bytes only when those characters
 /// themselves form a long enough ASCII run.
-pub fn extract_strings(bytes: &[u8], min_len: usize, encoding: StringEncoding) -> Vec<FoundString> {
+pub fn extract_strings(bytes: &[u8], min_len: usize, encoding: StringScan) -> Vec<FoundString> {
     let min_len = min_len.max(1);
     let mut found = match encoding {
-        StringEncoding::Ascii => ascii_runs(bytes, min_len),
-        StringEncoding::Utf16le => utf16le_runs(bytes, min_len),
-        StringEncoding::Both => {
+        StringScan::Ascii => ascii_runs(bytes, min_len),
+        StringScan::Utf16le => utf16le_runs(bytes, min_len),
+        StringScan::Both => {
             let mut all = ascii_runs(bytes, min_len);
             all.extend(utf16le_runs(bytes, min_len));
             all
@@ -345,7 +353,7 @@ mod tests {
     #[test]
     fn extracts_maximal_ascii_runs_over_the_minimum_length() {
         let bytes = b"\x00abcd\x00ef\x00longer-name\x00";
-        let found = extract_strings(bytes, 4, StringEncoding::Ascii);
+        let found = extract_strings(bytes, 4, StringScan::Ascii);
         let texts: Vec<&str> = found.iter().map(|item| item.text.as_str()).collect();
         assert_eq!(texts, ["abcd", "longer-name"]);
         assert_eq!(found[0].offset, 1);
@@ -360,7 +368,7 @@ mod tests {
             bytes.push(0);
         }
         bytes.push(0xff);
-        let found = extract_strings(&bytes, 4, StringEncoding::Utf16le);
+        let found = extract_strings(&bytes, 4, StringScan::Utf16le);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].text, "Part1");
         assert_eq!(found[0].offset, 1);
@@ -374,7 +382,7 @@ mod tests {
             bytes.push(c);
             bytes.push(0);
         }
-        let found = extract_strings(&bytes, 4, StringEncoding::Both);
+        let found = extract_strings(&bytes, 4, StringScan::Both);
         let pairs: Vec<(u64, &str)> = found
             .iter()
             .map(|item| (item.offset, item.text.as_str()))
