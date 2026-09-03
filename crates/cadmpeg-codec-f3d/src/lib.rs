@@ -198,7 +198,7 @@ impl CodecBackend for F3dCodec {
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
         match &scan.kind {
-            container::F3dContainerKind::MultiDocument => f3z::inspect(ctx, &scan),
+            container::F3dContainerKind::MultiDocument { .. } => f3z::inspect(ctx, &scan),
             container::F3dContainerKind::Document { .. } => {
                 Ok(report::build_inspection_summary(&scan))
             }

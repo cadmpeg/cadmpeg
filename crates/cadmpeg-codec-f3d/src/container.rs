@@ -200,10 +200,24 @@ pub enum F3dContainerKind {
     Document {
         /// Exact archive folder of the Design asset.
         design_asset_folder: String,
+        /// Dialect classified from the document manifest.
+        matched: DialectMatch,
     },
     /// An outer F3Z archive whose `.f3d` members each carry their own
     /// manifests and Design asset.
-    MultiDocument,
+    MultiDocument {
+        /// Dialect classified from the outer archive manifests.
+        matched: DialectMatch,
+    },
+}
+
+impl F3dContainerKind {
+    /// Primary dialect selected by this container kind's discriminants.
+    pub(crate) fn dialect(&self) -> &DialectMatch {
+        match self {
+            Self::Document { matched, .. } | Self::MultiDocument { matched } => matched,
+        }
+    }
 }
 
 /// The full result of reading a Fusion ZIP: the entry list plus decoded BREP
@@ -221,12 +235,6 @@ pub struct ContainerScan<'a> {
     pub breps: Vec<BrepFacts>,
     /// Whether this ZIP is one F3D document or an outer F3Z archive.
     pub kind: F3dContainerKind,
-    /// Primary-layer dialect of this archive, classified from the same
-    /// discriminants that chose [`Self::kind`].
-    ///
-    /// Exactly one entry, `format == "f3d"`. Embedded ACIS layers are derived
-    /// from [`Self::breps`] when document or archive identity is assembled.
-    pub dialect: DialectMatch,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
     /// Entry indices per native scope key, in entry order.
@@ -286,8 +294,9 @@ impl<'a> ContainerScan<'a> {
         match &self.kind {
             F3dContainerKind::Document {
                 design_asset_folder,
+                ..
             } => Some(design_asset_folder),
-            F3dContainerKind::MultiDocument => None,
+            F3dContainerKind::MultiDocument { .. } => None,
         }
     }
 
@@ -449,7 +458,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     // discriminants, before anything semantic is read. Classifying here is what
     // keeps the report from re-deriving an identity the parse already settled.
     let root_document_members = root_f3d_members(&inflated_entries);
-    let (kind, dialect) = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
+    let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
         let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
         let design_asset_folder = manifest::resolve_design_folder(
@@ -457,20 +466,17 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             inflated_entries.keys().map(String::as_str),
             |name| inflated_entries.get(name).map(|view| view.window()),
         )?;
-        (
-            F3dContainerKind::Document {
-                design_asset_folder,
-            },
+        F3dContainerKind::Document {
+            design_asset_folder,
             matched,
-        )
+        }
     } else if inflated_entries.contains_key("Manifest.json")
         && inflated_entries.contains_key("DesignDescription.json")
         && !root_document_members.is_empty()
     {
-        (
-            F3dContainerKind::MultiDocument,
-            F3dDialect::classify_f3z(&root_document_members),
-        )
+        F3dContainerKind::MultiDocument {
+            matched: F3dDialect::classify_f3z(&root_document_members),
+        }
     } else {
         return Err(CodecError::Malformed(
             "Fusion ZIP has neither a top-level Manifest.dat nor the F3Z manifest set".into(),
@@ -490,7 +496,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         entries,
         breps,
         kind,
-        dialect,
         inflated_entries,
         scope_entry_indices,
         metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
