@@ -33,6 +33,7 @@ pub(crate) struct Resolution<'a> {
     ir: &'a CadIr,
     namespace: &'a cadmpeg_ir::native::NativeNamespace,
     document: DocumentFacts,
+    target: DialectId,
 }
 
 impl<'a> Resolution<'a> {
@@ -46,6 +47,36 @@ impl<'a> Resolution<'a> {
 
     pub(super) const fn document(&self) -> &DocumentFacts {
         &self.document
+    }
+
+    pub(super) const fn target(&self) -> &DialectId {
+        &self.target
+    }
+}
+
+/// Why the retained native graph cannot witness the resolved write target.
+#[derive(Debug)]
+pub(in crate::writer) enum BaselineRefusal {
+    Unavailable,
+    DialectMismatch {
+        retained: DialectId,
+        resolved: DialectId,
+    },
+}
+
+impl BaselineRefusal {
+    fn message(self) -> String {
+        match self {
+            Self::Unavailable => {
+                "the retained FCStd document graph is unavailable, and this writer regenerates \
+                 no Document.xml, so the target cannot be written"
+                    .into()
+            }
+            Self::DialectMismatch { retained, resolved } => format!(
+                "the retained FCStd document graph declares {retained}, not the resolved target \
+                 {resolved}, and this writer regenerates no Document.xml"
+            ),
+        }
     }
 }
 
@@ -100,44 +131,49 @@ pub(in crate::writer) fn resolve<'a>(
     ir: &'a CadIr,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<Resolution<'a>, CodecError> {
-    let target = resolved.target_id();
-    // Deliverability, not preference. This writer patches the retained
-    // `Document.xml` and regenerates none, so the resolved target is reachable
-    // exactly when the retained graph already declares it — §8.1's "a
-    // patch-only writer's row is reachable only from a retained source of that
-    // flavor, and the plan refuses by name where it cannot deliver". The
-    // refusal is typed and carries the catalog, like every other write refusal;
-    // it used to surface as a bare message string from deep inside `write`.
-    retained_baseline(ir, target).ok_or_else(|| {
-        resolved.unavailable(
-            "the retained FCStd document graph does not declare it, and this writer \
-                 regenerates no Document.xml, so it cannot be written",
-        )
-    })
+    // A decoded document has matching source and native identities. A caller
+    // can hand-edit CADIR and make them disagree, so retained-graph
+    // deliverability remains a named refusal at this admission boundary. The
+    // accepted Resolution threads the resolved target to the byte writer; the
+    // byte writer does not classify the native declaration again.
+    retained_baseline(ir, resolved.target_id())
+        .map_err(|reason| resolved.unavailable(reason.message()))
 }
 
-/// The write options that reproduce `source_dialect` from the retained document
-/// graph, or `None` where that graph cannot carry it.
+/// The write options and dialect witnessed by the retained document graph.
 ///
 /// The graph is the whole baseline: the writer never regenerates a
 /// `Document.xml`, so preservation is possible exactly when the retained
 /// document record is present and its exact declaration classifies as the
-/// source's own dialect. A `SchemaVersion` of `"04"` classifies as
+/// retained dialect. A `SchemaVersion` of `"04"` classifies as
 /// `fcstd:unknown`, so it is preserved as residual identity rather than being
 /// rewritten as `"4"`.
 pub(in crate::writer) fn retained_baseline<'a>(
     ir: &'a CadIr,
-    source_dialect: &DialectId,
-) -> Option<Resolution<'a>> {
-    let namespace = ir.native.namespace("fcstd")?;
-    let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
+    target: &DialectId,
+) -> Result<Resolution<'a>, BaselineRefusal> {
+    let namespace = ir
+        .native
+        .namespace("fcstd")
+        .ok_or(BaselineRefusal::Unavailable)?;
+    let documents = namespace
+        .arena_as::<DocumentFacts>("document")
+        .map_err(|_| BaselineRefusal::Unavailable)?;
     let [document] = documents.as_slice() else {
-        return None;
+        return Err(BaselineRefusal::Unavailable);
     };
     let dialect = dialect::FcstdDialect::from_schema_version(&document.schema_version);
-    (dialect.id() == *source_dialect).then(|| Resolution {
+    let retained = dialect.id();
+    if &retained != target {
+        return Err(BaselineRefusal::DialectMismatch {
+            retained,
+            resolved: target.clone(),
+        });
+    }
+    Ok(Resolution {
         ir,
         namespace,
         document: document.clone(),
+        target: target.clone(),
     })
 }
