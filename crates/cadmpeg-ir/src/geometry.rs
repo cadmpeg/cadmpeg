@@ -2401,17 +2401,6 @@ pub enum VariableBlendRenderMode {
     RollingBallSnapshot,
 }
 
-/// Number of independently controlled radii in a variable blend.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum VariableBlendRadiusKind {
-    /// One radius law controls both support sides.
-    SingleRadius,
-    /// Each support side has an independent radius law.
-    TwoRadii,
-}
-
 /// One interpolation control point in a variable blend-value law.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2515,6 +2504,168 @@ pub enum VariableBlendValuePayload {
         /// radius, two derivative scalars, a position, and a vector.
         points: Vec<VariableBlendInterpolationPoint>,
     },
+}
+
+/// Radius-law payloads of a variable blend.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VariableBlendRadii {
+    /// One radius law controls both support sides.
+    Single {
+        /// Shared radius law.
+        value: VariableBlendValue,
+    },
+    /// Each support side has an independent radius law.
+    Two {
+        /// First support-side radius law.
+        first: VariableBlendValue,
+        /// Second support-side radius law.
+        second: VariableBlendValue,
+    },
+}
+
+impl VariableBlendRadii {
+    /// First radius law in native order.
+    #[must_use]
+    pub const fn first(&self) -> &VariableBlendValue {
+        match self {
+            Self::Single { value } | Self::Two { first: value, .. } => value,
+        }
+    }
+
+    /// Second radius law when both sides are controlled independently.
+    #[must_use]
+    pub const fn second(&self) -> Option<&VariableBlendValue> {
+        match self {
+            Self::Single { .. } => None,
+            Self::Two { second, .. } => Some(second),
+        }
+    }
+
+    /// Whether one radius law controls both sides.
+    #[must_use]
+    pub const fn is_single(&self) -> bool {
+        matches!(self, Self::Single { .. })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum VariableBlendRadiusKindWire {
+    SingleRadius,
+    TwoRadii,
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(
+    dead_code,
+    reason = "fields define the variable-blend radii wire schema"
+)]
+struct VariableBlendRadiiSchemaWire {
+    radius_kind: VariableBlendRadiusKindWire,
+    first_value: VariableBlendValue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    second_value: Option<VariableBlendValue>,
+}
+
+mod variable_blend_radii_wire {
+    use super::{VariableBlendRadii, VariableBlendRadiusKindWire, VariableBlendValue};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        radius_kind: VariableBlendRadiusKindWire,
+        first_value: VariableBlendValue,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        second_value: Option<VariableBlendValue>,
+    }
+
+    pub fn serialize<S>(value: &VariableBlendRadii, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = match value {
+            VariableBlendRadii::Single { value } => Wire {
+                radius_kind: VariableBlendRadiusKindWire::SingleRadius,
+                first_value: value.clone(),
+                second_value: None,
+            },
+            VariableBlendRadii::Two { first, second } => Wire {
+                radius_kind: VariableBlendRadiusKindWire::TwoRadii,
+                first_value: first.clone(),
+                second_value: Some(second.clone()),
+            },
+        };
+        wire.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<VariableBlendRadii, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.radius_kind, wire.second_value) {
+            (VariableBlendRadiusKindWire::SingleRadius, None) => Ok(VariableBlendRadii::Single {
+                value: wire.first_value,
+            }),
+            (VariableBlendRadiusKindWire::TwoRadii, Some(second)) => Ok(VariableBlendRadii::Two {
+                first: wire.first_value,
+                second,
+            }),
+            _ => Err(serde::de::Error::custom(
+                "variable-blend radius kind conflicts with its payload count",
+            )),
+        }
+    }
+}
+
+mod variable_blend_u_range_wire {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &[f64; 2], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        [Some(value[0]), Some(value[1])].serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[f64; 2], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match <[Option<f64>; 2]>::deserialize(deserializer)? {
+            [Some(lower), Some(upper)] => Ok([lower, upper]),
+            _ => Err(serde::de::Error::custom(
+                "variable-blend u_range requires both bounds",
+            )),
+        }
+    }
+}
+
+mod variable_blend_v_range_wire {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        [*value, None].serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match <[Option<f64>; 2]>::deserialize(deserializer)? {
+            [lower, None] => Ok(lower),
+            _ => Err(serde::de::Error::custom(
+                "variable-blend v_range requires an absent upper bound",
+            )),
+        }
+    }
 }
 
 /// Cross-section clause following the variable-radius laws.
@@ -2622,13 +2773,10 @@ pub struct VariableBlendConstruction {
     pub slice_range: [Option<f64>; 2],
     /// Two signed support offsets in document length units.
     pub offsets: [f64; 2],
-    /// Radius-control cardinality.
-    pub radius_kind: VariableBlendRadiusKind,
-    /// First radius-control payload.
-    pub first_value: VariableBlendValue,
-    /// Second radius-control payload for a two-radii construction.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub second_value: Option<VariableBlendValue>,
+    /// Structurally selected radius-control payloads.
+    #[serde(flatten, with = "variable_blend_radii_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "VariableBlendRadiiSchemaWire"))]
+    pub radii: VariableBlendRadii,
     /// Cross-section clause following the complete radius-law sequence.
     /// Absence denotes an elided default circular section; an explicit
     /// circular clause remains distinct.
@@ -2636,11 +2784,18 @@ pub struct VariableBlendConstruction {
     pub cross_section: Option<VariableBlendCrossSection>,
     /// Support-side parameter interval `(T0, T1)`; both bounds present in
     /// every instance.
-    pub u_range: [Option<f64>; 2],
+    #[serde(with = "variable_blend_u_range_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "[Option<f64>; 2]"))]
+    pub u_range: [f64; 2],
     /// Second interval: a lower bound with an unbounded-above marker,
     /// encoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`
     /// upper-bound marker is an interval bound, not a standalone Boolean.
-    pub v_range: [Option<f64>; 2],
+    #[serde(rename = "v_range", with = "variable_blend_v_range_wire")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(rename = "v_range", with = "[Option<f64>; 2]")
+    )]
+    pub v_lower: Option<f64>,
     /// Approximation-current flag preceding the surface cache; `1` when the
     /// cache approximation is current.
     pub shape_prefix: i64,

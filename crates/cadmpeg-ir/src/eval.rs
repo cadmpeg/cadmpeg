@@ -5962,7 +5962,7 @@ fn cacheless_circular_variable_blend_point(
     v: f64,
 ) -> Option<Point3> {
     if !cacheless_variable_blend_domain_contains(construction, u, v)
-        || construction.radius_kind != crate::geometry::VariableBlendRadiusKind::SingleRadius
+        || !construction.radii.is_single()
         || !matches!(
             construction.cross_section,
             None | Some(crate::geometry::VariableBlendCrossSection::Circular)
@@ -6005,7 +6005,7 @@ fn cacheless_circular_variable_blend_section(
     v: f64,
 ) -> Option<CircularVariableBlendSection> {
     if !cacheless_variable_blend_domain_contains(construction, u, v)
-        || construction.radius_kind != crate::geometry::VariableBlendRadiusKind::SingleRadius
+        || !construction.radii.is_single()
         || !matches!(
             construction.cross_section,
             None | Some(crate::geometry::VariableBlendCrossSection::Circular)
@@ -6013,12 +6013,12 @@ fn cacheless_circular_variable_blend_section(
     {
         return None;
     }
-    let signed_radius = variable_blend_radius(&construction.first_value, v)?;
+    let signed_radius = variable_blend_radius(construction.radii.first(), v)?;
     let radius = signed_radius.abs();
     if !radius.is_finite() || radius <= f64::EPSILON {
         return None;
     }
-    let radius_derivative = variable_blend_radius_differential(&construction.first_value, v)
+    let radius_derivative = variable_blend_radius_differential(construction.radii.first(), v)
         .filter(|differential| differential.value.signum() == signed_radius.signum())
         .map(|differential| differential.derivative * signed_radius.signum());
     let first = variable_blend_contact_track_differential(index, &construction.sides[0], v)?;
