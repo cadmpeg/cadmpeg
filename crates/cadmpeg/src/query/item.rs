@@ -42,7 +42,7 @@ pub struct ItemArgs {
 }
 
 /// Where the requested arena lives in the document.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ArenaTarget {
     Model { arena: String },
     Native { codec: String, arena: String },
@@ -79,14 +79,6 @@ impl ArenaTarget {
             Self::Model { arena } => format!("model.{arena}"),
             Self::Native { codec, arena } => format!("native.{codec}.{arena}"),
         }
-    }
-
-    fn matches_model(&self, arena: &str) -> bool {
-        matches!(self, Self::Model { arena: a } if a == arena)
-    }
-
-    fn matches_native(&self, codec: &str, arena: &str) -> bool {
-        matches!(self, Self::Native { codec: c, arena: a } if c == codec && a == arena)
     }
 }
 
@@ -554,9 +546,7 @@ impl<'de> DeserializeSeed<'de> for ModelSeed<'_> {
     type Value = ();
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        deserializer.deserialize_map(ArenasVisitor {
-            namespace: ArenaNamespace::Model,
-            codec: None,
+        deserializer.deserialize_map(ArenasVisitor::Model {
             target: self.target,
             mode: self.mode,
             capture: self.capture,
@@ -645,9 +635,8 @@ impl<'de> Visitor<'de> for NativeCodecVisitor<'_> {
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
         while let Some(key) = map.next_key::<String>()? {
             if key == "arenas" {
-                map.next_value_seed(ArenasSeed {
-                    namespace: ArenaNamespace::Native,
-                    codec: Some(self.codec),
+                map.next_value_seed(NativeArenasSeed {
+                    codec: self.codec,
                     target: self.target,
                     mode: self.mode,
                     capture: self.capture,
@@ -660,26 +649,18 @@ impl<'de> Visitor<'de> for NativeCodecVisitor<'_> {
     }
 }
 
-#[derive(Clone, Copy)]
-enum ArenaNamespace {
-    Model,
-    Native,
-}
-
-struct ArenasSeed<'a> {
-    namespace: ArenaNamespace,
-    codec: Option<&'a str>,
+struct NativeArenasSeed<'a> {
+    codec: &'a str,
     target: &'a ArenaTarget,
     mode: &'a KeepMode<'a>,
     capture: &'a mut Capture,
 }
 
-impl<'de> DeserializeSeed<'de> for ArenasSeed<'_> {
+impl<'de> DeserializeSeed<'de> for NativeArenasSeed<'_> {
     type Value = ();
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        deserializer.deserialize_map(ArenasVisitor {
-            namespace: self.namespace,
+        deserializer.deserialize_map(ArenasVisitor::Native {
             codec: self.codec,
             target: self.target,
             mode: self.mode,
@@ -688,12 +669,18 @@ impl<'de> DeserializeSeed<'de> for ArenasSeed<'_> {
     }
 }
 
-struct ArenasVisitor<'a> {
-    namespace: ArenaNamespace,
-    codec: Option<&'a str>,
-    target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
-    capture: &'a mut Capture,
+enum ArenasVisitor<'a> {
+    Model {
+        target: &'a ArenaTarget,
+        mode: &'a KeepMode<'a>,
+        capture: &'a mut Capture,
+    },
+    Native {
+        codec: &'a str,
+        target: &'a ArenaTarget,
+        mode: &'a KeepMode<'a>,
+        capture: &'a mut Capture,
+    },
 }
 
 impl<'de> Visitor<'de> for ArenasVisitor<'_> {
@@ -703,29 +690,50 @@ impl<'de> Visitor<'de> for ArenasVisitor<'_> {
         f.write_str("an arenas object")
     }
 
-    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-        while let Some(arena) = map.next_key::<String>()? {
-            let is_target = match self.namespace {
-                ArenaNamespace::Model => self.target.matches_model(&arena),
-                ArenaNamespace::Native => self
-                    .codec
-                    .is_some_and(|codec| self.target.matches_native(codec, &arena)),
-            };
-            let dotted = match self.namespace {
-                ArenaNamespace::Model => format!("model.{arena}"),
-                ArenaNamespace::Native => {
-                    format!("native.{}.{arena}", self.codec.unwrap_or(""))
-                }
-            };
-            map.next_value_seed(ArenaValueSeed {
-                dotted,
-                is_target,
-                mode: self.mode,
-                capture: self.capture,
-            })?;
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<(), A::Error> {
+        match self {
+            Self::Model {
+                target,
+                mode,
+                capture,
+            } => visit_arenas(map, target, mode, capture, |arena| ArenaTarget::Model {
+                arena,
+            }),
+            Self::Native {
+                codec,
+                target,
+                mode,
+                capture,
+            } => visit_arenas(map, target, mode, capture, |arena| ArenaTarget::Native {
+                codec: codec.to_owned(),
+                arena,
+            }),
         }
-        Ok(())
     }
+}
+
+fn visit_arenas<'de, A, F>(
+    mut map: A,
+    target: &ArenaTarget,
+    mode: &KeepMode<'_>,
+    capture: &mut Capture,
+    make_target: F,
+) -> Result<(), A::Error>
+where
+    A: MapAccess<'de>,
+    F: Fn(String) -> ArenaTarget,
+{
+    while let Some(arena) = map.next_key::<String>()? {
+        let current = make_target(arena);
+        let is_target = current == *target;
+        map.next_value_seed(ArenaValueSeed {
+            dotted: current.dotted(),
+            is_target,
+            mode,
+            capture,
+        })?;
+    }
+    Ok(())
 }
 
 struct ArenaValueSeed<'a> {
