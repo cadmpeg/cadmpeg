@@ -772,6 +772,8 @@ pub struct JointConnector {
 
 /// Structurally complete operands and frames for an assembly joint.
 #[derive(Debug, Clone, PartialEq)]
+// Inline fixed-size arrays encode the one-or-two connector invariant directly.
+#[allow(clippy::large_enum_variant)]
 pub enum JointOperands {
     /// One grounded connector and its optional attachment offset.
     Grounded {
@@ -1096,7 +1098,7 @@ impl TryFrom<AssemblyJointWire> for AssemblyJoint {
             Self::grounded(id, JointConnector { operand, frame }, offset_frame)
         } else {
             let kind = PairedJointKind::try_from(kind)
-                .map_err(|_| "paired joint cannot use the grounded kind")?;
+                .map_err(|()| "paired joint cannot use the grounded kind")?;
             let [first_operand, second_operand] = operands
                 .try_into()
                 .map_err(|_| "paired joint must contain two operands")?;

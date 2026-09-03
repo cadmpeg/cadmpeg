@@ -480,7 +480,7 @@ impl Coverage {
 
     /// Returns an observed count, or zero when the measure was not recorded.
     #[must_use]
-    fn count(&self, key: CoverageKey) -> usize {
+    fn count(&self, key: &CoverageKey) -> usize {
         self.entries.get(key.as_str()).copied().unwrap_or(0)
     }
 
@@ -627,7 +627,7 @@ impl DecodeReport {
 
     /// Returns a coverage measure, treating an unobserved measure as zero.
     pub fn coverage_count(&self, key: CoverageKey) -> usize {
-        self.coverage.count(key)
+        self.coverage.count(&key)
     }
 
     /// Count loss notes at or above [`Severity::Error`].
