@@ -1138,25 +1138,41 @@ pub(crate) fn dialect_match(scan: &Scan<'_>) -> DialectMatch {
         .classify(scan.metadata.properties.writer_version)
 }
 
-/// The source metadata a container-only decode records; `primary` is the one
-/// author of the document's identity.
-pub(crate) fn source_meta(scan: &Scan<'_>, primary: DialectMatch) -> SourceMeta {
+/// Path-specific source attributes supplied to the single metadata builder.
+pub(crate) enum SourceMetaDetail {
+    /// Facts reported only by container inspection.
+    ContainerOnly,
+    /// Facts reported only after full decoding.
+    Full(BTreeMap<String, String>),
+}
+
+/// Builds source metadata; `primary` is the one author of the document's identity.
+pub(crate) fn source_meta(
+    scan: &Scan<'_>,
+    primary: DialectMatch,
+    detail: SourceMetaDetail,
+) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "archive_version".to_string(),
         scan.archive.value().to_string(),
     );
     attributes.insert("container_kind".to_string(), "3dm-chunks".to_string());
-    attributes.insert(
-        "comment_offset".to_string(),
-        scan.comment.range.start.to_string(),
-    );
-    attributes.insert("eof_offset".to_string(), scan.eof_offset.to_string());
-    attributes.insert("table_count".to_string(), scan.tables.len().to_string());
-    attributes.insert(
-        "instance_definition_count".to_string(),
-        scan.definitions.definitions.len().to_string(),
-    );
+    match detail {
+        SourceMetaDetail::ContainerOnly => {
+            attributes.insert(
+                "comment_offset".to_string(),
+                scan.comment.range.start.to_string(),
+            );
+            attributes.insert("eof_offset".to_string(), scan.eof_offset.to_string());
+            attributes.insert("table_count".to_string(), scan.tables.len().to_string());
+            attributes.insert(
+                "instance_definition_count".to_string(),
+                scan.definitions.definitions.len().to_string(),
+            );
+        }
+        SourceMetaDetail::Full(full) => attributes.extend(full),
+    }
     SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         attributes,
@@ -1189,7 +1205,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     }));
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));
-    ir.source = Some(source_meta(scan, primary));
+    ir.source = Some(source_meta(scan, primary, SourceMetaDetail::ContainerOnly));
     Decoded {
         ir,
         body: DecodeBody {

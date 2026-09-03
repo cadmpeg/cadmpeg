@@ -2564,9 +2564,12 @@ impl<'a> DecodeContext<'a> {
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.
         losses.extend(crate::dialect::admission_loss(&primary));
-        let mut source = crate::container::source_meta(self.scan, primary);
-        extend_source_meta(self.scan, &mut source.attributes);
-        self.ir.source = Some(source);
+        let attributes = full_source_attributes(self.scan);
+        self.ir.source = Some(crate::container::source_meta(
+            self.scan,
+            primary,
+            crate::container::SourceMetaDetail::Full(attributes),
+        ));
         Decoded {
             ir: self.ir,
             body: DecodeBody {
@@ -5600,8 +5603,9 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
     ir
 }
 
-/// Extends the container source metadata with facts available after full decoding.
-fn extend_source_meta(scan: &Scan<'_>, attributes: &mut BTreeMap<String, String>) {
+/// Builds the path-specific facts available after full decoding.
+fn full_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
+    let mut attributes = BTreeMap::new();
     let settings = &scan.metadata.settings;
     if let Some(units) = &settings.units {
         attributes.insert("unit_value".to_string(), units.unit_value.to_string());
@@ -5707,6 +5711,7 @@ fn extend_source_meta(scan: &Scan<'_>, attributes: &mut BTreeMap<String, String>
             attributes.insert(format!("{prefix}.uuid"), id.to_string());
         }
     }
+    attributes
 }
 
 #[cfg(test)]
