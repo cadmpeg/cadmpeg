@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Statically declared decode-coverage measures.
 
-#![cfg_attr(not(test), allow(dead_code))]
-
 use cadmpeg_ir::{CoverageKey, HexByteCoverageKey, IndexedCoverageKey};
 
 pub(crate) const VISIBLE_CURVE_TYPE_ROW_COUNT: HexByteCoverageKey =
@@ -1113,6 +1111,7 @@ pub(crate) const VISIBLE_SPLINE_SURFACE_ROW_COUNT: CoverageKey =
 pub(crate) const VISIBLE_TORUS_OR_SPHERE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("visible_torus_or_sphere_surface_row_count");
 
+#[cfg(test)]
 pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_FEATURE_ARC_SEGMENT_COUNT,
     RESOLVED_FEATURE_ARC_SEGMENT_GEOMETRY_COUNT,
