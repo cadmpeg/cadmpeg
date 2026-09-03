@@ -1135,19 +1135,41 @@ fn helix_shape_rejects_sentinel_and_conflicting_wire_fields() {
 
 #[test]
 fn trim_cell_selection_requires_unique_in_range_ordinals() {
-    let valid = TrimCellSelection {
-        removed: vec![1, 4],
-        total: 5,
+    let valid = TrimCellSelection::new(vec![1, 4], 5).unwrap();
+    assert_eq!(valid.removed(), &[1, 4]);
+    assert_eq!(valid.total(), 5);
+    assert!(TrimCellSelection::new(vec![1, 1], 5).is_none());
+    assert!(TrimCellSelection::new(vec![6], 5).is_none());
+}
+
+#[test]
+fn trim_cells_preserve_the_flat_wire_fields_and_reject_invalid_input() {
+    use crate::features::{FaceSelection, FeatureDefinition, PathRef, TrimRegion};
+
+    let definition = FeatureDefinition::TrimSurface {
+        faces: FaceSelection::Unresolved,
+        tool: PathRef::Unresolved("test:trim-tool".into()),
+        keep: TrimRegion::Cells(TrimCellSelection::new(vec![1, 4], 5).unwrap()),
     };
-    assert!(valid.is_valid());
-    assert!(!TrimCellSelection {
-        removed: vec![1, 1],
-        total: 5,
-    }
-    .is_valid());
-    assert!(!TrimCellSelection {
-        removed: vec![6],
-        total: 5,
-    }
-    .is_valid());
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["definition"], "trim_surface");
+    assert_eq!(wire["keep"], "unresolved");
+    assert_eq!(wire["cell_selection"]["removed"], serde_json::json!([1, 4]));
+    assert_eq!(wire["cell_selection"]["total"], 5);
+    let decoded: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+    assert!(matches!(
+        decoded,
+        FeatureDefinition::TrimSurface {
+            keep: TrimRegion::Cells(ref selection),
+            ..
+        } if selection.removed() == [1, 4] && selection.total() == 5
+    ));
+
+    let mut conflicting = wire.clone();
+    conflicting["keep"] = serde_json::json!("inside");
+    assert!(serde_json::from_value::<FeatureDefinition>(conflicting).is_err());
+
+    let mut invalid = wire;
+    invalid["cell_selection"]["removed"] = serde_json::json!([6]);
+    assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
 }

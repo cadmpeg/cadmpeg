@@ -53,43 +53,11 @@ fn trim_surface_completeness_accepts_an_explicit_cell_selection() {
         tool: cadmpeg_ir::features::PathRef::Curves(vec![cadmpeg_ir::ids::CurveId(
             "curve:tool".into(),
         )]),
-        keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-        cell_selection: Some(cadmpeg_ir::features::TrimCellSelection {
-            removed: vec![1, 4],
-            total: 5,
-        }),
+        keep: cadmpeg_ir::features::TrimRegion::Cells(
+            cadmpeg_ir::features::TrimCellSelection::new(vec![1, 4], 5).unwrap(),
+        ),
     };
     assert!(!feature_definition_is_incomplete(&complete));
-
-    let conflicting = cadmpeg_ir::features::FeatureDefinition::TrimSurface {
-        faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
-            "face:target".into(),
-        )]),
-        tool: cadmpeg_ir::features::PathRef::Curves(vec![cadmpeg_ir::ids::CurveId(
-            "curve:tool".into(),
-        )]),
-        keep: cadmpeg_ir::features::TrimRegion::Inside,
-        cell_selection: Some(cadmpeg_ir::features::TrimCellSelection {
-            removed: vec![1, 4],
-            total: 5,
-        }),
-    };
-    assert!(feature_definition_is_incomplete(&conflicting));
-
-    let invalid = cadmpeg_ir::features::FeatureDefinition::TrimSurface {
-        faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
-            "face:target".into(),
-        )]),
-        tool: cadmpeg_ir::features::PathRef::Curves(vec![cadmpeg_ir::ids::CurveId(
-            "curve:tool".into(),
-        )]),
-        keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-        cell_selection: Some(cadmpeg_ir::features::TrimCellSelection {
-            removed: vec![6],
-            total: 5,
-        }),
-    };
-    assert!(feature_definition_is_incomplete(&invalid));
 }
 
 #[test]

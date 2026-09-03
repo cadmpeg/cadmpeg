@@ -7333,7 +7333,6 @@ pub(crate) fn project_surface_trim(
         faces: resolved_body_recipe_selection(scope, target_group, body_recipe_operands)?,
         tool: PathRef::Native(tool_group.id.clone()),
         keep: TrimRegion::Unresolved,
-        cell_selection: None,
     })
 }
 
@@ -7360,21 +7359,22 @@ pub(crate) fn bind_surface_trim_cell_selections(
         }) else {
             continue;
         };
-        let selection = cadmpeg_ir::features::TrimCellSelection {
-            removed: operation
+        let Some(selection) = cadmpeg_ir::features::TrimCellSelection::new(
+            operation
                 .cell_entries
                 .iter()
                 .map(|entry| entry.ordinal)
                 .collect(),
-            total: u64::from(operation.trailing_value),
-        };
-        if !selection.is_valid() {
+            u64::from(operation.trailing_value),
+        ) else {
             continue;
-        }
-        if let cadmpeg_ir::features::FeatureDefinition::TrimSurface { cell_selection, .. } =
+        };
+        if let cadmpeg_ir::features::FeatureDefinition::TrimSurface { keep, .. } =
             &mut feature.definition
         {
-            *cell_selection = Some(selection);
+            if matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved) {
+                *keep = cadmpeg_ir::features::TrimRegion::Cells(selection);
+            }
         }
     }
 }

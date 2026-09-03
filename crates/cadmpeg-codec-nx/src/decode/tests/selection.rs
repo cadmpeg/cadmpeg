@@ -1520,7 +1520,6 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
             faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]),
             tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId("edge".into())]),
             keep: TrimRegion::Inside,
-            cell_selection: None,
         },
         native_ref: None,
     });

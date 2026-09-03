@@ -224,7 +224,6 @@ fn surface_trim_projects_body_target_and_curve_tool() {
             faces: FaceSelection::Historical { ref faces, ref native, .. },
             tool: cadmpeg_ir::features::PathRef::Native(ref tool),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-            cell_selection: None,
         } if faces.len() == 1
             && native == &target_group.id
             && tool == &tool_group.id
@@ -245,7 +244,6 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
             faces: FaceSelection::Unresolved,
             tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-            cell_selection: None,
         },
     );
     feature.native_ref = Some(scope.id.clone());
@@ -293,9 +291,8 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     assert!(matches!(
         feature.definition,
         FeatureDefinition::TrimSurface {
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-            cell_selection: Some(cadmpeg_ir::features::TrimCellSelection { removed, total }),
+            keep: cadmpeg_ir::features::TrimRegion::Cells(ref selection),
             ..
-        } if removed == vec![1, 4] && total == 5
+        } if selection.removed() == [1, 4] && selection.total() == 5
     ));
 }

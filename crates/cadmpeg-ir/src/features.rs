@@ -1619,12 +1619,10 @@ pub enum FeatureDefinition {
         faces: FaceSelection,
         /// Sketch or model-space path defining the trim boundary.
         tool: PathRef,
-        /// Region retained after trimming.
+        /// Region or explicit partition-cell set retained after trimming.
+        #[serde(flatten, with = "trim_region_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "TrimRegionSchemaWire"))]
         keep: TrimRegion,
-        /// Explicit source cell selection when the operation removes a set of
-        /// partition cells rather than one canonical inside/outside region.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cell_selection: Option<TrimCellSelection>,
     },
     /// Extends selected surface boundaries by a fixed distance.
     ExtendSurface {
@@ -2548,7 +2546,7 @@ pub enum SurfaceBoundary {
 }
 
 /// Region retained by a trim-surface operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TrimRegion {
@@ -2558,6 +2556,8 @@ pub enum TrimRegion {
     Inside,
     /// Retain the region outside the trimming path.
     Outside,
+    /// Remove an explicit set of partition cells.
+    Cells(TrimCellSelection),
 }
 
 /// Cells removed by a trim operation from its partition of the target faces.
@@ -2567,25 +2567,132 @@ pub enum TrimRegion {
 /// result and a selected set can contain neither all nor only the first cells.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "TrimCellSelectionWire")]
 pub struct TrimCellSelection {
     /// One-based ordinals of cells removed by the operation.
-    pub removed: Vec<u64>,
+    removed: Vec<u64>,
     /// Number of cells in the operation's partition.
-    pub total: u64,
+    total: u64,
 }
 
 impl TrimCellSelection {
-    /// Whether the cell selection is a nonempty, in-range set.
+    /// Creates a nonempty selection whose unique ordinals are within the partition.
     #[must_use]
-    pub fn is_valid(&self) -> bool {
-        let mut seen = HashSet::with_capacity(self.removed.len());
-        self.total > 0
-            && !self.removed.is_empty()
-            && self
-                .removed
+    pub fn new(removed: Vec<u64>, total: u64) -> Option<Self> {
+        let mut seen = HashSet::with_capacity(removed.len());
+        (total > 0
+            && !removed.is_empty()
+            && removed
                 .iter()
-                .all(|ordinal| *ordinal > 0 && *ordinal <= self.total)
-            && self.removed.iter().all(|ordinal| seen.insert(*ordinal))
+                .all(|ordinal| *ordinal > 0 && *ordinal <= total)
+            && removed.iter().all(|ordinal| seen.insert(*ordinal)))
+        .then_some(Self { removed, total })
+    }
+
+    /// Returns the one-based removed-cell ordinals.
+    #[must_use]
+    pub fn removed(&self) -> &[u64] {
+        &self.removed
+    }
+
+    /// Returns the number of cells in the source partition.
+    #[must_use]
+    pub const fn total(&self) -> u64 {
+        self.total
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct TrimCellSelectionWire {
+    removed: Vec<u64>,
+    total: u64,
+}
+
+impl TryFrom<TrimCellSelectionWire> for TrimCellSelection {
+    type Error = &'static str;
+
+    fn try_from(wire: TrimCellSelectionWire) -> Result<Self, Self::Error> {
+        Self::new(wire.removed, wire.total)
+            .ok_or("trim cell selection removed must be nonempty, unique, and within total")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum TrimRegionWire {
+    Unresolved,
+    Inside,
+    Outside,
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the trim region wire schema")]
+struct TrimRegionSchemaWire {
+    keep: TrimRegionWire,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cell_selection: Option<TrimCellSelection>,
+}
+
+mod trim_region_wire {
+    use super::{TrimCellSelection, TrimRegion, TrimRegionWire};
+    use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize)]
+    struct Borrowed<'a> {
+        keep: TrimRegionWire,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cell_selection: Option<&'a TrimCellSelection>,
+    }
+
+    #[derive(Deserialize)]
+    struct Owned {
+        keep: TrimRegionWire,
+        #[serde(default)]
+        cell_selection: Option<TrimCellSelection>,
+    }
+
+    pub fn serialize<S>(value: &TrimRegion, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = match value {
+            TrimRegion::Unresolved => Borrowed {
+                keep: TrimRegionWire::Unresolved,
+                cell_selection: None,
+            },
+            TrimRegion::Inside => Borrowed {
+                keep: TrimRegionWire::Inside,
+                cell_selection: None,
+            },
+            TrimRegion::Outside => Borrowed {
+                keep: TrimRegionWire::Outside,
+                cell_selection: None,
+            },
+            TrimRegion::Cells(selection) => Borrowed {
+                keep: TrimRegionWire::Unresolved,
+                cell_selection: Some(selection),
+            },
+        };
+        wire.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<TrimRegion, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = Owned::deserialize(deserializer)?;
+        match (wire.keep, wire.cell_selection) {
+            (TrimRegionWire::Unresolved, None) => Ok(TrimRegion::Unresolved),
+            (TrimRegionWire::Inside, None) => Ok(TrimRegion::Inside),
+            (TrimRegionWire::Outside, None) => Ok(TrimRegion::Outside),
+            (TrimRegionWire::Unresolved, Some(selection)) => Ok(TrimRegion::Cells(selection)),
+            (_, Some(_)) => Err(D::Error::custom(
+                "trim surface cell_selection requires keep to be unresolved",
+            )),
+        }
     }
 }
 
