@@ -538,12 +538,21 @@ pub fn summarize(
         "zip",
         scan.entries.clone(),
         Vec::new(),
-        summary_notes(scan),
+        summary_notes(scan, SummaryScope::ContainerOnly),
     )
 }
 
+/// Whether the caller transferred beyond container metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SummaryScope {
+    /// Inspection or a container-only decode.
+    ContainerOnly,
+    /// A decode that attempted the document model.
+    FullDecode,
+}
+
 /// Container notes shared by inspection and decode report construction.
-pub(crate) fn summary_notes(scan: &ContainerScan<'_>) -> Vec<String> {
+pub(crate) fn summary_notes(scan: &ContainerScan<'_>, scope: SummaryScope) -> Vec<String> {
     let mut notes = Vec::new();
     if let Some(folder) = scan.design_asset_folder() {
         notes.push(format!("Design asset folder (from manifests): {folder}"));
@@ -578,11 +587,13 @@ pub(crate) fn summary_notes(scan: &ContainerScan<'_>) -> Vec<String> {
         )),
         _ => {}
     }
-    notes.push(
-        "container-level inspection only; run `decode` to resolve Design body bindings and build \
-         each referenced BREP graph"
-            .to_string(),
-    );
+    if scope == SummaryScope::ContainerOnly {
+        notes.push(
+            "container-level inspection only; run `decode` to resolve Design body bindings and build \
+             each referenced BREP graph"
+                .to_string(),
+        );
+    }
 
     notes
 }
