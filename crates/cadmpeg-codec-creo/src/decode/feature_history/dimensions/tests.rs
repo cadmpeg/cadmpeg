@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Feature, FeatureDefinition as IrFeatureDefinition, ParameterId};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::{planned_feature_dimension_parameter_ids, transfer_feature_dimensions};
@@ -63,7 +62,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         BTreeSet::from([ParameterId("creo:featdefs:parameter#917:3".to_string())])
     );
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.features.push(Feature::new(
             "creo:model:feature#40".into(),

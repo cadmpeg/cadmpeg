@@ -1029,7 +1029,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         FeatureDefinition, FeatureId,
     };
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     for (ordinal, kind) in ["DELETE", "DELETE"].into_iter().enumerate() {
         ir.model.features.push(Feature {
             id: FeatureId(format!("test:feature#{ordinal}")),
@@ -1410,7 +1410,7 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
 
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut source_properties = std::collections::BTreeMap::new();
     source_properties.insert(
         "primary_body_reference".to_string(),
@@ -1467,7 +1467,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         },
         native_ref: None,
     };
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(feature);
 
     let mut losses = Vec::new();
@@ -1496,7 +1496,7 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
         FaceSelection, Feature, FeatureDefinition, FeatureId, PathRef, TrimRegion,
     };
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("test:feature#construction-trim".into()),
         ordinal: 0,

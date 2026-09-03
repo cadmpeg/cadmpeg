@@ -678,12 +678,11 @@ pub fn solved_topological_vertices(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::units::Units;
 
     #[test]
     fn unique_model_curve_rejects_duplicate_ids() {
         let id = CurveId("creo:visibgeom:curve#7".to_string());
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.extend([
             Curve {
                 id: id.clone(),

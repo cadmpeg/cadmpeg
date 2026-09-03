@@ -16,7 +16,7 @@ use crate::CadIr;
 
 #[test]
 fn subd_rejects_short_rings_and_negative_sharpness() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#short".into()),
         scheme: SubdScheme::CatmullClark,
@@ -65,7 +65,7 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
 
 #[test]
 fn subd_rejects_invalid_secondary_grip_sector_arity() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#grips".into()),
         scheme: SubdScheme::CatmullClark,
@@ -113,7 +113,7 @@ fn subd_rejects_invalid_secondary_grip_sector_arity() {
 
 #[test]
 fn subd_rejects_secondary_grip_edge_not_incident_to_owner() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#grip-incidence".into()),
         scheme: SubdScheme::CatmullClark,
@@ -170,7 +170,7 @@ fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
         knot_interval: Some(1.0),
         sector_coefficients: [0.0, 0.0],
     };
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#grip-sector-incidence".into()),
         scheme: SubdScheme::CatmullClark,
@@ -221,7 +221,7 @@ fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
 
 #[test]
 fn subd_rejects_invalid_symmetry_carriers() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#symmetry".into()),
         scheme: SubdScheme::CatmullClark,
@@ -312,7 +312,7 @@ fn subd_rejects_invalid_symmetry_carriers() {
 
 #[test]
 fn source_association_is_a_free_carrier_root() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId("synthetic:source:curve#0".into()),
         geometry: CurveGeometry::Unknown { record: None },
@@ -334,7 +334,7 @@ fn source_association_is_a_free_carrier_root() {
 
 #[test]
 fn source_association_rejects_out_of_range_color() {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId("synthetic:source:curve#color".into()),
         geometry: CurveGeometry::Unknown { record: None },

@@ -50,7 +50,6 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
 };
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -824,7 +823,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
     assert!(matches!(
         schema_feature_definition(
             &scan,
-            &CadIr::empty(Units::default()),
+            &CadIr::empty(),
             9,
             911,
             "Hole"
@@ -875,7 +874,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         crate::surface::SurfaceKind::Cylinder,
     ));
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 9, 911, "Hole"),
+        schema_feature_definition(&scan, &CadIr::empty(), 9, 911, "Hole"),
         IrFeatureDefinition::Hole {
             kind: HoleKind::Simple,
             diameter: None,
@@ -1892,7 +1891,7 @@ fn circle_remains_a_closed_extrusion_profile() {
         radius: Length(3.0),
     };
     let seam = [4.0, -2.0];
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,

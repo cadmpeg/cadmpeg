@@ -9,7 +9,6 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
@@ -21,7 +20,7 @@ const EPS_PROFILE_CLOSURE: f64 = 1.0e-9;
 #[test]
 fn profile_closure_rejects_conflicting_edge_occurrences() {
     let curve_id = CurveId("iges:model:curve#D1".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Line {

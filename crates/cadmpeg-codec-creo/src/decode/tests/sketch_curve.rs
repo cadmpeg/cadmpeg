@@ -20,7 +20,6 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind};
-use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -594,7 +593,7 @@ fn dimension_display_preserves_radius_and_diameter_types() {
 
 #[test]
 fn evaluated_sweep_bodies_are_feature_outputs() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for id in [
         "creo:feature:extrusion#40:body",
         "creo:feature:revolution#40:body",

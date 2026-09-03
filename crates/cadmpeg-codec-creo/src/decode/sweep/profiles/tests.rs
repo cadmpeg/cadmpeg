@@ -6,7 +6,6 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
     SketchPlacement,
 };
-use cadmpeg_ir::units::Units;
 
 fn sketch(id: &SketchId, entity: &SketchEntityId) -> Sketch {
     Sketch {
@@ -38,7 +37,7 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 fn profile_joins_reject_duplicate_sketch_ids() {
     let sketch_id = SketchId("creo:model:sketch#7".to_string());
     let entity_id = SketchEntityId("creo:featdefs:sketch_entity#7:1".to_string());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.sketches.extend([
         sketch(&sketch_id, &entity_id),
         sketch(&sketch_id, &entity_id),
@@ -55,7 +54,7 @@ fn profile_joins_reject_duplicate_sketch_ids() {
 fn profile_joins_reject_duplicate_sketch_entity_ids() {
     let sketch_id = SketchId("creo:model:sketch#7".to_string());
     let entity_id = SketchEntityId("creo:featdefs:sketch_entity#7:1".to_string());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.sketches.push(sketch(&sketch_id, &entity_id));
     ir.model.sketch_entities.extend([
         line_entity(&entity_id, &sketch_id, [1.0, 0.0]),

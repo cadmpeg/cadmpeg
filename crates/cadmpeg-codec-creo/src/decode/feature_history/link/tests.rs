@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Feature, FeatureDefinition as IrFeatureDefinition};
-use cadmpeg_ir::units::Units;
 
 use super::super::{link_feature_sketch_history, section_entity_is_generated_profile};
 
@@ -67,7 +66,7 @@ fn feature(id: &str) -> Feature {
 #[test]
 fn history_link_rejects_duplicate_owner_feature_ids() {
     let scan = section_scan();
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.extend([
         feature("creo:model:feature#2"),
         feature("creo:model:feature#2"),
@@ -84,7 +83,7 @@ fn history_link_rejects_duplicate_owner_feature_ids() {
 #[test]
 fn history_link_rejects_duplicate_sketch_feature_ids() {
     let scan = section_scan();
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.extend([
         feature("creo:model:feature#2"),
         feature("creo:model:sketch_feature#7"),

@@ -72,7 +72,7 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
         .translated(reference, radius * interval[1].cos())
         .translated(axis.cross(reference), radius * interval[1].sin());
     let declared_end = evaluated_end.translated(Vector3::new(0.0, 0.0005, 0.0), 1.0);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Circle {

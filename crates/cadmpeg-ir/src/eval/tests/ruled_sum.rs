@@ -8,7 +8,7 @@ fn direct_surface_fixture(
 ) -> (CadIr, SurfaceId) {
     let construction_id = ProceduralSurfaceId(format!("{surface_name}-construction"));
     let surface_id = SurfaceId(surface_name.into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
             id: CurveId("first".into()),

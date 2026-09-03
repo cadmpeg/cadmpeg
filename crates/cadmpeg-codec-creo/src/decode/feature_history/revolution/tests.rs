@@ -5,7 +5,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
 fn saved_spline_definition() -> crate::feature::FeatureDefinition {
@@ -189,7 +188,7 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
             offset: 0,
         });
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .curves
         .extend((0..curve_count).map(|_| saved_spline_curve()));

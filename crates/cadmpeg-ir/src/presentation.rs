@@ -203,12 +203,11 @@ mod tests {
     use super::*;
     use crate::document::CadIr;
     use crate::report::Check;
-    use crate::units::Units;
     use crate::validate::validate_neutral;
 
     #[test]
     fn source_layer_items_validate_without_fabricated_geometry() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId("test:presentation:layer#construction".into()),
             name: "construction".into(),
@@ -224,7 +223,7 @@ mod tests {
 
     #[test]
     fn empty_layer_name_is_valid() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId("test:presentation:layer#unnamed".into()),
             name: String::new(),
@@ -240,7 +239,7 @@ mod tests {
 
     #[test]
     fn missing_typed_layer_item_is_invalid() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId("test:presentation:layer#missing".into()),
             name: "missing".into(),

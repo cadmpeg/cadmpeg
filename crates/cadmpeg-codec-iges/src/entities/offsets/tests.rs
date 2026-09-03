@@ -8,7 +8,6 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::parameter::{Token, TokenValue};
@@ -165,7 +164,7 @@ fn source_parameter_map_rejects_non_affine_curve_and_non_curve_domains() {
 #[test]
 fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     let source_id = CurveId("source".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: source_id.clone(),
         geometry: CurveGeometry::Line {

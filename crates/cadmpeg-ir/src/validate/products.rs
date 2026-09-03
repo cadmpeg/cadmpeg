@@ -163,7 +163,6 @@ mod tests {
         PairedJointKind, PrototypeReference,
     };
     use crate::transform::Transform;
-    use crate::units::Units;
 
     fn root_operand(object: &str) -> JointOperand {
         JointOperand::root(object, Vec::new())
@@ -171,7 +170,7 @@ mod tests {
 
     #[test]
     fn joint_operands_allow_document_root_and_reject_two_qualifiers() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.assembly_joints.push(AssemblyJoint::paired(
             JointId("test:model:joint#root".into()),
             PairedJointKind::Fixed,

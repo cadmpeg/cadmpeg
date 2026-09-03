@@ -14,7 +14,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::TransferLedger;
-use cadmpeg_ir::units::{Tolerances, Units};
+use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
 use crate::container::InventorContainer;
@@ -60,7 +60,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let (design_parameters, unresolved_design_parameters) =
         crate::design::project_parameters(&design_inventory);
     ir.model.parameters = design_parameters;

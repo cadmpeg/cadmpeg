@@ -10,7 +10,6 @@ use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellI
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Face, Loop as IrLoop, LoopBoundaryRole, Region, Sense, Shell,
 };
-use cadmpeg_ir::units::Units;
 use std::collections::BTreeMap;
 
 #[test]
@@ -55,7 +54,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
         .topology_rows
         .extend([curve_row(45, 50), curve_row(60, 70)]);
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId("creo:feature:extrusion#70:body".to_string()),
         kind: BodyKind::Solid,
@@ -75,7 +74,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
 #[test]
 fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     let scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId("creo:feature:extrusion#50:body".to_string()),
         kind: BodyKind::Solid,
@@ -126,7 +125,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         next_surface: 0,
         offset: 0,
     });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId("creo:feature:extrusion#50:body".to_string()),
         kind: BodyKind::Solid,
@@ -233,7 +232,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     let loop_id = LoopId("creo:test:loop".to_string());
     let coedge_id = CoedgeId("creo:test:coedge".to_string());
     let edge_id = EdgeId("creo:test:edge".to_string());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Solid,
@@ -348,7 +347,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
 
 #[test]
 fn evaluated_sweep_body_joins_reject_duplicate_ids() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId("creo:feature:extrusion#40:body".to_string()),
         kind: BodyKind::Solid,

@@ -25,7 +25,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{LossCategory, LossNote, LossTaxonomy, Severity};
-use cadmpeg_ir::units::{Tolerances, Units};
+use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::{self, Brep};
@@ -4773,7 +4773,7 @@ fn build_geometry_ir(
     ),
     CodecError,
 > {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let (source_attributes, tolerances) =
         source_attributes_and_tolerances(scan, primary_model_brep);
     ir.tolerances = tolerances;
@@ -4955,7 +4955,7 @@ fn build_metadata_ir(
     std::collections::BTreeMap<String, String>,
     Vec<UnknownRecord>,
 ) {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
 
     let mut attributes = std::collections::BTreeMap::new();

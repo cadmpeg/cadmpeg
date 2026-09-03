@@ -275,7 +275,7 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
 #[test]
 fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_absent() {
     let scan = slot_fillet_scan();
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let transferred = super::transfer_constrained_slot_fillet_cylinders(
         &scan,
         &mut ir,
@@ -303,7 +303,7 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
 #[test]
 fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
     let scan = split_outline_scan();
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
         super::transfer_split_outline_cylinders(
@@ -333,7 +333,7 @@ fn split_outline_rejects_duplicate_surface_rows() {
     let mut scan = split_outline_scan();
     let duplicate = scan.surfaces.rows[1].clone();
     scan.surfaces.rows.push(duplicate);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
         super::transfer_split_outline_cylinders(
@@ -393,7 +393,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
             offset: 7,
             body_offset: 7,
         });
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
         super::transfer_positional_cylinders(
@@ -467,7 +467,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
     scan.surfaces
         .parameters
         .extend([parameter(7, 1.0), parameter(8, 2.0)]);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
         super::transfer_positional_cylinders(
@@ -528,7 +528,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
             offset: 7,
             body_offset: 7,
         });
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
         super::transfer_positional_cylinders(
@@ -593,7 +593,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
             offset: 7,
             body_offset: 7,
         });
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(model_cylinder(7, 0.75));
 
     assert_eq!(
@@ -822,7 +822,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
 #[test]
 fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
     let scan = counterbore_dimension_gate_scan(24.5);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
@@ -844,7 +844,7 @@ fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
 #[test]
 fn counterbore_positional_radius_gate_accepts_declared_source_radius() {
     let scan = counterbore_dimension_gate_scan(20.0);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
@@ -867,7 +867,7 @@ fn counterbore_positional_radius_gate_accepts_declared_source_radius() {
 fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_are_absent() {
     let mut scan = slot_fillet_scan();
     scan.planes.positional_frames.clear();
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         model_plane(1, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
         model_plane(2, [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
@@ -890,7 +890,7 @@ fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_ar
 #[test]
 fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
     let scan = slot_fillet_scan();
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model
         .surfaces
         .push(model_plane(3, [0.0, -0.5, 0.0], [0.0, 1.0, 0.0]));
@@ -948,7 +948,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
             non_surface_entity_ids: vec![12],
             offset: 47,
         });
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model
         .surfaces
         .extend([model_cylinder(13, 2.0), model_cylinder(13, 3.0)]);
@@ -1029,7 +1029,7 @@ fn round_envelope_rejects_an_extra_reference_circle() {
 #[test]
 fn split_outline_rejects_conflicting_model_plane_carrier() {
     let scan = split_outline_scan();
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model
         .surfaces
         .push(model_plane(1, [0.0, 0.0, -0.5], [0.0, 0.0, 1.0]));

@@ -11,7 +11,6 @@ use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ExportPlan, TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::units::Units;
 
 use crate::codec::StepCodec;
 use crate::options::{StepSchema, StepWriteOptions};
@@ -65,7 +64,7 @@ fn target_of(plan: &ExportPlan) -> Option<String> {
 /// `write_step` caller configured the legacy strict-write option.
 #[test]
 fn planning_reports_unrepresentable_content_under_strict_write_options() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
         vec![cadmpeg_ir::NativeRecord::new(
@@ -244,7 +243,7 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
 /// which reads as a request for a dialect called `step`.
 #[test]
 fn inherit_refuses_a_step_source_that_records_no_dialect() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
             "format": crate::dialect::FORMAT,

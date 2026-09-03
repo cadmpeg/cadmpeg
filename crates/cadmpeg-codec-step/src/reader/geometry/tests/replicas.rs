@@ -14,7 +14,6 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::export::is_rigid_transform;
@@ -324,7 +323,7 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
         }),
         transform,
     };
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.curves.push(Curve {
         id: CurveId("transformed-curve".into()),
         geometry: curve_geometry.clone(),

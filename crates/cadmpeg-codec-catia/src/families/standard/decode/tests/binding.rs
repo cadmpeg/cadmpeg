@@ -659,7 +659,7 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
 
 #[test]
 fn cached_face_point_membership_matches_the_source_predicate() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.extend([
         Point {
             id: PointId("point-0".into()),
@@ -760,7 +760,7 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
 #[test]
 fn standard_emission_reverses_only_face_pcurve_use_range() {
     for reversed in [false, true] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.extend([
             Point {
                 id: PointId("point-0".into()),
@@ -972,7 +972,7 @@ fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() 
 
 #[test]
 fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
         id: PointId("point-0".into()),
         position: Point3::new(2.0, 0.0, 0.0),

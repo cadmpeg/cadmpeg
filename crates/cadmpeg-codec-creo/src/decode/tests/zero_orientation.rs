@@ -41,7 +41,6 @@ use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind, Point};
-use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -427,7 +426,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             offset: id as usize,
         });
     }
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId("creo:visibgeom:surface#31".to_string()),
@@ -629,7 +628,7 @@ fn named_revolve_transfers_profile_axis() {
             kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
             offset: 1,
         });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId("creo:feature:revolution#822:body".to_string()),
         kind: BodyKind::Solid,
@@ -659,7 +658,7 @@ fn named_revolve_transfers_profile_axis() {
 #[test]
 fn named_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId("creo:feature:extrusion#822:body".to_string()),
         kind: BodyKind::Solid,
@@ -682,7 +681,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
 #[test]
 fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::container::scan_bytes(Vec::new());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: BodyId("creo:feature:extrusion#822:body".to_string()),
         kind: BodyKind::Solid,
@@ -733,7 +732,7 @@ fn conflicting_section_sweep_names_remain_unresolved() {
             reference_type: 0,
             offset: 0,
         });
-    let ir = CadIr::empty(Units::default());
+    let ir = CadIr::empty();
 
     for kind in [
         "Protrusion",
@@ -782,7 +781,7 @@ fn conflicting_display_states_do_not_select_reference_family() {
             reference_type: 0,
             offset: 0,
         });
-    let ir = CadIr::empty(Units::default());
+    let ir = CadIr::empty();
 
     assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature").is_none());
 }
@@ -1016,7 +1015,7 @@ fn nonplanar_saved_spline_places_as_model_curve() {
 
 #[test]
 fn transferred_geometry_is_derived_from_ir_arenas() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     assert!(!has_transferred_geometry(&ir));
 
     ir.model.points.push(Point {

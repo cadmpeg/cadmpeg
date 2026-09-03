@@ -718,7 +718,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
 
 #[test]
 fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     for (index, position) in [Point3::new(1.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)]
         .into_iter()
@@ -798,7 +798,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
 
 #[test]
 fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let section_radius = 3.0_f64.sqrt();
     ir.model.points.extend(
@@ -874,7 +874,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
 
 #[test]
 fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let sqrt_three = 3.0_f64.sqrt();
     ir.model.points.extend(
@@ -964,7 +964,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
 
 #[test]
 fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     ir.model.points.extend(
         [Point3::new(2.0, 0.0, 2.0), Point3::new(-2.0, 0.0, -2.0)]
@@ -1049,7 +1049,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
 
 #[test]
 fn standard_spline_uses_identity_bound_native_support_pcurves() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.extend(
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
             .into_iter()
@@ -1229,7 +1229,7 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
 
 #[test]
 fn limit_curve_binding_retains_correlated_edge_candidates() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.extend(
         [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
             .into_iter()
@@ -1325,7 +1325,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
 
 #[test]
 fn standard_spline_retains_a_procedural_rolling_ball_support() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.extend(
         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
             .into_iter()
@@ -1423,7 +1423,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
         geometry: StandardCurveGeometry::Bspline,
     };
     let solve = |geometry, points: [Point3; 2]| {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId("surface".to_string()),
             geometry,
@@ -1491,7 +1491,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
 
 #[test]
 fn standard_line_edge_uses_distance_parameterization() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (index, position) in [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 6.0, 3.0)]
         .into_iter()
         .enumerate()
@@ -1524,7 +1524,7 @@ fn standard_line_edge_uses_distance_parameterization() {
 
 #[test]
 fn standard_line_edge_accepts_a_finite_nonzero_distance() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (index, position) in [Point3::new(0.0, 0.0, 0.0), Point3::new(1e-200, 0.0, 0.0)]
         .into_iter()
         .enumerate()
@@ -1558,7 +1558,7 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
 
 #[test]
 fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let surface_id = SurfaceId("cylinder".to_string());
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -1664,7 +1664,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     )
     .is_none());
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (index, position) in [start, end].into_iter().enumerate() {
         ir.model.points.push(Point {
             id: PointId(format!("p{index}")),
@@ -1697,7 +1697,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
 
 #[test]
 fn standard_unbound_vertices_receive_one_free_vertex_owner() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
         id: VertexId("v".to_string()),
         point: PointId("p".to_string()),
@@ -1721,7 +1721,7 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
 
 #[test]
 fn standard_spline_retains_complete_surface_incidence_pair_domain() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for index in 0..138 {
         ir.model.points.push(Point {
             id: PointId(format!("p{index}")),
@@ -1767,7 +1767,7 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
 
 #[test]
 fn standard_planar_intersection_spline_uses_the_common_line_domain() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (index, position) in [
         Point3::new(-2.0, 0.0, 0.0),
         Point3::new(3.0, 0.0, 0.0),
@@ -1823,7 +1823,7 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
 
 #[test]
 fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (index, position) in [Point3::new(5.0, 0.0, 0.0), Point3::new(-5.0, 0.0, 0.0)]
         .into_iter()
         .enumerate()
@@ -1874,7 +1874,7 @@ fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
 
 #[test]
 fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (index, position) in [
         Point3::new(-2.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),

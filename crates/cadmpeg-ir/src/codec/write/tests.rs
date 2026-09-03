@@ -59,7 +59,7 @@ impl EncoderBackend for NeutralEncoder {
 
 #[test]
 fn the_wrapper_stamps_cadir_on_a_dialect_free_plan() {
-    let ir = CadIr::empty(crate::units::Units::default());
+    let ir = CadIr::empty();
     let plan = NeutralEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
@@ -70,7 +70,7 @@ fn the_wrapper_stamps_cadir_on_a_dialect_free_plan() {
 
 #[test]
 fn a_dialect_free_encoder_refuses_an_explicit_target() {
-    let ir = CadIr::empty(crate::units::Units::default());
+    let ir = CadIr::empty();
     let error = NeutralEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("any"))
         .unwrap_err();
@@ -110,7 +110,7 @@ impl EncoderBackend for CatalogEncoder {
 
 #[test]
 fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
-    let ir = CadIr::empty(crate::units::Units::default());
+    let ir = CadIr::empty();
     let plan = CatalogEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
         .unwrap();
@@ -121,7 +121,7 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
 
 #[test]
 fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
-    let ir = CadIr::empty(crate::units::Units::default());
+    let ir = CadIr::empty();
     let plan = CatalogEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
         .unwrap();
@@ -130,7 +130,7 @@ fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
 
 #[test]
 fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
-    let ir = CadIr::empty(crate::units::Units::default());
+    let ir = CadIr::empty();
     let fidelity = SourceFidelity::default();
     let plan = CatalogEncoder
         .plan(
@@ -191,7 +191,7 @@ fn write_path_structurally_authors_fidelity_resolution() {
 
 #[test]
 fn an_empty_native_catalog_has_no_format_identity_request() {
-    let ir = CadIr::empty(crate::units::Units::default());
+    let ir = CadIr::empty();
     let error = resolve_write_request(&ir, TargetRequest::Inherit, "cadir", TargetCatalog::EMPTY)
         .unwrap_err();
 
@@ -218,7 +218,7 @@ const CATALOG_WRITE_TARGETS: &[TargetDescriptor] = &[
 const CATALOG_WRITE_CATALOG: TargetCatalog = TargetCatalog::new(CATALOG_WRITE_TARGETS, Some(1));
 
 fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.source = source.map(|(format, dialect)| match dialect {
         Some(id) => crate::document::SourceMeta::classified(
             DialectLayers::of(DialectMatch::admitted(DialectId::pinned(id))),

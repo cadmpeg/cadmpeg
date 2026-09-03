@@ -19,7 +19,6 @@ use crate::math::Vector3;
 use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
 use crate::source_fidelity::SourceFidelity;
 use crate::topology::Coedge;
-use crate::units::LengthUnit;
 
 /// Frozen accept/reject IR builders for Phase 5 gate swaps.
 pub mod admissibility_freeze;
@@ -61,8 +60,8 @@ use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
-    check_coedge_pairing, check_loops, check_references, check_shell_connectivity, check_units,
-    check_wire_topology,
+    check_coedge_pairing, check_loops, check_references, check_shell_connectivity,
+    check_tolerances, check_wire_topology,
 };
 
 /// A radius/length that is not a finite positive number is invalid geometry.
@@ -95,7 +94,7 @@ fn validate_model_with_index(
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ir, &mut findings);
-    check_units(ir, &mut findings);
+    check_tolerances(ir, &mut findings);
     check_references(ir, ids, &mut findings);
     check_pmi(ir, &mut findings);
     check_loops(ir, ids, &mut findings);
@@ -202,13 +201,12 @@ mod tests {
     };
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
-    use crate::units::Units;
     use crate::CadIr;
     use std::collections::BTreeMap;
 
     #[test]
     fn configuration_feature_sketch_resolves_against_model_sketches() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let feature_id = FeatureId("test:model:feature#sketch".into());
         let sketch_id = SketchId("test:model:sketch#sketch".into());
         ir.model.features.push(Feature {
@@ -291,7 +289,7 @@ mod tests {
         let first = FeatureId("test:model:feature#plane-a".into());
         let second = FeatureId("test:model:feature#plane-b".into());
         let split = FeatureId("test:model:feature#split".into());
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features = vec![
             feature(
                 first.clone(),

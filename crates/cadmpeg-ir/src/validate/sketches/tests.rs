@@ -215,7 +215,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         SketchEntityId, SketchGeometry, SketchId, SketchOffsetPair,
     };
 
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     let sketch = SketchId("synthetic:test:sketch#nurbs-offset".into());
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),

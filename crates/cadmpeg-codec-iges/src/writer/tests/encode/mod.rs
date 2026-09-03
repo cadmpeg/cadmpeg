@@ -19,7 +19,6 @@ use cadmpeg_ir::report::WritePath;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
@@ -194,7 +193,7 @@ fn encode_replays_an_unchanged_iges_source_image() {
 #[test]
 fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
     for (version, name) in [(IgesVersion::V5_1, "5.1"), (IgesVersion::V5_2, "5.2")] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.push(Point {
             id: PointId(format!("point#{name}")),
             source_object: None,
@@ -227,7 +226,7 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
 #[test]
 fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
     for (version, name) in [(IgesVersion::V4_0, "4.0"), (IgesVersion::V5_0, "5.0")] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.push(Point {
             id: PointId(format!("point#{name}")),
             source_object: None,
@@ -260,7 +259,7 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
 #[test]
 fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId(format!("surface#{version:?}")),
             geometry: SurfaceGeometry::Plane {
@@ -366,7 +365,7 @@ fn encode_does_not_replay_a_source_with_the_wrong_version() {
 
 #[test]
 fn encode_regenerates_an_edited_point_from_neutral_ir() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.push(Point {
         id: PointId("point#1".into()),
         source_object: None,
@@ -443,7 +442,7 @@ fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
 
 #[test]
 fn encode_refuses_an_empty_source_less_model() {
-    let ir = CadIr::empty(Units::default());
+    let ir = CadIr::empty();
     let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
         panic!("empty semantic output was accepted")
     };
@@ -572,7 +571,7 @@ fn encode_regenerates_supported_analytic_and_spline_curves() {
 
 #[test]
 fn encode_regenerates_planar_and_nurbs_surfaces() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId("surface#plane".into()),
@@ -705,7 +704,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
 
 #[test]
 fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId("surface#cylinder".into()),
@@ -843,7 +842,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     let pcurve_ids = (0..4)
         .map(|index| PcurveId(format!("pcurve#sheet:{index}")))
         .collect::<Vec<_>>();
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {

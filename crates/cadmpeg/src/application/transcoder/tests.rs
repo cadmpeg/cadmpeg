@@ -77,7 +77,7 @@ fn prepared(
 #[test]
 fn encoder_planning_owns_unknown_explicit_target_admission() {
     let mut conversion = prepared(
-        CadIr::empty(cadmpeg_ir::units::Units::default()),
+        CadIr::empty(),
         Format::Iges,
         Box::new(cadmpeg_codec_iges::IgesCodec),
         LossPolicy::Allow,
@@ -95,7 +95,7 @@ fn encoder_planning_owns_unknown_explicit_target_admission() {
 
 #[cfg(feature = "step")]
 fn step_ir_with_unrepresentable_native_content() -> CadIr {
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.native.namespace_mut("f3d").arenas.insert(
         "asm_histories".into(),
         vec![cadmpeg_ir::NativeRecord::new(
@@ -192,7 +192,7 @@ impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
 #[test]
 fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
     let conversion = prepared(
-        CadIr::empty(cadmpeg_ir::units::Units::default()),
+        CadIr::empty(),
         Format::Cadir,
         Box::new(NotImplementedEncoder),
         LossPolicy::RejectExport,
@@ -313,7 +313,7 @@ fn rejecting_export_losses_does_not_name_a_target() {
 fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
     use cadmpeg_core::dialect::DialectId;
 
-    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = CadIr::empty();
     for spelling in ["archive-60", "60"] {
         let target = export_target(TargetSelection::new(
             Format::Rhino,
@@ -349,7 +349,7 @@ fn an_unknown_dialect_is_refused_by_plan_with_its_catalog() {
     let error = target
         .encoder
         .plan(
-            EncodeInput::new(&CadIr::empty(cadmpeg_ir::units::Units::default()), None),
+            EncodeInput::new(&CadIr::empty(), None),
             target.selection.request(),
         )
         .expect_err("a STEP alias is not an IGES target");

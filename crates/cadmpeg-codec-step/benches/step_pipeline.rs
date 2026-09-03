@@ -12,7 +12,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
-use cadmpeg_ir::units::Units;
 
 const ENTITY_COUNT: usize = 100_000;
 
@@ -40,7 +39,7 @@ fn exchange(entity: &str) -> Vec<u8> {
 }
 
 fn ir() -> CadIr {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.extend((0..ENTITY_COUNT).map(|index| Point {
         source_object: None,
         id: PointId(format!("point-{index}")),

@@ -31,7 +31,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
 };
-use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -82,7 +81,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         row(34, crate::surface::SurfaceKind::Extrusion),
         row(35, crate::surface::SurfaceKind::Plane),
     ]);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
             id: SurfaceId("creo:visibgeom:surface#31".to_string()),

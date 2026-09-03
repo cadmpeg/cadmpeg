@@ -148,7 +148,6 @@ pub fn transfer_into_ir(
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    use cadmpeg_ir::units::Units;
 
     use super::*;
 
@@ -158,7 +157,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::default())
             .expect("test root fits policy");
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let remainder = transfer_into_ir(
             &ctx,
             &mut ir,
@@ -187,7 +186,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::default())
             .expect("test root fits policy");
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.native
             .namespace_mut("test")
             .set_arena("body_native_keys", &[HeldRecord { id: "held".into() }])

@@ -30,7 +30,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -363,7 +362,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     assert!(transfer(
         &mut ir,
@@ -493,7 +492,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         .expect("required loop")
         .metadata
         .edge_controls[1][2] = -1;
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
 
     assert!(transfer(
         &mut ir,

@@ -18,7 +18,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
             feature("sldprt:history:feature#0:1", None, 1),
         ],
     };
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features = project_features(&[history]);
     let predecessor = ir.model.features[1].id.clone();
     let consumer = ir.model.features[0].id.clone();

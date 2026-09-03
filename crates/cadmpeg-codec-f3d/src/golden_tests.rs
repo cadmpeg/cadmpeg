@@ -761,7 +761,7 @@ const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 fn neutral_document(ir: &CadIr) -> String {
     snapshot_text(&serde_json::json!({
         "model": serde_json::to_value(&ir.model).expect("serialize model"),
-        "units": serde_json::to_value(&ir.units).expect("serialize units"),
+        "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
     }))
 }

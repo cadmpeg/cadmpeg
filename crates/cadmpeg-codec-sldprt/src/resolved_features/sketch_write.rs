@@ -27,7 +27,7 @@ pub(super) fn sketch_brep(
             sketch.id.0
         ))
     })?;
-    let mut ir = cadmpeg_ir::CadIr::empty(source.units.clone());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     let prefix = format!("generated:sldprt:sketch:{}", sketch.id.0);
     let body_id = BodyId(format!("{prefix}:body"));
     let region_id = RegionId(format!("{prefix}:region"));

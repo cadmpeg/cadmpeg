@@ -9,12 +9,11 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::units::Units;
 use std::collections::BTreeMap;
 
 #[test]
 fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (id, normal, u_axis) in [
         (1, [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         (2, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]),

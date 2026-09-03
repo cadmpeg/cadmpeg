@@ -314,7 +314,7 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
 fn budgeted_model_surface_charges_nurbs_directrix_work() {
     let directrix_id = CurveId("budgeted-directrix".into());
     let surface_id = SurfaceId("budgeted-sweep".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Nurbs(NurbsCurve {
@@ -571,7 +571,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
         };
         let point = curve_point(&geometry, parameter).expect("analytic curve evaluates");
         let id = CurveId(format!("test:inverse:{index}"));
-        let mut ir = CadIr::empty(crate::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry,
@@ -631,7 +631,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
     ];
     for (index, (geometry, point, seed, expected)) in cases.into_iter().enumerate() {
         let id = CurveId(format!("test:polyline-inverse:{index}"));
-        let mut ir = CadIr::empty(crate::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry,
@@ -646,7 +646,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
 #[test]
 fn indexed_curve_inverse_uses_the_caller_tolerance() {
     let id = CurveId("test:inverse-tolerance".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry: CurveGeometry::Line {
@@ -688,7 +688,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     let parameter = 0.7 + std::f64::consts::TAU;
     let point = curve_point(&geometry, parameter).expect("transformed curve evaluates");
     let id = CurveId("test:transformed-inverse".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
@@ -719,7 +719,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
 fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     let point = Point3::new(2.0, 3.0, 4.0);
     let id = CurveId("test:degenerate-inverse".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry: CurveGeometry::Degenerate { point },
@@ -858,7 +858,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     let second_id = SurfaceId("second-offset".into());
     let first_construction = ProceduralSurfaceId("first-construction".into());
     let second_construction = ProceduralSurfaceId("second-construction".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
@@ -946,7 +946,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
     let support_id = SurfaceId("support".into());
     let offset_id = SurfaceId("offset".into());
     let construction = ProceduralSurfaceId("offset-construction".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
@@ -1013,7 +1013,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     let construction = ProceduralSurfaceId("offset-construction".into());
     let mut support = bilinear_surface();
     support.normal_reversed = true;
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
@@ -1067,7 +1067,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: base_id.clone(),
@@ -1131,7 +1131,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
 fn curve_bounded_surface_delegates_evaluation_to_its_support() {
     let support_id = SurfaceId("curve-bounded-support".into());
     let bounded_id = SurfaceId("curve-bounded".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
@@ -1177,7 +1177,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
 fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     let directrix_id = CurveId("directrix".into());
     let surface_id = SurfaceId("sweep".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Line {
@@ -1223,7 +1223,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     let directrix_id = CurveId("reversed-directrix".into());
     let surface_id = SurfaceId("cacheless-extrusion".into());
     let construction_id = ProceduralSurfaceId("cacheless-extrusion-construction".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Nurbs(NurbsCurve {
@@ -1281,7 +1281,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     let profile_id = CurveId("profile".into());
     let spine_id = CurveId("spine".into());
     let surface_id = SurfaceId("cacheless-sweep".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
             id: profile_id.clone(),
@@ -1384,7 +1384,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
 fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     let directrix_id = CurveId("profile".into());
     let surface_id = SurfaceId("revolution".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Transformed {
@@ -1437,7 +1437,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
 fn revolution_surface_maps_its_angular_parameter_interval() {
     let directrix_id = CurveId("mapped-profile".into());
     let surface_id = SurfaceId("mapped-revolution".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Line {
@@ -1490,7 +1490,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     let end_point_id = PointId("normalized-profile-end-point".into());
     let start_vertex_id = VertexId("normalized-profile-start-vertex".into());
     let end_vertex_id = VertexId("normalized-profile-end-vertex".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Line {

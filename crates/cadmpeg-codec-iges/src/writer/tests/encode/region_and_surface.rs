@@ -196,7 +196,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         ),
     ];
     for (name, nurbs, expected) in cases {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId(format!("curve#{name}")),
             geometry: CurveGeometry::Nurbs(nurbs),

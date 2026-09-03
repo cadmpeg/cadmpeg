@@ -1506,7 +1506,7 @@ mod tests {
 
     #[test]
     fn scales_model_geometry_and_feature_dimensions() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features.push(Feature::new(
             cadmpeg_ir::features::FeatureId::from("feature"),
             0,
@@ -1661,7 +1661,7 @@ mod tests {
 
     #[test]
     fn scales_procedural_model_lengths_and_cache_tolerances() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.procedural_surfaces.push(
             cadmpeg_ir::geometry::ProceduralSurface::try_new(
                 cadmpeg_ir::ids::ProceduralSurfaceId("surface-construction".into()),

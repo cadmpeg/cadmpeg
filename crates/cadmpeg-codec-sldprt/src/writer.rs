@@ -3661,7 +3661,7 @@ mod nurbs_write_tests {
 
     #[test]
     fn retained_swift_pmi_requires_an_unchanged_semantic_baseline() {
-        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut ir = CadIr::empty();
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
             id: cadmpeg_ir::ids::PmiId("sldprt:model:pmi#A1".into()),
             name: Some("datum A".into()),

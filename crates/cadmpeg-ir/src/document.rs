@@ -28,7 +28,7 @@ use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
-use crate::units::{Tolerances, Units};
+use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
 
 macro_rules! arena_registry {
@@ -248,8 +248,6 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 pub struct CadIr {
     /// Source-container metadata.
     pub source: Option<SourceMeta>,
-    /// Canonical unit declaration.
-    pub units: Units,
     /// Document-wide tolerances.
     pub tolerances: Tolerances,
     /// Format-neutral model.
@@ -265,7 +263,7 @@ struct CadIrWriteWire<'a> {
     ir_version: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<&'a SourceMeta>,
-    units: &'a Units,
+    units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
     model: &'a Model,
     native: &'a Native,
@@ -283,7 +281,8 @@ struct CadIrReadWire {
 struct CadIrPayload {
     #[serde(default)]
     source: Option<SourceMeta>,
-    units: Units,
+    #[serde(default, rename = "units")]
+    _units: CanonicalUnitsWire,
     tolerances: Tolerances,
     model: Model,
     #[serde(default)]
@@ -295,7 +294,7 @@ impl Serialize for CadIr {
         CadIrWriteWire {
             ir_version: IR_VERSION,
             source: self.source.as_ref(),
-            units: &self.units,
+            units: CanonicalUnitsWire::default(),
             tolerances: &self.tolerances,
             model: &self.model,
             native: &self.native,
@@ -315,7 +314,6 @@ impl From<CadIrPayload> for CadIr {
     fn from(payload: CadIrPayload) -> Self {
         Self {
             source: payload.source,
-            units: payload.units,
             tolerances: payload.tolerances,
             model: payload.model,
             native: payload.native,
@@ -411,10 +409,9 @@ impl CadIr {
     }
 
     /// Construct an empty current-version document with default tolerances.
-    pub fn empty(units: Units) -> Self {
+    pub fn empty() -> Self {
         Self {
             source: None,
-            units,
             tolerances: Tolerances::default(),
             model: Model::default(),
             native: Native::default(),

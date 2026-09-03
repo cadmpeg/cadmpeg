@@ -87,7 +87,7 @@ fn source_band_history_record_with_major(
 #[test]
 fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let records = [record(1, 11, &[], &[40]), record(2, 12, &[40], &[41])];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
 
     assert_eq!(ir.model.features.len(), 2);
@@ -115,7 +115,7 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
 #[test]
 fn projection_counts_dependency_on_later_producer() {
     let records = [record(1, 11, &[40], &[41]), record(2, 12, &[], &[40])];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
     assert!(ir.model.features[0].dependencies.is_empty());
 }
@@ -127,7 +127,7 @@ fn projection_counts_dependency_with_ambiguous_producers() {
         record(2, 12, &[], &[40]),
         record(3, 13, &[40], &[41]),
     ];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(project(&records, None, &mut ir), (0, 0, 1, 0));
     assert!(ir.model.features[2].dependencies.is_empty());
 }
@@ -226,7 +226,7 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
         value: Value::Doubles(vec![3.5]),
     });
     let records = [producer, record(2, 12, &[40], &[41])];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(project(&records, None, &mut ir), (0, 0, 0, 0));
 
     assert_eq!(

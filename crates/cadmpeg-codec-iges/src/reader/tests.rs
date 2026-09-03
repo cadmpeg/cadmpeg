@@ -9,7 +9,6 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Vertex;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, SourceProvenance};
 
 use crate::loss::IgesLossCode;
@@ -280,7 +279,7 @@ fn inspect_enforces_iges_parser_resource_limits() {
 
 #[test]
 fn semantic_decode_barrier_rejects_invalid_cadir() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
         id: VertexId("iges:model:vertex#invalid".into()),
         point: PointId("iges:model:point#missing".into()),

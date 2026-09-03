@@ -179,7 +179,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             side: 0,
         }],
     });
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId("creo:visibgeom:curve#11".to_string()),
         geometry: CurveGeometry::Circle {
@@ -259,7 +259,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
             .map(|curve_id| crate::topology::HalfEdgeId { curve_id, side: 0 })
             .collect(),
     });
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     for (id, origin, direction) in [
         (11, Point3::new(0.0, 0.0, 4.0), Vector3::new(1.0, 0.0, 0.0)),
         (12, Point3::new(0.0, 2.0, 4.0), Vector3::new(0.0, 1.0, 0.0)),

@@ -42,7 +42,7 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
             }],
             ..CatiaNative::default()
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         let transfer = transfer_design_features(&mut ir, &native, None);
 

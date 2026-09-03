@@ -1143,7 +1143,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             lead12_context_entity: None,
             lead54_trailing_entity: None,
         });
-    let mut relation_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut relation_ir = CadIr::empty();
     let relation_transfer = crate::formula::transfer_parameters(
         &mut relation_ir,
         &native,

@@ -8,13 +8,12 @@ use cadmpeg_ir::features::{
     FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
 };
 use cadmpeg_ir::ids::BodyId;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
 #[test]
 fn configuration_partitions_require_explicit_source_identity() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
         id: ConfigurationId(id.into()),
         ordinal,
@@ -65,7 +64,7 @@ fn configuration_partitions_require_explicit_source_identity() {
 
 #[test]
 fn duplicate_configuration_source_identity_does_not_select_a_partition() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId(format!("configuration:{ordinal}")),
@@ -96,7 +95,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
 
 #[test]
 fn inferred_partition_does_not_fabricate_active_configuration_identity() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
@@ -130,7 +129,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
 
 #[test]
 fn active_configuration_name_binds_partition_without_fabricating_body_membership() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
@@ -177,7 +176,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
 
 #[test]
 fn duplicate_configuration_partition_identities_are_reported() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for id in ["first", "second"] {
         ir.model.configurations.push(DesignConfiguration {
             id: ConfigurationId(id.into()),
@@ -206,7 +205,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
 
 #[test]
 fn incomplete_configuration_names_are_reported() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for (position, (ordinal, name)) in [(0, ""), (1, "Shared"), (2, "Shared"), (2, "Unique")]
         .into_iter()
         .enumerate()
@@ -239,7 +238,7 @@ fn incomplete_configuration_names_are_reported() {
 
 #[test]
 fn active_configuration_partition_disagreement_is_reported() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect::DialectId::pinned("sldprt:test"),
@@ -317,7 +316,7 @@ fn incoherent_configuration_bodies_are_reported() {
 
 #[test]
 fn configuration_values_complete_parameters_without_baseline_values() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let parameter = ParameterId("configured-parameter".into());
     ir.model.parameters.push(DesignParameter {
         id: parameter.clone(),
@@ -360,7 +359,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
 
 #[test]
 fn configuration_suppression_and_override_references_are_coherent() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let feature = FeatureId("feature".into());
     let definition = FeatureDefinition::TreeNode {
         role: FeatureTreeNodeRole::History,

@@ -14,7 +14,6 @@ use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::Check;
 use crate::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Sense, Vertex};
-use crate::units::Units;
 use crate::validate::validate_neutral;
 
 macro_rules! procedural_surface {
@@ -49,7 +48,7 @@ macro_rules! procedural_curve {
 }
 
 fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let curve = CurveId("curve".to_string());
     let surface = SurfaceId("surface".to_string());
     ir.model.curves.push(Curve {
@@ -138,7 +137,7 @@ fn mapped_surface_offset() -> CadIr {
 }
 
 fn untrimmed_surface_curve() -> CadIr {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.points.extend([
         crate::topology::Point {
             id: "point-start".into(),
@@ -446,7 +445,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         v_periodic: false,
     });
     let surface_id = SurfaceId("surface".to_string());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: surface.clone(),

@@ -701,7 +701,6 @@ mod tests {
     use crate::test_support::test_dump::{object_record_with_payload, scan_with_objects};
     use crate::wire::Uuid;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::units::Units;
 
     fn utf16(value: &str) -> Vec<u8> {
         let mut units = value.encode_utf16().collect::<Vec<_>>();
@@ -860,7 +859,7 @@ mod tests {
                 &unknown_base,
             ),
         ]);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         install(&scan, &mut ir);
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
@@ -981,7 +980,7 @@ mod tests {
                 &arrow,
             ),
         ]);
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         install(&scan, &mut ir);
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");

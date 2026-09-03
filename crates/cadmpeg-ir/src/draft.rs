@@ -583,7 +583,6 @@ mod tests {
     use crate::native::NativeRecord;
     use crate::report::TransferLedger;
     use crate::topology::{Point, Vertex};
-    use crate::units::Units;
 
     fn point(id: &str) -> Point {
         Point {
@@ -613,7 +612,7 @@ mod tests {
 
     #[test]
     fn collision_refuses_without_mutating_any_destination() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.push(point("test:model:point#1"));
         let mut draft = ModelDraft::new();
         draft
@@ -639,7 +638,7 @@ mod tests {
         let mut draft = ModelDraft::new();
         draft.model_mut().points.push(point(identity));
         draft.model_mut().points.push(point(identity));
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             draft.commit_model(&mut ir),
@@ -658,7 +657,7 @@ mod tests {
             point: target.into(),
             tolerance: None,
         });
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             draft.commit_model(&mut ir),
@@ -676,7 +675,7 @@ mod tests {
         let mut draft = ModelDraft::new();
         draft.model_mut().points.push(point(identity));
         draft.model_mut().points.push(point(identity));
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             draft.commit_incomplete(
@@ -693,7 +692,7 @@ mod tests {
 
     #[test]
     fn commit_session_matches_sequential_model_commits() {
-        let mut session_ir = CadIr::empty(Units::default());
+        let mut session_ir = CadIr::empty();
         let mut session = CommitSession::new(&session_ir);
         session
             .commit_model(point_draft("test:model:point#1"), &mut session_ir)
@@ -702,7 +701,7 @@ mod tests {
             .commit_model(point_draft("test:model:point#2"), &mut session_ir)
             .expect("second session commit");
 
-        let mut sequential_ir = CadIr::empty(Units::default());
+        let mut sequential_ir = CadIr::empty();
         point_draft("test:model:point#1")
             .commit_model(&mut sequential_ir)
             .expect("first sequential commit");
@@ -715,7 +714,7 @@ mod tests {
 
     #[test]
     fn commit_session_rejects_cross_draft_identity_collision() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut session = CommitSession::new(&ir);
         let identity = "test:model:point#cross-draft";
         session
@@ -732,7 +731,7 @@ mod tests {
     #[test]
     fn commit_session_rejects_pre_existing_neutral_identity() {
         let identity = "test:model:point#existing";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.points.push(point(identity));
         let mut session = CommitSession::new(&ir);
 
@@ -746,7 +745,7 @@ mod tests {
     #[test]
     fn commit_session_rejects_native_identity() {
         let identity = "test:native:record#1";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.native.namespace_mut("test").arenas.insert(
             "records".into(),
             vec![NativeRecord::new(identity, serde_json::Map::new())],
@@ -764,7 +763,7 @@ mod tests {
     fn commit_session_rejects_unresolved_reference() {
         let owner = "test:model:vertex#missing";
         let target = "test:model:point#missing";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut session = CommitSession::new(&ir);
 
         assert_eq!(
@@ -780,7 +779,7 @@ mod tests {
     #[test]
     fn commit_session_resolves_reference_into_earlier_draft() {
         let point_id = "test:model:point#earlier";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut session = CommitSession::new(&ir);
         session
             .commit_model(point_draft(point_id), &mut ir)
@@ -796,7 +795,7 @@ mod tests {
     #[test]
     fn rejected_session_commit_leaves_session_and_base_usable() {
         let rejected_identity = "test:model:vertex#rejected";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let before = ir.clone();
         let mut session = CommitSession::new(&ir);
 
@@ -818,7 +817,7 @@ mod tests {
     fn commit_session_contains_tracks_only_successful_commits() {
         let committed_identity = "test:model:point#committed";
         let rejected_identity = "test:model:point#rejected";
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut session = CommitSession::new(&ir);
 
         assert!(!session.contains(&ir, committed_identity));

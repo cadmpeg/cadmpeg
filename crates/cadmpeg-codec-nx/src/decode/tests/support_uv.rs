@@ -252,7 +252,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     let plane = SurfaceId("synthetic:seeded-intersection-plane".into());
     let curve = CurveId("synthetic:seeded-intersection-curve".into());
     let procedural_id = ProceduralCurveId("synthetic:seeded-intersection".into());
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),

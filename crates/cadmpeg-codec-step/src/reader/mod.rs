@@ -9,7 +9,6 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::LossNote;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
@@ -108,7 +107,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         ctx: &'ctx DecodeContext<'arena>,
         packaging: Packaging,
     ) -> Self {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut attributes = BTreeMap::new();
         attributes.insert("schema".into(), schema_name(exchange));
         attributes.insert("data_sections".into(), exchange.data.len().to_string());

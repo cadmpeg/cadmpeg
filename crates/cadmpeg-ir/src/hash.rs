@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use crate::document::{CadIr, SortedModel, SourceMeta};
 use crate::native::{Native, NativeNamespace, NativeRecord};
-use crate::units::{Tolerances, Units};
+use crate::units::{CanonicalUnitsWire, Tolerances};
 
 /// Returns the lowercase hexadecimal SHA-256 digest of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -123,7 +123,7 @@ fn document_local_sha256_with_source_and_charge<E>(
             source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
             source
         }),
-        units: &ir.units,
+        units: CanonicalUnitsWire::default(),
         tolerances: &ir.tolerances,
         model: ir.model.sorted(),
         native: normalized_native(&ir.native, format, &unknowns),
@@ -187,7 +187,7 @@ struct NormalizedDocument<'a> {
     ir_version: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<SourceMeta>,
-    units: &'a Units,
+    units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
     model: SortedModel<'a>,
     native: NormalizedNative<'a>,
@@ -311,7 +311,6 @@ mod tests {
     use crate::examples::unit_cube;
     use crate::ids::UnknownId;
     use crate::native::{Native, NativeRecord};
-    use crate::units::Units;
     use crate::unknown::UnknownRecord;
 
     #[test]
@@ -454,7 +453,7 @@ mod tests {
     }
 
     fn pinned_document() -> CadIr {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.native = pinned_native();
         let namespace = ir.native.namespace_mut("pin");
         namespace.arenas.insert(

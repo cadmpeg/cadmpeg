@@ -6,7 +6,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::{
@@ -667,7 +666,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         })
         .collect();
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId("creo:visibgeom:surface#5".to_string()),
         geometry: SurfaceGeometry::Plane {

@@ -281,7 +281,6 @@ mod tests {
 
     use super::*;
     use cadmpeg_core::decode::InspectOptions;
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
     use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
 
@@ -309,7 +308,7 @@ mod tests {
     fn matching_sidecar_loads_and_mismatch_fails_closed() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("part.cadir.json");
-        let text = CadIr::empty(Units::default()).to_canonical_json().unwrap();
+        let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
         let report: DecodeReport = serde_json::from_value(serde_json::json!({
             "format": "test",

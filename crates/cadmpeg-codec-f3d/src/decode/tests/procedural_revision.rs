@@ -692,8 +692,6 @@ fn decode_carries_the_document_modeling_length_unit_into_source_metadata() {
             .map(String::as_str),
         Some("inch")
     );
-    // The IR stays millimetre-canonical regardless of the display unit.
-    assert_eq!(result.ir().units, cadmpeg_ir::units::Units::default());
 }
 
 #[test]

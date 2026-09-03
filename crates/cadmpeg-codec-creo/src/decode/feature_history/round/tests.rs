@@ -68,11 +68,7 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         });
 
     assert_eq!(
-        super::chamfer_constant_distance(
-            &scan,
-            &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
-            4
-        ),
+        super::chamfer_constant_distance(&scan, &cadmpeg_ir::document::CadIr::empty(), 4),
         None
     );
 }
@@ -135,7 +131,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             offset: 0,
         });
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#31".to_string()),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
@@ -271,7 +267,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
             offset: 0,
         });
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#10".to_string()),
@@ -344,7 +340,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             offset: 4,
         },
     ]);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
 
     for (id, x) in [(3, -9.0), (4, -8.0)] {
@@ -440,7 +436,7 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
             offset: 4,
         },
     ]);
-    let ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
 
@@ -467,7 +463,7 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
         next_surface: 0,
         offset: 0,
     };
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#7".to_string()),
@@ -539,7 +535,7 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
             offset: 4,
         },
     ]);
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     for id in [3, 4] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
@@ -597,7 +593,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
             });
     }
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     for (id, radius) in [(3, 0.5), (4, 0.5)] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
@@ -732,7 +728,7 @@ fn legacy_round_dimension_supplies_constant_radius() {
             edge_ids: None,
             offset: 0,
         });
-    let ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(super::round_constant_radius(&scan, &ir, 913), Some(2.0));
 }
 
@@ -747,6 +743,6 @@ fn legacy_variable_round_dimension_withholds_radius() {
             edge_ids: None,
             offset: 0,
         });
-    let ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(super::round_constant_radius(&scan, &ir, 913), None);
 }

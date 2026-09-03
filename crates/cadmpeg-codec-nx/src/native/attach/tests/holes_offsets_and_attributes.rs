@@ -33,7 +33,6 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
-    use cadmpeg_ir::units::Units;
 
     let operation = "blind".to_string();
     let template = FeatureSimpleHoleTemplate {
@@ -173,7 +172,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model = model;
     let operation_positions = BTreeMap::from([("blind", 0usize)]);
     assert_eq!(
@@ -301,7 +300,6 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
-    use cadmpeg_ir::units::Units;
 
     let operation = "counterbore".to_string();
     let template = FeatureSimpleHoleTemplate {
@@ -489,7 +487,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model = model;
     let operations = vec![operation.clone()];
     let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
@@ -595,7 +593,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let output = BodyId("nx:s4:body#3".into());
     let make_offset = |ordinal: u32, distance: f64| {
         ProceduralSurface::new(
@@ -716,7 +714,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let output = BodyId("nx:s4:body#3".into());
     let make_offset = |ordinal: u32, distance: f64| {
         ProceduralSurface::new(
@@ -823,7 +821,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let output = BodyId("nx:s4:body#symmetric".into());
     let input = BodyId("nx:s4:body#input".into());
     let support = SurfaceId("nx:s4:nurbs-surf#0".into());
@@ -902,7 +900,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     };
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let output = BodyId("nx:s4:body#3".into());
     let support_a = SurfaceId("support-a".into());
     let support_b = SurfaceId("support-b".into());

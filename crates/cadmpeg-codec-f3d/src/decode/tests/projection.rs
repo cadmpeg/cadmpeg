@@ -29,7 +29,7 @@ use crate::records::{
 
 #[test]
 fn active_face_substitutions_have_a_distinct_loss_note() {
-    let ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     native.design_face_operands.push(
         serde_json::from_value(serde_json::json!({
@@ -213,7 +213,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
         FullRoundSideSelection,
     };
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("feature:full-round".into()),
         ordinal: 0,
@@ -817,7 +817,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
     );
     assert!(feature_definition_is_incomplete(&native_target));
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
         id: cadmpeg_ir::features::FeatureId("feature:coil".into()),
         ordinal: 0,
@@ -908,7 +908,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
     .expect("unresolved Loft definition");
     assert!(feature_definition_is_incomplete(&unresolved));
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("feature:loft".into()),
         ordinal: 0,
@@ -935,7 +935,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
 fn incomplete_feature_families_are_counted_by_source_operation() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let feature = |id: &str, source_tag: Option<&str>, kind: &str| Feature {
         id: FeatureId(id.into()),
         ordinal: 0,
@@ -1034,7 +1034,7 @@ fn split_body_requires_resolved_target_and_tool_selections() {
 
 #[test]
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
-    let ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     native.design_body_bindings.push(DesignBodyBinding {
         id: "f3d:design:body-binding#0".into(),
@@ -1058,7 +1058,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
 
 #[test]
 fn design_projection_gaps_count_cosmetic_thread_faces() {
-    let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     for (ordinal, face) in [
         serde_json::json!({"kind": "native", "value": "native:thread-face"}),
         serde_json::json!({"kind": "unresolved"}),
@@ -1102,7 +1102,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         SketchEntityId, SketchGeometry, SketchId,
     };
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId("constraint".into()),
         sketch: SketchId("sketch".into()),
@@ -1660,7 +1660,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         scope(4, Some(20), None),
         scope(5, Some(21), Some(20)),
     ];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features = native
         .design_parameter_scopes
         .iter()
@@ -1756,7 +1756,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     let mut native = F3dNative::default();
     native.design_parameter_scopes = scopes;
     native.design_feature_timelines = vec![timeline];
-    let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features = features;
 
     let gaps = design_projection_gaps(&ir, &native);

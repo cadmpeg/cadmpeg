@@ -271,7 +271,6 @@ mod tests {
     use super::*;
 
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureTreeNodeRole};
-    use cadmpeg_ir::units::Units;
 
     fn history_feature(
         id: &str,
@@ -304,7 +303,7 @@ mod tests {
 
     fn closure_ir(features: Vec<Feature>) -> (CadIr, BodyId) {
         let body = BodyId("body".into());
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features = features;
         (ir, body)
     }
@@ -507,7 +506,7 @@ mod tests {
         let body = BodyId("body".into());
         let dependency = FeatureId("dependency".into());
         let writer = FeatureId("writer".into());
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.features = vec![
             Feature {
                 id: FeatureId("base".into()),

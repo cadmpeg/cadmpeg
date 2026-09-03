@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let center = Point3::new(0.0, 2.0, 3.0);
     let radius = 2.0;
     ir.model.points.extend(

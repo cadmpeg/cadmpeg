@@ -42,7 +42,6 @@ use cadmpeg_ir::sketches::{
     SketchGeometry, SketchId, SketchLocus,
 };
 use cadmpeg_ir::topology::BodyKind;
-use cadmpeg_ir::units::Units;
 use std::collections::BTreeMap;
 
 const EPS_FULL_TURN: f64 = 1e-12;
@@ -73,7 +72,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -425,11 +424,11 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
     assert!(feature_is_sheet_extrusion(&scan, 942));
     assert!(feature_allows_linear_extrusion(&scan, 942));
     assert_eq!(
-        sweep_output_kind(&scan, &CadIr::empty(Units::default()), "extrusion", 942),
+        sweep_output_kind(&scan, &CadIr::empty(), "extrusion", 942),
         Some(BodyKind::Sheet)
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 942, 942, "Surface"),
+        schema_feature_definition(&scan, &CadIr::empty(), 942, 942, "Surface"),
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             op: BooleanOp::NewBody,
@@ -443,11 +442,11 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
     assert!(!feature_is_sheet_extrusion(&scan, 942));
     assert!(!feature_allows_linear_extrusion(&scan, 942));
     assert_eq!(
-        sweep_output_kind(&scan, &CadIr::empty(Units::default()), "extrusion", 942),
+        sweep_output_kind(&scan, &CadIr::empty(), "extrusion", 942),
         None
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 942, 942, "Surface"),
+        schema_feature_definition(&scan, &CadIr::empty(), 942, 942, "Surface"),
         IrFeatureDefinition::BoundarySurfaceUnresolved
     ));
 }
@@ -475,7 +474,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
         });
 
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 942, 942, "Surface"),
+        schema_feature_definition(&scan, &CadIr::empty(), 942, 942, "Surface"),
         IrFeatureDefinition::Native { kind, .. } if kind == "Surface"
     ));
 }
@@ -567,7 +566,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         },
         source_object: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert!(matches!(
@@ -935,7 +934,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
 
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.definitions.push(definition);
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     for kind in ["Revolve", "Revolve 2"] {
         assert!(matches!(
             named_feature_definition(&scan, &ir, 822, kind),
@@ -1050,7 +1049,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         },
         source_object: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     let IrFeatureDefinition::Extrude {
@@ -1250,7 +1249,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         next_surface: 0,
         offset: 0,
     });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId("creo:visibgeom:surface#6".to_string()),
         geometry: SurfaceGeometry::Plane {
@@ -1320,13 +1319,7 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
     });
 
     assert_eq!(
-        schema_feature_definition(
-            &scan,
-            &CadIr::empty(Units::default()),
-            5,
-            923,
-            "Datum Plane",
-        ),
+        schema_feature_definition(&scan, &CadIr::empty(), 5, 923, "Datum Plane",),
         IrFeatureDefinition::DatumPlane {
             origin: Point3::new(0.0, 1.0, 0.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
@@ -1374,13 +1367,7 @@ fn datum_feature_uses_its_unique_complete_local_system() {
         });
 
     assert_eq!(
-        schema_feature_definition(
-            &scan,
-            &CadIr::empty(Units::default()),
-            5,
-            923,
-            "Datum Plane"
-        ),
+        schema_feature_definition(&scan, &CadIr::empty(), 5, 923, "Datum Plane"),
         IrFeatureDefinition::DatumPlane {
             origin: Point3::new(3.0, 4.0, 5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1428,13 +1415,7 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
         });
 
     assert_eq!(
-        schema_feature_definition(
-            &scan,
-            &CadIr::empty(Units::default()),
-            7,
-            979,
-            "PRT_CSYS_DEF"
-        ),
+        schema_feature_definition(&scan, &CadIr::empty(), 7, 979, "PRT_CSYS_DEF"),
         IrFeatureDefinition::DatumCoordinateSystem {
             origin: Point3::new(5.0, 6.0, 7.0),
             x_axis: Vector3::new(0.0, 1.0, 0.0),
@@ -1475,13 +1456,7 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
         });
 
     assert_eq!(
-        schema_feature_definition(
-            &scan,
-            &CadIr::empty(Units::default()),
-            7,
-            979,
-            "PRT_CSYS_DEF"
-        ),
+        schema_feature_definition(&scan, &CadIr::empty(), 7, 979, "PRT_CSYS_DEF"),
         IrFeatureDefinition::DatumCoordinateSystemUnresolved
     );
 }
@@ -1503,7 +1478,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         definition,
         native_ref: None,
     };
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(feature(
         IrFeatureDefinition::Chamfer {
             groups: vec![cadmpeg_ir::features::ChamferGroup {
@@ -1731,7 +1706,7 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
 
 #[test]
 fn section_profile_prefers_a_resolved_sketch_chain() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: SketchId("creo:model:sketch#offset:40".to_string()),
         name: None,
@@ -1769,7 +1744,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     let sketch_id = SketchId("creo:model:sketch#917".to_string());
     let entity_id =
         |external_id| SketchEntityId(format!("creo:featdefs:sketch_entity#917:{external_id}"));
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,

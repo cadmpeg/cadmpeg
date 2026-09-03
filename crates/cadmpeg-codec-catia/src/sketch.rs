@@ -968,7 +968,6 @@ mod tests {
     use super::*;
 
     use cadmpeg_ir::sketches::{Sketch, SketchPlacement};
-    use cadmpeg_ir::units::Units;
 
     use crate::design_feature::DesignFeatureTransfer;
     use crate::native::{
@@ -1174,7 +1173,7 @@ mod tests {
             }],
             ..CatiaNative::default()
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
             id: SketchId("synthetic:test:sketch#0".to_string()),
             name: None,
@@ -1277,7 +1276,7 @@ mod tests {
             }],
             ..CatiaNative::default()
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.sketches.push(Sketch {
             id: SketchId("synthetic:test:sketch#0".to_string()),
             name: None,

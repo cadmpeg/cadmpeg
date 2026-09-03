@@ -195,7 +195,7 @@ fn neutral_document(bytes: &[u8]) -> String {
 fn normalized_document(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
     let mut document = serde_json::json!({
         "model": serde_json::to_value(&ir.model).expect("serialize model"),
-        "units": serde_json::to_value(&ir.units).expect("serialize units"),
+        "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
     });
     let mut positions = BTreeSet::new();

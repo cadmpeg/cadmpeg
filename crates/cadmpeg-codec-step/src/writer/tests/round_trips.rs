@@ -15,7 +15,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
 
 use crate::loss::StepLossCode;
@@ -237,7 +236,7 @@ fn buf_line_count(buf: &[u8]) -> usize {
 /// A minimal single-cylinder-surface document exercising analytic emission and
 /// interning of shared points/directions.
 pub(crate) fn cylinder_surface_doc() -> CadIr {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId("cyl".into()),
         geometry: SurfaceGeometry::Cylinder {
@@ -644,7 +643,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
         major_radius: 4.0,
         minor_radius: 1.5,
     };
-    let mut source = CadIr::empty(Units::default());
+    let mut source = CadIr::empty();
     source.model.curves.extend([
         Curve {
             id: CurveId("parabola".into()),
@@ -685,7 +684,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
 
 #[test]
 pub(crate) fn standalone_geometry_uses_general_shape_representation() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: CurveId("line".into()),
         geometry: CurveGeometry::Line {
@@ -1094,7 +1093,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
         ),
     ];
     for (geom, kw) in cases {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
             id: SurfaceId("s".into()),
             geometry: geom,
@@ -1185,7 +1184,6 @@ pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
 #[test]
 fn v1_document_uses_canonical_millimeter_unit() {
     let ir = unit_cube();
-    assert_eq!(ir.units.length, LengthUnit::Millimeter);
     let s = export(&ir);
     assert!(s.contains("SI_UNIT(.MILLI.,.METRE.)"));
     assert!(!s.contains("CONVERSION_BASED_UNIT"));

@@ -8,7 +8,6 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Edge;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use crate::test_support::*;
@@ -19,7 +18,7 @@ const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;
 #[test]
 fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let curve_id = CurveId("curve".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Line {
@@ -62,7 +61,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
 #[test]
 fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let curve_id = CurveId("curve".into());
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Circle {

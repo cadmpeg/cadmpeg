@@ -27,7 +27,6 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 
 use crate::loss::SldprtLossCode;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
@@ -2267,7 +2266,7 @@ fn build_geometry_ir(
         mut brep,
         configuration_bodies,
     } = decoded;
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let appearance_definitions = crate::appearance::definitions(scan);
     ir.source = Some(source_meta(scan, classification, header));
     let mut annotations = std::mem::take(&mut brep.annotations);
@@ -3282,7 +3281,7 @@ fn build_metadata_ir(
     ),
     CodecError,
 > {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
     let mut histories = crate::history::histories(scan, &mut annotations);
@@ -4402,7 +4401,7 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
         appearance_bindings: ir.model.appearance_bindings.clone(),
         ..Default::default()
     };
-    brep_partition_sha256(ir.units.clone(), ir.tolerances, partition).0
+    brep_partition_sha256(ir.tolerances, partition).0
 }
 
 /// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
@@ -4441,7 +4440,7 @@ fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
         appearance_bindings: ir.model.appearance_bindings.clone(),
         ..Default::default()
     };
-    let (hash, mut partition) = brep_partition_sha256(ir.units.clone(), ir.tolerances, partition);
+    let (hash, mut partition) = brep_partition_sha256(ir.tolerances, partition);
     ir.model.bodies = take(&mut partition.bodies);
     for (body, (name, color)) in ir.model.bodies.iter_mut().zip(saved_body_display) {
         body.name = name;
@@ -4469,13 +4468,12 @@ fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
 /// its arenas back; only `bodies` (display fields stripped), `appearances`,
 /// and `appearance_bindings` (both filtered to face bindings) are mutated.
 fn brep_partition_sha256(
-    units: cadmpeg_ir::units::Units,
     tolerances: cadmpeg_ir::units::Tolerances,
     model: cadmpeg_ir::document::Model,
 ) -> (String, cadmpeg_ir::document::Model) {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
-    let mut normalized = CadIr::empty(units);
+    let mut normalized = CadIr::empty();
     normalized.tolerances = tolerances;
     normalized.model = model;
     normalized.model.bodies.iter_mut().for_each(|body| {

@@ -804,7 +804,6 @@ pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u3
 mod namespace_tests {
     use super::native_face_orientations;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::units::Units;
 
     #[test]
     fn native_face_orientations_reads_nonvisible_rows() {
@@ -822,7 +821,7 @@ mod namespace_tests {
                 offset: 0,
             });
 
-        let orientations = native_face_orientations(&scan, &CadIr::empty(Units::default()));
+        let orientations = native_face_orientations(&scan, &CadIr::empty());
 
         assert_eq!(orientations.get(&17), Some(&true));
     }

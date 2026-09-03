@@ -1446,7 +1446,6 @@ mod source_less_lane_tests {
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
         SketchEntityId, SketchGeometry, SketchId, SketchLocus,
     };
-    use cadmpeg_ir::units::Units;
 
     use super::*;
 
@@ -1638,7 +1637,7 @@ mod source_less_lane_tests {
     #[test]
     fn inactive_axis_relation_retains_structure_without_requiring_solved_geometry() {
         let sketch = generated_sketch();
-        let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         add_sketch_owner(&mut ir, &sketch);
         ir.model.sketch_entities = vec![
             generated_entity(
@@ -1684,7 +1683,7 @@ mod source_less_lane_tests {
     #[test]
     fn generated_at_intersection_carries_point_reverse_incidence() {
         let sketch = generated_sketch();
-        let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         add_sketch_owner(&mut ir, &sketch);
         ir.model.sketch_entities = vec![
             generated_entity(
@@ -1742,7 +1741,7 @@ mod source_less_lane_tests {
     #[test]
     fn generated_symmetry_carries_axis_reverse_incidence() {
         let sketch = generated_sketch();
-        let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
+        let mut ir = cadmpeg_ir::CadIr::empty();
         add_sketch_owner(&mut ir, &sketch);
         ir.model.sketch_entities = vec![
             generated_entity(

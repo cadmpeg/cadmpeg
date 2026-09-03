@@ -19,7 +19,6 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Annotations, ExactnessNote};
@@ -5595,8 +5594,7 @@ pub(crate) fn seal_for_test(
 }
 
 fn build_ir(scan: &Scan<'_>) -> CadIr {
-    let units = Units::default();
-    let mut ir = CadIr::empty(units);
+    let mut ir = CadIr::empty();
     if let Some(source_units) = &scan.metadata.settings.units {
         if let Some(linear) = source_units.absolute_tolerance_millimeters {
             ir.tolerances.linear = linear;

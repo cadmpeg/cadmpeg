@@ -452,7 +452,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     for constraint in &mut constraints {
         constraint.native_ref = None;
     }
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.sketches = sketches;
     ir.model.sketch_entities = entities;
     ir.model.sketch_constraints = constraints;

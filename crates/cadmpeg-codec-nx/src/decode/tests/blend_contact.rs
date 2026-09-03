@@ -54,7 +54,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point3;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let first = SurfaceId("synthetic:first-intersection-plane".into());
     let second = SurfaceId("synthetic:second-intersection-plane".into());
     ir.model.surfaces.extend([
@@ -280,7 +280,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point3;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let horizontal = SurfaceId("synthetic:large-horizontal-plane".into());
     let vertical = SurfaceId("synthetic:large-vertical-plane".into());
     let origin = Point3::new(1.0e16, 1.0e16, 0.0);
@@ -351,7 +351,7 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
     use cadmpeg_ir::geometry::{ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let surfaces = [SurfaceId("cycle-a".into()), SurfaceId("cycle-b".into())];
     let constructions = [
         ProceduralSurfaceId("cycle-construction-a".into()),
@@ -471,7 +471,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
     use cadmpeg_ir::geometry::{Curve, NurbsCurve};
     use cadmpeg_ir::ids::CurveId;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let curve = CurveId("synthetic:piecewise-spine".into());
     ir.model.curves.push(Curve {
         id: curve.clone(),
@@ -655,7 +655,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point3;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let support = SurfaceId("synthetic:support-cylinder".into());
     let offset = SurfaceId("synthetic:offset-cylinder".into());
     let cylinder = |id, radius| Surface {
@@ -718,7 +718,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
     use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::Point3;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let first = SurfaceId("synthetic:first".into());
     let second = SurfaceId("synthetic:second".into());
     let first_offset = SurfaceId("synthetic:first-offset".into());
@@ -843,7 +843,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         },
         source_object: None,
     };
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         plane(
             support.clone(),
@@ -985,7 +985,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::math::Point3;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let ellipse = CurveId("synthetic:ellipse-spine".into());
     let geometry = CurveGeometry::Ellipse {
         center: Point3::new(2.0, 3.0, 4.0),
@@ -1045,7 +1045,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     const OUTSIDE_BLEND_SECTION_DELTA: f64 = 1.0e-6;
     const DIRECT_INVERSE_TOLERANCE: f64 = 1.0e-8;
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
     let first = SurfaceId("synthetic:first-plane".into());
     let second = SurfaceId("synthetic:second-plane".into());
     ir.model.surfaces.extend([

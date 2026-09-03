@@ -139,7 +139,6 @@ mod tests {
     use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
     use cadmpeg_ir::document::SourceMeta;
     use cadmpeg_ir::native::NativeRecord;
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::{DecodeReport, DecodeSidecar, SourceFidelity};
     use serde_json::Map;
     use std::collections::BTreeMap;
@@ -148,7 +147,7 @@ mod tests {
     fn matching_sidecar_restores_decoded_origin_and_mismatch_is_hard_error() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("part.cadir.json");
-        let text = CadIr::empty(Units::default()).to_canonical_json().unwrap();
+        let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
         let report: DecodeReport = serde_json::from_value(serde_json::json!({
             "format": "test",
@@ -190,7 +189,7 @@ mod tests {
     fn cadir_reader_refuses_conflicting_fcstd_schema_witnesses() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("part.cadir.json");
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut declared = BTreeMap::new();
         declared.insert("schema_version".to_owned(), "4".to_owned());
         ir.source = Some(SourceMeta::classified(

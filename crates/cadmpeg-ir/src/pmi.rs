@@ -296,13 +296,12 @@ mod tests {
     use super::*;
     use crate::document::CadIr;
     use crate::report::Check;
-    use crate::units::Units;
     use crate::validate::validate_neutral;
 
     #[test]
     fn datum_system_references_resolve_with_precedence() {
         let datum_id = PmiId("test:model:pmi#datum-a".into());
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.pmi.push(PmiAnnotation {
             id: datum_id.clone(),
             name: Some("datum A".into()),
@@ -357,7 +356,7 @@ mod tests {
 
     #[test]
     fn unresolved_semantic_reference_is_invalid() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#graphic".into()),
             name: None,
@@ -379,7 +378,7 @@ mod tests {
 
     #[test]
     fn datum_references_are_type_checked_and_common_groups_are_explicit() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let dimension_id = PmiId("test:model:pmi#dimension".into());
         ir.model.pmi.push(PmiAnnotation {
             id: dimension_id.clone(),
@@ -439,7 +438,7 @@ mod tests {
 
     #[test]
     fn non_finite_presentation_placement_is_invalid() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let mut placement = Transform::identity();
         placement.rows[0][3] = f64::INFINITY;
         ir.model.pmi.push(PmiAnnotation {

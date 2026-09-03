@@ -170,7 +170,6 @@ mod tests {
         CatiaObjectRecordReferenceSource, CatiaRangeNominal, CatiaRangeNominalFraming,
     };
     use cadmpeg_ir::pmi::PmiDefinition;
-    use cadmpeg_ir::units::Units;
 
     fn schema_value(value: &str) -> CatiaEntitySchemaValue {
         CatiaEntitySchemaValue {
@@ -296,7 +295,7 @@ mod tests {
 
     #[test]
     fn constraint_ranges_remain_native_without_a_physical_quantity() {
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         let native = CatiaNative {
             entity_records: vec![entity_record()],
             ..CatiaNative::default()
@@ -318,7 +317,7 @@ mod tests {
             entity_records: vec![diameter, size],
             ..CatiaNative::default()
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             transfer_dimensions(&mut ir, &native, None, &HashSet::new()),
@@ -408,7 +407,7 @@ mod tests {
             ],
             ..CatiaNative::default()
         };
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
 
         assert_eq!(
             transfer_dimensions(&mut ir, &native, None, &HashSet::new()),

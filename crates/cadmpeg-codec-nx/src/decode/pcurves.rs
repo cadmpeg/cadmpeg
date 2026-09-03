@@ -3537,7 +3537,6 @@ mod tests {
     };
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Sense};
-    use cadmpeg_ir::units::Units;
 
     #[test]
     fn opposite_chart_geometry_work_limit_reallocates_unused_remainder() {
@@ -3560,7 +3559,7 @@ mod tests {
         let pcurve_id = PcurveId("nx:s1:pcurve#0".into());
         let vertex_id = VertexId("nx:s1:vertex#0".into());
 
-        let mut ir = CadIr::empty(Units::default());
+        let mut ir = CadIr::empty();
         ir.model.procedural_curves.push(ProceduralCurve::new(
             procedural_id,
             curve,

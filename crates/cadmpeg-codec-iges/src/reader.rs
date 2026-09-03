@@ -11,7 +11,6 @@ use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::{document_local_sha256_with_charge, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{LossNote, Severity, TransferLedger, TransferOutcome};
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -310,7 +309,7 @@ fn decode_with_occurrence_limits(
             retained_source,
         ));
 
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     if let Some(context) = &length_context {
         ir.tolerances.linear = context.minimum_resolution_mm();
     }

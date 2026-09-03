@@ -83,7 +83,6 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
-    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::SourceObjectAssociation;
 
     let operations = ["hole-a".to_string(), "hole-b".to_string()];
@@ -192,7 +191,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model = model;
     let outputs = std::collections::BTreeMap::from([
         ("hole-a".to_string(), vec![body.clone()]),

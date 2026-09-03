@@ -70,7 +70,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     let spine_id = CurveId("profile-frame-spine".into());
     let surface_id = SurfaceId("profile-frame-sweep".into());
     let construction_id = ProceduralSurfaceId("profile-frame-construction".into());
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
             id: profile_id.clone(),

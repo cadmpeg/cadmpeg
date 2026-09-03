@@ -8,7 +8,7 @@
 //! tolerance and its caveats, including that the relation is not transitive:
 //! every verdict here concerns exactly the two documents passed in.
 //!
-//! The comparison covers units, tolerances, every model and native arena, and
+//! The comparison covers tolerances, every model and native arena, and
 //! [`crate::document::SourceMeta`] — the source format id, all dialect layers,
 //! and its attributes, where a codec records the program version, the object
 //! count, and the rest of what it read out of the container.
@@ -147,11 +147,8 @@ pub struct ArenaDiff {
 }
 
 /// Structural changes between two IR documents.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IrDiff {
-    /// `(left, right)` units, present only when the two documents' units differ.
-    pub unit_change: Option<(crate::units::Units, crate::units::Units)>,
     /// `(left, right)` tolerances, present only when the two documents' tolerances differ.
     pub tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
     /// Source-metadata changes, including the informational digest section.
@@ -161,17 +158,63 @@ pub struct IrDiff {
 }
 
 impl IrDiff {
-    /// Returns `true` when neither units, tolerances, source metadata, nor any
+    /// Returns `true` when neither tolerances, source metadata, nor any
     /// arena differ.
     ///
     /// A difference confined to [`SourceDiff::local_digests`] leaves this `true`.
     pub fn is_empty(&self) -> bool {
-        self.unit_change.is_none()
-            && self.tolerance_change.is_none()
+        self.tolerance_change.is_none()
             && self.source.is_empty()
             && self.per_arena.iter().all(|arena| {
                 arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty()
             })
+    }
+}
+
+#[derive(Serialize)]
+struct IrDiffWriteWire<'a> {
+    unit_change: Option<(
+        crate::units::CanonicalUnitsWire,
+        crate::units::CanonicalUnitsWire,
+    )>,
+    tolerance_change: &'a Option<(crate::units::Tolerances, crate::units::Tolerances)>,
+    source: &'a SourceDiff,
+    per_arena: &'a [ArenaDiff],
+}
+
+impl Serialize for IrDiff {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        IrDiffWriteWire {
+            unit_change: None,
+            tolerance_change: &self.tolerance_change,
+            source: &self.source,
+            per_arena: &self.per_arena,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the structural-diff wire schema")]
+struct IrDiffSchemaWire {
+    unit_change: Option<(
+        crate::units::CanonicalUnitsWire,
+        crate::units::CanonicalUnitsWire,
+    )>,
+    tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
+    source: SourceDiff,
+    per_arena: Vec<ArenaDiff>,
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for IrDiff {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "IrDiff".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        IrDiffSchemaWire::json_schema(generator)
     }
 }
 
@@ -361,7 +404,7 @@ fn attribute_changes(
         .collect()
 }
 
-/// Compare units, tolerances, source metadata, and every entity arena by stable
+/// Compare tolerances, source metadata, and every entity arena by stable
 /// entity ID.
 ///
 /// Fractional numbers compare within the tolerance stated by
@@ -369,16 +412,11 @@ fn attribute_changes(
 /// compare exactly. Source attributes are strings and compare exactly; a
 /// machine-local digest among them is reported without counting as a difference.
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
-    // `Units` carries only the `LengthUnit` enum, so exact comparison is the
-    // correct relation for it; there is no float to tolerate.
-    let unit_change =
-        (left.units != right.units).then(|| (left.units.clone(), right.units.clone()));
     let tolerance_change = (!tolerances_agree(left.tolerances, right.tolerances))
         .then_some((left.tolerances, right.tolerances));
     let mut per_arena = diff_arenas(left, right);
     per_arena.extend(diff_native_namespaces(left, right));
     IrDiff {
-        unit_change,
         tolerance_change,
         source: diff_source(left, right),
         per_arena,

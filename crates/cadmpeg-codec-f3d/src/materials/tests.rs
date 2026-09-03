@@ -659,7 +659,6 @@ fn unknown_texture_distance_unit_omits_typed_texture_and_counts_loss() {
 fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-    use cadmpeg_ir::units::Units;
 
     // One appearance attribute GUID reaches every face carrying it, so the
     // assignment pair repeats across those faces. The face id has to enter the
@@ -668,7 +667,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     let visual_family = "11111111-2222-3333-4444-555555555555";
     let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
-    let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     for face in ["face:1", "face:2", "face:3"] {
         ir.model.attributes.push(SourceAttribute {
             id: format!("attr:{face}").into(),
@@ -1947,7 +1946,7 @@ fn material_losses(report: &cadmpeg_ir::codec::DecodeBody) -> Vec<&str> {
 
 #[test]
 fn appearance_loss_stands_when_no_asset_decodes() {
-    let ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let ir = cadmpeg_ir::CadIr::empty();
     let mut report = appearance_loss_report();
     crate::decode::reconcile_appearance_loss(&mut report, &ir, false);
     assert_eq!(material_losses(&report).len(), 1);
@@ -1955,7 +1954,7 @@ fn appearance_loss_stands_when_no_asset_decodes() {
 
 #[test]
 fn appearance_loss_clears_when_an_unassigned_catalog_transfers() {
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.appearances = vec![opaque_appearance("2F0E19C1-0000-4000-8000-000000000001")];
     let mut report = appearance_loss_report();
     crate::decode::reconcile_appearance_loss(&mut report, &ir, false);
@@ -1964,7 +1963,7 @@ fn appearance_loss_clears_when_an_unassigned_catalog_transfers() {
 
 #[test]
 fn appearance_loss_counts_assets_whose_assignment_is_unresolved() {
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.appearances = vec![
         opaque_appearance("2F0E19C1-0000-4000-8000-000000000001"),
         opaque_appearance("2F0E19C1-0000-4000-8000-000000000002"),
@@ -1978,7 +1977,7 @@ fn appearance_loss_counts_assets_whose_assignment_is_unresolved() {
 
 #[test]
 fn appearance_loss_clears_when_an_assignment_resolves() {
-    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = cadmpeg_ir::CadIr::empty();
     let appearance = opaque_appearance("2F0E19C1-0000-4000-8000-000000000001");
     ir.model.appearance_bindings = vec![cadmpeg_ir::appearance::AppearanceBinding {
         id: "f3d:appearance:body#0_1:2F0E19C1-0000-4000-8000-000000000001".to_owned(),

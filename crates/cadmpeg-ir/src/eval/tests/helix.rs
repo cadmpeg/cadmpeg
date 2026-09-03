@@ -16,7 +16,7 @@ fn helix_fixture() -> (CadIr, CurveId) {
         apex_factor: 0.4,
         axis: Vector3::new(0.0, 0.0, 1.0),
     };
-    let mut ir = CadIr::empty(crate::units::Units::default());
+    let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {

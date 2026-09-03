@@ -13,7 +13,7 @@ use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::units::{Tolerances, Units};
+use cadmpeg_ir::units::Tolerances;
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
@@ -172,7 +172,7 @@ fn build_result(
     matched: DialectMatch,
     kernel: &DialectMatch,
 ) -> Result<Decoded, CodecError> {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     // Identity is authored once, here; the sealed wrapper stamps the report
     // from it.
     ir.source = Some(SourceMeta::classified(

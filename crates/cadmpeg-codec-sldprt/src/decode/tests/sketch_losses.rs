@@ -8,7 +8,6 @@ use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchConstraintId, SpatialSketchConstraint,
     SpatialSketchConstraintDefinition, SpatialSketchEntityId, SpatialSketchId,
 };
-use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
@@ -46,7 +45,7 @@ fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {
 
 #[test]
 fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
@@ -72,7 +71,7 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
 
 #[test]
 fn typed_native_operands_are_reported_as_design_losses() {
-    let mut ir = CadIr::empty(Units::default());
+    let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: FeatureId("combine".into()),
         ordinal: 0,

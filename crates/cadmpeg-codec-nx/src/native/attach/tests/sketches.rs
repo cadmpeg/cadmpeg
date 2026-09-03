@@ -29,7 +29,7 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         discriminator: vec![8, 2, 3, 1, 3, 1],
     };
     let coordinate_pairs = [&pair];
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
     let sketch = super::super::attach_sketch_graph(
@@ -93,7 +93,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
         source_offset: 91,
     };
     let fixed_points = [&point];
-    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
     let sketch = super::super::attach_sketch_graph(
