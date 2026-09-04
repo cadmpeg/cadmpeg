@@ -2719,7 +2719,8 @@ pub(crate) fn append_a8_rolling_ball_pools(
             jet.pos as u64,
             format!(
                 "object_id:{:08x}:multiplicities:{:?}",
-                jet.object_id, jet.multiplicities
+                jet.object_id,
+                jet.multiplicities()
             ),
             Exactness::ByteExact,
         );

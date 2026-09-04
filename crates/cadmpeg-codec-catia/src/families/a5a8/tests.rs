@@ -1014,7 +1014,7 @@ fn rolling_ball_parsers_accept_finite_nonzero_radii() {
         let [curve] = crate::families::a5a8::records::a8_freeform_curves(&a8)
             .try_into()
             .expect("one common-form rolling-ball jet");
-        assert_eq!(curve.sites[0].radius, radius);
+        assert_eq!(curve.sites[0].site.radius, radius);
     }
 }
 
@@ -1093,10 +1093,8 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
     let curves = crate::families::a5a8::records::a8_freeform_curves(&a8_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].object_id, 0x1234_5678);
-    assert_eq!(curves[0].degree, 5);
-    assert_eq!(curves[0].multiplicities, vec![6, 6]);
-    assert_eq!(curves[0].sites[1].radius, 2.0);
-    assert_eq!(curves[0].tail_len, 59);
+    assert_eq!(curves[0].multiplicities(), vec![6, 6]);
+    assert_eq!(curves[0].sites[1].site.radius, 2.0);
 
     let mut repeated_knot = a8_freeform_curve_stream();
     repeated_knot[26..34].copy_from_slice(&le_f64(0.0));
@@ -1116,7 +1114,7 @@ fn a8_curve_parser_accepts_frame_bounded_site_count() {
         &a8_freeform_curve_stream_with_count(8193),
     );
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].knots.len(), 8193);
+    assert_eq!(curves[0].knots().len(), 8193);
     assert_eq!(curves[0].sites.len(), 8193);
 }
 

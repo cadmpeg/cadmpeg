@@ -791,6 +791,21 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     })
 }
 
+/// One knot of a common-form degree-5 rolling-ball jet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A8FreeformJet {
+    /// Distinct knot.
+    pub knot: f64,
+    /// Multiplicity of this distinct knot.
+    pub multiplicity: u32,
+    /// Position channels at this knot.
+    pub site: RollingBallSite,
+    /// Ten first-derivative channels.
+    pub first_derivatives: [f64; 10],
+    /// Ten second-derivative channels.
+    pub second_derivatives: [f64; 10],
+}
+
 /// Common-form degree-5 rolling-ball jet stored in an `a8 <flag> 32` object record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct A8FreeformCurve {
@@ -798,20 +813,20 @@ pub struct A8FreeformCurve {
     pub pos: usize,
     /// Inline persistent object identifier.
     pub object_id: u32,
-    /// Parametric degree.
-    pub degree: u32,
-    /// Distinct parameter knots.
-    pub knots: Vec<f64>,
-    /// Multiplicity for each distinct knot.
-    pub multiplicities: Vec<u32>,
-    /// Position channels at each knot.
-    pub sites: Vec<RollingBallSite>,
-    /// Ten first-derivative channels per knot.
-    pub first_derivatives: Vec<[f64; 10]>,
-    /// Ten second-derivative channels per knot.
-    pub second_derivatives: Vec<[f64; 10]>,
-    /// Bytes following the three jet blocks inside the payload.
-    pub tail_len: usize,
+    /// Knot-aligned jet samples.
+    pub sites: Vec<A8FreeformJet>,
+}
+
+impl A8FreeformCurve {
+    pub const DEGREE: u32 = 5;
+
+    pub fn knots(&self) -> Vec<f64> {
+        self.sites.iter().map(|site| site.knot).collect()
+    }
+
+    pub fn multiplicities(&self) -> Vec<u32> {
+        self.sites.iter().map(|site| site.multiplicity).collect()
+    }
 }
 
 /// Convert a complete common-form rolling-ball jet to its exact neutral
@@ -819,12 +834,7 @@ pub struct A8FreeformCurve {
 pub(crate) fn rolling_ball_jet_definition(
     jet: &A8FreeformCurve,
 ) -> Option<ProceduralSurfaceDefinition> {
-    if jet.degree != 5
-        || jet.sites.len() != jet.knots.len()
-        || jet.first_derivatives.len() != jet.knots.len()
-        || jet.second_derivatives.len() != jet.knots.len()
-        || jet.multiplicities.len() != jet.knots.len()
-    {
+    if jet.sites.is_empty() {
         return None;
     }
     let derivative = |values: [f64; 10]| RollingBallJetDerivative {
@@ -836,21 +846,31 @@ pub(crate) fn rolling_ball_jet_definition(
     let sites = jet
         .sites
         .iter()
-        .zip(&jet.first_derivatives)
-        .zip(&jet.second_derivatives)
-        .map(|((site, first), second)| RollingBallJetSite {
-            first_limit: Point3::new(site.limit1[0], site.limit1[1], site.limit1[2]),
-            second_limit: Point3::new(site.limit2[0], site.limit2[1], site.limit2[2]),
-            center: Point3::new(site.center[0], site.center[1], site.center[2]),
-            angle: site.theta,
-            first_derivative: derivative(*first),
-            second_derivative: derivative(*second),
+        .map(|sample| RollingBallJetSite {
+            first_limit: Point3::new(
+                sample.site.limit1[0],
+                sample.site.limit1[1],
+                sample.site.limit1[2],
+            ),
+            second_limit: Point3::new(
+                sample.site.limit2[0],
+                sample.site.limit2[1],
+                sample.site.limit2[2],
+            ),
+            center: Point3::new(
+                sample.site.center[0],
+                sample.site.center[1],
+                sample.site.center[2],
+            ),
+            angle: sample.site.theta,
+            first_derivative: derivative(sample.first_derivatives),
+            second_derivative: derivative(sample.second_derivatives),
         })
         .collect();
     Some(ProceduralSurfaceDefinition::RollingBallJet {
-        degree: jet.degree,
-        multiplicities: jet.multiplicities.clone(),
-        knots: jet.knots.clone(),
+        degree: A8FreeformCurve::DEGREE,
+        multiplicities: jet.multiplicities(),
+        knots: jet.knots(),
         sites,
     })
 }
@@ -929,13 +949,24 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     Some(A8FreeformCurve {
         pos,
         object_id,
-        degree,
-        knots,
-        multiplicities,
-        sites,
-        first_derivatives,
-        second_derivatives,
-        tail_len: end - blocks_end,
+        sites: knots
+            .into_iter()
+            .zip(multiplicities)
+            .zip(sites)
+            .zip(first_derivatives)
+            .zip(second_derivatives)
+            .map(
+                |((((knot, multiplicity), site), first_derivatives), second_derivatives)| {
+                    A8FreeformJet {
+                        knot,
+                        multiplicity,
+                        site,
+                        first_derivatives,
+                        second_derivatives,
+                    }
+                },
+            )
+            .collect(),
     })
 }
 
