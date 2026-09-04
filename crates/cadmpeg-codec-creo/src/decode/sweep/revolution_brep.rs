@@ -87,12 +87,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         };
         let vertex_curves = profile
             .iter()
-            .map(|(_, _, point, _)| revolved_section_circle(transform, *point, axis))
+            .map(|(_, _, point, _)| revolved_section_circle(transform, *point, &axis))
             .collect::<Vec<_>>();
         let surface_geometries = profile
             .iter()
             .map(|(geometry, reversed, _, _)| {
-                revolved_brep_surface(transform, geometry, *reversed, axis)
+                revolved_brep_surface(transform, geometry, *reversed, &axis)
             })
             .collect::<Option<Vec<_>>>();
         let Some(surface_geometries) = surface_geometries else {
@@ -112,7 +112,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                             transform,
                             segment,
                             &surface_geometries[index],
-                            axis,
+                            &axis,
                             section_point,
                             at_start,
                         )
@@ -126,7 +126,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             .iter()
             .zip(&surface_geometries)
             .map(|(segment, surface)| {
-                revolution_face_sense(transform, segment, surface, axis, area)
+                revolution_face_sense(transform, segment, surface, &axis, area)
             })
             .collect::<Option<Vec<_>>>();
         let Some(face_senses) = face_senses else {
@@ -228,7 +228,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     transform,
                     &profile[index],
                     &surface_geometry,
-                    axis,
+                    &axis,
                     section_point,
                     boundary == "start",
                 )

@@ -548,8 +548,7 @@ pub(crate) fn project_dissected_sketches(
                 .into_iter()
                 .collect(),
             FeatureDefinition::Revolve { construction, .. } => construction
-                .profile
-                .as_mut()
+                .profile_mut()
                 .and_then(replace)
                 .into_iter()
                 .collect(),

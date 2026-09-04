@@ -141,7 +141,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             else {
                 continue;
             };
-            let Some(surface) = revolved_section_surface(transform, &geometry, axis) else {
+            let Some(surface) = revolved_section_surface(transform, &geometry, &axis) else {
                 continue;
             };
             let native_surface = match segment.kind {
@@ -213,7 +213,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 let Some(external_id) = order.external_id(internal_id) else {
                     continue;
                 };
-                let Some(surface) = revolved_section_surface(transform, &section_geometry, axis)
+                let Some(surface) = revolved_section_surface(transform, &section_geometry, &axis)
                 else {
                     continue;
                 };
@@ -275,7 +275,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             else {
                 continue;
             };
-            let Some(surface) = revolved_nurbs_surface(directrix, axis) else {
+            let Some(surface) = revolved_nurbs_surface(directrix, &axis) else {
                 continue;
             };
             let native_surface = definition
@@ -393,7 +393,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
-                let Some(geometry) = revolved_section_circle(transform, *point, axis) else {
+                let Some(geometry) = revolved_section_circle(transform, *point, &axis) else {
                     continue;
                 };
                 pending.push((

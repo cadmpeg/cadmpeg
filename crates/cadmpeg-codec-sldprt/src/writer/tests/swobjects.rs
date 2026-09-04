@@ -341,21 +341,21 @@ fn encoder_writes_source_less_line_sketches() {
     let path = PathRef::Sketch(sketch_id.clone());
     let generated = [
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: Some(profile.clone()),
-                axis: Some(cadmpeg_ir::features::RevolutionAxis {
+            construction: cadmpeg_ir::features::RevolveConstruction::new(
+                Some(profile.clone()),
+                Some(cadmpeg_ir::features::RevolutionAxis {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     direction: Vector3::new(0.0, 1.0, 0.0),
+                    reference: None,
                 }),
-                extent: Some(RevolveExtent::OneSided {
+                Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: Angle(1.2) },
                 }),
-                axis_reference: None,
-                solid: Some(true),
-                face_maker: None,
-                fuse_order: None,
-                allow_multi_profile_faces: None,
-            },
+                Some(true),
+                None,
+                None,
+                None,
+            ),
             op: BooleanOp::NewBody,
         },
         FeatureDefinition::Sweep {

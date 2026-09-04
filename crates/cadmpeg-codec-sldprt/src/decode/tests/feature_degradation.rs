@@ -72,14 +72,11 @@ fn decode_degrades_nonfinite_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[4].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: Some(_),
-                extent: None,
-                ..
-            },
+            ref construction,
             op: cadmpeg_ir::features::BooleanOp::Join,
-        }
+        } if construction.profile().is_none()
+            && construction.axis().is_some()
+            && construction.extent().is_none()
     ));
 }
 
@@ -202,14 +199,11 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
     assert!(matches!(
         decoded.ir().model.features[4].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: Some(_),
-                extent: None,
-                ..
-            },
+            ref construction,
             op: cadmpeg_ir::features::BooleanOp::Join,
-        }
+        } if construction.profile().is_none()
+            && construction.axis().is_some()
+            && construction.extent().is_none()
     ));
     assert!(matches!(
         decoded.ir().model.features[6].definition,

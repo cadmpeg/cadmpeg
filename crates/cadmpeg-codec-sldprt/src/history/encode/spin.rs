@@ -9,7 +9,7 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, AngularTermination, BooleanOp, LoftSection, PathRef, ProfileRef, RevolutionConstruction,
+    Angle, AngularTermination, BooleanOp, LoftSection, PathRef, ProfileRef, RevolveConstruction,
     RevolveExtent, SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent, SweepSection,
     SweepTransformation, SweepTransition,
 };
@@ -24,7 +24,7 @@ use cadmpeg_ir::features::{
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_revolve(
         &self,
-        construction: &RevolutionConstruction,
+        construction: &RevolveConstruction,
         op: &BooleanOp,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -33,11 +33,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature_sources = self.feature_sources;
         let sketch_sources = self.sketch_sources;
         Ok({
-            if construction.axis_reference.is_some()
-                || construction.solid == Some(false)
-                || construction.face_maker.is_some()
-                || construction.fuse_order.is_some()
-                || construction.allow_multi_profile_faces.is_some()
+            if construction
+                .axis()
+                .is_some_and(|axis| axis.reference.is_some())
+                || construction.solid() == Some(false)
+                || construction.face_maker().is_some()
+                || construction.fuse_order().is_some()
+                || construction.allow_multi_profile_faces().is_some()
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported revolution construction controls",
@@ -50,12 +52,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none()
-                && (construction.profile.is_none()
-                    || construction.axis.is_none()
-                    || construction.extent.is_none()
-                    || *op == BooleanOp::Unresolved)
-            {
+            if existing.is_none() && (!construction.is_resolved() || *op == BooleanOp::Unresolved) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved revolution construction",
                     feature.id
@@ -65,7 +62,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             let mut properties = feature.source_properties.clone();
-            if let Some(extent) = &construction.extent {
+            if let Some(extent) = construction.extent() {
                 parameters.remove("Angle");
                 parameters.remove("Angle2");
                 match extent {
@@ -97,7 +94,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                 }
             }
-            if let Some(axis) = construction.axis {
+            if let Some(axis) = construction.axis() {
                 if !valid_direction(axis.direction) {
                     return Err(CodecError::malformed(format_args!(
                         "SLDPRT feature {} has a degenerate revolution axis",
@@ -113,7 +110,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     resolved_boolean_op(*op, &feature.id)?.into(),
                 );
             }
-            if let Some(profile) = &construction.profile {
+            if let Some(profile) = construction.profile() {
                 let profile_source =
                     profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {

@@ -2660,11 +2660,11 @@ pub fn bind_sketch_feature_geometry(
                 dependencies.extend(profile_dependency(profile));
             }
             FeatureDefinition::Revolve { construction, .. } => {
-                dependencies.extend(construction.profile.as_ref().and_then(profile_dependency));
+                dependencies.extend(construction.profile().and_then(profile_dependency));
                 dependencies.extend(
                     construction
-                        .axis_reference
-                        .as_ref()
+                        .axis()
+                        .and_then(|axis| axis.reference.as_ref())
                         .and_then(path_dependency),
                 );
             }
@@ -5602,7 +5602,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         Angle, AngularTermination, FeatureDefinition, ProfileRef, RevolutionAxis,
-        RevolutionConstruction, RevolveExtent,
+        RevolveConstruction, RevolveExtent,
     };
 
     let DesignPathFeatureConstruction::Revolve {
@@ -5656,6 +5656,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
         Some(RevolutionAxis {
             origin: axis_operand.resolved_axis_origin?,
             direction: axis_operand.resolved_axis_direction?,
+            reference: None,
         })
     } else if matches.is_empty() {
         let resolved = resolve_sketch_axis_selection(
@@ -5682,20 +5683,19 @@ pub(crate) fn project_fixed_revolve_with_entities(
         return None;
     };
     Some(FeatureDefinition::Revolve {
-        construction: RevolutionConstruction {
-            profile: Some(ProfileRef::Native(profile.id.clone())),
+        construction: RevolveConstruction::new(
+            Some(ProfileRef::Native(profile.id.clone())),
             axis,
-            extent: Some(RevolveExtent::OneSided {
+            Some(RevolveExtent::OneSided {
                 termination: AngularTermination::Angle {
                     angle: Angle(*angle),
                 },
             }),
-            axis_reference: None,
-            solid: None,
-            face_maker: None,
-            fuse_order: None,
-            allow_multi_profile_faces: None,
-        },
+            None,
+            None,
+            None,
+            None,
+        ),
         op: fixed_boolean_operation(*operation),
     })
 }
@@ -5760,7 +5760,7 @@ pub(crate) fn bind_revolve_face_axes(
         let FeatureDefinition::Revolve { construction, .. } = &mut feature.definition else {
             continue;
         };
-        if construction.axis.is_some() {
+        if construction.axis().is_some() {
             continue;
         }
         let Some(scope) = feature
@@ -5835,7 +5835,7 @@ pub(crate) fn bind_revolve_face_axes(
                 })
                 .then_some(first)
             });
-        construction.axis = match (entity_axis, recipe_axis) {
+        construction.set_axis(match (entity_axis, recipe_axis) {
             (Some(entity), Some(recipe))
                 if crate::history::same_axis_line(
                     (entity.origin, entity.direction),
@@ -5846,7 +5846,7 @@ pub(crate) fn bind_revolve_face_axes(
             }
             (Some(axis), None) | (None, Some(axis)) => Some(axis),
             _ => None,
-        };
+        });
     }
 }
 
@@ -5893,6 +5893,7 @@ fn analytic_surface_axis(
         .then_some(cadmpeg_ir::features::RevolutionAxis {
             origin,
             direction: direction.scale(1.0 / length),
+            reference: None,
         })
 }
 
@@ -5981,6 +5982,7 @@ fn resolve_sketch_axis_selection(
         .then_some(cadmpeg_ir::features::RevolutionAxis {
             origin,
             direction: direction.scale(1.0 / length),
+            reference: None,
         })
 }
 

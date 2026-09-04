@@ -2959,8 +2959,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             FeatureDefinition::Revolve { construction, .. } => {
-                paths.extend(&construction.axis_reference);
-                if construction.axis.as_ref().is_some_and(|axis| {
+                paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
+                if construction.axis().is_some_and(|axis| {
                     !axis.origin.x.is_finite()
                         || !axis.origin.y.is_finite()
                         || !axis.origin.z.is_finite()
@@ -5404,7 +5404,7 @@ fn definition_profiles(
         | crate::features::FeatureDefinition::SheetMetalBaseFlange { profile, .. }
         | crate::features::FeatureDefinition::Wrap { profile, .. } => profiles.push(profile),
         crate::features::FeatureDefinition::Revolve { construction, .. } => {
-            profiles.extend(&construction.profile);
+            profiles.extend(construction.profile());
         }
         crate::features::FeatureDefinition::Rib { construction, .. } => {
             profiles.extend(&construction.profile);
@@ -5491,7 +5491,7 @@ fn definition_terminations(
             }
         },
         crate::features::FeatureDefinition::Revolve { construction, .. } => {
-            match &construction.extent {
+            match construction.extent() {
                 Some(
                     crate::features::RevolveExtent::OneSided { termination }
                     | crate::features::RevolveExtent::Symmetric { termination },
@@ -5905,8 +5905,8 @@ fn check_feature_sketch_references(
                 profiles.extend(&construction.profile);
             }
             FeatureDefinition::Revolve { construction, .. } => {
-                profiles.extend(&construction.profile);
-                paths.extend(&construction.axis_reference);
+                profiles.extend(construction.profile());
+                paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
             }
             FeatureDefinition::Sweep {
                 section,

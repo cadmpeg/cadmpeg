@@ -44,13 +44,14 @@ pub(in super::super) fn resolved_revolution_axis(
             Some(RevolutionAxis {
                 origin: Point3::new(start[0], start[1], start[2]),
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
+                reference: None,
             })
         })
         .collect::<Vec<_>>();
     let [axis] = candidates.as_slice() else {
         return None;
     };
-    Some(*axis)
+    Some(axis.clone())
 }
 
 pub(in super::super) fn full_turn_revolution_carrier_axis(
@@ -166,6 +167,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     Some(RevolutionAxis {
         origin: Point3::new(origin[0], origin[1], origin[2]),
         direction: Vector3::new(direction[0], direction[1], direction[2]),
+        reference: None,
     })
 }
 

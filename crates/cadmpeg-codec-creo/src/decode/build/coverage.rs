@@ -163,25 +163,20 @@ pub(in super::super) fn collect_feature_coverage(
             IrFeatureDefinition::Revolve { construction, op } => {
                 revolve_feature_count += 1;
                 let unresolved_profile = construction
-                    .profile
-                    .as_ref()
+                    .profile()
                     .is_none_or(|profile| matches!(profile, ProfileRef::Unresolved(_)));
-                let native_profile = matches!(construction.profile, Some(ProfileRef::Native(_)));
-                let unresolved_axis = construction.axis.is_none();
-                let incomplete_extent =
-                    construction
-                        .extent
-                        .as_ref()
-                        .is_none_or(|extent| match extent {
-                            RevolveExtent::OneSided { termination }
-                            | RevolveExtent::Symmetric { termination } => {
-                                angular_termination_has_unresolved_operands(termination)
-                            }
-                            RevolveExtent::TwoSided { first, second } => {
-                                angular_termination_has_unresolved_operands(first)
-                                    || angular_termination_has_unresolved_operands(second)
-                            }
-                        });
+                let native_profile = matches!(construction.profile(), Some(ProfileRef::Native(_)));
+                let unresolved_axis = construction.axis().is_none();
+                let incomplete_extent = construction.extent().is_none_or(|extent| match extent {
+                    RevolveExtent::OneSided { termination }
+                    | RevolveExtent::Symmetric { termination } => {
+                        angular_termination_has_unresolved_operands(termination)
+                    }
+                    RevolveExtent::TwoSided { first, second } => {
+                        angular_termination_has_unresolved_operands(first)
+                            || angular_termination_has_unresolved_operands(second)
+                    }
+                });
                 let unresolved_op = *op == BooleanOp::Unresolved;
                 unresolved_revolve_profile_feature_count += usize::from(unresolved_profile);
                 native_revolve_profile_feature_count += usize::from(native_profile);

@@ -5,7 +5,7 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
     Angle, AngularTermination, BooleanOp, FeatureDefinition, Length, PathRef, ProfileRef,
-    RevolutionAxis, RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide,
+    RevolutionAxis, RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide,
     SweepMode,
 };
 use std::collections::HashMap;
@@ -317,7 +317,11 @@ pub(crate) fn project_revolve(
                 .get("AxisDirection")
                 .and_then(|value| parse_valid_direction(value)),
         )
-        .map(|(origin, direction)| RevolutionAxis { origin, direction });
+        .map(|(origin, direction)| RevolutionAxis {
+            origin,
+            direction,
+            reference: None,
+        });
     let op = feature
         .properties
         .get("Operation")
@@ -327,16 +331,7 @@ pub(crate) fn project_revolve(
         })
         .unwrap_or(BooleanOp::Unresolved);
     FeatureDefinition::Revolve {
-        construction: RevolutionConstruction {
-            profile,
-            axis,
-            extent,
-            axis_reference: None,
-            solid: Some(true),
-            face_maker: None,
-            fuse_order: None,
-            allow_multi_profile_faces: None,
-        },
+        construction: RevolveConstruction::new(profile, axis, extent, Some(true), None, None, None),
         op,
     }
 }

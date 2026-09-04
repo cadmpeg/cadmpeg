@@ -5,6 +5,9 @@
 use super::super::*;
 use super::*;
 
+const EPS_PROJECTED_REVOLUTION_ANGLE: f64 = 1.0e-12;
+const EPS_BOUND_REVOLUTION_ANGLE: f64 = 1.0e-12;
+
 #[test]
 fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
     let history = FeatureHistory {
@@ -1345,14 +1348,11 @@ fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
     assert!(matches!(
         projected[0].definition,
         FeatureDefinition::Revolve {
-            construction: RevolutionConstruction {
-                extent: Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) }
-                }),
-                ..
-            },
+            ref construction,
             op: BooleanOp::Cut,
-        } if (value - std::f64::consts::TAU).abs() < 1.0e-12
+        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle: Angle(value) }
+                }) if (value - std::f64::consts::TAU).abs() < EPS_PROJECTED_REVOLUTION_ANGLE)
     ));
 }
 
@@ -1402,14 +1402,11 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
     assert!(matches!(
         projected[0].definition,
         FeatureDefinition::Revolve {
-            construction: RevolutionConstruction {
-                extent: Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) }
-                }),
-                ..
-            },
+            ref construction,
             ..
-        } if (value - std::f64::consts::TAU).abs() < 1.0e-12
+        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle: Angle(value) }
+                }) if (value - std::f64::consts::TAU).abs() < EPS_BOUND_REVOLUTION_ANGLE)
     ));
 }
 

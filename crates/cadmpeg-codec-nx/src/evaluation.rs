@@ -1090,8 +1090,8 @@ mod tests {
         CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
         HolePlacement, LinearTermination, PathRef, PatternKind, ProfileRef, RadiusSpec,
-        RevolutionConstruction, RibConstruction, RibDraft, SurfaceExtension, SweepMode,
-        SweepSection, ThickenSide, TrimRegion,
+        RevolveConstruction, RibConstruction, RibDraft, SurfaceExtension, SweepMode, SweepSection,
+        ThickenSide, TrimRegion,
     };
     use cadmpeg_ir::ids::{CurveId, FaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1597,16 +1597,7 @@ mod tests {
             )
             .definition,
             FeatureDefinition::Revolve {
-                construction: RevolutionConstruction {
-                    profile: None,
-                    axis: None,
-                    extent: None,
-                    axis_reference: None,
-                    solid: None,
-                    face_maker: None,
-                    fuse_order: None,
-                    allow_multi_profile_faces: None,
-                },
+                construction: RevolveConstruction::new(None, None, None, None, None, None, None),
                 op: BooleanOp::NewBody,
             },
             FeatureDefinition::Rib {

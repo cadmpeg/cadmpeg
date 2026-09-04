@@ -672,13 +672,11 @@ pub(super) fn continue_fixed_kind_operations(
     assert!(matches!(
         projected,
         Some(FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                axis: Some(cadmpeg_ir::features::RevolutionAxis { origin, direction }),
-                ..
-            },
+            ref construction,
             op: cadmpeg_ir::features::BooleanOp::Cut,
-        }) if origin == Point3::new(1.0, 2.0, 3.0)
-            && direction == Vector3::new(0.0, -1.0, 0.0)
+        }) if construction.axis().is_some_and(|axis|
+            axis.origin == Point3::new(1.0, 2.0, 3.0)
+                && axis.direction == Vector3::new(0.0, -1.0, 0.0))
     ));
     axis_selection.secondary_identity = None;
     axis_selection.historical_face_candidates =
@@ -707,9 +705,9 @@ pub(super) fn continue_fixed_kind_operations(
     assert!(matches!(
         historical_definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction { axis: None, .. },
+            ref construction,
             ..
-        }
+        } if construction.axis().is_none()
     ));
     let mut feature = cadmpeg_ir::features::Feature {
         id: crate::ids::neutral_feature_id(&indexed_revolve_scope),
@@ -755,13 +753,11 @@ pub(super) fn continue_fixed_kind_operations(
     assert!(matches!(
         feature.definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                axis: Some(cadmpeg_ir::features::RevolutionAxis { origin, direction }),
-                ..
-            },
+            ref construction,
             ..
-        } if origin == Point3::new(4.0, 5.0, 6.0)
-            && direction == Vector3::new(0.0, 0.0, -1.0)
+        } if construction.axis().is_some_and(|axis|
+            axis.origin == Point3::new(4.0, 5.0, 6.0)
+                && axis.direction == Vector3::new(0.0, 0.0, -1.0))
     ));
 
     let face_axis_operand = DesignFaceOperand {
@@ -874,13 +870,11 @@ pub(super) fn continue_fixed_kind_operations(
     assert!(matches!(
         face_axis_feature.definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                axis: Some(cadmpeg_ir::features::RevolutionAxis { origin, direction }),
-                ..
-            },
+            ref construction,
             ..
-        } if origin == Point3::new(1.0, 2.0, 3.0)
-            && direction == Vector3::new(0.0, 0.0, 1.0)
+        } if construction.axis().is_some_and(|axis|
+            axis.origin == Point3::new(1.0, 2.0, 3.0)
+                && axis.direction == Vector3::new(0.0, 0.0, 1.0))
     ));
     let mut conflicting_face_axis_feature = cadmpeg_ir::features::Feature {
         definition: face_axis_definition,
@@ -904,9 +898,9 @@ pub(super) fn continue_fixed_kind_operations(
     assert!(matches!(
         conflicting_face_axis_feature.definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction { axis: None, .. },
+            ref construction,
             ..
-        }
+        } if construction.axis().is_none()
     ));
 
     let loft_start = bytes.len();

@@ -67,7 +67,7 @@ pub(in super::super) fn add_extrusion_pcurve(
 pub(in super::super) fn revolution_boundary_pcurve(
     surface: &SurfaceGeometry,
     point: [f64; 3],
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
 ) -> Option<PcurveGeometry> {
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -197,7 +197,7 @@ pub(in super::super) fn revolved_brep_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
     reversed: bool,
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
 ) -> Option<SurfaceGeometry> {
     if matches!(geometry, SketchGeometry::Nurbs { .. }) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
@@ -213,7 +213,7 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
     transform: &crate::placement::FeatureSectionTransform,
     segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
     surface: &SurfaceGeometry,
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
     section_point: [f64; 2],
     at_start: bool,
 ) -> Option<PcurveGeometry> {
@@ -237,7 +237,7 @@ pub(in super::super) fn revolution_face_sense(
     transform: &crate::placement::FeatureSectionTransform,
     segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
     surface: &SurfaceGeometry,
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
     profile_area: f64,
 ) -> Option<Sense> {
     let is_nurbs = matches!(segment.0, SketchGeometry::Nurbs { .. });

@@ -8,8 +8,8 @@ use super::{
 use cadmpeg_ir::features::{
     AngularTermination, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
     ExtrudeStart, FaceSelection, FeatureId, HoleKind, Length, LinearTermination, LoftPointSection,
-    LoftSection, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolutionConstruction,
-    RevolveExtent, RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
+    LoftSection, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolveConstruction, RevolveExtent,
+    RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -213,22 +213,25 @@ pub(crate) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
 }
 
 pub(crate) fn revolve_feature_is_incomplete(
-    construction: &RevolutionConstruction,
+    construction: &RevolveConstruction,
     op: BooleanOp,
     dependencies: &[FeatureId],
 ) -> bool {
-    construction
-        .profile
-        .as_ref()
-        .is_none_or(profile_ref_is_incomplete)
-        || construction
-            .profile
-            .as_ref()
-            .is_some_and(|profile| profile_dependency_is_incomplete(profile, dependencies))
-        || construction.axis.is_none_or(|axis| {
-            !finite_feature_point(axis.origin) || !unit_feature_direction(axis.direction)
-        })
-        || construction.extent.as_ref().is_none_or(|extent| {
+    let RevolveConstruction::Resolved {
+        profile,
+        axis,
+        extent,
+        solid,
+        ..
+    } = construction
+    else {
+        return true;
+    };
+    profile_ref_is_incomplete(profile)
+        || profile_dependency_is_incomplete(profile, dependencies)
+        || !finite_feature_point(axis.origin)
+        || !unit_feature_direction(axis.direction)
+        || {
             let side_is_incomplete = |termination: &AngularTermination| {
                 angular_termination_is_incomplete(termination)
                     || angular_termination_dependency_is_incomplete(termination, dependencies)
@@ -240,12 +243,9 @@ pub(crate) fn revolve_feature_is_incomplete(
                     side_is_incomplete(first) || side_is_incomplete(second)
                 }
             }
-        })
-        || construction
-            .axis_reference
-            .as_ref()
-            .is_some_and(path_ref_is_incomplete)
-        || construction.solid.is_none()
+        }
+        || axis.reference.as_ref().is_some_and(path_ref_is_incomplete)
+        || solid.is_none()
         || matches!(op, BooleanOp::Unresolved)
 }
 

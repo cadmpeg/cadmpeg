@@ -205,14 +205,11 @@ fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: None,
-                extent: None,
-                ..
-            },
+            construction,
             op: cadmpeg_ir::features::BooleanOp::Cut,
-        }
+        } if construction.profile().is_none()
+            && construction.axis().is_none()
+            && construction.extent().is_none()
     ));
 }
 

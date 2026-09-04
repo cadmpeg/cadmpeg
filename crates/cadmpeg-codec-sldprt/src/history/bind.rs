@@ -440,7 +440,7 @@ pub(crate) fn bind_definition_sketch(
             construction.profile.as_mut().is_some_and(bind_profile)
         }
         FeatureDefinition::Revolve { construction, .. } => {
-            construction.profile.as_mut().is_some_and(bind_profile)
+            construction.profile_mut().is_some_and(bind_profile)
         }
         FeatureDefinition::Sweep { section, path, .. } => {
             section.referenced_profile_mut().is_some_and(bind_profile)

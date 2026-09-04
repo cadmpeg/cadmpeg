@@ -14,6 +14,8 @@ use crate::container::{self};
 use crate::test_support::*;
 use crate::CreoCodec;
 
+const EPS_FULL_TURN_REVOLUTION: f64 = 1.0e-12;
+
 #[test]
 fn decode_types_class_911_as_unresolved_hole() {
     let mut geometry = visibgeom_payload(1, 0);
@@ -791,14 +793,11 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
     assert!(matches!(
         feature("creo:model:feature#5").definition,
         cadmpeg_ir::features::FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: None,
-                extent: None,
-                ..
-            },
+            ref construction,
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
-        }
+        } if construction.profile().is_none()
+            && construction.axis().is_none()
+            && construction.extent().is_none()
     ));
     assert!(matches!(
         feature("creo:model:feature#6").definition,
@@ -1161,18 +1160,15 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: None,
-                extent: Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+            construction,
+            op: cadmpeg_ir::features::BooleanOp::NewBody,
+        } if construction.profile().is_none()
+            && construction.axis().is_none()
+            && matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                     termination: cadmpeg_ir::features::AngularTermination::Angle {
                         angle: cadmpeg_ir::features::Angle(angle)
                     }
-                }),
-                ..
-            },
-            op: cadmpeg_ir::features::BooleanOp::NewBody,
-        } if (*angle - std::f64::consts::TAU).abs() < 1.0e-12
+                }) if (*angle - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas["feature_revolution_extents"];

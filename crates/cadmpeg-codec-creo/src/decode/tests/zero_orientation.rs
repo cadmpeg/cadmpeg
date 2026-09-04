@@ -472,6 +472,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         Some(RevolutionAxis {
             origin: Point3::new(2.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 1.0, 0.0),
+            reference: None,
         })
     );
     let carrier_only_definition = crate::feature::FeatureDefinition {
@@ -512,6 +513,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         Some(RevolutionAxis {
             origin: Point3::new(2.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 1.0, 0.0),
+            reference: None,
         })
     );
     let partial = RevolveExtent::OneSided {
@@ -640,17 +642,14 @@ fn named_revolve_transfers_profile_axis() {
     });
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Revolve {
-        construction:
-            cadmpeg_ir::features::RevolutionConstruction {
-                axis: Some(axis),
-                solid: Some(true),
-                ..
-            },
+        construction,
         op: BooleanOp::NewBody,
     }) = named_feature_definition(&scan, &ir, 822, "Revolve")
     else {
         panic!("named revolve axis");
     };
+    assert_eq!(construction.solid(), Some(true));
+    let axis = construction.axis().expect("named revolve axis");
     assert_eq!(axis.origin, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(axis.direction, Vector3::new(0.0, 1.0, 0.0));
 }
@@ -1037,9 +1036,10 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
     };
     let surface = revolved_nurbs_surface(
         &directrix,
-        RevolutionAxis {
+        &RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         },
     )
     .expect("revolution surface");
@@ -1069,6 +1069,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     let axis = RevolutionAxis {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(0.0, 1.0, 0.0),
+        reference: None,
     };
     let spline = SketchGeometry::Nurbs {
         degree: 2,
@@ -1084,7 +1085,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     };
     let segment = (spline.clone(), false, [2.0, 0.0], [2.0, 2.0]);
     let surface =
-        revolved_brep_surface(&transform, &spline, false, axis).expect("revolved spline surface");
+        revolved_brep_surface(&transform, &spline, false, &axis).expect("revolved spline surface");
     let SurfaceGeometry::Nurbs(surface) = &surface else {
         panic!("spline revolution must retain a NURBS surface");
     };
@@ -1104,7 +1105,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &transform,
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
-        axis,
+        &axis,
         segment.2,
         true,
     )
@@ -1113,7 +1114,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &transform,
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
-        axis,
+        &axis,
         segment.3,
         false,
     )
@@ -1133,7 +1134,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &transform,
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
-        axis,
+        &axis,
         1.0,
     )
     .expect("forward face sense");
@@ -1141,13 +1142,13 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &transform,
         &segment,
         &SurfaceGeometry::Nurbs(surface.clone()),
-        axis,
+        &axis,
         -1.0,
     )
     .expect("reverse face sense");
     assert_ne!(forward_sense, reverse_sense);
 
-    let reversed = revolved_brep_surface(&transform, &spline, true, axis)
+    let reversed = revolved_brep_surface(&transform, &spline, true, &axis)
         .expect("reversed revolved spline surface");
     let SurfaceGeometry::Nurbs(reversed) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");

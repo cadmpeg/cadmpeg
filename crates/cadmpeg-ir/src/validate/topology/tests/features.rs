@@ -674,8 +674,8 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
 fn feature_extent_magnitudes_are_validated() {
     use crate::features::{
         Angle, AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature,
-        FeatureDefinition, FeatureId, Length, LinearTermination, ProfileRef,
-        RevolutionConstruction, RevolveExtent,
+        FeatureDefinition, FeatureId, Length, LinearTermination, ProfileRef, RevolveConstruction,
+        RevolveExtent,
     };
 
     let side = |termination: LinearTermination| ExtrudeSide {
@@ -744,18 +744,17 @@ fn feature_extent_magnitudes_are_validated() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Revolve {
-            construction: RevolutionConstruction {
-                profile: None,
-                axis: None,
-                extent: Some(RevolveExtent::OneSided {
+            construction: RevolveConstruction::new(
+                None,
+                None,
+                Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: Angle(-1.0) },
                 }),
-                axis_reference: None,
-                solid: None,
-                face_maker: None,
-                fuse_order: None,
-                allow_multi_profile_faces: None,
-            },
+                None,
+                None,
+                None,
+                None,
+            ),
             op: BooleanOp::NewBody,
         },
         native_ref: None,
