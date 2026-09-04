@@ -2,9 +2,9 @@
 
 use super::super::super::graph::{
     bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, B5ExtrusionDirectrix,
-    B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve,
-    B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve,
-    B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
+    B5ExtrusionSurface, B5Face, B5Graph, B5LogicalVertex, B5Loop, B5LoopMetadata, B5OffsetSurface,
+    B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile,
+    B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
     b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
@@ -176,8 +176,10 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[2.0, 0.0, 0.5]],
-        logical_vertex_refs: vec![50],
+        logical_vertices: vec![B5LogicalVertex {
+            object_id: 50,
+            point: [2.0, 0.0, 0.5],
+        }],
         edge_vertices: BTreeMap::from([(30, [0, 0])]),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
         vertex_tolerances: BTreeMap::new(),
@@ -939,8 +941,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]],
-        logical_vertex_points: Vec::new(),
-        logical_vertex_refs: Vec::new(),
+        logical_vertices: Vec::new(),
         edge_vertices: BTreeMap::from([(5, [0, 1]), (6, [1, 2]), (7, [2, 0])]),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -1025,8 +1026,7 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: Vec::new(),
-        logical_vertex_refs: Vec::new(),
+        logical_vertices: Vec::new(),
         edge_vertices: BTreeMap::new(),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),

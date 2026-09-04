@@ -69,11 +69,9 @@ pub struct B5Graph {
     pub vertex_incidence_links: BTreeMap<u32, B5VertexIncidenceLink>,
     /// World-frame `05 08 01` vertex coordinates, in stream order.
     pub vertex_points: Vec<[f64; 3]>,
-    /// Logical vertex coordinates resolved from native `5d` identity. Their
-    /// edge indices follow the raw `vertex_points` indices.
-    pub logical_vertex_points: Vec<[f64; 3]>,
-    /// Native `5d` object ids aligned with `logical_vertex_points`.
-    pub logical_vertex_refs: Vec<u32>,
+    /// Native `5d` logical vertices. Their edge indices follow the raw
+    /// `vertex_points` indices.
+    pub logical_vertices: Vec<B5LogicalVertex>,
     /// Per-edge pair of vertex indices. Raw `vertex_points` occupy the first
     /// index range; native `5d` logical vertices occupy the following range.
     pub edge_vertices: BTreeMap<u32, [usize; 2]>,
@@ -86,6 +84,16 @@ pub struct B5Graph {
     /// `b5 03 0e`/`0f` line and arc profile curves, keyed by `object_id`;
     /// referenced by `B5Surface::Revolution::profile_curve`.
     pub profiles: BTreeMap<u32, B5Profile>,
+}
+
+/// One native `5d` logical vertex: its object id and resolved world-frame
+/// coordinate.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct B5LogicalVertex {
+    /// Native `5d` object id.
+    pub object_id: u32,
+    /// World-frame coordinate resolved from native incidence.
+    pub point: [f64; 3],
 }
 
 impl B5Graph {
@@ -1265,8 +1273,7 @@ pub(crate) fn parse_from_records_budgeted(
         &vertex_points,
     );
     let edge_vertices = bound_vertices.edges;
-    let logical_vertex_refs = bound_vertices.refs;
-    let logical_vertex_points = bound_vertices.points;
+    let logical_vertices = bound_vertices.vertices;
     let vertex_tolerances = bound_vertices.tolerances;
     let referenced_loops: std::collections::HashSet<u32> = faces
         .iter()
@@ -1313,8 +1320,7 @@ pub(crate) fn parse_from_records_budgeted(
         edges,
         vertex_incidence_links,
         vertex_points,
-        logical_vertex_points,
-        logical_vertex_refs,
+        logical_vertices,
         edge_vertices,
         edge_parameter_incidences,
         vertex_tolerances,
@@ -2227,8 +2233,7 @@ pub(crate) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -
 
 struct BoundNativeVertices {
     edges: BTreeMap<u32, [usize; 2]>,
-    refs: Vec<u32>,
-    points: Vec<[f64; 3]>,
+    vertices: Vec<B5LogicalVertex>,
     tolerances: BTreeMap<usize, f64>,
 }
 
@@ -2280,16 +2285,17 @@ fn bind_native_vertices(
             }
         }
     }
-    let mut logical_vertices: Vec<_> = logical_coordinates.into_iter().collect();
-    logical_vertices.sort_unstable_by_key(|(vertex, _)| *vertex);
-    let logical_vertex_indices: HashMap<u32, usize> = logical_vertices
+    let mut ranked: Vec<_> = logical_coordinates.into_iter().collect();
+    ranked.sort_unstable_by_key(|(vertex, _)| *vertex);
+    let logical_vertex_indices: HashMap<u32, usize> = ranked
         .iter()
         .enumerate()
         .map(|(rank, (vertex, _))| (*vertex, points.len() + rank))
         .collect();
-    let logical_vertex_points: Vec<[f64; 3]> =
-        logical_vertices.iter().map(|(_, point)| *point).collect();
-    let logical_vertex_refs = logical_vertices.iter().map(|(vertex, _)| *vertex).collect();
+    let logical_vertices: Vec<B5LogicalVertex> = ranked
+        .into_iter()
+        .map(|(object_id, point)| B5LogicalVertex { object_id, point })
+        .collect();
     let mut edge_vertices = geometric_edges.clone();
     for (&edge, vertices) in native_edges {
         if let (Some(&start), Some(&end)) = (
@@ -2312,7 +2318,7 @@ fn bind_native_vertices(
                 (
                     loci[0],
                     distance_squared(
-                        vertex_coordinate(points, &logical_vertex_points, loci[0]),
+                        vertex_coordinate(points, &logical_vertices, loci[0]),
                         lifted[0],
                     )
                     .sqrt(),
@@ -2320,7 +2326,7 @@ fn bind_native_vertices(
                 (
                     loci[1],
                     distance_squared(
-                        vertex_coordinate(points, &logical_vertex_points, loci[1]),
+                        vertex_coordinate(points, &logical_vertices, loci[1]),
                         lifted[1],
                     )
                     .sqrt(),
@@ -2340,8 +2346,7 @@ fn bind_native_vertices(
     }
     BoundNativeVertices {
         edges: edge_vertices,
-        refs: logical_vertex_refs,
-        points: logical_vertex_points,
+        vertices: logical_vertices,
         tolerances,
     }
 }
@@ -2429,11 +2434,15 @@ fn propagate_vertex_component(
     (mapping, members, consistent)
 }
 
-fn vertex_coordinate(points: &[[f64; 3]], logical_points: &[[f64; 3]], index: usize) -> [f64; 3] {
+fn vertex_coordinate(
+    points: &[[f64; 3]],
+    logical_vertices: &[B5LogicalVertex],
+    index: usize,
+) -> [f64; 3] {
     if index < points.len() {
         points[index]
     } else {
-        logical_points[index - points.len()]
+        logical_vertices[index - points.len()].point
     }
 }
 

@@ -108,7 +108,7 @@ pub(super) fn emit_vertices(
             tolerance: vertex_tolerances.get(&index).copied(),
         });
     }
-    for (rank, coordinates) in graph.logical_vertex_points.iter().enumerate() {
+    for (rank, vertex) in graph.logical_vertices.iter().enumerate() {
         let index = graph.vertex_points.len() + rank;
         if !used_vertices.contains(&index) {
             continue;
@@ -123,8 +123,8 @@ pub(super) fn emit_vertices(
         );
         ir.model.points.push(Point {
             id: point_id.clone(),
-            position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
-            source_object: Some(cgm_source("vertex", graph.logical_vertex_refs[rank])),
+            position: Point3::new(vertex.point[0], vertex.point[1], vertex.point[2]),
+            source_object: Some(cgm_source("vertex", vertex.object_id)),
         });
         let vertex_id =
             VertexId::mint(format!("catia:b5:vertex#{index}")).expect("identity grammar");
