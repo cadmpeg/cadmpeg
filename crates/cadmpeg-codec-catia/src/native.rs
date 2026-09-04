@@ -9265,19 +9265,19 @@ impl CatiaNative {
         let mut parsed_value_blocks = value_block::parse(bytes);
         parsed_value_blocks.retain(|block| {
             !parsed_object_graphs.iter().any(|graph| {
-                contains_extent(graph.pos, graph.total_len, block.pos, block.total_len)
+                contains_extent(graph.pos, graph.total_len, block.pos, block.total_len())
             })
         });
         parsed_object_graphs.retain(|graph| {
             !parsed_value_blocks.iter().any(|block| {
-                contains_extent(block.pos, block.total_len, graph.pos, graph.total_len)
+                contains_extent(block.pos, block.total_len(), graph.pos, graph.total_len)
             })
         });
         parsed_catalogs.retain(|catalog| {
             !parsed_object_graphs.iter().any(|graph| {
                 contains_extent(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
             }) && !parsed_value_blocks.iter().any(|block| {
-                contains_extent(block.pos, block.total_len, catalog.pos, catalog.total_len)
+                contains_extent(block.pos, block.total_len(), catalog.pos, catalog.total_len)
             })
         });
         let catalogs: Vec<CatiaCatalog> = parsed_catalogs
@@ -9474,7 +9474,7 @@ impl CatiaNative {
                 .iter()
                 .any(|graph| extents_overlap(row_start, 24, graph.byte_offset, graph.byte_len))
                 && !parsed_value_blocks.iter().any(|block| {
-                    extents_overlap(row_start, 24, block.pos as u64, block.total_len as u64)
+                    extents_overlap(row_start, 24, block.pos as u64, block.total_len() as u64)
                 })
                 && !catalogs.iter().any(|catalog| {
                     extents_overlap(row_start, 24, catalog.byte_offset, catalog.byte_len)
@@ -9510,7 +9510,7 @@ impl CatiaNative {
         let value_blocks = parsed_value_blocks
             .into_iter()
             .filter_map(|block| {
-                let catalog_pos = block.pos + block.total_len;
+                let catalog_pos = block.pos + block.total_len();
                 let catalog = catalogs
                     .iter()
                     .find(|catalog| catalog.byte_offset == catalog_pos as u64)?;
@@ -9729,17 +9729,17 @@ impl CatiaValueBlock {
         object_graph: Option<&CatiaObjectGraph>,
     ) -> Self {
         let id = format!("catia:outer:value-block#{:010}", block.pos);
-        let schema_selections =
-            value_schema_selections(&id, block.pos as u64, &block.fields, catalog);
+        let fields = block.fields();
+        let schema_selections = value_schema_selections(&id, block.pos as u64, &fields, catalog);
         Self {
             id,
             byte_offset: block.pos as u64,
-            byte_len: block.total_len as u64,
+            byte_len: block.total_len() as u64,
             declared_len: block.declared_len as u64,
             object_graph: object_graph.map(|graph| graph.id.clone()),
             catalog: catalog.id.clone(),
             payload: block.payload,
-            fields: block.fields,
+            fields,
             schema_selections,
         }
     }

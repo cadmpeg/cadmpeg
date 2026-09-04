@@ -16,12 +16,18 @@ pub struct ValueBlock {
     pub pos: usize,
     /// Stored length from the marker through the byte before the terminator.
     pub declared_len: usize,
-    /// Complete extent including the trailing `0xFE` terminator.
-    pub total_len: usize,
     /// Value payload between the six-byte header and terminator.
     pub payload: Vec<u8>,
-    /// Lossless tokenization of the value payload.
-    pub fields: Vec<ValueField>,
+}
+
+impl ValueBlock {
+    pub fn total_len(&self) -> usize {
+        self.declared_len + 1
+    }
+
+    pub fn fields(&self) -> Vec<ValueField> {
+        tokenize(&self.payload)
+    }
 }
 
 /// One token in a `7C0B` value payload.
@@ -128,7 +134,7 @@ pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
         let Some(block) = parse_candidate(bytes, pos) else {
             continue;
         };
-        if let Some(block_end) = block.pos.checked_add(block.total_len) {
+        if let Some(block_end) = block.pos.checked_add(block.total_len()) {
             enclosing_end = enclosing_end.max(block_end);
         }
         blocks.push(block);
@@ -150,9 +156,7 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
     Some(ValueBlock {
         pos,
         declared_len,
-        total_len: declared_len + 1,
         payload: bytes[pos + value_block::LEN..terminator].to_vec(),
-        fields: tokenize(&bytes[pos + value_block::LEN..terminator]),
     })
 }
 

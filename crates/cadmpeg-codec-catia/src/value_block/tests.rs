@@ -134,7 +134,7 @@ fn value_block_parser_reads_length_to_terminator_boundary() {
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].pos, 0);
     assert_eq!(blocks[0].declared_len, 15);
-    assert_eq!(blocks[0].total_len, 16);
+    assert_eq!(blocks[0].total_len(), 16);
     assert_eq!(blocks[0].payload, payload);
 }
 
