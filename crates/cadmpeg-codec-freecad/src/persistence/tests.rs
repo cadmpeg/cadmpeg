@@ -319,11 +319,14 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     match result.ir().model.procedural_curves[1].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
             distance,
-            direction,
+            side:
+                cadmpeg_ir::geometry::OffsetSide::Direction {
+                    direction,
+                    support: None,
+                },
             ..
         } => {
             assert_eq!(*distance, 2.0);
-            let direction = direction.expect("offset direction");
             assert_eq!([direction.x, direction.y, direction.z], [0.0, 0.0, 1.0]);
         }
         other => panic!("unexpected offset construction {other:?}"),

@@ -813,11 +813,16 @@ pub(super) fn project(
                 ProceduralCurveDefinition::Offset {
                     source: offset_source_id,
                     distance,
-                    support: None,
-                    direction: None,
-                    normal: Some(normal),
-                    parameter_range: Some([start, end]),
-                    distance_law,
+                    side: cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
+                    range: Some(match distance_law {
+                        Some(distance_law) => cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+                            parameter_range: [start, end],
+                            distance_law,
+                        },
+                        None => cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
+                            parameter_range: [start, end],
+                        },
+                    }),
                 },
             ),
         );

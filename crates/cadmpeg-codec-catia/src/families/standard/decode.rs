@@ -960,16 +960,18 @@ pub(crate) fn emit_standard_extrusion_definition(
                     ProceduralCurveDefinition::Offset {
                         source: source_id,
                         distance,
-                        direction: Some(direction),
-                        support: Some(standard_extrusion_support_id(
-                            annotations,
-                            surfaces,
-                            procedural_supports,
-                            &support,
-                        )),
-                        normal: None,
-                        parameter_range: Some(source_parameter_range),
-                        distance_law: None,
+                        side: cadmpeg_ir::geometry::OffsetSide::Direction {
+                            direction,
+                            support: Some(standard_extrusion_support_id(
+                                annotations,
+                                surfaces,
+                                procedural_supports,
+                                &support,
+                            )),
+                        },
+                        range: Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
+                            parameter_range: source_parameter_range,
+                        }),
                     },
                 ),
             );

@@ -5694,6 +5694,143 @@ pub enum DeformableCurveSource {
     },
 }
 
+/// Orientation carrier of a planar curve offset.
+#[derive(Debug, Clone, PartialEq)]
+pub enum OffsetSide {
+    /// Unit plane normal defining the positive offset side.
+    PlaneNormal(Vector3),
+    /// Explicit offset direction, optionally constrained to a support surface.
+    Direction {
+        /// Nonzero offset direction.
+        direction: Vector3,
+        /// Support surface within which the offset is measured.
+        support: Option<SurfaceId>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct OffsetSideWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    direction: Option<Vector3>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    support: Option<SurfaceId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    normal: Option<Vector3>,
+}
+
+impl Serialize for OffsetSide {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let wire = match self {
+            Self::PlaneNormal(normal) => OffsetSideWire {
+                direction: None,
+                support: None,
+                normal: Some(*normal),
+            },
+            Self::Direction { direction, support } => OffsetSideWire {
+                direction: Some(*direction),
+                support: support.clone(),
+                normal: None,
+            },
+        };
+        wire.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for OffsetSide {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = OffsetSideWire::deserialize(deserializer)?;
+        match (wire.direction, wire.support, wire.normal) {
+            (Some(direction), support, None) => Ok(Self::Direction { direction, support }),
+            (None, None, Some(normal)) => Ok(Self::PlaneNormal(normal)),
+            _ => Err(serde::de::Error::custom(
+                "offset direction and normal are exclusive, and support requires direction",
+            )),
+        }
+    }
+}
+
+/// Parameter interval and optional variable-distance law of a curve offset.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CurveOffsetRange {
+    /// Constant-distance offset over a retained source interval.
+    Uniform {
+        /// Parameter interval on the source curve.
+        parameter_range: [f64; 2],
+    },
+    /// Variable-distance offset over the interval used by its law.
+    Variable {
+        /// Parameter interval on the source curve.
+        parameter_range: [f64; 2],
+        /// Variable signed-distance law.
+        distance_law: CurveOffsetDistanceLaw,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CurveOffsetRangeWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parameter_range: Option<[f64; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    distance_law: Option<CurveOffsetDistanceLaw>,
+}
+
+mod curve_offset_range_wire {
+    use super::{CurveOffsetRange, CurveOffsetRangeWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(range: &Option<CurveOffsetRange>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let wire = match range {
+            None => CurveOffsetRangeWire {
+                parameter_range: None,
+                distance_law: None,
+            },
+            Some(CurveOffsetRange::Uniform { parameter_range }) => CurveOffsetRangeWire {
+                parameter_range: Some(*parameter_range),
+                distance_law: None,
+            },
+            Some(CurveOffsetRange::Variable {
+                parameter_range,
+                distance_law,
+            }) => CurveOffsetRangeWire {
+                parameter_range: Some(*parameter_range),
+                distance_law: Some(distance_law.clone()),
+            },
+        };
+        wire.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<CurveOffsetRange>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = CurveOffsetRangeWire::deserialize(deserializer)?;
+        match (wire.parameter_range, wire.distance_law) {
+            (None, None) => Ok(None),
+            (Some(parameter_range), None) => {
+                Ok(Some(CurveOffsetRange::Uniform { parameter_range }))
+            }
+            (Some(parameter_range), Some(distance_law)) => Ok(Some(CurveOffsetRange::Variable {
+                parameter_range,
+                distance_law,
+            })),
+            (None, Some(_)) => Err(serde::de::Error::custom(
+                "offset distance_law requires parameter_range",
+            )),
+        }
+    }
+}
+
 /// Neutral semantics for a procedural curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5855,23 +5992,14 @@ pub enum ProceduralCurveDefinition {
         source: CurveId,
         /// Signed offset distance, in document length units.
         distance: f64,
-        /// Fixed plane-normal direction defining the offset side, when carried
-        /// by the source representation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
-        /// Surface the offset is measured within, when the offset is constrained
-        /// to a support surface; `None` for a free-space offset.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        support: Option<SurfaceId>,
-        /// Unit normal defining the positive offset side for planar offsets.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        normal: Option<Vector3>,
-        /// Parameter interval on the source curve used by the offset.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameter_range: Option<[f64; 2]>,
-        /// Variable distance law; absent when `distance` is uniform.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        distance_law: Option<CurveOffsetDistanceLaw>,
+        /// Exclusive plane-normal or explicit-direction carrier.
+        #[serde(flatten)]
+        #[cfg_attr(feature = "schema", schemars(with = "OffsetSideWire"))]
+        side: OffsetSide,
+        /// Retained parameter range, with its distance law when variable.
+        #[serde(flatten, with = "curve_offset_range_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "CurveOffsetRangeWire"))]
+        range: Option<CurveOffsetRange>,
     },
     /// Free-space 3D offset using a reference direction.
     SpatialOffset {

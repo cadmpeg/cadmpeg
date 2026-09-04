@@ -1279,21 +1279,27 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             }
             ProceduralCurveDefinition::Offset {
                 source,
-                support,
-                distance_law,
+                side,
+                range,
                 ..
             } => {
                 if ids.curves(&source.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
-                if let Some(support) = support {
+                if let crate::geometry::OffsetSide::Direction {
+                    support: Some(support),
+                    ..
+                } = side
+                {
                     if ids.surfaces(&support.0).is_none() {
                         ref_error(findings, &procedural.id.0, "surface", &support.0);
                     }
                 }
-                if let Some(crate::geometry::CurveOffsetDistanceLaw::Coordinate {
-                    function, ..
-                }) = distance_law
+                if let Some(crate::geometry::CurveOffsetRange::Variable {
+                    distance_law:
+                        crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
+                    ..
+                }) = range
                 {
                     if ids.curves(&function.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &function.0);
