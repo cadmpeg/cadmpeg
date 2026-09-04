@@ -1424,11 +1424,42 @@ pub struct CatiaConsolidatedEdgeDefinition {
 /// Exact oriented-use allocation chain owned by one consolidated edge node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedEdgeUsesWire",
+    into = "CatiaConsolidatedEdgeUsesWire"
+)]
 pub struct CatiaConsolidatedEdgeUses {
     /// Counted allocation-reference vectors in side order.
     pub references: [[u32; 2]; 2],
-    /// Terminal side-use sense bytes in serialized order.
-    pub senses: [u8; 2],
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaConsolidatedEdgeUsesWire {
+    references: [[u32; 2]; 2],
+    senses: [u8; 2],
+}
+
+impl From<CatiaConsolidatedEdgeUses> for CatiaConsolidatedEdgeUsesWire {
+    fn from(value: CatiaConsolidatedEdgeUses) -> Self {
+        Self {
+            references: value.references,
+            senses: [0x88, 0x84],
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedEdgeUsesWire> for CatiaConsolidatedEdgeUses {
+    type Error = String;
+
+    fn try_from(wire: CatiaConsolidatedEdgeUsesWire) -> Result<Self, Self::Error> {
+        if wire.senses != [0x88, 0x84] {
+            return Err("consolidated edge uses require senses [0x88, 0x84]".to_owned());
+        }
+        Ok(Self {
+            references: wire.references,
+        })
+    }
 }
 
 /// One endpoint identity retained by consolidated topology edge nodes.
@@ -8165,7 +8196,7 @@ fn native_consolidated_edge_uses(
         .collect::<Option<Vec<[u32; 2]>>>()?
         .try_into()
         .ok()?;
-    let senses = uses
+    let senses: [u8; 2] = uses
         .each_ref()
         .map(|use_| match use_.sense? {
             crate::families::b2::records::B2UseSense::Sense84 => Some(0x84),
@@ -8175,7 +8206,7 @@ fn native_consolidated_edge_uses(
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
-    (senses == [0x88, 0x84]).then_some(CatiaConsolidatedEdgeUses { references, senses })
+    (senses == [0x88, 0x84]).then_some(CatiaConsolidatedEdgeUses { references })
 }
 
 fn consolidated_vertex_identities(
