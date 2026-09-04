@@ -16,9 +16,9 @@ use cadmpeg_ir::features::{
     HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, Length,
     LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter,
     PatternSeed, PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec,
-    RevolutionAxis, RevolutionConstruction, RevolutionFuseOrder, RevolveExtent,
-    RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SurfaceProjectionMode,
-    SweepMode, SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
+    RevolutionAxis, RevolutionFuseOrder, RevolveConstruction, RevolveExtent, RuledCurveOrientation,
+    ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode,
+    SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -3231,6 +3231,7 @@ fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
             |vector| Point3::new(vector.x, vector.y, vector.z),
         ),
         direction: vector_property(properties, "Axis")?,
+        reference: None,
     })
 }
 
@@ -3316,7 +3317,7 @@ fn revolution_definition(
         .iter()
         .filter_map(|name| property(properties, name))
         .collect::<Vec<_>>();
-    let axis_reference = match axis_reference_properties.as_slice() {
+    axis.reference = match axis_reference_properties.as_slice() {
         [] => None,
         [property] => {
             if property.links.iter().any(nonempty_link) {
@@ -3348,24 +3349,23 @@ fn revolution_definition(
             None
         };
     Some(FeatureDefinition::Revolve {
-        construction: RevolutionConstruction {
+        construction: RevolveConstruction::new(
             profile,
-            axis: Some(axis),
-            extent: Some(extent),
-            axis_reference,
-            solid: Some(if kind == "Part::Revolution" {
+            Some(axis),
+            Some(extent),
+            Some(if kind == "Part::Revolution" {
                 bool_selector(properties, "Solid", false)?
             } else {
                 true
             }),
             face_maker,
             fuse_order,
-            allow_multi_profile_faces: if kind.starts_with("PartDesign::") {
+            if kind.starts_with("PartDesign::") {
                 Some(bool_selector(properties, "AllowMultiFace", false)?)
             } else {
                 None
             },
-        },
+        ),
         op: if kind == "Part::Revolution" {
             BooleanOp::NewBody
         } else if kind.contains("Groove") {

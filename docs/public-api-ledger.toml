@@ -3606,3 +3606,38 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::features::RevolutionConstruction::face_maker"
 reason = "standalone revolutions use the typed non-empty face-maker class"
+
+[[change]]
+commit = "4300f93ef240dbe0366e0650d52286830b9badcf"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::features::RevolutionConstruction"
+reason = "independent optional revolution inputs allowed complete and incomplete construction states to share one shape"
+
+[[change]]
+commit = "4300f93ef240dbe0366e0650d52286830b9badcf"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::features::{RevolveConstruction,PartialRevolveConstruction}"
+reason = "resolved revolutions carry all required inputs while incomplete decoded records use an opaque partial state"
+
+[[change]]
+commit = "4300f93ef240dbe0366e0650d52286830b9badcf"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::FeatureDefinition::Revolve::construction"
+reason = "the revolution construction discriminant now proves whether every required input is present"
+
+[[change]]
+commit = "4300f93ef240dbe0366e0650d52286830b9badcf"
+crate = "cadmpeg-ir"
+kind = "struct"
+item = "cadmpeg_ir::features::RevolutionAxis"
+reason = "the axis owns its optional native reference and is no longer Copy"
+
+[[change]]
+commit = "4300f93ef240dbe0366e0650d52286830b9badcf"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::features::RevolveConstruction::{new,is_resolved,profile,profile_mut,set_profile,axis,axis_mut,set_axis,extent,extent_mut,set_extent,solid,set_solid,face_maker,fuse_order,allow_multi_profile_faces}"
+reason = "checked construction and mutation preserve the resolved or partial revolution state"

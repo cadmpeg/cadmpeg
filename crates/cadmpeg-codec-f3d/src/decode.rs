@@ -635,33 +635,32 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !profile_ref_is_resolved(profile) || !start_is_resolved || !extent_is_resolved
         }
         FeatureDefinition::Revolve { construction, op } => {
-            let profile_is_resolved = construction
-                .profile
-                .as_ref()
-                .is_some_and(profile_ref_is_resolved);
-            let axis_is_resolved = construction
-                .axis
-                .as_ref()
-                .is_some_and(|axis| axis.direction.unit().is_some());
-            let extent_is_resolved = construction.extent.as_ref().is_some_and(|extent| {
-                use cadmpeg_ir::features::RevolveExtent;
+            use cadmpeg_ir::features::{RevolveConstruction, RevolveExtent};
 
-                match extent {
-                    RevolveExtent::OneSided { termination }
-                    | RevolveExtent::Symmetric { termination } => {
-                        angular_termination_is_resolved(termination)
-                    }
-                    RevolveExtent::TwoSided { first, second } => {
-                        angular_termination_is_resolved(first)
-                            && angular_termination_is_resolved(second)
-                    }
+            match construction {
+                RevolveConstruction::Unresolved(_) => true,
+                RevolveConstruction::Resolved {
+                    profile,
+                    axis,
+                    extent,
+                    ..
+                } => {
+                    let extent_is_resolved = match extent {
+                        RevolveExtent::OneSided { termination }
+                        | RevolveExtent::Symmetric { termination } => {
+                            angular_termination_is_resolved(termination)
+                        }
+                        RevolveExtent::TwoSided { first, second } => {
+                            angular_termination_is_resolved(first)
+                                && angular_termination_is_resolved(second)
+                        }
+                    };
+                    !profile_ref_is_resolved(profile)
+                        || axis.direction.unit().is_none()
+                        || !extent_is_resolved
+                        || *op == cadmpeg_ir::features::BooleanOp::Unresolved
                 }
-            });
-
-            !profile_is_resolved
-                || !axis_is_resolved
-                || !extent_is_resolved
-                || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+            }
         }
         FeatureDefinition::Sweep {
             section,

@@ -414,10 +414,10 @@ fn scale_feature_definition(definition: &mut FeatureDefinition, scale: f64) {
             scale_extrude_extent(extent, scale);
         }
         FeatureDefinition::Revolve { construction, .. } => {
-            if let Some(axis) = construction.axis.as_mut() {
+            if let Some(axis) = construction.axis_mut() {
                 scale_point3(&mut axis.origin, scale);
             }
-            if let Some(extent) = construction.extent.as_mut() {
+            if let Some(extent) = construction.extent_mut() {
                 scale_revolve_extent(extent, scale);
             }
         }

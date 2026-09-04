@@ -9,6 +9,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::SldprtCodec;
 
+const EPS_PARTIAL_REVOLUTION_ANGLE: f64 = 1.0e-12;
+const EPS_REVERSED_REVOLUTION_ANGLE: f64 = 1.0e-12;
+const EPS_SYMMETRIC_REVOLUTION_ANGLE: f64 = 1.0e-12;
+const EPS_TWO_SIDED_REVOLUTION_FIRST_ANGLE: f64 = 1.0e-12;
+const EPS_TWO_SIDED_REVOLUTION_SECOND_ANGLE: f64 = 1.0e-12;
+
 #[test]
 fn semantic_writer_round_trips_reference_coordinate_system() {
     use cadmpeg_ir::features::FeatureDefinition;
@@ -1525,19 +1531,18 @@ fn semantic_writer_round_trips_typed_revolution() {
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: Some(cadmpeg_ir::features::RevolutionAxis {
+            construction,
+            op: BooleanOp::Join,
+        } if construction.profile().is_none()
+            && construction.axis().is_some_and(|axis| matches!(axis,
+                cadmpeg_ir::features::RevolutionAxis {
                     origin: Point3 { x: 10.0, y: 20.0, z: 30.0 },
                     direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
-                }),
-                extent: Some(RevolveExtent::OneSided {
+                    ..
+                }))
+            && matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: Angle(value) },
-                }),
-                ..
-            },
-            op: BooleanOp::Join,
-        } if (*value - std::f64::consts::PI).abs() < 1.0e-12
+                }) if (*value - std::f64::consts::PI).abs() < EPS_PARTIAL_REVOLUTION_ANGLE)
     ));
 
     {
@@ -1547,16 +1552,16 @@ fn semantic_writer_round_trips_typed_revolution() {
         else {
             panic!("typed revolution feature");
         };
-        let Some(axis) = construction.axis.as_mut() else {
+        let Some(axis) = construction.axis_mut() else {
             panic!("resolved revolution axis");
         };
         axis.origin = Point3::new(1.0, 2.0, 3.0);
         axis.direction = Vector3::new(0.0, 0.0, 1.0);
-        construction.extent = Some(RevolveExtent::OneSided {
+        construction.set_extent(Some(RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
                 angle: Angle(std::f64::consts::FRAC_PI_2),
             },
-        });
+        }));
         *op = BooleanOp::Cut;
     }
 
@@ -1599,9 +1604,11 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: None,
-                axis: Some(cadmpeg_ir::features::RevolutionAxis {
+            construction,
+            op: BooleanOp::Unresolved,
+        } if construction.profile().is_none()
+            && construction.axis().is_some_and(|axis| matches!(axis,
+                cadmpeg_ir::features::RevolutionAxis {
                     origin: Point3 {
                         x: 1.0,
                         y: 2.0,
@@ -1612,12 +1619,9 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
                         y: 0.0,
                         z: 1.0
                     },
-                }),
-                extent: None,
-                ..
-            },
-            op: BooleanOp::Unresolved,
-        }
+                    ..
+                }))
+            && construction.extent().is_none()
     ));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
@@ -1652,14 +1656,11 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                axis: Some(_),
-                profile: None,
-                extent: None,
-                ..
-            },
+            ref construction,
             op: BooleanOp::Unresolved,
-        }
+        } if construction.axis().is_some()
+            && construction.profile().is_none()
+            && construction.extent().is_none()
     ));
 }
 
@@ -1683,41 +1684,34 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: Some(ProfileRef::Feature(profile)),
-                extent: Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) },
-                }),
-                ..
-            },
+            construction,
             op: BooleanOp::Join,
-        } if profile == &profile_feature && (*value - 90f64.to_radians()).abs() < 1.0e-12
+        } if matches!(construction.profile(), Some(ProfileRef::Feature(profile)) if profile == &profile_feature)
+            && matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle: Angle(value) },
+                }) if (*value - 90f64.to_radians()).abs() < EPS_REVERSED_REVOLUTION_ANGLE)
     ));
     assert!(matches!(
         decoded.ir().model.features[2].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(RevolveExtent::Symmetric {
-                    termination: AngularTermination::Angle { angle: Angle(value) },
-                }),
-                ..
-            },
+            ref construction,
             op: BooleanOp::NewBody,
-        } if (value - std::f64::consts::PI).abs() < 1.0e-12
+        } if matches!(construction.extent(), Some(RevolveExtent::Symmetric {
+                    termination: AngularTermination::Angle { angle: Angle(value) },
+                }) if (*value - std::f64::consts::PI).abs() < EPS_SYMMETRIC_REVOLUTION_ANGLE)
     ));
     assert!(matches!(
         decoded.ir().model.features[3].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(RevolveExtent::TwoSided {
+            ref construction,
+            op: BooleanOp::Cut,
+        } if matches!(construction.extent(), Some(RevolveExtent::TwoSided {
                     first: AngularTermination::Angle { angle: Angle(first) },
                     second: AngularTermination::Angle { angle: Angle(second) },
-                }),
-                ..
-            },
-            op: BooleanOp::Cut,
-        } if (first - 30f64.to_radians()).abs() < 1.0e-12
-            && (second - 60f64.to_radians()).abs() < 1.0e-12
+                }) if (*first - 30f64.to_radians()).abs()
+                    < EPS_TWO_SIDED_REVOLUTION_FIRST_ANGLE
+                    && (*second - 60f64.to_radians()).abs()
+                        < EPS_TWO_SIDED_REVOLUTION_SECOND_ANGLE)
     ));
 
     {
@@ -1727,9 +1721,9 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         else {
             panic!("typed revolution");
         };
-        construction.extent = Some(RevolveExtent::OneSided {
+        construction.set_extent(Some(RevolveExtent::OneSided {
             termination: AngularTermination::Angle { angle: Angle(0.75) },
-        });
+        }));
         *op = BooleanOp::Intersect;
     }
 

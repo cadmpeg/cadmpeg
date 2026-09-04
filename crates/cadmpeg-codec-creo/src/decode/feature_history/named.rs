@@ -18,7 +18,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, LinearTermination, PatternKind,
-    ProfileRef, RevolutionConstruction,
+    ProfileRef, RevolveConstruction,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
@@ -204,16 +204,15 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
     let extent = feature_revolution_extent(scan, feature_id);
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
     IrFeatureDefinition::Revolve {
-        construction: RevolutionConstruction {
-            profile: unique_feature_profile_ref(scan, ir, feature_id),
-            axis: feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref()),
+        construction: RevolveConstruction::new(
+            unique_feature_profile_ref(scan, ir, feature_id),
+            feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref()),
             extent,
-            axis_reference: None,
-            solid: sweep_solid(output_kind),
-            face_maker: None,
-            fuse_order: None,
-            allow_multi_profile_faces: None,
-        },
+            sweep_solid(output_kind),
+            None,
+            None,
+            None,
+        ),
         op,
     }
 }

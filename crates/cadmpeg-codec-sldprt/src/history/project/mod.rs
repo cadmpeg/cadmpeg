@@ -691,7 +691,7 @@ pub(crate) fn bind_native_construction_features(
             FeatureDefinition::Extrude { profile, .. }
             | FeatureDefinition::Wrap { profile, .. } => bind(profile),
             FeatureDefinition::Revolve { construction, .. } => {
-                if let Some(profile) = &mut construction.profile {
+                if let Some(profile) = construction.profile_mut() {
                     bind(profile);
                 }
             }

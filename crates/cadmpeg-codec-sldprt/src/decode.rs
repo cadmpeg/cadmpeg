@@ -1255,10 +1255,16 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Revolve { construction, op } => {
-                construction.profile.as_ref().is_none_or(incomplete_profile)
-                    || construction.axis.is_none()
-                    || construction.extent.as_ref().is_none_or(incomplete_revolve_extent)
-                    || *op == BooleanOp::Unresolved
+                match construction {
+                    cadmpeg_ir::features::RevolveConstruction::Unresolved(_) => true,
+                    cadmpeg_ir::features::RevolveConstruction::Resolved {
+                        profile, extent, ..
+                    } => {
+                        incomplete_profile(profile)
+                            || incomplete_revolve_extent(extent)
+                            || *op == BooleanOp::Unresolved
+                    }
+                }
             }
             FeatureDefinition::Sweep {
                 section,

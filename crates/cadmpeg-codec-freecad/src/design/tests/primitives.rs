@@ -7,6 +7,9 @@ use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureDefinition, Rev
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;
+const EPS_REVOLUTION_TWO_SIDED_ANGLES: f64 = 1.0e-12;
+
 #[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
@@ -75,15 +78,12 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
     assert!(matches!(
         definition("Revolution"),
         cadmpeg_ir::features::FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)),
-                extent: Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle }
-                }),
-                ..
-            },
+            construction,
             op: cadmpeg_ir::features::BooleanOp::Join
-        } if (angle.0 - std::f64::consts::PI).abs() < 1.0e-12
+        } if matches!(construction.profile(), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
+            && matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle }
+                }) if (angle.0 - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
     assert!(matches!(
         definition("Fillet"),
@@ -118,9 +118,9 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
     assert!(matches!(
         definition("Profileless"),
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction { profile: None, .. },
+            construction,
             ..
-        }
+        } if construction.profile().is_none()
     ));
 }
 
@@ -597,51 +597,37 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
             ("PartDesignRevolution", "Midplane") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        extent: Some(RevolveExtent::OneSided { .. }),
-                        ..
-                    },
+                    construction,
                     ..
-                }
+                } if matches!(construction.extent(), Some(RevolveExtent::OneSided { .. }))
             )),
             ("PartDesignRevolution", "Reversed") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        axis: Some(axis), ..
-                    },
+                    construction,
                     ..
-                } if axis.direction.y == 1.0
+                } if construction.axis().is_some_and(|axis| axis.direction.y == 1.0)
             )),
             ("PartDesignRevolution", "AllowMultiFace") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        allow_multi_profile_faces: Some(false),
-                        ..
-                    },
+                    construction,
                     ..
-                }
+                } if construction.allow_multi_profile_faces() == Some(false)
             )),
             ("StandaloneRevolution", "Symmetric") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        extent: Some(RevolveExtent::OneSided { .. }),
-                        ..
-                    },
+                    construction,
                     ..
-                }
+                } if matches!(construction.extent(), Some(RevolveExtent::OneSided { .. }))
             )),
             ("StandaloneRevolution", "Solid") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        solid: Some(false),
-                        ..
-                    },
+                    construction,
                     ..
-                }
+                } if construction.solid() == Some(false)
             )),
             _ => unreachable!(),
         }
@@ -681,51 +667,37 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
             ("PartDesignRevolution", "Midplane") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        extent: Some(RevolveExtent::Symmetric { .. }),
-                        ..
-                    },
+                    construction,
                     ..
-                }
+                } if matches!(construction.extent(), Some(RevolveExtent::Symmetric { .. }))
             )),
             ("PartDesignRevolution", "Reversed") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        axis: Some(axis), ..
-                    },
+                    construction,
                     ..
-                } if axis.direction.y == -1.0
+                } if construction.axis().is_some_and(|axis| axis.direction.y == -1.0)
             )),
             ("PartDesignRevolution", "AllowMultiFace") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        allow_multi_profile_faces: Some(false),
-                        ..
-                    },
+                    construction,
                     ..
-                }
+                } if construction.allow_multi_profile_faces() == Some(false)
             )),
             ("StandaloneRevolution", "Symmetric") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        extent: Some(RevolveExtent::Symmetric { .. }),
-                        ..
-                    },
+                    construction,
                     ..
-                }
+                } if matches!(construction.extent(), Some(RevolveExtent::Symmetric { .. }))
             )),
             ("StandaloneRevolution", "Solid") => assert!(matches!(
                 definition(&result, name),
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        solid: Some(true),
-                        ..
-                    },
+                    construction,
                     ..
-                }
+                } if construction.solid() == Some(true)
             )),
             _ => unreachable!(),
         }
@@ -853,55 +825,58 @@ fn transfers_non_default_revolution_branches() {
     assert!(matches!(
         definition("ToFirst"),
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                axis: Some(axis),
-                extent: Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::ToFirst
-                }),
-                ..
-            },
+            construction,
             ..
-        } if axis.direction.y == 1.0 && axis.origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+        } if construction.axis().is_some_and(|axis| axis.direction.y == 1.0
+            && axis.origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+            && matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::ToFirst
+                }))
     ));
     assert!(matches!(
         definition("ToFace"),
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::ToFace { .. }
-                }),
-                ..
-            },
+            construction,
             ..
-        }
+        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+            termination: AngularTermination::ToFace { .. }
+        }))
     ));
     assert!(matches!(
         definition("TwoAngles"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { extent: Some(RevolveExtent::TwoSided { first: AngularTermination::Angle { angle: first }, second: AngularTermination::Angle { angle: second } }), .. }, .. }
-            if (first.0 - 120_f64.to_radians()).abs() < 1.0e-12 && (second.0 - 30_f64.to_radians()).abs() < 1.0e-12
+        FeatureDefinition::Revolve { construction, .. }
+            if matches!(construction.extent(), Some(RevolveExtent::TwoSided { first: AngularTermination::Angle { angle: first }, second: AngularTermination::Angle { angle: second } })
+                if (first.0 - 120_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES
+                    && (second.0 - 30_f64.to_radians()).abs() < EPS_REVOLUTION_TWO_SIDED_ANGLES)
     ));
     assert!(matches!(
         definition("Midplane"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), fuse_order: Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst), solid: Some(true), allow_multi_profile_faces: Some(false), .. }, .. }
-            if axis.direction.y == -1.0 && reference.ends_with(":ReferenceAxis")
+        FeatureDefinition::Revolve { construction, .. }
+            if construction.axis().is_some_and(|axis| axis.direction.y == -1.0
+                && matches!(&axis.reference, Some(cadmpeg_ir::features::PathRef::Native(reference)) if reference.ends_with(":ReferenceAxis")))
+                && matches!(construction.extent(), Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }))
+                && construction.fuse_order() == Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst)
+                && construction.solid() == Some(true)
+                && construction.allow_multi_profile_faces() == Some(false)
     ));
     assert!(matches!(
         definition("ThroughAll"),
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::ThroughAll
-                }),
-                ..
-            },
+            construction,
             op: BooleanOp::Cut
-        }
+        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+            termination: AngularTermination::ThroughAll
+        }))
     ));
     assert!(matches!(
         definition("Standalone"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), solid: Some(true), face_maker: Some(face_maker), .. }, op: BooleanOp::NewBody }
-            if axis.direction.z == 1.0 && reference.ends_with(":AxisLink")
-                && *face_maker == cadmpeg_ir::features::FaceMaker::Unified
+        FeatureDefinition::Revolve { construction, op: BooleanOp::NewBody }
+            if matches!(construction.profile(), Some(cadmpeg_ir::features::ProfileRef::Sketch(_)))
+                && construction.axis().is_some_and(|axis| axis.direction.z == 1.0
+                    && matches!(&axis.reference, Some(cadmpeg_ir::features::PathRef::Native(reference)) if reference.ends_with(":AxisLink")))
+                && matches!(construction.extent(), Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }))
+                && construction.solid() == Some(true)
+                && construction.face_maker() == Some(&cadmpeg_ir::features::FaceMaker::Unified)
     ));
 }
 
@@ -1789,14 +1764,11 @@ fn distinguishes_absent_and_malformed_partdesign_revolution_type() {
             assert!(matches!(
                 definition,
                 FeatureDefinition::Revolve {
-                    construction: cadmpeg_ir::features::RevolutionConstruction {
-                        extent: Some(RevolveExtent::OneSided {
-                            termination: AngularTermination::Angle { .. }
-                        }),
-                        ..
-                    },
+                    construction,
                     ..
-                }
+                } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { .. }
+                }))
             ));
         }
         assert_valid_document(result.ir());

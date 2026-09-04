@@ -1002,7 +1002,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
 fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     use cadmpeg_ir::features::{
         Angle, AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureId,
-        GeneratedVertexRef, PathRef, ProfileRef, RevolutionAxis, RevolutionConstruction,
+        GeneratedVertexRef, PathRef, ProfileRef, RevolutionAxis, RevolveConstruction,
         RevolveExtent, VertexSelection,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1010,21 +1010,21 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let output = ir.model.bodies[0].id.clone();
     let face = ir.model.faces[0].id.clone();
-    let complete = RevolutionConstruction {
-        profile: Some(ProfileRef::Faces(vec![face])),
-        axis: Some(RevolutionAxis {
+    let complete = RevolveConstruction::new(
+        Some(ProfileRef::Faces(vec![face])),
+        Some(RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         }),
-        extent: Some(RevolveExtent::OneSided {
+        Some(RevolveExtent::OneSided {
             termination: AngularTermination::Angle { angle: Angle(1.0) },
         }),
-        axis_reference: None,
-        solid: Some(true),
-        face_maker: None,
-        fuse_order: None,
-        allow_multi_profile_faces: None,
-    };
+        Some(true),
+        None,
+        None,
+        None,
+    );
     assert!(!super::revolve_feature_is_incomplete(
         &complete,
         BooleanOp::NewBody,
@@ -1040,51 +1040,51 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     );
 
     let mut incomplete = complete.clone();
-    incomplete.profile = None;
+    incomplete.set_profile(None);
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
-    incomplete.axis = None;
+    incomplete.set_axis(None);
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
-    incomplete.axis.as_mut().unwrap().direction = Vector3::new(0.0, 0.0, 2.0);
+    incomplete.axis_mut().unwrap().direction = Vector3::new(0.0, 0.0, 2.0);
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
-    incomplete.extent = None;
+    incomplete.set_extent(None);
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
-    incomplete.extent = Some(RevolveExtent::OneSided {
+    incomplete.set_extent(Some(RevolveExtent::OneSided {
         termination: AngularTermination::Angle { angle: Angle(0.0) },
-    });
+    }));
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
-    incomplete.axis_reference = Some(PathRef::Native("test:axis".into()));
+    incomplete.axis_mut().unwrap().reference = Some(PathRef::Native("test:axis".into()));
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
-    incomplete.solid = None;
+    incomplete.set_solid(None);
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
@@ -1092,7 +1092,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     ));
     let source = FeatureId("test:feature#vertex-source".into());
     incomplete = complete.clone();
-    incomplete.extent = Some(RevolveExtent::OneSided {
+    incomplete.set_extent(Some(RevolveExtent::OneSided {
         termination: AngularTermination::ToVertex {
             vertex: VertexSelection::Generated {
                 vertex: GeneratedVertexRef {
@@ -1102,7 +1102,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
                 native: "test:vertex-selection".into(),
             },
         },
-    });
+    }));
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,

@@ -32,8 +32,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, Length, LinearTermination, PathRef, ProfileRef,
-    RevolutionConstruction, SurfaceBoundary, ThickenSide,
+    FeatureId as IrFeatureId, Length, LinearTermination, PathRef, ProfileRef, SurfaceBoundary,
+    ThickenSide,
 };
 use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
@@ -934,14 +934,12 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         assert!(matches!(
             named_feature_definition(&scan, &ir, 822, kind),
             Some(IrFeatureDefinition::Revolve {
-                construction: RevolutionConstruction {
-                    profile: Some(ProfileRef::Native(profile)),
-                    axis: None,
-                    extent: None,
-                    ..
-                },
+                ref construction,
                 op: BooleanOp::Unresolved,
-            }) if profile == "creo:featdefs:sketch#822"
+            }) if matches!(construction.profile(), Some(ProfileRef::Native(profile))
+                if profile == "creo:featdefs:sketch#822")
+                && construction.axis().is_none()
+                && construction.extent().is_none()
         ));
     }
 
@@ -955,14 +953,11 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     assert!(matches!(
         named_feature_definition(&scan, &ir, 822, "Revolve"),
         Some(IrFeatureDefinition::Revolve {
-            construction: RevolutionConstruction {
-                extent: Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle: Angle(value) },
-                }),
-                ..
-            },
+            ref construction,
             ..
-        }) if (value - std::f64::consts::TAU).abs() < EPS_FULL_TURN
+        }) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle: Angle(value) },
+                }) if (*value - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
 
     let sketch = SketchId("creo:model:sketch#822".to_string());

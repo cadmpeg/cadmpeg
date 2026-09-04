@@ -1492,3 +1492,71 @@ fn trim_cells_preserve_the_flat_wire_fields_and_reject_invalid_input() {
     invalid["cell_selection"]["removed"] = serde_json::json!([6]);
     assert!(serde_json::from_value::<FeatureDefinition>(invalid).is_err());
 }
+
+#[test]
+fn revolve_construction_preserves_the_flat_wire_shape() {
+    use crate::features::{FeatureDefinition, PathRef, RevolveConstruction};
+
+    let wire = serde_json::json!({
+        "definition": "revolve",
+        "construction": {
+            "profile": {"kind": "sketch", "value": "test:sketch#profile"},
+            "axis": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+            },
+            "extent": {
+                "kind": "one_sided",
+                "termination": {"kind": "angle", "angle": 1.25}
+            },
+            "axis_reference": {"kind": "native", "value": "test:axis"},
+            "solid": true,
+            "face_maker_class": "Part::FaceMakerBullseye"
+        },
+        "op": "new_body"
+    });
+    let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Revolve {
+            construction: RevolveConstruction::Resolved { ref axis, .. },
+            ..
+        } if axis.reference == Some(PathRef::Native("test:axis".into()))
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), wire);
+}
+
+#[test]
+fn revolve_construction_admits_only_typed_partial_states() {
+    use crate::features::{FeatureDefinition, RevolveConstruction};
+
+    let partial_wire = serde_json::json!({
+        "definition": "revolve",
+        "construction": {
+            "profile": {"kind": "native", "value": "test:profile"},
+            "solid": false
+        },
+        "op": "unresolved"
+    });
+    let partial: FeatureDefinition = serde_json::from_value(partial_wire.clone()).unwrap();
+    assert!(matches!(
+        partial,
+        FeatureDefinition::Revolve {
+            construction: RevolveConstruction::Unresolved(_),
+            ..
+        }
+    ));
+    assert_eq!(serde_json::to_value(partial).unwrap(), partial_wire);
+
+    let orphan_reference = serde_json::json!({
+        "definition": "revolve",
+        "construction": {
+            "axis_reference": {"kind": "native", "value": "test:axis"}
+        },
+        "op": "unresolved"
+    });
+    let error = serde_json::from_value::<FeatureDefinition>(orphan_reference)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("axis_reference requires a revolution axis"));
+}

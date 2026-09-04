@@ -44,7 +44,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, HolePlacement,
-    Length, LinearTermination, ProfileRef, RadiusSpec, RevolutionConstruction,
+    Length, LinearTermination, ProfileRef, RadiusSpec, RevolveConstruction,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{FaceId, SurfaceId};
@@ -497,16 +497,15 @@ pub(in super::super) fn schema_feature_definition(
         let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
         return IrFeatureDefinition::Revolve {
-            construction: RevolutionConstruction {
+            construction: RevolveConstruction::new(
                 profile,
                 axis,
                 extent,
-                axis_reference: None,
-                solid: sweep_solid(output_kind),
-                face_maker: None,
-                fuse_order: None,
-                allow_multi_profile_faces: None,
-            },
+                sweep_solid(output_kind),
+                None,
+                None,
+                None,
+            ),
             op: section_sweep_boolean_operation(
                 feature_recipe_effect(scan, feature_id),
                 kind,

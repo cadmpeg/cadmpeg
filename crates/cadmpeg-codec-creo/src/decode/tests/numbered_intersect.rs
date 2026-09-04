@@ -1893,6 +1893,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     let axis = RevolutionAxis {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(0.0, 1.0, 0.0),
+        reference: None,
     };
     let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
         start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
@@ -1900,7 +1901,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     };
 
     assert!(matches!(
-        revolved_section_circle(&transform, [2.0, 3.0], axis),
+        revolved_section_circle(&transform, [2.0, 3.0], &axis),
         Some(CurveGeometry::Circle {
             center,
             axis,
@@ -1911,7 +1912,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
             && ref_direction == Vector3::new(1.0, 0.0, 0.0)
             && radius == 2.0
     ));
-    assert!(revolved_section_circle(&transform, [0.0, 3.0], axis).is_none());
+    assert!(revolved_section_circle(&transform, [0.0, 3.0], &axis).is_none());
     assert!(matches!(
         extruded_section_line(&transform, [2.0, 3.0]),
         Some(CurveGeometry::Line { origin, direction })
@@ -1920,20 +1921,20 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     ));
 
     assert!(matches!(
-        revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), axis),
+        revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis),
         Some(SurfaceGeometry::Cylinder { radius, .. }) if radius == 2.0
     ));
     assert!(matches!(
-        revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), axis),
+        revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), &axis),
         Some(SurfaceGeometry::Plane { origin, .. }) if origin.y == 3.0
     ));
     assert!(matches!(
-        revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), axis),
+        revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis),
         Some(SurfaceGeometry::Cone { radius, half_angle, .. })
             if radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
     ));
     assert!(matches!(
-        revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), axis),
+        revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis),
         Some(SurfaceGeometry::Cone { axis, radius, half_angle, .. })
             if axis.y == -1.0
                 && radius == 4.0
@@ -1946,7 +1947,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         end_angle: Angle(std::f64::consts::PI),
     };
     assert!(matches!(
-        revolved_section_surface(&transform, &centered_arc, axis),
+        revolved_section_surface(&transform, &centered_arc, &axis),
         Some(SurfaceGeometry::Sphere { radius, .. }) if radius == 2.0
     ));
     let offset_arc = SketchGeometry::Arc {
@@ -1956,7 +1957,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         end_angle: Angle(std::f64::consts::PI),
     };
     assert!(matches!(
-        revolved_section_surface(&transform, &offset_arc, axis),
+        revolved_section_surface(&transform, &offset_arc, &axis),
         Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
             if major_radius == 5.0 && minor_radius == 2.0
     ));
@@ -1965,7 +1966,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         radius: Length(2.0),
     };
     assert!(matches!(
-        revolved_section_surface(&transform, &offset_circle, axis),
+        revolved_section_surface(&transform, &offset_circle, &axis),
         Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
             if major_radius == 5.0 && minor_radius == 2.0
     ));
@@ -1983,9 +1984,10 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
     let axis = RevolutionAxis {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(0.0, 0.0, 1.0),
+        reference: None,
     };
     let pcurve =
-        revolution_boundary_pcurve(&surface, [-3.0, 0.0, 0.0], axis).expect("spindle boundary");
+        revolution_boundary_pcurve(&surface, [-3.0, 0.0, 0.0], &axis).expect("spindle boundary");
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, parameter).expect("pcurve point");
         let point = cadmpeg_ir::eval::surface_point(&surface, uv.u, uv.v).expect("surface point");

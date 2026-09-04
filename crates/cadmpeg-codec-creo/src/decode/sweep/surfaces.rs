@@ -44,7 +44,7 @@ use std::collections::BTreeSet;
 pub(in super::super) fn revolved_section_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
-    revolution_axis: RevolutionAxis,
+    revolution_axis: &RevolutionAxis,
 ) -> Option<SurfaceGeometry> {
     let axis = normalized([
         revolution_axis.direction.x,
@@ -289,7 +289,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
 
 pub(in super::super) fn revolved_nurbs_surface(
     directrix: &NurbsCurve,
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
 ) -> Option<NurbsSurface> {
     if directrix
         .weights
@@ -387,7 +387,7 @@ pub(in super::super) fn revolved_nurbs_surface(
 pub(in super::super) fn revolved_section_circle(
     transform: &crate::placement::FeatureSectionTransform,
     point: [f64; 2],
-    axis: RevolutionAxis,
+    axis: &RevolutionAxis,
 ) -> Option<CurveGeometry> {
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];

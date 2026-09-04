@@ -9,6 +9,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::SldprtCodec;
 
+const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;
+
 #[test]
 fn decode_resolves_feature_topology_selections() {
     use cadmpeg_ir::features::{
@@ -512,14 +514,11 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Revolve {
-            construction: cadmpeg_ir::features::RevolutionConstruction {
-                extent: Some(RevolveExtent::OneSided {
-                    termination: AngularTermination::Angle { angle },
-                }),
-                ..
-            },
+            construction,
             op: BooleanOp::Cut,
-        } if (angle.0 - std::f64::consts::PI).abs() < 1.0e-12
+        } if matches!(construction.extent(), Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle },
+                }) if (angle.0 - std::f64::consts::PI).abs() < EPS_REVOLUTION_HALF_TURN)
     ));
 }
 

@@ -2423,13 +2423,13 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         let FeatureDefinition::Revolve { construction, .. } = &mut feature.definition else {
             continue;
         };
-        let Some(ProfileRef::Native(native)) = construction.profile.as_ref() else {
+        let Some(ProfileRef::Native(native)) = construction.profile() else {
             continue;
         };
         let Some(profile) = resolved_profiles.get(native) else {
             continue;
         };
-        construction.profile = Some(profile.clone());
+        construction.set_profile(Some(profile.clone()));
     }
     Ok(())
 }

@@ -478,7 +478,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     use cadmpeg_ir::features::{
         AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
         FeatureDefinition, Length, LinearTermination, ProfileRef, RevolutionAxis,
-        RevolutionConstruction, RevolveExtent,
+        RevolveConstruction, RevolveExtent,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
@@ -505,21 +505,21 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         allow_multi_profile_faces: None,
     };
     let revolve = |op| FeatureDefinition::Revolve {
-        construction: RevolutionConstruction {
-            profile: Some(ProfileRef::Sketch(SketchId("sketch".into()))),
-            axis: Some(RevolutionAxis {
+        construction: RevolveConstruction::new(
+            Some(ProfileRef::Sketch(SketchId("sketch".into()))),
+            Some(RevolutionAxis {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),
+                reference: None,
             }),
-            extent: Some(RevolveExtent::OneSided {
+            Some(RevolveExtent::OneSided {
                 termination: AngularTermination::ThroughAll,
             }),
-            axis_reference: None,
-            solid: Some(true),
-            face_maker: None,
-            fuse_order: None,
-            allow_multi_profile_faces: None,
-        },
+            Some(true),
+            None,
+            None,
+            None,
+        ),
         op,
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {

@@ -491,6 +491,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
@@ -523,6 +524,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
 
@@ -546,6 +548,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
 
@@ -575,6 +578,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
 }
@@ -653,6 +657,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 19.5),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
     lane.sketch_entities[0].kind = SketchInputKind::Arc;
@@ -733,6 +738,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         })
     );
 
@@ -825,6 +831,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         })
     );
 
@@ -840,6 +847,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         })
     );
 
@@ -851,6 +859,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
+            reference: None,
         })
     );
 }
@@ -879,6 +888,7 @@ fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
+            reference: None,
         })
     );
     assert_eq!(

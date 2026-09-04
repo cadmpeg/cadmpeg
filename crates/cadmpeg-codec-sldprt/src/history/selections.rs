@@ -286,7 +286,7 @@ pub fn bind_topology_selections(
                 }
             }
             FeatureDefinition::Revolve { construction, .. } => {
-                if let Some(profile) = &mut construction.profile {
+                if let Some(profile) = construction.profile_mut() {
                     resolve_profile_ref(profile, &face_ids);
                 }
             }
