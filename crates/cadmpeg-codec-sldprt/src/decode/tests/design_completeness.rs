@@ -657,8 +657,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(path.clone()),
             support_faces: face.clone(),
-            continuity: None,
-            boundary_continuities: Vec::new(),
+            continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),
             merge_result: Some(false),
         },
         FeatureDefinition::TrimSurface {
@@ -783,8 +782,9 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                     EdgeId("boundary".into()),
                 ])),
                 support_faces: FaceSelection::Faces(Vec::new()),
-                continuity: Some(SurfaceContinuity::Contact),
-                boundary_continuities: Vec::new(),
+                continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+                    SurfaceContinuity::Contact,
+                ),
                 merge_result: Some(false),
             },
         ),

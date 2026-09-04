@@ -691,6 +691,12 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         scope.surface_patch_boundaries = boundaries;
         scope
     };
+    let uniform_continuity = |scope: &DesignParameterScope| {
+        cadmpeg_ir::features::FilledSurfaceContinuity::per_boundary(
+            crate::design::feature_project::surface_patch_boundary_continuities(scope),
+        )
+        .and_then(|continuity| continuity.uniform())
+    };
 
     for (code, expected) in [
         (DesignPatchContinuity::Connected, SurfaceContinuity::Contact),
@@ -701,10 +707,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         ),
     ] {
         let scope = scope_with(vec![boundary(code), boundary(code)]);
-        assert_eq!(
-            crate::design::feature_project::surface_patch_continuity(&scope),
-            Some(expected)
-        );
+        assert_eq!(uniform_continuity(&scope), Some(expected));
     }
 
     // A patch whose boundaries impose different conditions has no single neutral
@@ -717,14 +720,12 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         crate::design::feature_project::surface_patch_boundary_continuities(&mixed),
         vec![SurfaceContinuity::Tangent, SurfaceContinuity::Contact]
     );
-    assert!(crate::design::feature_project::surface_patch_continuity(&mixed).is_none());
+    assert!(uniform_continuity(&mixed).is_none());
+    assert!(uniform_continuity(&scope_with(Vec::new())).is_none());
     assert!(
-        crate::design::feature_project::surface_patch_continuity(&scope_with(Vec::new())).is_none()
-    );
-    assert!(
-        crate::design::feature_project::surface_patch_continuity(&scope_with(vec![boundary(
-            DesignPatchContinuity::Unknown(9)
-        )]))
+        uniform_continuity(&scope_with(vec![boundary(DesignPatchContinuity::Unknown(
+            9
+        ))]))
         .is_none()
     );
     assert!(
@@ -817,14 +818,14 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             &[],
         ),
         Some(FeatureDefinition::FilledSurface {
-            continuity: Some(SurfaceContinuity::Contact),
-            ref boundary_continuities,
+            ref continuity,
             ..
-        }) if boundary_continuities == &[
-            SurfaceContinuity::Contact,
-            SurfaceContinuity::Contact,
-            SurfaceContinuity::Contact,
-        ]
+        }) if matches!(continuity.resolved(), Some(
+            cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
+                first: SurfaceContinuity::Contact,
+                rest,
+            }
+        ) if rest == &[SurfaceContinuity::Contact, SurfaceContinuity::Contact])
     ));
 
     scope.reference_members = vec![100, 101, 102, 110, 111, 112, 120, 121, 122, 900];
@@ -840,14 +841,14 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             &[],
         ),
         Some(FeatureDefinition::FilledSurface {
-            continuity: Some(SurfaceContinuity::Contact),
-            ref boundary_continuities,
+            ref continuity,
             ..
-        }) if boundary_continuities == &[
-            SurfaceContinuity::Contact,
-            SurfaceContinuity::Contact,
-            SurfaceContinuity::Contact,
-        ]
+        }) if matches!(continuity.resolved(), Some(
+            cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
+                first: SurfaceContinuity::Contact,
+                rest,
+            }
+        ) if rest == &[SurfaceContinuity::Contact, SurfaceContinuity::Contact])
     ));
 }
 

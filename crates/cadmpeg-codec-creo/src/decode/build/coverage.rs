@@ -385,7 +385,7 @@ pub(in super::super) fn collect_feature_coverage(
                 filled_surface_feature_count += 1;
                 let unresolved_boundary = surface_boundary_has_unresolved_operands(boundary);
                 let unresolved_support = face_selection_has_unresolved_operands(support_faces);
-                let unresolved_continuity = continuity.is_none();
+                let unresolved_continuity = continuity.is_unresolved();
                 let unresolved_merge = merge_result.is_none();
                 unresolved_filled_surface_boundary_feature_count +=
                     usize::from(unresolved_boundary);

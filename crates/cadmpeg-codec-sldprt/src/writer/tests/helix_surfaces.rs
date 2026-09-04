@@ -1045,10 +1045,9 @@ fn semantic_writer_round_trips_filled_surface() {
         FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Resolved { edges, native: edge_native }),
             support_faces: FaceSelection::Resolved { faces, native: face_native },
-            continuity: Some(SurfaceContinuity::Tangent),
-            boundary_continuities,
+            continuity,
             merge_result: Some(false),
-        } if boundary_continuities.is_empty()
+        } if continuity.uniform_value() == Some(SurfaceContinuity::Tangent)
             && edges == std::slice::from_ref(&edge_id) && edge_native == &edge
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
@@ -1059,7 +1058,6 @@ fn semantic_writer_round_trips_filled_surface() {
             boundary,
             support_faces,
             continuity,
-            boundary_continuities,
             merge_result,
         } = &mut ir_edit.model.features[0].definition
         else {
@@ -1069,8 +1067,9 @@ fn semantic_writer_round_trips_filled_surface() {
             edge_id.clone(),
         ]));
         *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-        *continuity = Some(SurfaceContinuity::Curvature);
-        boundary_continuities.clear();
+        *continuity = cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+            SurfaceContinuity::Curvature,
+        );
         *merge_result = Some(true);
     }
 
@@ -1093,10 +1092,10 @@ fn semantic_writer_round_trips_filled_surface() {
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
         FeatureDefinition::FilledSurface {
-            continuity: Some(SurfaceContinuity::Curvature),
+            ref continuity,
             merge_result: Some(true),
             ..
-        }
+        } if continuity.uniform_value() == Some(SurfaceContinuity::Curvature)
     ));
 }
 

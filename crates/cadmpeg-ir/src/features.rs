@@ -1703,13 +1703,10 @@ pub enum FeatureDefinition {
         boundary: SurfaceBoundary,
         /// Adjacent faces supplying tangent or curvature conditions.
         support_faces: FaceSelection,
-        /// Continuity imposed against the support faces, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        continuity: Option<SurfaceContinuity>,
-        /// Continuity imposed by each boundary component, in source order,
-        /// when the operation carries component-specific conditions.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        boundary_continuities: Vec<SurfaceContinuity>,
+        /// Uniform, component-specific, or unresolved boundary continuity.
+        #[serde(flatten)]
+        #[cfg_attr(feature = "schema", schemars(with = "FilledSurfaceContinuityWire"))]
+        continuity: FilledSurfaceContinuityState,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2701,6 +2698,152 @@ pub enum SurfaceContinuity {
     Tangent,
     /// Second-derivative continuity.
     Curvature,
+}
+
+/// Resolved continuity conditions for a filled-surface boundary.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum FilledSurfaceContinuity {
+    /// One condition applies to the complete boundary.
+    Uniform(SurfaceContinuity),
+    /// Conditions apply to individual boundary components in source order.
+    PerBoundary {
+        /// Condition of the first component; its presence makes the sequence non-empty.
+        first: SurfaceContinuity,
+        /// Conditions of the remaining components.
+        rest: Vec<SurfaceContinuity>,
+    },
+}
+
+impl FilledSurfaceContinuity {
+    /// Creates a non-empty component-specific condition sequence.
+    #[must_use]
+    pub fn per_boundary(conditions: Vec<SurfaceContinuity>) -> Option<Self> {
+        let mut conditions = conditions.into_iter();
+        Some(Self::PerBoundary {
+            first: conditions.next()?,
+            rest: conditions.collect(),
+        })
+    }
+
+    /// Returns the aggregate condition when every component uses one value.
+    #[must_use]
+    pub fn uniform(&self) -> Option<SurfaceContinuity> {
+        match self {
+            Self::Uniform(continuity) => Some(*continuity),
+            Self::PerBoundary { first, rest }
+                if rest.iter().all(|continuity| continuity == first) =>
+            {
+                Some(*first)
+            }
+            Self::PerBoundary { .. } => None,
+        }
+    }
+}
+
+/// Optional filled-surface continuity with checked flat-wire deserialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "FilledSurfaceContinuityWire",
+    into = "FilledSurfaceContinuityWire"
+)]
+pub struct FilledSurfaceContinuityState(Option<FilledSurfaceContinuity>);
+
+impl FilledSurfaceContinuityState {
+    /// Creates an unresolved continuity state.
+    #[must_use]
+    pub const fn unresolved() -> Self {
+        Self(None)
+    }
+
+    /// Creates one condition for the complete boundary.
+    #[must_use]
+    pub const fn uniform(continuity: SurfaceContinuity) -> Self {
+        Self(Some(FilledSurfaceContinuity::Uniform(continuity)))
+    }
+
+    /// Creates component-specific conditions, or unresolved state for no conditions.
+    #[must_use]
+    pub fn per_boundary(conditions: Vec<SurfaceContinuity>) -> Self {
+        Self(FilledSurfaceContinuity::per_boundary(conditions))
+    }
+
+    /// Returns the resolved continuity form.
+    #[must_use]
+    pub const fn resolved(&self) -> Option<&FilledSurfaceContinuity> {
+        self.0.as_ref()
+    }
+
+    /// Returns the aggregate condition when every component uses one value.
+    #[must_use]
+    pub fn uniform_value(&self) -> Option<SurfaceContinuity> {
+        self.0.as_ref().and_then(FilledSurfaceContinuity::uniform)
+    }
+
+    /// Whether no continuity condition was resolved.
+    #[must_use]
+    pub const fn is_unresolved(&self) -> bool {
+        self.0.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct FilledSurfaceContinuityWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    continuity: Option<SurfaceContinuity>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    boundary_continuities: Vec<SurfaceContinuity>,
+}
+
+impl From<FilledSurfaceContinuityState> for FilledSurfaceContinuityWire {
+    fn from(value: FilledSurfaceContinuityState) -> Self {
+        match value.0 {
+            None => Self {
+                continuity: None,
+                boundary_continuities: Vec::new(),
+            },
+            Some(FilledSurfaceContinuity::Uniform(continuity)) => Self {
+                continuity: Some(continuity),
+                boundary_continuities: Vec::new(),
+            },
+            Some(FilledSurfaceContinuity::PerBoundary { first, rest }) => {
+                let continuity = rest
+                    .iter()
+                    .all(|candidate| candidate == &first)
+                    .then_some(first);
+                let mut boundary_continuities = Vec::with_capacity(rest.len() + 1);
+                boundary_continuities.push(first);
+                boundary_continuities.extend(rest);
+                Self {
+                    continuity,
+                    boundary_continuities,
+                }
+            }
+        }
+    }
+}
+
+impl TryFrom<FilledSurfaceContinuityWire> for FilledSurfaceContinuityState {
+    type Error = String;
+
+    fn try_from(value: FilledSurfaceContinuityWire) -> Result<Self, Self::Error> {
+        let FilledSurfaceContinuityWire {
+            continuity,
+            boundary_continuities,
+        } = value;
+        let Some(per_boundary) = FilledSurfaceContinuity::per_boundary(boundary_continuities)
+        else {
+            return Ok(continuity.map_or_else(Self::unresolved, Self::uniform));
+        };
+        if continuity.is_some_and(|continuity| per_boundary.uniform() != Some(continuity)) {
+            return Err(
+                "filled-surface continuity disagrees with boundary_continuities".to_string(),
+            );
+        }
+        Ok(Self(Some(per_boundary)))
+    }
 }
 
 /// Boundary input accepted by a filled-surface operation.

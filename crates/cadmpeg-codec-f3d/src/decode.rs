@@ -991,25 +991,33 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             boundary,
             support_faces,
             continuity,
-            boundary_continuities,
             merge_result,
         } => {
-            use cadmpeg_ir::features::{SurfaceBoundary, SurfaceContinuity};
+            use cadmpeg_ir::features::SurfaceBoundary;
 
             let boundary_is_resolved = match boundary {
                 SurfaceBoundary::Edges(edges) => edge_selection_is_resolved(edges),
                 SurfaceBoundary::Path(path) => loft_path_is_resolved(path),
             };
-            let continuity_is_resolved = continuity.is_some() || !boundary_continuities.is_empty();
+            let continuity_is_resolved = !continuity.is_unresolved();
+            let needs_support = |continuity| {
+                matches!(
+                    continuity,
+                    cadmpeg_ir::features::SurfaceContinuity::Tangent
+                        | cadmpeg_ir::features::SurfaceContinuity::Curvature
+                )
+            };
             let support_is_required =
                 continuity
-                    .iter()
-                    .chain(boundary_continuities)
-                    .any(|continuity| {
-                        matches!(
-                            continuity,
-                            SurfaceContinuity::Tangent | SurfaceContinuity::Curvature
-                        )
+                    .resolved()
+                    .is_some_and(|continuity| match continuity {
+                        cadmpeg_ir::features::FilledSurfaceContinuity::Uniform(continuity) => {
+                            needs_support(*continuity)
+                        }
+                        cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
+                            first,
+                            rest,
+                        } => needs_support(*first) || rest.iter().copied().any(needs_support),
                     });
 
             !boundary_is_resolved

@@ -46,8 +46,9 @@ pub(in super::super) fn filled_surface_feature_definition(
     IrFeatureDefinition::FilledSurface {
         boundary,
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: Some(SurfaceContinuity::Contact),
-        boundary_continuities: Vec::new(),
+        continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+            SurfaceContinuity::Contact,
+        ),
         merge_result: Some(false),
     }
 }

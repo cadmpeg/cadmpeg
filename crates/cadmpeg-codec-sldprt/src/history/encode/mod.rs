@@ -260,15 +260,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 boundary,
                 support_faces,
                 continuity,
-                boundary_continuities,
                 merge_result,
-            } => self.encode_filled_surface(
-                boundary,
-                support_faces,
-                continuity,
-                boundary_continuities,
-                merge_result,
-            ),
+            } => self.encode_filled_surface(boundary, support_faces, continuity, merge_result),
             FeatureDefinition::Draft {
                 faces: face_selection,
                 anchor,
