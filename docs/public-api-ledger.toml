@@ -3669,3 +3669,17 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::features::ExtrudeSide::offset"
 reason = "extrusion offsets are carried only by the linear termination variants whose geometry they modify"
+
+[[change]]
+commit = "b5b4fbda3685f41b4438ee19cef4adf2afff4069"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::features::DatumPlaneReference::Face"
+reason = "a face-backed datum reference carries only the face identity whose geometry defines its plane"
+
+[[change]]
+commit = "b5b4fbda3685f41b4438ee19cef4adf2afff4069"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane"
+reason = "a datum reference without a face identity carries one resolved support frame"

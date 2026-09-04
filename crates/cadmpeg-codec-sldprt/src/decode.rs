@@ -1196,9 +1196,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 .as_ref()
                 .is_none_or(|reference| match reference {
                     cadmpeg_ir::features::DatumPlaneReference::Feature(_) => false,
-                    cadmpeg_ir::features::DatumPlaneReference::Face { face, .. } => {
+                    cadmpeg_ir::features::DatumPlaneReference::Face(face) => {
                         incomplete_face_selection(face)
                     }
+                    cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. } => false,
                 }),
             FeatureDefinition::ProjectedCurve {
                 source,
@@ -4072,60 +4073,34 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
                 reference:
-                    Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                        face: face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
-                        origin,
-                        normal,
-                        u_axis,
-                    }),
+                    Some(cadmpeg_ir::features::DatumPlaneReference::Face(
+                        face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
+                    )),
                 distance,
             } = &feature.definition
             else {
                 return None;
             };
-            (!selected.is_empty()).then_some((
-                feature.id.clone(),
-                face.clone(),
-                *origin,
-                *normal,
-                *u_axis,
-                *distance,
-            ))
+            (!selected.is_empty()).then_some((feature.id.clone(), face.clone(), *distance))
         })
         .collect::<Vec<_>>();
     let configuration = &mut ir.model.configurations[configuration_index];
-    for (
-        feature,
-        resolved_face,
-        resolved_origin,
-        resolved_normal,
-        resolved_u_axis,
-        resolved_distance,
-    ) in resolved
-    {
+    for (feature, resolved_face, resolved_distance) in resolved {
         let Some(state) = configuration.feature_states.get_mut(&feature) else {
             continue;
         };
         let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
             reference:
-                Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                    face,
-                    origin,
-                    normal,
-                    u_axis,
-                }),
+                reference @ Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. }),
             distance,
         } = &mut state.definition
         else {
             continue;
         };
-        if *origin == resolved_origin
-            && *normal == resolved_normal
-            && *u_axis == resolved_u_axis
-            && *distance == resolved_distance
-            && matches!(face, cadmpeg_ir::features::FaceSelection::Unresolved)
-        {
-            *face = resolved_face;
+        if *distance == resolved_distance {
+            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face(
+                resolved_face,
+            ));
         }
     }
     let resolved = ir

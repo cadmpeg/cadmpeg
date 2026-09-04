@@ -533,7 +533,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                             .is_none_or(|source| source.ordinal >= feature.ordinal)
                             || !feature.dependencies.contains(reference)
                     }
-                    DatumPlaneReference::Face { face, .. } => face_selection_is_incomplete(face),
+                    DatumPlaneReference::Face(face) => face_selection_is_incomplete(face),
+                    DatumPlaneReference::ResolvedPlane { .. } => false,
                 }) =>
             {
                 "datum plane"

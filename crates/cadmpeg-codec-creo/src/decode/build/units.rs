@@ -194,7 +194,7 @@ fn scale_datum_plane_reference(
     reference: &mut cadmpeg_ir::features::DatumPlaneReference,
     scale: f64,
 ) {
-    if let cadmpeg_ir::features::DatumPlaneReference::Face { origin, .. } = reference {
+    if let cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { origin, .. } = reference {
         scale_point3(origin, scale);
     }
 }

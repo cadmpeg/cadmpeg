@@ -999,12 +999,9 @@ fn configuration_offset_plane_inherits_shared_reference() {
     use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, FeatureDefinition, Length};
 
     let base = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face {
-            face: FaceSelection::Faces(vec!["test:model:face#1".into()]),
-            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        }),
+        reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(vec![
+            "test:model:face#1".into(),
+        ]))),
         distance: Length(5.0),
     };
     let mut configured = FeatureDefinition::DatumOffsetPlane {
@@ -1026,22 +1023,18 @@ fn configuration_offset_plane_inherits_shared_reference() {
 }
 
 #[test]
-fn configuration_offset_plane_replaces_only_an_unresolved_face() {
+fn configuration_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, FeatureDefinition, Length};
 
     let base = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face {
-            face: FaceSelection::Faces(vec!["test:model:face#1".into()]),
-            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        }),
+        reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(vec![
+            "test:model:face#1".into(),
+        ]))),
         distance: Length(5.0),
     };
     let configured_origin = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
     let mut configured = FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face {
-            face: FaceSelection::Unresolved,
+        reference: Some(DatumPlaneReference::ResolvedPlane {
             origin: configured_origin,
             normal: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
             u_axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1052,13 +1045,12 @@ fn configuration_offset_plane_replaces_only_an_unresolved_face() {
     inherit_configuration_shared_semantics(&mut configured, &base);
 
     let FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face { face, origin, .. }),
+        reference: Some(DatumPlaneReference::ResolvedPlane { origin, .. }),
         distance,
     } = configured
     else {
         panic!("offset-plane definition retained its face reference");
     };
-    assert_eq!(face, FaceSelection::Faces(vec!["test:model:face#1".into()]));
     assert_eq!(origin, configured_origin);
     assert_eq!(distance, Length(8.0));
 }
@@ -1066,8 +1058,7 @@ fn configuration_offset_plane_replaces_only_an_unresolved_face() {
 #[test]
 fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     use cadmpeg_ir::features::{
-        DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
-        FeatureId, Length,
+        DatumPlaneReference, Feature as NeutralFeature, FeatureDefinition, FeatureId, Length,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1104,8 +1095,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
             distance: Length(12.0),
         },
     );
-    let unresolved_reference = || DatumPlaneReference::Face {
-        face: FaceSelection::Unresolved,
+    let unresolved_reference = || DatumPlaneReference::ResolvedPlane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(1.0, 0.0, 0.0),
         u_axis: Vector3::new(0.0, 0.0, -1.0),
@@ -1137,8 +1127,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
         offset_id,
         1,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
+            reference: Some(DatumPlaneReference::ResolvedPlane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 1.0, 0.0),
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
@@ -1153,10 +1142,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     assert!(matches!(
         mismatched.definition,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
-                ..
-            }),
+            reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             ..
         }
     ));
@@ -1165,8 +1151,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
 #[test]
 fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     use cadmpeg_ir::features::{
-        DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
-        FeatureId, Length,
+        DatumPlaneReference, Feature as NeutralFeature, FeatureDefinition, FeatureId, Length,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1226,8 +1211,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     let unresolved_base = neutral_feature(
         offset_id.clone(),
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
+            reference: Some(DatumPlaneReference::ResolvedPlane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
@@ -1244,19 +1228,13 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     );
     inherit_configuration_reference_plane_semantics(
         std::slice::from_mut(&mut remains_unresolved),
-        &[unresolved_base],
+        std::slice::from_ref(&unresolved_base),
     );
-    assert!(matches!(
-        remains_unresolved.definition,
-        FeatureDefinition::DatumOffsetPlane {
-            reference: None,
-            ..
-        }
-    ));
+    assert_eq!(remains_unresolved.definition, unresolved_base.definition);
 }
 
 #[test]
-fn scoped_offset_plane_inherits_a_matching_resolved_face_reference() {
+fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     use cadmpeg_ir::features::{
         DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
         FeatureId, Length,
@@ -1278,18 +1256,19 @@ fn scoped_offset_plane_inherits_a_matching_resolved_face_reference() {
         definition,
         native_ref: None,
     };
-    let frame = |face| DatumPlaneReference::Face {
-        face,
+    let resolved_plane = || DatumPlaneReference::ResolvedPlane {
         origin: Point3::new(2.0, 3.0, 4.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
     let base = neutral_feature(FeatureDefinition::DatumOffsetPlane {
-        reference: Some(frame(FaceSelection::Faces(vec!["face#1".into()]))),
+        reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(vec![
+            "face#1".into(),
+        ]))),
         distance: Length(7.0),
     });
     let mut configured = neutral_feature(FeatureDefinition::DatumOffsetPlane {
-        reference: Some(frame(FaceSelection::Unresolved)),
+        reference: Some(resolved_plane()),
         distance: Length(7.0),
     });
 
@@ -1298,7 +1277,13 @@ fn scoped_offset_plane_inherits_a_matching_resolved_face_reference() {
         std::slice::from_ref(&base),
     );
 
-    assert_eq!(configured.definition, base.definition);
+    assert!(matches!(
+        configured.definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -1426,12 +1411,9 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         components: components.clone(),
     };
     let definition = || FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face {
-            face: FaceSelection::Native(native.clone()),
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }),
+        reference: Some(DatumPlaneReference::Face(FaceSelection::Native(
+            native.clone(),
+        ))),
         distance: Length(4.0),
     };
     let feature = NeutralFeature {
@@ -1481,10 +1463,10 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Resolved { faces, native: resolved_native },
-                ..
-            }),
+            reference: Some(DatumPlaneReference::Face(FaceSelection::Resolved {
+                faces,
+                native: resolved_native,
+            })),
             ..
         } if faces == &[FaceId("face".into())] && resolved_native == &native
     ));
@@ -1501,10 +1483,8 @@ fn configuration_frame_alias_binds_without_body_membership() {
     use cadmpeg_ir::topology::{Face, Sense};
 
     let feature_id = FeatureId("test:model:feature#offset".into());
-    let native = "sldprt:feature-input:legacy-face-alias#lane:40:200";
     let definition = || FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face {
-            face: FaceSelection::Native(native.into()),
+        reference: Some(DatumPlaneReference::ResolvedPlane {
             origin: Point3::new(0.0, 0.0, 5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
@@ -1566,11 +1546,8 @@ fn configuration_frame_alias_binds_without_body_membership() {
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Resolved { faces, native: resolved_native },
-                ..
-            }),
+            reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(faces))),
             ..
-        } if faces == &[FaceId("face".into())] && resolved_native == native
+        } if faces == &[FaceId("face".into())]
     ));
 }

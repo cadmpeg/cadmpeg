@@ -233,7 +233,9 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         .iter()
         .map(|plane| match plane {
             DatumPlaneReference::Feature(feature) => feature.clone(),
-            DatumPlaneReference::Face { .. } => panic!("feature-backed plane"),
+            DatumPlaneReference::Face(_) | DatumPlaneReference::ResolvedPlane { .. } => {
+                panic!("feature-backed plane")
+            }
         })
         .collect::<Vec<_>>();
     assert_eq!(point.dependencies, plane_features);
