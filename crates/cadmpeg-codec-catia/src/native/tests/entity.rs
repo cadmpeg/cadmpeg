@@ -1123,7 +1123,9 @@ fn typed_definition_chain_values_transfer_as_parameters() {
     let parameter_entity = native.entity_records[0].clone();
     native.entity_records[0].relation_program_instance =
         Some(crate::native::CatiaRelationProgramInstance {
-            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12,
+            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                context_entity: crate::native::CatiaEntityReference::default(),
+            },
             program_entity: crate::native::CatiaEntityReference::default(),
             repeated_entity: crate::native::CatiaEntityReference::default(),
             reference_incidences: Vec::new(),
@@ -1139,9 +1141,6 @@ fn typed_definition_chain_values_transfer_as_parameters() {
                     class_name: Some("param".to_string()),
                 },
             }]),
-            output_entity: None,
-            lead12_context_entity: None,
-            lead54_trailing_entity: None,
         });
     let mut relation_ir = CadIr::empty();
     let relation_transfer = crate::formula::transfer_parameters(
