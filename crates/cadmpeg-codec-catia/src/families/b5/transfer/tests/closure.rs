@@ -3,7 +3,7 @@
 use super::super::super::graph::{
     bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, pcurve_parameter_domain,
     B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5LogicalVertex, B5Loop,
-    B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve,
+    B5LoopMember, B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve,
     B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
     B5SupportedSurfaceParameters, B5Surface,
 };
@@ -324,9 +324,8 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
                 2,
                 B5Loop {
                     object_id: 2,
-                    pcurves: vec![20, 20, 20],
-                    edges: vec![30, 31, 32],
-                    metadata: test_loop_metadata(3),
+                    members: test_loop_members(&[20, 20, 20], &[30, 31, 32]),
+                    metadata: test_loop_metadata(),
                     surface: 10,
                 },
             ),
@@ -334,9 +333,8 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
                 4,
                 B5Loop {
                     object_id: 4,
-                    pcurves: vec![21, 21, 21],
-                    edges: vec![33, 34, 35],
-                    metadata: test_loop_metadata(3),
+                    members: test_loop_members(&[21, 21, 21], &[33, 34, 35]),
+                    metadata: test_loop_metadata(),
                     surface: 11,
                 },
             ),
@@ -425,9 +423,8 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
             2,
             B5Loop {
                 object_id: 2,
-                pcurves: vec![20, 20, 20],
-                edges: vec![30, 31, 32],
-                metadata: test_loop_metadata(3),
+                members: test_loop_members(&[20, 20, 20], &[30, 31, 32]),
+                metadata: test_loop_metadata(),
                 surface: 10,
             },
         )]),
@@ -514,12 +511,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
-    graph
-        .loops
-        .get_mut(&2)
-        .expect("required loop")
-        .metadata
-        .edge_controls[1][2] = -1;
+    graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
     let mut ir = CadIr::empty();
 
     assert!(transfer(
@@ -861,9 +853,8 @@ fn body_kind_requires_unique_complete_loop_ownership() {
             2,
             B5Loop {
                 object_id: 2,
-                pcurves: vec![4],
-                edges: vec![3],
-                metadata: test_loop_metadata(1),
+                members: test_loop_members(&[4], &[3]),
+                metadata: test_loop_metadata(),
                 surface: 10,
             },
         )]),
@@ -914,9 +905,8 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         6,
         B5Loop {
             object_id: 6,
-            pcurves: vec![8],
-            edges: vec![7],
-            metadata: test_loop_metadata(1),
+            members: test_loop_members(&[8], &[7]),
+            metadata: test_loop_metadata(),
             surface: 10,
         },
     );
@@ -932,8 +922,12 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .loops
         .get_mut(&2)
         .expect("required invariant")
-        .edges
-        .push(3);
+        .members
+        .push(B5LoopMember {
+            pcurve: 0,
+            edge: 3,
+            controls: [1, 1, 1],
+        });
     assert_eq!(
         ownership_plan(&graph)
             .expect("required invariant")
@@ -944,10 +938,10 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .loops
         .get_mut(&2)
         .expect("required invariant")
-        .edges
+        .members
         .pop();
 
-    graph.loops.get_mut(&6).expect("required invariant").edges[0] = 3;
+    graph.loops.get_mut(&6).expect("required invariant").members[0].edge = 3;
     let ownership = ownership_plan(&graph).expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
     assert_eq!(ownership.components.len(), 1);
@@ -964,9 +958,8 @@ fn body_kind_requires_unique_complete_loop_ownership() {
 fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
     let loop_ = |object_id: u32, edges: Vec<u32>| B5Loop {
         object_id,
-        pcurves: vec![0; edges.len()],
-        metadata: test_loop_metadata(edges.len()),
-        edges,
+        members: test_loop_members(&vec![0; edges.len()], &edges),
+        metadata: test_loop_metadata(),
         surface: 10,
     };
     let mut graph = B5Graph {
@@ -992,12 +985,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
-    graph
-        .loops
-        .get_mut(&2)
-        .expect("required loop")
-        .metadata
-        .edge_controls[1][2] = -1;
+    graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
     let orientation = orient_loop_members(
         &graph,
         BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
@@ -1036,9 +1024,8 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
             1,
             B5Loop {
                 object_id: 1,
-                pcurves: vec![2],
-                edges: vec![3],
-                metadata: test_loop_metadata(1),
+                members: test_loop_members(&[2], &[3]),
+                metadata: test_loop_metadata(),
                 surface: 4,
             },
         )]),

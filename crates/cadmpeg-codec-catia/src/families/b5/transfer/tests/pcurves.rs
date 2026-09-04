@@ -112,9 +112,8 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
             2,
             B5Loop {
                 object_id: 2,
-                pcurves: vec![20],
-                edges: vec![30],
-                metadata: test_loop_metadata(1),
+                members: test_loop_members(&[20], &[30]),
+                metadata: test_loop_metadata(),
                 surface: 10,
             },
         )]),
@@ -895,9 +894,8 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
             3,
             B5Loop {
                 object_id: 3,
-                pcurves: vec![4, 4, 4],
-                edges: vec![5, 6, 7],
-                metadata: test_loop_metadata(3),
+                members: test_loop_members(&[4, 4, 4], &[5, 6, 7]),
+                metadata: test_loop_metadata(),
                 surface: 2,
             },
         )]),
@@ -1043,9 +1041,8 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
             component.loop_,
             B5Loop {
                 object_id: component.loop_,
-                pcurves: vec![component.pcurve; 3],
-                edges: component.edges.to_vec(),
-                metadata: test_loop_metadata(3),
+                members: test_loop_members(&[component.pcurve; 3], &component.edges),
+                metadata: test_loop_metadata(),
                 surface: component.surface,
             },
         );

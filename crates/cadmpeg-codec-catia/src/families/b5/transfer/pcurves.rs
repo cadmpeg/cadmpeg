@@ -665,7 +665,9 @@ pub(super) fn emit_pcurves(
     let pcurve_plan = &plan.pcurve_plan;
     let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
     for loop_ in graph.loops.values() {
-        for (index, (&object_id, &edge_id)) in loop_.pcurves.iter().zip(&loop_.edges).enumerate() {
+        for (index, member) in loop_.members.iter().enumerate() {
+            let object_id = member.pcurve;
+            let edge_id = member.edge;
             let Some((_, _, native_range)) = pcurve_plan.get(&object_id) else {
                 continue;
             };

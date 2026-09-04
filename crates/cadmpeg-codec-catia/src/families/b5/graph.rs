@@ -117,7 +117,7 @@ impl B5Graph {
         let referenced_edges = self
             .loops
             .values()
-            .flat_map(|loop_| loop_.edges.iter().copied())
+            .flat_map(|loop_| loop_.members.iter().map(|member| member.edge))
             .collect::<HashSet<_>>();
         Some(
             referenced_edges
@@ -728,17 +728,24 @@ pub struct B5FaceRecord {
 pub struct B5Loop {
     /// This record's stream `object_id`.
     pub object_id: u32,
-    /// `object_id`s of the loop's member pcurves (or `0x18` lines), in
-    /// serialized order.
-    pub pcurves: Vec<u32>,
-    /// `object_id`s of the loop's member `b5 03 5e` edges, index-aligned
-    /// with `pcurves`.
-    pub edges: Vec<u32>,
-    /// Complete source-native framing, per-occurrence controls, and optional
-    /// numeric extension.
+    /// Pcurve/edge occurrences in serialized order, each with its native
+    /// control triple.
+    pub members: Vec<B5LoopMember>,
+    /// Source-native framing and optional numeric extension.
     pub metadata: B5LoopMetadata,
     /// `object_id` of the loop's surface (the trailing reference token).
     pub surface: u32,
+}
+
+/// One pcurve/edge occurrence of a class-`62` loop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B5LoopMember {
+    /// `object_id` of the member pcurve (or `0x18` line).
+    pub pcurve: u32,
+    /// `object_id` of the member `b5 03 5e` edge.
+    pub edge: u32,
+    /// Three signed controls for this occurrence.
+    pub controls: [i16; 3],
 }
 
 /// Complete metadata following a class-`62` loop's reference lanes.
@@ -746,8 +753,6 @@ pub struct B5Loop {
 pub struct B5LoopMetadata {
     /// Primary and secondary loop framing controls.
     pub framing_controls: [u8; 2],
-    /// Three signed controls for each edge occurrence, in loop order.
-    pub edge_controls: Vec<[i16; 3]>,
     /// Optional fixed-width numeric extension.
     pub extension: Option<B5LoopMetadataExtension>,
 }
@@ -765,18 +770,16 @@ pub struct B5LoopMetadataExtension {
 
 impl B5Loop {
     pub(crate) fn edge_senses(&self) -> Vec<bool> {
-        self.metadata
-            .edge_controls
+        self.members
             .iter()
-            .map(|controls| controls[0] == -1)
+            .map(|member| member.controls[0] == -1)
             .collect()
     }
 
     pub(crate) fn pcurve_senses(&self) -> Vec<bool> {
-        self.metadata
-            .edge_controls
+        self.members
             .iter()
-            .map(|controls| controls[2] == -1)
+            .map(|member| member.controls[2] == -1)
             .collect()
     }
 }
@@ -1286,21 +1289,16 @@ pub(crate) fn parse_from_records_budgeted(
             .all(|count| *count == 1)
         && referenced_loops.iter().all(|loop_id| {
             loops.get(loop_id).is_some_and(|loop_| {
-                loop_
-                    .pcurves
-                    .iter()
-                    .zip(&loop_.edges)
-                    .all(|(pcurve, edge)| {
-                        (pcurves
-                            .get(pcurve)
+                loop_.members.iter().all(|member| {
+                    (pcurves
+                        .get(&member.pcurve)
+                        .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                        || opaque_pcurves
+                            .get(&member.pcurve)
                             .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                            || opaque_pcurves
-                                .get(pcurve)
-                                .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                            || implicit_pcurves.get(pcurve) == Some(&loop_.surface))
-                            && edge_vertices.contains_key(edge)
-                    })
-                    && loop_chain_closes(loop_, &edge_vertices)
+                        || implicit_pcurves.get(&member.pcurve) == Some(&loop_.surface))
+                        && edge_vertices.contains_key(&member.edge)
+                }) && loop_chain_closes(loop_, &edge_vertices)
             })
         });
     Some(B5Graph {
@@ -2264,10 +2262,10 @@ fn bind_native_vertices(
     // are separated. Keep the first deterministic finite lift as the logical
     // coordinate; the pass below records every separation in vertex tolerance.
     for loop_ in loops.values() {
-        for (&pcurve, &edge) in loop_.pcurves.iter().zip(&loop_.edges) {
+        for member in &loop_.members {
             let (Some(vertices), Some(lifted)) = (
-                native_edges.get(&edge),
-                pcurve_endpoints(pcurve, edge, geometry),
+                native_edges.get(&member.edge),
+                pcurve_endpoints(member.pcurve, member.edge, geometry),
             ) else {
                 continue;
             };
@@ -2307,11 +2305,11 @@ fn bind_native_vertices(
     }
     let mut tolerances = BTreeMap::<usize, f64>::new();
     for loop_ in loops.values() {
-        for (&pcurve, &edge) in loop_.pcurves.iter().zip(&loop_.edges) {
-            let Some(lifted) = pcurve_endpoints(pcurve, edge, geometry) else {
+        for member in &loop_.members {
+            let Some(lifted) = pcurve_endpoints(member.pcurve, member.edge, geometry) else {
                 continue;
             };
-            let Some(&loci) = edge_vertices.get(&edge) else {
+            let Some(&loci) = edge_vertices.get(&member.edge) else {
                 continue;
             };
             let residuals = [
@@ -2447,21 +2445,21 @@ fn vertex_coordinate(
 }
 
 pub(crate) fn loop_chain_closes(loop_: &B5Loop, edge_vertices: &BTreeMap<u32, [usize; 2]>) -> bool {
-    let edge_senses = loop_.edge_senses();
-    if loop_.edges.is_empty() || loop_.edges.len() != edge_senses.len() {
-        return false;
-    }
-    let Some(first) = edge_vertices.get(&loop_.edges[0]) else {
+    let mut members = loop_.members.iter();
+    let Some(first_member) = members.next() else {
         return false;
     };
-    let first_reversed = usize::from(edge_senses[0]);
+    let Some(first) = edge_vertices.get(&first_member.edge) else {
+        return false;
+    };
+    let first_reversed = usize::from(first_member.controls[0] == -1);
     let initial = first[first_reversed];
     let mut current = first[1 - first_reversed];
-    for (edge, reversed) in loop_.edges[1..].iter().zip(&edge_senses[1..]) {
-        let Some(endpoints) = edge_vertices.get(edge) else {
+    for member in members {
+        let Some(endpoints) = edge_vertices.get(&member.edge) else {
             return false;
         };
-        let reversed = usize::from(*reversed);
+        let reversed = usize::from(member.controls[0] == -1);
         if endpoints[reversed] != current {
             return false;
         }
@@ -2524,11 +2522,11 @@ fn bind_edge_vertices(
     let mut edges: BTreeMap<u32, [usize; 2]> = BTreeMap::new();
     let mut conflicts = HashSet::new();
     for loop_ in loops.values() {
-        for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
-            if conflicts.contains(&edge_id) {
+        for member in &loop_.members {
+            if conflicts.contains(&member.edge) {
                 continue;
             }
-            let Some(endpoints) = pcurve_endpoints(pcurve_id, edge_id, geometry) else {
+            let Some(endpoints) = pcurve_endpoints(member.pcurve, member.edge, geometry) else {
                 continue;
             };
             let indices: Option<[usize; 2]> = endpoints
@@ -2539,17 +2537,17 @@ fn bind_edge_vertices(
             let Some(indices) = indices else {
                 continue;
             };
-            if let Some(previous) = edges.get(&edge_id) {
+            if let Some(previous) = edges.get(&member.edge) {
                 let mut previous_sorted = *previous;
                 let mut current_sorted = indices;
                 previous_sorted.sort_unstable();
                 current_sorted.sort_unstable();
                 if previous_sorted != current_sorted {
-                    edges.remove(&edge_id);
-                    conflicts.insert(edge_id);
+                    edges.remove(&member.edge);
+                    conflicts.insert(member.edge);
                 }
             } else {
-                edges.insert(edge_id, indices);
+                edges.insert(member.edge, indices);
             }
         }
     }
@@ -5563,9 +5561,9 @@ pub(crate) fn edge_face_references_from_frames(
             let Some(loop_record) = loops.get(loop_id) else {
                 continue;
             };
-            for &edge in &loop_record.edges {
-                if edge_ids.contains(&edge) {
-                    owners.entry(edge).or_default().insert(face);
+            for member in &loop_record.members {
+                if edge_ids.contains(&member.edge) {
+                    owners.entry(member.edge).or_default().insert(face);
                 }
             }
         }
@@ -5585,15 +5583,15 @@ fn parse_loop(
     if !surfaces.contains_key(&surface) {
         return None;
     }
-    for (&pcurve, &edge) in record.pcurves.iter().zip(&record.edges) {
+    for member in &record.members {
         if (parsed_pcurves
-            .get(&pcurve)
+            .get(&member.pcurve)
             .is_none_or(|pcurve| pcurve.surface != surface)
             && opaque_pcurves
-                .get(&pcurve)
+                .get(&member.pcurve)
                 .is_none_or(|pcurve| pcurve.surface != surface)
-            && implicit_pcurves.get(&pcurve) != Some(&surface))
-            || by_id.get(&edge)?.class != 0x5e
+            && implicit_pcurves.get(&member.pcurve) != Some(&surface))
+            || by_id.get(&member.edge)?.class != 0x5e
         {
             return None;
         }
@@ -5602,28 +5600,36 @@ fn parse_loop(
 }
 
 fn parse_loop_record(record: &B5Record) -> Option<B5Loop> {
-    let (references, metadata) = loop_references_and_metadata(record)?;
+    let (references, metadata, edge_controls) = loop_references_and_metadata(record)?;
     let surface = *references.last()?;
-    let mut pcurves = Vec::with_capacity((references.len() - 1) / 2);
-    let mut edges = Vec::with_capacity((references.len() - 1) / 2);
-    for pair in references[..references.len() - 1].chunks_exact(2) {
-        pcurves.push(pair[0]);
-        edges.push(pair[1]);
+    let pairs = &references[..references.len() - 1];
+    if pairs.len() / 2 != edge_controls.len() {
+        return None;
     }
+    let members = pairs
+        .chunks_exact(2)
+        .zip(edge_controls)
+        .map(|(pair, controls)| B5LoopMember {
+            pcurve: pair[0],
+            edge: pair[1],
+            controls,
+        })
+        .collect();
     Some(B5Loop {
         object_id: record.object_id,
-        pcurves,
-        edges,
+        members,
         metadata,
         surface,
     })
 }
 
 fn loop_references(record: &B5Record) -> Option<Vec<u32>> {
-    loop_references_and_metadata(record).map(|(references, _)| references)
+    loop_references_and_metadata(record).map(|(references, _, _)| references)
 }
 
-fn loop_references_and_metadata(record: &B5Record) -> Option<(Vec<u32>, B5LoopMetadata)> {
+fn loop_references_and_metadata(
+    record: &B5Record,
+) -> Option<(Vec<u32>, B5LoopMetadata, Vec<[i16; 3]>)> {
     (record.class == 0x62).then_some(())?;
     let mut position = 0;
     let count = counted_cardinality(&record.payload, &mut position)?;
@@ -5637,11 +5643,11 @@ fn loop_references_and_metadata(record: &B5Record) -> Option<(Vec<u32>, B5LoopMe
     if counted_cardinality(&record.payload, &mut position)? != edge_count {
         return None;
     }
-    let metadata = loop_metadata(record.payload.get(position..)?, edge_count)?;
-    Some((references, metadata))
+    let (metadata, edge_controls) = loop_metadata(record.payload.get(position..)?, edge_count)?;
+    Some((references, metadata, edge_controls))
 }
 
-fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<B5LoopMetadata> {
+fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec<[i16; 3]>)> {
     let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
     let controls_end = 3usize.checked_add(controls_len)?;
     if !matches!(bytes.first(), Some(0x03 | 0x05))
@@ -5700,11 +5706,13 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<B5LoopMetadata> {
         }
         _ => return None,
     };
-    Some(B5LoopMetadata {
-        framing_controls: [bytes[0], bytes[1]],
+    Some((
+        B5LoopMetadata {
+            framing_controls: [bytes[0], bytes[1]],
+            extension,
+        },
         edge_controls,
-        extension,
-    })
+    ))
 }
 
 fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
