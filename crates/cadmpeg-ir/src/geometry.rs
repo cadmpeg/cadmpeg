@@ -3311,14 +3311,94 @@ pub struct RollingBallThirdSide {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum RollingBallRadiusSelector {
+pub enum RollingBallRadiusSelector<T = f64> {
     /// Native `-1` no-radius sentinel.
     None,
     /// Explicit native selector scalar.
     Value {
         /// Stored scalar value.
-        value: f64,
+        value: T,
     },
+}
+
+/// Integer radius-selector value in a revision G2 blend.
+///
+/// The native `-1` value denotes the absence variant and is not a value of
+/// this type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transparent))]
+pub struct RevisionG2RadiusValue(i64);
+
+impl RevisionG2RadiusValue {
+    /// Construct an explicit selector value.
+    #[must_use]
+    pub const fn new(value: i64) -> Option<Self> {
+        if value == -1 {
+            None
+        } else {
+            Some(Self(value))
+        }
+    }
+
+    /// Return the native integer value.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
+impl Serialize for RevisionG2RadiusValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RevisionG2RadiusValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = i64::deserialize(deserializer)?;
+        Self::new(value).ok_or_else(|| {
+            serde::de::Error::custom("revision G2 radius selector value cannot be -1")
+        })
+    }
+}
+
+mod revision_g2_radius_selector_wire {
+    use super::{RevisionG2RadiusValue, RollingBallRadiusSelector};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(
+        selector: &RollingBallRadiusSelector<RevisionG2RadiusValue>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match selector {
+            RollingBallRadiusSelector::None => (-1_i64).serialize(serializer),
+            RollingBallRadiusSelector::Value { value } => value.get().serialize(serializer),
+        }
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<RollingBallRadiusSelector<RevisionG2RadiusValue>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(match i64::deserialize(deserializer)? {
+            -1 => RollingBallRadiusSelector::None,
+            value => RollingBallRadiusSelector::Value {
+                value: RevisionG2RadiusValue(value),
+            },
+        })
+    }
 }
 
 /// Complete byte-backed rolling-ball or three-surface blend context.
@@ -3858,9 +3938,10 @@ pub struct RevisionG2BlendConstruction {
     pub center_range: [Option<f64>; 2],
     /// Two signed blend radii in document length units.
     pub radii: [f64; 2],
-    /// Radius-selector enum following the radii; `-1` selects the
-    /// absent-radius branch.
-    pub radius_selector: i64,
+    /// Integer-valued optional-radius selector following the radii.
+    #[serde(with = "revision_g2_radius_selector_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "i64"))]
+    pub radius_selector: RollingBallRadiusSelector<RevisionG2RadiusValue>,
     /// Native optional U interval endpoints.
     pub u_range: [Option<f64>; 2],
     /// Native optional V interval endpoints.
