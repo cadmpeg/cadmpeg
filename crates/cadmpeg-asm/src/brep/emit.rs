@@ -2755,45 +2755,9 @@ fn emit_carrier_curve(
                     pcurve_parameter_range: None,
                 },
             }
-        } else if let Some((family, embedded, tail)) = procedural.8 {
-            let surfaces: [Option<SurfaceId>; 2] = embedded
-                .surfaces
-                .into_iter()
-                .enumerate()
-                .map(|(side, geometry)| {
-                    let geometry = geometry?;
-                    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
-                    out.surfaces.push(Surface {
-                        id: id.clone(),
-                        geometry,
-                        source_object: None,
-                    });
-                    Some(id)
-                })
-                .collect::<Vec<_>>()
-                .try_into()
-                .expect("two fixed support sides");
-            let pcurves = embedded.pcurves.map(|pcurve| {
-                pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                    degree: pcurve.degree,
-                    knots: pcurve.knots,
-                    control_points: pcurve.control_points,
-                    weights: pcurve.weights,
-                    periodic: pcurve.periodic,
-                })
-            });
+        } else if let Some(family) = procedural.8 {
             cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-                family,
-                context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                    sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
-                        surface: surfaces[side].clone(),
-                        pcurve: pcurves[side].clone(),
-                        pcurve_parameter_range: None,
-                    }),
-                    parameter_range: embedded.parameter_range,
-                    discontinuities: embedded.discontinuities,
-                },
-                tail,
+                family: emit_surface_curve_family(out, i, format, family),
             }
         } else if let Some(embedded) = procedural.9 {
             emit_silhouette_curve(out, i, embedded, format)
@@ -2946,6 +2910,77 @@ fn emit_carrier_curve(
                 definition,
             ),
         ));
+    }
+}
+
+fn emit_surface_curve_family(
+    out: &mut AsmBrep,
+    i: i64,
+    format: IdFormat<'_>,
+    family: crate::nurbs::proc_curve::EmbeddedSurfaceCurve,
+) -> cadmpeg_ir::geometry::SurfaceCurveFamily {
+    let mut map_context = |embedded: crate::nurbs::proc_curve::EmbeddedIntersection| {
+        let surfaces: [Option<SurfaceId>; 2] = embedded
+            .surfaces
+            .into_iter()
+            .enumerate()
+            .map(|(side, geometry)| {
+                let geometry = geometry?;
+                let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+                out.surfaces.push(Surface {
+                    id: id.clone(),
+                    geometry,
+                    source_object: None,
+                });
+                Some(id)
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("two fixed support sides");
+        let pcurves = embedded.pcurves.map(|pcurve| {
+            pcurve.map(|pcurve| PcurveGeometry::Nurbs {
+                degree: pcurve.degree,
+                knots: pcurve.knots,
+                control_points: pcurve.control_points,
+                weights: pcurve.weights,
+                periodic: pcurve.periodic,
+            })
+        });
+        cadmpeg_ir::geometry::IntcurveSupportContext {
+            sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
+                surface: surfaces[side].clone(),
+                pcurve: pcurves[side].clone(),
+                pcurve_parameter_range: None,
+            }),
+            parameter_range: embedded.parameter_range,
+            discontinuities: embedded.discontinuities,
+        }
+    };
+    match family {
+        crate::nurbs::proc_curve::EmbeddedSurfaceCurve::Blend { context, tail } => {
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Blend {
+                context: map_context(context),
+                tail,
+            }
+        }
+        crate::nurbs::proc_curve::EmbeddedSurfaceCurve::SurfaceConstrained { context, tail } => {
+            cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained {
+                context: map_context(context),
+                tail,
+            }
+        }
+        crate::nurbs::proc_curve::EmbeddedSurfaceCurve::Parametric { context, tail } => {
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric {
+                context: map_context(context),
+                tail,
+            }
+        }
+        crate::nurbs::proc_curve::EmbeddedSurfaceCurve::Skin { context, tail } => {
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Skin {
+                context: map_context(context),
+                tail,
+            }
+        }
     }
 }
 

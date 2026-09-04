@@ -1542,24 +1542,25 @@ fn emit_e5_curves_and_edges(
             ProceduralCurve::new(
                 id,
                 ProceduralCurveDefinition::SurfaceCurve {
-                    family: SurfaceCurveFamily::Parametric,
-                    context: IntcurveSupportContext {
-                        sides: [
-                            IntcurveSupportSide {
-                                surface: Some(surface.clone()),
-                                pcurve: Some(pcurve.clone()),
-                                pcurve_parameter_range: None,
-                            },
-                            IntcurveSupportSide {
-                                surface: None,
-                                pcurve: None,
-                                pcurve_parameter_range: None,
-                            },
-                        ],
-                        parameter_range: *range,
-                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                    family: SurfaceCurveFamily::Parametric {
+                        context: IntcurveSupportContext {
+                            sides: [
+                                IntcurveSupportSide {
+                                    surface: Some(surface.clone()),
+                                    pcurve: Some(pcurve.clone()),
+                                    pcurve_parameter_range: None,
+                                },
+                                IntcurveSupportSide {
+                                    surface: None,
+                                    pcurve: None,
+                                    pcurve_parameter_range: None,
+                                },
+                            ],
+                            parameter_range: *range,
+                            discontinuities: std::array::from_fn(|_| Vec::new()),
+                        },
+                        tail: None,
                     },
-                    tail: None,
                 },
             ),
         );

@@ -1186,11 +1186,17 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
                 continue;
             }
             match procedural.definition() {
-                ProceduralCurveDefinition::Intersection { context, .. }
-                | ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
+                ProceduralCurveDefinition::Intersection { context, .. } => {
                     used_surfaces
                         .extend(context.sides.iter().filter_map(|side| side.surface.clone()));
                 }
+                ProceduralCurveDefinition::SurfaceCurve { family } => used_surfaces.extend(
+                    family
+                        .context()
+                        .sides
+                        .iter()
+                        .filter_map(|side| side.surface.clone()),
+                ),
                 _ => {}
             }
         }
@@ -1613,10 +1619,16 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
                 continue;
             }
             match procedural.definition() {
-                ProceduralCurveDefinition::Intersection { context, .. }
-                | ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
+                ProceduralCurveDefinition::Intersection { context, .. } => {
                     surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));
                 }
+                ProceduralCurveDefinition::SurfaceCurve { family } => surfaces.extend(
+                    family
+                        .context()
+                        .sides
+                        .iter()
+                        .filter_map(|side| side.surface.clone()),
+                ),
                 _ => {}
             }
         }

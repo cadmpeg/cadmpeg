@@ -1698,13 +1698,13 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceCurveFamily};
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceCurveFamilyKind};
 
     for (name, expected_family) in [
-        ("blend_int_cur", SurfaceCurveFamily::Blend),
-        ("surf_int_cur", SurfaceCurveFamily::SurfaceConstrained),
-        ("par_int_cur", SurfaceCurveFamily::Parametric),
-        ("skin_int_cur", SurfaceCurveFamily::Skin),
+        ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
+        ("surf_int_cur", SurfaceCurveFamilyKind::SurfaceConstrained),
+        ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
+        ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
     ] {
         let result = F3dCodec
             .decode(
@@ -1714,21 +1714,21 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{name} decode failed: {error}"));
-        let ProceduralCurveDefinition::SurfaceCurve {
-            family, context, ..
-        } = &result.ir().model.procedural_curves[0].definition()
+        let ProceduralCurveDefinition::SurfaceCurve { family } =
+            &result.ir().model.procedural_curves[0].definition()
         else {
             panic!("expected {name} surface curve")
         };
-        assert_eq!(family, &expected_family);
+        assert_eq!(family.kind(), expected_family);
+        let context = family.context();
         assert!(context.sides.iter().all(|side| side.surface.is_some()));
 
         let mut edited = result.ir().clone();
         edited.model.procedural_curves[0].edit_definition(|definition| {
-            let ProceduralCurveDefinition::SurfaceCurve { context, .. } = definition else {
+            let ProceduralCurveDefinition::SurfaceCurve { family } = definition else {
                 unreachable!()
             };
-            context.parameter_range = [-1.0, 2.0];
+            family.context_mut().parameter_range = [-1.0, 2.0];
         });
         let mut regenerated = Vec::new();
         crate::test_support::plan_inherited_write(
@@ -1742,8 +1742,8 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));
         assert!(matches!(
             regenerated.ir().model.procedural_curves[0].definition(),
-            ProceduralCurveDefinition::SurfaceCurve { ref context, .. }
-                if context.parameter_range == [-1.0, 2.0]
+            ProceduralCurveDefinition::SurfaceCurve { ref family }
+                if family.context().parameter_range == [-1.0, 2.0]
         ));
 
         let (mut source_less, _, _) = result.into_parts();
@@ -1759,7 +1759,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             .unwrap_or_else(|error| panic!("{name} round trip failed: {error}"));
         assert!(matches!(
             &round_trip.ir().model.procedural_curves[0].definition(),
-            ProceduralCurveDefinition::SurfaceCurve { family, .. } if family == &expected_family
+            ProceduralCurveDefinition::SurfaceCurve { family } if family.kind() == expected_family
         ));
     }
 }

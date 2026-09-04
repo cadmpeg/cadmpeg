@@ -4960,22 +4960,36 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-        family,
-        context,
-        tail,
-    } = procedural.definition()
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { family } =
+        procedural.definition()
     {
-        let name = match family {
-            cadmpeg_ir::geometry::SurfaceCurveFamily::Blend => "blend_int_cur",
-            cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained => "surf_int_cur",
-            cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric => "par_int_cur",
-            cadmpeg_ir::geometry::SurfaceCurveFamily::Skin => "skin_int_cur",
+        let (name, context, tail) = match family {
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Blend { context, tail } => (
+                "blend_int_cur",
+                context,
+                tail.as_ref().map(|value| (&value.tail, value.flags, None)),
+            ),
+            cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained { context, tail } => (
+                "surf_int_cur",
+                context,
+                tail.as_ref().map(|value| (&value.tail, value.flags, None)),
+            ),
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { context, tail } => (
+                "par_int_cur",
+                context,
+                tail.as_ref()
+                    .map(|value| (&value.tail, value.flags.flag, value.flags.second_flag)),
+            ),
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Skin { context, tail } => (
+                "skin_int_cur",
+                context,
+                tail.as_ref().map(|value| (&value.tail, value.flags, None)),
+            ),
         };
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, name)?;
-        if let Some(tail) = tail {
+        if let Some((tail, flag, second_flag)) = tail {
             native_cache_first_curve_context(
                 bytes,
                 target,
@@ -4989,8 +5003,8 @@ pub(crate) fn native_procedural_curve(
                 },
                 Some(solved_cache),
             )?;
-            bytes.push(native_bool(tail.flag));
-            if let Some(second_flag) = tail.second_flag {
+            bytes.push(native_bool(flag));
+            if let Some(second_flag) = second_flag {
                 bytes.push(native_bool(second_flag));
             }
         } else {

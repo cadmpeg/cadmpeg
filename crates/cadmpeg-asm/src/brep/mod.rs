@@ -29,9 +29,9 @@ use crate::ids::IdFormat;
 use crate::nurbs;
 use crate::nurbs::proc_curve::{
     CompoundDefinition, EmbeddedDeformable, EmbeddedIntersection, EmbeddedLawCurve,
-    EmbeddedProjection, EmbeddedSilhouette, EmbeddedSpring, EmbeddedSurfaceOffset,
-    EmbeddedThreeSurfaceIntersection, EmbeddedTwoSidedOffset, SubsetDefinition,
-    VectorOffsetDefinition,
+    EmbeddedProjection, EmbeddedSilhouette, EmbeddedSpring, EmbeddedSurfaceCurve,
+    EmbeddedSurfaceOffset, EmbeddedThreeSurfaceIntersection, EmbeddedTwoSidedOffset,
+    SubsetDefinition, VectorOffsetDefinition,
 };
 use crate::nurbs::proc_surface::DecodedProceduralSurface;
 use crate::sab::Record;
@@ -454,11 +454,7 @@ type ProceduralCurveTail = (
     Option<EmbeddedTwoSidedOffset>,
     Option<(EmbeddedIntersection, bool)>,
     Option<EmbeddedThreeSurfaceIntersection>,
-    Option<(
-        cadmpeg_ir::geometry::SurfaceCurveFamily,
-        EmbeddedIntersection,
-        Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-    )>,
+    Option<EmbeddedSurfaceCurve>,
     Option<EmbeddedSilhouette>,
     Option<EmbeddedSurfaceOffset>,
     Option<EmbeddedSpring>,

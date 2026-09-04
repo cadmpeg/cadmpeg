@@ -14,7 +14,7 @@ use crate::nurbs::proc_curve::{
     procedural_curve_resolving_refs, projection_patch_layout, rolling_ball_patch_layout,
     silhouette_patch_layout, spring_patch_layout, subset_patch_layout, surface_curve_patch_layout,
     surface_offset_patch_layout, three_surface_patch_layout, vector_offset_patch_layout,
-    ProjectionTailPatchLayout,
+    EmbeddedSurfaceCurve, ProjectionTailPatchLayout,
 };
 use crate::nurbs::proc_surface::{DecodedProceduralSurfaceDefinition, EmbeddedLawExpression};
 use crate::nurbs::reader::NUBS_MARKER;

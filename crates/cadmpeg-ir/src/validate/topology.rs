@@ -1200,8 +1200,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
-                for side in &context.sides {
+            ProceduralCurveDefinition::SurfaceCurve { family } => {
+                for side in &family.context().sides {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(&surface.0).is_none() {
                             ref_error(findings, &procedural.id.0, "surface", &surface.0);

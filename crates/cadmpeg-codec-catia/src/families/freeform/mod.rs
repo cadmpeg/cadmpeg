@@ -2227,9 +2227,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             }
         } else {
             ProceduralCurveDefinition::SurfaceCurve {
-                family: SurfaceCurveFamily::Parametric,
-                context,
-                tail: None,
+                family: SurfaceCurveFamily::Parametric {
+                    context,
+                    tail: None,
+                },
             }
         };
         if let Some(((edge_index, procedure_index, curve_id, _), partner_pcurves)) = attachment {
@@ -3119,11 +3120,12 @@ mod tests {
         assert_eq!(ir.model.coedges[1].pcurves.len(), 0);
         assert_eq!(ir.model.curves.len(), 1);
         assert_eq!(ir.model.edges[0].curve.as_ref(), Some(&curve_id));
-        let ProceduralCurveDefinition::SurfaceCurve { context, .. } =
+        let ProceduralCurveDefinition::SurfaceCurve { family } =
             ir.model.procedural_curves[0].definition()
         else {
             panic!("one exact support remains a parametric surface curve");
         };
+        let context = family.context();
         assert_eq!(
             context
                 .sides
@@ -3172,8 +3174,8 @@ mod tests {
             panic!("one consolidated surface curve");
         };
         let context = match procedural.definition() {
-            ProceduralCurveDefinition::Intersection { context, .. }
-            | ProceduralCurveDefinition::SurfaceCurve { context, .. } => context,
+            ProceduralCurveDefinition::Intersection { context, .. } => context,
+            ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),
             _ => panic!("consolidated surface-curve construction"),
         };
         assert!(context
@@ -3219,8 +3221,8 @@ mod tests {
             panic!("one consolidated surface curve");
         };
         let context = match procedural.definition() {
-            ProceduralCurveDefinition::Intersection { context, .. }
-            | ProceduralCurveDefinition::SurfaceCurve { context, .. } => context,
+            ProceduralCurveDefinition::Intersection { context, .. } => context,
+            ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),
             _ => panic!("consolidated surface-curve construction"),
         };
         assert!(context

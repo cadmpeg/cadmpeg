@@ -936,13 +936,13 @@ fn three_surface_layout_walks_both_integer_widths() {
 
 #[test]
 fn surface_curve_layout_walks_each_family_at_both_widths() {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
+    use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
     for int_width in [4usize, 8] {
         for (name, family) in [
-            ("blend_int_cur", SurfaceCurveFamily::Blend),
-            ("surf_int_cur", SurfaceCurveFamily::SurfaceConstrained),
-            ("par_int_cur", SurfaceCurveFamily::Parametric),
-            ("skin_int_cur", SurfaceCurveFamily::Skin),
+            ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
+            ("surf_int_cur", SurfaceCurveFamilyKind::SurfaceConstrained),
+            ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
+            ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
         ] {
             let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
             bytes.extend_from_slice(name.as_bytes());
@@ -962,7 +962,7 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
                 }
             }
 
-            let layout = surface_curve_patch_layout(&bytes, int_width, &family)
+            let layout = surface_curve_patch_layout(&bytes, int_width, family)
                 .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
             assert_eq!(
                 layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
@@ -1148,8 +1148,6 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
 
 #[test]
 fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
-
     for int_width in [4usize, 8] {
         let mut support = vec![0x0f];
         push_ident(&mut support, "blend_support");
@@ -1187,8 +1185,13 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
             &test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
-        let (family, context, tail) = decoded.embedded_surface_curve.expect("typed blend context");
-        assert_eq!(family, SurfaceCurveFamily::Blend);
+        let EmbeddedSurfaceCurve::Blend {
+            context,
+            tail: Some(tail),
+        } = decoded.embedded_surface_curve.expect("typed blend context")
+        else {
+            panic!("blend surface-curve family")
+        };
         assert_eq!(context.parameter_range, [0.0, 1.0]);
         assert!(matches!(
             context.surfaces[0],
@@ -1197,16 +1200,13 @@ fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
         assert!(context.surfaces[1].is_none());
         assert!(context.pcurves[0].is_some());
         assert!(context.pcurves[1].is_none());
-        let tail = tail.expect("cache-first tail");
-        assert_eq!(tail.extension, 7);
-        assert!(tail.flag);
+        assert_eq!(tail.tail.extension, 7);
+        assert!(tail.flags);
     }
 }
 
 #[test]
 fn cache_first_par_curve_selects_mirrored_support_slot() {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
-
     // `flag1 = F` mirrors the support onto the second serialized slot:
     // surface slot 1 and pcurve slot 1 are null, while slot 2 carries the
     // parametric support surface and its bs2 pcurve. `par_int_cur`
@@ -1251,8 +1251,13 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
             &test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("cache-first par curve at width {int_width}"));
-        let (family, context, tail) = decoded.embedded_surface_curve.expect("typed par context");
-        assert_eq!(family, SurfaceCurveFamily::Parametric);
+        let EmbeddedSurfaceCurve::Parametric {
+            context,
+            tail: Some(tail),
+        } = decoded.embedded_surface_curve.expect("typed par context")
+        else {
+            panic!("parametric surface-curve family")
+        };
         assert!(context.surfaces[0].is_none());
         assert!(matches!(
             context.surfaces[1],
@@ -1260,10 +1265,9 @@ fn cache_first_par_curve_selects_mirrored_support_slot() {
         ));
         assert!(context.pcurves[0].is_none());
         assert!(context.pcurves[1].is_some());
-        let tail = tail.expect("cache-first tail");
-        assert_eq!(tail.extension, 7);
-        assert!(!tail.flag);
-        assert_eq!(tail.second_flag, Some(false));
+        assert_eq!(tail.tail.extension, 7);
+        assert!(!tail.flags.flag);
+        assert_eq!(tail.flags.second_flag, Some(false));
     }
 }
 
