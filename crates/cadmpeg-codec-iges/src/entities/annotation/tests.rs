@@ -570,7 +570,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     let mut ir = CadIr::empty();
     for (sequence, z) in [(1, 0.0), (3, 0.0)] {
         ir.model.curves.push(Curve {
-            id: CurveId(format!("iges:model:curve#D{sequence}")),
+            id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
             geometry: CurveGeometry::Circle {
                 center: Point3::new(0.0, 0.0, z),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -696,7 +696,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
     let mut ir = CadIr::empty();
     for sequence in [1, 3] {
         ir.model.curves.push(Curve {
-            id: CurveId(format!("iges:model:curve#D{sequence}")),
+            id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
             geometry: CurveGeometry::Circle {
                 center: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),

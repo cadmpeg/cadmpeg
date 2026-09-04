@@ -555,7 +555,8 @@ pub(super) fn transfer_section_entities(
                 )
             })
         });
-        let curve_id = CurveId(sketch_section_curve_id(sketch_id, &suffix));
+        let curve_id =
+            CurveId::mint(sketch_section_curve_id(sketch_id, &suffix)).expect("identity grammar");
         annotate(
             annotations,
             &entity_id.0,
@@ -632,10 +633,11 @@ pub(super) fn transfer_section_entities(
             },
             |external_id| sketch_entity_id(sketch_id, external_id),
         );
-        let curve_id = CurveId(format!(
+        let curve_id = CurveId::mint(format!(
             "creo:featdefs:saved_spline_curve#{}:{suffix}",
             sketch_identity_scope(sketch_id)
-        ));
+        ))
+        .expect("identity grammar");
         if entities.iter().any(|entity| entity.id() == &entity_id) {
             continue;
         }
@@ -702,7 +704,8 @@ pub(super) fn transfer_section_entities(
                 continue;
             };
             let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
-            let id = CurveId(sketch_section_curve_id(sketch_id, &suffix));
+            let id = CurveId::mint(sketch_section_curve_id(sketch_id, &suffix))
+                .expect("identity grammar");
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
@@ -747,7 +750,8 @@ pub(super) fn transfer_section_entities(
             } else {
                 format!("circle:offset:{}", segment.offset)
             };
-            let id = CurveId(sketch_section_curve_id(sketch_id, &suffix));
+            let id = CurveId::mint(sketch_section_curve_id(sketch_id, &suffix))
+                .expect("identity grammar");
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }
@@ -793,7 +797,8 @@ pub(super) fn transfer_section_entities(
             } else {
                 format!("centered_line:offset:{}", segment.offset)
             };
-            let id = CurveId(sketch_section_curve_id(sketch_id, &suffix));
+            let id = CurveId::mint(sketch_section_curve_id(sketch_id, &suffix))
+                .expect("identity grammar");
             if ir.model.curves.iter().any(|existing| existing.id == id) {
                 continue;
             }

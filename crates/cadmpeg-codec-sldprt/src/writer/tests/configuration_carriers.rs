@@ -937,7 +937,8 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.faces[0].surface = cadmpeg_ir::ids::SurfaceId("missing".into());
+    decoded.ir_mut().model.faces[0].surface =
+        cadmpeg_ir::ids::SurfaceId::mint("missing").expect("identity grammar");
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -976,7 +977,7 @@ pub(crate) fn semantic_writer_rejects_subds() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId("test:sldprt:subd#0".into()),
+        id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
@@ -1228,13 +1229,13 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         .iter()
         .all(|shell| shell.faces.len() == 1));
     assert!(regenerated.ir().model.regions.iter().all(|region| {
-        regenerated.source_fidelity().annotations.provenance[&region.id.0]
+        regenerated.source_fidelity().annotations.provenance[region.id.as_str()]
             .tag
             .as_deref()
             == Some("00_51_region")
     }));
     assert!(regenerated.ir().model.shells.iter().all(|shell| {
-        regenerated.source_fidelity().annotations.provenance[&shell.id.0]
+        regenerated.source_fidelity().annotations.provenance[shell.id.as_str()]
             .tag
             .as_deref()
             == Some("00_51_shell")

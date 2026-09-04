@@ -95,7 +95,7 @@ fn decode_rejects_unresolved_form_one_analytic_surface_references() {
             .model
             .surfaces
             .iter()
-            .all(|surface| surface.id.0 != "iges:model:surface#D7"));
+            .all(|surface| surface.id.as_str() != "iges:model:surface#D7"));
         assert!(result.report().losses.iter().any(|loss| {
             loss.message
                 .contains(&format!("IGES entity type {entity_type} form 1"))
@@ -152,7 +152,7 @@ fn decode_rejects_unresolved_form_one_analytic_surface_references() {
             .model
             .surfaces
             .iter()
-            .all(|surface| surface.id.0 != "iges:model:surface#D7"));
+            .all(|surface| surface.id.as_str() != "iges:model:surface#D7"));
         assert!(result.report().losses.iter().any(|loss| {
             loss.message.contains("IGES entity type 192 form 1") && loss.message.contains(expected)
         }));
@@ -177,7 +177,7 @@ fn decode_rejects_unresolved_form_one_analytic_surface_references() {
         .model
         .surfaces
         .iter()
-        .all(|surface| surface.id.0 != "iges:model:surface#D7"));
+        .all(|surface| surface.id.as_str() != "iges:model:surface#D7"));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("IGES entity type 192 form 1")
             && loss.message.contains("prohibited transformation")

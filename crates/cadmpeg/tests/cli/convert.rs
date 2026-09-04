@@ -118,7 +118,7 @@ fn source_less_ir_exports_to_decodable_rhino() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId("cadir:model:point#cli".into()),
+        id: cadmpeg_ir::ids::PointId::mint("cadir:model:point#cli").expect("identity grammar"),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -159,7 +159,7 @@ fn rhino_output_version_is_selected_explicitly() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId("cadir:model:point#version".into()),
+        id: cadmpeg_ir::ids::PointId::mint("cadir:model:point#version").expect("identity grammar"),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -582,7 +582,7 @@ fn convert_refuses_binary_output_to_stdout() {
     // source-less IR; the guard question is the destination, not the codec).
     let mut point_ir = cadmpeg_ir::CadIr::empty();
     point_ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId("cadir:model:point#guard".into()),
+        id: cadmpeg_ir::ids::PointId::mint("cadir:model:point#guard").expect("identity grammar"),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -673,7 +673,7 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId("cadir:model:point#iges".into()),
+        id: cadmpeg_ir::ids::PointId::mint("cadir:model:point#iges").expect("identity grammar"),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -741,7 +741,7 @@ fn a_to_that_names_only_the_format_still_inherits() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId("cadir:model:point#bare".into()),
+        id: cadmpeg_ir::ids::PointId::mint("cadir:model:point#bare").expect("identity grammar"),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });

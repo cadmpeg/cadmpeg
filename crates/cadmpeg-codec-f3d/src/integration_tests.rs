@@ -198,7 +198,7 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
             ("component.f3d", component.as_slice()),
         ],
     ));
-    assert!(merged.ir().model.bodies[0].id.0.contains(&format!(
+    assert!(merged.ir().model.bodies[0].id.as_str().contains(&format!(
         "xref/{XREF_ROLE}/occurrence-0/xref/{CHILD_ROLE}/occurrence-0/"
     )));
     assert_valid(&merged);

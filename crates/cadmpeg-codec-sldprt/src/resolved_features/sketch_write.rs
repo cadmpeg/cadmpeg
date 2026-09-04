@@ -24,16 +24,16 @@ pub(super) fn sketch_brep(
     let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
         cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT sketch {} requires resolved model-space placement",
-            sketch.id.0
+            sketch.id.as_str()
         ))
     })?;
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let prefix = format!("generated:sldprt:sketch:{}", sketch.id.0);
-    let body_id = BodyId(format!("{prefix}:body"));
-    let region_id = RegionId(format!("{prefix}:region"));
-    let shell_id = ShellId(format!("{prefix}:shell"));
-    let face_id = FaceId(format!("{prefix}:face"));
-    let surface_id = SurfaceId(format!("{prefix}:surface"));
+    let prefix = format!("generated:sldprt:sketch:{}", sketch.id.as_str());
+    let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
+    let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
+    let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
+    let face_id = FaceId::mint(format!("{prefix}:face")).expect("identity grammar");
+    let surface_id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
     let v_axis = normal.cross(u_axis);
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -83,7 +83,8 @@ pub(super) fn sketch_brep(
                 let entity = entities.get(&entity_use.entity).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(format_args!(
                         "sketch {} references missing entity {}",
-                        sketch.id.0, entity_use.entity.0
+                        sketch.id.as_str(),
+                        entity_use.entity.0
                     ))
                 })?;
                 let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
@@ -102,14 +103,16 @@ pub(super) fn sketch_brep(
                 "source-less SLDPRT sketch profile {profile_index} is not a closed endpoint chain"
             )));
         }
-        let loop_id = LoopId(format!("{prefix}:loop:{profile_index}"));
+        let loop_id =
+            LoopId::mint(format!("{prefix}:loop:{profile_index}")).expect("identity grammar");
         face_loops.push(loop_id.clone());
         let mut coedge_ids = Vec::new();
         for (use_index, entity_use) in profile.iter().enumerate() {
             let entity = entities.get(&entity_use.entity).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch {} references missing entity {}",
-                    sketch.id.0, entity_use.entity.0
+                    sketch.id.as_str(),
+                    entity_use.entity.0
                 ))
             })?;
             let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
@@ -145,9 +148,12 @@ pub(super) fn sketch_brep(
                     entity.id().0
                 )));
             }
-            let curve_id = CurveId(format!("{prefix}:curve:{profile_index}:{use_index}"));
-            let edge_id = EdgeId(format!("{prefix}:edge:{profile_index}:{use_index}"));
-            let coedge_id = CoedgeId(format!("{prefix}:coedge:{profile_index}:{use_index}"));
+            let curve_id = CurveId::mint(format!("{prefix}:curve:{profile_index}:{use_index}"))
+                .expect("identity grammar");
+            let edge_id = EdgeId::mint(format!("{prefix}:edge:{profile_index}:{use_index}"))
+                .expect("identity grammar");
+            let coedge_id = CoedgeId::mint(format!("{prefix}:coedge:{profile_index}:{use_index}"))
+                .expect("identity grammar");
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: generated.curve,
@@ -205,8 +211,10 @@ pub(super) fn sketch_brep(
         let SketchGeometry::Point { position } = entity.geometry else {
             continue;
         };
-        let point_id = PointId(format!("{prefix}:free-point:{ordinal}"));
-        let vertex_id = VertexId(format!("{prefix}:free-vertex:{ordinal}"));
+        let point_id =
+            PointId::mint(format!("{prefix}:free-point:{ordinal}")).expect("identity grammar");
+        let vertex_id =
+            VertexId::mint(format!("{prefix}:free-vertex:{ordinal}")).expect("identity grammar");
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: lift_point(position, origin, u_axis, v_axis),
@@ -217,9 +225,12 @@ pub(super) fn sketch_brep(
             point: point_id,
             tolerance: None,
         });
-        let edge_id = EdgeId(format!("{prefix}:point-edge:{ordinal}"));
-        let loop_id = LoopId(format!("{prefix}:point-loop:{ordinal}"));
-        let coedge_id = CoedgeId(format!("{prefix}:point-coedge:{ordinal}"));
+        let edge_id =
+            EdgeId::mint(format!("{prefix}:point-edge:{ordinal}")).expect("identity grammar");
+        let loop_id =
+            LoopId::mint(format!("{prefix}:point-loop:{ordinal}")).expect("identity grammar");
+        let coedge_id =
+            CoedgeId::mint(format!("{prefix}:point-coedge:{ordinal}")).expect("identity grammar");
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
             curve: None,
@@ -253,7 +264,7 @@ pub(super) fn sketch_brep(
     if face_loops.is_empty() {
         return Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT sketch {} has no profiles",
-            sketch.id.0
+            sketch.id.as_str()
         )));
     }
     ir.model.faces.push(Face {
@@ -306,7 +317,7 @@ fn generated_sketch_curve(
     let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
         cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT sketch {} requires resolved model-space placement",
-            sketch.id.0
+            sketch.id.as_str()
         ))
     })?;
     let lift = |point| lift_point(point, origin, u_axis, v_axis);
@@ -476,8 +487,8 @@ fn sketch_vertex(
     }
     let key = (position.u.to_bits(), position.v.to_bits());
     let ordinal = vertices.len();
-    let point_id = PointId(format!("{prefix}:point:{ordinal}"));
-    let vertex_id = VertexId(format!("{prefix}:vertex:{ordinal}"));
+    let point_id = PointId::mint(format!("{prefix}:point:{ordinal}")).expect("identity grammar");
+    let vertex_id = VertexId::mint(format!("{prefix}:vertex:{ordinal}")).expect("identity grammar");
     ir.model.points.push(Point {
         id: point_id.clone(),
         position: lift_point(position, origin, u_axis, v_axis),
@@ -512,7 +523,7 @@ pub(super) fn patch_line_profiles(
         let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
             cadmpeg_core::CodecError::NotImplemented(format!(
                 "SLDPRT sketch write-back requires resolved placement for {}",
-                sketch.id.0
+                sketch.id.as_str()
             ))
         })?;
         let v_axis = normal.cross(u_axis);

@@ -14,6 +14,13 @@ pub struct SemanticAnnotationId(
     #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
 );
 
+impl SemanticAnnotationId {
+    /// Borrow the underlying id string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Semantic role of an annotation independent of its drawing presentation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

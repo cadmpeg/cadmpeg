@@ -179,7 +179,8 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
     corrupted.model.occurrences[0].prototype = cadmpeg_ir::PrototypeReference::Local {
-        definition: cadmpeg_ir::ids::ProductDefinitionId("fcstd:model:component#missing".into()),
+        definition: cadmpeg_ir::ids::ProductDefinitionId::mint("fcstd:model:component#missing")
+            .expect("identity grammar"),
     };
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
@@ -885,7 +886,7 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
                     .native_ref
                     .as_deref()
                     .is_some_and(|id| id.ends_with(name))
-                    && !occurrence.id.0.ends_with(":container")
+                    && !occurrence.id.as_str().ends_with(":container")
             })
             .expect("named occurrence")
     };

@@ -5774,7 +5774,8 @@ pub(crate) fn bind_revolve_face_axes(
         };
         let entity_axis = entity_face_slot.and_then(|face_slot| {
             analytic_axis_for_face(
-                &cadmpeg_ir::ids::FaceId(ids::brep_entity_id(face_slot)),
+                &cadmpeg_ir::ids::FaceId::mint(ids::brep_entity_id(face_slot))
+                    .expect("identity grammar"),
                 faces,
                 surfaces,
             )

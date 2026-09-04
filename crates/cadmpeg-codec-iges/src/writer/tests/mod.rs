@@ -177,11 +177,11 @@ fn number_preserves_distinct_finite_values() {
 
 #[test]
 fn generated_resolution_covers_large_coordinate_endpoint_admission() {
-    let point_start = PointId("point#start".into());
-    let point_end = PointId("point#end".into());
-    let vertex_start = VertexId("vertex#start".into());
-    let vertex_end = VertexId("vertex#end".into());
-    let curve_id = CurveId("curve#line".into());
+    let point_start = PointId::mint("point#start").expect("identity grammar");
+    let point_end = PointId::mint("point#end").expect("identity grammar");
+    let vertex_start = VertexId::mint("vertex#start").expect("identity grammar");
+    let vertex_end = VertexId::mint("vertex#end").expect("identity grammar");
+    let curve_id = CurveId::mint("curve#line").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.points.extend([
         Point {
@@ -216,7 +216,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
         source_object: None,
     });
     ir.model.edges.push(Edge {
-        id: EdgeId("edge#line".into()),
+        id: EdgeId::mint("edge#line").expect("identity grammar"),
         curve: Some(curve_id),
         start: vertex_start,
         end: vertex_end,
@@ -232,7 +232,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId("point#global-profile".into()),
+        id: PointId::mint("point#global-profile").expect("identity grammar"),
         source_object: None,
         position: Point3::new(123.0, -4.0, 5.0),
     });
@@ -331,7 +331,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear = 2.5;
     ir.model.points.push(Point {
-        id: PointId("point#resolution-floor".into()),
+        id: PointId::mint("point#resolution-floor").expect("identity grammar"),
         source_object: None,
         position: Point3::new(1.0, 2.0, 3.0),
     });

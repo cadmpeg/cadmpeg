@@ -1101,7 +1101,7 @@ mod tests {
 
     fn model_body(id: &str) -> Body {
         Body {
-            id: BodyId(id.to_string()),
+            id: BodyId::mint(id.to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -1113,7 +1113,7 @@ mod tests {
 
     fn complete_block_ir() -> CadIr {
         let mut ir = CadIr::empty();
-        let body = BodyId("body".to_string());
+        let body = BodyId::mint("body".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(&body.0));
         ir.model.features.push(Feature {
             id: FeatureId("block".to_string()),
@@ -1292,7 +1292,7 @@ mod tests {
     #[test]
     fn complete_sphere_rederives_a_new_body() {
         let mut ir = CadIr::empty();
-        let body = BodyId("sphere".to_string());
+        let body = BodyId::mint("sphere".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(&body.0));
         ir.model.features.push(Feature {
             id: FeatureId("sphere-feature".to_string()),
@@ -1349,7 +1349,7 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified {
-                bodies: vec![BodyId("body".to_string())],
+                bodies: vec![BodyId::mint("body".to_string()).expect("identity grammar")],
             }
         );
     }
@@ -1490,7 +1490,7 @@ mod tests {
     fn complete_extrudes_apply_new_body_and_boolean_output_lineage() {
         let mut ir = complete_block_ir();
         let existing = ir.model.bodies[0].id.clone();
-        let created = BodyId("extruded".to_string());
+        let created = BodyId::mint("extruded".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(&created.0));
         let profile = FeatureId("profile".to_string());
         ir.model.features.push(body_neutral_feature(
@@ -1730,9 +1730,9 @@ mod tests {
     #[test]
     fn hole_cannot_modify_a_body_absent_from_prior_history() {
         let mut ir = complete_block_ir();
-        ir.model
-            .features
-            .push(complete_hole(BodyId("other".to_string())));
+        ir.model.features.push(complete_hole(
+            BodyId::mint("other".to_string()).expect("identity grammar"),
+        ));
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
@@ -1807,7 +1807,7 @@ mod tests {
     fn extract_body_copies_each_existing_source_to_one_new_output() {
         let mut ir = complete_block_ir();
         let source = ir.model.bodies[0].id.clone();
-        let extracted = BodyId("extracted".to_string());
+        let extracted = BodyId::mint("extracted".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(&extracted.0));
         ir.model.features.push(Feature {
             id: FeatureId("extract".to_string()),
@@ -1829,7 +1829,10 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified {
-                bodies: vec![BodyId("body".to_string()), extracted],
+                bodies: vec![
+                    BodyId::mint("body".to_string()).expect("identity grammar"),
+                    extracted
+                ],
             }
         );
     }
@@ -1860,7 +1863,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -1920,7 +1923,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -1959,7 +1962,7 @@ mod tests {
     fn keep_selected_removes_every_unselected_body() {
         let mut ir = complete_block_ir();
         let retained = ir.model.bodies[0].id.clone();
-        let removed = BodyId("removed".to_string());
+        let removed = BodyId::mint("removed".to_string()).expect("identity grammar");
         ir.model.features[0].outputs.push(removed.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![retained.clone(), removed.clone()]),
@@ -1985,7 +1988,7 @@ mod tests {
     fn combine_consumes_tools_and_preserves_the_target_identity() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        let tool = BodyId("tool".to_string());
+        let tool = BodyId::mint("tool".to_string()).expect("identity grammar");
         ir.model.features[0].outputs.push(tool.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
@@ -2014,7 +2017,7 @@ mod tests {
     fn combine_preserves_tools_when_requested() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        let tool = BodyId("tool".to_string());
+        let tool = BodyId::mint("tool".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(&tool.0));
         ir.model.features[0].outputs.push(tool.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
@@ -2124,8 +2127,8 @@ mod tests {
     fn trim_bodies_preserves_all_targets_and_tools() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId("second".to_string());
-        let tool = BodyId("tool".to_string());
+        let second = BodyId::mint("second".to_string()).expect("identity grammar");
+        let tool = BodyId::mint("tool".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(&second.0));
         ir.model.bodies.push(model_body(&tool.0));
         ir.model.features[0].outputs = vec![first.clone(), second.clone(), tool.clone()];
@@ -2156,7 +2159,7 @@ mod tests {
     fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        let tool = BodyId("tool".to_string());
+        let tool = BodyId::mint("tool".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(&tool.0));
         ir.model.features[0].outputs.push(tool.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
@@ -2192,7 +2195,9 @@ mod tests {
             target.clone(),
             FeatureDefinition::TrimBodies {
                 targets: BodySelection::Bodies(vec![target]),
-                tools: BodySelection::Bodies(vec![BodyId("tool".to_string())]),
+                tools: BodySelection::Bodies(vec![
+                    BodyId::mint("tool".to_string()).expect("identity grammar")
+                ]),
                 keep: BodyTrimSide::Unresolved,
             },
         ));
@@ -2231,7 +2236,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -2239,8 +2244,8 @@ mod tests {
     fn sew_replaces_all_inputs_with_its_declared_outputs() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId("second".to_string());
-        let sewn = BodyId("sewn".to_string());
+        let second = BodyId::mint("second".to_string()).expect("identity grammar");
+        let sewn = BodyId::mint("sewn".to_string()).expect("identity grammar");
         ir.model.bodies[0] = model_body(&sewn.0);
         ir.model.features[0].outputs = vec![first.clone(), second.clone()];
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
@@ -2307,7 +2312,9 @@ mod tests {
             body.clone(),
             FeatureDefinition::Combine {
                 target: BodySelection::Bodies(vec![body]),
-                tools: BodySelection::Bodies(vec![BodyId("missing".to_string())]),
+                tools: BodySelection::Bodies(vec![
+                    BodyId::mint("missing".to_string()).expect("identity grammar")
+                ]),
                 op: cadmpeg_ir::features::BooleanKind::Cut,
                 keep_tools: false,
             },
@@ -2326,8 +2333,8 @@ mod tests {
     fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId("second".to_string());
-        let unrelated = BodyId("unrelated".to_string());
+        let second = BodyId::mint("second".to_string()).expect("identity grammar");
+        let unrelated = BodyId::mint("unrelated".to_string()).expect("identity grammar");
         ir.model.bodies = vec![model_body(&unrelated.0)];
         ir.model.features[0].outputs = vec![first.clone(), second.clone(), unrelated.clone()];
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
@@ -2376,7 +2383,7 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Mismatch {
-                rederived: vec![BodyId("body".to_string())],
+                rederived: vec![BodyId::mint("body".to_string()).expect("identity grammar")],
                 saved: Vec::new(),
             }
         );
@@ -2453,8 +2460,12 @@ mod tests {
     fn complete_single_body_dress_up_families_preserve_identity() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
-        let first = FaceSelection::Faces(vec![FaceId("first".to_string())]);
-        let second = FaceSelection::Faces(vec![FaceId("second".to_string())]);
+        let first = FaceSelection::Faces(vec![
+            FaceId::mint("first".to_string()).expect("identity grammar")
+        ]);
+        let second = FaceSelection::Faces(vec![
+            FaceId::mint("second".to_string()).expect("identity grammar")
+        ]);
         let definitions = [
             FeatureDefinition::FaceBlend {
                 first_faces: first.clone(),
@@ -2508,19 +2519,23 @@ mod tests {
     fn complete_surface_edits_preserve_every_declared_body_identity() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId("second".to_string());
+        let second = BodyId::mint("second".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(&second.0));
         ir.model.features[0].outputs.push(second.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
         };
-        let faces = FaceSelection::Faces(vec![FaceId("face".to_string())]);
+        let faces = FaceSelection::Faces(vec![
+            FaceId::mint("face".to_string()).expect("identity grammar")
+        ]);
         let mut trim = body_neutral_feature(
             "trim-surface",
             1,
             FeatureDefinition::TrimSurface {
                 faces: faces.clone(),
-                tool: PathRef::Curves(vec![CurveId("trim-curve".to_string())]),
+                tool: PathRef::Curves(vec![
+                    CurveId::mint("trim-curve".to_string()).expect("identity grammar")
+                ]),
                 keep: TrimRegion::Inside,
             },
         );
@@ -2605,7 +2620,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -2630,20 +2645,24 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
         ));
     }
 
     #[test]
     fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
         let mut ir = complete_block_ir();
-        let missing = BodyId("missing".to_string());
+        let missing = BodyId::mint("missing".to_string()).expect("identity grammar");
         let mut trim = body_neutral_feature(
             "trim-surface",
             1,
             FeatureDefinition::TrimSurface {
-                faces: FaceSelection::Faces(vec![FaceId("face".to_string())]),
-                tool: PathRef::Curves(vec![CurveId("trim-curve".to_string())]),
+                faces: FaceSelection::Faces(vec![
+                    FaceId::mint("face".to_string()).expect("identity grammar")
+                ]),
+                tool: PathRef::Curves(vec![
+                    CurveId::mint("trim-curve".to_string()).expect("identity grammar")
+                ]),
                 keep: TrimRegion::Outside,
             },
         );
@@ -2663,8 +2682,8 @@ mod tests {
     fn body_pattern_adds_one_copy_per_non_original_occurrence() {
         let mut ir = complete_block_ir();
         let seed = ir.model.bodies[0].id.clone();
-        let first_copy = BodyId("copy-1".to_string());
-        let second_copy = BodyId("copy-2".to_string());
+        let first_copy = BodyId::mint("copy-1".to_string()).expect("identity grammar");
+        let second_copy = BodyId::mint("copy-2".to_string()).expect("identity grammar");
         ir.model.bodies.push(model_body(&first_copy.0));
         ir.model.bodies.push(model_body(&second_copy.0));
         let mut pattern = body_neutral_feature(
@@ -2717,7 +2736,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId("body".to_string())]
+                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -2960,7 +2979,9 @@ mod tests {
     fn overlapping_replace_face_operands_do_not_change_the_body_identity_effect() {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
-        let faces = FaceSelection::Faces(vec![FaceId("face".to_string())]);
+        let faces = FaceSelection::Faces(vec![
+            FaceId::mint("face".to_string()).expect("identity grammar")
+        ]);
         ir.model.features.push(body_preserving_feature(
             "replace-face",
             1,

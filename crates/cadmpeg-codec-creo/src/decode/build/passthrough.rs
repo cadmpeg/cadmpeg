@@ -71,7 +71,8 @@ pub(in super::super) fn preserve_passthrough_sections(
                 Exactness::Unknown,
             )
         };
-        let id = UnknownId(format!("creo:{}:section#{}", section.name, offset));
+        let id = UnknownId::mint(format!("creo:{}:section#{}", section.name, offset))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,

@@ -42,7 +42,7 @@ fuzz_target!(|data: &[u8]| {
                 &mut ir,
                 "iges",
                 [UnknownRecord::retained(
-                    UnknownId("iges:fuzz:unsupported#0".into()),
+                    UnknownId::mint("iges:fuzz:unsupported#0").expect("identity grammar"),
                     0,
                     vec![control],
                     Vec::new(),

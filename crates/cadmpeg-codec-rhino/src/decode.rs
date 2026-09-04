@@ -340,7 +340,9 @@ impl ArenaLengths {
     }
 
     fn remove_ids(ir: &mut CadIr, ids: &BTreeSet<String>) {
-        ir.model.bodies.retain(|entity| !ids.contains(&entity.id.0));
+        ir.model
+            .bodies
+            .retain(|entity| !ids.contains(entity.id.as_str()));
         ir.model
             .regions
             .retain(|entity| !ids.contains(&entity.id.to_string()));
@@ -391,10 +393,10 @@ impl ArenaLengths {
             .retain(|entity| !ids.contains(&entity.id.to_string()));
         ir.model
             .parameters
-            .retain(|entity| !ids.contains(&entity.id.0));
+            .retain(|entity| !ids.contains(entity.id.as_str()));
         ir.model
             .semantic_annotations
-            .retain(|entity| !ids.contains(&entity.id.0));
+            .retain(|entity| !ids.contains(entity.id.as_str()));
     }
 }
 
@@ -2368,7 +2370,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Mints the stable unknown-record ID for source order.
     pub fn mint_unknown_id(source_order: usize) -> UnknownId {
-        UnknownId(format!("rhino:object:record#{source_order:06}"))
+        UnknownId::mint(format!("rhino:object:record#{source_order:06}")).expect("identity grammar")
     }
 
     /// Commits the transaction and produces canonical IR and report state.
@@ -2613,10 +2615,11 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn retain_opaque_record(&mut self, source: &OpaqueRecord) {
-        let id = UnknownId(format!(
+        let id = UnknownId::mint(format!(
             "rhino:opaque:record#{:08x}-{:08x}-{:016x}",
             source.table_typecode, source.record.typecode, source.record.range.start
-        ));
+        ))
+        .expect("identity grammar");
         let record = self.source_record(id, source.record.range.clone());
         self.opaque_records.push(record);
     }
@@ -4466,7 +4469,8 @@ pub(crate) fn embedded_brep_json(
         layer: None,
         instance_path: Vec::new(),
     };
-    let unknown = UnknownId("rhino:history:embedded-brep".to_string());
+    let unknown =
+        UnknownId::mint("rhino:history:embedded-brep".to_string()).expect("identity grammar");
     let mut mesh_budget = crate::mesh::MeshBudget::from_session(expand.ctx());
     let staged = stage_brep(BrepTransferInput {
         expand,
@@ -4548,7 +4552,7 @@ fn scale_plane_pcurves(staged: &mut BrepDraft, scale: f64) {
         .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.clone()))
         .collect::<BTreeSet<_>>();
     for pcurve in &mut staged.draft.model_mut().pcurves {
-        if !plane_pcurves.contains(&pcurve.id.0) {
+        if !plane_pcurves.contains(pcurve.id.as_str()) {
             continue;
         }
         if let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry {

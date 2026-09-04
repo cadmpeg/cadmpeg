@@ -924,7 +924,8 @@ fn extended_geometry_json(
             value.class_data_range.clone(),
             archive,
             scale,
-            cadmpeg_ir::ids::SubdId("rhino:history:embedded-subd".to_string()),
+            cadmpeg_ir::ids::SubdId::mint("rhino:history:embedded-subd".to_string())
+                .expect("identity grammar"),
         )
         .ok()?;
         match subd {

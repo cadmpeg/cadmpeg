@@ -203,7 +203,7 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
             .model
             .edges
             .iter()
-            .map(|edge| edge.id.0.as_str())
+            .map(|edge| edge.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:edge#10", "catia:b5:edge#11", "catia:b5:edge#9"]
     );

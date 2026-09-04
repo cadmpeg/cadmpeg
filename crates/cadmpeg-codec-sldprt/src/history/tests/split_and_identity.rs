@@ -165,7 +165,7 @@ fn body_modifier_uses_one_based_modeling_history_ordinal() {
     assert!(projected[0].outputs.is_empty());
     assert_eq!(
         projected[1].outputs,
-        [cadmpeg_ir::ids::BodyId("sldprt:brep:body#333".into())]
+        [cadmpeg_ir::ids::BodyId::mint("sldprt:brep:body#333").expect("identity grammar")]
     );
 }
 

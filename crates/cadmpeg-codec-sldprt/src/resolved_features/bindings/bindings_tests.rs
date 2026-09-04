@@ -239,9 +239,9 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         }],
     };
     let face = Face {
-        id: FaceId("face".into()),
-        shell: ShellId("shell".into()),
-        surface: SurfaceId("surface".into()),
+        id: FaceId::mint("face").expect("identity grammar"),
+        shell: ShellId::mint("shell").expect("identity grammar"),
+        surface: SurfaceId::mint("surface").expect("identity grammar"),
         sense: Sense::Forward,
         loops: Vec::new(),
         name: None,
@@ -251,7 +251,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     let mut transform = cadmpeg_ir::transform::Transform::identity();
     transform.rows[0][3] = 12.0;
     let surface = Surface {
-        id: SurfaceId("surface".into()),
+        id: SurfaceId::mint("surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Transformed {
             basis: Box::new(SurfaceGeometry::Plane {
                 origin: Point3::new(1.0, 2.0, 3.0),
@@ -313,7 +313,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     ));
 
     let mut second_face = face.clone();
-    second_face.id = FaceId("other-face".into());
+    second_face.id = FaceId::mint("other-face").expect("identity grammar");
     bind_mirror_surface_planes(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),

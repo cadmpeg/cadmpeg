@@ -289,8 +289,9 @@ pub(super) fn emit_edges(
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
     for edge_id in edge_ids {
-        let id = EdgeId(format!("catia:b5:edge#{edge_id}"));
-        let curve_id = CurveId(format!("catia:b5:curve#{edge_id}"));
+        let id = EdgeId::mint(format!("catia:b5:edge#{edge_id}")).expect("identity grammar");
+        let curve_id =
+            CurveId::mint(format!("catia:b5:curve#{edge_id}")).expect("identity grammar");
         let endpoints = graph.edge_vertices[&edge_id];
         let mut curve_plan = plan
             .edge_curve_plan
@@ -363,7 +364,8 @@ pub(super) fn emit_edges(
                 )
             });
         if let Some((kind, tag, definition)) = procedural {
-            let procedural_id = ProceduralCurveId(format!("catia:b5:{kind}#{edge_id}"));
+            let procedural_id = ProceduralCurveId::mint(format!("catia:b5:{kind}#{edge_id}"))
+                .expect("identity grammar");
             annotate(
                 annotations,
                 &procedural_id,
@@ -401,8 +403,10 @@ pub(super) fn emit_edges(
         ir.model.edges.push(Edge {
             id,
             curve: Some(curve_id),
-            start: VertexId(format!("catia:b5:vertex#{}", endpoints[0])),
-            end: VertexId(format!("catia:b5:vertex#{}", endpoints[1])),
+            start: VertexId::mint(format!("catia:b5:vertex#{}", endpoints[0]))
+                .expect("identity grammar"),
+            end: VertexId::mint(format!("catia:b5:vertex#{}", endpoints[1]))
+                .expect("identity grammar"),
             param_range: edge_range,
             tolerance: edge_tolerance,
         });

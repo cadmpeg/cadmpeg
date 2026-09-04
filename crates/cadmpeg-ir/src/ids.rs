@@ -13,6 +13,28 @@
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+fn deserialize_entity_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    if is_valid_identity(&value) {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(IdentityError::InvalidId { value }))
+    }
+}
+
+fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    if value.is_empty() || value.chars().any(char::is_whitespace) {
+        Err(serde::de::Error::custom(IdentityError::InvalidId { value }))
+    } else {
+        Ok(value)
+    }
+}
 use std::fmt::{self, Display};
 
 /// True when `id` matches `<format>:<scope>:<kind>#<key>`.
@@ -110,7 +132,7 @@ macro_rules! id_type {
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
-        pub struct $name(pub String);
+        pub struct $name(#[serde(deserialize_with = "deserialize_entity_id")] pub String);
 
         impl Serialize for $name {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -122,6 +144,15 @@ macro_rules! id_type {
         }
 
         impl $name {
+            /// Mint an identity that matches `<format>:<scope>:<kind>#<key>`.
+            pub fn mint(value: impl Into<String>) -> Result<Self, IdentityError> {
+                let value = value.into();
+                if !is_valid_identity(&value) {
+                    return Err(IdentityError::InvalidId { value });
+                }
+                Ok(Self(value))
+            }
+
             /// Borrow the underlying id string.
             pub fn as_str(&self) -> &str {
                 &self.0
@@ -136,7 +167,7 @@ macro_rules! id_type {
 
         impl<S: Into<String>> From<S> for $name {
             fn from(value: S) -> Self {
-                $name(value.into())
+                Self::mint(value.into()).unwrap_or_else(|error| panic!("{error}"))
             }
         }
     };
@@ -148,9 +179,18 @@ macro_rules! local_id_type {
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
-        pub struct $name(pub String);
+        pub struct $name(#[serde(deserialize_with = "deserialize_local_id")] pub String);
 
         impl $name {
+            /// Mint a non-empty state-local identity.
+            pub fn mint(value: impl Into<String>) -> Result<Self, IdentityError> {
+                let value = value.into();
+                if value.is_empty() || value.chars().any(char::is_whitespace) {
+                    return Err(IdentityError::InvalidId { value });
+                }
+                Ok(Self(value))
+            }
+
             /// Borrow the underlying id string.
             pub fn as_str(&self) -> &str {
                 &self.0
@@ -165,7 +205,7 @@ macro_rules! local_id_type {
 
         impl<S: Into<String>> From<S> for $name {
             fn from(value: S) -> Self {
-                $name(value.into())
+                Self::mint(value.into()).unwrap_or_else(|error| panic!("{error}"))
             }
         }
     };

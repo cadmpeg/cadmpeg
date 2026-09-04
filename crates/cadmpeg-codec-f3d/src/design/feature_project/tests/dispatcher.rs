@@ -356,7 +356,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         .id
         .0
         .split_once('#')
-        .map_or(point.id.0.as_str(), |(_, key)| key);
+        .map_or(point.id.as_str(), |(_, key)| key);
     let prefix = crate::ids::history_input_prefix(feature_key, 4);
     assert_eq!(
         state,
@@ -638,8 +638,10 @@ fn loft_path_preserves_complete_historical_edge_selection() {
     use cadmpeg_ir::features::{EdgeSelection, PathRef};
     use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
 
-    let state = FeatureInputTopologyId("f3d:history-input:state#feature".into());
-    let edge = HistoricalEdgeId("f3d:history-input:edge#7:feature:41:17".into());
+    let state =
+        FeatureInputTopologyId::mint("f3d:history-input:state#feature").expect("identity grammar");
+    let edge =
+        HistoricalEdgeId::mint("f3d:history-input:edge#7:feature:41:17").expect("identity grammar");
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(
             "group",
@@ -732,7 +734,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         native_ref: Some(scope.id.clone()),
     }];
     let cages = [cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId("f3d:model:subd#1".into()),
+        id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
@@ -812,7 +814,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         native_ref: Some(scope.id.clone()),
     }];
     let cages = [cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId("f3d:model:subd#1".into()),
+        id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),

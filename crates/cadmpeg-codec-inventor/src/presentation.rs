@@ -344,10 +344,11 @@ fn project_face_bindings(
         let appearance_id = appearance_ids
             .entry((style.segment_token.as_str(), style.record_ordinal))
             .or_insert_with(|| {
-                let id = AppearanceId(format!(
+                let id = AppearanceId::mint(format!(
                     "inventor:presentation:face-color#{}-{}",
                     style.segment_token, style.record_ordinal
-                ));
+                ))
+                .expect("identity grammar");
                 projection.appearances.push(Appearance {
                     id: id.clone(),
                     name: None,
@@ -1068,7 +1069,7 @@ mod tests {
             issues: Vec::new(),
         };
         let appearance = Appearance {
-            id: AppearanceId("appearance".into()),
+            id: AppearanceId::mint("appearance").expect("identity grammar"),
             name: None,
             asset_guid: Some("d3c6130d-6c0f-4525-b268-53517ab46a78".into()),
             library_id: Some("afefc330-5e61-4e24-814f-ae810148b79d".into()),
@@ -1081,17 +1082,23 @@ mod tests {
             textures: Vec::new(),
         };
 
-        let projection =
-            project_default_bindings(&inventory, &[appearance], &[BodyId("body".into())]);
+        let projection = project_default_bindings(
+            &inventory,
+            &[appearance],
+            &[BodyId::mint("body").expect("identity grammar")],
+        );
 
         assert_eq!(projection.unresolved_defaults, 0);
         let [binding] = projection.bindings.as_slice() else {
             panic!("one body binding must be projected");
         };
-        assert_eq!(binding.appearance, AppearanceId("appearance".into()));
+        assert_eq!(
+            binding.appearance,
+            AppearanceId::mint("appearance").expect("identity grammar")
+        );
         assert_eq!(
             binding.target,
-            AppearanceTarget::Body(BodyId("body".into()))
+            AppearanceTarget::Body(BodyId::mint("body").expect("identity grammar"))
         );
     }
 
@@ -1247,7 +1254,7 @@ mod tests {
             graphics_primary_color_styles: vec![style],
             issues: Vec::new(),
         };
-        let face_id = FaceId("face".into());
+        let face_id = FaceId::mint("face").expect("identity grammar");
         let face_keys = std::collections::HashMap::from([(face_id.clone(), 42)]);
 
         let projection = project_bindings(&inventory, &[], &[], &face_keys);

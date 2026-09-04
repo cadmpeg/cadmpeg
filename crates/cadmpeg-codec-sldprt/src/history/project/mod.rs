@@ -738,7 +738,8 @@ pub(crate) fn custom_property_attributes(histories: &[FeatureHistory]) -> Vec<So
                 .strip_prefix("sldprt:history:feature#")
                 .unwrap_or(&feature.id);
             SourceAttribute {
-                id: AttributeId(format!("sldprt:history:custom-property#{key}")),
+                id: AttributeId::mint(format!("sldprt:history:custom-property#{key}"))
+                    .expect("identity grammar"),
                 target: AttributeTarget::Document,
                 name: feature.name.clone(),
                 values: feature

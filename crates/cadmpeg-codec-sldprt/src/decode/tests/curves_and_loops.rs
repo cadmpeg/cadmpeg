@@ -188,7 +188,10 @@ fn false_later_loop_candidate_does_not_replace_owned_loop() {
 
     assert_eq!(result.ir().model.loops.len(), 1);
     assert_eq!(result.ir().model.coedges.len(), 3);
-    assert_eq!(result.ir().model.loops[0].id.0, "sldprt:brep:loop#20");
+    assert_eq!(
+        result.ir().model.loops[0].id.as_str(),
+        "sldprt:brep:loop#20"
+    );
 }
 
 #[test]

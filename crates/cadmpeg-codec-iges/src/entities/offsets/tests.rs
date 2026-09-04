@@ -163,7 +163,7 @@ fn source_parameter_map_rejects_non_affine_curve_and_non_curve_domains() {
 
 #[test]
 fn offset_source_range_uses_the_unique_curve_endpoint_match() {
-    let source_id = CurveId("source".into());
+    let source_id = CurveId::mint("source").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: source_id.clone(),
@@ -175,62 +175,62 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     });
     ir.model.points.extend([
         Point {
-            id: PointId("wrong-start-point".into()),
+            id: PointId::mint("wrong-start-point").expect("identity grammar"),
             position: Point3::new(10.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("wrong-end-point".into()),
+            id: PointId::mint("wrong-end-point").expect("identity grammar"),
             position: Point3::new(11.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-start-point".into()),
+            id: PointId::mint("matching-start-point").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-end-point".into()),
+            id: PointId::mint("matching-end-point").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("wrong-start".into()),
-            point: PointId("wrong-start-point".into()),
+            id: VertexId::mint("wrong-start").expect("identity grammar"),
+            point: PointId::mint("wrong-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("wrong-end".into()),
-            point: PointId("wrong-end-point".into()),
+            id: VertexId::mint("wrong-end").expect("identity grammar"),
+            point: PointId::mint("wrong-end-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-start".into()),
-            point: PointId("matching-start-point".into()),
+            id: VertexId::mint("matching-start").expect("identity grammar"),
+            point: PointId::mint("matching-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-end".into()),
-            point: PointId("matching-end-point".into()),
+            id: VertexId::mint("matching-end").expect("identity grammar"),
+            point: PointId::mint("matching-end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.extend([
         Edge {
-            id: EdgeId("wrong-occurrence".into()),
+            id: EdgeId::mint("wrong-occurrence").expect("identity grammar"),
             curve: Some(source_id.clone()),
-            start: VertexId("wrong-start".into()),
-            end: VertexId("wrong-end".into()),
+            start: VertexId::mint("wrong-start").expect("identity grammar"),
+            end: VertexId::mint("wrong-end").expect("identity grammar"),
             param_range: Some([5.0, 6.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId("matching-occurrence".into()),
+            id: EdgeId::mint("matching-occurrence").expect("identity grammar"),
             curve: Some(source_id.clone()),
-            start: VertexId("matching-start".into()),
-            end: VertexId("matching-end".into()),
+            start: VertexId::mint("matching-start").expect("identity grammar"),
+            end: VertexId::mint("matching-end").expect("identity grammar"),
             param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
@@ -458,7 +458,7 @@ fn decode_does_not_default_an_unused_offset_pointer() {
         .model
         .curves
         .iter()
-        .all(|curve| curve.id.0 != "iges:model:curve#D3"));
+        .all(|curve| curve.id.as_str() != "iges:model:curve#D3"));
     assert!(result
         .report()
         .losses

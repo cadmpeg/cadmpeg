@@ -7,7 +7,7 @@ use cadmpeg_ir::ids::BodyId;
 
 #[test]
 fn nx_brep_projects_to_stored_geometry_only_with_unique_result_bodies() {
-    let body = BodyId("body#1".into());
+    let body = BodyId::mint("body#1").expect("identity grammar");
     assert!(matches!(
         super::brep_feature_definition(std::slice::from_ref(&body)),
         Some(FeatureDefinition::StoredGeometry)

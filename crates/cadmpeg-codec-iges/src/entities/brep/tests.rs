@@ -17,7 +17,7 @@ const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;
 
 #[test]
 fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
-    let curve_id = CurveId("curve".into());
+    let curve_id = CurveId::mint("curve").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -29,18 +29,18 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     });
     ir.model.edges.extend([
         Edge {
-            id: EdgeId("wrong-occurrence".into()),
+            id: EdgeId::mint("wrong-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("wrong-start".into()),
-            end: VertexId("wrong-end".into()),
+            start: VertexId::mint("wrong-start").expect("identity grammar"),
+            end: VertexId::mint("wrong-end").expect("identity grammar"),
             param_range: Some([10.0, 11.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId("matching-occurrence".into()),
+            id: EdgeId::mint("matching-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("matching-start".into()),
-            end: VertexId("matching-end".into()),
+            start: VertexId::mint("matching-start").expect("identity grammar"),
+            end: VertexId::mint("matching-end").expect("identity grammar"),
             param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
@@ -55,12 +55,12 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
         EPS_EDGE_ENDPOINT_MATCH,
     )
     .expect("matching edge occurrence");
-    assert_eq!(source_edge.id.0, "matching-occurrence");
+    assert_eq!(source_edge.id.as_str(), "matching-occurrence");
 }
 
 #[test]
 fn source_edge_selection_rejects_multiple_matching_occurrences() {
-    let curve_id = CurveId("curve".into());
+    let curve_id = CurveId::mint("curve").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -74,18 +74,18 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     });
     ir.model.edges.extend([
         Edge {
-            id: EdgeId("first-occurrence".into()),
+            id: EdgeId::mint("first-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("first-start".into()),
-            end: VertexId("first-end".into()),
+            start: VertexId::mint("first-start").expect("identity grammar"),
+            end: VertexId::mint("first-end").expect("identity grammar"),
             param_range: Some([0.0, std::f64::consts::TAU]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId("second-occurrence".into()),
+            id: EdgeId::mint("second-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("second-start".into()),
-            end: VertexId("second-end".into()),
+            start: VertexId::mint("second-start").expect("identity grammar"),
+            end: VertexId::mint("second-end").expect("identity grammar"),
             param_range: Some([std::f64::consts::TAU, 2.0 * std::f64::consts::TAU]),
             tolerance: None,
         },
@@ -271,7 +271,7 @@ fn decode_rejects_closed_shell_with_inconsistent_radial_sense() {
         .model
         .bodies
         .iter()
-        .all(|body| body.id.0 != "iges:model:body#D55"));
+        .all(|body| body.id.as_str() != "iges:model:body#D55"));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message
             == "IGES entity type 186 form 0 was not projected: closed shell does not use every edge exactly twice with opposite senses"
@@ -312,7 +312,7 @@ fn decode_applies_manifold_solid_placement_at_body_scope_once() {
         .model
         .points
         .iter()
-        .filter(|point| point.id.0.starts_with("iges:model:point#D55:"))
+        .filter(|point| point.id.as_str().starts_with("iges:model:point#D55:"))
         .map(|point| point.position)
         .collect::<Vec<_>>();
     assert!(points.contains(&cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)));
@@ -362,7 +362,7 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         .model
         .edges
         .iter()
-        .filter(|edge| edge.id.0.starts_with("iges:model:edge#D55:"))
+        .filter(|edge| edge.id.as_str().starts_with("iges:model:edge#D55:"))
         .collect::<Vec<_>>();
     assert_eq!(solid_edges.len(), 6);
     for edge in solid_edges {
@@ -436,7 +436,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .model
         .edges
         .iter()
-        .filter(|edge| edge.id.0.starts_with("iges:model:edge#D23:"))
+        .filter(|edge| edge.id.as_str().starts_with("iges:model:edge#D23:"))
         .collect::<Vec<_>>();
     assert_eq!(explicit_edges.len(), 4);
     assert_eq!(

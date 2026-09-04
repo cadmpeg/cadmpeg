@@ -193,9 +193,12 @@ pub(crate) fn attach_free_vertices(
     namespace: &str,
     stream: &str,
 ) {
-    let body_id = BodyId(format!("catia:{namespace}:body#unbound-points"));
-    let region_id = RegionId(format!("catia:{namespace}:region#unbound-points"));
-    let shell_id = ShellId(format!("catia:{namespace}:shell#unbound-points"));
+    let body_id =
+        BodyId::mint(format!("catia:{namespace}:body#unbound-points")).expect("identity grammar");
+    let region_id = RegionId::mint(format!("catia:{namespace}:region#unbound-points"))
+        .expect("identity grammar");
+    let shell_id =
+        ShellId::mint(format!("catia:{namespace}:shell#unbound-points")).expect("identity grammar");
     for id in [&body_id.0, &region_id.0, &shell_id.0] {
         annotate(
             annotations,
@@ -567,7 +570,8 @@ pub(crate) fn build_metadata_fallback(
     // Preserve the reconstructed BREP stream (or, absent one, the whole file) as
     // an unknown passthrough so no recognized data is silently dropped.
     if let Some(brep) = &scan.brep {
-        let id = UnknownId("catia:payload:unknown#brep-stream".to_string());
+        let id = UnknownId::mint("catia:payload:unknown#brep-stream".to_string())
+            .expect("identity grammar");
         annotate(
             &mut annotations,
             &id,
@@ -593,7 +597,7 @@ pub(crate) fn preserve_raw_payload(
         Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
         None => (scan.data.as_ref(), "CATPart"),
     };
-    let id = UnknownId(id.to_string());
+    let id = UnknownId::mint(id.to_string()).expect("identity grammar");
     annotate(
         annotations,
         &id,
@@ -922,8 +926,8 @@ mod route_tests {
 
         let mut invalid = CadIr::empty();
         invalid.model.shells.push(Shell {
-            id: ShellId("catia:test:shell#invalid".into()),
-            region: RegionId("catia:test:region#missing".into()),
+            id: ShellId::mint("catia:test:shell#invalid").expect("identity grammar"),
+            region: RegionId::mint("catia:test:region#missing").expect("identity grammar"),
             faces: Vec::new(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
@@ -949,7 +953,7 @@ mod route_tests {
         let mut ir = CadIr::empty();
         for key in [9_u32, 10] {
             ir.model.curves.push(Curve {
-                id: CurveId(format!("catia:test:curve#{key}")),
+                id: CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
                 geometry: CurveGeometry::Line {
                     origin: Point3::new(0.0, 0.0, f64::from(key)),
                     direction: Vector3::new(1.0, 0.0, 0.0),
@@ -990,9 +994,9 @@ mod route_tests {
 
     #[test]
     fn neutral_model_admissibility_includes_pending_unknown_records() {
-        let record_id = UnknownId("catia:test:unknown#0".into());
+        let record_id = UnknownId::mint("catia:test:unknown#0").expect("identity grammar");
         let mut ir = CadIr::empty();
-        let curve_id = CurveId("catia:test:curve#0".into());
+        let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown {
@@ -1004,7 +1008,8 @@ mod route_tests {
             .add_procedural_curve(
                 curve_id,
                 ProceduralCurve::new(
-                    ProceduralCurveId("catia:test:procedural-curve#0".into()),
+                    ProceduralCurveId::mint("catia:test:procedural-curve#0")
+                        .expect("identity grammar"),
                     ProceduralCurveDefinition::Unknown {
                         native_kind: None,
                         record: Some(record_id.clone()),
@@ -1025,19 +1030,19 @@ mod route_tests {
     #[test]
     fn unresolved_carrier_accounting_requires_an_exact_construction() {
         let mut ir = CadIr::empty();
-        let curve_id = CurveId("curve-0".to_string());
+        let curve_id = CurveId::mint("curve-0".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: None,
         });
-        let surface_id = SurfaceId("surface-0".to_string());
+        let surface_id = SurfaceId::mint("surface-0".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         });
-        let offset_id = SurfaceId("surface-1".to_string());
+        let offset_id = SurfaceId::mint("surface-1".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
@@ -1049,10 +1054,13 @@ mod route_tests {
             .add_procedural_curve(
                 curve_id,
                 ProceduralCurve::new(
-                    ProceduralCurveId("procedural-curve-0".to_string()),
+                    ProceduralCurveId::mint("procedural-curve-0".to_string())
+                        .expect("identity grammar"),
                     ProceduralCurveDefinition::Unknown {
                         native_kind: None,
-                        record: Some(UnknownId("record-0".to_string())),
+                        record: Some(
+                            UnknownId::mint("record-0".to_string()).expect("identity grammar"),
+                        ),
                     },
                 ),
             )
@@ -1061,9 +1069,12 @@ mod route_tests {
             .add_procedural_surface(
                 surface_id.clone(),
                 ProceduralSurface::new(
-                    ProceduralSurfaceId("procedural-surface-0".to_string()),
+                    ProceduralSurfaceId::mint("procedural-surface-0".to_string())
+                        .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Unknown {
-                        record: Some(UnknownId("record-1".to_string())),
+                        record: Some(
+                            UnknownId::mint("record-1".to_string()).expect("identity grammar"),
+                        ),
                     },
                     None,
                 ),
@@ -1073,7 +1084,8 @@ mod route_tests {
             .add_procedural_surface(
                 offset_id,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId("procedural-surface-1".to_string()),
+                    ProceduralSurfaceId::mint("procedural-surface-1".to_string())
+                        .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Offset {
                         support: surface_id,
                         distance: 2.0,

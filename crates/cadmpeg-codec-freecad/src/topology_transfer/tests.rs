@@ -525,13 +525,13 @@ Co
 
 #[test]
 fn non_manifold_incidence_does_not_invent_a_radial_order() {
-    let edge = EdgeId("edge".into());
+    let edge = EdgeId::mint("edge").expect("identity grammar");
     let mut coedges = (0..3)
         .map(|index| {
-            let id = CoedgeId(format!("coedge-{index}"));
+            let id = CoedgeId::mint(format!("coedge-{index}")).expect("identity grammar");
             Coedge {
                 id: id.clone(),
-                owner_loop: LoopId(format!("loop-{index}")),
+                owner_loop: LoopId::mint(format!("loop-{index}")).expect("identity grammar"),
                 edge: edge.clone(),
                 next: id.clone(),
                 previous: id.clone(),
@@ -547,10 +547,10 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
 
     let mut four = (0..4)
         .map(|index| {
-            let id = CoedgeId(format!("coedge-four-{index}"));
+            let id = CoedgeId::mint(format!("coedge-four-{index}")).expect("identity grammar");
             Coedge {
                 id: id.clone(),
-                owner_loop: LoopId(format!("loop-four-{index}")),
+                owner_loop: LoopId::mint(format!("loop-four-{index}")).expect("identity grammar"),
                 edge: edge.clone(),
                 next: id.clone(),
                 previous: id.clone(),
@@ -573,10 +573,10 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         original_ids.iter().collect::<Vec<_>>()
     );
 
-    let id = CoedgeId("coedge-single".into());
+    let id = CoedgeId::mint("coedge-single").expect("identity grammar");
     let mut singleton = vec![Coedge {
         id: id.clone(),
-        owner_loop: LoopId("loop-single".into()),
+        owner_loop: LoopId::mint("loop-single").expect("identity grammar"),
         edge,
         next: id.clone(),
         previous: id.clone(),

@@ -43,21 +43,24 @@ fn feature_output_bodies_with_history(
         .rows
         .iter()
         .filter(|row| row.feature_id == feature_id)
-        .map(|row| SurfaceId(format!("creo:visibgeom:surface#{}", row.id)))
+        .map(|row| {
+            SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar")
+        })
         .chain(
             scan.features
                 .entity_tables
                 .iter()
                 .filter(|table| table.feature_id == Some(feature_id))
                 .flat_map(|table| &table.surface_ids)
-                .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
+                .map(|surface_id| {
+                    SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                        .expect("identity grammar")
+                }),
         )
-        .chain(
-            affected_geometry
-                .into_iter()
-                .flatten()
-                .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
-        );
+        .chain(affected_geometry.into_iter().flatten().map(|surface_id| {
+            SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                .expect("identity grammar")
+        }));
     let mut outputs = evaluated_sweep_output_bodies(ir, feature_id);
     let edge_outputs = match feature_edge_selection(scan, ir, feature_id) {
         Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ir, &edges),
@@ -206,7 +209,10 @@ pub(in super::super) fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) ->
 pub(in super::super) fn evaluated_sweep_output_bodies(ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
     ["extrusion", "revolution"]
         .into_iter()
-        .map(|family| BodyId(format!("creo:feature:{family}#{feature_id}:body")))
+        .map(|family| {
+            BodyId::mint(format!("creo:feature:{family}#{feature_id}:body"))
+                .expect("identity grammar")
+        })
         .filter(|id| exactly_one(ir.model.bodies.iter().filter(|body| body.id == *id)).is_some())
         .collect()
 }
@@ -216,7 +222,8 @@ pub(in super::super) fn evaluated_sweep_body_kind(
     family: &str,
     feature_id: u32,
 ) -> Option<BodyKind> {
-    let id = BodyId(format!("creo:feature:{family}#{feature_id}:body"));
+    let id =
+        BodyId::mint(format!("creo:feature:{family}#{feature_id}:body")).expect("identity grammar");
     exactly_one(ir.model.bodies.iter().filter(|body| body.id == id)).map(|body| body.kind)
 }
 

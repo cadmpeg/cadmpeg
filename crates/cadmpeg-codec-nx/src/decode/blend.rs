@@ -88,13 +88,13 @@ mod tests {
             1.0,
         );
         for index in 0..MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
-            let surface = SurfaceId(format!("surface-{index}"));
+            let surface = SurfaceId::mint(format!("surface-{index}")).expect("identity grammar");
             cache.remember(&surface, index as f64, false, frame);
         }
-        let first = SurfaceId("surface-0".into());
+        let first = SurfaceId::mint("surface-0").expect("identity grammar");
         assert_eq!(cache.get(&first, 0.0, false), Some(frame));
 
-        let newest = SurfaceId("surface-newest".into());
+        let newest = SurfaceId::mint("surface-newest").expect("identity grammar");
         cache.remember(&newest, 0.0, false, frame);
         assert!(cache.get(&first, 0.0, false).is_none());
         assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
@@ -106,14 +106,15 @@ mod tests {
         let mut cache = BlendSurfaceFrameCache::default();
         let point = Point3::new(1.0, 2.0, 3.0);
         for index in 0..MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
-            let surface = SurfaceId(format!("boundary-surface-{index}"));
+            let surface =
+                SurfaceId::mint(format!("boundary-surface-{index}")).expect("identity grammar");
             cache.remember_boundary_point(&surface, index as f64, index % 2, point);
         }
 
-        let first = SurfaceId("boundary-surface-0".into());
+        let first = SurfaceId::mint("boundary-surface-0").expect("identity grammar");
         assert_eq!(cache.get_boundary_point(&first, 0.0, 0), Some(point));
 
-        let newest = SurfaceId("boundary-surface-newest".into());
+        let newest = SurfaceId::mint("boundary-surface-newest").expect("identity grammar");
         cache.remember_boundary_point(&newest, 0.0, 1, point);
         assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
         assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
@@ -151,9 +152,9 @@ mod tests {
 
     #[test]
     fn blend_contact_seed_cache_is_bounded_and_uses_the_nearest_chart() {
-        let support = SurfaceId("synthetic:seed-support".into());
-        let spine = CurveId("synthetic:seed-spine".into());
-        let offset_surface = SurfaceId("synthetic:seed-offset".into());
+        let support = SurfaceId::mint("synthetic:seed-support").expect("identity grammar");
+        let spine = CurveId::mint("synthetic:seed-spine").expect("identity grammar");
+        let offset_surface = SurfaceId::mint("synthetic:seed-offset").expect("identity grammar");
         let mut cache = BlendContactSeedCache::default();
         for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
             let parameter = parameter as f64;

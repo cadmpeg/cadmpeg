@@ -59,7 +59,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         offset: id as usize,
     };
     let plane = |id, origin, normal| Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin,
             normal,
@@ -89,19 +89,19 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#31".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Nurbs(translated_surface()),
             source_object: None,
         },
         plane(32, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
         plane(33, Point3::new(0.0, 0.0, 2.0), Vector3::new(0.0, 0.0, -1.0)),
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#34".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#35".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },
@@ -126,7 +126,11 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
             .model
             .surfaces
             .iter_mut()
-            .find(|surface| surface.id == SurfaceId(format!("creo:visibgeom:surface#{surface_id}")))
+            .find(|surface| {
+                surface.id
+                    == SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                        .expect("identity grammar")
+            })
             .expect("plane surface")
             .geometry = SurfaceGeometry::Unknown { record: None };
     }

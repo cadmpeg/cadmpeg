@@ -187,7 +187,7 @@ pub(super) fn curve_carrier_id(
     } else {
         sequence
     };
-    Some(CurveId(format!("iges:model:curve#D{carrier_sequence}")))
+    Some(CurveId::mint(format!("iges:model:curve#D{carrier_sequence}")).expect("identity grammar"))
 }
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
@@ -1260,12 +1260,16 @@ fn project_native_composite(
         })
         .collect();
     let stem = format!("D{}", entry.sequence);
-    let start_point = PointId(format!("iges:model:point#{stem}-start"));
-    let end_point = PointId(format!("iges:model:point#{stem}-end"));
-    let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-    let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-    let curve_id = CurveId(format!("iges:model:curve#{stem}"));
-    let edge_id = EdgeId(format!("iges:model:edge#{stem}"));
+    let start_point =
+        PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+    let end_point =
+        PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+    let start_vertex =
+        VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+    let end_vertex =
+        VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
+    let curve_id = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+    let edge_id = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
     ir.model.points.extend([
         Point {
             source_object: None,
@@ -1674,12 +1678,16 @@ fn project_with_type_130_policy(
             continue;
         };
         let stem = format!("D{}", entry.sequence);
-        let start_point = PointId(format!("iges:model:point#{stem}-start"));
-        let end_point = PointId(format!("iges:model:point#{stem}-end"));
-        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-        let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-        let curve_id = CurveId(format!("iges:model:curve#{stem}"));
-        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        let start_point =
+            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+        let end_point =
+            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+        let start_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+        let end_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
+        let curve_id = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -1730,7 +1738,8 @@ fn project_with_type_130_policy(
         let _attached = ir.model.add_procedural_curve(
             curve_id,
             ProceduralCurve::new(
-                ProceduralCurveId(format!("iges:model:procedural-curve#{stem}")),
+                ProceduralCurveId::mint(format!("iges:model:procedural-curve#{stem}"))
+                    .expect("identity grammar"),
                 ProceduralCurveDefinition::Compound {
                     parameters: boundaries,
                     component_parameters: child_starts,

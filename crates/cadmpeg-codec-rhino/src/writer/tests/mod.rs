@@ -81,19 +81,29 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
     let loop_id: LoopId = "cadir:model:loop#polygon".into();
     let surface: SurfaceId = "cadir:model:surface#polygon".into();
     let point_ids = (0..points.len())
-        .map(|index| PointId(format!("cadir:model:point#polygon.{index}")))
+        .map(|index| {
+            PointId::mint(format!("cadir:model:point#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..points.len())
-        .map(|index| VertexId(format!("cadir:model:vertex#polygon.{index}")))
+        .map(|index| {
+            VertexId::mint(format!("cadir:model:vertex#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..points.len())
-        .map(|index| EdgeId(format!("cadir:model:edge#polygon.{index}")))
+        .map(|index| {
+            EdgeId::mint(format!("cadir:model:edge#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..points.len())
-        .map(|index| CurveId(format!("cadir:model:curve#polygon.{index}")))
+        .map(|index| {
+            CurveId::mint(format!("cadir:model:curve#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..points.len())
-        .map(|index| CoedgeId(format!("cadir:model:coedge#polygon.{index}")))
+        .map(|index| {
+            CoedgeId::mint(format!("cadir:model:coedge#polygon.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     ir.model.bodies.push(Body {
         id: body.clone(),
@@ -203,21 +213,37 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
 
     let base = ir.model.edges.len();
     let face = ir.model.faces[0].id.clone();
-    let loop_id = LoopId(format!("cadir:model:loop#polygon.{}", ir.model.loops.len()));
+    let loop_id = LoopId::mint(format!("cadir:model:loop#polygon.{}", ir.model.loops.len()))
+        .expect("identity grammar");
     let point_ids = (0..points.len())
-        .map(|index| PointId(format!("cadir:model:point#polygon.{}", base + index)))
+        .map(|index| {
+            PointId::mint(format!("cadir:model:point#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..points.len())
-        .map(|index| VertexId(format!("cadir:model:vertex#polygon.{}", base + index)))
+        .map(|index| {
+            VertexId::mint(format!("cadir:model:vertex#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..points.len())
-        .map(|index| EdgeId(format!("cadir:model:edge#polygon.{}", base + index)))
+        .map(|index| {
+            EdgeId::mint(format!("cadir:model:edge#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..points.len())
-        .map(|index| CurveId(format!("cadir:model:curve#polygon.{}", base + index)))
+        .map(|index| {
+            CurveId::mint(format!("cadir:model:curve#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..points.len())
-        .map(|index| CoedgeId(format!("cadir:model:coedge#polygon.{}", base + index)))
+        .map(|index| {
+            CoedgeId::mint(format!("cadir:model:coedge#polygon.{}", base + index))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     ir.model.faces[0].loops.push(loop_id.clone());
     ir.model.loops.push(Loop {
@@ -290,16 +316,16 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
     let region: RegionId = "cadir:model:region#adjacent".into();
     let shell: ShellId = "cadir:model:shell#adjacent".into();
     let face_ids = [
-        FaceId("cadir:model:face#adjacent.0".into()),
-        FaceId("cadir:model:face#adjacent.1".into()),
+        FaceId::mint("cadir:model:face#adjacent.0").expect("identity grammar"),
+        FaceId::mint("cadir:model:face#adjacent.1").expect("identity grammar"),
     ];
     let loop_ids = [
-        LoopId("cadir:model:loop#adjacent.0".into()),
-        LoopId("cadir:model:loop#adjacent.1".into()),
+        LoopId::mint("cadir:model:loop#adjacent.0").expect("identity grammar"),
+        LoopId::mint("cadir:model:loop#adjacent.1").expect("identity grammar"),
     ];
     let surface_ids = [
-        SurfaceId("cadir:model:surface#adjacent.0".into()),
-        SurfaceId("cadir:model:surface#adjacent.1".into()),
+        SurfaceId::mint("cadir:model:surface#adjacent.0").expect("identity grammar"),
+        SurfaceId::mint("cadir:model:surface#adjacent.1").expect("identity grammar"),
     ];
     let positions = [
         Point3::new(0.0, 0.0, 0.0),
@@ -310,19 +336,31 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         Point3::new(2.0, 1.0, 0.0),
     ];
     let point_ids = (0..positions.len())
-        .map(|index| PointId(format!("cadir:model:point#adjacent.{index}")))
+        .map(|index| {
+            PointId::mint(format!("cadir:model:point#adjacent.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..positions.len())
-        .map(|index| VertexId(format!("cadir:model:vertex#adjacent.{index}")))
+        .map(|index| {
+            VertexId::mint(format!("cadir:model:vertex#adjacent.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..7)
-        .map(|index| EdgeId(format!("cadir:model:edge#adjacent.{index}")))
+        .map(|index| {
+            EdgeId::mint(format!("cadir:model:edge#adjacent.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..7)
-        .map(|index| CurveId(format!("cadir:model:curve#adjacent.{index}")))
+        .map(|index| {
+            CurveId::mint(format!("cadir:model:curve#adjacent.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..8)
-        .map(|index| CoedgeId(format!("cadir:model:coedge#adjacent.{index}")))
+        .map(|index| {
+            CoedgeId::mint(format!("cadir:model:coedge#adjacent.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     ir.model.bodies.push(Body {
         id: body.clone(),
@@ -477,28 +515,49 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
         Point3::new(0.0, 0.0, 1.0),
     ];
     let point_ids = (0..4)
-        .map(|index| PointId(format!("cadir:model:point#tetrahedron.{index}")))
+        .map(|index| {
+            PointId::mint(format!("cadir:model:point#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..4)
-        .map(|index| VertexId(format!("cadir:model:vertex#tetrahedron.{index}")))
+        .map(|index| {
+            VertexId::mint(format!("cadir:model:vertex#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..6)
-        .map(|index| EdgeId(format!("cadir:model:edge#tetrahedron.{index}")))
+        .map(|index| {
+            EdgeId::mint(format!("cadir:model:edge#tetrahedron.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..6)
-        .map(|index| CurveId(format!("cadir:model:curve#tetrahedron.{index}")))
+        .map(|index| {
+            CurveId::mint(format!("cadir:model:curve#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let face_ids = (0..4)
-        .map(|index| FaceId(format!("cadir:model:face#tetrahedron.{index}")))
+        .map(|index| {
+            FaceId::mint(format!("cadir:model:face#tetrahedron.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let loop_ids = (0..4)
-        .map(|index| LoopId(format!("cadir:model:loop#tetrahedron.{index}")))
+        .map(|index| {
+            LoopId::mint(format!("cadir:model:loop#tetrahedron.{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let surface_ids = (0..4)
-        .map(|index| SurfaceId(format!("cadir:model:surface#tetrahedron.{index}")))
+        .map(|index| {
+            SurfaceId::mint(format!("cadir:model:surface#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..12)
-        .map(|index| CoedgeId(format!("cadir:model:coedge#tetrahedron.{index}")))
+        .map(|index| {
+            CoedgeId::mint(format!("cadir:model:coedge#tetrahedron.{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     ir.model.bodies.push(Body {
         id: body.clone(),

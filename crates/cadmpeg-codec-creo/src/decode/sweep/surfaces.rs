@@ -253,10 +253,11 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 || format!("offset{}", spline.offset),
                 |entity_id| entity_id.to_string(),
             );
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
                 definition.id
-            ));
+            ))
+            .expect("identity grammar");
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
@@ -478,7 +479,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) else {
                 continue;
             };
-            let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -533,7 +535,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) {
                 continue;
             }
-            let id = SurfaceId(format!("creo:visibgeom:surface#{native_surface_id}"));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface_id}"))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -603,9 +606,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 .entity_id
                 .expect("ordered saved spline has an entity id")
                 .to_string();
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "creo:feature:extrusion_directrix#{feature_id}:{suffix}"
-            ));
+            ))
+            .expect("identity grammar");
             if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 annotate(
                     annotations,
@@ -629,13 +633,15 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     }),
                 });
             }
-            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{native_surface_id}"));
+            let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface_id}"))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
-            let procedural_id = ProceduralSurfaceId(format!(
+            let procedural_id = ProceduralSurfaceId::mint(format!(
                 "creo:feature:extrusion_construction#{feature_id}:{suffix}"
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &surface_id,

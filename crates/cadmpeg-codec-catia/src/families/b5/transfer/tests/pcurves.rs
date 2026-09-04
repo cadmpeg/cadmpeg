@@ -194,8 +194,11 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         resolved_surface_carrier_in_graph(&graph, 10),
         Some(ResolvedPcurveSurface::Geometry(SurfaceGeometry::Nurbs(_)))
     ));
-    let plan = build_plan(&graph, &UnknownId("catia:test-payload".to_string()))
-        .expect("closed revolution graph");
+    let plan = build_plan(
+        &graph,
+        &UnknownId::mint("catia:test-payload".to_string()).expect("identity grammar"),
+    )
+    .expect("closed revolution graph");
     let curve = plan.edge_curve_plan.get(&30).expect("revolution isocurve");
     assert_eq!(curve.parameter_range, Some(angular_range));
     assert!(matches!(curve.geometry, CurveGeometry::Nurbs(_)));
@@ -943,7 +946,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
-    let payload = UnknownId("catia:test-payload".to_string());
+    let payload = UnknownId::mint("catia:test-payload".to_string()).expect("identity grammar");
 
     assert!(ownership_plan(&graph).is_some());
     assert!(loop_chain_closes(&graph.loops[&3], &graph.edge_vertices));
@@ -1141,7 +1144,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         &mut ir,
         &mut AnnotationBuilder::new(),
         graph,
-        &UnknownId("catia:payload:unknown#test".to_string()),
+        &UnknownId::mint("catia:payload:unknown#test".to_string()).expect("identity grammar"),
     ));
 
     // Native traversal order, which the arena-order check reads as unsorted.
@@ -1149,7 +1152,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         ir.model
             .faces
             .iter()
-            .map(|face| face.id.0.as_str())
+            .map(|face| face.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:face#9", "catia:b5:face#10"]
     );
@@ -1175,7 +1178,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
         ir.model
             .faces
             .iter()
-            .map(|face| face.id.0.as_str())
+            .map(|face| face.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:face#10", "catia:b5:face#9"]
     );

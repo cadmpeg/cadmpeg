@@ -15,10 +15,11 @@ impl StepIdentity {
     /// File-level signature opaque record: `step:file:signature#{index}`.
     #[must_use]
     pub fn signature(index: usize) -> UnknownId {
-        UnknownId(
+        UnknownId::mint(
             format_identity("step", "file", "signature", index)
                 .expect("step:file:signature#N is always valid"),
         )
+        .expect("identity grammar")
     }
 
     /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.

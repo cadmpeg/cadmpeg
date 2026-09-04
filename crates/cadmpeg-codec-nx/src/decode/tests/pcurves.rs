@@ -21,8 +21,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn active_body_selection_accepts_a_complete_singleton_membership() {
-    let first = BodyId("nx:test:body#first".into());
-    let second = BodyId("nx:test:body#second".into());
+    let first = BodyId::mint("nx:test:body#first").expect("identity grammar");
+    let second = BodyId::mint("nx:test:body#second").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.bodies.extend([
         Body {
@@ -69,8 +69,8 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
 
 #[test]
 fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
-    let first = BodyId("nx:s3:body#first".into());
-    let second = BodyId("nx:s8:body#second".into());
+    let first = BodyId::mint("nx:s3:body#first").expect("identity grammar");
+    let second = BodyId::mint("nx:s8:body#second").expect("identity grammar");
     let body_node_ids = BTreeMap::from([
         (first.clone(), BTreeSet::from([7, 8])),
         (second, BTreeSet::from([8, 9])),
@@ -87,9 +87,9 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
 #[test]
 fn analytic_closed_isocurves_retain_the_native_full_turn() {
     let mut ir = CadIr::empty();
-    let cone = SurfaceId("nx:test:cone".into());
-    let sphere = SurfaceId("nx:test:sphere".into());
-    let torus = SurfaceId("nx:test:torus".into());
+    let cone = SurfaceId::mint("nx:test:cone").expect("identity grammar");
+    let sphere = SurfaceId::mint("nx:test:sphere").expect("identity grammar");
+    let torus = SurfaceId::mint("nx:test:torus").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: cone.clone(),
@@ -125,7 +125,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             source_object: None,
         },
     ]);
-    let plane = SurfaceId("nx:test:plane".into());
+    let plane = SurfaceId::mint("nx:test:plane").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: plane.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -135,9 +135,9 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         },
         source_object: None,
     });
-    let cone_ellipse = CurveId("nx:test:cone-ellipse".into());
-    let sphere_circle = CurveId("nx:test:sphere-circle".into());
-    let torus_circle = CurveId("nx:test:torus-circle".into());
+    let cone_ellipse = CurveId::mint("nx:test:cone-ellipse").expect("identity grammar");
+    let sphere_circle = CurveId::mint("nx:test:sphere-circle").expect("identity grammar");
+    let torus_circle = CurveId::mint("nx:test:torus-circle").expect("identity grammar");
     ir.model.curves.extend([
         Curve {
             id: cone_ellipse.clone(),
@@ -243,7 +243,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         }
     }
 
-    let construction = ProceduralCurveId("nx:test:closed-intersection".into());
+    let construction =
+        ProceduralCurveId::mint("nx:test:closed-intersection").expect("identity grammar");
     let _attached = ir.model.add_procedural_curve(
         sphere_circle.clone(),
         ProceduralCurve::new(
@@ -259,8 +260,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             },
         ),
     );
-    let point = PointId("nx:test:closed-point".into());
-    let vertex = VertexId("nx:test:closed-vertex".into());
+    let point = PointId::mint("nx:test:closed-point").expect("identity grammar");
+    let vertex = VertexId::mint("nx:test:closed-vertex").expect("identity grammar");
     ir.model.points.push(Point {
         id: point.clone(),
         position: Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
@@ -272,7 +273,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         tolerance: Some(1.0e-8),
     });
     ir.model.edges.push(Edge {
-        id: EdgeId("nx:test:closed-edge".into()),
+        id: EdgeId::mint("nx:test:closed-edge").expect("identity grammar"),
         curve: Some(sphere_circle),
         start: vertex.clone(),
         end: vertex,
@@ -359,8 +360,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 #[test]
 fn boundary_pcurve_requires_an_affine_carrier_witness() {
     let mut ir = CadIr::empty();
-    let curve = CurveId("nx:test:bowed-boundary-curve".into());
-    let surface = SurfaceId("nx:test:boundary-plane".into());
+    let curve = CurveId::mint("nx:test:bowed-boundary-curve").expect("identity grammar");
+    let surface = SurfaceId::mint("nx:test:boundary-plane").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Nurbs(
@@ -419,8 +420,9 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
 #[test]
 fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     let mut ir = CadIr::empty();
-    let curve = CurveId("nx:test:affine-nurbs-boundary-curve".into());
-    let surface = SurfaceId("nx:test:affine-nurbs-boundary-surface".into());
+    let curve = CurveId::mint("nx:test:affine-nurbs-boundary-curve").expect("identity grammar");
+    let surface =
+        SurfaceId::mint("nx:test:affine-nurbs-boundary-surface").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Line {
@@ -613,12 +615,12 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
 
 #[test]
 fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
-    let surface = SurfaceId("nx:test:budget-plane".into());
-    let start_point = PointId("nx:test:budget-start-point".into());
-    let end_point = PointId("nx:test:budget-end-point".into());
-    let start_vertex = VertexId("nx:test:budget-start-vertex".into());
-    let end_vertex = VertexId("nx:test:budget-end-vertex".into());
-    let edge = EdgeId("nx:test:budget-edge".into());
+    let surface = SurfaceId::mint("nx:test:budget-plane").expect("identity grammar");
+    let start_point = PointId::mint("nx:test:budget-start-point").expect("identity grammar");
+    let end_point = PointId::mint("nx:test:budget-end-point").expect("identity grammar");
+    let start_vertex = VertexId::mint("nx:test:budget-start-vertex").expect("identity grammar");
+    let end_vertex = VertexId::mint("nx:test:budget-end-vertex").expect("identity grammar");
+    let edge = EdgeId::mint("nx:test:budget-edge").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
@@ -938,7 +940,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
 #[test]
 fn nurbs_blend_contact_requires_the_declared_radius_shell() {
     let mut ir = CadIr::empty();
-    let surface = SurfaceId("nx:test:contact-support".into());
+    let surface = SurfaceId::mint("nx:test:contact-support").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: affine_nurbs_surface(0.0),
@@ -955,8 +957,8 @@ fn nurbs_blend_contact_requires_the_declared_radius_shell() {
 #[test]
 fn saved_offset_cache_retains_its_procedural_lineage() {
     let mut ir = CadIr::empty();
-    let support = SurfaceId("nx:test:support".into());
-    let cache = SurfaceId("nx:test:cache".into());
+    let support = SurfaceId::mint("nx:test:support").expect("identity grammar");
+    let cache = SurfaceId::mint("nx:test:cache").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
@@ -970,7 +972,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
         },
     ]);
     let procedural = ProceduralSurface::try_new(
-        ProceduralSurfaceId("nx:test:offset".into()),
+        ProceduralSurfaceId::mint("nx:test:offset").expect("identity grammar"),
         ProceduralSurfaceDefinition::Offset {
             support: support.clone(),
             distance: 4.0,
@@ -999,8 +1001,8 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
 fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     let mut ir = CadIr::empty();
     let surfaces = [
-        SurfaceId("nx:test:surface#0".into()),
-        SurfaceId("nx:test:surface#1".into()),
+        SurfaceId::mint("nx:test:surface#0").expect("identity grammar"),
+        SurfaceId::mint("nx:test:surface#1").expect("identity grammar"),
     ];
     for surface in &surfaces {
         ir.model.surfaces.push(Surface {
@@ -1013,8 +1015,8 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             source_object: None,
         });
     }
-    let curve = CurveId("nx:test:curve".into());
-    let procedural = ProceduralCurveId("nx:test:intersection".into());
+    let curve = CurveId::mint("nx:test:curve").expect("identity grammar");
+    let procedural = ProceduralCurveId::mint("nx:test:intersection").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
@@ -1033,12 +1035,12 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         },
     ));
     let points = [
-        PointId("nx:test:point#0".into()),
-        PointId("nx:test:point#1".into()),
+        PointId::mint("nx:test:point#0").expect("identity grammar"),
+        PointId::mint("nx:test:point#1").expect("identity grammar"),
     ];
     let vertices = [
-        VertexId("nx:test:vertex#0".into()),
-        VertexId("nx:test:vertex#1".into()),
+        VertexId::mint("nx:test:vertex#0").expect("identity grammar"),
+        VertexId::mint("nx:test:vertex#1").expect("identity grammar"),
     ];
     for index in 0..2 {
         ir.model.points.push(Point {
@@ -1052,7 +1054,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             tolerance: None,
         });
     }
-    let edge = EdgeId("nx:test:edge".into());
+    let edge = EdgeId::mint("nx:test:edge").expect("identity grammar");
     ir.model.edges.push(Edge {
         id: edge.clone(),
         curve: Some(curve),
@@ -1062,20 +1064,20 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         tolerance: Some(0.03),
     });
     let pcurves = [
-        PcurveId("nx:test:pcurve#0".into()),
-        PcurveId("nx:test:pcurve#1".into()),
+        PcurveId::mint("nx:test:pcurve#0").expect("identity grammar"),
+        PcurveId::mint("nx:test:pcurve#1").expect("identity grammar"),
     ];
     let faces = [
-        FaceId("nx:test:face#0".into()),
-        FaceId("nx:test:face#1".into()),
+        FaceId::mint("nx:test:face#0").expect("identity grammar"),
+        FaceId::mint("nx:test:face#1").expect("identity grammar"),
     ];
     let loops = [
-        LoopId("nx:test:loop#0".into()),
-        LoopId("nx:test:loop#1".into()),
+        LoopId::mint("nx:test:loop#0").expect("identity grammar"),
+        LoopId::mint("nx:test:loop#1").expect("identity grammar"),
     ];
     let coedges = [
-        CoedgeId("nx:test:coedge#0".into()),
-        CoedgeId("nx:test:coedge#1".into()),
+        CoedgeId::mint("nx:test:coedge#0").expect("identity grammar"),
+        CoedgeId::mint("nx:test:coedge#1").expect("identity grammar"),
     ];
     for index in 0..2 {
         ir.model.pcurves.push(Pcurve {
@@ -1092,7 +1094,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         });
         ir.model.faces.push(Face {
             id: faces[index].clone(),
-            shell: ShellId("nx:test:shell".into()),
+            shell: ShellId::mint("nx:test:shell").expect("identity grammar"),
             surface: surfaces[index].clone(),
             sense: Sense::Forward,
             loops: vec![loops[index].clone()],
@@ -1505,7 +1507,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
 
-    let support = SurfaceId("nx:test:offset-orientation-support".into());
+    let support = SurfaceId::mint("nx:test:offset-orientation-support").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: support.clone(),
@@ -1520,7 +1522,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     let second = cadmpeg_ir::eval::pcurve_uv(&pcurve, 6.0).unwrap();
     let oriented = super::orient_tolerant_intersection_pcurve(
         &ir,
-        &CurveId("nx:test:unused-orientation-curve".into()),
+        &CurveId::mint("nx:test:unused-orientation-curve").expect("identity grammar"),
         &support,
         &pcurve,
         [2.0, 6.0],
@@ -1542,8 +1544,8 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
 #[test]
 fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
     let mut ir = CadIr::empty();
-    let curve = CurveId("nx:test:closed-orientation-curve".into());
-    let support = SurfaceId("nx:test:closed-orientation-support".into());
+    let curve = CurveId::mint("nx:test:closed-orientation-curve").expect("identity grammar");
+    let support = SurfaceId::mint("nx:test:closed-orientation-support").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Circle {
@@ -1589,7 +1591,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
 #[test]
 fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     let mut ir = CadIr::empty();
-    let curve_id = CurveId("nx:test:curve#0".into());
+    let curve_id = CurveId::mint("nx:test:curve#0").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Nurbs(
@@ -1605,7 +1607,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         source_object: None,
     });
     let procedural = ProceduralCurve::try_new(
-        ProceduralCurveId("nx:test:intersection#0".into()),
+        ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext {
                 sides: [
@@ -1632,8 +1634,8 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         .add_procedural_curve(curve_id.clone(), procedural)
         .unwrap();
 
-    let start_point = PointId("nx:test:point#0".into());
-    let end_point = PointId("nx:test:point#1".into());
+    let start_point = PointId::mint("nx:test:point#0").expect("identity grammar");
+    let end_point = PointId::mint("nx:test:point#1").expect("identity grammar");
     ir.model.points.extend([
         Point {
             id: start_point.clone(),
@@ -1646,8 +1648,8 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             source_object: None,
         },
     ]);
-    let start = VertexId("nx:test:vertex#0".into());
-    let end = VertexId("nx:test:vertex#1".into());
+    let start = VertexId::mint("nx:test:vertex#0").expect("identity grammar");
+    let end = VertexId::mint("nx:test:vertex#1").expect("identity grammar");
     ir.model.vertices.extend([
         Vertex {
             id: start.clone(),
@@ -1660,7 +1662,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             tolerance: None,
         },
     ]);
-    let edge = EdgeId("nx:test:edge#0".into());
+    let edge = EdgeId::mint("nx:test:edge#0").expect("identity grammar");
     ir.model.edges.push(Edge {
         id: edge.clone(),
         curve: Some(curve_id.clone()),
@@ -1669,9 +1671,10 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         param_range: None,
         tolerance: None,
     });
-    let support = SurfaceId("nx:test:surface-support#0".into());
-    let surface = SurfaceId("nx:test:surface#0".into());
-    let construction = ProceduralSurfaceId("nx:test:surface-offset#0".into());
+    let support = SurfaceId::mint("nx:test:surface-support#0").expect("identity grammar");
+    let surface = SurfaceId::mint("nx:test:surface#0").expect("identity grammar");
+    let construction =
+        ProceduralSurfaceId::mint("nx:test:surface-offset#0").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
@@ -1739,8 +1742,8 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
 fn boundary_coincidence_is_certified_between_uniform_samples() {
     let mut ir = CadIr::empty();
     let surfaces = [
-        SurfaceId("nx:test:surface#0".into()),
-        SurfaceId("nx:test:surface#1".into()),
+        SurfaceId::mint("nx:test:surface#0").expect("identity grammar"),
+        SurfaceId::mint("nx:test:surface#1").expect("identity grammar"),
     ];
     let surface = || {
         NurbsSurface::new(

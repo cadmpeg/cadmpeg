@@ -594,7 +594,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut historical_split_scope = split_body_scope.clone();
     historical_split_scope.previous_history_state_id = Some(7);
     let mut historical_split_tool = split_tool.clone();
-    historical_split_tool.preceding_candidate_faces = vec![FaceId(crate::ids::brep_entity_id(7))];
+    historical_split_tool.preceding_candidate_faces =
+        vec![FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")];
     historical_split_tool.recipe_references = vec![DesignRecipeReference {
         selector: 1,
         selector_offset: 0,
@@ -604,7 +605,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         design_reference_offset: 0,
         candidate_faces: Vec::new(),
         candidate_edges: Vec::new(),
-        alternate_selector_faces: vec![FaceId(crate::ids::brep_entity_id(7))],
+        alternate_selector_faces: vec![
+            FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")
+        ],
         alternate_selector_edges: Vec::new(),
     }];
     assert!(matches!(
@@ -745,7 +748,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         features[0].definition,
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Resolved {
-                faces: vec![FaceId(crate::ids::brep_entity_id(7))],
+                faces: vec![FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")],
                 native: delete_group.id.clone(),
             },
             heal: true,
@@ -822,7 +825,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         features[0].definition,
         FeatureDefinition::DeleteFace {
             faces: FaceSelection::Resolved {
-                faces: vec![FaceId(crate::ids::brep_entity_id(7))],
+                faces: vec![FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")],
                 native: delete_group.id.clone(),
             },
             heal: false,

@@ -405,7 +405,7 @@ fn source_records<'a>(
         .native_unknowns_iter("sldprt")
         .map(|reference| {
             let reference = reference?;
-            let retained = retained_by_id.get(reference.id.0.as_str()).ok_or_else(|| {
+            let retained = retained_by_id.get(reference.id.as_str()).ok_or_else(|| {
                 cadmpeg_ir::native::NativeConvertError::MissingRetainedSourceRecord(
                     reference.id.0.clone(),
                 )

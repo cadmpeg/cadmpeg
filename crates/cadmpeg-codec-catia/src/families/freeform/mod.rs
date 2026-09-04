@@ -86,9 +86,10 @@ pub(crate) fn append_consolidated_revolutions(
                 + profile.center_pair[0] * direction_y.z
                 + profile.center_pair[1] * axis.z,
         );
-        let directrix = CurveId(format!(
+        let directrix = CurveId::mint(format!(
             "catia:consolidated:surface-revolution-directrix#{index}"
-        ));
+        ))
+        .expect("identity grammar");
         annotate(
             annotations,
             &directrix,
@@ -107,9 +108,10 @@ pub(crate) fn append_consolidated_revolutions(
             },
             source_object: Some(cgm_source("profile-circle", profile.record_id)),
         });
-        let surface = SurfaceId(format!(
+        let surface = SurfaceId::mint(format!(
             "catia:consolidated:surface-revolution-surface#{index}"
-        ));
+        ))
+        .expect("identity grammar");
         let center_offset = Vector3::new(
             center.x - origin.x,
             center.y - origin.y,
@@ -179,7 +181,8 @@ pub(crate) fn append_consolidated_revolutions(
         let _attached = ir.model.add_procedural_surface(
             surface,
             ProceduralSurface::new(
-                ProceduralSurfaceId(format!("catia:consolidated:surface-revolution#{index}")),
+                ProceduralSurfaceId::mint(format!("catia:consolidated:surface-revolution#{index}"))
+                    .expect("identity grammar"),
                 ProceduralSurfaceDefinition::Revolution {
                     directrix,
                     axis_origin: origin,
@@ -443,7 +446,8 @@ pub(crate) fn try_decode_freeform_surfaces(
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    let payload_id = UnknownId("catia:payload:unknown#freeform".to_string());
+    let payload_id =
+        UnknownId::mint("catia:payload:unknown#freeform".to_string()).expect("identity grammar");
     preserve_raw_payload(&mut unknowns, &mut annotations, scan, &payload_id.0);
     let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
     let mut topology_ir = ir.clone();
@@ -465,7 +469,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             .take()
             .unwrap_or_else(|| freeform_surface_carriers(&scan.data, &consolidated_records));
         for (index, surface) in surfaces.iter().enumerate() {
-            let id = SurfaceId(format!("catia:a8:surf#{index}"));
+            let id = SurfaceId::mint(format!("catia:a8:surf#{index}")).expect("identity grammar");
             annotate(
                 &mut annotations,
                 &id,
@@ -494,7 +498,8 @@ pub(crate) fn try_decode_freeform_surfaces(
         &consolidated_records,
     );
     for curve in b2_nurbs_curves {
-        let id = CurveId(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()));
+        let id = CurveId::mint(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()))
+            .expect("identity grammar");
         let parameter_range = [
             *curve.geometry.knots().first().expect("parsed knot vector"),
             *curve.geometry.knots().last().expect("parsed knot vector"),
@@ -518,7 +523,8 @@ pub(crate) fn try_decode_freeform_surfaces(
         standalone_wires.push((id, parameter_range, curve.pos));
     }
     for curve in a5_nurbs_curves {
-        let id = CurveId(format!("catia:a5:nurbs-curve#{}", ir.model.curves.len()));
+        let id = CurveId::mint(format!("catia:a5:nurbs-curve#{}", ir.model.curves.len()))
+            .expect("identity grammar");
         let parameter_range = [
             *curve.geometry.knots().first().expect("parsed knot vector"),
             *curve.geometry.knots().last().expect("parsed knot vector"),
@@ -542,7 +548,8 @@ pub(crate) fn try_decode_freeform_surfaces(
         standalone_wires.push((id, parameter_range, curve.pos));
     }
     for circle in b2_spatial_circles {
-        let id = CurveId(format!("catia:b2:circle#{}", ir.model.curves.len()));
+        let id = CurveId::mint(format!("catia:b2:circle#{}", ir.model.curves.len()))
+            .expect("identity grammar");
         let parameter_range = [
             circle.range[0] / circle.radius,
             circle.range[1] / circle.radius,
@@ -827,9 +834,11 @@ fn attach_standalone_wires(
     let Some(plans) = plans else {
         return false;
     };
-    let body_id = BodyId("catia:freeform:wire-body#0".to_string());
-    let region_id = RegionId("catia:freeform:wire-region#0".to_string());
-    let shell_id = ShellId("catia:freeform:wire-shell#0".to_string());
+    let body_id = BodyId::mint("catia:freeform:wire-body#0".to_string()).expect("identity grammar");
+    let region_id =
+        RegionId::mint("catia:freeform:wire-region#0".to_string()).expect("identity grammar");
+    let shell_id =
+        ShellId::mint("catia:freeform:wire-shell#0".to_string()).expect("identity grammar");
     for id in [&body_id.0, &region_id.0, &shell_id.0] {
         annotate(
             annotations,
@@ -843,14 +852,19 @@ fn attach_standalone_wires(
     let mut edge_ids = Vec::with_capacity(plans.len());
     for (index, curve_id, range, pos, start, end) in plans {
         let point_ids = [
-            PointId(format!("catia:freeform:wire-point#{index}:start")),
-            PointId(format!("catia:freeform:wire-point#{index}:end")),
+            PointId::mint(format!("catia:freeform:wire-point#{index}:start"))
+                .expect("identity grammar"),
+            PointId::mint(format!("catia:freeform:wire-point#{index}:end"))
+                .expect("identity grammar"),
         ];
         let vertex_ids = [
-            VertexId(format!("catia:freeform:wire-vertex#{index}:start")),
-            VertexId(format!("catia:freeform:wire-vertex#{index}:end")),
+            VertexId::mint(format!("catia:freeform:wire-vertex#{index}:start"))
+                .expect("identity grammar"),
+            VertexId::mint(format!("catia:freeform:wire-vertex#{index}:end"))
+                .expect("identity grammar"),
         ];
-        let edge_id = EdgeId(format!("catia:freeform:wire-edge#{index}"));
+        let edge_id =
+            EdgeId::mint(format!("catia:freeform:wire-edge#{index}")).expect("identity grammar");
         for id in [
             &point_ids[0].0,
             &point_ids[1].0,
@@ -1069,7 +1083,8 @@ fn append_consolidated_line_profiles(
         .into_iter()
         .enumerate()
     {
-        let id = CurveId(format!("catia:consolidated:line-profile-curve#{index}"));
+        let id = CurveId::mint(format!("catia:consolidated:line-profile-curve#{index}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -1111,7 +1126,7 @@ pub(crate) fn append_freeform_surface_pools(
     for surface in &surfaces {
         let (source_object, source_tag) = freeform_surface_source(surface);
         let index = ir.model.surfaces.len();
-        let id = SurfaceId(format!("catia:freeform:surf#{index}"));
+        let id = SurfaceId::mint(format!("catia:freeform:surf#{index}")).expect("identity grammar");
         carrier_ids.push(id.clone());
         annotate(
             annotations,
@@ -1136,7 +1151,8 @@ pub(crate) fn append_freeform_surface_pools(
         .filter_map(|(offset, carrier)| Some((offset, carrier?)))
     {
         let surface_index = ir.model.surfaces.len();
-        let surface_id = SurfaceId(format!("catia:offset:surf#{surface_index}"));
+        let surface_id = SurfaceId::mint(format!("catia:offset:surf#{surface_index}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &surface_id,
@@ -1151,10 +1167,11 @@ pub(crate) fn append_freeform_surface_pools(
             source_object: None,
         });
 
-        let procedural_id = ProceduralSurfaceId(format!(
+        let procedural_id = ProceduralSurfaceId::mint(format!(
             "catia:offset:construction#{}",
             ir.model.procedural_surfaces.len()
-        ));
+        ))
+        .expect("identity grammar");
         annotate(
             annotations,
             &procedural_id,
@@ -1226,7 +1243,8 @@ pub(crate) fn append_freeform_surface_pools(
         ) else {
             continue;
         };
-        let id = CurveId(format!("catia:guide:curve#{}", ir.model.curves.len()));
+        let id = CurveId::mint(format!("catia:guide:curve#{}", ir.model.curves.len()))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -1250,7 +1268,8 @@ pub(crate) fn append_freeform_surface_pools(
                 continue;
             };
             let side = usize::from(second_limit);
-            let id = CurveId(format!("catia:rolling-ball:limit#{}:{side}", jet.pos));
+            let id = CurveId::mint(format!("catia:rolling-ball:limit#{}:{side}", jet.pos))
+                .expect("identity grammar");
             annotate(
                 annotations,
                 &id,
@@ -1290,11 +1309,13 @@ pub(crate) fn append_freeform_surface_pools(
             continue;
         };
         let surface_index = ir.model.surfaces.len();
-        let surface_id = SurfaceId(format!("catia:rolling-ball:surf#{surface_index}"));
-        let procedural_id = ProceduralSurfaceId(format!(
+        let surface_id = SurfaceId::mint(format!("catia:rolling-ball:surf#{surface_index}"))
+            .expect("identity grammar");
+        let procedural_id = ProceduralSurfaceId::mint(format!(
             "catia:rolling-ball:construction#{}",
             ir.model.procedural_surfaces.len()
-        ));
+        ))
+        .expect("identity grammar");
         annotate(
             annotations,
             &surface_id,
@@ -1697,10 +1718,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     if let Some(id) = surface_ids.get(&key) {
                         id.clone()
                     } else {
-                        let id = SurfaceId(format!(
+                        let id = SurfaceId::mint(format!(
                             "catia:consolidated:nurbs-offset#{}",
                             ir.model.surfaces.len()
-                        ));
+                        ))
+                        .expect("identity grammar");
                         annotate(
                             annotations,
                             &id,
@@ -1714,10 +1736,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             geometry: SurfaceGeometry::Unknown { record: None },
                             source_object: None,
                         });
-                        let procedural_id = ProceduralSurfaceId(format!(
+                        let procedural_id = ProceduralSurfaceId::mint(format!(
                             "catia:consolidated:nurbs-offset-construction#{}",
                             ir.model.procedural_surfaces.len()
-                        ));
+                        ))
+                        .expect("identity grammar");
                         annotate(
                             annotations,
                             &procedural_id,
@@ -1870,10 +1893,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             let surface = if let Some(id) = surface_ids.get(&key) {
                 id.clone()
             } else {
-                let id = SurfaceId(format!(
+                let id = SurfaceId::mint(format!(
                     "catia:consolidated:{id_kind}#{}",
                     ir.model.surfaces.len()
-                ));
+                ))
+                .expect("identity grammar");
                 annotate(
                     annotations,
                     &id,
@@ -2245,10 +2269,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 }
                 binding_counts.standard_face_pcurves += partner_pcurves.coedges.len();
                 for (coedge_index, geometry) in partner_pcurves.coedges {
-                    let pcurve_id = PcurveId(format!(
+                    let pcurve_id = PcurveId::mint(format!(
                         "catia:consolidated:standard-pcurve#{}",
                         ir.model.pcurves.len()
-                    ));
+                    ))
+                    .expect("identity grammar");
                     annotate(
                         annotations,
                         &pcurve_id,
@@ -2293,10 +2318,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 .derived(&procedural.id, "curve")
                 .derived(&procedural.id, "definition");
         } else {
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "catia:consolidated:curve#{}",
                 ir.model.curves.len()
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &curve_id,
@@ -2310,10 +2336,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 geometry: CurveGeometry::Unknown { record: None },
                 source_object: None,
             });
-            let procedural_id = ProceduralCurveId(format!(
+            let procedural_id = ProceduralCurveId::mint(format!(
                 "catia:consolidated:construction#{}",
                 ir.model.procedural_curves.len()
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &procedural_id,
@@ -2648,14 +2675,16 @@ pub(crate) fn append_a8_rolling_ball_pools(
         else {
             continue;
         };
-        let surface_id = SurfaceId(format!(
+        let surface_id = SurfaceId::mint(format!(
             "catia:a8-rolling-ball:surf#{}",
             ir.model.surfaces.len()
-        ));
-        let procedural_id = ProceduralSurfaceId(format!(
+        ))
+        .expect("identity grammar");
+        let procedural_id = ProceduralSurfaceId::mint(format!(
             "catia:a8-rolling-ball:construction#{}",
             ir.model.procedural_surfaces.len()
-        ));
+        ))
+        .expect("identity grammar");
         annotate(
             annotations,
             &surface_id,
@@ -2763,7 +2792,7 @@ mod tests {
     #[test]
     fn standalone_clamped_curve_becomes_a_valid_wire_edge() {
         let mut ir = CadIr::empty();
-        let curve_id = CurveId("catia:test:curve#0".to_string());
+        let curve_id = CurveId::mint("catia:test:curve#0".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Nurbs(
@@ -3006,33 +3035,33 @@ mod tests {
 
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(Point {
-                id: PointId(format!("point#{index}")),
+                id: PointId::mint(format!("point#{index}")).expect("identity grammar"),
                 position,
                 source_object: None,
             });
             ir.model.vertices.push(Vertex {
-                id: VertexId(format!("vertex#{index}")),
-                point: PointId(format!("point#{index}")),
+                id: VertexId::mint(format!("vertex#{index}")).expect("identity grammar"),
+                point: PointId::mint(format!("point#{index}")).expect("identity grammar"),
                 tolerance: None,
             });
         }
-        let curve_id = CurveId("standard-curve".to_string());
+        let curve_id = CurveId::mint("standard-curve".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: None,
         });
         ir.model.edges.push(Edge {
-            id: EdgeId("standard-edge".to_string()),
+            id: EdgeId::mint("standard-edge".to_string()).expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("vertex#1".to_string()),
-            end: VertexId("vertex#0".to_string()),
+            start: VertexId::mint("vertex#1".to_string()).expect("identity grammar"),
+            end: VertexId::mint("vertex#0".to_string()).expect("identity grammar"),
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
         let support_ids = [
-            SurfaceId("support#0".to_string()),
-            SurfaceId("support#1".to_string()),
+            SurfaceId::mint("support#0".to_string()).expect("identity grammar"),
+            SurfaceId::mint("support#1".to_string()).expect("identity grammar"),
         ];
         ir.model.surfaces.push(Surface {
             id: support_ids[0].clone(),
@@ -3045,12 +3074,12 @@ mod tests {
             source_object: None,
         });
         for (side, support_id) in support_ids.iter().enumerate() {
-            let face_id = FaceId(format!("face#{side}"));
-            let loop_id = LoopId(format!("loop#{side}"));
-            let coedge_id = CoedgeId(format!("coedge#{side}"));
+            let face_id = FaceId::mint(format!("face#{side}")).expect("identity grammar");
+            let loop_id = LoopId::mint(format!("loop#{side}")).expect("identity grammar");
+            let coedge_id = CoedgeId::mint(format!("coedge#{side}")).expect("identity grammar");
             ir.model.faces.push(Face {
                 id: face_id.clone(),
-                shell: ShellId("shell".to_string()),
+                shell: ShellId::mint("shell".to_string()).expect("identity grammar"),
                 surface: support_id.clone(),
                 sense: Sense::Forward,
                 loops: vec![loop_id.clone()],
@@ -3070,10 +3099,11 @@ mod tests {
             ir.model.coedges.push(Coedge {
                 id: coedge_id.clone(),
                 owner_loop: loop_id,
-                edge: EdgeId("standard-edge".to_string()),
+                edge: EdgeId::mint("standard-edge".to_string()).expect("identity grammar"),
                 next: coedge_id.clone(),
                 previous: coedge_id.clone(),
-                radial_next: CoedgeId(format!("coedge#{}", 1 - side)),
+                radial_next: CoedgeId::mint(format!("coedge#{}", 1 - side))
+                    .expect("identity grammar"),
                 sense: if side == 0 {
                     Sense::Forward
                 } else {
@@ -3086,7 +3116,8 @@ mod tests {
         let _attached = ir.model.add_procedural_curve(
             curve_id.clone(),
             ProceduralCurve::new(
-                ProceduralCurveId("standard-intersection".to_string()),
+                ProceduralCurveId::mint("standard-intersection".to_string())
+                    .expect("identity grammar"),
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
                         sides: std::array::from_fn(|side| IntcurveSupportSide {
@@ -3146,7 +3177,7 @@ mod tests {
         let bytes =
             crate::test_support::a5_native_edge_run_stream_with_support(6, 139, 142, 0x1234);
         let mut ir = CadIr::empty();
-        let surface_id = SurfaceId("standard-carrier".to_string());
+        let surface_id = SurfaceId::mint("standard-carrier".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Plane {
@@ -3193,7 +3224,7 @@ mod tests {
         let bytes =
             crate::test_support::a5_native_edge_run_stream_with_support(6, 139, 142, 0x5678);
         let mut ir = CadIr::empty();
-        let surface_id = SurfaceId("standard-carrier".to_string());
+        let surface_id = SurfaceId::mint("standard-carrier".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Plane {
@@ -3252,7 +3283,7 @@ mod tests {
             ("unknown", SurfaceGeometry::Unknown { record: None }),
         ] {
             ir.model.surfaces.push(Surface {
-                id: SurfaceId(id.to_string()),
+                id: SurfaceId::mint(id.to_string()).expect("identity grammar"),
                 geometry,
                 source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
             });
@@ -3278,27 +3309,27 @@ mod tests {
         let mut ir = CadIr::empty();
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(Point {
-                id: PointId(format!("point#{index}")),
+                id: PointId::mint(format!("point#{index}")).expect("identity grammar"),
                 position,
                 source_object: None,
             });
             ir.model.vertices.push(Vertex {
-                id: VertexId(format!("vertex#{index}")),
-                point: PointId(format!("point#{index}")),
+                id: VertexId::mint(format!("vertex#{index}")).expect("identity grammar"),
+                point: PointId::mint(format!("point#{index}")).expect("identity grammar"),
                 tolerance: None,
             });
         }
-        let curve_id = CurveId("standard-plane-curve".to_string());
+        let curve_id = CurveId::mint("standard-plane-curve".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: None,
         });
         ir.model.edges.push(Edge {
-            id: EdgeId("standard-plane-edge".to_string()),
+            id: EdgeId::mint("standard-plane-edge".to_string()).expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("vertex#0".to_string()),
-            end: VertexId("vertex#1".to_string()),
+            start: VertexId::mint("vertex#0".to_string()).expect("identity grammar"),
+            end: VertexId::mint("vertex#1".to_string()).expect("identity grammar"),
             param_range: None,
             tolerance: None,
         });
@@ -3308,8 +3339,8 @@ mod tests {
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         };
         let support_ids = [
-            SurfaceId("standard-plane#0".to_string()),
-            SurfaceId("standard-plane#1".to_string()),
+            SurfaceId::mint("standard-plane#0".to_string()).expect("identity grammar"),
+            SurfaceId::mint("standard-plane#1".to_string()).expect("identity grammar"),
         ];
         for support_id in &support_ids {
             ir.model.surfaces.push(Surface {
@@ -3321,7 +3352,8 @@ mod tests {
         let _attached = ir.model.add_procedural_curve(
             curve_id,
             ProceduralCurve::new(
-                ProceduralCurveId("standard-plane-intersection".to_string()),
+                ProceduralCurveId::mint("standard-plane-intersection".to_string())
+                    .expect("identity grammar"),
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
                         sides: std::array::from_fn(|side| IntcurveSupportSide {

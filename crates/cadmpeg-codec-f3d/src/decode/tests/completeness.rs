@@ -50,12 +50,14 @@ fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
 #[test]
 fn trim_surface_completeness_accepts_an_explicit_cell_selection() {
     let complete = cadmpeg_ir::features::FeatureDefinition::TrimSurface {
-        faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
-            "face:target".into(),
-        )]),
-        tool: cadmpeg_ir::features::PathRef::Curves(vec![cadmpeg_ir::ids::CurveId(
-            "curve:tool".into(),
-        )]),
+        faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+            "f3d:test:face#target",
+        )
+        .expect("identity grammar")]),
+        tool: cadmpeg_ir::features::PathRef::Curves(vec![cadmpeg_ir::ids::CurveId::mint(
+            "f3d:test:curve#tool",
+        )
+        .expect("identity grammar")]),
         keep: cadmpeg_ir::features::TrimRegion::Cells(
             cadmpeg_ir::features::TrimCellSelection::new(vec![1, 4], 5).unwrap(),
         ),
@@ -151,7 +153,11 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
     use cadmpeg_ir::ids::FaceId;
 
-    let resolved = |name: &str| FaceSelection::Faces(vec![FaceId(name.to_owned())]);
+    let resolved = |name: &str| {
+        FaceSelection::Faces(vec![
+            FaceId::mint(name.to_owned()).expect("identity grammar")
+        ])
+    };
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::ReplaceFace {
             targets: resolved("target"),
@@ -178,7 +184,7 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
     use cadmpeg_ir::ids::BodyId;
 
     let complete = FeatureDefinition::DeleteBody {
-        bodies: BodySelection::Bodies(vec![BodyId("body:1".into())]),
+        bodies: BodySelection::Bodies(vec![BodyId::mint("body:1").expect("identity grammar")]),
         mode: BodyRetentionMode::DeleteSelected,
     };
     assert!(!feature_definition_is_incomplete(&complete));
@@ -191,7 +197,7 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::DeleteBody {
-            bodies: BodySelection::Bodies(vec![BodyId("body:1".into())]),
+            bodies: BodySelection::Bodies(vec![BodyId::mint("body:1").expect("identity grammar")]),
             mode: BodyRetentionMode::Unresolved,
         }
     ));
@@ -205,7 +211,7 @@ fn product_feature_definitions_require_neutral_reference_ids() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::InsertComponent {
-            occurrence: OccurrenceId("model:occurrence#component".into()),
+            occurrence: OccurrenceId::mint("model:occurrence#component").expect("identity grammar"),
         }
     ));
     assert!(!feature_definition_is_incomplete(
@@ -215,7 +221,7 @@ fn product_feature_definitions_require_neutral_reference_ids() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::InsertComponent {
-            occurrence: OccurrenceId(String::new()),
+            occurrence: OccurrenceId::mint(String::new()).expect("identity grammar"),
         }
     ));
     assert!(feature_definition_is_incomplete(
@@ -235,7 +241,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let faces = FaceSelection::Faces(vec!["face:1".into()]);
-    let bodies = BodySelection::Bodies(vec![BodyId("body:1".into())]);
+    let bodies = BodySelection::Bodies(vec![BodyId::mint("body:1").expect("identity grammar")]);
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Sphere {
@@ -351,14 +357,18 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Scale {
-            bodies: BodySelection::Bodies(vec![BodyId("body:scale".into())]),
+            bodies: BodySelection::Bodies(vec![
+                BodyId::mint("body:scale").expect("identity grammar")
+            ]),
             center: Some(ScaleCenter::ModelOrigin),
             factors: ScaleFactors::Uniform(1.5),
         }
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Scale {
-            bodies: BodySelection::Bodies(vec![BodyId("body:scale".into())]),
+            bodies: BodySelection::Bodies(vec![
+                BodyId::mint("body:scale").expect("identity grammar")
+            ]),
             center: Some(ScaleCenter::Native("native:center".into())),
             factors: ScaleFactors::Uniform(1.5),
         }

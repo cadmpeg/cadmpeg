@@ -464,7 +464,7 @@ pub(crate) fn project_configuration_sketch_states(
             .collect::<HashMap<_, _>>();
         for feature in &mut features {
             if let FeatureDefinition::SpatialSketch { sketch } = &mut feature.definition {
-                let expected = cadmpeg_ir::sketches::SpatialSketchId(feature.id.0.replacen(
+                let expected = cadmpeg_ir::sketches::SpatialSketchId(feature.id.as_str().replacen(
                     ":model:feature#",
                     ":model:spatial-sketch#",
                     1,

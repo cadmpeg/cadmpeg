@@ -616,15 +616,15 @@ fn active_brep_face_namespace_accepts_default_or_matching_named_source() {
     use cadmpeg_ir::ids::FaceId;
 
     assert!(active_brep_face_matches_source(
-        &FaceId("f3d:brep:entity#17".into()),
+        &FaceId::mint("f3d:brep:entity#17").expect("identity grammar"),
         "history"
     ));
     assert!(active_brep_face_matches_source(
-        &FaceId("f3d:brep/history/entity#17".into()),
+        &FaceId::mint("f3d:brep/history/entity#17").expect("identity grammar"),
         "history"
     ));
     assert!(!active_brep_face_matches_source(
-        &FaceId("f3d:brep/other/entity#17".into()),
+        &FaceId::mint("f3d:brep/other/entity#17").expect("identity grammar"),
         "history"
     ));
 }
@@ -1293,7 +1293,10 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 
     assert_eq!(
         grouped_reference_face_candidate(&operand, &topology, &HashSet::from([10])),
-        Some(cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(10)))
+        Some(
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(10))
+                .expect("identity grammar")
+        )
     );
     assert_eq!(
         grouped_reference_face_candidate(&operand, &topology, &HashSet::from([10, 20])),
@@ -1411,9 +1414,16 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         group(120, 3, vec![121]),
     ];
     let mut operands = vec![face_operand(111, 110, 1), face_operand(121, 120, 3)];
-    operands[0].candidate_faces = vec![cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(10))];
+    operands[0].candidate_faces =
+        vec![
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(10))
+                .expect("identity grammar"),
+        ];
     operands[1].unreferenced_candidate_faces =
-        vec![cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(11))];
+        vec![
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(11))
+                .expect("identity grammar"),
+        ];
 
     let roots = crate::design::face_resolve::extrude_profile_group_roots(&scope, &groups)
         .expect("valid profile hierarchy");

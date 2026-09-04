@@ -1094,7 +1094,7 @@ pub(crate) mod tests {
             .expect("neutral view");
         assert_eq!(
             semantic_note.references["View"][0].local_target(),
-            Some(neutral_view.id.0.as_str())
+            Some(neutral_view.id.as_str())
         );
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());

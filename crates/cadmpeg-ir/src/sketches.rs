@@ -25,6 +25,13 @@ macro_rules! string_id {
                 crate::schema::serialize_reference_id(&self.0, serializer)
             }
         }
+
+        impl $name {
+            /// Borrow the underlying id string.
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
     };
 }
 

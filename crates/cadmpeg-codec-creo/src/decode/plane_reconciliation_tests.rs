@@ -189,7 +189,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
     });
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("creo:visibgeom:curve#11".to_string()),
+        id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(2.0, 3.0, 4.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -211,7 +211,11 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == SurfaceId("creo:visibgeom:surface#5".to_string()))
+        .find(|surface| {
+            surface.id
+                == SurfaceId::mint("creo:visibgeom:surface#5".to_string())
+                    .expect("identity grammar")
+        })
         .expect("topology-bound plane");
     let SurfaceGeometry::Plane { origin, normal, .. } = &plane.geometry else {
         panic!("expected plane geometry");
@@ -273,7 +277,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
         (12, Point3::new(0.0, 2.0, 4.0), Vector3::new(0.0, 1.0, 0.0)),
     ] {
         ir.model.curves.push(Curve {
-            id: CurveId(format!("creo:visibgeom:curve#{id}")),
+            id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: nurbs_curve(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
@@ -301,7 +305,8 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
         1
     );
     assert!(ir.model.surfaces.iter().any(|surface| {
-        surface.id == SurfaceId("creo:visibgeom:surface#5".to_string())
+        surface.id
+            == SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar")
             && matches!(
                 &surface.geometry,
                 SurfaceGeometry::Plane { origin, normal, .. }

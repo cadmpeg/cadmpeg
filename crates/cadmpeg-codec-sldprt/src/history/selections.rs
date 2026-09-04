@@ -76,7 +76,7 @@ fn surface_selection_face_bindings<'a>(
 ) -> SurfaceSelectionFaceBindings {
     let mut faces_by_identity = HashMap::<(u32, u32), Option<cadmpeg_ir::ids::FaceId>>::new();
     for (target, feature_source_id, local_face_id) in face_identities {
-        let candidate = cadmpeg_ir::ids::FaceId(target.clone());
+        let candidate = cadmpeg_ir::ids::FaceId::mint(target.clone()).expect("identity grammar");
         let entry = faces_by_identity
             .entry((*feature_source_id, *local_face_id))
             .or_insert_with(|| Some(candidate.clone()));
@@ -142,22 +142,22 @@ pub fn bind_topology_selections(
     let body_ids = selection_ids(
         bodies
             .iter()
-            .map(|body| (body.id.0.as_str(), body.name.as_deref(), body.id.clone())),
+            .map(|body| (body.id.as_str(), body.name.as_deref(), body.id.clone())),
     );
     let face_ids = selection_ids(
         faces
             .iter()
-            .map(|face| (face.id.0.as_str(), face.name.as_deref(), face.id.clone())),
+            .map(|face| (face.id.as_str(), face.name.as_deref(), face.id.clone())),
     );
     let edge_ids = selection_ids(
         edges
             .iter()
-            .map(|edge| (edge.id.0.as_str(), None, edge.id.clone())),
+            .map(|edge| (edge.id.as_str(), None, edge.id.clone())),
     );
     let curve_ids = selection_ids(
         curves
             .iter()
-            .map(|curve| (curve.id.0.as_str(), None, curve.id.clone())),
+            .map(|curve| (curve.id.as_str(), None, curve.id.clone())),
     );
     let surfaces_by_id = surfaces
         .iter()
@@ -683,7 +683,9 @@ mod tests {
         );
         assert_eq!(
             bindings.get(&key).cloned(),
-            Some(Some(vec![cadmpeg_ir::ids::FaceId("terminal-face".into())]))
+            Some(Some(vec![
+                cadmpeg_ir::ids::FaceId::mint("terminal-face").expect("identity grammar")
+            ]))
         );
     }
 
@@ -719,7 +721,9 @@ mod tests {
         );
         assert_eq!(
             bindings.get(&key).cloned(),
-            Some(Some(vec![cadmpeg_ir::ids::FaceId("terminal-face".into())]))
+            Some(Some(vec![
+                cadmpeg_ir::ids::FaceId::mint("terminal-face").expect("identity grammar")
+            ]))
         );
     }
 }

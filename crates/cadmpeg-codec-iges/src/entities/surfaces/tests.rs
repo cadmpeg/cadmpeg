@@ -1360,7 +1360,7 @@ fn decode_rejects_a_unit_offset_indicator_that_is_not_the_designated_normal() {
         .model
         .surfaces
         .iter()
-        .all(|surface| surface.id.0 != "iges:model:surface#D3"));
+        .all(|surface| surface.id.as_str() != "iges:model:surface#D3"));
     assert!(result
         .report()
         .losses

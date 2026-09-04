@@ -186,10 +186,10 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "step");
     let unknowns = result.ir().native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
-    assert_eq!(unknowns[0].id.0, "step:data:example_record#1");
+    assert_eq!(unknowns[0].id.as_str(), "step:data:example_record#1");
     let retained = result
         .source_fidelity()
-        .retained_record(&unknowns[0].id.0)
+        .retained_record(&unknowns[0].id.as_str())
         .expect("opaque payload is retained in source fidelity");
     assert_eq!(
         retained.data(),
@@ -224,7 +224,7 @@ pub(crate) fn decode_retains_signature_opaque_without_verification_result() {
         .expect("signature is retained as an opaque source record");
     let retained = result
         .source_fidelity()
-        .retained_record(&signature.id.0)
+        .retained_record(&signature.id.as_str())
         .expect("signature source fidelity");
     assert_eq!(
         retained.data(),
@@ -261,7 +261,7 @@ pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
     assert!(target.links.is_empty());
     let target_source = result
         .source_fidelity()
-        .retained_record(&target.id.0)
+        .retained_record(&target.id.as_str())
         .expect("retained user-defined target span");
     assert_eq!(
         target_source.data(),
@@ -275,7 +275,7 @@ pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
     assert_eq!(entity.links, vec!["step:data:!vendor_target#1".to_string()]);
     let entity_source = result
         .source_fidelity()
-        .retained_record(&entity.id.0)
+        .retained_record(&entity.id.as_str())
         .expect("retained user-defined entity span");
     assert_eq!(
         entity_source.data(),
@@ -477,7 +477,7 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
         .expect("unowned pcurve line is retained");
     assert!(decoded
         .source_fidelity()
-        .retained_record(&line.id.0)
+        .retained_record(&line.id.as_str())
         .expect("unowned pcurve line payload is retained")
         .data()
         .is_some_and(|data| data.starts_with(b"#71=LINE")));

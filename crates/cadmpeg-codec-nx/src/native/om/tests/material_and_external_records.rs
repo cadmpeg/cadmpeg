@@ -345,7 +345,10 @@ fn decode_selects_dominant_rmfastload_body() {
     assert_eq!(object_ids.len(), 50);
     assert_eq!(object_ids[0].value, 1_000);
     assert_eq!(object_ids[49].value, 1_049);
-    assert!(result.ir().model.bodies[0].id.0.starts_with("nx:s0:"));
+    assert!(result.ir().model.bodies[0]
+        .id
+        .as_str()
+        .starts_with("nx:s0:"));
     assert_eq!(result.ir().model.faces.len(), 50);
     assert_eq!(result.ir().model.surfaces.len(), 50);
     assert!(result
@@ -353,13 +356,13 @@ fn decode_selects_dominant_rmfastload_body() {
         .model
         .faces
         .iter()
-        .all(|face| face.id.0.starts_with("nx:s0:")));
+        .all(|face| face.id.as_str().starts_with("nx:s0:")));
     assert!(result
         .ir()
         .model
         .surfaces
         .iter()
-        .all(|surface| surface.id.0.starts_with("nx:s0:")));
+        .all(|surface| surface.id.as_str().starts_with("nx:s0:")));
     assert_eq!(
         result
             .ir()

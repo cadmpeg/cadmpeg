@@ -208,12 +208,8 @@ fn only_edge_treatments_use_single_member_transition_chains() {
         ),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges == [
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:7:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:7:19".into()
-                ),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:17").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:19").expect("identity grammar"),
             ]
     ));
 }
@@ -474,7 +470,7 @@ fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
         candidate_faces: Vec::new(),
         candidate_edges: candidate_edges
             .iter()
-            .map(|edge| EdgeId(format!("f3d:edge#{edge}")))
+            .map(|edge| EdgeId::mint(format!("f3d:edge#{edge}")).expect("identity grammar"))
             .collect(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -495,8 +491,8 @@ fn grouped_surface_patch_recipe_requires_agreeing_exact_references() {
     assert_eq!(
         surface_patch_grouped_recipe_edges(&[&first, &second]),
         SurfacePatchRecipeEdges::Resolved(vec![
-            EdgeId("f3d:edge#17".into()),
-            EdgeId("f3d:edge#18".into())
+            EdgeId::mint("f3d:edge#17").expect("identity grammar"),
+            EdgeId::mint("f3d:edge#18").expect("identity grammar")
         ])
     );
 }
@@ -691,9 +687,7 @@ fn edge_flange_uses_one_updated_edge_without_recipe_context() {
     assert!(matches!(
         selection,
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
-            if edges == [cadmpeg_ir::ids::HistoricalEdgeId(
-                "f3d:history-input:edge#11:edge-flange:7:17".into()
-            )]
+            if edges == [cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#11:edge-flange:7:17").expect("identity grammar")]
     ));
 }
 
@@ -811,12 +805,8 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
         selection,
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges == [
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#7:chamfer:7:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#7:chamfer:7:18".into()
-                ),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:18").expect("identity grammar"),
             ]
     ));
 }
@@ -877,12 +867,8 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
         ),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges == [
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#7:chamfer:7:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#7:chamfer:7:18".into()
-                ),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:18").expect("identity grammar"),
             ]
     ));
 }
@@ -1049,7 +1035,8 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
     use cadmpeg_ir::features::EdgeSelection;
     use cadmpeg_ir::ids::FeatureInputTopologyId;
 
-    let state = FeatureInputTopologyId("f3d:history-input:state#feature".into());
+    let state =
+        FeatureInputTopologyId::mint("f3d:history-input:state#feature").expect("identity grammar");
     let selection = partial_historical_edge_selection(
         [
             ("operand-a", Some(17)),
@@ -1066,9 +1053,10 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         selection,
         EdgeSelection::HistoricalPartial {
             state,
-            edges: vec![cadmpeg_ir::ids::HistoricalEdgeId(
-                "f3d:history-input:edge#7:feature:41:17".into()
-            )],
+            edges: vec![cadmpeg_ir::ids::HistoricalEdgeId::mint(
+                "f3d:history-input:edge#7:feature:41:17"
+            )
+            .expect("identity grammar")],
             unresolved: vec!["operand-b".into()],
             native: "group".into(),
         }
@@ -1077,7 +1065,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         [("operand-a", Some(17)), ("operand-b", Some(18))],
         41,
         "feature",
-        FeatureInputTopologyId("state".into()),
+        FeatureInputTopologyId::mint("state").expect("identity grammar"),
         "group",
     )
     .is_none());
@@ -1086,7 +1074,7 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             [("operand-a", None), ("operand-b", None)],
             41,
             "feature",
-            FeatureInputTopologyId("state".into()),
+            FeatureInputTopologyId::mint("state").expect("identity grammar"),
             "group",
         ),
         None

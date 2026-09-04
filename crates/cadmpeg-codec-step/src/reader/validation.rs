@@ -182,7 +182,7 @@ pub(super) fn decode(
         }
     }
     ir.model.points.retain(|point| {
-        let id = step_id(&point.id.0);
+        let id = step_id(&point.id.as_str());
         !validation_points.contains(&id) || referenced_validation_points.contains(&id)
     });
     StageOutcome {

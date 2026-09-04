@@ -311,10 +311,11 @@ pub(super) fn decode(
             ));
             continue;
         };
-        let id = OccurrenceId(StepIdentity::product(
+        let id = OccurrenceId::mint(StepIdentity::product(
             "occurrence",
             format!("definition-{definition}"),
-        ));
+        ))
+        .expect("identity grammar");
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
             prototype: PrototypeReference::Local {
@@ -417,10 +418,11 @@ pub(super) fn decode(
             } else {
                 format!("-instance-{instance}")
             };
-            let id = OccurrenceId(StepIdentity::product(
+            let id = OccurrenceId::mint(StepIdentity::product(
                 "occurrence",
                 format!("{usage_id}{suffix}"),
-            ));
+            ))
+            .expect("identity grammar");
             let occurrence_cap = occurrence_limit(ctx);
             if ir.model.occurrences.len() >= occurrence_cap {
                 warnings.push(format!(
@@ -1132,7 +1134,7 @@ fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64
 }
 
 fn product_ir_id(id: u64) -> ProductDefinitionId {
-    ProductDefinitionId(StepIdentity::product("product", id))
+    ProductDefinitionId::mint(StepIdentity::product("product", id)).expect("identity grammar")
 }
 
 fn product_definition_ir_id(
@@ -1143,10 +1145,11 @@ fn product_definition_ir_id(
     if definition_count == 1 {
         product_ir_id(product)
     } else {
-        ProductDefinitionId(StepIdentity::product(
+        ProductDefinitionId::mint(StepIdentity::product(
             "product",
             format!("{product}-definition-{definition}"),
         ))
+        .expect("identity grammar")
     }
 }
 

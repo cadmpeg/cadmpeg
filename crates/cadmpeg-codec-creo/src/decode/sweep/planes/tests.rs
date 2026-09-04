@@ -37,7 +37,7 @@ fn plane_row(id: u32) -> crate::surface::SurfaceRow {
 
 fn plane_surface(id: u32, z: f64) -> Surface {
     Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, z),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -59,7 +59,7 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
 
 fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
     Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin,
             axis,
@@ -166,7 +166,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
     assert!(feature_plane_equations(&scan, &ir, 917).is_none());
 
     ir.model.surfaces[1] = Surface {
-        id: SurfaceId("creo:visibgeom:surface#32".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     };

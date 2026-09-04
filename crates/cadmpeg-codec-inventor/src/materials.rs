@@ -73,10 +73,11 @@ pub(crate) fn project_catalog(instances: &[ProteinInstanceRecords]) -> MaterialC
             .into_iter()
             .find_map(|id| color_property(record, id));
             appearances.push(Appearance {
-                id: AppearanceId(format!(
+                id: AppearanceId::mint(format!(
                     "inventor:protein:appearance#{instance_ordinal}-{}",
                     record.ordinal
-                )),
+                ))
+                .expect("identity grammar"),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
                 library_id: library_id(&record.asset_lib_id),

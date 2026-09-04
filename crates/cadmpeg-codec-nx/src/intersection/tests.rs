@@ -42,7 +42,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     let _attached = ir.model.add_procedural_curve(
         curve,
         ProceduralCurve::new(
-            ProceduralCurveId("nx:test:intersection#0".into()),
+            ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
             ProceduralCurveDefinition::Intersection {
                 context: IntcurveSupportContext {
                     sides: [
@@ -73,7 +73,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     };
     assert_eq!(context.sides[1].surface.as_ref(), Some(&incident[1]));
 
-    let pcurve_id = PcurveId("nx:test:pcurve#0".into());
+    let pcurve_id = PcurveId::mint("nx:test:pcurve#0").expect("identity grammar");
     let pcurve_geometry = PcurveGeometry::Line {
         origin: Point2::new(0.0, 0.0),
         direction: Point2::new(1.0, 0.0),
@@ -476,12 +476,12 @@ fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
 #[test]
 fn intersection_pcurve_attachment_requires_face_incidence() {
     let ir = cadmpeg_ir::examples::unit_cube();
-    let edge = cadmpeg_ir::ids::EdgeId("synthetic:cube:edge#0".into());
+    let edge = cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
     let surface = ir
         .model
         .coedges
         .iter()
-        .find(|coedge| coedge.edge == edge && coedge.id.0.contains("bottom"))
+        .find(|coedge| coedge.edge == edge && coedge.id.as_str().contains("bottom"))
         .and_then(|coedge| {
             let loop_ = ir
                 .model

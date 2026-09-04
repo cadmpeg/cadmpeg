@@ -136,7 +136,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     assert_eq!(result.ir().model.curves.len(), 1);
     let unknowns = result.ir().native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].id.0, "catia:payload:unknown#brep-stream");
+    assert_eq!(unknowns[0].id.as_str(), "catia:payload:unknown#brep-stream");
     assert!(unknowns[0]
         .links
         .contains(&"catia:standard:circle#0".to_string()));
@@ -546,7 +546,12 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
+        .find(|curve| {
+            curve
+                .id
+                .as_str()
+                .starts_with("catia:consolidated:construction#")
+        })
         .expect("resolved consolidated construction");
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
@@ -593,7 +598,12 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
+        .find(|curve| {
+            curve
+                .id
+                .as_str()
+                .starts_with("catia:consolidated:construction#")
+        })
         .expect("resolved consolidated construction");
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("two resolved support sides form an intersection");
@@ -622,7 +632,12 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             .model
             .procedural_curves
             .iter()
-            .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
+            .find(|curve| {
+                curve
+                    .id
+                    .as_str()
+                    .starts_with("catia:consolidated:construction#")
+            })
             .expect("resolved consolidated construction");
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
@@ -838,7 +853,7 @@ fn standard_decode_transfers_consolidated_guide_curve() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0.starts_with("catia:guide:curve#"))
+        .find(|curve| curve.id.as_str().starts_with("catia:guide:curve#"))
         .expect("typed guide curve");
     let CurveGeometry::Nurbs(nurbs) = &guide.geometry else {
         panic!("guide curve must be NURBS");

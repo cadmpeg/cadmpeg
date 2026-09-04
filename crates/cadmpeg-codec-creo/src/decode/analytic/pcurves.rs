@@ -34,9 +34,12 @@ const PCURVE_CARRIER_PARALLEL_EPS_SQUARED: f64 = 1e-18;
 const PCURVE_CARRIER_SAMPLE_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
 fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> {
-    let visible_id = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
-    let nonvisible_id = SurfaceId(format!("creo:novisgeom:surface#{face_id}"));
-    let active_datum_id = SurfaceId(format!("creo:actdatums:surface#{face_id}"));
+    let visible_id =
+        SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}")).expect("identity grammar");
+    let nonvisible_id =
+        SurfaceId::mint(format!("creo:novisgeom:surface#{face_id}")).expect("identity grammar");
+    let active_datum_id =
+        SurfaceId::mint(format!("creo:actdatums:surface#{face_id}")).expect("identity grammar");
     for id in [visible_id, nonvisible_id, active_datum_id] {
         if !surfaces.iter().any(|surface| surface.id == id) {
             continue;
@@ -514,9 +517,9 @@ fn collect_support_cone_plane_witness(
 
 fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&mut Surface> {
     let ids = [
-        SurfaceId(format!("creo:visibgeom:surface#{face_id}")),
-        SurfaceId(format!("creo:novisgeom:surface#{face_id}")),
-        SurfaceId(format!("creo:actdatums:surface#{face_id}")),
+        SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}")).expect("identity grammar"),
+        SurfaceId::mint(format!("creo:novisgeom:surface#{face_id}")).expect("identity grammar"),
+        SurfaceId::mint(format!("creo:actdatums:surface#{face_id}")).expect("identity grammar"),
     ];
     for id in ids {
         let matches = surfaces
@@ -1328,7 +1331,8 @@ pub fn transfer_analytic_pcurve_carriers(
             .map(|(_, offset)| *offset)
             .min()
             .unwrap_or(*offset);
-        let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+        let id =
+            CurveId::mint(format!("creo:visibgeom:curve#{curve_id}")).expect("identity grammar");
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
@@ -1829,7 +1833,8 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#7".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1838,7 +1843,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#7".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 1.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1862,7 +1868,8 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#7".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Nurbs(
                     NurbsSurface::new(
                         1,
@@ -1887,7 +1894,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#8".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#8".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1946,7 +1954,8 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Cone {
                     origin: Point3::new(-1.0, 0.0, 0.0),
                     axis: Vector3::new(1.0, 0.0, 0.0),
@@ -1958,7 +1967,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(-0.5, 0.0, 0.0),
                     normal: Vector3::new(1.0, 0.0, 0.0),
@@ -2053,7 +2063,8 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#10".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2062,7 +2073,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#11".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2155,7 +2167,7 @@ mod tests {
             });
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("creo:visibgeom:surface#43".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#43".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 1.0, 0.0),
@@ -2182,10 +2194,13 @@ mod tests {
         let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations);
         assert_eq!(
             transferred,
-            BTreeSet::from([CurveId("creo:visibgeom:curve#846".to_string())])
+            BTreeSet::from([
+                CurveId::mint("creo:visibgeom:curve#846".to_string()).expect("identity grammar")
+            ])
         );
         assert!(ir.model.curves.iter().any(|curve| {
-            curve.id == CurveId("creo:visibgeom:curve#846".to_string())
+            curve.id
+                == CurveId::mint("creo:visibgeom:curve#846".to_string()).expect("identity grammar")
                 && matches!(curve.geometry, CurveGeometry::Line { .. })
         }));
     }
@@ -2261,7 +2276,8 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#10".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -2270,7 +2286,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#11".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(1.0, 0.0, 0.0),

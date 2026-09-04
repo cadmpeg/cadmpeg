@@ -186,7 +186,7 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
         .model
         .points
         .iter()
-        .all(|point| point.id.0.contains("@block@")));
+        .all(|point| point.id.as_str().contains("@block@")));
     let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
@@ -229,7 +229,7 @@ fn decode_does_not_infer_a_source_header_for_unresolved_partition_sites() {
         .model
         .points
         .iter()
-        .all(|point| point.id.0.contains("@block@")));
+        .all(|point| point.id.as_str().contains("@block@")));
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn decode_uses_the_active_configuration_source_site() {
         .model
         .points
         .iter()
-        .filter(|point| !point.id.0.contains("@block@"))
+        .filter(|point| !point.id.as_str().contains("@block@"))
         .collect::<Vec<_>>();
     assert_eq!(active_points.len(), 3);
     assert!(active_points

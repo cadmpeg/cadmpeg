@@ -556,8 +556,8 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
     // The two PSB geometry sections are preserved as unknown records.
     let unknowns = result.ir().native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 2);
-    assert!(unknowns.iter().any(|u| u.id.0.contains("VisibGeom")));
-    assert!(unknowns.iter().any(|u| u.id.0.contains("NovisGeom")));
+    assert!(unknowns.iter().any(|u| u.id.as_str().contains("VisibGeom")));
+    assert!(unknowns.iter().any(|u| u.id.as_str().contains("NovisGeom")));
     // No geometry arenas populated.
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.points.is_empty());

@@ -229,7 +229,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             if consumed_points.contains(&point.id) {
                 continue;
             }
-            ensure_finite_point(point.position, &point.id.0)?;
+            ensure_finite_point(point.position, &point.id.as_str())?;
             entities.push(point_entity(point.position));
         }
         entities
@@ -1662,7 +1662,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
         {
             continue;
         }
-        ensure_finite_point(point.position, &point.id.0)?;
+        ensure_finite_point(point.position, &point.id.as_str())?;
         entities.push(point_entity(point.position));
     }
     Ok(entities)
@@ -2118,7 +2118,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
         {
             continue;
         }
-        ensure_finite_point(point.position, &point.id.0)?;
+        ensure_finite_point(point.position, &point.id.as_str())?;
         entities.push(point_entity(point.position));
     }
     Ok(entities)

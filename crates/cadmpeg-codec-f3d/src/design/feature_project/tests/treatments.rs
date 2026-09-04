@@ -314,7 +314,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind { length: Length(10.0) }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
             ..
-        } if faces == &vec![FaceId(crate::ids::brep_entity_id(282))]
+        } if faces == &vec![FaceId::mint(crate::ids::brep_entity_id(282)).expect("identity grammar")]
             && native == &scopes[2].id
             && placements == &vec![cadmpeg_ir::features::HolePlacement::Directed {
                 position: Point3 { x: 12.5, y: -25.0, z: 37.5 },

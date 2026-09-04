@@ -1487,10 +1487,11 @@ fn feature_result(
         source.segment_token, source.record_ordinal
     ));
     let result = FeatureResultTopology {
-        id: FeatureResultTopologyId(format!(
+        id: FeatureResultTopologyId::mint(format!(
             "inventor:design:feature-result#{}-{}",
             source.segment_token, source.record_ordinal
-        )),
+        ))
+        .expect("identity grammar"),
         output_of: feature_id.clone(),
         bodies,
         faces: Vec::new(),

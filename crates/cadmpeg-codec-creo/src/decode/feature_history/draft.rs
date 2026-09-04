@@ -85,7 +85,10 @@ pub(in super::super) fn thicken_feature_definition(
             );
             let faces = source_ids
                 .iter()
-                .map(|surface_id| FaceId(format!("creo:visibgeom:face#{surface_id}")))
+                .map(|surface_id| {
+                    FaceId::mint(format!("creo:visibgeom:face#{surface_id}"))
+                        .expect("identity grammar")
+                })
                 .collect::<Vec<_>>();
             if faces
                 .iter()
@@ -253,7 +256,8 @@ pub(in super::super) fn schema_feature_definition(
         let available_features = model_feature_ids(scan);
         let face_selection = |surface_id| {
             let native = format!("creo:visibgeom:surface#{surface_id}");
-            let face = FaceId(format!("creo:visibgeom:face#{surface_id}"));
+            let face = FaceId::mint(format!("creo:visibgeom:face#{surface_id}"))
+                .expect("identity grammar");
             if ir.model.faces.iter().any(|candidate| candidate.id == face) {
                 FaceSelection::Resolved {
                     faces: vec![face],
@@ -731,7 +735,8 @@ fn reconciled_datum_plane_definition(
         .get(&surface_id)
         .map(|(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]))
         .or_else(|| {
-            let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            let model_id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                .expect("identity grammar");
             let surfaces = ir
                 .model
                 .surfaces

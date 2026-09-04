@@ -77,7 +77,7 @@ pub(super) fn infer_edge_parameter_ranges(
         .model
         .points
         .iter()
-        .map(|point| (point.id.0.as_str(), point.position))
+        .map(|point| (point.id.as_str(), point.position))
         .collect::<HashMap<_, _>>();
     let vertices = ir
         .model
@@ -87,7 +87,7 @@ pub(super) fn infer_edge_parameter_ranges(
             points
                 .get(vertex.point.0.as_str())
                 .copied()
-                .map(|point| (vertex.id.0.as_str(), point))
+                .map(|point| (vertex.id.as_str(), point))
         })
         .collect::<HashMap<_, _>>();
     let candidates = ir
@@ -523,7 +523,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         layer: None,
                         instance_path: Vec::new(),
                     }),
-                id: PointId(StepIdentity::data("point", id)),
+                id: PointId::mint(StepIdentity::data("point", id)).expect("identity grammar"),
                 position,
             })
         }));
@@ -832,7 +832,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 curve_parameter_offsets.insert(id, offset);
             }
             ir.model.curves.push(Curve {
-                id: CurveId(StepIdentity::data("curve", id)),
+                id: CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar"),
                 geometry,
                 source_object: None,
             });
@@ -850,7 +850,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         }
         if let Some(nurbs) = nurbs_curve(record, &points, &mut warnings) {
             ir.model.curves.push(Curve {
-                id: CurveId(StepIdentity::data("curve", id)),
+                id: CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar"),
                 geometry: CurveGeometry::Nurbs(nurbs),
                 source_object: None,
             });
@@ -916,7 +916,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let curve_index = ir.model.curves.len();
-            let curve = CurveId(StepIdentity::data("curve", id));
+            let curve = CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar");
             ir.model.curves.push(Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Transformed {
@@ -928,9 +928,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let _attached = ir.model.add_procedural_curve(
                 curve,
                 ProceduralCurve::new(
-                    ProceduralCurveId(StepIdentity::construction("curve_replica", id)),
+                    ProceduralCurveId::mint(StepIdentity::construction("curve_replica", id))
+                        .expect("identity grammar"),
                     ProceduralCurveDefinition::Replica {
-                        source: CurveId(StepIdentity::data("curve", parent_step)),
+                        source: CurveId::mint(StepIdentity::data("curve", parent_step))
+                            .expect("identity grammar"),
                         transform,
                     },
                 ),
@@ -957,8 +959,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 waiting_on.entry(basis_step).or_default().push(id);
                 continue;
             }
-            let curve = CurveId(StepIdentity::data("curve", id));
-            let basis = CurveId(StepIdentity::data("curve", basis_step));
+            let curve = CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar");
+            let basis =
+                CurveId::mint(StepIdentity::data("curve", basis_step)).expect("identity grammar");
             let Some(geometry) = carrier_index
                 .curves
                 .get(&basis_step)
@@ -1007,7 +1010,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 source_object: None,
             });
             if let Ok(procedural) = ProceduralCurve::try_new(
-                ProceduralCurveId(StepIdentity::construction("trimmed_curve", id)),
+                ProceduralCurveId::mint(StepIdentity::construction("trimmed_curve", id))
+                    .expect("identity grammar"),
                 ProceduralCurveDefinition::Subset {
                     source: basis,
                     parameter_range,
@@ -1041,7 +1045,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             else {
                 continue;
             };
-            let curve = CurveId(StepIdentity::data("curve", id));
+            let curve = CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar");
             typed.extend(segments.iter().map(|(segment, _)| *segment));
             let curve_index = ir.model.curves.len();
             ir.model.curves.push(Curve {
@@ -1063,7 +1067,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let source_reference_step = parameters.get(1).and_then(Value::reference);
         let source_step =
             source_reference_step.and_then(|source| curve_carrier_record(source, exchange));
-        let source = source_step.map(|source| CurveId(StepIdentity::data("curve", source)));
+        let source = source_step.map(|source| {
+            CurveId::mint(StepIdentity::data("curve", source)).expect("identity grammar")
+        });
         let distance = parameters.get(2).and_then(Value::number);
         let self_intersect = parameters
             .get(3)
@@ -1098,7 +1104,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         else {
             continue;
         };
-        let curve = CurveId(StepIdentity::data("curve", id));
+        let curve = CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar");
         let curve_index = ir.model.curves.len();
         ir.model.curves.push(Curve {
             id: curve.clone(),
@@ -1108,7 +1114,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let _attached = ir.model.add_procedural_curve(
             curve.clone(),
             ProceduralCurve::new(
-                ProceduralCurveId(StepIdentity::construction("offset_curve", id)),
+                ProceduralCurveId::mint(StepIdentity::construction("offset_curve", id))
+                    .expect("identity grammar"),
                 ProceduralCurveDefinition::SpatialOffset {
                     source,
                     distance: distance * unit_scales.length(id, scale),
@@ -1131,7 +1138,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ));
             let curve_index = ir.model.curves.len();
             ir.model.curves.push(Curve {
-                id: CurveId(StepIdentity::data("curve", id)),
+                id: CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar"),
                 geometry: CurveGeometry::Unknown {
                     record: exchange.records.get(&id).map(opaque_record_id),
                 },
@@ -1178,7 +1185,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
-            let curve = CurveId(StepIdentity::data("curve", id));
+            let curve = CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar");
             let curve_index = ir.model.curves.len();
             ir.model.curves.push(Curve {
                 id: curve.clone(),
@@ -1224,7 +1231,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 1)
                     .and_then(Value::reference)
                     .filter(|curve| carrier_index.curves.contains_key(curve))
-                    .map(|curve| CurveId(StepIdentity::data("curve", curve)))
+                    .map(|curve| {
+                        CurveId::mint(StepIdentity::data("curve", curve)).expect("identity grammar")
+                    })
                     .zip(
                         named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 2)
                             .and_then(Value::reference)
@@ -1240,7 +1249,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             Some("SURFACE_OF_REVOLUTION") => named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
                 .and_then(Value::reference)
                 .filter(|curve| carrier_index.curves.contains_key(curve))
-                .map(|curve| CurveId(StepIdentity::data("curve", curve)))
+                .map(|curve| {
+                    CurveId::mint(StepIdentity::data("curve", curve)).expect("identity grammar")
+                })
                 .zip(
                     named_parameter(record, "SURFACE_OF_REVOLUTION", 2)
                         .and_then(Value::reference)
@@ -1266,7 +1277,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ));
             continue;
         };
-        let surface = SurfaceId(StepIdentity::data("surface", id));
+        let surface = SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
@@ -1275,7 +1286,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let _attached = ir.model.add_procedural_surface(
             surface,
             ProceduralSurface::new(
-                ProceduralSurfaceId(StepIdentity::construction("swept_surface", id)),
+                ProceduralSurfaceId::mint(StepIdentity::construction("swept_surface", id))
+                    .expect("identity grammar"),
                 definition,
                 None,
             ),
@@ -1384,7 +1396,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         };
         if let Some(geometry) = geometry {
             ir.model.surfaces.push(Surface {
-                id: SurfaceId(StepIdentity::data("surface", id)),
+                id: SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar"),
                 geometry,
                 source_object: None,
             });
@@ -1401,7 +1413,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         }
         if let Some(nurbs) = nurbs_surface(record, &points, &mut warnings) {
             ir.model.surfaces.push(Surface {
-                id: SurfaceId(StepIdentity::data("surface", id)),
+                id: SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar"),
                 geometry: SurfaceGeometry::Nurbs(nurbs),
                 source_object: None,
             });
@@ -1485,7 +1497,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             };
             let Some(parameter_scales) = surface_parameter_scales_for_step(
                 ir,
-                &SurfaceId(StepIdentity::data("surface", support_step)),
+                &SurfaceId::mint(StepIdentity::data("surface", support_step))
+                    .expect("identity grammar"),
                 &geometry,
                 record_scale,
                 record_angle_scale,
@@ -1520,7 +1533,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             {
                 continue;
             }
-            let surface = SurfaceId(StepIdentity::data("surface", id));
+            let surface =
+                SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar");
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry,
@@ -1529,12 +1543,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(StepIdentity::construction(
+                    ProceduralSurfaceId::mint(StepIdentity::construction(
                         "rectangular_trimmed_surface",
                         id,
-                    )),
+                    ))
+                    .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Subset {
-                        support: SurfaceId(StepIdentity::data("surface", support_step)),
+                        support: SurfaceId::mint(StepIdentity::data("surface", support_step))
+                            .expect("identity grammar"),
                         parameter_ranges,
                         u_sense: Some(u_sense),
                         v_sense: Some(v_sense),
@@ -1548,7 +1564,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             typed.insert(id);
             true
         } else if record.partial("CURVE_BOUNDED_SURFACE").is_some() {
-            let surface = SurfaceId(StepIdentity::data("surface", id));
+            let surface =
+                SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar");
             let Some(parameters) = entity_parameters(record, "CURVE_BOUNDED_SURFACE") else {
                 continue;
             };
@@ -1559,20 +1576,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 surface_waiting_on.entry(support_step).or_default().push(id);
                 continue;
             };
-            let support = SurfaceId(StepIdentity::data("surface", support_step));
+            let support = SurfaceId::mint(StepIdentity::data("surface", support_step))
+                .expect("identity grammar");
             let boundary_steps = parameters.get(2).and_then(references);
             let boundaries = boundary_steps.as_ref().map(|boundaries| {
                 boundaries
                     .iter()
                     .copied()
-                    .map(|boundary| CurveId(StepIdentity::data("curve", boundary)))
+                    .map(|boundary| {
+                        CurveId::mint(StepIdentity::data("curve", boundary))
+                            .expect("identity grammar")
+                    })
                     .collect::<Vec<_>>()
             });
             let boundary_pcurves = boundary_steps
                 .iter()
                 .flatten()
                 .flat_map(|boundary| boundary_pcurve_steps(*boundary, support_step, exchange))
-                .map(|pcurve| PcurveId(StepIdentity::data("pcurve", pcurve)))
+                .map(|pcurve| {
+                    PcurveId::mint(StepIdentity::data("pcurve", pcurve)).expect("identity grammar")
+                })
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect();
@@ -1606,7 +1629,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(StepIdentity::construction("curve_bounded_surface", id)),
+                    ProceduralSurfaceId::mint(StepIdentity::construction(
+                        "curve_bounded_surface",
+                        id,
+                    ))
+                    .expect("identity grammar"),
                     ProceduralSurfaceDefinition::CurveBounded {
                         support,
                         boundaries,
@@ -1620,7 +1647,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             typed.insert(id);
             true
         } else if record.partial("OFFSET_SURFACE").is_some() {
-            let surface = SurfaceId(StepIdentity::data("surface", id));
+            let surface =
+                SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar");
             let Some(parameters) = entity_parameters(record, "OFFSET_SURFACE") else {
                 continue;
             };
@@ -1632,7 +1660,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 surface_waiting_on.entry(support_step).or_default().push(id);
                 continue;
             }
-            let support = SurfaceId(StepIdentity::data("surface", support_step));
+            let support = SurfaceId::mint(StepIdentity::data("surface", support_step))
+                .expect("identity grammar");
             let distance = parameters.get(2).and_then(Value::number);
             let self_intersect = parameters
                 .get(3)
@@ -1650,7 +1679,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(StepIdentity::construction("offset_surface", id)),
+                    ProceduralSurfaceId::mint(StepIdentity::construction("offset_surface", id))
+                        .expect("identity grammar"),
                     ProceduralSurfaceDefinition::ParallelOffset {
                         support,
                         distance: distance * record_scale,
@@ -1688,7 +1718,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             else {
                 continue;
             };
-            let surface = SurfaceId(StepIdentity::data("surface", id));
+            let surface =
+                SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar");
             let surface_index = ir.model.surfaces.len();
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
@@ -1701,9 +1732,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let _attached = ir.model.add_procedural_surface(
                 surface,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(StepIdentity::construction("surface_replica", id)),
+                    ProceduralSurfaceId::mint(StepIdentity::construction("surface_replica", id))
+                        .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Replica {
-                        source: SurfaceId(StepIdentity::data("surface", parent_step)),
+                        source: SurfaceId::mint(StepIdentity::data("surface", parent_step))
+                            .expect("identity grammar"),
                         transform,
                     },
                     None,
@@ -1727,7 +1760,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ));
             let surface_index = ir.model.surfaces.len();
             ir.model.surfaces.push(Surface {
-                id: SurfaceId(StepIdentity::data("surface", id)),
+                id: SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar"),
                 geometry: SurfaceGeometry::Unknown {
                     record: exchange.records.get(&id).map(opaque_record_id),
                 },
@@ -1767,7 +1800,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if let Entry::Vacant(entry) = carrier_index.curves.entry(curve_step) {
             let curve_index = ir.model.curves.len();
             ir.model.curves.push(Curve {
-                id: CurveId(StepIdentity::data("curve", curve_step)),
+                id: CurveId::mint(StepIdentity::data("curve", curve_step))
+                    .expect("identity grammar"),
                 geometry: CurveGeometry::Unknown {
                     record: exchange.records.get(&curve_step).map(opaque_record_id),
                 },
@@ -1784,7 +1818,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         "OFFSET_SURFACE",
         "RECTANGULAR_TRIMMED_SURFACE",
     ]) {
-        let surface = SurfaceId(StepIdentity::data("surface", id));
+        let surface = SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar");
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
             let surface_index = ir.model.surfaces.len();
             ir.model.surfaces.push(Surface {
@@ -1814,7 +1848,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(surface_step) {
             let surface_index = ir.model.surfaces.len();
             ir.model.surfaces.push(Surface {
-                id: SurfaceId(StepIdentity::data("surface", surface_step)),
+                id: SurfaceId::mint(StepIdentity::data("surface", surface_step))
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Unknown {
                     record: exchange.records.get(&surface_step).map(opaque_record_id),
                 },
@@ -1831,7 +1866,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .surfaces
         .iter()
         .filter_map(|surface| {
-            let id = step_instance_id(&surface.id.0)?;
+            let id = step_instance_id(&surface.id.as_str())?;
             let scales = surface_parameter_scales_for_step(
                 ir,
                 &surface.id,
@@ -1887,7 +1922,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         }
         ir.model.pcurves.push(Pcurve {
-            id: PcurveId(StepIdentity::data("pcurve", id)),
+            id: PcurveId::mint(StepIdentity::data("pcurve", id)).expect("identity grammar"),
             geometry,
             metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
         });
@@ -1908,7 +1943,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         .model
         .pcurves
         .iter()
-        .filter_map(|pcurve| step_instance_id(&pcurve.id.0))
+        .filter_map(|pcurve| step_instance_id(&pcurve.id.as_str()))
         .collect::<BTreeSet<_>>();
     for surface in &mut ir.model.procedural_surfaces {
         surface.edit_definition(|definition| {
@@ -1936,14 +1971,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             }
             continue;
         };
-        let surface = SurfaceId(StepIdentity::data("surface", id));
+        let surface = SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar");
         if !carrier_index.surfaces.contains_key(&id) {
             continue;
         }
         let _attached = ir.model.add_procedural_surface(
             surface,
             ProceduralSurface::new(
-                ProceduralSurfaceId(StepIdentity::construction("degenerate_torus", id)),
+                ProceduralSurfaceId::mint(StepIdentity::construction("degenerate_torus", id))
+                    .expect("identity grammar"),
                 ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
                 None,
             ),
@@ -2053,7 +2089,8 @@ fn decode_tessellated_curve_sets(
                 continue;
             };
             ir.model.curves.push(Curve {
-                id: CurveId(StepIdentity::data("curve", curve_key)),
+                id: CurveId::mint(StepIdentity::data("curve", curve_key))
+                    .expect("identity grammar"),
                 geometry: CurveGeometry::Polyline(polyline),
                 source_object: Some(SourceObjectAssociation {
                     format: crate::dialect::FORMAT.into(),
@@ -3801,7 +3838,8 @@ fn composite_curve(
             decoded.curves.contains_key(&curve_step).then_some((
                 id,
                 CompositeCurveSegment {
-                    curve: CurveId(StepIdentity::data("curve", curve_step)),
+                    curve: CurveId::mint(StepIdentity::data("curve", curve_step))
+                        .expect("identity grammar"),
                     same_sense: parameters.get(1)?.logical()?,
                     transition,
                 },

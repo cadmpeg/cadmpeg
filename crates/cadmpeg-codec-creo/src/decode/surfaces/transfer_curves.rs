@@ -107,7 +107,8 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             ];
             Some(points)
         })();
-        let curve_id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let curve_id =
+            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
         let allow_unresolved_endpoint_witness = endpoint_evidence
             .get(&row.id)
             .is_some_and(|evidence| !evidence.complete)
@@ -198,7 +199,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             continue;
         };
         let geometry = |surface_id| {
-            let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+                .expect("identity grammar");
             exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))
                 .map(|surface| &surface.geometry)
         };
@@ -245,7 +247,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         let Some((geometry, kind)) = resolved else {
             continue;
         };
-        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let id =
+            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
@@ -417,7 +420,8 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 2.0, 0.0),
                     normal: Vector3::new(0.0, 1.0, 0.0),
@@ -426,7 +430,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Plane {
                     origin: Point3::new(0.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
@@ -435,7 +440,8 @@ mod tests {
                 source_object: None,
             },
             Surface {
-                id: SurfaceId("creo:visibgeom:surface#3".to_string()),
+                id: SurfaceId::mint("creo:visibgeom:surface#3".to_string())
+                    .expect("identity grammar"),
                 geometry: SurfaceGeometry::Unknown { record: None },
                 source_object: None,
             },
@@ -449,13 +455,15 @@ mod tests {
         );
         assert_eq!(
             transferred,
-            BTreeSet::from([CurveId("creo:visibgeom:curve#10".to_string())])
+            BTreeSet::from([
+                CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar")
+            ])
         );
         assert!(matches!(
             ir.model
                 .curves
                 .iter()
-                .find(|curve| curve.id == CurveId("creo:visibgeom:curve#10".to_string()))
+                .find(|curve| curve.id == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Line { origin, direction })
                 if origin.x == 0.0
@@ -503,7 +511,7 @@ mod tests {
         }];
 
         let extrusion = Surface {
-            id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Nurbs(
                 NurbsSurface::new(
                     1,
@@ -528,7 +536,7 @@ mod tests {
             source_object: None,
         };
         let plane = Surface {
-            id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),

@@ -48,7 +48,7 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0.ends_with("#7"))
+        .find(|surface| surface.id.as_str().ends_with("#7"))
         .expect("first cone instance");
     assert!(matches!(
         surface.geometry,

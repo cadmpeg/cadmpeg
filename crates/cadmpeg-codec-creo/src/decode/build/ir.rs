@@ -213,7 +213,7 @@ fn transfer_reference_lines(
             }
         };
         let prefix = format!("creo:mdl_ref_info:{family}#{native_identity}");
-        let id = CurveId(prefix);
+        let id = CurveId::mint(prefix).expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -264,7 +264,8 @@ fn transfer_reference_circles(
         } else {
             format!("{}@{}", circle.entity_id, circle.offset)
         };
-        let id = CurveId(format!("creo:mdl_ref_info:arc_z#{native_identity}"));
+        let id = CurveId::mint(format!("creo:mdl_ref_info:arc_z#{native_identity}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -312,7 +313,8 @@ fn transfer_reference_ellipses(
         } else {
             format!("{}@{}", ellipse.source_entity_id, ellipse.offset)
         };
-        let id = CurveId(format!("creo:mdl_ref_info:conic#{native_identity}"));
+        let id = CurveId::mint(format!("creo:mdl_ref_info:conic#{native_identity}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -405,7 +407,8 @@ fn transfer_datum_plane_surfaces(
     annotations: &mut AnnotationBuilder,
 ) {
     for plane in &scan.planes.datums {
-        let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
+        let id = SurfaceId::mint(format!("creo:actdatums:surface#{}", plane.id))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -448,7 +451,8 @@ fn transfer_placed_plane_surfaces_into_ir(
     annotations: &mut AnnotationBuilder,
 ) {
     for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
-        let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}"))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }

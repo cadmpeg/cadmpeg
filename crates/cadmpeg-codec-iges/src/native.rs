@@ -4761,7 +4761,8 @@ pub(crate) fn store(
         }
     }
     for body in &ir.model.bodies {
-        if let Some(sequence) = model_id_directory_sequence(&body.id.0, "iges:model:body#D") {
+        if let Some(sequence) = model_id_directory_sequence(&body.id.as_str(), "iges:model:body#D")
+        {
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()
@@ -4769,7 +4770,9 @@ pub(crate) fn store(
         }
     }
     for point in &ir.model.points {
-        if let Some(sequence) = model_id_directory_sequence(&point.id.0, "iges:model:point#D") {
+        if let Some(sequence) =
+            model_id_directory_sequence(&point.id.as_str(), "iges:model:point#D")
+        {
             occurrence_neutral_links
                 .entry(sequence)
                 .or_default()

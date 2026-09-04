@@ -538,7 +538,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     ir.source = Some(SourceMeta::classified(dialects, attributes));
     if matches!(document_kind, DocumentKind::Part | DocumentKind::Assembly) {
         ir.model.product_definitions.push(ProductDefinition {
-            id: ProductDefinitionId("inventor:document:product#root".into()),
+            id: ProductDefinitionId::mint("inventor:document:product#root")
+                .expect("identity grammar"),
             kind: if document_kind == DocumentKind::Assembly {
                 ProductDefinitionKind::LinkGroup
             } else {
@@ -1638,10 +1639,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             source_fidelity.retain_unknown_records(
                 &format!("RSeStorage/B{}:expanded", carrier.segment_token),
                 [UnknownRecord::retained(
-                    UnknownId(format!(
+                    UnknownId::mint(format!(
                         "inventor:kernel:carrier#{}-{}",
                         carrier.segment_token, carrier.record_ordinal
-                    )),
+                    ))
+                    .expect("identity grammar"),
                     carrier.carrier_offset,
                     data,
                     vec![active_carrier.id.clone()],

@@ -338,7 +338,8 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             }
             _ => unreachable!("prototype family was filtered above"),
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -453,7 +454,8 @@ pub(in super::super) fn transfer_positional_spline_replays(
         ) else {
             continue;
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -595,11 +597,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             }
             _ => continue,
         };
-        let id = SurfaceId(format!(
+        let id = SurfaceId::mint(format!(
             "{}{}",
             carrier.namespace.ir_prefix(),
             carrier.surface_id
-        ));
+        ))
+        .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }

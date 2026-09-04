@@ -203,7 +203,8 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let surfaces = ir
             .model
             .surfaces
@@ -449,7 +450,8 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let surfaces = ir
             .model
             .surfaces
@@ -681,7 +683,8 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let surfaces = ir
             .model
             .surfaces

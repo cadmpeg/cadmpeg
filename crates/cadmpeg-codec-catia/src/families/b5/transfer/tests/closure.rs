@@ -370,13 +370,13 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         &mut ir,
         &mut AnnotationBuilder::new(),
         graph,
-        &UnknownId("catia:test-payload".to_string()),
+        &UnknownId::mint("catia:test-payload".to_string()).expect("identity grammar"),
     ));
     assert_eq!(
         ir.model
             .faces
             .iter()
-            .map(|face| face.id.0.as_str())
+            .map(|face| face.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:face#1"]
     );
@@ -384,7 +384,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         ir.model
             .loops
             .iter()
-            .map(|loop_| loop_.id.0.as_str())
+            .map(|loop_| loop_.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:loop#2"]
     );
@@ -393,7 +393,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         .model
         .surfaces
         .iter()
-        .any(|surface| surface.id.0.contains("#11")));
+        .any(|surface| surface.id.as_str().contains("#11")));
 }
 
 #[test]
@@ -500,7 +500,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         &mut ir,
         &mut AnnotationBuilder::new(),
         graph,
-        &UnknownId("catia:test-payload".to_string()),
+        &UnknownId::mint("catia:test-payload".to_string()).expect("identity grammar"),
     ));
     assert_eq!(ir.model.pcurves.len(), 3);
     assert_eq!(ir.model.coedges.len(), 3);
@@ -577,8 +577,14 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
 #[test]
 fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     let surfaces = HashMap::from([
-        (10, SurfaceId("surface-10".to_string())),
-        (11, SurfaceId("surface-11".to_string())),
+        (
+            10,
+            SurfaceId::mint("surface-10".to_string()).expect("identity grammar"),
+        ),
+        (
+            11,
+            SurfaceId::mint("surface-11".to_string()).expect("identity grammar"),
+        ),
     ]);
     let pcurve_20 = PcurveGeometry::Line {
         origin: Point2::new(0.0, 0.0),

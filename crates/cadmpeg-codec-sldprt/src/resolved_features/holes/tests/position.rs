@@ -90,7 +90,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         )
         .collect();
     let surface = |id, x| Surface {
-        id: SurfaceId(format!("surface-{id}")),
+        id: SurfaceId::mint(format!("surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(x, 7.0, 10.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -156,7 +156,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     );
 
     let opposite_side = |id, x| Surface {
-        id: SurfaceId(format!("surface-{id}")),
+        id: SurfaceId::mint(format!("surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(x, 30.0, 10.0),
             axis: Vector3::new(0.0, 0.0, -1.0),
@@ -225,7 +225,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
         .into_iter()
         .enumerate()
         .map(|(id, x)| Surface {
-            id: SurfaceId(format!("carrier-{id}")),
+            id: SurfaceId::mint(format!("carrier-{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(x, 11.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -336,7 +336,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         .cloned()
         .enumerate()
         .map(|(index, mut surface)| {
-            surface.id = SurfaceId(format!("opposite-{index}"));
+            surface.id = SurfaceId::mint(format!("opposite-{index}")).expect("identity grammar");
             let SurfaceGeometry::Cylinder { origin, axis, .. } = &mut surface.geometry else {
                 unreachable!();
             };
@@ -354,7 +354,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     );
 
     surfaces.push(Surface {
-        id: SurfaceId("duplicate-locus-bore".into()),
+        id: SurfaceId::mint("duplicate-locus-bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(1000.0, 1000.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -954,7 +954,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     .with_construction(true)
     .with_native_ref(Some("construction-point".into()));
     let surface = Surface {
-        id: SurfaceId("bore".into()),
+        id: SurfaceId::mint("bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(12.0, 23.0, 10.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -1158,7 +1158,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     )
     .with_native_ref(Some("relation-handle".into()));
     let surface = Surface {
-        id: SurfaceId("bore".into()),
+        id: SurfaceId::mint("bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(12.0, 23.0, 10.0),
             axis: Vector3::new(0.0, 0.0, 1.0),

@@ -85,7 +85,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let surfaces = ir
             .model
             .surfaces

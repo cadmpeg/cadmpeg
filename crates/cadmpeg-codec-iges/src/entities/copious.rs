@@ -334,16 +334,18 @@ pub(super) fn project(
                 && matches!(global.global_table(), GlobalTable::V4_0));
         if projects_as_points {
             for (index, position) in points.into_iter().enumerate() {
-                let point = PointId(format!(
+                let point = PointId::mint(format!(
                     "iges:model:point#D{}-{}",
                     entry.sequence,
                     index + 1
-                ));
-                let vertex = VertexId(format!(
+                ))
+                .expect("identity grammar");
+                let vertex = VertexId::mint(format!(
                     "iges:model:vertex#D{}-{}",
                     entry.sequence,
                     index + 1
-                ));
+                ))
+                .expect("identity grammar");
                 ir.model.points.push(Point {
                     source_object: None,
                     id: point.clone(),
@@ -393,16 +395,19 @@ pub(super) fn project(
         let start = points[0];
         let end = points[points.len() - 1];
         let stem = format!("D{}", entry.sequence);
-        let start_point = PointId(format!("iges:model:point#{stem}-start"));
-        let end_point = PointId(format!("iges:model:point#{stem}-end"));
-        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
+        let start_point =
+            PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+        let end_point =
+            PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+        let start_vertex =
+            VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
         let end_vertex = if entry.form == 63 {
             start_vertex.clone()
         } else {
-            VertexId(format!("iges:model:vertex#{stem}-end"))
+            VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar")
         };
-        let curve = CurveId(format!("iges:model:curve#{stem}"));
-        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+        let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
         ir.model.points.push(Point {
             source_object: None,
             id: start_point.clone(),

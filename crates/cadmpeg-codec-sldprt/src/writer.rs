@@ -622,20 +622,20 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
                 if *ratio != 1.0 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
-                        surface.id.0, ratio
+                        surface.id.as_str(), ratio
                     )));
                 }
                 if !(*half_angle > 0.0 && *half_angle < std::f64::consts::FRAC_PI_2) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
-                        surface.id.0, half_angle
+                        surface.id.as_str(), half_angle
                     )));
                 }
             }
             SurfaceGeometry::Sphere { radius, .. } if *radius < 0.0 => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
-                    surface.id.0, radius
+                    surface.id.as_str(), radius
                 )));
             }
             SurfaceGeometry::Torus {
@@ -645,7 +645,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             } if !(*major_radius > *minor_radius && *minor_radius > 0.0) => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
-                    surface.id.0, major_radius, minor_radius
+                    surface.id.as_str(), major_radius, minor_radius
                 )));
             }
             _ => {}
@@ -667,7 +667,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
         edge.param_range.is_some()
             && annotations
                 .exactness()
-                .get(&edge.id.0)
+                .get(edge.id.as_str())
                 .is_none_or(|note| note.entity() != cadmpeg_ir::Exactness::Derived)
     }) {
         return Err(CodecError::NotImplemented(
@@ -720,7 +720,7 @@ fn configuration_partitions(
     {
         return Err(CodecError::malformed(format_args!(
             "SLDPRT body {} belongs to no configuration",
-            body.id.0
+            body.id.as_str()
         )));
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
@@ -735,7 +735,7 @@ fn configuration_partitions(
             let index = configuration.source_index.ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT configuration {} has no assigned source index",
-                    configuration.id.0
+                    configuration.id.as_str()
                 ))
             })?;
             let subset = body_subset(ir, bodies)?;
@@ -913,9 +913,9 @@ fn opaque_blocks(
     let mut seen = HashSet::new();
     records
         .iter()
-        .filter(|record| record.id.0.starts_with("sldprt:file:block#"))
+        .filter(|record| record.id.as_str().starts_with("sldprt:file:block#"))
         .filter_map(|record| {
-            let provenance = annotations.provenance.get(&record.id.0)?;
+            let provenance = annotations.provenance.get(record.id.as_str())?;
             let section = provenance.stream();
             let lower = section.to_ascii_lowercase();
             if section == active_partition {
@@ -943,7 +943,8 @@ fn opaque_blocks(
             }
             let mut payload = record.data?.to_vec();
             if lower.contains("pmisemanticdatadb") {
-                if let Err(error) = crate::pmi::patch_payload(ir, &record.id.0, &mut payload) {
+                if let Err(error) = crate::pmi::patch_payload(ir, &record.id.as_str(), &mut payload)
+                {
                     return Some(Err(error));
                 }
             }
@@ -972,7 +973,7 @@ fn retained_swobjects_sections(
     let mut sections = records
         .iter()
         .filter_map(|record| {
-            let provenance = annotations.provenance.get(&record.id.0)?;
+            let provenance = annotations.provenance.get(record.id.as_str())?;
             let section = provenance.stream();
             section
                 .to_ascii_lowercase()
@@ -1010,12 +1011,15 @@ fn patch_retained_swobjects_metadata(
         .into_iter()
         .filter(|attribute| attribute.name != "source_linear_unit_code")
         .map(|attribute| {
-            let provenance = annotations.provenance.get(&attribute.id.0).ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "SLDPRT metadata attribute {} has no retained record provenance",
-                    attribute.id
-                ))
-            })?;
+            let provenance = annotations
+                .provenance
+                .get(attribute.id.as_str())
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT metadata attribute {} has no retained record provenance",
+                        attribute.id
+                    ))
+                })?;
             Ok((provenance.stream().to_owned(), provenance.offset, attribute))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
@@ -1504,10 +1508,10 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
         .model
         .attributes
         .iter()
-        .filter(|attribute| attribute.id.0.starts_with("sldprt:"))
+        .filter(|attribute| attribute.id.as_str().starts_with("sldprt:"))
         .collect::<Vec<_>>();
     attributes.sort_by_key(|attribute| {
-        let position = metadata_source_position(&attribute.id.0);
+        let position = metadata_source_position(&attribute.id.as_str());
         (position.is_none(), position)
     });
     attributes
@@ -2421,7 +2425,7 @@ pub(crate) fn brep_body(
                 nurbs,
                 &mut next,
                 length_scale,
-                &surface.id.0,
+                &surface.id.as_str(),
             )?;
             continue;
         }
@@ -2440,7 +2444,7 @@ pub(crate) fn brep_body(
                 nurbs,
                 &mut next,
                 length_scale,
-                &curve.id.0,
+                &curve.id.as_str(),
             )?;
             continue;
         }
@@ -3628,7 +3632,7 @@ mod nurbs_write_tests {
     fn retained_swift_pmi_requires_an_unchanged_semantic_baseline() {
         let mut ir = CadIr::empty();
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
-            id: cadmpeg_ir::ids::PmiId("sldprt:model:pmi#A1".into()),
+            id: cadmpeg_ir::ids::PmiId::mint("sldprt:model:pmi#A1").expect("identity grammar"),
             name: Some("datum A".into()),
             visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {

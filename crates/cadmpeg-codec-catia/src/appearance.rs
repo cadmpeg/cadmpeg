@@ -211,10 +211,11 @@ fn packet(field: &ValueField) -> Option<Packet> {
 }
 
 fn insert_appearance(ir: &mut CadIr, rgba: [u8; 4]) -> AppearanceId {
-    let id = AppearanceId(format!(
+    let id = AppearanceId::mint(format!(
         "catia:appearance:rgba#{:02x}{:02x}{:02x}{:02x}",
         rgba[0], rgba[1], rgba[2], rgba[3]
-    ));
+    ))
+    .expect("identity grammar");
     if !ir
         .model
         .appearances
@@ -320,7 +321,7 @@ mod tests {
     fn model(face_count: usize) -> CadIr {
         let mut ir = CadIr::empty();
         ir.model.bodies.push(Body {
-            id: BodyId("body".into()),
+            id: BodyId::mint("body").expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: vec![],
             transform: None,
@@ -330,9 +331,9 @@ mod tests {
         });
         for index in 0..face_count {
             ir.model.faces.push(Face {
-                id: FaceId(format!("face-{index}")),
-                shell: ShellId("shell".into()),
-                surface: SurfaceId(format!("surface-{index}")),
+                id: FaceId::mint(format!("face-{index}")).expect("identity grammar"),
+                shell: ShellId::mint("shell").expect("identity grammar"),
+                surface: SurfaceId::mint(format!("surface-{index}")).expect("identity grammar"),
                 sense: Sense::Forward,
                 loops: vec![],
                 name: None,

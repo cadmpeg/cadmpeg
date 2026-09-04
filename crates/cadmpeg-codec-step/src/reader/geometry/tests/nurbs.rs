@@ -231,15 +231,15 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
 
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("unknown".into()),
+        id: CurveId::mint("unknown").expect("identity grammar"),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: None,
     });
     ir.model.curves.push(Curve {
-        id: CurveId("composite".into()),
+        id: CurveId::mint("composite").expect("identity grammar"),
         geometry: CurveGeometry::Composite {
             segments: vec![CompositeCurveSegment {
-                curve: CurveId("unknown".into()),
+                curve: CurveId::mint("unknown").expect("identity grammar"),
                 same_sense: true,
                 transition: CompositeCurveTransition::Continuous,
             }],

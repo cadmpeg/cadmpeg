@@ -25,7 +25,7 @@ fn direct_face_recipe_clauses_resolve_ordered_changed_intersections() {
         design_reference_offset: selector_offset + 2,
         candidate_faces: candidates
             .iter()
-            .map(|face| FaceId(format!("f3d:brep:entity#{face}")))
+            .map(|face| FaceId::mint(format!("f3d:brep:entity#{face}")).expect("identity grammar"))
             .collect(),
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),

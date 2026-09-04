@@ -98,7 +98,7 @@ fn every_write_target_dialects_lists_is_a_to_value() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId("cadir:model:point#listing".into()),
+        id: cadmpeg_ir::ids::PointId::mint("cadir:model:point#listing").expect("identity grammar"),
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });

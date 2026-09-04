@@ -1427,7 +1427,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
         row(43, crate::surface::SurfaceKind::Cone),
     ];
     let plane = |id: &str, native_id: u32| Surface {
-        id: SurfaceId(id.to_string()),
+        id: SurfaceId::mint(id.to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1450,13 +1450,14 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     ];
     let cache = surfaces[2].geometry.clone();
     surfaces[2].geometry = SurfaceGeometry::Procedural {
-        construction: ProceduralSurfaceId("extrusion-construction".to_string()),
+        construction: ProceduralSurfaceId::mint("extrusion-construction".to_string())
+            .expect("identity grammar"),
         cache: Some(SolvedSurfaceGeometry::new(cache).unwrap()),
     };
     let procedural_surfaces = vec![ProceduralSurface::new(
-        ProceduralSurfaceId("extrusion-construction".to_string()),
+        ProceduralSurfaceId::mint("extrusion-construction".to_string()).expect("identity grammar"),
         ProceduralSurfaceDefinition::Extrusion {
-            directrix: CurveId("directrix".to_string()),
+            directrix: CurveId::mint("directrix".to_string()).expect("identity grammar"),
             parameter_interval: None,
             direction: Vector3::new(0.0, 0.0, 1.0),
             native_position: None,
@@ -1505,7 +1506,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     };
     let curves = vec![
         Curve {
-            id: CurveId("typed".to_string()),
+            id: CurveId::mint("typed".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(1.0, 0.0, 0.0),
@@ -1513,7 +1514,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
             source_object: Some(source(41)),
         },
         Curve {
-            id: CurveId("opaque".to_string()),
+            id: CurveId::mint("opaque".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: Some(source(42)),
         },

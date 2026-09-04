@@ -106,7 +106,8 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
 
 fn saved_spline_curve() -> Curve {
     Curve {
-        id: CurveId("creo:featdefs:saved_spline_curve#40:1".to_string()),
+        id: CurveId::mint("creo:featdefs:saved_spline_curve#40:1".to_string())
+            .expect("identity grammar"),
         geometry: CurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,

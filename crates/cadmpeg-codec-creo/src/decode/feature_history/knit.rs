@@ -494,7 +494,10 @@ pub(in super::super) fn feature_result_topology(
         .collect::<Vec<_>>();
     (!faces.is_empty() || !edges.is_empty()).then_some(())?;
     Some(FeatureResultTopology {
-        id: FeatureResultTopologyId(format!("creo:model:feature-result-topology#{feature_id}")),
+        id: FeatureResultTopologyId::mint(format!(
+            "creo:model:feature-result-topology#{feature_id}"
+        ))
+        .expect("identity grammar"),
         output_of: IrFeatureId(format!("creo:model:feature#{feature_id}")),
         bodies: Vec::new(),
         faces,

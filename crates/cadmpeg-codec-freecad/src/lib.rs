@@ -778,12 +778,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .model
         .vertices
         .iter()
-        .map(|entity| entity.id.0.as_str())
-        .chain(ir.model.edges.iter().map(|entity| entity.id.0.as_str()))
-        .chain(ir.model.loops.iter().map(|entity| entity.id.0.as_str()))
-        .chain(ir.model.faces.iter().map(|entity| entity.id.0.as_str()))
-        .chain(ir.model.shells.iter().map(|entity| entity.id.0.as_str()))
-        .chain(ir.model.bodies.iter().map(|entity| entity.id.0.as_str()))
+        .map(|entity| entity.id.as_str())
+        .chain(ir.model.edges.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.model.loops.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.model.faces.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.model.shells.iter().map(|entity| entity.id.as_str()))
+        .chain(ir.model.bodies.iter().map(|entity| entity.id.as_str()))
         .collect::<HashSet<_>>();
     for map in &element_maps {
         if !property_ids.contains(map.property.as_str())
@@ -1121,7 +1121,8 @@ impl CodecBackend for FcstdCodec {
                 &mut ir,
                 "fcstd",
                 [UnknownRecord::retained(
-                    UnknownId(native::native_id("thumbnail", name)),
+                    UnknownId::mint(native::native_id("thumbnail", name))
+                        .expect("identity grammar"),
                     0,
                     bytes.to_vec(),
                     vec![native::native_id("document", "0")],

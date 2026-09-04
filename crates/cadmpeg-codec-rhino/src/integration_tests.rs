@@ -177,7 +177,7 @@ fn document_pipeline_composes_definitions_history_identity_attributes_and_settin
 fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topology() {
     let mut point_ir = cadmpeg_ir::CadIr::empty();
     point_ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId("integration:point#0".into()),
+        id: cadmpeg_ir::ids::PointId::mint("integration:point#0").expect("identity grammar"),
         position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
         source_object: None,
     });
@@ -1962,7 +1962,8 @@ fn opennurbs_object_walk_and_transfer_floor() {
         };
         let mut point_ir = cadmpeg_ir::CadIr::empty();
         point_ir.model.points.push(cadmpeg_ir::topology::Point {
-            id: cadmpeg_ir::ids::PointId("integration:writer-point#0".into()),
+            id: cadmpeg_ir::ids::PointId::mint("integration:writer-point#0")
+                .expect("identity grammar"),
             position: cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
             source_object: None,
         });

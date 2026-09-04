@@ -92,7 +92,8 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             continue;
         };
         for row in rows {
-            let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -177,7 +178,8 @@ pub(in super::super) fn transfer_positional_tori(
         let Some(frame) = record.positional_torus_frame else {
             continue;
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -278,7 +280,8 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         ) else {
             continue;
         };
-        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
+        let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", record.surface_id))
+            .expect("identity grammar");
         if ir
             .model
             .surfaces
@@ -287,14 +290,16 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         {
             continue;
         }
-        let curve_id = CurveId(format!(
+        let curve_id = CurveId::mint(format!(
             "creo:visibgeom:surface_directrix#{}",
             record.surface_id
-        ));
-        let procedural_id = ProceduralSurfaceId(format!(
+        ))
+        .expect("identity grammar");
+        let procedural_id = ProceduralSurfaceId::mint(format!(
             "creo:visibgeom:surface_extrusion#{}",
             record.surface_id
-        ));
+        ))
+        .expect("identity grammar");
         annotate(
             annotations,
             &curve_id,
@@ -442,11 +447,13 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         let Some(surface) = extruded_nurbs_surface(&directrix, sweep) else {
             continue;
         };
-        let curve_id = CurveId(format!(
+        let curve_id = CurveId::mint(format!(
             "creo:visibgeom:tabulated_directrix#{}",
             replay.surface_id
-        ));
-        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{}", replay.surface_id));
+        ))
+        .expect("identity grammar");
+        let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", replay.surface_id))
+            .expect("identity grammar");
         if ir
             .model
             .surfaces
@@ -455,10 +462,11 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         {
             continue;
         }
-        let procedural_id = ProceduralSurfaceId(format!(
+        let procedural_id = ProceduralSurfaceId::mint(format!(
             "creo:visibgeom:tabulated_extrusion#{}",
             replay.surface_id
-        ));
+        ))
+        .expect("identity grammar");
         annotate(
             annotations,
             &curve_id,

@@ -674,11 +674,11 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
         .native_unknowns("step")
         .expect("STEP unknown arena");
     assert_eq!(unknown.len(), 1);
-    assert_eq!(unknown[0].id.0, "step:data:item#1");
+    assert_eq!(unknown[0].id.as_str(), "step:data:item#1");
     assert_eq!(
         result
             .source_fidelity()
-            .retained_record(&unknown[0].id.0)
+            .retained_record(&unknown[0].id.as_str())
             .expect("root occurrence source fidelity")
             .data(),
         Some(b"#1=ITEM(#10,#11);".as_slice())
@@ -902,7 +902,7 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
     assert_eq!(
         decoded
             .source_fidelity()
-            .retained_record(&signature_unknown.id.0)
+            .retained_record(&signature_unknown.id.as_str())
             .and_then(|record| record.data()),
         Some(&bytes[signature.clone()])
     );

@@ -30,7 +30,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     use cadmpeg_ir::topology::Color;
 
     let visual_guid = "11111111-2222-3333-4444-555555555555";
-    let appearance_id = AppearanceId("generated:appearance#0".into());
+    let appearance_id = AppearanceId::mint("generated:appearance#0").expect("identity grammar");
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     source_less.model.appearances = vec![Appearance {
         id: appearance_id.clone(),

@@ -156,7 +156,7 @@ pub(crate) fn design_constraint_transfer_coverage(
 ) -> DesignConstraintTransferCoverage {
     constraints
         .iter()
-        .filter(|constraint| constraint.id.0.contains(id_marker))
+        .filter(|constraint| constraint.id.as_str().contains(id_marker))
         .fold(
             DesignConstraintTransferCoverage::default(),
             |mut coverage, constraint| {

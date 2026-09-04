@@ -57,7 +57,7 @@ fn object_attribute_items_are_written_in_ascending_order() {
 fn nonempty_user_string_presentation_is_refused_before_output() {
     let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#user-strings".into()),
+        id: PointId::mint("cadir:model:point#user-strings").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -107,7 +107,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
 fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
     let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#mesh-modifiers".into()),
+        id: PointId::mint("cadir:model:point#mesh-modifiers").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -157,7 +157,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
 fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
     let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#layer-settings".into()),
+        id: PointId::mint("cadir:model:point#layer-settings").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });

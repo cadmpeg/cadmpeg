@@ -173,14 +173,18 @@ pub(crate) fn keep_faces_and_carriers(
                         geometry
                     } else if construction_is_exact_carrier {
                         SurfaceGeometry::Procedural {
-                            construction: ProceduralSurfaceId(format!(
+                            construction: ProceduralSurfaceId::mint(format!(
                                 "{format}:brep:procedural_surface#{surf_ref}"
-                            )),
+                            ))
+                            .expect("identity grammar"),
                             cache: None,
                         }
                     } else {
                         SurfaceGeometry::Unknown {
-                            record: Some(UnknownId(unknown_record_id(surf_rec, format))),
+                            record: Some(
+                                UnknownId::mint(unknown_record_id(surf_rec, format))
+                                    .expect("identity grammar"),
+                            ),
                         }
                     },
                     false,
@@ -203,7 +207,7 @@ pub(crate) fn keep_faces_and_carriers(
                 {
                     out.mesh_surface_sentinels.push(MeshSurfaceSentinel {
                         id: format!("{format}:asm:mesh-surface-sentinel#{}", surf_rec.index),
-                        surface: SurfaceId(id(format, surf_ref)),
+                        surface: SurfaceId::mint(id(format, surf_ref)).expect("identity grammar"),
                         record_index: surf_rec.index as u32,
                     });
                 }
@@ -625,13 +629,15 @@ pub(crate) fn collect_wire_topology(
                 if let Some(side) = side {
                     out.wire_topologies.push(WireTopology {
                         id: format!("{format}:asm:wire-topology#{wire_index}"),
-                        shell: ShellId(id(format, shell_index)),
+                        shell: ShellId::mint(id(format, shell_index)).expect("identity grammar"),
                         record_index: wire.index as u32,
                         edges: wire_edges
                             .into_iter()
-                            .map(|edge| EdgeId(id(format, edge)))
+                            .map(|edge| EdgeId::mint(id(format, edge)).expect("identity grammar"))
                             .collect(),
-                        free_vertex: free_vertex.map(|vertex| VertexId(id(format, vertex))),
+                        free_vertex: free_vertex.map(|vertex| {
+                            VertexId::mint(id(format, vertex)).expect("identity grammar")
+                        }),
                         side,
                     });
                 }
@@ -801,7 +807,8 @@ pub(crate) fn ring_coedges(
     kept: &HashSet<i64>,
     format: IdFormat<'_>,
 ) -> Vec<CoedgeId> {
-    let id = |i: i64| CoedgeId(format!("{format}:brep:entity#{i}"));
+    let id =
+        |i: i64| CoedgeId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {
         return out;
@@ -828,7 +835,7 @@ pub(crate) fn loop_chain(
     kept: &HashSet<i64>,
     format: IdFormat<'_>,
 ) -> Vec<LoopId> {
-    let id = |i: i64| LoopId(format!("{format}:brep:entity#{i}"));
+    let id = |i: i64| LoopId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let mut cur = face_rec.ref_at(4);
     let mut guard = HashSet::new();
@@ -851,7 +858,7 @@ fn face_chain(
     kept: &HashSet<i64>,
     format: IdFormat<'_>,
 ) -> Vec<FaceId> {
-    let id = |i: i64| FaceId(format!("{format}:brep:entity#{i}"));
+    let id = |i: i64| FaceId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let mut cur = shell_rec.ref_at(5);
     let mut guard = HashSet::new();
@@ -954,7 +961,9 @@ fn face_chain_from(
     let mut guard = HashSet::new();
     while let Some(index) = current.filter(|index| guard.insert(*index)) {
         if kept.contains(&index) {
-            out.push(FaceId(format!("{format}:brep:entity#{index}")));
+            out.push(
+                FaceId::mint(format!("{format}:brep:entity#{index}")).expect("identity grammar"),
+            );
         }
         let Some(face) = by_index.get(&index) else {
             break;
@@ -969,7 +978,7 @@ pub(crate) fn shell_chain(
     by_index: &HashMap<i64, &Record>,
     format: IdFormat<'_>,
 ) -> Vec<ShellId> {
-    let id = |i: i64| ShellId(format!("{format}:brep:entity#{i}"));
+    let id = |i: i64| ShellId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let mut cur = region_rec.ref_at(4);
     let mut guard = HashSet::new();
@@ -989,7 +998,8 @@ pub(crate) fn region_chain(
     by_index: &HashMap<i64, &Record>,
     format: IdFormat<'_>,
 ) -> Vec<RegionId> {
-    let id = |i: i64| RegionId(format!("{format}:brep:entity#{i}"));
+    let id =
+        |i: i64| RegionId::mint(format!("{format}:brep:entity#{i}")).expect("identity grammar");
     let mut out = Vec::new();
     let mut cur = body_rec.ref_at(3);
     let mut guard = HashSet::new();

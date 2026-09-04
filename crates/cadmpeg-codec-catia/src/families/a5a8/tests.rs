@@ -1380,7 +1380,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     assert_eq!(sites.len(), 2);
     assert_eq!(sites[1].first_limit, Point3::new(2.0, 0.0, 0.0));
     assert_eq!(sites[1].angle, std::f64::consts::FRAC_PI_2);
-    let provenance = &decoded.source_fidelity().annotations.provenance[&procedural.id.0];
+    let provenance = &decoded.source_fidelity().annotations.provenance[procedural.id.as_str()];
     assert_eq!(provenance.stream(), "catia:object_stream_a8_03_32");
     let tag = provenance
         .tag

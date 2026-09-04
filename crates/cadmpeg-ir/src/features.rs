@@ -175,6 +175,13 @@ pub struct ConfigurationId(
     #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
 );
 
+impl ConfigurationId {
+    /// Borrow the underlying id string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Resolution state of a configuration's source display name.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -518,6 +525,13 @@ pub struct ConfigurationFeatureState {
 pub struct ParameterId(
     #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
 );
+
+impl ParameterId {
+    /// Borrow the underlying id string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 /// A named design expression, optionally owned by a construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

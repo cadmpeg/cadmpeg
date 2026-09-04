@@ -62,7 +62,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         } if support.as_str() == "step:data:surface#7"
     ));
     let index = ModelIndex::new(decoded.ir());
-    let trimmed_id = SurfaceId("step:data:surface#8".into());
+    let trimmed_id = SurfaceId::mint("step:data:surface#8").expect("identity grammar");
     assert_eq!(
         model_surface_point_by_id(&index, &trimmed_id, 0.0, 0.0),
         Some(Point3::new(3.0, 4.0, 0.0))
@@ -165,7 +165,7 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
     let index = ModelIndex::new(decoded.ir());
     let point = model_surface_point_by_id(
         &index,
-        &SurfaceId("step:data:surface#6".into()),
+        &SurfaceId::mint("step:data:surface#6").expect("identity grammar"),
         parameter_ranges[0][1] - parameter_ranges[0][0],
         1.0,
     )

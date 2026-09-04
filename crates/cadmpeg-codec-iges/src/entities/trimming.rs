@@ -214,8 +214,10 @@ fn create_boundary_vertices(
         .collect::<Vec<Option<VertexId>>>();
     let mut derivations = Vec::new();
     for (index, cluster) in clusters.into_iter().enumerate() {
-        let point_id = PointId(format!("iges:model:point#{stem}:{boundary}:{index}"));
-        let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary}:{index}"));
+        let point_id = PointId::mint(format!("iges:model:point#{stem}:{boundary}:{index}"))
+            .expect("identity grammar");
+        let vertex_id = VertexId::mint(format!("iges:model:vertex#{stem}:{boundary}:{index}"))
+            .expect("identity grammar");
         candidate.model_mut().points.push(Point {
             source_object: None,
             id: point_id.clone(),
@@ -358,7 +360,8 @@ pub(super) fn pcurve_geometry(
     ctx: Option<&DecodeContext<'_>>,
     composite_index: Option<&CompositeIndex>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
-    let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
+    let curve_id =
+        CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar");
     let (nurbs, range) =
         bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?;
     let source_parameter_map = match procedural_source_parameter_map(ir, support) {
@@ -530,7 +533,7 @@ fn parameter_curve_carrier_id(
     } else {
         sequence
     };
-    Some(CurveId(format!("iges:model:curve#D{carrier_sequence}")))
+    Some(CurveId::mint(format!("iges:model:curve#D{carrier_sequence}")).expect("identity grammar"))
 }
 
 fn surface_parameter_bound_intervals(
@@ -1875,7 +1878,8 @@ pub(super) fn project(
         if !valid {
             continue;
         }
-        let surface_id = SurfaceId(format!("iges:model:surface#D{surface_sequence}"));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{surface_sequence}"))
+            .expect("identity grammar");
         let Some(support_geometry) = carrier_index
             .surfaces(&surface_id.0)
             .map(|surface| surface.geometry.clone())
@@ -1888,10 +1892,11 @@ pub(super) fn project(
         };
         let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
-        let body_id = BodyId(format!("iges:model:body#{stem}"));
-        let region_id = RegionId(format!("iges:model:region#{stem}"));
-        let shell_id = ShellId(format!("iges:model:shell#{stem}"));
-        let face_id = FaceId(format!("iges:model:face#{stem}"));
+        let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
+        let region_id =
+            RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
+        let shell_id = ShellId::mint(format!("iges:model:shell#{stem}")).expect("identity grammar");
+        let face_id = FaceId::mint(format!("iges:model:face#{stem}")).expect("identity grammar");
         let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
         let support_parameter_intervals = surface_parameter_bound_intervals(
@@ -1928,7 +1933,9 @@ pub(super) fn project(
             }
             let mut items = Vec::with_capacity(boundary.segments.len());
             for segment in &boundary.segments {
-                let model_curve_id = CurveId(format!("iges:model:curve#D{}", segment.model_curve));
+                let model_curve_id =
+                    CurveId::mint(format!("iges:model:curve#D{}", segment.model_curve))
+                        .expect("identity grammar");
                 let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
                     losses.push(entity_loss(
                         entry,
@@ -1980,7 +1987,8 @@ pub(super) fn project(
                             periodic_parameters,
                         ) && !source_curve_control_polygon_within_bounds(
                             ir,
-                            &CurveId(format!("iges:model:curve#D{sequence}")),
+                            &CurveId::mint(format!("iges:model:curve#D{sequence}"))
+                                .expect("identity grammar"),
                             &PcurveSupport {
                                 surface_id: &surface_id,
                                 geometry: &support_geometry,
@@ -2101,9 +2109,13 @@ pub(super) fn project(
                 sewing_tolerance,
                 trimmed_surface,
             ));
-            let loop_id = LoopId(format!("iges:model:loop#{stem}:{boundary_index}"));
+            let loop_id = LoopId::mint(format!("iges:model:loop#{stem}:{boundary_index}"))
+                .expect("identity grammar");
             let coedge_ids = (0..items.len())
-                .map(|index| CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}:{index}")))
+                .map(|index| {
+                    CoedgeId::mint(format!("iges:model:coedge#{stem}:{boundary_index}:{index}"))
+                        .expect("identity grammar")
+                })
                 .collect::<Vec<_>>();
             let source_endpoints = items
                 .iter()
@@ -2147,9 +2159,10 @@ pub(super) fn project(
             };
             candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
-                let edge_id = EdgeId(format!(
+                let edge_id = EdgeId::mint(format!(
                     "iges:model:edge#{stem}:{boundary_index}:{segment_index}"
-                ));
+                ))
+                .expect("identity grammar");
                 let start_vertex = vertex_ids[segment_index * 2].clone();
                 let end_vertex = vertex_ids[segment_index * 2 + 1].clone();
                 candidate.model_mut().edges.push(Edge {
@@ -2165,9 +2178,9 @@ pub(super) fn project(
                     .into_iter()
                     .enumerate()
                     .map(|(pcurve_index, (geometry, parameter_range))| {
-                        let id = PcurveId(format!(
+                        let id = PcurveId::mint(format!(
                             "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}:{pcurve_index}"
-                        ));
+                        )).expect("identity grammar");
                         if implicit_outer_domain {
                             implicit_boundary_pcurves.push(id.clone());
                         }
@@ -2247,10 +2260,11 @@ pub(super) fn project(
             }
         }
         let face_surface_id = if implicit_outer_domain {
-            let derived_surface_id = SurfaceId(format!(
+            let derived_surface_id = SurfaceId::mint(format!(
                 "iges:model:surface#D{}:implicit-outer",
                 entry.sequence
-            ));
+            ))
+            .expect("identity grammar");
             candidate.model_mut().surfaces.push(Surface {
                 id: derived_surface_id.clone(),
                 geometry: support_geometry.clone(),
@@ -2259,10 +2273,11 @@ pub(super) fn project(
             let _attached = candidate.model_mut().add_procedural_surface(
                 derived_surface_id.clone(),
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(format!(
+                    ProceduralSurfaceId::mint(format!(
                         "iges:model:procedural-surface#D{}:implicit-outer",
                         entry.sequence
-                    )),
+                    ))
+                    .expect("identity grammar"),
                     ProceduralSurfaceDefinition::CurveBounded {
                         support: surface_id.clone(),
                         boundaries: implicit_boundary_curves,

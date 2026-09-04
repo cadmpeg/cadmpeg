@@ -104,10 +104,11 @@ pub(crate) fn transfer_closed_face_topology(
             .iter()
             .find(|surface| surface.id == *surface_id)
             .map(|surface| &surface.geometry)?;
-        let face_id = FaceId(format!(
+        let face_id = FaceId::mint(format!(
             "catia:zero-entity:topology-face#{}",
             face.record_ordinal
-        ));
+        ))
+        .expect("identity grammar");
         if face_id_by_ordinal
             .insert(face.record_ordinal, face_id.clone())
             .is_some()
@@ -153,9 +154,10 @@ pub(crate) fn transfer_closed_face_topology(
                             super::records::zero_entity_neutral_pcurve(surface_geometry, pcurve)?;
                         let parameter_range = pcurve_parameter_range(&geometry)?;
                         Some(OccurrencePcurve {
-                            id: PcurveId(format!(
+                            id: PcurveId::mint(format!(
                                 "catia:zero-entity:topology-pcurve#{support_record_ordinal}"
-                            )),
+                            ))
+                            .expect("identity grammar"),
                             geometry,
                             parameter_range,
                         })
@@ -339,25 +341,34 @@ pub(crate) fn transfer_closed_face_topology(
         },
         |root| root.body_record_ordinal.to_string(),
     );
-    let body_id = BodyId(format!("catia:zero-entity:topology-body#{topology_scope}"));
-    let region_id = RegionId(format!(
+    let body_id = BodyId::mint(format!("catia:zero-entity:topology-body#{topology_scope}"))
+        .expect("identity grammar");
+    let region_id = RegionId::mint(format!(
         "catia:zero-entity:topology-region#{topology_scope}"
-    ));
+    ))
+    .expect("identity grammar");
     let shell_scope = ownership_root.map_or_else(
         || topology_scope.clone(),
         |root| root.shell_record_ordinal.to_string(),
     );
-    let shell_id = ShellId(format!("catia:zero-entity:topology-shell#{shell_scope}"));
+    let shell_id = ShellId::mint(format!("catia:zero-entity:topology-shell#{shell_scope}"))
+        .expect("identity grammar");
 
     let point_ids = endpoint_loci
         .iter()
         .enumerate()
-        .map(|(index, _)| PointId(format!("catia:zero-entity:topology-point#{index}")))
+        .map(|(index, _)| {
+            PointId::mint(format!("catia:zero-entity:topology-point#{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = endpoint_loci
         .iter()
         .enumerate()
-        .map(|(index, _)| VertexId(format!("catia:zero-entity:topology-vertex#{index}")))
+        .map(|(index, _)| {
+            VertexId::mint(format!("catia:zero-entity:topology-vertex#{index}"))
+                .expect("identity grammar")
+        })
         .collect::<Vec<_>>();
 
     for (index, locus) in endpoint_loci.iter().enumerate() {
@@ -447,10 +458,11 @@ pub(crate) fn transfer_closed_face_topology(
     for (edge_index, candidate) in edge_candidates.iter().enumerate() {
         let first_occurrence =
             &occurrences[*occurrence_by_support.get(&candidate.support_record_ordinals[0])?];
-        let edge_id = EdgeId(format!(
+        let edge_id = EdgeId::mint(format!(
             "catia:zero-entity:topology-edge#{}-{}",
             candidate.support_record_ordinals[0], candidate.support_record_ordinals[1]
-        ));
+        ))
+        .expect("identity grammar");
         let oriented_curve = first_occurrence.oriented_curve.as_ref()?;
         let param_range = first_occurrence.oriented_curve_parameter_range;
         let oriented_vertices = &occurrence_vertex_pairs
@@ -490,10 +502,11 @@ pub(crate) fn transfer_closed_face_topology(
             .loops
             .iter()
             .map(|loop_record| {
-                LoopId(format!(
+                LoopId::mint(format!(
                     "catia:zero-entity:topology-loop#{}",
                     loop_record.record_ordinal
                 ))
+                .expect("identity grammar")
             })
             .collect::<Vec<_>>();
         let outer_sense = match face.loops.first()?.loop_class {
@@ -531,9 +544,10 @@ pub(crate) fn transfer_closed_face_topology(
                 .support_record_ordinals
                 .iter()
                 .map(|support_record_ordinal| {
-                    CoedgeId(format!(
+                    CoedgeId::mint(format!(
                         "catia:zero-entity:topology-coedge#{support_record_ordinal}"
                     ))
+                    .expect("identity grammar")
                 })
                 .collect::<Vec<_>>();
             let vertex_uses = loop_record
@@ -929,13 +943,14 @@ mod tests {
             .map(|support| {
                 (
                     support.record_ordinal,
-                    CurveId(format!("catia:test:curve#{}", support.record_ordinal)),
+                    CurveId::mint(format!("catia:test:curve#{}", support.record_ordinal))
+                        .expect("identity grammar"),
                 )
             })
             .collect::<HashMap<_, _>>();
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("catia:test:surface#0".into()),
+            id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: points[0],
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -967,7 +982,10 @@ mod tests {
             &mut no_root_ir,
             &mut no_root_annotations,
             &runs,
-            &HashMap::from([(100, SurfaceId("catia:test:surface#0".into()))]),
+            &HashMap::from([(
+                100,
+                SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
+            )]),
             &curve_ids,
             None,
             &topology_budget,
@@ -993,7 +1011,10 @@ mod tests {
             &mut ir,
             &mut annotations,
             &runs,
-            &HashMap::from([(100, SurfaceId("catia:test:surface#0".into()))]),
+            &HashMap::from([(
+                100,
+                SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
+            )]),
             &curve_ids,
             Some(&root),
             &topology_budget,
@@ -1029,13 +1050,14 @@ mod tests {
             .map(|support| {
                 (
                     support.record_ordinal,
-                    CurveId(format!("catia:test:curve#{}", support.record_ordinal)),
+                    CurveId::mint(format!("catia:test:curve#{}", support.record_ordinal))
+                        .expect("identity grammar"),
                 )
             })
             .collect::<HashMap<_, _>>();
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("catia:test:surface#0".into()),
+            id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: points[0],
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1076,7 +1098,10 @@ mod tests {
             &mut ir,
             &mut annotations,
             &runs,
-            &HashMap::from([(100, SurfaceId("catia:test:surface#0".into()))]),
+            &HashMap::from([(
+                100,
+                SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
+            )]),
             &curve_ids,
             None,
             &budget,

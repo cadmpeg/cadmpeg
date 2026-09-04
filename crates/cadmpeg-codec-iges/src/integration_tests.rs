@@ -66,77 +66,77 @@ fn arena_ids(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> 
             .model
             .bodies
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelCoedges => result
             .ir()
             .model
             .coedges
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelCurves => result
             .ir()
             .model
             .curves
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelLoops => result
             .ir()
             .model
             .loops
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelPoints => result
             .ir()
             .model
             .points
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelPcurves => result
             .ir()
             .model
             .pcurves
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelProceduralCurves => result
             .ir()
             .model
             .procedural_curves
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelProceduralSurfaces => result
             .ir()
             .model
             .procedural_surfaces
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelRegions => result
             .ir()
             .model
             .regions
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelShells => result
             .ir()
             .model
             .shells
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelSurfaces => result
             .ir()
             .model
             .surfaces
             .iter()
-            .map(|item| item.id.0.as_str())
+            .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::Native(name) => result
             .ir()

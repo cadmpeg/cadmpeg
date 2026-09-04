@@ -175,7 +175,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
             .count(),
         1
     );
-    let surface_id = SurfaceId("step:data:surface#28".into());
+    let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(&index, &surface_id, 10.0, 0.0),
@@ -304,7 +304,7 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode NURBS linear-extrusion sheet");
 
-    let surface_id = SurfaceId("step:data:surface#28".into());
+    let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(&index, &surface_id, 5.0, 0.0),
@@ -335,7 +335,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode swept-surface chart witness");
-        let surface_id = SurfaceId("step:data:surface#9".into());
+        let surface_id = SurfaceId::mint("step:data:surface#9").expect("identity grammar");
         let index = ModelIndex::new(decoded.ir());
         assert_eq!(
             model_surface_point_by_id(&index, &surface_id, 5.0, 0.0),
@@ -377,7 +377,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode surface of revolution sheet");
 
-    let surface_id = SurfaceId("step:data:surface#28".into());
+    let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
         model_surface_point_by_id(&index, &surface_id, 0.0, 10.0),
@@ -447,11 +447,15 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
 #8=SHAPE_REPRESENTATION('',(#7),$);",
     );
     let index = ModelIndex::new(result.ir());
-    let start = model_curve_point_by_id(&index, &CurveId("step:data:curve#6".into()), 0.0)
-        .expect("trimmed ellipse start");
+    let start = model_curve_point_by_id(
+        &index,
+        &CurveId::mint("step:data:curve#6").expect("identity grammar"),
+        0.0,
+    )
+    .expect("trimmed ellipse start");
     let end = model_curve_point_by_id(
         &index,
-        &CurveId("step:data:curve#6".into()),
+        &CurveId::mint("step:data:curve#6").expect("identity grammar"),
         std::f64::consts::FRAC_PI_2,
     )
     .expect("trimmed ellipse end");
@@ -525,10 +529,11 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         ("#18", [-std::f64::consts::FRAC_PI_2, 0.0]),
         ("#20", [-std::f64::consts::FRAC_PI_2, 0.0]),
     ] {
-        let construction_id = ProceduralCurveId(StepIdentity::construction(
+        let construction_id = ProceduralCurveId::mint(StepIdentity::construction(
             "trimmed_curve",
             curve_id.trim_start_matches('#'),
-        ));
+        ))
+        .expect("identity grammar");
         let construction = decoded
             .ir()
             .model
@@ -550,7 +555,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
 
     let numeric_start = model_curve_point_by_id(
         &ModelIndex::new(decoded.ir()),
-        &CurveId("step:data:curve#13".into()),
+        &CurveId::mint("step:data:curve#13").expect("identity grammar"),
         0.0,
     )
     .expect("numeric trim start");
@@ -558,7 +563,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     assert!(numeric_start.y.abs() < 1.0e-12);
     let cartesian_end = model_curve_point_by_id(
         &ModelIndex::new(decoded.ir()),
-        &CurveId("step:data:curve#14".into()),
+        &CurveId::mint("step:data:curve#14").expect("identity grammar"),
         std::f64::consts::FRAC_PI_2,
     )
     .expect("Cartesian trim end");
@@ -568,7 +573,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     let index = ModelIndex::new(decoded.ir());
     let replica_start = model_curve_point_by_id(
         &index,
-        &CurveId("step:data:curve#17".into()),
+        &CurveId::mint("step:data:curve#17").expect("identity grammar"),
         -std::f64::consts::FRAC_PI_2,
     )
     .expect("replica start");
@@ -915,7 +920,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
     ] {
         assert!(
             unknowns.iter().any(|record| {
-                (id == 3 && record.id.0.ends_with("#3") && record.id.0.contains(kind))
+                (id == 3 && record.id.as_str().ends_with("#3") && record.id.as_str().contains(kind))
                     || (id != 3 && record.id.0 == format!("step:data:{kind}#{id}"))
             }),
             "missing retained source record #{id}"
@@ -999,9 +1004,9 @@ fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| {
-            record.id.0.ends_with("#3")
-                || record.id.0.ends_with("#4")
-                || record.id.0.ends_with("#5")
+            record.id.as_str().ends_with("#3")
+                || record.id.as_str().ends_with("#4")
+                || record.id.as_str().ends_with("#5")
         }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1025,5 +1030,5 @@ fn tessellated_curve_set_with_invalid_indices_stays_source_native() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0.ends_with("#2")));
+        .any(|record| record.id.as_str().ends_with("#2")));
 }

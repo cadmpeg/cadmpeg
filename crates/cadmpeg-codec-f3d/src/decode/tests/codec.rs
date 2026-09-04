@@ -553,7 +553,7 @@ fn decode_yields_metadata_and_honest_report() {
         .source_fidelity()
         .annotations
         .provenance
-        .contains_key(&unknowns[0].id.0));
+        .contains_key(unknowns[0].id.as_str()));
 }
 
 #[test]
@@ -646,7 +646,7 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
         .model
         .bodies
         .iter()
-        .all(|body| !body.id.0.contains("BREP.sibling")));
+        .all(|body| !body.id.as_str().contains("BREP.sibling")));
 }
 
 #[test]

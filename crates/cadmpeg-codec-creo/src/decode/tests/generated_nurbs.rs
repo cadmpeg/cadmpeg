@@ -89,12 +89,12 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#31".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Nurbs(translated_surface(2.0)),
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#32".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -103,7 +103,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#33".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 2.0),
                 normal: Vector3::new(0.0, 0.0, -1.0),
@@ -112,12 +112,12 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#34".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#35".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },

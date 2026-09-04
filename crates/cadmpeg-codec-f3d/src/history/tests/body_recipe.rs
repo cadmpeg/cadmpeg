@@ -10,9 +10,9 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
     let body = |slot| Body {
-        id: BodyId(format!("f3d:brep:body#{slot}")),
+        id: BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId(format!("region#{slot}"))],
+        regions: vec![RegionId::mint(format!("region#{slot}")).expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
@@ -21,28 +21,28 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let bodies = [body(1), body(2)];
     let regions = [
         Region {
-            id: RegionId("region#1".into()),
+            id: RegionId::mint("region#1").expect("identity grammar"),
             body: bodies[0].id.clone(),
-            shells: vec![ShellId("shell#1".into())],
+            shells: vec![ShellId::mint("shell#1").expect("identity grammar")],
         },
         Region {
-            id: RegionId("region#2".into()),
+            id: RegionId::mint("region#2").expect("identity grammar"),
             body: bodies[1].id.clone(),
-            shells: vec![ShellId("shell#2".into())],
+            shells: vec![ShellId::mint("shell#2").expect("identity grammar")],
         },
     ];
     let shells = [
         Shell {
-            id: ShellId("shell#1".into()),
-            region: RegionId("region#1".into()),
-            faces: vec![FaceId("face#1".into())],
+            id: ShellId::mint("shell#1").expect("identity grammar"),
+            region: RegionId::mint("region#1").expect("identity grammar"),
+            faces: vec![FaceId::mint("face#1").expect("identity grammar")],
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         },
         Shell {
-            id: ShellId("shell#2".into()),
-            region: RegionId("region#2".into()),
-            faces: vec![FaceId("face#2".into())],
+            id: ShellId::mint("shell#2").expect("identity grammar"),
+            region: RegionId::mint("region#2").expect("identity grammar"),
+            faces: vec![FaceId::mint("face#2").expect("identity grammar")],
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         },
@@ -67,7 +67,10 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             design_reference_offset: 0,
             form: 33,
             form_offset: 0,
-            candidate_faces: vec![FaceId("face#1".into()), FaceId("face#2".into())],
+            candidate_faces: vec![
+                FaceId::mint("face#1").expect("identity grammar"),
+                FaceId::mint("face#2").expect("identity grammar"),
+            ],
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),
         }],

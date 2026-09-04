@@ -798,8 +798,10 @@ fn native_circle_loop_geometry(
     if first.curve_id == second.curve_id {
         return None;
     }
-    let first_id = CurveId(format!("creo:visibgeom:curve#{}", first.curve_id));
-    let second_id = CurveId(format!("creo:visibgeom:curve#{}", second.curve_id));
+    let first_id = CurveId::mint(format!("creo:visibgeom:curve#{}", first.curve_id))
+        .expect("identity grammar");
+    let second_id = CurveId::mint(format!("creo:visibgeom:curve#{}", second.curve_id))
+        .expect("identity grammar");
     let first = exactly_one(model_curves.iter().filter(|curve| curve.id == first_id))?;
     let second = exactly_one(model_curves.iter().filter(|curve| curve.id == second_id))?;
     let (
@@ -1117,7 +1119,8 @@ pub(in super::super) fn transfer_native_brep(
     let model_curve_counts = edge_vertices
         .keys()
         .map(|curve_id| {
-            let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+            let id = CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
+                .expect("identity grammar");
             let count = ir
                 .model
                 .curves
@@ -1397,7 +1400,8 @@ pub(in super::super) fn transfer_native_brep(
         };
     let solved_point_count = solved_vertices.len();
     for (vertex_id, position) in solved_vertices {
-        let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
+        let point_id =
+            PointId::mint(format!("creo:visibgeom:point#{vertex_id}")).expect("identity grammar");
         if ir.model.points.iter().any(|item| item.id == point_id) {
             continue;
         }
@@ -1449,11 +1453,13 @@ pub(in super::super) fn transfer_native_brep(
         .copied()
         .collect::<BTreeSet<_>>();
     for vertex_id in used_vertices {
-        let vertex = VertexId(format!("creo:visibgeom:vertex#{vertex_id}"));
+        let vertex =
+            VertexId::mint(format!("creo:visibgeom:vertex#{vertex_id}")).expect("identity grammar");
         if ir.model.vertices.iter().any(|item| item.id == vertex) {
             continue;
         }
-        let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
+        let point_id =
+            PointId::mint(format!("creo:visibgeom:point#{vertex_id}")).expect("identity grammar");
         annotate(
             annotations,
             &vertex,
@@ -1470,7 +1476,8 @@ pub(in super::super) fn transfer_native_brep(
     }
     for curve_id in &neutral_edge_curves {
         let [start, end] = edge_vertices[curve_id];
-        let curve = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+        let curve =
+            CurveId::mint(format!("creo:visibgeom:curve#{curve_id}")).expect("identity grammar");
         let points = [solved_vertices[&start], solved_vertices[&end]];
         let unbacked_closed_edge = start == end
             && closed_single_edge_curves.contains(curve_id)
@@ -1542,7 +1549,7 @@ pub(in super::super) fn transfer_native_brep(
                 )
             })
         };
-        let id = EdgeId(format!("creo:visibgeom:edge#{curve_id}"));
+        let id = EdgeId::mint(format!("creo:visibgeom:edge#{curve_id}")).expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -1554,8 +1561,9 @@ pub(in super::super) fn transfer_native_brep(
         ir.model.edges.push(Edge {
             id,
             curve: Some(curve.clone()),
-            start: VertexId(format!("creo:visibgeom:vertex#{start}")),
-            end: VertexId(format!("creo:visibgeom:vertex#{end}")),
+            start: VertexId::mint(format!("creo:visibgeom:vertex#{start}"))
+                .expect("identity grammar"),
+            end: VertexId::mint(format!("creo:visibgeom:vertex#{end}")).expect("identity grammar"),
             param_range,
             tolerance: None,
         });
@@ -1588,8 +1596,10 @@ pub(in super::super) fn transfer_native_brep(
     }
 
     for (component_index, (faces, component_curves)) in body_components.iter().enumerate() {
-        let body_id = BodyId(format!("creo:visibgeom:body#{}", component_index + 1));
-        let region_id = RegionId(format!("creo:visibgeom:region#{}", component_index + 1));
+        let body_id = BodyId::mint(format!("creo:visibgeom:body#{}", component_index + 1))
+            .expect("identity grammar");
+        let region_id = RegionId::mint(format!("creo:visibgeom:region#{}", component_index + 1))
+            .expect("identity grammar");
         for (id, tag) in [
             (body_id.to_string(), "native_component_body"),
             (region_id.to_string(), "native_component_region"),
@@ -1660,13 +1670,15 @@ pub(in super::super) fn transfer_native_brep(
             .enumerate()
             .map(|(shell_index, shell)| {
                 let shell_id = if shell_index == 0 {
-                    ShellId(format!("creo:visibgeom:shell#{}", component_index + 1))
+                    ShellId::mint(format!("creo:visibgeom:shell#{}", component_index + 1))
+                        .expect("identity grammar")
                 } else {
-                    ShellId(format!(
+                    ShellId::mint(format!(
                         "creo:visibgeom:shell#{}:{}",
                         component_index + 1,
                         shell_index + 1
                     ))
+                    .expect("identity grammar")
                 };
                 annotate(
                     annotations,
@@ -1685,12 +1697,18 @@ pub(in super::super) fn transfer_native_brep(
                     faces: shell
                         .faces
                         .iter()
-                        .map(|face| FaceId(format!("creo:visibgeom:face#{face}")))
+                        .map(|face| {
+                            FaceId::mint(format!("creo:visibgeom:face#{face}"))
+                                .expect("identity grammar")
+                        })
                         .collect(),
                     wire_edges: shell
                         .wire_curves
                         .iter()
-                        .map(|curve_id| EdgeId(format!("creo:visibgeom:edge#{curve_id}")))
+                        .map(|curve_id| {
+                            EdgeId::mint(format!("creo:visibgeom:edge#{curve_id}"))
+                                .expect("identity grammar")
+                        })
                         .collect(),
                     free_vertices: Vec::new(),
                 });
@@ -1719,14 +1737,17 @@ pub(in super::super) fn transfer_native_brep(
         });
         for face_id in faces {
             let native_loops = &eligible_faces[face_id];
-            let face = FaceId(format!("creo:visibgeom:face#{face_id}"));
+            let face =
+                FaceId::mint(format!("creo:visibgeom:face#{face_id}")).expect("identity grammar");
             let shell_id = face_shell_ids[face_id].clone();
             let loop_ids = (0..native_loops.len())
                 .map(|index| {
                     if index == 0 {
-                        LoopId(format!("creo:visibgeom:loop#{face_id}"))
+                        LoopId::mint(format!("creo:visibgeom:loop#{face_id}"))
+                            .expect("identity grammar")
                     } else {
-                        LoopId(format!("creo:visibgeom:loop#{face_id}:{index}"))
+                        LoopId::mint(format!("creo:visibgeom:loop#{face_id}:{index}"))
+                            .expect("identity grammar")
                     }
                 })
                 .collect::<Vec<_>>();
@@ -1811,10 +1832,11 @@ pub(in super::super) fn transfer_native_brep(
                     .half_edges
                     .iter()
                     .map(|half_edge| {
-                        CoedgeId(format!(
+                        CoedgeId::mint(format!(
                             "creo:visibgeom:coedge#{}:{}",
                             half_edge.curve_id, half_edge.side
                         ))
+                        .expect("identity grammar")
                     })
                     .collect::<Vec<_>>();
                 ir.model.loops.push(IrLoop {
@@ -1837,10 +1859,11 @@ pub(in super::super) fn transfer_native_brep(
                         side: 1 - half_edge.side,
                     };
                     let radial_next = if emitted_half_edges.contains(&twin) {
-                        CoedgeId(format!(
+                        CoedgeId::mint(format!(
                             "creo:visibgeom:coedge#{}:{}",
                             twin.curve_id, twin.side
                         ))
+                        .expect("identity grammar")
                     } else {
                         id.clone()
                     };
@@ -1887,8 +1910,11 @@ pub(in super::super) fn transfer_native_brep(
                                     .iter()
                                     .filter(|candidate| candidate.id == surface_id),
                             )?;
-                            let curve_id =
-                                CurveId(format!("creo:visibgeom:curve#{}", half_edge.curve_id));
+                            let curve_id = CurveId::mint(format!(
+                                "creo:visibgeom:curve#{}",
+                                half_edge.curve_id
+                            ))
+                            .expect("identity grammar");
                             let curve = exactly_one(
                                 ir.model
                                     .curves
@@ -1896,7 +1922,8 @@ pub(in super::super) fn transfer_native_brep(
                                     .filter(|candidate| candidate.id == curve_id),
                             )?;
                             let edge_id =
-                                EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id));
+                                EdgeId::mint(format!("creo:visibgeom:edge#{}", half_edge.curve_id))
+                                    .expect("identity grammar");
                             let edge = exactly_one(
                                 ir.model
                                     .edges
@@ -1937,10 +1964,11 @@ pub(in super::super) fn transfer_native_brep(
                         });
                     let pcurves = pcurve_geometry
                         .map(|(geometry, parameter_range, offset, tag)| {
-                            let pcurve = PcurveId(format!(
+                            let pcurve = PcurveId::mint(format!(
                                 "creo:visibgeom:pcurve#{}:{face_id}",
                                 half_edge.curve_id
-                            ));
+                            ))
+                            .expect("identity grammar");
                             if !ir.model.pcurves.iter().any(|item| item.id == pcurve) {
                                 annotate(
                                     annotations,
@@ -1971,7 +1999,8 @@ pub(in super::super) fn transfer_native_brep(
                     ir.model.coedges.push(Coedge {
                         id,
                         owner_loop: loop_id.clone(),
-                        edge: EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id)),
+                        edge: EdgeId::mint(format!("creo:visibgeom:edge#{}", half_edge.curve_id))
+                            .expect("identity grammar"),
                         next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
                         previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()]
                             .clone(),
@@ -2004,7 +2033,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         let Some(frame) = fc05_cap_pair_model_frame(scan, pair) else {
             continue;
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", pair.surface_id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", pair.surface_id))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -2057,7 +2087,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 pair.reference_direction_row_frame,
                 frame.axis_sign,
             );
-            let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+            let id = CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
+                .expect("identity grammar");
             if ir.model.curves.iter().any(|curve| curve.id == id) {
                 continue;
             }

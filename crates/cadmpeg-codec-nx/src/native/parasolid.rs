@@ -4520,9 +4520,9 @@ mod tests {
         assert_eq!(result.ir().model.attributes.len(), 1);
         assert_eq!(
             result.ir().model.attributes[0].target,
-            cadmpeg_ir::attributes::AttributeTarget::Face(cadmpeg_ir::ids::FaceId(
-                "nx:s0:face#4".into()
-            ))
+            cadmpeg_ir::attributes::AttributeTarget::Face(
+                cadmpeg_ir::ids::FaceId::mint("nx:s0:face#4").expect("identity grammar")
+            )
         );
         assert_eq!(
             result.ir().model.attributes[0].name,

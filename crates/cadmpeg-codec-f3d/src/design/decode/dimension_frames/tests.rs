@@ -158,7 +158,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let tags = [
         PersistentSubentityTag {
             id: "matching".into(),
-            target: AttributeTarget::Face(FaceId("face-b".into())),
+            target: AttributeTarget::Face(FaceId::mint("face-b").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -166,7 +166,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "other".into(),
-            target: AttributeTarget::Face(FaceId("face-a".into())),
+            target: AttributeTarget::Face(FaceId::mint("face-a").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![999],
@@ -174,7 +174,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-face".into(),
-            target: AttributeTarget::Face(FaceId("face-c".into())),
+            target: AttributeTarget::Face(FaceId::mint("face-c").expect("identity grammar")),
             selector: 2,
             token: "13".into(),
             design_references: vec![331],
@@ -182,7 +182,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "matching-edge".into(),
-            target: AttributeTarget::Edge(EdgeId("edge-b".into())),
+            target: AttributeTarget::Edge(EdgeId::mint("edge-b").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -190,7 +190,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-edge".into(),
-            target: AttributeTarget::Edge(EdgeId("edge-c".into())),
+            target: AttributeTarget::Edge(EdgeId::mint("edge-c").expect("identity grammar")),
             selector: 2,
             token: "13".into(),
             design_references: vec![331],
@@ -201,14 +201,26 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
         &mut bound, &tags, None,
     );
-    assert_eq!(bound.candidate_faces, [FaceId("face-b".into())]);
-    assert_eq!(bound.candidate_edges, [EdgeId("edge-b".into())]);
-    assert_eq!(bound.alternate_selector_faces, [FaceId("face-c".into())]);
-    assert_eq!(bound.alternate_selector_edges, [EdgeId("edge-c".into())]);
+    assert_eq!(
+        bound.candidate_faces,
+        [FaceId::mint("face-b").expect("identity grammar")]
+    );
+    assert_eq!(
+        bound.candidate_edges,
+        [EdgeId::mint("edge-b").expect("identity grammar")]
+    );
+    assert_eq!(
+        bound.alternate_selector_faces,
+        [FaceId::mint("face-c").expect("identity grammar")]
+    );
+    assert_eq!(
+        bound.alternate_selector_edges,
+        [EdgeId::mint("edge-c").expect("identity grammar")]
+    );
     let stream_tags = [
         PersistentSubentityTag {
             id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId("face-a".into())),
+            target: AttributeTarget::Face(FaceId::mint("face-a").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -216,7 +228,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "f3d:xref/B/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId("face-b".into())),
+            target: AttributeTarget::Face(FaceId::mint("face-b").expect("identity grammar")),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -228,7 +240,10 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         &stream_tags,
         Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
     );
-    assert_eq!(bound.candidate_faces, [FaceId("face-a".into())]);
+    assert_eq!(
+        bound.candidate_faces,
+        [FaceId::mint("face-a").expect("identity grammar")]
+    );
 }
 
 #[test]

@@ -99,11 +99,11 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
     assert_eq!(neutral_page.kind, cadmpeg_ir::drawings::DrawingKind::Page);
     assert_eq!(
         neutral_page.template.as_deref(),
-        Some(neutral_template.id.0.as_str())
+        Some(neutral_template.id.as_str())
     );
     assert_eq!(
         neutral_page.relationships["Views"][0].local_target(),
-        Some(neutral_view.id.0.as_str())
+        Some(neutral_view.id.as_str())
     );
     assert_eq!(neutral_template.assets.len(), 1);
     assert_eq!(neutral_view.position, Some([25.0, 40.0]));
@@ -245,11 +245,11 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         .expect("neutral view");
     assert_eq!(
         neutral_page.template.as_deref(),
-        Some(neutral_template.id.0.as_str())
+        Some(neutral_template.id.as_str())
     );
     assert_eq!(
         neutral_view.relationships["Template"][0].local_target(),
-        Some(neutral_template.id.0.as_str())
+        Some(neutral_template.id.as_str())
     );
     assert!(neutral_view.template.is_none());
     assert!(crate::validate_native(result.ir()).is_empty());

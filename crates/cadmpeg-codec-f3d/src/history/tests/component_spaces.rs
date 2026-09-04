@@ -153,7 +153,9 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
         token_offset: 4,
         design_reference: 301,
         design_reference_offset: 8,
-        candidate_faces: vec![cadmpeg_ir::ids::FaceId("wrong-active-face".into())],
+        candidate_faces: vec![
+            cadmpeg_ir::ids::FaceId::mint("wrong-active-face").expect("identity grammar")
+        ],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -164,13 +166,18 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
     assert_eq!(
         reference.candidate_faces,
         [
-            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(10)),
-            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(11)),
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(10))
+                .expect("identity grammar"),
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(11))
+                .expect("identity grammar"),
         ]
     );
     assert_eq!(
         reference.candidate_edges,
-        [cadmpeg_ir::ids::EdgeId(crate::ids::brep_entity_id(20))]
+        [
+            cadmpeg_ir::ids::EdgeId::mint(crate::ids::brep_entity_id(20))
+                .expect("identity grammar")
+        ]
     );
     assert!(reference.alternate_selector_faces.is_empty());
     assert!(reference.alternate_selector_edges.is_empty());
@@ -187,7 +194,10 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
         design_reference_offset: 0,
         candidate_faces: faces
             .iter()
-            .map(|face| cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(face)))
+            .map(|face| {
+                cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(face))
+                    .expect("identity grammar")
+            })
             .collect(),
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
@@ -202,8 +212,8 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
             203,
         ),
         Some(vec![
-            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(7)),
-            cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(8)),
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar"),
+            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(8)).expect("identity grammar"),
         ])
     );
     assert!(direct_face_recipe_candidates(
@@ -266,7 +276,10 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
         design_reference_offset: 0,
         candidate_faces: faces
             .iter()
-            .map(|face| cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(face)))
+            .map(|face| {
+                cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(face))
+                    .expect("identity grammar")
+            })
             .collect(),
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),

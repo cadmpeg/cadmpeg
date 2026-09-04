@@ -30,7 +30,7 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
 }
 
 fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
-    let curve = CurveId(format!("iges:model:curve#D{sequence}"));
+    let curve = CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar");
     let point = |vertex: &cadmpeg_ir::ids::VertexId| {
         let point_id = &ir
             .model
@@ -286,10 +286,11 @@ pub(super) fn project(
         };
         let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1).filter(|sequence| {
-            ir.model
-                .curves
-                .iter()
-                .any(|curve| curve.id == CurveId(format!("iges:model:curve#D{sequence}")))
+            ir.model.curves.iter().any(|curve| {
+                curve.id
+                    == CurveId::mint(format!("iges:model:curve#D{sequence}"))
+                        .expect("identity grammar")
+            })
         }) else {
             losses.push(entity_loss(entry, "solid profile curve pointer is invalid"));
             continue;

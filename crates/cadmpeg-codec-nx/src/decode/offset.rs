@@ -2330,7 +2330,7 @@ mod tests {
 
     #[test]
     fn positive_weight_control_hull_bounds_offset_queries() {
-        let support = SurfaceId("synthetic:hull-support".into());
+        let support = SurfaceId::mint("synthetic:hull-support").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),
@@ -2377,10 +2377,11 @@ mod tests {
 
     #[test]
     fn offset_inverse_continues_past_a_linear_support_boundary() {
-        let support = SurfaceId("synthetic:linear-support".into());
-        let offset = SurfaceId("synthetic:linear-offset".into());
+        let support = SurfaceId::mint("synthetic:linear-support").expect("identity grammar");
+        let offset = SurfaceId::mint("synthetic:linear-offset").expect("identity grammar");
         let construction =
-            cadmpeg_ir::ids::ProceduralSurfaceId("synthetic:linear-offset-construction".into());
+            cadmpeg_ir::ids::ProceduralSurfaceId::mint("synthetic:linear-offset-construction")
+                .expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: support.clone(),

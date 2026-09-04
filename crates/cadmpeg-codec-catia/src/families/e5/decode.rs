@@ -119,7 +119,7 @@ pub(crate) fn try_decode_e5(
         "catia:payload:unknown#e5",
     );
     for (index, point) in points.iter().enumerate() {
-        let point_id = PointId(format!("catia:e5:pt#{index}"));
+        let point_id = PointId::mint(format!("catia:e5:pt#{index}")).expect("identity grammar");
         annotate(
             &mut annotations,
             &point_id,
@@ -133,7 +133,7 @@ pub(crate) fn try_decode_e5(
             position: *point,
             source_object: None,
         });
-        let vertex_id = VertexId(format!("catia:e5:v#{index}"));
+        let vertex_id = VertexId::mint(format!("catia:e5:v#{index}")).expect("identity grammar");
         annotate(
             &mut annotations,
             &vertex_id,
@@ -150,7 +150,7 @@ pub(crate) fn try_decode_e5(
         });
     }
     for (index, circle) in circles.iter().enumerate() {
-        let id = CurveId(format!("catia:e5:curve#{index}"));
+        let id = CurveId::mint(format!("catia:e5:curve#{index}")).expect("identity grammar");
         annotate(
             &mut annotations,
             &id,
@@ -166,7 +166,7 @@ pub(crate) fn try_decode_e5(
         });
     }
     for (index, surface) in surfaces.iter().enumerate() {
-        let id = SurfaceId(format!("catia:e5:surf#{index}"));
+        let id = SurfaceId::mint(format!("catia:e5:surf#{index}")).expect("identity grammar");
         annotate(
             &mut annotations,
             &id,
@@ -187,9 +187,11 @@ pub(crate) fn try_decode_e5(
     }
     for (index, jet) in rolling_ball_jets.iter().enumerate() {
         let surface_index = surfaces.len() + index;
-        let surface_id = SurfaceId(format!("catia:e5:surf#{surface_index}"));
+        let surface_id =
+            SurfaceId::mint(format!("catia:e5:surf#{surface_index}")).expect("identity grammar");
         let procedural_id =
-            ProceduralSurfaceId(format!("catia:e5:procedural-surf#{surface_index}"));
+            ProceduralSurfaceId::mint(format!("catia:e5:procedural-surf#{surface_index}"))
+                .expect("identity grammar");
         annotate(
             &mut annotations,
             &surface_id,
@@ -900,9 +902,12 @@ pub(crate) fn canonical_direction(mut direction: Vector3) -> Vector3 {
 }
 
 pub(crate) fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
-    let body_id = BodyId("catia:e5:body#unbound-points".to_string());
-    let region_id = RegionId("catia:e5:region#unbound-points".to_string());
-    let shell_id = ShellId("catia:e5:shell#unbound-points".to_string());
+    let body_id =
+        BodyId::mint("catia:e5:body#unbound-points".to_string()).expect("identity grammar");
+    let region_id =
+        RegionId::mint("catia:e5:region#unbound-points".to_string()).expect("identity grammar");
+    let shell_id =
+        ShellId::mint("catia:e5:shell#unbound-points".to_string()).expect("identity grammar");
     for id in [&body_id.0, &region_id.0, &shell_id.0] {
         annotate(
             annotations,
@@ -1000,7 +1005,11 @@ pub(crate) fn transfer_e5_topology(
             .map(|(index, surface)| {
                 (
                     surface.record_id,
-                    (SurfaceId(format!("catia:e5:surf#{index}")), surface),
+                    (
+                        SurfaceId::mint(format!("catia:e5:surf#{index}"))
+                            .expect("identity grammar"),
+                        surface,
+                    ),
                 )
             })
             .collect();
@@ -1008,7 +1017,12 @@ pub(crate) fn transfer_e5_topology(
         .vertex_refs
         .iter()
         .enumerate()
-        .map(|(index, reference)| (*reference, VertexId(format!("catia:e5:v#{index}"))))
+        .map(|(index, reference)| {
+            (
+                *reference,
+                VertexId::mint(format!("catia:e5:v#{index}")).expect("identity grammar"),
+            )
+        })
         .collect();
     let point_for_ref: HashMap<u32, Point3> = topology
         .vertex_refs
@@ -1049,7 +1063,12 @@ pub(crate) fn transfer_e5_topology(
     let edge_ids: HashMap<u32, EdgeId> = topology
         .edges
         .keys()
-        .map(|record_id| (*record_id, EdgeId(format!("catia:e5:edge#{record_id}"))))
+        .map(|record_id| {
+            (
+                *record_id,
+                EdgeId::mint(format!("catia:e5:edge#{record_id}")).expect("identity grammar"),
+            )
+        })
         .collect();
     emit_e5_curves_and_edges(
         ir,
@@ -1453,7 +1472,8 @@ fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Op
     let mut face_shell = HashMap::new();
     for (body, plan) in ownership.iter().enumerate() {
         for (component, faces) in plan.components.iter().enumerate() {
-            let shell = ShellId(format!("catia:e5:shell#{body}-{component}"));
+            let shell = ShellId::mint(format!("catia:e5:shell#{body}-{component}"))
+                .expect("identity grammar");
             for face in faces {
                 face_shell.insert(*face, shell.clone());
             }
@@ -1480,7 +1500,12 @@ fn emit_e5_curves_and_edges(
 ) {
     let edge_curve_ids: HashMap<u32, CurveId> = edge_curve_plan
         .keys()
-        .map(|&record_id| (record_id, CurveId(format!("catia:e5:curve#{record_id}"))))
+        .map(|&record_id| {
+            (
+                record_id,
+                CurveId::mint(format!("catia:e5:curve#{record_id}")).expect("identity grammar"),
+            )
+        })
         .collect();
     for (&record_id, (geometry, _)) in edge_curve_plan {
         let id = edge_curve_ids[&record_id].clone();
@@ -1501,7 +1526,8 @@ fn emit_e5_curves_and_edges(
     }
     for (&record_id, context) in intersection_plan {
         let curve = edge_curve_ids[&record_id].clone();
-        let id = ProceduralCurveId(format!("catia:e5:intersection#{record_id}"));
+        let id = ProceduralCurveId::mint(format!("catia:e5:intersection#{record_id}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -1527,7 +1553,8 @@ fn emit_e5_curves_and_edges(
             continue;
         }
         let curve = edge_curve_ids[&record_id].clone();
-        let id = ProceduralCurveId(format!("catia:e5:surface-curve#{record_id}"));
+        let id = ProceduralCurveId::mint(format!("catia:e5:surface-curve#{record_id}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -1601,7 +1628,7 @@ fn emit_e5_pcurves(
     pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
 ) {
     for (&record_id, (geometry, range)) in pcurve_plan {
-        let id = PcurveId(format!("catia:e5:pcurve#{record_id}"));
+        let id = PcurveId::mint(format!("catia:e5:pcurve#{record_id}")).expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -1627,13 +1654,17 @@ fn emit_e5_bodies(
     ownership: &[E5BodyOwnership],
 ) {
     for (body_index, (record_id, _)) in body_faces.iter().enumerate() {
-        let body_id = BodyId(record_id.map_or_else(
+        let body_id = BodyId::mint(record_id.map_or_else(
             || format!("catia:e5:body#inferred-{body_index}"),
             |id| format!("catia:e5:body#{id}"),
-        ));
+        ))
+        .expect("identity grammar");
         let plan = &ownership[body_index];
         let region_ids: Vec<RegionId> = (0..plan.components.len())
-            .map(|component| RegionId(format!("catia:e5:region#{body_index}-{component}")))
+            .map(|component| {
+                RegionId::mint(format!("catia:e5:region#{body_index}-{component}"))
+                    .expect("identity grammar")
+            })
             .collect();
         annotate(
             annotations,
@@ -1661,7 +1692,8 @@ fn emit_e5_bodies(
         });
         for (component, component_faces) in plan.components.iter().enumerate() {
             let region_id = region_ids[component].clone();
-            let shell_id = ShellId(format!("catia:e5:shell#{body_index}-{component}"));
+            let shell_id = ShellId::mint(format!("catia:e5:shell#{body_index}-{component}"))
+                .expect("identity grammar");
             annotate(
                 annotations,
                 &region_id,
@@ -1694,7 +1726,9 @@ fn emit_e5_bodies(
                 region: region_id,
                 faces: component_faces
                     .iter()
-                    .map(|face| FaceId(format!("catia:e5:face#{face}")))
+                    .map(|face| {
+                        FaceId::mint(format!("catia:e5:face#{face}")).expect("identity grammar")
+                    })
                     .collect(),
                 wire_edges: Vec::new(),
                 free_vertices: Vec::new(),
@@ -1721,11 +1755,15 @@ fn emit_e5_faces_loops_coedges(
 ) -> bool {
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for face in &topology.faces {
-        let face_id = FaceId(format!("catia:e5:face#{}", face.record_id));
+        let face_id =
+            FaceId::mint(format!("catia:e5:face#{}", face.record_id)).expect("identity grammar");
         let loop_ids: Vec<LoopId> = face
             .loops
             .iter()
-            .map(|loop_| LoopId(format!("catia:e5:loop#{}", loop_.record_id)))
+            .map(|loop_| {
+                LoopId::mint(format!("catia:e5:loop#{}", loop_.record_id))
+                    .expect("identity grammar")
+            })
             .collect();
         annotate(
             annotations,
@@ -1754,9 +1792,13 @@ fn emit_e5_faces_loops_coedges(
         });
 
         for (loop_position, loop_) in face.loops.iter().enumerate() {
-            let loop_id = LoopId(format!("catia:e5:loop#{}", loop_.record_id));
+            let loop_id = LoopId::mint(format!("catia:e5:loop#{}", loop_.record_id))
+                .expect("identity grammar");
             let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edge_uses.len())
-                .map(|index| CoedgeId(format!("catia:e5:coedge#{}-{index}", loop_.record_id)))
+                .map(|index| {
+                    CoedgeId::mint(format!("catia:e5:coedge#{}-{index}", loop_.record_id))
+                        .expect("identity grammar")
+                })
                 .collect();
             let members = loop_
                 .resolved_members()
@@ -1854,7 +1896,8 @@ fn emit_e5_faces_loops_coedges(
                         Sense::Forward
                     },
                     pcurves: vec![cadmpeg_ir::topology::PcurveUse {
-                        pcurve: PcurveId(format!("catia:e5:pcurve#{pcurve_ref}")),
+                        pcurve: PcurveId::mint(format!("catia:e5:pcurve#{pcurve_ref}"))
+                            .expect("identity grammar"),
                         isoparametric: None,
                         parameter_range: pcurve_parameter_range,
                     }],
@@ -3209,7 +3252,13 @@ mod route_tests {
             )]),
             vertex_refs: vec![400, 401],
         };
-        let surfaces = HashMap::from([(100, (SurfaceId("surface".to_string()), &surface))]);
+        let surfaces = HashMap::from([(
+            100,
+            (
+                SurfaceId::mint("surface".to_string()).expect("identity grammar"),
+                &surface,
+            ),
+        )]);
         let points = HashMap::from([
             (400, Point3::new(0.0, 0.0, 0.0)),
             (401, Point3::new(0.0, 0.0, 0.0)),
@@ -3266,7 +3315,13 @@ mod route_tests {
             )]),
             vertex_refs: vec![400, 401],
         };
-        let surfaces = HashMap::from([(100, (SurfaceId("surface".to_string()), &surface))]);
+        let surfaces = HashMap::from([(
+            100,
+            (
+                SurfaceId::mint("surface".to_string()).expect("identity grammar"),
+                &surface,
+            ),
+        )]);
         let points = HashMap::from([
             (400, Point3::new(0.0001, 0.0, 0.0)),
             (401, Point3::new(0.0004, 0.0, 0.0)),
@@ -3379,7 +3434,13 @@ mod route_tests {
             )]),
             vertex_refs: vec![400, 401],
         };
-        let surfaces = HashMap::from([(100, (SurfaceId("surface".to_string()), &surface))]);
+        let surfaces = HashMap::from([(
+            100,
+            (
+                SurfaceId::mint("surface".to_string()).expect("identity grammar"),
+                &surface,
+            ),
+        )]);
         let points = HashMap::from([
             (400, Point3::new(0.0, 0.0, 0.0)),
             (401, Point3::new(1.0, 0.0, 0.0)),
@@ -3452,25 +3513,25 @@ mod route_tests {
         let mut ir = CadIr::empty();
         ir.model.points.extend([
             Point {
-                id: PointId("point-10".to_string()),
+                id: PointId::mint("point-10".to_string()).expect("identity grammar"),
                 position: Point3::new(0.0, 0.0, 0.0),
                 source_object: None,
             },
             Point {
-                id: PointId("point-11".to_string()),
+                id: PointId::mint("point-11".to_string()).expect("identity grammar"),
                 position: Point3::new(1.0, 0.0, 0.0),
                 source_object: None,
             },
         ]);
         ir.model.vertices.extend([
             Vertex {
-                id: VertexId("vertex-10".to_string()),
-                point: PointId("point-10".to_string()),
+                id: VertexId::mint("vertex-10".to_string()).expect("identity grammar"),
+                point: PointId::mint("point-10".to_string()).expect("identity grammar"),
                 tolerance: None,
             },
             Vertex {
-                id: VertexId("vertex-11".to_string()),
-                point: PointId("point-11".to_string()),
+                id: VertexId::mint("vertex-11".to_string()).expect("identity grammar"),
+                point: PointId::mint("point-11".to_string()).expect("identity grammar"),
                 tolerance: None,
             },
         ]);
@@ -3498,7 +3559,10 @@ mod route_tests {
         let [vertex_use] = ir.model.loops[0].anchored_vertex_uses() else {
             panic!("E5 edge emission must retain one vertex use");
         };
-        assert_eq!(vertex_use.vertex, VertexId("catia:e5:v#1".to_string()));
+        assert_eq!(
+            vertex_use.vertex,
+            VertexId::mint("catia:e5:v#1".to_string()).expect("identity grammar")
+        );
         assert_eq!(vertex_use.after.0.as_str(), "catia:e5:coedge#2-0");
     }
 
@@ -4370,7 +4434,7 @@ mod route_tests {
     fn occurrence_intersection_accepts_roundoff_equivalent_side_ranges() {
         let sides = vec![
             (
-                SurfaceId("left".to_string()),
+                SurfaceId::mint("left".to_string()).expect("identity grammar"),
                 PcurveGeometry::Line {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(1.0, 0.0),
@@ -4378,7 +4442,7 @@ mod route_tests {
                 [-2.0, 3.0],
             ),
             (
-                SurfaceId("right".to_string()),
+                SurfaceId::mint("right".to_string()).expect("identity grammar"),
                 PcurveGeometry::Line {
                     origin: Point2::new(0.0, 1.0),
                     direction: Point2::new(1.0, 0.0),
@@ -4416,7 +4480,7 @@ mod route_tests {
     fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
         let sides = vec![
             E5OccurrenceIntersectionSide {
-                surface: SurfaceId("left".to_string()),
+                surface: SurfaceId::mint("left".to_string()).expect("identity grammar"),
                 pcurve: PcurveGeometry::Line {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(1.0, 0.0),
@@ -4425,7 +4489,7 @@ mod route_tests {
                 curve: None,
             },
             E5OccurrenceIntersectionSide {
-                surface: SurfaceId("right".to_string()),
+                surface: SurfaceId::mint("right".to_string()).expect("identity grammar"),
                 pcurve: PcurveGeometry::Line {
                     origin: Point2::new(0.0, 1.0),
                     direction: Point2::new(1.0, 0.0),
@@ -4482,7 +4546,7 @@ mod route_tests {
         );
         let mut sides = vec![
             E5OccurrenceIntersectionSide {
-                surface: SurfaceId("left".to_string()),
+                surface: SurfaceId::mint("left".to_string()).expect("identity grammar"),
                 pcurve: PcurveGeometry::Line {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(1.0, 0.0),
@@ -4491,7 +4555,7 @@ mod route_tests {
                 curve: Some((line.clone(), [0.0, 1.0])),
             },
             E5OccurrenceIntersectionSide {
-                surface: SurfaceId("right".to_string()),
+                surface: SurfaceId::mint("right".to_string()).expect("identity grammar"),
                 pcurve: PcurveGeometry::Line {
                     origin: Point2::new(0.0, 1.0),
                     direction: Point2::new(1.0, 0.0),

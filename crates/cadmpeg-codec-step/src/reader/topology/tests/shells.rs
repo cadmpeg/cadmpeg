@@ -748,7 +748,7 @@ fn advanced_brep_representation_reuses_its_committed_solid_body() {
         .native_unknowns("step")
         .unwrap()
         .iter()
-        .any(|record| record.id.0.contains("advanced_brep_representation")));
+        .any(|record| record.id.as_str().contains("advanced_brep_representation")));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

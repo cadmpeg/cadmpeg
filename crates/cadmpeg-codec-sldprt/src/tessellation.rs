@@ -893,7 +893,7 @@ pub(crate) fn assign_persistent_owners(
 ) -> Vec<String> {
     let mut faces_by_identity = HashMap::<PersistentFaceIdentity, Option<FaceId>>::new();
     for (target, identity) in face_identities {
-        let candidate = FaceId(target.clone());
+        let candidate = FaceId::mint(target.clone()).expect("identity grammar");
         match faces_by_identity.entry(identity.clone()) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(candidate));

@@ -634,7 +634,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(origin[0], origin[1], origin[2]),
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
@@ -722,7 +722,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
 
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#11".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#11".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -741,7 +741,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         });
     for (id, x) in [(3, -9.0), (4, -8.0)] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(x, 0.0, 0.0),
                 normal: Vector3::new(1.0, 0.0, 0.0),
@@ -785,7 +785,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -922,7 +922,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(origin[0], origin[1], origin[2]),
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
@@ -976,7 +976,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (12, 1.0)] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -993,7 +993,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(origin[0], origin[1], origin[2]),
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
@@ -1055,7 +1055,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -1072,7 +1072,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(origin[0], origin[1], origin[2]),
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
@@ -1437,7 +1437,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     };
     scan.surfaces.parameters.push(parameter);
     let plane = |id, y, normal| Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, y, 0.0),
             normal,
@@ -1450,7 +1450,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         plane(31, 4.0, Vector3::new(0.0, 1.0, 0.0)),
         plane(32, -4.0, Vector3::new(0.0, -1.0, 0.0)),
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#33".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(2.0, 4.0, 0.0),
                 axis: Vector3::new(0.0, -1.0, 0.0),
@@ -1496,7 +1496,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         .rows
         .push(row(34, crate::surface::SurfaceKind::Plane));
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#34".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
@@ -1509,7 +1509,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         .rows
         .push(row(35, crate::surface::SurfaceKind::Cylinder));
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#35".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
@@ -1521,10 +1521,10 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     ir.model.surfaces.truncate(3);
 
     let mut untransferred_caps = ir.clone();
-    untransferred_caps
-        .model
-        .surfaces
-        .retain(|surface| surface.id == SurfaceId("creo:visibgeom:surface#33".to_string()));
+    untransferred_caps.model.surfaces.retain(|surface| {
+        surface.id
+            == SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar")
+    });
     assert_eq!(
         generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, None),
         generated_bounded_cylinder_extent(&scan, &ir, 7, None)
@@ -1805,7 +1805,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         offset: id as usize,
     };
     let plane = |id, z| Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(4.0, -2.0, z),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1864,7 +1864,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         row(35, true),
     ]);
     let plane = |id, origin, normal| Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin,
             normal,
@@ -1875,7 +1875,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#37".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#37".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },

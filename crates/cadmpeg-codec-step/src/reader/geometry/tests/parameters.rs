@@ -104,7 +104,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("plane".into()),
+            &SurfaceId::mint("plane").expect("identity grammar"),
             &plane,
             10.0,
             0.25,
@@ -115,7 +115,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("cylinder".into()),
+            &SurfaceId::mint("cylinder").expect("identity grammar"),
             &cylinder,
             10.0,
             0.25,
@@ -126,7 +126,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("sphere".into()),
+            &SurfaceId::mint("sphere").expect("identity grammar"),
             &sphere,
             10.0,
             0.25,
@@ -137,7 +137,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("transformed".into()),
+            &SurfaceId::mint("transformed").expect("identity grammar"),
             &transformed,
             10.0,
             0.25,
@@ -148,7 +148,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,
-            &SurfaceId("unknown".into()),
+            &SurfaceId::mint("unknown").expect("identity grammar"),
             &SurfaceGeometry::Unknown { record: None },
             10.0,
             0.25,
@@ -161,7 +161,7 @@ fn surface_parameter_units_follow_the_surface_chart() {
 #[test]
 fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     let mut ir = CadIr::empty();
-    let directrix = CurveId("line".into());
+    let directrix = CurveId::mint("line").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Line {
@@ -170,8 +170,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         },
         source_object: None,
     });
-    let sweep = SurfaceId("sweep".into());
-    let revolution = SurfaceId("revolution".into());
+    let sweep = SurfaceId::mint("sweep").expect("identity grammar");
+    let revolution = SurfaceId::mint("revolution").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: sweep.clone(),
@@ -187,7 +187,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     let _attached = ir.model.add_procedural_surface(
         sweep.clone(),
         ProceduralSurface::new(
-            ProceduralSurfaceId("sweep-construction".into()),
+            ProceduralSurfaceId::mint("sweep-construction").expect("identity grammar"),
             ProceduralSurfaceDefinition::LinearSweep {
                 directrix: directrix.clone(),
                 direction: Vector3::new(0.0, 1.0, 0.0),
@@ -198,7 +198,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     let _attached = ir.model.add_procedural_surface(
         revolution.clone(),
         ProceduralSurface::new(
-            ProceduralSurfaceId("revolution-construction".into()),
+            ProceduralSurfaceId::mint("revolution-construction").expect("identity grammar"),
             ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
                 axis_origin: Point3::new(0.0, 0.0, 0.0),
@@ -278,7 +278,7 @@ fn directrix_parameter_units_follow_step_curve_equations() {
 #[test]
 fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
     let mut ir = CadIr::empty();
-    let directrix = CurveId("composite".into());
+    let directrix = CurveId::mint("composite").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Composite {
@@ -287,7 +287,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         },
         source_object: None,
     });
-    let surface = SurfaceId("sweep".into());
+    let surface = SurfaceId::mint("sweep").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Unknown { record: None },
@@ -296,7 +296,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
     let _attached = ir.model.add_procedural_surface(
         surface.clone(),
         ProceduralSurface::new(
-            ProceduralSurfaceId("sweep-construction".into()),
+            ProceduralSurfaceId::mint("sweep-construction").expect("identity grammar"),
             ProceduralSurfaceDefinition::LinearSweep {
                 directrix,
                 direction: Vector3::new(0.0, 1.0, 0.0),
@@ -320,8 +320,8 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
 
 #[test]
 fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
-    let surface_id = SurfaceId("surface".into());
-    let directrix = CurveId("directrix".into());
+    let surface_id = SurfaceId::mint("surface").expect("identity grammar");
+    let directrix = CurveId::mint("directrix").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix.clone(),
@@ -339,7 +339,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
     let _attached = ir.model.add_procedural_surface(
         surface_id.clone(),
         ProceduralSurface::new(
-            ProceduralSurfaceId("construction".into()),
+            ProceduralSurfaceId::mint("construction").expect("identity grammar"),
             ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
                 axis_origin: Point3::new(0.0, 0.0, 0.0),

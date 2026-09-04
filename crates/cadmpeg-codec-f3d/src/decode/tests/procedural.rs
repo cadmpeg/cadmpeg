@@ -229,7 +229,8 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
     };
     let scale = construction.scales[0].clone().expect("generated scale");
     let curve = scale.path.clone();
-    let line_curve = cadmpeg_ir::ids::CurveId("generated:compound_loft_tail_line#0".into());
+    let line_curve = cadmpeg_ir::ids::CurveId::mint("generated:compound_loft_tail_line#0")
+        .expect("identity grammar");
     let tails = [
         CompoundLoftTail::Six {
             flags: [true, false],

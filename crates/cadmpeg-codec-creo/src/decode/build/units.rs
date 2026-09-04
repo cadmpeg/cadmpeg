@@ -1721,16 +1721,17 @@ mod tests {
     #[test]
     fn scales_procedural_model_lengths_and_cache_tolerances() {
         let mut ir = CadIr::empty();
-        let surface_id = cadmpeg_ir::ids::SurfaceId("surface".into());
+        let surface_id = cadmpeg_ir::ids::SurfaceId::mint("surface").expect("identity grammar");
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: None },
             source_object: None,
         });
         let surface = cadmpeg_ir::geometry::ProceduralSurface::try_new(
-            cadmpeg_ir::ids::ProceduralSurfaceId("surface-construction".into()),
+            cadmpeg_ir::ids::ProceduralSurfaceId::mint("surface-construction")
+                .expect("identity grammar"),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                directrix: cadmpeg_ir::ids::CurveId("directrix".into()),
+                directrix: cadmpeg_ir::ids::CurveId::mint("directrix").expect("identity grammar"),
                 parameter_interval: Some([1.0, 2.0]),
                 direction: Vector3::new(1.0, 2.0, 3.0),
                 native_position: Some(Point3::new(4.0, 5.0, 6.0)),
@@ -1743,14 +1744,15 @@ mod tests {
         ir.model
             .add_procedural_surface(surface_id, surface)
             .unwrap();
-        let curve_id = cadmpeg_ir::ids::CurveId("curve".into());
+        let curve_id = cadmpeg_ir::ids::CurveId::mint("curve").expect("identity grammar");
         ir.model.curves.push(cadmpeg_ir::geometry::Curve {
             id: curve_id.clone(),
             geometry: cadmpeg_ir::geometry::CurveGeometry::Unknown { record: None },
             source_object: None,
         });
         let curve = cadmpeg_ir::geometry::ProceduralCurve::try_new(
-            cadmpeg_ir::ids::ProceduralCurveId("curve-construction".into()),
+            cadmpeg_ir::ids::ProceduralCurveId::mint("curve-construction")
+                .expect("identity grammar"),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
                 angle_range: [0.0, 1.0],
                 center: Point3::new(1.0, 2.0, 3.0),

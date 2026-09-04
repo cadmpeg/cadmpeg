@@ -361,13 +361,16 @@ fn decode_projects_a_v5_type_142_constituent_through_its_model_curve() {
         .iter()
         .find(|curve| {
             result.ir().model.procedural_curve_owner(&curve.id)
-                == Some(&CurveId("iges:model:curve#D9".into()))
+                == Some(&CurveId::mint("iges:model:curve#D9").expect("identity grammar"))
         })
         .expect("Type 102 neutral carrier");
     let ProceduralCurveDefinition::Compound { components, .. } = composite.definition() else {
         panic!("expected a compound neutral carrier");
     };
-    assert_eq!(components, &[CurveId("iges:model:curve#D3".into())]);
+    assert_eq!(
+        components,
+        &[CurveId::mint("iges:model:curve#D3").expect("identity grammar")]
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:?}",
@@ -417,13 +420,16 @@ fn decode_projects_a_v5_type_130_constituent_after_its_offset_carrier() {
         .iter()
         .find(|curve| {
             result.ir().model.procedural_curve_owner(&curve.id)
-                == Some(&CurveId("iges:model:curve#D5".into()))
+                == Some(&CurveId::mint("iges:model:curve#D5").expect("identity grammar"))
         })
         .expect("Type 102 neutral carrier");
     let ProceduralCurveDefinition::Compound { components, .. } = composite.definition() else {
         panic!("expected a compound neutral carrier");
     };
-    assert_eq!(components, &[CurveId("iges:model:curve#D3".into())]);
+    assert_eq!(
+        components,
+        &[CurveId::mint("iges:model:curve#D3").expect("identity grammar")]
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:?}",
@@ -779,7 +785,7 @@ fn positive_join_tolerance_excludes_the_resolution_boundary() {
 
 #[test]
 fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
-    let curve_id = CurveId("line".into());
+    let curve_id = CurveId::mint("line").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -791,33 +797,33 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
     });
     ir.model.points.extend([
         Point {
-            id: PointId("start-point".into()),
+            id: PointId::mint("start-point").expect("identity grammar"),
             position: Point3::new(0.001, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("end-point".into()),
+            id: PointId::mint("end-point").expect("identity grammar"),
             position: Point3::new(1.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("start".into()),
-            point: PointId("start-point".into()),
+            id: VertexId::mint("start").expect("identity grammar"),
+            point: PointId::mint("start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("end".into()),
-            point: PointId("end-point".into()),
+            id: VertexId::mint("end").expect("identity grammar"),
+            point: PointId::mint("end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.push(Edge {
-        id: EdgeId("edge".into()),
+        id: EdgeId::mint("edge").expect("identity grammar"),
         curve: Some(curve_id.clone()),
-        start: VertexId("start".into()),
-        end: VertexId("end".into()),
+        start: VertexId::mint("start").expect("identity grammar"),
+        end: VertexId::mint("end").expect("identity grammar"),
         param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
@@ -859,7 +865,7 @@ fn decode_refuses_a_composite_child_count_over_its_projection_limit() {
 
 #[test]
 fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
-    let base_id = CurveId("base".into());
+    let base_id = CurveId::mint("base").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: base_id.clone(),
@@ -873,40 +879,40 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
     });
     ir.model.points.extend([
         Point {
-            id: PointId("base-start-point".into()),
+            id: PointId::mint("base-start-point").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("base-end-point".into()),
+            id: PointId::mint("base-end-point").expect("identity grammar"),
             position: Point3::new(1.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("base-start".into()),
-            point: PointId("base-start-point".into()),
+            id: VertexId::mint("base-start").expect("identity grammar"),
+            point: PointId::mint("base-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("base-end".into()),
-            point: PointId("base-end-point".into()),
+            id: VertexId::mint("base-end").expect("identity grammar"),
+            point: PointId::mint("base-end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.push(Edge {
-        id: EdgeId("base-edge".into()),
+        id: EdgeId::mint("base-edge").expect("identity grammar"),
         curve: Some(base_id.clone()),
-        start: VertexId("base-start".into()),
-        end: VertexId("base-end".into()),
+        start: VertexId::mint("base-start").expect("identity grammar"),
+        end: VertexId::mint("base-end").expect("identity grammar"),
         param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
 
     let mut child_id = base_id;
     for level in 0..65 {
-        let composite_id = CurveId(format!("composite-{level}"));
+        let composite_id = CurveId::mint(format!("composite-{level}")).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: composite_id.clone(),
             geometry: CurveGeometry::Composite {
@@ -937,7 +943,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
 
 #[test]
 fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
-    let curve_id = CurveId("line".into());
+    let curve_id = CurveId::mint("line").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -949,69 +955,74 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     });
     ir.model.points.extend([
         Point {
-            id: PointId("wrong-start-point".into()),
+            id: PointId::mint("wrong-start-point").expect("identity grammar"),
             position: Point3::new(10.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("wrong-end-point".into()),
+            id: PointId::mint("wrong-end-point").expect("identity grammar"),
             position: Point3::new(11.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-start-point".into()),
+            id: PointId::mint("matching-start-point").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-end-point".into()),
+            id: PointId::mint("matching-end-point").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("wrong-start".into()),
-            point: PointId("wrong-start-point".into()),
+            id: VertexId::mint("wrong-start").expect("identity grammar"),
+            point: PointId::mint("wrong-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("wrong-end".into()),
-            point: PointId("wrong-end-point".into()),
+            id: VertexId::mint("wrong-end").expect("identity grammar"),
+            point: PointId::mint("wrong-end-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-start".into()),
-            point: PointId("matching-start-point".into()),
+            id: VertexId::mint("matching-start").expect("identity grammar"),
+            point: PointId::mint("matching-start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-end".into()),
-            point: PointId("matching-end-point".into()),
+            id: VertexId::mint("matching-end").expect("identity grammar"),
+            point: PointId::mint("matching-end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.extend([
         Edge {
-            id: EdgeId("wrong-occurrence".into()),
+            id: EdgeId::mint("wrong-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("wrong-start".into()),
-            end: VertexId("wrong-end".into()),
+            start: VertexId::mint("wrong-start").expect("identity grammar"),
+            end: VertexId::mint("wrong-end").expect("identity grammar"),
             param_range: Some([5.0, 6.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId("matching-occurrence".into()),
+            id: EdgeId::mint("matching-occurrence").expect("identity grammar"),
             curve: Some(curve_id),
-            start: VertexId("matching-start".into()),
-            end: VertexId("matching-end".into()),
+            start: VertexId::mint("matching-start").expect("identity grammar"),
+            end: VertexId::mint("matching-end").expect("identity grammar"),
             param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ]);
 
-    let (carrier, range) = bounded_nurbs_for_curve(&ir, &CurveId("line".into()), None, None)
-        .expect("the curve-valid edge occurrence");
+    let (carrier, range) = bounded_nurbs_for_curve(
+        &ir,
+        &CurveId::mint("line").expect("identity grammar"),
+        None,
+        None,
+    )
+    .expect("the curve-valid edge occurrence");
     assert_eq!(range, [0.0, 1.0]);
     assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
     assert_eq!(carrier.control_points()[1], Point3::new(2.0, 0.0, 0.0));
@@ -1019,7 +1030,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
 
 #[test]
 fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
-    let curve_id = CurveId("line".into());
+    let curve_id = CurveId::mint("line").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -1030,10 +1041,10 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         source_object: None,
     });
     for (index, end) in [(0, 1.0), (1, 2.0)] {
-        let start_point = PointId(format!("start-point-{index}"));
-        let end_point = PointId(format!("end-point-{index}"));
-        let start_vertex = VertexId(format!("start-{index}"));
-        let end_vertex = VertexId(format!("end-{index}"));
+        let start_point = PointId::mint(format!("start-point-{index}")).expect("identity grammar");
+        let end_point = PointId::mint(format!("end-point-{index}")).expect("identity grammar");
+        let start_vertex = VertexId::mint(format!("start-{index}")).expect("identity grammar");
+        let end_vertex = VertexId::mint(format!("end-{index}")).expect("identity grammar");
         ir.model.points.extend([
             Point {
                 id: start_point.clone(),
@@ -1059,7 +1070,7 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
             },
         ]);
         ir.model.edges.push(Edge {
-            id: EdgeId(format!("edge-{index}")),
+            id: EdgeId::mint(format!("edge-{index}")).expect("identity grammar"),
             curve: Some(curve_id.clone()),
             start: start_vertex,
             end: end_vertex,
@@ -1073,9 +1084,9 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
 
 #[test]
 fn composite_index_lookups_match_the_unindexed_scan() {
-    let bounded = CurveId("bounded".into());
-    let edgeless = CurveId("edgeless".into());
-    let absent = CurveId("absent".into());
+    let bounded = CurveId::mint("bounded").expect("identity grammar");
+    let edgeless = CurveId::mint("edgeless").expect("identity grammar");
+    let absent = CurveId::mint("absent").expect("identity grammar");
     let mut ir = CadIr::empty();
     for id in [bounded.clone(), edgeless.clone()] {
         ir.model.curves.push(Curve {
@@ -1089,33 +1100,33 @@ fn composite_index_lookups_match_the_unindexed_scan() {
     }
     ir.model.points.extend([
         Point {
-            id: PointId("start-point".into()),
+            id: PointId::mint("start-point").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("end-point".into()),
+            id: PointId::mint("end-point").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("start".into()),
-            point: PointId("start-point".into()),
+            id: VertexId::mint("start").expect("identity grammar"),
+            point: PointId::mint("start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("end".into()),
-            point: PointId("end-point".into()),
+            id: VertexId::mint("end").expect("identity grammar"),
+            point: PointId::mint("end-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.push(Edge {
-        id: EdgeId("edge".into()),
+        id: EdgeId::mint("edge").expect("identity grammar"),
         curve: Some(bounded.clone()),
-        start: VertexId("start".into()),
-        end: VertexId("end".into()),
+        start: VertexId::mint("start").expect("identity grammar"),
+        end: VertexId::mint("end").expect("identity grammar"),
         param_range: Some([0.0, 2.0]),
         tolerance: None,
     });
@@ -1138,11 +1149,27 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         );
     }
 
-    assert!(bounded_nurbs_for_curve(&ir, &CurveId("bounded".into()), None, Some(&index)).is_some());
-    assert!(
-        bounded_nurbs_for_curve(&ir, &CurveId("edgeless".into()), None, Some(&index)).is_none()
-    );
-    assert!(bounded_nurbs_for_curve(&ir, &CurveId("absent".into()), None, Some(&index)).is_none());
+    assert!(bounded_nurbs_for_curve(
+        &ir,
+        &CurveId::mint("bounded").expect("identity grammar"),
+        None,
+        Some(&index)
+    )
+    .is_some());
+    assert!(bounded_nurbs_for_curve(
+        &ir,
+        &CurveId::mint("edgeless").expect("identity grammar"),
+        None,
+        Some(&index)
+    )
+    .is_none());
+    assert!(bounded_nurbs_for_curve(
+        &ir,
+        &CurveId::mint("absent").expect("identity grammar"),
+        None,
+        Some(&index)
+    )
+    .is_none());
 }
 
 #[test]
@@ -1510,9 +1537,9 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
 
 #[test]
 fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
-    let first_id = CurveId("first".into());
-    let second_id = CurveId("second".into());
-    let composite_id = CurveId("composite".into());
+    let first_id = CurveId::mint("first").expect("identity grammar");
+    let second_id = CurveId::mint("second").expect("identity grammar");
+    let composite_id = CurveId::mint("composite").expect("identity grammar");
     let first_end = Point3::new(1.0, 0.0, 0.0);
     let mut ir = CadIr::empty();
     ir.model.curves.extend([
@@ -1558,10 +1585,10 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
     ]);
     for (index, curve) in [first_id, second_id].into_iter().enumerate() {
         ir.model.edges.push(Edge {
-            id: EdgeId(format!("edge-{index}")),
+            id: EdgeId::mint(format!("edge-{index}")).expect("identity grammar"),
             curve: Some(curve),
-            start: VertexId(format!("start-{index}")),
-            end: VertexId(format!("end-{index}")),
+            start: VertexId::mint(format!("start-{index}")).expect("identity grammar"),
+            end: VertexId::mint(format!("end-{index}")).expect("identity grammar"),
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         });

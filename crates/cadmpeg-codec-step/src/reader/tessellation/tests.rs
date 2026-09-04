@@ -385,7 +385,7 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
         .native_unknowns("step")
         .expect("STEP native namespace")
         .iter()
-        .any(|record| record.id.0.ends_with("#84")));
+        .any(|record| record.id.as_str().ends_with("#84")));
 }
 
 #[test]
@@ -425,7 +425,7 @@ fn repositioned_annotation_mesh_with_invalid_or_missing_placement_keeps_source_c
             .native_unknowns("step")
             .expect("STEP native namespace")
             .iter()
-            .any(|record| record.id.0.ends_with("#5")));
+            .any(|record| record.id.as_str().ends_with("#5")));
         if unresolved_placement {
             assert!(decoded
                 .ir()
@@ -471,7 +471,7 @@ fn unresolved_outer_repositioning_preserves_inner_valid_placement() {
         .native_unknowns("step")
         .expect("STEP native namespace")
         .iter()
-        .any(|record| record.id.0.ends_with("#88")));
+        .any(|record| record.id.as_str().ends_with("#88")));
 }
 
 #[test]

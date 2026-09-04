@@ -512,10 +512,11 @@ fn retain_v1_record(
             .checked_add(bytes.len())
             .expect("V1 retention cap checked");
     }
-    let id = UnknownId(format!(
+    let id = UnknownId::mint(format!(
         "rhino:legacy:record#{:08x}-{:016x}",
         chunk.typecode, chunk.header_start
-    ));
+    ))
+    .expect("identity grammar");
     let offset = u64::try_from(range.start).expect("V1 record offset fits u64");
     if retain {
         UnknownRecord::retained(id, offset, bytes.to_vec(), Vec::new())

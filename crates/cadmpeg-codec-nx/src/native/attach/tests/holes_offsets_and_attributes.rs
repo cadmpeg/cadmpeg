@@ -74,8 +74,8 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         end_treatment: SimpleHoleEndTreatment::None,
     };
     let mut model = Model::default();
-    let cylinder_surface = SurfaceId("blind-cylinder-surface".into());
-    let cap_surface = SurfaceId("blind-cap-surface".into());
+    let cylinder_surface = SurfaceId::mint("blind-cylinder-surface").expect("identity grammar");
+    let cap_surface = SurfaceId::mint("blind-cap-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: cylinder_surface.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -98,9 +98,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     let (entry_loop, cylinder_cap_loop, cap_face_loop) = {
         let mut add_circle_loop =
             |loop_name: &str, edge_name: &str, center: Point3, radius: f64| {
-                let loop_id = LoopId(loop_name.into());
-                let edge_id = EdgeId(edge_name.into());
-                let curve_id = CurveId(format!("{edge_name}-curve"));
+                let loop_id = LoopId::mint(loop_name).expect("identity grammar");
+                let edge_id = EdgeId::mint(edge_name).expect("identity grammar");
+                let curve_id =
+                    CurveId::mint(format!("{edge_name}-curve")).expect("identity grammar");
                 if !model.edges.iter().any(|edge| edge.id == edge_id) {
                     model.curves.push(Curve {
                         id: curve_id.clone(),
@@ -115,13 +116,14 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                     model.edges.push(Edge {
                         id: edge_id.clone(),
                         curve: Some(curve_id),
-                        start: VertexId("vertex".into()),
-                        end: VertexId("vertex".into()),
+                        start: VertexId::mint("vertex").expect("identity grammar"),
+                        end: VertexId::mint("vertex").expect("identity grammar"),
                         param_range: None,
                         tolerance: None,
                     });
                 }
-                let coedge_id = CoedgeId(format!("{loop_name}-coedge"));
+                let coedge_id =
+                    CoedgeId::mint(format!("{loop_name}-coedge")).expect("identity grammar");
                 model.coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
@@ -156,11 +158,11 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             ),
         )
     };
-    let cylinder_face = FaceId("blind-cylinder-face".into());
-    let cap_face = FaceId("blind-cap-face".into());
+    let cylinder_face = FaceId::mint("blind-cylinder-face").expect("identity grammar");
+    let cap_face = FaceId::mint("blind-cap-face").expect("identity grammar");
     model.faces.push(Face {
         id: cylinder_face.clone(),
-        shell: ShellId("blind-shell".into()),
+        shell: ShellId::mint("blind-shell").expect("identity grammar"),
         surface: cylinder_surface,
         sense: Sense::Reversed,
         loops: vec![entry_loop, cylinder_cap_loop],
@@ -170,7 +172,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     });
     model.faces.push(Face {
         id: cap_face.clone(),
-        shell: ShellId("blind-shell".into()),
+        shell: ShellId::mint("blind-shell").expect("identity grammar"),
         surface: cap_surface,
         sense: Sense::Forward,
         loops: vec![cap_face_loop],
@@ -178,24 +180,24 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         color: None,
         tolerance: None,
     });
-    let body = BodyId("blind-body".into());
+    let body = BodyId::mint("blind-body").expect("identity grammar");
     model.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId("blind-region".into())],
+        regions: vec![RegionId::mint("blind-region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     model.regions.push(Region {
-        id: RegionId("blind-region".into()),
+        id: RegionId::mint("blind-region").expect("identity grammar"),
         body: body.clone(),
-        shells: vec![ShellId("blind-shell".into())],
+        shells: vec![ShellId::mint("blind-shell").expect("identity grammar")],
     });
     model.shells.push(Shell {
-        id: ShellId("blind-shell".into()),
-        region: RegionId("blind-region".into()),
+        id: ShellId::mint("blind-shell").expect("identity grammar"),
+        region: RegionId::mint("blind-region").expect("identity grammar"),
         faces: vec![cylinder_face, cap_face],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
@@ -272,7 +274,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     let mut missing_cap = ir.clone();
     missing_cap.model.shells[0]
         .faces
-        .retain(|face| face != &FaceId("blind-cap-face".into()));
+        .retain(|face| face != &FaceId::mint("blind-cap-face").expect("identity grammar"));
     assert!(super::blind_hole_body_projection(
         &missing_cap,
         std::slice::from_ref(&operation),
@@ -281,18 +283,18 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     .is_none());
     let mut duplicate_cap = ir.clone();
     duplicate_cap.model.faces.push(Face {
-        id: FaceId("blind-duplicate-cap-face".into()),
-        shell: ShellId("blind-shell".into()),
-        surface: SurfaceId("blind-cap-surface".into()),
+        id: FaceId::mint("blind-duplicate-cap-face").expect("identity grammar"),
+        shell: ShellId::mint("blind-shell").expect("identity grammar"),
+        surface: SurfaceId::mint("blind-cap-surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId("blind-cap-face-loop".into())],
+        loops: vec![LoopId::mint("blind-cap-face-loop").expect("identity grammar")],
         name: None,
         color: None,
         tolerance: None,
     });
     duplicate_cap.model.shells[0]
         .faces
-        .push(FaceId("blind-duplicate-cap-face".into()));
+        .push(FaceId::mint("blind-duplicate-cap-face").expect("identity grammar"));
     assert!(super::blind_hole_body_projection(
         &duplicate_cap,
         std::slice::from_ref(&operation),
@@ -362,11 +364,11 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     let mut model = Model::default();
     let mut add_circle_loop =
         |name: &str, shared_edge: Option<&str>, center: Point3, radius: f64| {
-            let loop_id = LoopId(format!("{name}-loop"));
+            let loop_id = LoopId::mint(format!("{name}-loop")).expect("identity grammar");
             let edge_name = shared_edge.unwrap_or(name);
-            let curve_id = CurveId(format!("{edge_name}-curve"));
-            let edge_id = EdgeId(format!("{edge_name}-edge"));
-            let coedge_id = CoedgeId(format!("{name}-coedge"));
+            let curve_id = CurveId::mint(format!("{edge_name}-curve")).expect("identity grammar");
+            let edge_id = EdgeId::mint(format!("{edge_name}-edge")).expect("identity grammar");
+            let coedge_id = CoedgeId::mint(format!("{name}-coedge")).expect("identity grammar");
             if !model.edges.iter().any(|edge| edge.id == edge_id) {
                 model.curves.push(Curve {
                     id: curve_id.clone(),
@@ -381,8 +383,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 model.edges.push(Edge {
                     id: edge_id.clone(),
                     curve: Some(curve_id),
-                    start: VertexId("vertex".into()),
-                    end: VertexId("vertex".into()),
+                    start: VertexId::mint("vertex").expect("identity grammar"),
+                    end: VertexId::mint("vertex").expect("identity grammar"),
                     param_range: None,
                     tolerance: None,
                 });
@@ -402,8 +404,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         };
     let mut add_face = |id: &str, surface: SurfaceId, sense: Sense, loops: Vec<LoopId>| {
         model.faces.push(Face {
-            id: FaceId(id.into()),
-            shell: ShellId("shell".into()),
+            id: FaceId::mint(id).expect("identity grammar"),
+            shell: ShellId::mint("shell").expect("identity grammar"),
             surface,
             sense,
             loops,
@@ -412,7 +414,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             tolerance: None,
         });
     };
-    let bore_surface = SurfaceId("bore-surface".into());
+    let bore_surface = SurfaceId::mint("bore-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: bore_surface.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -434,7 +436,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     ];
     add_face("bore-face", bore_surface, Sense::Reversed, bore_loops);
 
-    let counterbore_surface = SurfaceId("counterbore-surface".into());
+    let counterbore_surface = SurfaceId::mint("counterbore-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: counterbore_surface.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -461,7 +463,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         counterbore_loops,
     );
 
-    let shoulder_surface = SurfaceId("shoulder-surface".into());
+    let shoulder_surface = SurfaceId::mint("shoulder-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: shoulder_surface.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -492,28 +494,28 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         shoulder_loops,
     );
 
-    let body = BodyId("body".into());
+    let body = BodyId::mint("body").expect("identity grammar");
     model.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId("region".into())],
+        regions: vec![RegionId::mint("region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     model.regions.push(Region {
-        id: RegionId("region".into()),
+        id: RegionId::mint("region").expect("identity grammar"),
         body: body.clone(),
-        shells: vec![ShellId("shell".into())],
+        shells: vec![ShellId::mint("shell").expect("identity grammar")],
     });
     model.shells.push(Shell {
-        id: ShellId("shell".into()),
-        region: RegionId("region".into()),
+        id: ShellId::mint("shell").expect("identity grammar"),
+        region: RegionId::mint("region").expect("identity grammar"),
         faces: vec![
-            FaceId("bore-face".into()),
-            FaceId("counterbore-face".into()),
-            FaceId("shoulder-face".into()),
+            FaceId::mint("bore-face").expect("identity grammar"),
+            FaceId::mint("counterbore-face").expect("identity grammar"),
+            FaceId::mint("shoulder-face").expect("identity grammar"),
         ],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
@@ -605,7 +607,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     let mut missing_shoulder = ir.clone();
     missing_shoulder.model.shells[0]
         .faces
-        .retain(|face| face != &FaceId("shoulder-face".into()));
+        .retain(|face| face != &FaceId::mint("shoulder-face").expect("identity grammar"));
     assert!(super::counterbore_body_projection(&missing_shoulder, &operations, &outputs).is_none());
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
@@ -628,13 +630,16 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let output = BodyId("nx:s4:body#3".into());
+    let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
     let make_offset = |ordinal: u32, distance: f64| {
-        let owner = SurfaceId(format!("nx:s4:offset-surf#{ordinal}"));
+        let owner =
+            SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
         let procedural = ProceduralSurface::new(
-            ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
+            ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
+                .expect("identity grammar"),
             ProceduralSurfaceDefinition::Offset {
-                support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+                support: SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
+                    .expect("identity grammar"),
                 distance,
                 u_sense: Some(1),
                 v_sense: Some(1),
@@ -664,12 +669,12 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         }
     ));
 
-    let input = BodyId("nx:s4:body#input".into());
+    let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
     for ordinal in 0..2 {
         attach_test_body_surface(
             &mut ir,
             &input,
-            SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+            SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
         );
     }
     let (definition, _) =
@@ -702,7 +707,9 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     ir.model
         .faces
         .iter_mut()
-        .find(|face| face.surface == SurfaceId("nx:s4:nurbs-surf#0".into()))
+        .find(|face| {
+            face.surface == SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar")
+        })
         .expect("first support face")
         .sense = cadmpeg_ir::topology::Sense::Forward;
     let (definition, _) =
@@ -719,8 +726,8 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     let mut ambiguous = ir.clone();
     attach_test_body_surface(
         &mut ambiguous,
-        &BodyId("nx:s4:body#duplicate".into()),
-        SurfaceId("nx:s4:nurbs-surf#0".into()),
+        &BodyId::mint("nx:s4:body#duplicate").expect("identity grammar"),
+        SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar"),
     );
     let (definition, _) =
         super::offset_surface_feature_definition(&ambiguous, std::slice::from_ref(&output))
@@ -751,13 +758,16 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let output = BodyId("nx:s4:body#3".into());
+    let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
     let make_offset = |ordinal: u32, distance: f64| {
-        let owner = SurfaceId(format!("nx:s4:offset-surf#{ordinal}"));
+        let owner =
+            SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
         let procedural = ProceduralSurface::new(
-            ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
+            ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
+                .expect("identity grammar"),
             ProceduralSurfaceDefinition::Offset {
-                support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+                support: SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
+                    .expect("identity grammar"),
                 distance,
                 u_sense: Some(1),
                 v_sense: Some(1),
@@ -800,12 +810,12 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         super::thicken_feature_definition(&sheet_output, std::slice::from_ref(&output)).is_none()
     );
 
-    let input = BodyId("nx:s4:body#input".into());
+    let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
     for ordinal in 0..2 {
         attach_test_body_surface(
             &mut ir,
             &input,
-            SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+            SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
         );
     }
     let (definition, _) = super::thicken_feature_definition(&ir, std::slice::from_ref(&output))
@@ -822,7 +832,9 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     ir.model
         .faces
         .iter_mut()
-        .find(|face| face.surface == SurfaceId("nx:s4:nurbs-surf#1".into()))
+        .find(|face| {
+            face.surface == SurfaceId::mint("nx:s4:nurbs-surf#1").expect("identity grammar")
+        })
         .expect("second support face")
         .sense = cadmpeg_ir::topology::Sense::Reversed;
     let (definition, _) = super::thicken_feature_definition(&ir, std::slice::from_ref(&output))
@@ -846,7 +858,7 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
     assert!(super::thicken_feature_definition(&ir, &[output]).is_none());
 
-    let zero_output = BodyId("nx:s4:body#4".into());
+    let zero_output = BodyId::mint("nx:s4:body#4").expect("identity grammar");
     let (owner, zero) = make_offset(3, 0.0);
     attach_test_body_procedural_surface(&mut ir, &zero_output, owner, zero);
     assert!(super::thicken_feature_definition(&ir, &[zero_output]).is_none());
@@ -859,14 +871,16 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let output = BodyId("nx:s4:body#symmetric".into());
-    let input = BodyId("nx:s4:body#input".into());
-    let support = SurfaceId("nx:s4:nurbs-surf#0".into());
+    let output = BodyId::mint("nx:s4:body#symmetric").expect("identity grammar");
+    let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
+    let support = SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar");
     attach_test_body_surface(&mut ir, &input, support.clone());
     let make_offset = |ordinal: u32, support: SurfaceId, distance: f64| {
-        let owner = SurfaceId(format!("nx:s4:offset-surf#{ordinal}"));
+        let owner =
+            SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
         let procedural = ProceduralSurface::new(
-            ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
+            ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
+                .expect("identity grammar"),
             ProceduralSurfaceDefinition::Offset {
                 support,
                 distance,
@@ -909,7 +923,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
             let ProceduralSurfaceDefinition::Offset { support, .. } = definition else {
                 unreachable!()
             };
-            *support = SurfaceId("nx:s4:nurbs-surf#other".into());
+            *support = SurfaceId::mint("nx:s4:nurbs-surf#other").expect("identity grammar");
         });
     assert!(
         super::thicken_feature_definition(&mismatched_support, std::slice::from_ref(&output))
@@ -939,10 +953,10 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let output = BodyId("nx:s4:body#3".into());
-    let support_a = SurfaceId("support-a".into());
-    let support_b = SurfaceId("support-b".into());
-    let support_c = SurfaceId("support-c".into());
+    let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
+    let support_a = SurfaceId::mint("support-a").expect("identity grammar");
+    let support_b = SurfaceId::mint("support-b").expect("identity grammar");
+    let support_c = SurfaceId::mint("support-c").expect("identity grammar");
     assert_eq!(
         super::blend_support_bipartition(vec![
             [support_a.clone(), support_b.clone()],
@@ -960,14 +974,22 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     ])
     .is_none());
     assert!(super::blend_support_bipartition(vec![
-        [SurfaceId("a".into()), SurfaceId("b".into())],
-        [SurfaceId("c".into()), SurfaceId("d".into())],
+        [
+            SurfaceId::mint("a").expect("identity grammar"),
+            SurfaceId::mint("b").expect("identity grammar")
+        ],
+        [
+            SurfaceId::mint("c").expect("identity grammar"),
+            SurfaceId::mint("d").expect("identity grammar")
+        ],
     ])
     .is_none());
     let make_blend = |ordinal: u32, radius: BlendRadiusLaw| {
-        let owner = SurfaceId(format!("nx:s4:blend-surf#{ordinal}"));
+        let owner =
+            SurfaceId::mint(format!("nx:s4:blend-surf#{ordinal}")).expect("identity grammar");
         let procedural = ProceduralSurface::new(
-            ProceduralSurfaceId(format!("nx:s4:blend-construction#{ordinal}")),
+            ProceduralSurfaceId::mint(format!("nx:s4:blend-construction#{ordinal}"))
+                .expect("identity grammar"),
             ProceduralSurfaceDefinition::Blend {
                 supports: [None, None],
                 spine: None,
@@ -1021,8 +1043,8 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     ));
 
     let mut face_blend_ir = ir.clone();
-    let first_support = SurfaceId("nx:s4:blend-support#a".into());
-    let second_support = SurfaceId("nx:s4:blend-support#b".into());
+    let first_support = SurfaceId::mint("nx:s4:blend-support#a").expect("identity grammar");
+    let second_support = SurfaceId::mint("nx:s4:blend-support#b").expect("identity grammar");
     for procedural in &mut face_blend_ir.model.procedural_surfaces {
         procedural.edit_definition(|definition| {
             let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
@@ -1116,9 +1138,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     ));
     assert!(super::blend_feature_definition(&ir, &[], super::NxBlendFamily::Edge,).is_none());
 
-    let conic_owner = SurfaceId("nx:s4:blend-surf#3".into());
+    let conic_owner = SurfaceId::mint("nx:s4:blend-surf#3").expect("identity grammar");
     let conic = ProceduralSurface::new(
-        ProceduralSurfaceId("nx:s4:blend-construction#3".into()),
+        ProceduralSurfaceId::mint("nx:s4:blend-construction#3").expect("identity grammar"),
         ProceduralSurfaceDefinition::Blend {
             supports: [None, None],
             spine: None,
@@ -1130,13 +1152,13 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     );
     attach_test_body_procedural_surface(
         &mut ir,
-        &BodyId("nx:s4:body#3".into()),
+        &BodyId::mint("nx:s4:body#3").expect("identity grammar"),
         conic_owner,
         conic,
     );
     assert!(super::blend_feature_definition(
         &ir,
-        &[BodyId("nx:s4:body#3".into())],
+        &[BodyId::mint("nx:s4:body#3").expect("identity grammar")],
         super::NxBlendFamily::Edge,
     )
     .is_none());
@@ -1185,9 +1207,9 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    ir.model.shells[0].id = ShellId("nx:s3:shell#58".into());
-    ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
-    ir.model.loops[0].id = LoopId("nx:s3:loop#59".into());
+    ir.model.shells[0].id = ShellId::mint("nx:s3:shell#58").expect("identity grammar");
+    ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
+    ir.model.loops[0].id = LoopId::mint("nx:s3:loop#59").expect("identity grammar");
     let references = [(13, 58), (14, 60), (15, 59)].map(|(topology_type, topology_xmt)| {
         ParasolidTopologyAttributeListReference {
             id: format!("topology-reference-{topology_type}"),
@@ -1290,12 +1312,12 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         .model
         .attributes
         .iter()
-        .filter(|attribute| attribute.id.0.contains("topology-numeric-attribute"))
+        .filter(|attribute| attribute.id.as_str().contains("topology-numeric-attribute"))
         .collect::<Vec<_>>();
     assert_eq!(attributes.len(), 6);
     assert_eq!(
         attributes[0].target,
-        AttributeTarget::Shell(ShellId("nx:s3:shell#58".into()))
+        AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar"))
     );
     assert_eq!(attributes[0].name, "parasolid_type_integer_reference_3");
     assert_eq!(
@@ -1312,15 +1334,15 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     for (attributes, target) in [
         (
             &attributes[0..2],
-            AttributeTarget::Shell(ShellId("nx:s3:shell#58".into())),
+            AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar")),
         ),
         (
             &attributes[2..4],
-            AttributeTarget::Face(FaceId("nx:s3:face#60".into())),
+            AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar")),
         ),
         (
             &attributes[4..6],
-            AttributeTarget::Loop(LoopId("nx:s3:loop#59".into())),
+            AttributeTarget::Loop(LoopId::mint("nx:s3:loop#59").expect("identity grammar")),
         ),
     ] {
         assert!(attributes
@@ -1589,7 +1611,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
+    ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
@@ -1749,11 +1771,12 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         .model
         .attributes
         .iter()
-        .filter(|attribute| attribute.id.0.contains("topology-numeric-attribute"))
+        .filter(|attribute| attribute.id.as_str().contains("topology-numeric-attribute"))
         .collect::<Vec<_>>();
     assert_eq!(attributes.len(), 2);
     assert!(attributes.iter().all(|attribute| {
-        attribute.target == AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
+        attribute.target
+            == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
             && attribute.name == "CLASS.field_0.parasolid_type_2"
     }));
     assert_ne!(attributes[0].id, attributes[1].id);
@@ -1779,7 +1802,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
+    ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
@@ -1880,11 +1903,17 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         .model
         .attributes
         .iter()
-        .filter(|attribute| attribute.id.0.contains("topology-structured-attribute"))
+        .filter(|attribute| {
+            attribute
+                .id
+                .as_str()
+                .contains("topology-structured-attribute")
+        })
         .collect::<Vec<_>>();
     assert_eq!(attributes.len(), 6);
     assert!(attributes.iter().all(|attribute| {
-        attribute.target == AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
+        attribute.target
+            == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
     }));
     let values = attributes
         .iter()

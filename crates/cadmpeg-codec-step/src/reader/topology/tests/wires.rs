@@ -327,7 +327,7 @@ fn subedge_inherits_parent_edge_geometry_without_losing_topology() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .all(|record| record.id.0 != "step:data:subedge#19"));
+        .all(|record| record.id.as_str() != "step:data:subedge#19"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

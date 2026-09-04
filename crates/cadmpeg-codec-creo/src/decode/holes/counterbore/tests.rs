@@ -55,7 +55,7 @@ fn boundary_scan() -> crate::container::ContainerScan<'static> {
 
 fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
     cadmpeg_ir::geometry::Curve {
-        id: CurveId("creo:visibgeom:curve#11".to_string()),
+        id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -68,7 +68,7 @@ fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
 
 fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
-        id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: origin.into(),
             normal: [0.0, 0.0, 1.0].into(),

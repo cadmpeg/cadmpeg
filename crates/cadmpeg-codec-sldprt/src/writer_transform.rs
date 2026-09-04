@@ -21,43 +21,43 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         .model
         .regions
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let shells = ir
         .model
         .shells
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let faces = ir
         .model
         .faces
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let loops = ir
         .model
         .loops
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let coedges = ir
         .model
         .coedges
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let edges = ir
         .model
         .edges
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let vertices = ir
         .model
         .vertices
         .iter()
-        .map(|value| (value.id.0.as_str(), value))
+        .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
 
     let mut point_transforms = HashMap::new();
@@ -110,18 +110,18 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     }
 
     for point in &mut ir.model.points {
-        if let Some(transform) = point_transforms.get(point.id.0.as_str()) {
+        if let Some(transform) = point_transforms.get(point.id.as_str()) {
             point.position = transform.apply_point(point.position);
         }
     }
     for surface in &mut ir.model.surfaces {
-        let Some(transform) = surface_transforms.get(surface.id.0.as_str()).copied() else {
+        let Some(transform) = surface_transforms.get(surface.id.as_str()).copied() else {
             continue;
         };
         transform_surface(&mut surface.geometry, transform)?;
     }
     for curve in &mut ir.model.curves {
-        let Some(transform) = curve_transforms.get(curve.id.0.as_str()).copied() else {
+        let Some(transform) = curve_transforms.get(curve.id.as_str()).copied() else {
             continue;
         };
         transform_curve(&mut curve.geometry, transform)?;

@@ -1074,7 +1074,8 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
 
     let mut mixed = edited;
     let mut inline = mixed.model.pcurves[0].clone();
-    inline.id = cadmpeg_ir::ids::PcurveId("generated:mixed-inline-pcurve#0".into());
+    inline.id = cadmpeg_ir::ids::PcurveId::mint("generated:mixed-inline-pcurve#0")
+        .expect("identity grammar");
     let Some(parameter_range) = inline.parameter_range() else {
         panic!("ref-form fixture carries a parameter range")
     };

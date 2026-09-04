@@ -294,7 +294,11 @@ fn equal_arc_length_parameterization(
         ir.model
             .curves
             .iter()
-            .find(|curve| curve.id == CurveId(format!("iges:model:curve#D{sequence}")))
+            .find(|curve| {
+                curve.id
+                    == CurveId::mint(format!("iges:model:curve#D{sequence}"))
+                        .expect("identity grammar")
+            })
             .map(|curve| &curve.geometry)
     };
     let Some((first, second)) = curve_geometry(first_sequence).zip(curve_geometry(second_sequence))
@@ -1259,7 +1263,8 @@ pub(super) fn project(
             continue;
         };
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("iges:model:surface#D{}", entry.sequence)),
+            id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: transform.point(local_origin),
                 normal,
@@ -1308,8 +1313,10 @@ pub(super) fn project(
             ));
             continue;
         }
-        let first_id = CurveId(format!("iges:model:curve#D{first_sequence}"));
-        let second_id = CurveId(format!("iges:model:curve#D{second_sequence}"));
+        let first_id =
+            CurveId::mint(format!("iges:model:curve#D{first_sequence}")).expect("identity grammar");
+        let second_id = CurveId::mint(format!("iges:model:curve#D{second_sequence}"))
+            .expect("identity grammar");
         let (Some((first, first_interval)), Some((mut second, second_interval))) = (
             bounded_nurbs(ir, &first_id, ctx, &composite_index),
             bounded_nurbs(ir, &second_id, ctx, &composite_index),
@@ -1355,7 +1362,8 @@ pub(super) fn project(
             ));
             continue;
         };
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
@@ -1364,10 +1372,16 @@ pub(super) fn project(
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
-                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+                ProceduralSurfaceId::mint(format!(
+                    "iges:model:procedural-surface#D{}",
+                    entry.sequence
+                ))
+                .expect("identity grammar"),
                 ProceduralSurfaceDefinition::Ruled {
-                    first: CurveId(format!("iges:model:curve#D{first_sequence}")),
-                    second: CurveId(format!("iges:model:curve#D{second_sequence}")),
+                    first: CurveId::mint(format!("iges:model:curve#D{first_sequence}"))
+                        .expect("identity grammar"),
+                    second: CurveId::mint(format!("iges:model:curve#D{second_sequence}"))
+                        .expect("identity grammar"),
                 },
                 Some([
                     Some(first_interval[0]),
@@ -1478,10 +1492,11 @@ pub(super) fn project(
             let procedural_directrix = if entry.transform == 0 {
                 directrix_id
             } else {
-                let placed_id = CurveId(format!(
+                let placed_id = CurveId::mint(format!(
                     "iges:model:curve#D{}-placed-directrix",
                     entry.sequence
-                ));
+                ))
+                .expect("identity grammar");
                 ir.model.curves.push(Curve {
                     id: placed_id.clone(),
                     geometry: CurveGeometry::Transformed {
@@ -1492,9 +1507,13 @@ pub(super) fn project(
                 });
                 placed_id
             };
-            let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
-            let procedural_id =
-                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence));
+            let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+                .expect("identity grammar");
+            let procedural_id = ProceduralSurfaceId::mint(format!(
+                "iges:model:procedural-surface#D{}",
+                entry.sequence
+            ))
+            .expect("identity grammar");
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -1579,10 +1598,11 @@ pub(super) fn project(
         let procedural_directrix = if entry.transform == 0 {
             directrix_id
         } else {
-            let placed_id = CurveId(format!(
+            let placed_id = CurveId::mint(format!(
                 "iges:model:curve#D{}-placed-directrix",
                 entry.sequence
-            ));
+            ))
+            .expect("identity grammar");
             ir.model.curves.push(Curve {
                 id: placed_id.clone(),
                 geometry: CurveGeometry::Nurbs(placed_directrix.clone()),
@@ -1590,7 +1610,8 @@ pub(super) fn project(
             });
             placed_id
         };
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
         let Ok(surface) = NurbsSurface::new(
             placed_directrix.degree(),
             1,
@@ -1618,7 +1639,11 @@ pub(super) fn project(
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
-                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+                ProceduralSurfaceId::mint(format!(
+                    "iges:model:procedural-surface#D{}",
+                    entry.sequence
+                ))
+                .expect("identity grammar"),
                 ProceduralSurfaceDefinition::Extrusion {
                     directrix: procedural_directrix,
                     parameter_interval: Some(source_interval),
@@ -1693,7 +1718,8 @@ pub(super) fn project(
                 continue;
             }
         };
-        let axis_id = CurveId(format!("iges:model:curve#D{axis_sequence}"));
+        let axis_id =
+            CurveId::mint(format!("iges:model:curve#D{axis_sequence}")).expect("identity grammar");
         let Some(axis_curve) = ir.model.curves.iter().find(|curve| curve.id == axis_id) else {
             losses.push(entity_loss(entry, "revolution axis carrier is missing"));
             continue;
@@ -1743,10 +1769,11 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                procedural_directrix = CurveId(format!(
+                procedural_directrix = CurveId::mint(format!(
                     "iges:model:curve#D{}-placed-generatrix",
                     entry.sequence
-                ));
+                ))
+                .expect("identity grammar");
                 ir.model.curves.push(Curve {
                     id: procedural_directrix.clone(),
                     geometry: CurveGeometry::Transformed {
@@ -1765,9 +1792,13 @@ pub(super) fn project(
                 };
                 procedural_axis_direction = direction.scale(orientation);
             }
-            let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
-            let procedural_id =
-                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence));
+            let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+                .expect("identity grammar");
+            let procedural_id = ProceduralSurfaceId::mint(format!(
+                "iges:model:procedural-surface#D{}",
+                entry.sequence
+            ))
+            .expect("identity grammar");
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -1859,7 +1890,8 @@ pub(super) fn project(
             }
         }
         let placed_generatrix = (entry.transform != 0).then(|| generatrix.clone());
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
         let Ok(surface) = NurbsSurface::new(
             generatrix.degree(),
             2,
@@ -1887,7 +1919,9 @@ pub(super) fn project(
             geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
-        let mut procedural_directrix = CurveId(format!("iges:model:curve#D{generatrix_sequence}"));
+        let mut procedural_directrix =
+            CurveId::mint(format!("iges:model:curve#D{generatrix_sequence}"))
+                .expect("identity grammar");
         let mut procedural_axis_origin = axis_origin;
         let mut procedural_axis_direction = axis_direction;
         let procedural_is_exact = if entry.transform == 0 {
@@ -1898,10 +1932,11 @@ pub(super) fn project(
             for point in placed_generatrix.control_points_mut() {
                 *point = transform.point(*point);
             }
-            procedural_directrix = CurveId(format!(
+            procedural_directrix = CurveId::mint(format!(
                 "iges:model:curve#D{}-placed-generatrix",
                 entry.sequence
-            ));
+            ))
+            .expect("identity grammar");
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Nurbs(placed_generatrix),
@@ -1924,10 +1959,11 @@ pub(super) fn project(
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(format!(
+                    ProceduralSurfaceId::mint(format!(
                         "iges:model:procedural-surface#D{}",
                         entry.sequence
-                    )),
+                    ))
+                    .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Revolution {
                         directrix: procedural_directrix,
                         axis_origin: procedural_axis_origin,
@@ -2288,7 +2324,8 @@ pub(super) fn project(
                 continue 'surface;
             }
         }
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
@@ -2297,7 +2334,11 @@ pub(super) fn project(
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
-                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+                ProceduralSurfaceId::mint(format!(
+                    "iges:model:procedural-surface#D{}",
+                    entry.sequence
+                ))
+                .expect("identity grammar"),
                 ProceduralSurfaceDefinition::Exact {
                     spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                         ranges: [u_range, v_range],
@@ -2360,7 +2401,8 @@ pub(super) fn project(
             ));
             continue;
         }
-        let support_id = SurfaceId(format!("iges:model:surface#D{support_sequence}"));
+        let support_id = SurfaceId::mint(format!("iges:model:surface#D{support_sequence}"))
+            .expect("identity grammar");
         let Some(support) = ir
             .model
             .surfaces
@@ -2417,7 +2459,8 @@ pub(super) fn project(
             ));
             continue;
         }
-        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let surface_id = SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+            .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry,
@@ -2426,7 +2469,11 @@ pub(super) fn project(
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
-                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+                ProceduralSurfaceId::mint(format!(
+                    "iges:model:procedural-surface#D{}",
+                    entry.sequence
+                ))
+                .expect("identity grammar"),
                 ProceduralSurfaceDefinition::Offset {
                     support: support_id,
                     distance: signed_distance,

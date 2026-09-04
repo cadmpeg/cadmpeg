@@ -19,7 +19,7 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
         (2, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(normal[0], normal[1], normal[2]),

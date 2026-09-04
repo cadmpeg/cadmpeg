@@ -781,8 +781,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             form: 33,
             form_offset: 0,
             candidate_faces: vec![
-                FaceId("f3d:brep:entity#12".into()),
-                FaceId("f3d:brep:entity#19".into()),
+                FaceId::mint("f3d:brep:entity#12").expect("identity grammar"),
+                FaceId::mint("f3d:brep:entity#19").expect("identity grammar"),
             ],
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),

@@ -39,7 +39,7 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId("model-surface".into()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("model-surface").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -59,7 +59,7 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
 fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId("model-surface".into()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("model-surface").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1433,11 +1433,11 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
     ir.model.faces.push(Face {
-        id: FaceId("face".into()),
-        shell: ShellId("shell".into()),
-        surface: SurfaceId("surface".into()),
+        id: FaceId::mint("face").expect("identity grammar"),
+        shell: ShellId::mint("shell").expect("identity grammar"),
+        surface: SurfaceId::mint("surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId("loop".into())],
+        loops: vec![LoopId::mint("loop").expect("identity grammar")],
         name: None,
         color: None,
         tolerance: None,
@@ -1468,7 +1468,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
                 native: resolved_native,
             })),
             ..
-        } if faces == &[FaceId("face".into())] && resolved_native == &native
+        } if faces == &[FaceId::mint("face").expect("identity grammar")] && resolved_native == &native
     ));
 }
 
@@ -1508,7 +1508,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("surface".into()),
+        id: SurfaceId::mint("surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1517,11 +1517,11 @@ fn configuration_frame_alias_binds_without_body_membership() {
         source_object: None,
     });
     ir.model.faces.push(Face {
-        id: FaceId("face".into()),
-        shell: ShellId("shell".into()),
-        surface: SurfaceId("surface".into()),
+        id: FaceId::mint("face").expect("identity grammar"),
+        shell: ShellId::mint("shell").expect("identity grammar"),
+        surface: SurfaceId::mint("surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId("loop".into())],
+        loops: vec![LoopId::mint("loop").expect("identity grammar")],
         name: None,
         color: None,
         tolerance: None,
@@ -1548,6 +1548,6 @@ fn configuration_frame_alias_binds_without_body_membership() {
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face(FaceSelection::Faces(faces))),
             ..
-        } if faces == &[FaceId("face".into())]
+        } if faces == &[FaceId::mint("face").expect("identity grammar")]
     ));
 }

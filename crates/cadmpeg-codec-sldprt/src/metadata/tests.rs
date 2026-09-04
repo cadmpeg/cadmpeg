@@ -94,7 +94,7 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
         .iter()
         .find(|attribute| attribute.name == "transformed_reference_plane")
         .unwrap();
-    assert!(transformed.id.0.ends_with(":147"));
+    assert!(transformed.id.as_str().ends_with(":147"));
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn decode_extracts_document_envelope() {
         .iter()
         .find(|attribute| attribute.name == "transformed_reference_plane")
         .expect("transformed reference plane");
-    assert!(transformed.id.0.ends_with(":147"));
+    assert!(transformed.id.as_str().ends_with(":147"));
     assert_eq!(
         transformed.values,
         vec![

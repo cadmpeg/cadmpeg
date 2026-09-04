@@ -236,7 +236,7 @@ fn buf_line_count(buf: &[u8]) -> usize {
 pub(crate) fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("cyl".into()),
+        id: SurfaceId::mint("cyl").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -424,7 +424,8 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
 #[test]
 pub(crate) fn writer_round_trips_product_body_ownership() {
     let mut ir = unit_cube();
-    let product = cadmpeg_ir::ids::ProductDefinitionId("product-0".into());
+    let product =
+        cadmpeg_ir::ids::ProductDefinitionId::mint("product-0").expect("identity grammar");
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
@@ -439,7 +440,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
             native_ref: None,
         });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: cadmpeg_ir::ids::OccurrenceId("root-0".into()),
+        id: cadmpeg_ir::ids::OccurrenceId::mint("root-0").expect("identity grammar"),
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
@@ -640,12 +641,12 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
     let mut source = CadIr::empty();
     source.model.curves.extend([
         Curve {
-            id: CurveId("parabola".into()),
+            id: CurveId::mint("parabola").expect("identity grammar"),
             geometry: parabola.clone(),
             source_object: None,
         },
         Curve {
-            id: CurveId("hyperbola".into()),
+            id: CurveId::mint("hyperbola").expect("identity grammar"),
             geometry: hyperbola.clone(),
             source_object: None,
         },
@@ -680,7 +681,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
 pub(crate) fn standalone_geometry_uses_general_shape_representation() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("line".into()),
+        id: CurveId::mint("line").expect("identity grammar"),
         geometry: CurveGeometry::Line {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
@@ -810,7 +811,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube();
-    let appearance = AppearanceId("test:appearance#hidden".into());
+    let appearance = AppearanceId::mint("test:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
         name: Some("hidden face".into()),
@@ -870,8 +871,9 @@ fn writer_round_trips_surface_appearance_transparency() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube();
-    let appearance = AppearanceId("test:appearance#transparent".into());
-    let second_appearance = AppearanceId("test:appearance#more-transparent".into());
+    let appearance = AppearanceId::mint("test:appearance#transparent").expect("identity grammar");
+    let second_appearance =
+        AppearanceId::mint("test:appearance#more-transparent").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
         name: Some("transparent face".into()),
@@ -963,7 +965,7 @@ fn writer_round_trips_presentation_layer_visibility() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#hidden".into()),
+        id: LayerId::mint("test:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
         description: Some("layer visibility".into()),
         visible: Some(false),
@@ -1005,7 +1007,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#unnamed".into()),
+        id: LayerId::mint("test:layer#unnamed").expect("identity grammar"),
         name: String::new(),
         description: Some("unnamed layer".into()),
         visible: Some(false),
@@ -1089,7 +1091,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
     for (geom, kw) in cases {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("s".into()),
+            id: SurfaceId::mint("s").expect("identity grammar"),
             geometry: geom,
             source_object: None,
         });

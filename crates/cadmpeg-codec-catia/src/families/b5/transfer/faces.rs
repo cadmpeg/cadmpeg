@@ -382,9 +382,11 @@ pub(super) fn emit_faces(
     let ownership = &plan.ownership;
     let loop_orientation = &plan.loop_orientation;
 
-    let body_id = BodyId("catia:b5:body#0".to_string());
+    let body_id = BodyId::mint("catia:b5:body#0".to_string()).expect("identity grammar");
     let region_ids: Vec<RegionId> = (0..ownership.components.len())
-        .map(|component| RegionId(format!("catia:b5:region#{component}")))
+        .map(|component| {
+            RegionId::mint(format!("catia:b5:region#{component}")).expect("identity grammar")
+        })
         .collect();
     annotate(
         annotations,
@@ -407,7 +409,8 @@ pub(super) fn emit_faces(
     });
     for (component_index, component_faces) in ownership.components.iter().enumerate() {
         let region_id = region_ids[component_index].clone();
-        let shell_id = ShellId(format!("catia:b5:shell#{component_index}"));
+        let shell_id =
+            ShellId::mint(format!("catia:b5:shell#{component_index}")).expect("identity grammar");
         annotate(
             annotations,
             &region_id,
@@ -438,7 +441,10 @@ pub(super) fn emit_faces(
             region: region_id,
             faces: component_faces
                 .iter()
-                .map(|face| FaceId(format!("catia:b5:face#{}", graph.faces[*face].object_id)))
+                .map(|face| {
+                    FaceId::mint(format!("catia:b5:face#{}", graph.faces[*face].object_id))
+                        .expect("identity grammar")
+                })
                 .collect(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
@@ -447,11 +453,13 @@ pub(super) fn emit_faces(
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for (face_index, face) in graph.faces.iter().enumerate() {
-        let face_id = FaceId(format!("catia:b5:face#{}", face.object_id));
-        let shell_id = ShellId(format!(
+        let face_id =
+            FaceId::mint(format!("catia:b5:face#{}", face.object_id)).expect("identity grammar");
+        let shell_id = ShellId::mint(format!(
             "catia:b5:shell#{}",
             ownership.face_components[face_index]
-        ));
+        ))
+        .expect("identity grammar");
         let Some(boundary_roles) =
             b5_boundary_roles(ir, graph, face, loop_orientation, surface_ids, pcurve_uses)
         else {
@@ -476,7 +484,9 @@ pub(super) fn emit_faces(
             loops: face
                 .loops
                 .iter()
-                .map(|loop_id| LoopId(format!("catia:b5:loop#{loop_id}")))
+                .map(|loop_id| {
+                    LoopId::mint(format!("catia:b5:loop#{loop_id}")).expect("identity grammar")
+                })
                 .collect(),
             name: None,
             color: None,
@@ -487,9 +497,13 @@ pub(super) fn emit_faces(
             let orientation = &loop_orientation[loop_id_value];
             let senses = &orientation.reversed;
             let member_order = &orientation.member_order;
-            let loop_id = LoopId(format!("catia:b5:loop#{loop_id_value}"));
+            let loop_id =
+                LoopId::mint(format!("catia:b5:loop#{loop_id_value}")).expect("identity grammar");
             let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edges.len())
-                .map(|index| CoedgeId(format!("catia:b5:coedge#{loop_id_value}-{index}")))
+                .map(|index| {
+                    CoedgeId::mint(format!("catia:b5:coedge#{loop_id_value}-{index}"))
+                        .expect("identity grammar")
+                })
                 .collect();
             let coedge_ids: Vec<CoedgeId> = member_order
                 .iter()
@@ -502,7 +516,8 @@ pub(super) fn emit_faces(
                     let endpoints = graph.edge_vertices[&edge];
                     let endpoint = endpoints[1 - usize::from(senses[member])];
                     AnchoredVertexUse {
-                        vertex: VertexId(format!("catia:b5:vertex#{endpoint}")),
+                        vertex: VertexId::mint(format!("catia:b5:vertex#{endpoint}"))
+                            .expect("identity grammar"),
                         after: coedge_ids_by_member[member].clone(),
                         pcurves: Vec::new(),
                     }
@@ -648,7 +663,7 @@ mod tests {
                 let start_point = points[start];
                 let end_point = points[end];
                 pcurves.push(Pcurve {
-                    id: PcurveId(format!("pc#{pcurve}")),
+                    id: PcurveId::mint(format!("pc#{pcurve}")).expect("identity grammar"),
                     geometry: PcurveGeometry::Line {
                         origin: Point2::new(start_point[0], start_point[1]),
                         direction: Point2::new(
@@ -664,7 +679,10 @@ mod tests {
                 });
                 pcurve_uses.insert(
                     (loop_id, member),
-                    (PcurveId(format!("pc#{pcurve}")), [0.0, 1.0]),
+                    (
+                        PcurveId::mint(format!("pc#{pcurve}")).expect("identity grammar"),
+                        [0.0, 1.0],
+                    ),
                 );
             }
             loops.insert(
@@ -721,7 +739,7 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("surface#10".to_string()),
+            id: SurfaceId::mint("surface#10".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -737,7 +755,10 @@ mod tests {
                 &graph,
                 &graph.faces[0],
                 &orientations,
-                &HashMap::from([(10, SurfaceId("surface#10".to_string()))]),
+                &HashMap::from([(
+                    10,
+                    SurfaceId::mint("surface#10".to_string()).expect("identity grammar")
+                )]),
                 &pcurve_uses,
             ),
             Some(vec![LoopBoundaryRole::Inner, LoopBoundaryRole::Outer])

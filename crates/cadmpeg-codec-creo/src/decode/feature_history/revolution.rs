@@ -164,12 +164,16 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             };
             let surface_id = native_surface.map_or_else(
                 || {
-                    SurfaceId(format!(
+                    SurfaceId::mint(format!(
                         "creo:feature:revolution_surface#{feature_id}:segment{}",
                         segment.external_id
                     ))
+                    .expect("identity grammar")
                 },
-                |id| SurfaceId(format!("creo:visibgeom:surface#{id}")),
+                |id| {
+                    SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                        .expect("identity grammar")
+                },
             );
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
@@ -227,7 +231,9 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ) else {
                     continue;
                 };
-                let surface_id = SurfaceId(format!("creo:visibgeom:surface#{native_surface}"));
+                let surface_id =
+                    SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface}"))
+                        .expect("identity grammar");
                 if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                     continue;
                 }
@@ -265,10 +271,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 || format!("offset{}", spline.offset),
                 |entity_id| entity_id.to_string(),
             );
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
                 definition.id
-            ));
+            ))
+            .expect("identity grammar");
             let Some(CurveGeometry::Nurbs(directrix)) =
                 exactly_one(ir.model.curves.iter().filter(|curve| curve.id == curve_id))
                     .map(|curve| &curve.geometry)
@@ -286,10 +293,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             let Some(native_surface) = native_surface else {
                 continue;
             };
-            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{native_surface}"));
-            let procedural_id = ProceduralSurfaceId(format!(
+            let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{native_surface}"))
+                .expect("identity grammar");
+            let procedural_id = ProceduralSurfaceId::mint(format!(
                 "creo:feature:revolution_construction#{feature_id}:{suffix}"
-            ));
+            ))
+            .expect("identity grammar");
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
@@ -397,9 +406,9 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                     continue;
                 };
                 pending.push((
-                    CurveId(format!(
+                    CurveId::mint(format!(
                         "creo:feature:revolution_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
-                    )),
+                    )).expect("identity grammar"),
                     geometry,
                     transform.offset,
                     format!(
@@ -474,9 +483,9 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                     continue;
                 };
                 pending.push((
-                    CurveId(format!(
+                    CurveId::mint(format!(
                         "creo:feature:extrusion_vertex_orbit#{feature_id}:profile{profile_index}:vertex{vertex_index}"
-                    )),
+                    )).expect("identity grammar"),
                     geometry,
                     transform.offset,
                     format!(
