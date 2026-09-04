@@ -7624,42 +7624,47 @@ fn zero_entity_support_runs(
             id: format!("catia:zero-entity:support-run#{index}"),
             carrier_byte_offset: run.carrier_pos as u64,
             carrier_record_ordinal: run.carrier_record_ordinal,
-            face: run.face.map(|face| CatiaZeroEntityFace {
-                byte_offset: face.pos as u64,
-                record_ordinal: face.record_ordinal,
-                tag: face.tag,
-                allocations: face.allocations,
-                loop_terminals: face.loop_terminals,
-                loops: face
-                    .loops
-                    .into_iter()
-                    .map(|loop_record| {
-                        let typed_records = loop_record
-                            .typed_references
-                            .iter()
-                            .map(|ordinal| {
-                                zero_entity_record(records, *ordinal)
-                                    .map(|record| record.id.clone())
-                            })
-                            .collect::<Option<Vec<_>>>()
-                            .unwrap_or_default();
-                        CatiaZeroEntityLoop {
-                            byte_offset: loop_record.pos as u64,
-                            record_ordinal: loop_record.record_ordinal,
-                            tag: loop_record.tag,
-                            member_ids: loop_record.member_ids,
-                            typed_references: loop_record.typed_references,
-                            typed_records,
-                            support_record_ordinals: loop_record.support_record_ordinals,
-                            terminal_id: loop_record.terminal_id,
-                            gap: loop_record.gap,
-                            loop_class: loop_record.loop_class,
-                            forward_senses: loop_record.forward_senses,
-                            oriented_model_endpoints: loop_record.oriented_model_endpoints,
-                        }
-                    })
-                    .collect(),
-                terminal_control: face.terminal_control,
+            face: run.face.map(|face| {
+                let loop_terminals = face.loop_terminals();
+                let terminal_control = face.terminal_control.as_byte();
+                CatiaZeroEntityFace {
+                    byte_offset: face.pos as u64,
+                    record_ordinal: face.record_ordinal,
+                    tag: face.tag,
+                    allocations: face.allocations,
+                    loop_terminals,
+                    loops: face
+                        .loops
+                        .into_iter()
+                        .flatten()
+                        .map(|loop_record| {
+                            let typed_records = loop_record
+                                .typed_references
+                                .iter()
+                                .map(|ordinal| {
+                                    zero_entity_record(records, *ordinal)
+                                        .map(|record| record.id.clone())
+                                })
+                                .collect::<Option<Vec<_>>>()
+                                .unwrap_or_default();
+                            CatiaZeroEntityLoop {
+                                byte_offset: loop_record.pos as u64,
+                                record_ordinal: loop_record.record_ordinal,
+                                tag: loop_record.tag,
+                                member_ids: loop_record.member_ids,
+                                typed_references: loop_record.typed_references,
+                                typed_records,
+                                support_record_ordinals: loop_record.support_record_ordinals,
+                                terminal_id: loop_record.terminal_id,
+                                gap: loop_record.gap,
+                                loop_class: loop_record.loop_class,
+                                forward_senses: loop_record.forward_senses,
+                                oriented_model_endpoints: loop_record.oriented_model_endpoints,
+                            }
+                        })
+                        .collect(),
+                    terminal_control,
+                }
             }),
             supports: run
                 .supports

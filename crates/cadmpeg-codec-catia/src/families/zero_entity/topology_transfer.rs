@@ -122,7 +122,7 @@ pub(crate) fn transfer_closed_face_topology(
             .iter()
             .map(|support| (support.record_ordinal, support))
             .collect::<HashMap<_, _>>();
-        for loop_record in &face.loops {
+        for loop_record in face.loops.iter().flatten() {
             if loop_record.support_record_ordinals.len() != loop_record.forward_senses.len()
                 || loop_record.support_record_ordinals.len()
                     != loop_record.oriented_model_endpoints.len()
@@ -501,6 +501,7 @@ pub(crate) fn transfer_closed_face_topology(
         let loop_ids = face
             .loops
             .iter()
+            .flatten()
             .map(|loop_record| {
                 LoopId::mint(format!(
                     "catia:zero-entity:topology-loop#{}",
@@ -509,7 +510,12 @@ pub(crate) fn transfer_closed_face_topology(
                 .expect("identity grammar")
             })
             .collect::<Vec<_>>();
-        let outer_sense = match face.loops.first()?.loop_class {
+        let outer_sense = match face
+            .loops
+            .as_ref()
+            .and_then(|loops| loops.first())?
+            .loop_class
+        {
             0x41 => Sense::Forward,
             0xc1 => Sense::Reversed,
             _ => return None,
@@ -543,7 +549,7 @@ pub(crate) fn transfer_closed_face_topology(
             tolerance: None,
         });
 
-        for (loop_index, loop_record) in face.loops.iter().enumerate() {
+        for (loop_index, loop_record) in face.loops.iter().flatten().enumerate() {
             let loop_id = &loop_ids[loop_index];
             let coedge_ids = loop_record
                 .support_record_ordinals
@@ -756,7 +762,11 @@ pub(crate) fn transfer_closed_face_topology(
         faces: support_runs.len(),
         loops: support_runs
             .iter()
-            .map(|run| run.face.as_ref().map_or(0, |face| face.loops.len()))
+            .map(|run| {
+                run.face
+                    .as_ref()
+                    .map_or(0, |face| face.loops.as_ref().map_or(0, Vec::len))
+            })
             .sum(),
         coedges: occurrences.len(),
         edges: edge_candidates.len(),
@@ -902,8 +912,7 @@ mod tests {
                 record_ordinal: face_ordinal,
                 tag: [0x5f, 0x0c],
                 allocations: vec![10, 3],
-                loop_terminals: vec![7],
-                loops: vec![super::super::records::ZeroEntityLoop {
+                loops: Some(vec![super::super::records::ZeroEntityLoop {
                     pos: face_ordinal as usize + 1,
                     record_ordinal: face_ordinal + 100,
                     tag: [0x62, 0x14],
@@ -918,8 +927,9 @@ mod tests {
                         .into_iter()
                         .map(|(start, end)| [start, end])
                         .collect(),
-                }],
-                terminal_control: 0x05,
+                }]),
+                terminal_control:
+                    crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
             }),
             supports,
         }
