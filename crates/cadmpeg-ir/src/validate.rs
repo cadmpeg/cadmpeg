@@ -246,7 +246,6 @@ mod tests {
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(

@@ -435,7 +435,6 @@ pub fn project_configurations(
                 material,
                 properties,
                 parameter_overrides: BTreeMap::new(),
-                suppressed_features: Vec::new(),
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
                 bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
@@ -534,7 +533,15 @@ pub fn bind_configuration_suppressed_features(
             configuration
                 .properties
                 .remove(&format!("suppressed:{name}"));
-            configuration.suppressed_features.push(feature.id.clone());
+            configuration.feature_states.insert(
+                feature.id.clone(),
+                cadmpeg_ir::features::ConfigurationFeatureState {
+                    suppressed: true,
+                    dependencies: feature.dependencies.clone(),
+                    outputs: Vec::new(),
+                    definition: feature.definition.clone(),
+                },
+            );
         }
     }
 }
@@ -894,7 +901,10 @@ mod tests {
         };
         let mut projected = project_configurations(&[table]).expect("ordered configuration table");
         bind_configuration_suppressed_features(&mut projected, std::slice::from_ref(&feature));
-        assert_eq!(projected[0].suppressed_features, [feature.id.clone()]);
+        assert_eq!(
+            projected[0].suppressed_features().collect::<Vec<_>>(),
+            [&feature.id]
+        );
         assert!(projected[0].properties.is_empty());
         assert_eq!(
             unresolved_configuration_suppressed_feature_count(&projected),
@@ -916,7 +926,7 @@ mod tests {
         }])
         .expect("ordered configuration table");
         bind_configuration_suppressed_features(&mut ambiguous, &[feature, duplicate]);
-        assert!(ambiguous[0].suppressed_features.is_empty());
+        assert!(ambiguous[0].suppressed_features().next().is_none());
         assert_eq!(
             unresolved_configuration_suppressed_feature_count(&ambiguous),
             1

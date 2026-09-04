@@ -555,22 +555,17 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
             )));
     }
-    let incoherent_configuration_suppression =
-        ir.model
-            .configurations
-            .iter()
-            .filter(|configuration| {
-                let mut suppressed = std::collections::HashSet::new();
-                configuration
-                    .suppressed_features
-                    .iter()
-                    .any(|feature| !feature_ids.contains(feature) || !suppressed.insert(feature))
-                    || (!configuration.feature_states.is_empty()
-                        && configuration.feature_states.iter().any(|(feature, state)| {
-                            state.suppressed != suppressed.contains(feature)
-                        }))
-            })
-            .count();
+    let incoherent_configuration_suppression = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| {
+            configuration
+                .feature_states
+                .keys()
+                .any(|feature| !feature_ids.contains(feature))
+        })
+        .count();
     let incoherent_configuration_overrides = ir
         .model
         .configurations
@@ -4205,7 +4200,6 @@ fn assign_configuration_bodies(
                 properties: std::collections::BTreeMap::new(),
                 bodies: cadmpeg_ir::ConfigurationBodies::Resolved(bodies),
                 parameter_values: std::collections::BTreeMap::new(),
-                suppressed_features: Vec::new(),
                 parameter_overrides: BTreeMap::new(),
                 feature_states: std::collections::BTreeMap::new(),
                 native_ref: None,

@@ -1400,7 +1400,6 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         material: None,
         properties: Default::default(),
         parameter_overrides: Default::default(),
-        suppressed_features: Vec::new(),
         bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: Default::default(),
         feature_states: Default::default(),
@@ -1512,9 +1511,15 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         .iter()
         .any(|loss| loss.message.contains("1 NX design configuration")));
 
-    ir.model.configurations[0]
-        .suppressed_features
-        .push(suppressed.id);
+    ir.model.configurations[0].feature_states.insert(
+        suppressed.id.clone(),
+        ConfigurationFeatureState {
+            suppressed: true,
+            dependencies: suppressed.dependencies,
+            outputs: Vec::new(),
+            definition: suppressed.definition,
+        },
+    );
     losses.clear();
     super::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());

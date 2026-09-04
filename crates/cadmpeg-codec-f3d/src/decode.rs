@@ -2474,10 +2474,6 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.configurations,
             &self.ir.model.parameters,
         );
-        crate::design::configurations::bind_configuration_suppressed_features(
-            &mut self.ir.model.configurations,
-            &self.ir.model.features,
-        );
         self.ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
             &self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -2750,6 +2746,10 @@ impl<'a> F3dDecodeSession<'a> {
             .model
             .spatial_sketch_constraints
             .sort_by(|a, b| a.id.cmp(&b.id));
+        crate::design::configurations::bind_configuration_suppressed_features(
+            &mut self.ir.model.configurations,
+            &self.ir.model.features,
+        );
         Ok(())
     }
 

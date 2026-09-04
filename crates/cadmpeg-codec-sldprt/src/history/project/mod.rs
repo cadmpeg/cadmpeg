@@ -847,7 +847,6 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
             bodies: ConfigurationBodies::Unresolved,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             native_ref: Some(configuration.id.clone()),
         })

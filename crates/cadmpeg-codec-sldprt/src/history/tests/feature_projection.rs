@@ -33,7 +33,6 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             bodies: cadmpeg_ir::features::ConfigurationBodies::Unresolved,
             parameter_values: BTreeMap::new(),
             feature_states: BTreeMap::from([(
