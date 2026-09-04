@@ -55,9 +55,9 @@ pub(super) fn check_annotations(
     findings: &mut Vec<Finding>,
 ) {
     let wanted: HashSet<&str> = annotations
-        .exactness
+        .exactness()
         .iter()
-        .filter_map(|(id, note)| (!note.fields.is_empty()).then_some(id.as_str()))
+        .filter_map(|(id, note)| (!note.fields().is_empty()).then_some(id.as_str()))
         .collect();
     let entity_json = annotated_entity_json(ir, &wanted);
     for id in annotations.provenance.keys() {
@@ -70,7 +70,7 @@ pub(super) fn check_annotations(
             );
         }
     }
-    for (id, note) in &annotations.exactness {
+    for (id, note) in annotations.exactness() {
         if !all_ids.contains(id) {
             annotation_finding(
                 findings,
@@ -80,7 +80,7 @@ pub(super) fn check_annotations(
             );
             continue;
         }
-        if note.fields.is_empty() {
+        if note.fields().is_empty() {
             continue;
         }
         let Some(entity) = entity_json.get(id) else {
@@ -92,7 +92,7 @@ pub(super) fn check_annotations(
             );
             continue;
         };
-        for path in note.fields.keys() {
+        for path in note.fields().keys() {
             if path.is_empty() || !field_path_resolves(entity, path) {
                 annotation_finding(
                     findings,

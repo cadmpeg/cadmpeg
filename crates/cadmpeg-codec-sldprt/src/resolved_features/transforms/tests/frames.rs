@@ -10,7 +10,6 @@ use crate::records::{
     SketchRelationKind,
 };
 use crate::resolved_features::relation_geometry::declared_entity_handle_circular_marker;
-use cadmpeg_ir::annotations::ExactnessNote;
 use cadmpeg_ir::features::{
     Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
     ParameterId, ParameterValue,
@@ -1279,11 +1278,11 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     let stream = builder.stream("test:support");
     builder.note(&sketch_id.0, stream, 200).tag("support");
     let mut annotations = builder.build();
+    let mut builder = AnnotationBuilder::resume(annotations);
     for id in [&sketch_id.0, &entity_id.0, &constraint_id.0] {
-        annotations
-            .exactness
-            .insert(id.clone(), ExactnessNote::default());
+        builder.exactness(id, cadmpeg_ir::Exactness::Derived);
     }
+    annotations = builder.build();
 
     bind_sketch_profiles(
         &mut features,
@@ -1300,7 +1299,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     assert!(entities.is_empty());
     assert!(constraints.is_empty());
     assert!(annotations.provenance.is_empty());
-    assert!(annotations.exactness.is_empty());
+    assert!(annotations.exactness().is_empty());
     assert!(matches!(
         features[0].definition,
         FeatureDefinition::Sketch { sketch: None, .. }

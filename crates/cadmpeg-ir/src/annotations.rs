@@ -22,7 +22,7 @@ pub struct Annotations {
     /// Source location for each annotated entity.
     pub provenance: BTreeMap<String, AnnotationProvenance>,
     /// Non-byte-exact entity or field annotations.
-    pub exactness: BTreeMap<String, ExactnessNote>,
+    exactness: BTreeMap<String, ExactnessNote>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,22 +132,82 @@ impl JsonSchema for Annotations {
 }
 
 /// Exactness for an entity and sparse overrides for its serialized fields.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExactnessNote {
     /// Exactness of the entity except where overridden by `fields`.
-    pub entity: Exactness,
+    entity: Exactness,
     /// Exactness overrides keyed by serde field path.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub fields: BTreeMap<String, Exactness>,
+    fields: BTreeMap<String, Exactness>,
 }
 
-impl Default for ExactnessNote {
-    fn default() -> Self {
-        Self {
-            entity: Exactness::ByteExact,
-            fields: BTreeMap::new(),
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ExactnessNoteWire {
+    entity: Exactness,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    fields: BTreeMap<String, Exactness>,
+}
+
+impl Serialize for ExactnessNote {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        ExactnessNoteWire {
+            entity: self.entity,
+            fields: self.fields.clone(),
         }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ExactnessNote {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = ExactnessNoteWire::deserialize(deserializer)?;
+        if wire.entity == Exactness::ByteExact && wire.fields.is_empty() {
+            return Err(D::Error::custom(
+                "ExactnessNote cannot store the implicit byte-exact default",
+            ));
+        }
+        if let Some(field) = wire
+            .fields
+            .iter()
+            .find_map(|(field, exactness)| (*exactness == wire.entity).then_some(field))
+        {
+            return Err(D::Error::custom(format!(
+                "ExactnessNote.fields[{field:?}] duplicates entity exactness"
+            )));
+        }
+        Ok(Self {
+            entity: wire.entity,
+            fields: wire.fields,
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for ExactnessNote {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ExactnessNote".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        ExactnessNoteWire::json_schema(generator)
+    }
+}
+
+impl ExactnessNote {
+    /// Exactness of the entity except where a field override exists.
+    pub const fn entity(&self) -> Exactness {
+        self.entity
+    }
+
+    /// Sparse field overrides whose values differ from entity exactness.
+    pub fn fields(&self) -> &BTreeMap<String, Exactness> {
+        &self.fields
     }
 }
 
@@ -228,11 +288,20 @@ impl AnnotationBuilder {
     /// the table's sparse absent-means-byte-exact representation.
     pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
         let id = id.to_string();
-        let note = self.annotations.exactness.entry(id.clone()).or_default();
-        note.entity = exactness;
-        note.fields.retain(|_, value| *value != exactness);
-        if exactness == Exactness::ByteExact && note.fields.is_empty() {
-            self.annotations.exactness.remove(&id);
+        if let Some(note) = self.annotations.exactness.get_mut(&id) {
+            note.entity = exactness;
+            note.fields.retain(|_, value| *value != exactness);
+            if exactness == Exactness::ByteExact && note.fields.is_empty() {
+                self.annotations.exactness.remove(&id);
+            }
+        } else if exactness != Exactness::ByteExact {
+            self.annotations.exactness.insert(
+                id,
+                ExactnessNote {
+                    entity: exactness,
+                    fields: BTreeMap::new(),
+                },
+            );
         }
         self
     }
@@ -266,13 +335,44 @@ impl AnnotationBuilder {
                 }
             }
         } else {
-            self.annotations
-                .exactness
-                .entry(id)
-                .or_default()
-                .fields
-                .insert(field, exactness);
+            match self.annotations.exactness.entry(id) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(ExactnessNote {
+                        entity: Exactness::ByteExact,
+                        fields: BTreeMap::from([(field, exactness)]),
+                    });
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let note = entry.get_mut();
+                    if exactness == note.entity {
+                        note.fields.remove(&field);
+                    } else {
+                        note.fields.insert(field, exactness);
+                    }
+                }
+            }
         }
+        self
+    }
+
+    /// Remove every sparse exactness annotation.
+    pub fn clear_exactness(&mut self) -> &mut Self {
+        self.annotations.exactness.clear();
+        self
+    }
+
+    /// Retain exactness annotations selected by identity.
+    pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) -> &mut Self {
+        self.annotations.exactness.retain(|id, _| keep(id));
+        self
+    }
+
+    /// Replace every exactness identity with a derived identity.
+    pub fn map_exactness_ids(&mut self, mut map: impl FnMut(&str) -> String) -> &mut Self {
+        self.annotations.exactness = std::mem::take(&mut self.annotations.exactness)
+            .into_iter()
+            .map(|(id, note)| (map(&id), note))
+            .collect();
         self
     }
 
@@ -295,6 +395,11 @@ impl AnnotationBuilder {
 }
 
 impl Annotations {
+    /// Sparse non-byte-exact annotations keyed by entity identity.
+    pub fn exactness(&self) -> &BTreeMap<String, ExactnessNote> {
+        &self.exactness
+    }
+
     /// Return the number of streams retained for wire serialization.
     #[must_use]
     pub fn stream_count(&self) -> usize {
@@ -424,6 +529,31 @@ mod tests {
 
         builder.exactness("f3d:edge#0", Exactness::ByteExact);
         assert!(builder.annotations().exactness.is_empty());
+    }
+
+    #[test]
+    fn exactness_wire_rejects_the_implicit_default_as_an_explicit_note() {
+        let error = serde_json::from_value::<ExactnessNote>(serde_json::json!({
+            "entity": "byte_exact"
+        }))
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("cannot store the implicit byte-exact default"));
+    }
+
+    #[test]
+    fn exactness_wire_rejects_a_redundant_field_override() {
+        let error = serde_json::from_value::<ExactnessNote>(serde_json::json!({
+            "entity": "derived",
+            "fields": {"geometry": "derived"}
+        }))
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("fields[\"geometry\"] duplicates entity exactness"));
     }
 
     #[test]

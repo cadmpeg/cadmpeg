@@ -3718,3 +3718,24 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::report::LossTaxonomy::as_str"
 reason = "the taxonomy now returns its static wire spelling directly so a shared LossKind does not store a derived code string"
+
+[[change]]
+commit = "a1cdaa957f3708a76964ca85f838090230d69712"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::annotations::Annotations::exactness"
+reason = "the sparse exactness table is mutated only through AnnotationBuilder so explicit default and redundant entries cannot be constructed"
+
+[[change]]
+commit = "a1cdaa957f3708a76964ca85f838090230d69712"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::annotations::ExactnessNote::{entity,fields}"
+reason = "exactness notes expose read-only accessors while AnnotationBuilder canonicalizes every entity and field update"
+
+[[change]]
+commit = "a1cdaa957f3708a76964ca85f838090230d69712"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::annotations::ExactnessNote::Default"
+reason = "the former default was an explicit byte-exact note that the sparse table is required to omit"

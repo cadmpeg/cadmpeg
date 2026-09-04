@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
-use cadmpeg_ir::{Annotations, Exactness};
+use cadmpeg_ir::{AnnotationBuilder, Annotations};
 
 use crate::native::CatiaNative;
 
@@ -490,22 +490,14 @@ pub(crate) fn transfer_parameters(
                 .is_some_and(|entity| entity.definition_chain_value.is_some())
         })
         .count();
+    let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in &parameters {
-        annotations
-            .exactness
-            .entry(candidate.parameter.id.0.clone())
-            .or_default()
-            .fields
-            .insert("properties".to_string(), Exactness::Derived);
+        annotation_builder.derived(&candidate.parameter.id.0, "properties");
         if !candidate.formula_output && candidate.parameter.dependencies.is_empty() {
-            annotations
-                .exactness
-                .entry(candidate.parameter.id.0.clone())
-                .or_default()
-                .fields
-                .insert("expression".to_string(), Exactness::Derived);
+            annotation_builder.derived(&candidate.parameter.id.0, "expression");
         }
     }
+    *annotations = annotation_builder.build();
     let transferred = parameters.len();
     ir.model
         .parameters

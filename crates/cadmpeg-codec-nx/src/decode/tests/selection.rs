@@ -381,20 +381,20 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     let unknowns = ir.native_unknowns("nx").unwrap();
     assert_arena_annotations!(&unknowns);
 
-    let point_note = &annotations.exactness[&ir.model.points[0].id.to_string()];
-    assert_eq!(point_note.entity, Exactness::ByteExact);
-    assert_eq!(point_note.fields["position"], Exactness::Derived);
-    let surface_note = &annotations.exactness[&ir.model.surfaces[0].id.to_string()];
-    assert_eq!(surface_note.fields["geometry"], Exactness::Derived);
-    let curve_note = &annotations.exactness[&ir.model.curves[0].id.to_string()];
-    assert_eq!(curve_note.fields["geometry"], Exactness::Derived);
+    let point_note = &annotations.exactness()[&ir.model.points[0].id.to_string()];
+    assert_eq!(point_note.entity(), Exactness::ByteExact);
+    assert_eq!(point_note.fields()["position"], Exactness::Derived);
+    let surface_note = &annotations.exactness()[&ir.model.surfaces[0].id.to_string()];
+    assert_eq!(surface_note.fields()["geometry"], Exactness::Derived);
+    let curve_note = &annotations.exactness()[&ir.model.curves[0].id.to_string()];
+    assert_eq!(curve_note.fields()["geometry"], Exactness::Derived);
     for id in [
         ir.model.vertices[0].id.to_string(),
         ir.model.edges[0].id.to_string(),
         ir.model.faces[0].id.to_string(),
     ] {
         assert_eq!(
-            annotations.exactness[&id].fields["tolerance"],
+            annotations.exactness()[&id].fields()["tolerance"],
             Exactness::Derived
         );
     }
