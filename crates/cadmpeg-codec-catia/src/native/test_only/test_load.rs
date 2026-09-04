@@ -92,7 +92,7 @@ impl CatiaNative {
         let mut entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
         if namespace.version() < CATIA_NUMERIC_PAIR_VERSION {
             for entity in &mut entity_records {
-                entity.numeric_pair = entity_table::parse_numeric_pair(&entity.value_payload);
+                entity.numeric_pair = entity_table::parse_numeric_pair(entity.value_payload());
             }
         }
         let row_chain_arena = if namespace
@@ -110,7 +110,7 @@ impl CatiaNative {
         if namespace.version() < CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION {
             for entity in &mut entity_records {
                 entity.reference_signature = entity_table::parse_reference_signature(
-                    &entity.value_payload,
+                    entity.value_payload(),
                 )
                 .map(|production| CatiaReferenceSignature {
                     production,
@@ -121,7 +121,8 @@ impl CatiaNative {
         }
         if namespace.version() < CATIA_SUFFIX_FRAMING_VERSION {
             for entity in &mut entity_records {
-                entity.suffix_framing = entity_suffix_framing(&entity.record_suffix);
+                let suffix = entity.record_suffix().to_vec();
+                entity.set_suffix_from_bytes(&suffix);
             }
         }
         if namespace.version() < CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION
@@ -135,12 +136,12 @@ impl CatiaNative {
                 entity.parameter_value = parameter_value(
                     entity.lead,
                     &entity.value_schema_selections,
-                    entity.suffix_value.as_ref(),
+                    entity.suffix_value(),
                 );
                 entity.constraint_range = resolved_constraint_range(
                     entity.lead,
                     &entity.value_schema_selections,
-                    entity.suffix_value.as_ref(),
+                    entity.suffix_value(),
                     &records,
                     &entity.object_graph,
                     entity.entity_id,
@@ -148,15 +149,15 @@ impl CatiaNative {
                 entity.definition_value = definition_value(
                     entity.lead,
                     &entity.definition_schema_selections,
-                    &entity.value_fields,
-                    entity.suffix_value.as_ref(),
+                    &entity.value_fields(),
+                    entity.suffix_value(),
                     entity.suffix_schema_selection.as_ref(),
                 );
                 entity.definition_chain_value = definition_chain_value(
                     entity.lead,
                     &entity.definition_schema_selections,
-                    &entity.value_fields,
-                    entity.suffix_value.as_ref(),
+                    &entity.value_fields(),
+                    entity.suffix_value(),
                     entity.suffix_schema_selection.as_ref(),
                 );
             }
@@ -172,18 +173,19 @@ impl CatiaNative {
                     .iter_mut()
                     .filter(|entity| entity.object_graph == graph.id)
                 {
-                    entity.suffix_value = entity_suffix_value(&entity.record_suffix);
+                    let suffix = entity.record_suffix().to_vec();
+                    entity.set_suffix_from_bytes(&suffix);
                     entity.suffix_schema_selection =
-                        entity_suffix_schema_selection(entity.suffix_value.as_ref(), catalog);
+                        entity_suffix_schema_selection(entity.suffix_value(), catalog);
                     entity.parameter_value = parameter_value(
                         entity.lead,
                         &entity.value_schema_selections,
-                        entity.suffix_value.as_ref(),
+                        entity.suffix_value(),
                     );
                     entity.constraint_range = resolved_constraint_range(
                         entity.lead,
                         &entity.value_schema_selections,
-                        entity.suffix_value.as_ref(),
+                        entity.suffix_value(),
                         &records,
                         &entity.object_graph,
                         entity.entity_id,
@@ -191,15 +193,15 @@ impl CatiaNative {
                     entity.definition_value = definition_value(
                         entity.lead,
                         &entity.definition_schema_selections,
-                        &entity.value_fields,
-                        entity.suffix_value.as_ref(),
+                        &entity.value_fields(),
+                        entity.suffix_value(),
                         entity.suffix_schema_selection.as_ref(),
                     );
                     entity.definition_chain_value = definition_chain_value(
                         entity.lead,
                         &entity.definition_schema_selections,
-                        &entity.value_fields,
-                        entity.suffix_value.as_ref(),
+                        &entity.value_fields(),
+                        entity.suffix_value(),
                         entity.suffix_schema_selection.as_ref(),
                     );
                 }
@@ -208,9 +210,9 @@ impl CatiaNative {
         if namespace.version() < CATIA_RANGE_NOMINAL_VERSION {
             for entity in &mut entity_records {
                 entity.range_interval = range_interval(
-                    &entity.value_payload,
+                    entity.value_payload(),
                     &entity.value_schema_selections,
-                    entity.suffix_value.as_ref(),
+                    entity.suffix_value(),
                     &records,
                     &entity.object_graph,
                     entity.entity_id,
@@ -283,12 +285,11 @@ impl CatiaNative {
         }
         if namespace.version() < CATIA_REFERENCE_SIGNATURE_FRAME_VERSION {
             for entity in &mut entity_records {
+                let payload = entity.value_payload().to_vec();
                 let Some(signature) = &mut entity.reference_signature else {
                     continue;
                 };
-                let Some(production) =
-                    entity_table::parse_reference_signature(&entity.value_payload)
-                else {
+                let Some(production) = entity_table::parse_reference_signature(&payload) else {
                     continue;
                 };
                 signature.production = production;
@@ -302,7 +303,7 @@ impl CatiaNative {
             };
             for entity in &mut entity_records {
                 entity.reference_signature = entity_table::parse_reference_signature(
-                    &entity.value_payload,
+                    entity.value_payload(),
                 )
                 .map(|production| {
                     reference_signature(production, &entity.object_graph, &entity_references)
@@ -500,7 +501,7 @@ impl CatiaNative {
                         .any(|entity| !valid_entity_record_shape(entity))
                     || graph_entities.iter().any(|entity| {
                         entity.reference_signature
-                            != entity_table::parse_reference_signature(&entity.value_payload).map(
+                            != entity_table::parse_reference_signature(entity.value_payload()).map(
                                 |production| {
                                     reference_signature(
                                         production,
@@ -518,7 +519,7 @@ impl CatiaNative {
                         entity.definition_schema_selections
                             != definition_schema_selections(
                                 &entity_table::parse_definition_schema_selectors(
-                                    &entity.definition_prefix,
+                                    entity.definition_prefix(),
                                 ),
                                 catalog,
                             )
@@ -526,7 +527,7 @@ impl CatiaNative {
                     || graph_entities.iter().any(|entity| {
                         entity.value_schema_selections
                             != entity_value_schema_selections(
-                                &entity.value_fields,
+                                &entity.value_fields(),
                                 catalog,
                                 &entity.value_packets,
                             )
@@ -539,29 +540,31 @@ impl CatiaNative {
                             )
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.suffix_value != entity_suffix_value(&entity.record_suffix)
+                        entity.suffix_value()
+                            != entity_suffix_value(entity.record_suffix()).as_ref()
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.suffix_framing != entity_suffix_framing(&entity.record_suffix)
+                        entity.suffix_framing()
+                            != entity_suffix_framing(entity.record_suffix()).as_ref()
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_schema_selection
-                            != entity_suffix_schema_selection(entity.suffix_value.as_ref(), catalog)
+                            != entity_suffix_schema_selection(entity.suffix_value(), catalog)
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.parameter_value
                             != parameter_value(
                                 entity.lead,
                                 &entity.value_schema_selections,
-                                entity.suffix_value.as_ref(),
+                                entity.suffix_value(),
                             )
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.range_interval
                             != range_interval(
-                                &entity.value_payload,
+                                entity.value_payload(),
                                 &entity.value_schema_selections,
-                                entity.suffix_value.as_ref(),
+                                entity.suffix_value(),
                                 &graph.records,
                                 &graph.id,
                                 entity.entity_id,
@@ -572,7 +575,7 @@ impl CatiaNative {
                             != resolved_constraint_range(
                                 entity.lead,
                                 &entity.value_schema_selections,
-                                entity.suffix_value.as_ref(),
+                                entity.suffix_value(),
                                 &graph.records,
                                 &graph.id,
                                 entity.entity_id,
@@ -583,8 +586,8 @@ impl CatiaNative {
                             != definition_value(
                                 entity.lead,
                                 &entity.definition_schema_selections,
-                                &entity.value_fields,
-                                entity.suffix_value.as_ref(),
+                                &entity.value_fields(),
+                                entity.suffix_value(),
                                 entity.suffix_schema_selection.as_ref(),
                             )
                     })
@@ -593,8 +596,8 @@ impl CatiaNative {
                             != definition_chain_value(
                                 entity.lead,
                                 &entity.definition_schema_selections,
-                                &entity.value_fields,
-                                entity.suffix_value.as_ref(),
+                                &entity.value_fields(),
+                                entity.suffix_value(),
                                 entity.suffix_schema_selection.as_ref(),
                             )
                     })

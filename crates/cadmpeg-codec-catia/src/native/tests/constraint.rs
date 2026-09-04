@@ -865,8 +865,7 @@ fn dimension_constraint_ranges_accept_db_terminated_dc_frames() {
     assert_eq!(range.evaluation, CatiaEntityEvaluation::Scalar { bits });
     assert_eq!(
         entity
-            .suffix_value
-            .as_ref()
+            .suffix_value()
             .expect("DB-terminated suffix value")
             .trailer,
         CatiaEntitySuffixTrailer::Token81DB
@@ -912,8 +911,7 @@ fn dimension_constraint_ranges_accept_8192_terminated_df_frames() {
     assert_eq!(range.evaluation, CatiaEntityEvaluation::Scalar { bits });
     assert_eq!(
         entity
-            .suffix_value
-            .as_ref()
+            .suffix_value()
             .expect("81 92-terminated suffix value")
             .trailer,
         CatiaEntitySuffixTrailer::Token8192

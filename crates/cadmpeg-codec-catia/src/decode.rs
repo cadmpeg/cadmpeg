@@ -614,7 +614,7 @@ fn finish_decode(
     let entity_value_field_count = native
         .entity_records
         .iter()
-        .map(|record| record.value_fields.len())
+        .map(|record| record.value_fields().len())
         .sum();
     let entity_value_schema_selection_count = native
         .entity_records
@@ -1505,7 +1505,7 @@ fn finish_decode(
         paged_atom_state_01_entity_suffix_count,
     ) = native.entity_records.iter().fold(
         (0, 0, 0, 0),
-        |(escaped, token, fixed, paged), record| match record.suffix_framing.as_ref() {
+        |(escaped, token, fixed, paged), record| match record.suffix_framing() {
             Some(crate::native::CatiaEntitySuffixFraming::EscapedWord(_)) => {
                 (escaped + 1, token, fixed, paged)
             }
@@ -1525,7 +1525,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.suffix_value.as_ref().is_some_and(|value| {
+            record.suffix_value().is_some_and(|value| {
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Evaluation {
@@ -1540,7 +1540,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.suffix_value.as_ref().is_some_and(|value| {
+            record.suffix_value().is_some_and(|value| {
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Evaluation {
@@ -1555,7 +1555,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .fold((0, 0), |(e8, e9), record| {
-            match record.suffix_value.as_ref().map(|value| &value.payload) {
+            match record.suffix_value().map(|value| &value.payload) {
                 Some(crate::native::CatiaEntitySuffixPayload::ControlE8) => (e8 + 1, e9),
                 Some(crate::native::CatiaEntitySuffixPayload::ControlE9) => (e8, e9 + 1),
                 _ => (e8, e9),
@@ -1567,7 +1567,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.suffix_value.as_ref().is_some_and(|value| {
+            record.suffix_value().is_some_and(|value| {
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Separator37
@@ -1579,7 +1579,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter(|record| {
-            record.suffix_value.as_ref().is_some_and(|value| {
+            record.suffix_value().is_some_and(|value| {
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Atom { .. }
@@ -1597,7 +1597,7 @@ fn finish_decode(
         (0, 0, 0, 0, 0),
         |(atoms, evaluations, controls, separators, schemas), record| {
             let Some(crate::native::CatiaEntitySuffixPayload::SchemaSelected { value, .. }) =
-                record.suffix_value.as_ref().map(|suffix| &suffix.payload)
+                record.suffix_value().map(|suffix| &suffix.payload)
             else {
                 return (atoms, evaluations, controls, separators, schemas);
             };
@@ -1630,7 +1630,7 @@ fn finish_decode(
         .iter()
         .filter(|record| {
             record
-                .suffix_value
+                .suffix_value()
                 .as_ref()
                 .is_some_and(|value| value.prefix_atom_widths.iter().any(|width| *width > 1))
         })
