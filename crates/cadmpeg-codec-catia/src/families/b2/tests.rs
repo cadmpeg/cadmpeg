@@ -1602,7 +1602,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].u_range, [0.0, 4.0 * std::f64::consts::PI]);
     assert_eq!(cylinders[0].v_range, [-4.0, 5.0]);
-    match &cylinders[0].geometry {
+    match cylinders[0].surface_geometry() {
         SurfaceGeometry::Cylinder {
             origin,
             axis,
@@ -1611,7 +1611,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         } => {
             assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
             assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
-            assert_eq!(*radius, 2.0);
+            assert_eq!(radius, 2.0);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
@@ -1627,7 +1627,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     large[54..62].copy_from_slice(&radius.to_le_bytes());
     large[70..78].copy_from_slice(&(std::f64::consts::TAU * radius).to_le_bytes());
     assert!(matches!(
-        crate::families::b2::records::b2_cylinders(&large)[0].geometry,
+        crate::families::b2::records::b2_cylinders(&large)[0].surface_geometry(),
         SurfaceGeometry::Cylinder {
             radius: 2_000_000.0,
             ..
@@ -1671,9 +1671,12 @@ fn analytic_point_lifts_bound_tiny_parameter_domains_by_span() {
 fn consolidated_cylinder_parser_reads_width2_frame() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b3_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].layout, 0x5a);
     assert!(matches!(
-        cylinders[0].geometry,
+        cylinders[0].layout,
+        crate::families::b2::records::B2CylinderLayout::Full5a { .. }
+    ));
+    assert!(matches!(
+        cylinders[0].surface_geometry(),
         SurfaceGeometry::Cylinder { .. }
     ));
 }
@@ -1698,9 +1701,12 @@ fn consolidated_frame_width_and_flag_are_independent() {
 fn b2_cylinder_parser_reads_implicit_axis_layout() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_implicit_axis_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].layout, 0x52);
     assert!(matches!(
-        cylinders[0].geometry,
+        cylinders[0].layout,
+        crate::families::b2::records::B2CylinderLayout::Full52
+    ));
+    assert!(matches!(
+        cylinders[0].surface_geometry(),
         SurfaceGeometry::Cylinder { axis, .. } if [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
     ));
 
@@ -1713,9 +1719,14 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
 fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_range_origin_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
-    assert_eq!(cylinders[0].layout, 0x62);
     assert!(matches!(
-        cylinders[0].geometry,
+        cylinders[0].layout,
+        crate::families::b2::records::B2CylinderLayout::RangeOrigin {
+            stored_vector: [0.0, 1.0],
+        }
+    ));
+    assert!(matches!(
+        cylinders[0].surface_geometry(),
         SurfaceGeometry::Cylinder {
             axis,
             ref_direction,
@@ -1723,9 +1734,8 @@ fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
         } if [axis.x, axis.y, axis.z] == [0.0, 1.0, 0.0]
             && [ref_direction.x, ref_direction.y, ref_direction.z] == [0.0, 0.0, 1.0]
     ));
-    assert_eq!(cylinders[0].stored_vector, Some([0.0, 1.0]));
     assert_eq!(
-        cylinders[0].range_origin.map(f64::to_bits),
+        cylinders[0].range_origin().map(f64::to_bits),
         Some(((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits())
     );
 

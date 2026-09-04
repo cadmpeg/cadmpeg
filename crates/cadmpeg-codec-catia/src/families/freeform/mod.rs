@@ -963,7 +963,7 @@ fn freeform_surface_carriers(
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
-                geometry: surface.geometry,
+                geometry: surface.surface_geometry(),
                 source_object: cgm_source_key("b2-03-28-frame", format!("{:010}", surface.pos)),
                 source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
             }),
@@ -973,7 +973,7 @@ fn freeform_surface_carriers(
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
-                geometry: surface.cylinder.geometry,
+                geometry: surface.cylinder.surface_geometry(),
                 source_object: cgm_source("surface", surface.object_id),
                 source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
             }),
@@ -1786,7 +1786,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     let Some(cylinder) = standalone.get(pos) else {
                         continue;
                     };
-                    let carrier = cylinder.geometry.clone();
+                    let carrier = cylinder.surface_geometry();
                     let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
                         continue;
                     };
@@ -1806,7 +1806,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     let Some(value) = embedded.get(pos) else {
                         continue;
                     };
-                    let carrier = value.cylinder.geometry.clone();
+                    let carrier = value.cylinder.surface_geometry();
                     let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
                         continue;
                     };
@@ -3031,7 +3031,7 @@ mod tests {
             .into_iter()
             .next()
             .expect("one exact cylinder")
-            .geometry;
+            .surface_geometry();
 
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(Point {

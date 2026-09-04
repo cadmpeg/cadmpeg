@@ -1848,30 +1848,28 @@ pub(crate) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
 }
 
 pub(crate) fn b2_cylinder_point(cylinder: &B2Cylinder, uv: [f64; 2]) -> Option<Point3> {
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius,
-    } = &cylinder.geometry
-    else {
-        return None;
-    };
     if !parameter_in_closed_range(uv[0], cylinder.u_range)
         || !parameter_in_closed_range(uv[1], cylinder.v_range)
     {
         return None;
     }
+    let radius = cylinder.radius;
     let angle = uv[0] / radius;
-    let perpendicular = (*axis).cross(*ref_direction);
+    let axis = Vector3::new(cylinder.axis[0], cylinder.axis[1], cylinder.axis[2]);
+    let ref_direction = Vector3::new(
+        cylinder.reference_direction[0],
+        cylinder.reference_direction[1],
+        cylinder.reference_direction[2],
+    );
+    let perpendicular = axis.cross(ref_direction);
     Some(Point3::new(
-        origin.x
+        cylinder.origin[0]
             + uv[1] * axis.x
             + radius * (angle.cos() * ref_direction.x + angle.sin() * perpendicular.x),
-        origin.y
+        cylinder.origin[1]
             + uv[1] * axis.y
             + radius * (angle.cos() * ref_direction.y + angle.sin() * perpendicular.y),
-        origin.z
+        cylinder.origin[2]
             + uv[1] * axis.z
             + radius * (angle.cos() * ref_direction.z + angle.sin() * perpendicular.z),
     ))
@@ -2085,24 +2083,59 @@ fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Nurbs
 pub struct B2Cylinder {
     /// Record byte offset.
     pub pos: usize,
-    /// Payload-layout discriminator (`0x52`, `0x5a`, or `0x62`).
-    pub layout: u8,
-    /// Frame token following the origin.
-    pub frame_token: u8,
     /// Cylinder-axis origin.
     pub origin: [f64; 3],
+    /// Cylinder-axis unit direction.
+    pub axis: [f64; 3],
+    /// Unit direction from which the circumferential parameter is measured.
+    pub reference_direction: [f64; 3],
     /// Cylinder radius.
     pub radius: f64,
-    /// Decoded carrier.
-    pub geometry: SurfaceGeometry,
     /// Arc-length circumferential range.
     pub u_range: [f64; 2],
     /// Axial range.
     pub v_range: [f64; 2],
-    /// Stored planar vector for a range-origin `0x62` frame.
-    pub stored_vector: Option<[f64; 2]>,
-    /// Origin of the stored partial circumferential interval.
-    pub range_origin: Option<f64>,
+    /// Layout-specific frame data.
+    pub layout: B2CylinderLayout,
+}
+
+/// Layout of a consolidated `B:28` cylinder chart.
+#[derive(Debug, Clone, PartialEq)]
+pub enum B2CylinderLayout {
+    /// Layout `0x5a` with a stored frame token.
+    Full5a { frame_token: u8 },
+    /// Layout `0x52` with a fixed X-axis frame.
+    Full52,
+    /// Layout `0x62` with a stored planar vector.
+    RangeOrigin { stored_vector: [f64; 2] },
+}
+
+impl B2Cylinder {
+    pub(crate) fn frame_token(&self) -> u8 {
+        match self.layout {
+            B2CylinderLayout::Full5a { frame_token } => frame_token,
+            B2CylinderLayout::Full52 => 0x1d,
+            B2CylinderLayout::RangeOrigin { .. } => 0x0e,
+        }
+    }
+
+    pub(crate) fn range_origin(&self) -> Option<f64> {
+        matches!(self.layout, B2CylinderLayout::RangeOrigin { .. })
+            .then(|| cylinder_range_origin(self.radius, self.u_range))
+    }
+
+    pub(crate) fn surface_geometry(&self) -> SurfaceGeometry {
+        SurfaceGeometry::Cylinder {
+            origin: Point3::new(self.origin[0], self.origin[1], self.origin[2]),
+            axis: Vector3::new(self.axis[0], self.axis[1], self.axis[2]),
+            ref_direction: Vector3::new(
+                self.reference_direction[0],
+                self.reference_direction[1],
+                self.reference_direction[2],
+            ),
+            radius: self.radius,
+        }
+    }
 }
 
 /// Slant-coordinate cone chart stored in a `b2 03 29` record.
@@ -2941,7 +2974,6 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
     let layout = u8::try_from(frame.end.checked_sub(frame.payload)?).ok()?;
     let p = frame.payload;
     let origin_values = read_f64_array::<3>(data, p)?;
-    let origin = Point3::new(origin_values[0], origin_values[1], origin_values[2]);
     let frame_token = *data.get(p + 24)?;
     match layout {
         0x5a => {
@@ -2974,20 +3006,13 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             let ref_direction = Vector3::new(-axis.y, axis.x, 0.0);
             Some(B2Cylinder {
                 pos,
-                layout,
-                frame_token,
                 origin: origin_values,
+                axis: [axis.x, axis.y, axis.z],
+                reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
                 radius,
-                geometry: SurfaceGeometry::Cylinder {
-                    origin,
-                    axis,
-                    ref_direction,
-                    radius,
-                },
                 u_range,
                 v_range,
-                stored_vector: None,
-                range_origin: None,
+                layout: B2CylinderLayout::Full5a { frame_token },
             })
         }
         0x52 => {
@@ -3013,20 +3038,13 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             }
             Some(B2Cylinder {
                 pos,
-                layout,
-                frame_token,
                 origin: origin_values,
+                axis: [1.0, 0.0, 0.0],
+                reference_direction: [0.0, 1.0, 0.0],
                 radius,
-                geometry: SurfaceGeometry::Cylinder {
-                    origin,
-                    axis: Vector3::new(1.0, 0.0, 0.0),
-                    ref_direction: Vector3::new(0.0, 1.0, 0.0),
-                    radius,
-                },
                 u_range,
                 v_range,
-                stored_vector: None,
-                range_origin: None,
+                layout: B2CylinderLayout::Full52,
             })
         }
         0x62 if frame_token == 0x0e && data.get(p + 89) == Some(&0x03) => {
@@ -3054,20 +3072,15 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             }
             Some(B2Cylinder {
                 pos,
-                layout,
-                frame_token,
                 origin: origin_values,
+                axis: [0.0, 1.0, 0.0],
+                reference_direction: [vector[0], 0.0, vector[1]],
                 radius,
-                geometry: SurfaceGeometry::Cylinder {
-                    origin,
-                    axis: Vector3::new(0.0, 1.0, 0.0),
-                    ref_direction: Vector3::new(vector[0], 0.0, vector[1]),
-                    radius,
-                },
                 u_range,
                 v_range,
-                stored_vector: Some(vector),
-                range_origin: Some(range_origin),
+                layout: B2CylinderLayout::RangeOrigin {
+                    stored_vector: vector,
+                },
             })
         }
         _ => None,

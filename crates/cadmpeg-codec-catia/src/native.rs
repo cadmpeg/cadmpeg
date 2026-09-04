@@ -6575,51 +6575,33 @@ fn consolidated_cylinders(
         .into_iter()
         .enumerate()
         .map(|(index, cylinder)| {
-            let payload = if cylinder.layout == 0x62 {
-                let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                    axis,
-                    ref_direction,
-                    ..
-                } = cylinder.geometry
-                else {
-                    unreachable!("B2 cylinder parser produced a non-cylinder carrier")
-                };
-                CatiaConsolidatedCylinderPayload::RangeOrigin {
-                    stored_vector: cylinder
-                        .stored_vector
-                        .expect("range-origin cylinder has its stored vector"),
-                    axis: [axis.x, axis.y, axis.z],
-                    reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                    range_origin: cylinder
-                        .range_origin
-                        .expect("range-origin cylinder has its range origin"),
-                }
-            } else {
-                match cylinder.geometry {
-                    cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                        axis,
-                        ref_direction,
-                        ..
-                    } => {
-                        let frame = (
-                            cylinder.frame_token,
-                            [axis.x, axis.y, axis.z],
-                            [ref_direction.x, ref_direction.y, ref_direction.z],
-                        );
-                        match cylinder.layout {
-                            0x52 => CatiaConsolidatedCylinderPayload::Layout52 {
-                                frame_token: frame.0,
-                                axis: frame.1,
-                                reference_direction: frame.2,
-                            },
-                            _ => CatiaConsolidatedCylinderPayload::Layout5a {
-                                frame_token: frame.0,
-                                axis: frame.1,
-                                reference_direction: frame.2,
-                            },
-                        }
+            let payload = match cylinder.layout {
+                crate::families::b2::records::B2CylinderLayout::RangeOrigin { stored_vector } => {
+                    CatiaConsolidatedCylinderPayload::RangeOrigin {
+                        stored_vector,
+                        axis: cylinder.axis,
+                        reference_direction: cylinder.reference_direction,
+                        range_origin: cylinder.range_origin().unwrap_or_else(|| {
+                            crate::families::b2::records::cylinder_range_origin(
+                                cylinder.radius,
+                                cylinder.u_range,
+                            )
+                        }),
                     }
-                    _ => unreachable!("B2 cylinder parser produced a non-cylinder carrier"),
+                }
+                crate::families::b2::records::B2CylinderLayout::Full52 => {
+                    CatiaConsolidatedCylinderPayload::Layout52 {
+                        frame_token: cylinder.frame_token(),
+                        axis: cylinder.axis,
+                        reference_direction: cylinder.reference_direction,
+                    }
+                }
+                crate::families::b2::records::B2CylinderLayout::Full5a { frame_token } => {
+                    CatiaConsolidatedCylinderPayload::Layout5a {
+                        frame_token,
+                        axis: cylinder.axis,
+                        reference_direction: cylinder.reference_direction,
+                    }
                 }
             };
             CatiaConsolidatedCylinder {
@@ -6647,31 +6629,21 @@ fn consolidated_embedded_cylinders(
     crate::families::b2::records::b2_embedded_cylinders_from_records(bytes, records)
         .into_iter()
         .enumerate()
-        .map(|(index, embedded)| {
-            let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-                axis,
-                ref_direction,
-                ..
-            } = embedded.cylinder.geometry
-            else {
-                unreachable!("embedded B2 cylinder parser produced a non-cylinder carrier")
-            };
-            CatiaConsolidatedEmbeddedCylinder {
-                id: format!("catia:consolidated:embedded-cylinder#{index}"),
-                byte_offset: embedded.pos as u64,
-                group: group_ids
-                    .get(&(embedded.wrapper_pos as u64))
-                    .expect("embedded cylinder owner came from the same group parse")
-                    .to_string(),
-                object_id: embedded.object_id,
-                origin: embedded.cylinder.origin,
-                radius: embedded.cylinder.radius,
-                u_range: embedded.cylinder.u_range,
-                v_range: embedded.cylinder.v_range,
-                frame_token: embedded.cylinder.frame_token,
-                axis: [axis.x, axis.y, axis.z],
-                reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-            }
+        .map(|(index, embedded)| CatiaConsolidatedEmbeddedCylinder {
+            id: format!("catia:consolidated:embedded-cylinder#{index}"),
+            byte_offset: embedded.pos as u64,
+            group: group_ids
+                .get(&(embedded.wrapper_pos as u64))
+                .expect("embedded cylinder owner came from the same group parse")
+                .to_string(),
+            object_id: embedded.object_id,
+            origin: embedded.cylinder.origin,
+            radius: embedded.cylinder.radius,
+            u_range: embedded.cylinder.u_range,
+            v_range: embedded.cylinder.v_range,
+            frame_token: embedded.cylinder.frame_token(),
+            axis: embedded.cylinder.axis,
+            reference_direction: embedded.cylinder.reference_direction,
         })
         .collect()
 }
