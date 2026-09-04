@@ -30,12 +30,12 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::AttributeValue;
 #[allow(unused_imports)]
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId, CosmeticThreadExtent,
-    DatumPlaneReference, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection,
-    ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, HoleBottom, HoleKind, Length, ParameterId, ParameterValue, PathRef,
-    ProfileRef, RadiusSpec, RevolutionConstruction, RevolveExtent, RibConstruction, SplitFaceTool,
-    Termination,
+    Angle, AngularTermination, BooleanOp, ChamferSpec, ConfigurationBodies, ConfigurationId,
+    CosmeticThreadExtent, DatumPlaneReference, DesignConfiguration, DesignParameter,
+    DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
+    FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleKind, Length,
+    LinearTermination, ParameterId, ParameterValue, PathRef, ProfileRef, RadiusSpec,
+    RevolutionConstruction, RevolveExtent, RibConstruction, SplitFaceTool,
 };
 #[allow(unused_imports)]
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};

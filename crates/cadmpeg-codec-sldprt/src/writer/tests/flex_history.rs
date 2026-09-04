@@ -900,8 +900,8 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{
         Angle, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, FaceMotion, FaceSelection,
-        Feature, FeatureDefinition, FeatureId, HoleKind, Length, PatternKind, RadiusSpec,
-        Termination,
+        Feature, FeatureDefinition, FeatureId, HoleKind, Length, LinearTermination, PatternKind,
+        RadiusSpec,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::BTreeMap;
@@ -1024,7 +1024,7 @@ fn encoder_writes_source_less_native_features() {
             },
             exit_kind: None,
             diameter: Some(Length(5.0)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(20.0),
             }),
             bottom: None,
@@ -1113,7 +1113,7 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
                         length: cadmpeg_ir::features::Length(25.0),
                     },
                     ..

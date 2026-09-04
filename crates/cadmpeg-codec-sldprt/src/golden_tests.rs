@@ -13,7 +13,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, Length, Termination};
+use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, Length, LinearTermination};
 use cadmpeg_ir::WritePath;
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
@@ -327,7 +327,7 @@ fn blind_extrude_lengths(ir: &mut cadmpeg_ir::CadIr) -> Vec<&mut Length> {
             return None;
         };
         match &mut side.termination {
-            Termination::Blind { length } => Some(length),
+            LinearTermination::Blind { length } => Some(length),
             _ => None,
         }
     }

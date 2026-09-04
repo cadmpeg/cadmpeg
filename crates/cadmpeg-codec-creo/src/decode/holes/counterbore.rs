@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Length, Termination};
+use cadmpeg_ir::features::{Length, LinearTermination};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -537,7 +537,7 @@ pub fn counterbore_directed_placement(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> Option<(Option<u32>, Point3, Vector3, Termination)> {
+) -> Option<(Option<u32>, Point3, Vector3, LinearTermination)> {
     let (bore_diameter, counterbore_diameter, counterbore_depth) =
         counterbore_dimensions(scan, ir, feature_id)?;
     let sources = counterbore_cylinder_sources(scan, feature_id)?;
@@ -655,7 +655,7 @@ pub fn counterbore_placement_from_corner_envelopes(
     bore_diameter: f64,
     counterbore_diameter: f64,
     counterbore_depth: f64,
-) -> Option<(Point3, Vector3, Termination)> {
+) -> Option<(Point3, Vector3, LinearTermination)> {
     let assignment = counterbore_corner_assignment(
         source_corners,
         bore_diameter,
@@ -665,7 +665,7 @@ pub fn counterbore_placement_from_corner_envelopes(
     Some((
         assignment.position,
         assignment.direction,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(assignment.length),
         },
     ))
@@ -771,7 +771,7 @@ pub fn counterbore_directed_span(
     counterbore: (u32, Point3, [f64; 3]),
     bore: (u32, Point3, [f64; 3]),
     counterbore_depth: f64,
-) -> Option<(u32, Point3, Vector3, Termination)> {
+) -> Option<(u32, Point3, Vector3, LinearTermination)> {
     let delta = [
         bore.1.x - counterbore.1.x,
         bore.1.y - counterbore.1.y,
@@ -811,7 +811,7 @@ pub fn counterbore_directed_span(
         counterbore.0,
         counterbore.1,
         Vector3::new(direction[0], direction[1], direction[2]),
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(length),
         },
     ))

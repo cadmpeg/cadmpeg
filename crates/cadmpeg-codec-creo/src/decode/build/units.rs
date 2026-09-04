@@ -507,7 +507,7 @@ fn scale_feature_definition(definition: &mut FeatureDefinition, scale: f64) {
             }
             scale_optional_length(diameter, scale);
             if let Some(extent) = extent {
-                scale_termination(extent, scale);
+                scale_linear_termination(extent, scale);
             }
             if let Some(specification) = specification {
                 scale_hole_specification(specification, scale);
@@ -663,7 +663,7 @@ fn scale_extrude_start(start: &mut cadmpeg_ir::features::ExtrudeStart, scale: f6
 }
 
 fn scale_extrude_side(side: &mut cadmpeg_ir::features::ExtrudeSide, scale: f64) {
-    scale_termination(&mut side.termination, scale);
+    scale_linear_termination(&mut side.termination, scale);
     scale_optional_length(&mut side.offset, scale);
 }
 
@@ -686,30 +686,49 @@ fn scale_revolve_extent(extent: &mut cadmpeg_ir::features::RevolveExtent, scale:
 
     match extent {
         RevolveExtent::OneSided { termination } | RevolveExtent::Symmetric { termination } => {
-            scale_termination(termination, scale);
+            scale_angular_termination(termination, scale);
         }
         RevolveExtent::TwoSided { first, second } => {
-            scale_termination(first, scale);
-            scale_termination(second, scale);
+            scale_angular_termination(first, scale);
+            scale_angular_termination(second, scale);
         }
     }
 }
 
-fn scale_termination(termination: &mut cadmpeg_ir::features::Termination, scale: f64) {
-    use cadmpeg_ir::features::Termination;
+fn scale_linear_termination(termination: &mut cadmpeg_ir::features::LinearTermination, scale: f64) {
+    use cadmpeg_ir::features::LinearTermination;
 
     match termination {
-        Termination::Blind { length } => scale_length(length, scale),
-        Termination::ToFace { offset, .. } => scale_optional_length(offset, scale),
-        Termination::OffsetFromFace { offset, .. } => scale_length(offset, scale),
-        Termination::Unresolved
-        | Termination::ThroughAll
-        | Termination::ThroughNext
-        | Termination::ToFirst
-        | Termination::ToLast
-        | Termination::ToVertex { .. }
-        | Termination::ToShape { .. }
-        | Termination::Angle { .. } => {}
+        LinearTermination::Blind { length } => scale_length(length, scale),
+        LinearTermination::ToFace { offset, .. } => scale_optional_length(offset, scale),
+        LinearTermination::OffsetFromFace { offset, .. } => scale_length(offset, scale),
+        LinearTermination::Unresolved
+        | LinearTermination::ThroughAll
+        | LinearTermination::ThroughNext
+        | LinearTermination::ToFirst
+        | LinearTermination::ToLast
+        | LinearTermination::ToVertex { .. }
+        | LinearTermination::ToShape { .. } => {}
+    }
+}
+
+fn scale_angular_termination(
+    termination: &mut cadmpeg_ir::features::AngularTermination,
+    scale: f64,
+) {
+    use cadmpeg_ir::features::AngularTermination;
+
+    match termination {
+        AngularTermination::ToFace { offset, .. } => scale_optional_length(offset, scale),
+        AngularTermination::OffsetFromFace { offset, .. } => scale_length(offset, scale),
+        AngularTermination::Unresolved
+        | AngularTermination::ThroughAll
+        | AngularTermination::ThroughNext
+        | AngularTermination::ToFirst
+        | AngularTermination::ToLast
+        | AngularTermination::ToVertex { .. }
+        | AngularTermination::ToShape { .. }
+        | AngularTermination::Angle { .. } => {}
     }
 }
 
@@ -1502,8 +1521,8 @@ mod tests {
 
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceMotion, Feature,
-        FeatureDefinition, FuzzyTolerance, PatternKind, PatternScaleCenter, ProfileRef,
-        Termination,
+        FeatureDefinition, FuzzyTolerance, LinearTermination, PatternKind, PatternScaleCenter,
+        ProfileRef,
     };
 
     #[test]
@@ -1520,7 +1539,7 @@ mod tests {
                 },
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: Termination::Blind {
+                        termination: LinearTermination::Blind {
                             length: Length(3.0),
                         },
                         draft: None,
@@ -1564,7 +1583,7 @@ mod tests {
         let ExtrudeExtent::OneSided { side } = extent else {
             panic!("test extent changed family");
         };
-        let Termination::Blind { length } = &side.termination else {
+        let LinearTermination::Blind { length } = &side.termination else {
             panic!("test termination changed family");
         };
         assert_close(length.0, 76.2);

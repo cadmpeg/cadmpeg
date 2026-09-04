@@ -475,23 +475,43 @@ fn profile_ref_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
     }
 }
 
-fn termination_is_resolved(termination: &cadmpeg_ir::features::Termination) -> bool {
-    use cadmpeg_ir::features::{Termination, VertexSelection};
+fn linear_termination_is_resolved(termination: &cadmpeg_ir::features::LinearTermination) -> bool {
+    use cadmpeg_ir::features::{LinearTermination, VertexSelection};
 
     match termination {
-        Termination::Unresolved | Termination::Angle { .. } => false,
-        Termination::ToFace { face, .. }
-        | Termination::OffsetFromFace { face, .. }
-        | Termination::ToShape { target: face } => face_selection_is_resolved(face),
-        Termination::ToVertex { vertex } => matches!(
+        LinearTermination::Unresolved => false,
+        LinearTermination::ToFace { face, .. }
+        | LinearTermination::OffsetFromFace { face, .. }
+        | LinearTermination::ToShape { target: face } => face_selection_is_resolved(face),
+        LinearTermination::ToVertex { vertex } => matches!(
             vertex,
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
         ),
-        Termination::Blind { .. }
-        | Termination::ThroughAll
-        | Termination::ThroughNext
-        | Termination::ToFirst
-        | Termination::ToLast => true,
+        LinearTermination::Blind { .. }
+        | LinearTermination::ThroughAll
+        | LinearTermination::ThroughNext
+        | LinearTermination::ToFirst
+        | LinearTermination::ToLast => true,
+    }
+}
+
+fn angular_termination_is_resolved(termination: &cadmpeg_ir::features::AngularTermination) -> bool {
+    use cadmpeg_ir::features::{AngularTermination, VertexSelection};
+
+    match termination {
+        AngularTermination::Unresolved => false,
+        AngularTermination::ToFace { face, .. }
+        | AngularTermination::OffsetFromFace { face, .. }
+        | AngularTermination::ToShape { target: face } => face_selection_is_resolved(face),
+        AngularTermination::ToVertex { vertex } => matches!(
+            vertex,
+            VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
+        ),
+        AngularTermination::Angle { angle } => angle.0.is_finite(),
+        AngularTermination::ThroughAll
+        | AngularTermination::ThroughNext
+        | AngularTermination::ToFirst
+        | AngularTermination::ToLast => true,
     }
 }
 
@@ -605,11 +625,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             };
             let extent_is_resolved = match extent {
                 ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                    termination_is_resolved(&side.termination)
+                    linear_termination_is_resolved(&side.termination)
                 }
                 ExtrudeExtent::TwoSided { first, second } => {
-                    termination_is_resolved(&first.termination)
-                        && termination_is_resolved(&second.termination)
+                    linear_termination_is_resolved(&first.termination)
+                        && linear_termination_is_resolved(&second.termination)
                 }
             };
             !profile_ref_is_resolved(profile) || !start_is_resolved || !extent_is_resolved
@@ -623,22 +643,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 .axis
                 .as_ref()
                 .is_some_and(|axis| axis.direction.unit().is_some());
-            let revolve_termination_is_resolved =
-                |termination: &cadmpeg_ir::features::Termination| match termination {
-                    cadmpeg_ir::features::Termination::Angle { angle } => angle.0.is_finite(),
-                    termination => termination_is_resolved(termination),
-                };
             let extent_is_resolved = construction.extent.as_ref().is_some_and(|extent| {
                 use cadmpeg_ir::features::RevolveExtent;
 
                 match extent {
                     RevolveExtent::OneSided { termination }
                     | RevolveExtent::Symmetric { termination } => {
-                        revolve_termination_is_resolved(termination)
+                        angular_termination_is_resolved(termination)
                     }
                     RevolveExtent::TwoSided { first, second } => {
-                        revolve_termination_is_resolved(first)
-                            && revolve_termination_is_resolved(second)
+                        angular_termination_is_resolved(first)
+                            && angular_termination_is_resolved(second)
                     }
                 }
             });
@@ -732,7 +747,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || diameter.is_none()
                 || extent
                     .as_ref()
-                    .is_none_or(|extent| !termination_is_resolved(extent))
+                    .is_none_or(|extent| !linear_termination_is_resolved(extent))
         }
         FeatureDefinition::Coil {
             construction,
@@ -1069,7 +1084,7 @@ fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, u
 
 fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGaps {
     use cadmpeg_ir::features::{
-        BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, Termination,
+        BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination,
     };
     use cadmpeg_ir::features::{FeatureDefinition, PathRef, ProfileRef};
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
@@ -1556,7 +1571,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     ExtrudeExtent::TwoSided { first, second } => vec![first, second],
                 };
                 for side in sides {
-                    if let Termination::ToFace { face, .. } = &side.termination {
+                    if let LinearTermination::ToFace { face, .. } = &side.termination {
                         face_selection(face);
                     }
                 }

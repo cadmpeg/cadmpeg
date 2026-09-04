@@ -629,13 +629,13 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         },
         extrude(
             cadmpeg_ir::features::ExtrudeDirection::Unresolved,
-            cadmpeg_ir::features::Termination::Blind {
+            cadmpeg_ir::features::LinearTermination::Blind {
                 length: Length(10.0),
             },
         ),
         extrude(
             cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-            cadmpeg_ir::features::Termination::ToVertex {
+            cadmpeg_ir::features::LinearTermination::ToVertex {
                 vertex: cadmpeg_ir::features::VertexSelection::Native("vertex".into()),
             },
         ),
@@ -839,7 +839,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
         kind: cadmpeg_ir::features::HoleKind::Simple,
         exit_kind,
         diameter: Some(Length(5.0)),
-        extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+        extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
         bottom: None,
         taper_angle: None,
         specification: None,

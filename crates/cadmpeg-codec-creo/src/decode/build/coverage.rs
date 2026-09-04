@@ -12,9 +12,9 @@ use crate::container::ContainerScan;
 
 use super::super::feature_history::replayed_torus_minor_radius;
 use super::ir::{
-    body_selection_has_unresolved_operands, face_selection_has_unresolved_operands,
+    angular_termination_has_unresolved_operands, body_selection_has_unresolved_operands,
+    face_selection_has_unresolved_operands, linear_termination_has_unresolved_operands,
     pattern_kind_has_unresolved_operands, surface_boundary_has_unresolved_operands,
-    termination_has_unresolved_operands,
 };
 
 /// Count transferred features by kind and record the counts in `coverage`.
@@ -140,11 +140,11 @@ pub(in super::super) fn collect_feature_coverage(
                 );
                 let incomplete_termination = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                        termination_has_unresolved_operands(&side.termination)
+                        linear_termination_has_unresolved_operands(&side.termination)
                     }
                     ExtrudeExtent::TwoSided { first, second } => {
-                        termination_has_unresolved_operands(&first.termination)
-                            || termination_has_unresolved_operands(&second.termination)
+                        linear_termination_has_unresolved_operands(&first.termination)
+                            || linear_termination_has_unresolved_operands(&second.termination)
                     }
                 };
                 let unresolved_op = *op == BooleanOp::Unresolved;
@@ -176,11 +176,11 @@ pub(in super::super) fn collect_feature_coverage(
                         .is_none_or(|extent| match extent {
                             RevolveExtent::OneSided { termination }
                             | RevolveExtent::Symmetric { termination } => {
-                                termination_has_unresolved_operands(termination)
+                                angular_termination_has_unresolved_operands(termination)
                             }
                             RevolveExtent::TwoSided { first, second } => {
-                                termination_has_unresolved_operands(first)
-                                    || termination_has_unresolved_operands(second)
+                                angular_termination_has_unresolved_operands(first)
+                                    || angular_termination_has_unresolved_operands(second)
                             }
                         });
                 let unresolved_op = *op == BooleanOp::Unresolved;
@@ -231,7 +231,7 @@ pub(in super::super) fn collect_feature_coverage(
                 let unresolved_diameter = diameter.is_none();
                 let incomplete_termination = extent
                     .as_ref()
-                    .is_none_or(termination_has_unresolved_operands);
+                    .is_none_or(linear_termination_has_unresolved_operands);
                 unresolved_hole_location_feature_count += usize::from(unresolved_location);
                 unresolved_hole_profile_feature_count += usize::from(unresolved_profile);
                 native_hole_profile_feature_count += usize::from(native_profile);

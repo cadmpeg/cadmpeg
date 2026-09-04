@@ -309,7 +309,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
             kind: cadmpeg_ir::features::HoleKind::Simple,
             diameter: Some(Length(4.0)),
-            extent: Some(cadmpeg_ir::features::Termination::Blind { length: Length(10.0) }),
+            extent: Some(cadmpeg_ir::features::LinearTermination::Blind { length: Length(10.0) }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
             ..
         } if faces == &vec![FaceId(crate::ids::brep_entity_id(282))]

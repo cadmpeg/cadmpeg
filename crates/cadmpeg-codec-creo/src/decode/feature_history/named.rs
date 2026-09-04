@@ -17,8 +17,8 @@ use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, PatternForm, PatternKind,
-    ProfileRef, RevolutionConstruction, Termination,
+    FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, LinearTermination, PatternForm,
+    PatternKind, ProfileRef, RevolutionConstruction,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
@@ -223,7 +223,7 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
 pub(in super::super) fn unresolved_extrude_extent() -> ExtrudeExtent {
     ExtrudeExtent::OneSided {
         side: ExtrudeSide {
-            termination: Termination::Unresolved,
+            termination: LinearTermination::Unresolved,
             draft: None,
             offset: None,
         },

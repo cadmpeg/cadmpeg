@@ -74,7 +74,7 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
         Some(FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(2.1)
                     },
                     ..
@@ -98,7 +98,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
         Some(FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(6.4)
                     },
                     ..
@@ -150,7 +150,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
             profile: ProfileRef::Feature(profile_ref),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length: Length(6.8) },
+                    termination: LinearTermination::Blind { length: Length(6.8) },
                     ..
                 }
             },
@@ -213,7 +213,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
             profile: ProfileRef::Feature(profile_ref),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length: Length(4.2) },
+                    termination: LinearTermination::Blind { length: Length(4.2) },
                     ..
                 }
             },
@@ -461,7 +461,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         projected,
         FeatureDefinition::Hole {
             diameter: Some(Length(6.6)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(9.4)
             }),
             ..
@@ -490,7 +490,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
                 ..
             },
         diameter: Some(diameter),
-        extent: Some(Termination::Blind { length }),
+        extent: Some(LinearTermination::Blind { length }),
         ..
     } = projected
     else {
@@ -1182,7 +1182,7 @@ fn simple_hole_uses_its_profile_dimension_roles() {
     assert_eq!(*diameter, Some(Length(4.5)));
     assert_eq!(
         *extent,
-        Some(Termination::Blind {
+        Some(LinearTermination::Blind {
             length: Length(13.2)
         })
     );
@@ -1290,7 +1290,7 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
                 drill_point_angle: Angle(drill_point_angle),
             },
             diameter: Some(Length(4.2)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(10.0),
             }),
             ..
@@ -1332,7 +1332,7 @@ fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
         FeatureDefinition::Revolve {
             construction: RevolutionConstruction {
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle: Angle(value) }
+                    termination: AngularTermination::Angle { angle: Angle(value) }
                 }),
                 ..
             },
@@ -1389,7 +1389,7 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
         FeatureDefinition::Revolve {
             construction: RevolutionConstruction {
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle: Angle(value) }
+                    termination: AngularTermination::Angle { angle: Angle(value) }
                 }),
                 ..
             },
@@ -1661,7 +1661,7 @@ fn profile_consumers_require_a_regeneration_profile() {
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Unresolved,
+                termination: LinearTermination::Unresolved,
                 draft: None,
                 offset: None,
             },

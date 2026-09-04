@@ -1508,7 +1508,9 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
 
 #[test]
 fn semantic_writer_round_trips_typed_revolution() {
-    use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, RevolveExtent, Termination};
+    use cadmpeg_ir::features::{
+        Angle, AngularTermination, BooleanOp, FeatureDefinition, RevolveExtent,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1531,7 +1533,7 @@ fn semantic_writer_round_trips_typed_revolution() {
                     direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
                 }),
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle: Angle(value) },
+                    termination: AngularTermination::Angle { angle: Angle(value) },
                 }),
                 ..
             },
@@ -1552,7 +1554,7 @@ fn semantic_writer_round_trips_typed_revolution() {
         axis.origin = Point3::new(1.0, 2.0, 3.0);
         axis.direction = Vector3::new(0.0, 0.0, 1.0);
         construction.extent = Some(RevolveExtent::OneSided {
-            termination: Termination::Angle {
+            termination: AngularTermination::Angle {
                 angle: Angle(std::f64::consts::FRAC_PI_2),
             },
         });
@@ -1665,7 +1667,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
 #[test]
 fn semantic_writer_round_trips_all_revolution_extents() {
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, FeatureDefinition, ProfileRef, RevolveExtent, Termination,
+        Angle, AngularTermination, BooleanOp, FeatureDefinition, ProfileRef, RevolveExtent,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1685,7 +1687,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: Some(ProfileRef::Feature(profile)),
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle: Angle(value) },
+                    termination: AngularTermination::Angle { angle: Angle(value) },
                 }),
                 ..
             },
@@ -1697,7 +1699,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 extent: Some(RevolveExtent::Symmetric {
-                    termination: Termination::Angle { angle: Angle(value) },
+                    termination: AngularTermination::Angle { angle: Angle(value) },
                 }),
                 ..
             },
@@ -1709,8 +1711,8 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 extent: Some(RevolveExtent::TwoSided {
-                    first: Termination::Angle { angle: Angle(first) },
-                    second: Termination::Angle { angle: Angle(second) },
+                    first: AngularTermination::Angle { angle: Angle(first) },
+                    second: AngularTermination::Angle { angle: Angle(second) },
                 }),
                 ..
             },
@@ -1727,7 +1729,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
             panic!("typed revolution");
         };
         construction.extent = Some(RevolveExtent::OneSided {
-            termination: Termination::Angle { angle: Angle(0.75) },
+            termination: AngularTermination::Angle { angle: Angle(0.75) },
         });
         *op = BooleanOp::Intersect;
     }

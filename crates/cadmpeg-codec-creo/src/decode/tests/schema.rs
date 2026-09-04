@@ -607,7 +607,7 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -657,7 +657,7 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -741,7 +741,7 @@ fn decode_types_named_base_protrusion_as_new_body() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -780,7 +780,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -807,7 +807,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -1168,7 +1168,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
                 profile: None,
                 axis: None,
                 extent: Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                    termination: cadmpeg_ir::features::Termination::Angle {
+                    termination: cadmpeg_ir::features::AngularTermination::Angle {
                         angle: cadmpeg_ir::features::Angle(angle)
                     }
                 }),

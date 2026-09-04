@@ -5,7 +5,7 @@ use crate::test_support::*;
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, FeatureDefinition,
-    InnerWireTaper, Length, PathRef, Termination,
+    InnerWireTaper, Length, LinearTermination, PathRef,
 };
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -106,7 +106,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     ));
     assert!(matches!(
         extent,
-        Some(cadmpeg_ir::features::Termination::ThroughAll)
+        Some(cadmpeg_ir::features::LinearTermination::ThroughAll)
     ));
     assert!(matches!(
         bottom,
@@ -195,7 +195,7 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
                 arcs: true,
             }),
             kind: cadmpeg_ir::features::HoleKind::Simple,
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(25.0),
             }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Angled { .. }),
@@ -852,7 +852,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToLast,
+                    termination: LinearTermination::ToLast,
                     ..
                 }
             },
@@ -864,7 +864,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToFirst,
+                    termination: LinearTermination::ToFirst,
                     ..
                 }
             },
@@ -876,7 +876,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToFace { .. },
+                    termination: LinearTermination::ToFace { .. },
                     ..
                 }
             },
@@ -888,7 +888,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToShape { .. },
+                    termination: LinearTermination::ToShape { .. },
                     ..
                 }
             },
@@ -900,7 +900,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ThroughAll,
+                    termination: LinearTermination::ThroughAll,
                     ..
                 }
             },
@@ -914,7 +914,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length },
+                    termination: LinearTermination::Blind { length },
                     draft: Some(Angle(draft)),
                     ..
                 }
@@ -929,12 +929,12 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: Termination::Blind { length: first },
+                    termination: LinearTermination::Blind { length: first },
                     draft: Some(Angle(draft)),
                     ..
                 },
                 second: ExtrudeSide {
-                    termination: Termination::Blind { length: second },
+                    termination: LinearTermination::Blind { length: second },
                     draft: Some(Angle(reverse_draft)),
                     ..
                 },
@@ -957,7 +957,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length },
+                    termination: LinearTermination::Blind { length },
                     ..
                 }
             },
@@ -1060,7 +1060,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::Symmetric {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind { length },
+                    termination: cadmpeg_ir::features::LinearTermination::Blind { length },
                     draft: Some(cadmpeg_ir::features::Angle(draft)),
                     ..
                 }
@@ -1113,7 +1113,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(5.0)
                     },
                     ..
@@ -1296,12 +1296,12 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: Termination::Blind { length: Length(-5.0) },
+                    termination: LinearTermination::Blind { length: Length(-5.0) },
                     draft: Some(Angle(first_draft)),
                     offset: Some(Length(1.0)),
                 },
                 second: ExtrudeSide {
-                    termination: Termination::ToShape { .. },
+                    termination: LinearTermination::ToShape { .. },
                     draft: Some(Angle(second_draft)),
                     offset: Some(Length(-2.0)),
                 },
@@ -1321,7 +1321,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: Termination::ThroughAll,
+                    termination: LinearTermination::ThroughAll,
                     offset: Some(Length(0.5)),
                     ..
                 }
@@ -1334,13 +1334,13 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(6.0)
                     },
                     ..
                 },
                 second: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(2.0)
                     },
                     ..
@@ -1410,7 +1410,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
                 FeatureDefinition::Extrude {
                     extent: ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
-                            termination: Termination::Blind {
+                            termination: LinearTermination::Blind {
                                 length: Length(6.0)
                             },
                             ..
@@ -1856,7 +1856,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
             profile: cadmpeg_ir::features::ProfileRef::Sketch(_),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
                         length: cadmpeg_ir::features::Length(10.0)
                     },
                     ..
@@ -1871,7 +1871,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
                         length: cadmpeg_ir::features::Length(2.5)
                     },
                     ..

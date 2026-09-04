@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, EdgeSelection, ExtrudeDirection,
     ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, Feature, FeatureDefinition,
-    FeatureId, FeatureResultTopology, FilletGroup, HoleKind, HolePlacement, Length, ParameterValue,
-    ProfileRef, RadiusSpec, Termination,
+    FeatureId, FeatureResultTopology, FilletGroup, HoleKind, HolePlacement, Length,
+    LinearTermination, ParameterValue, ProfileRef, RadiusSpec,
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1161,9 +1161,9 @@ fn project_extrusion(
     let length = length_parameter(source, 4, index)?;
     let taper = angle_parameter(source, 5, index)?;
     let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
-        1 if length.0 > 0.0 => Termination::Blind { length },
-        4 => Termination::ThroughNext,
-        5 => Termination::ThroughAll,
+        1 if length.0 > 0.0 => LinearTermination::Blind { length },
+        4 => LinearTermination::ThroughNext,
+        5 => LinearTermination::ThroughAll,
         _ => return None,
     };
     let side = ExtrudeSide {
@@ -1378,9 +1378,9 @@ fn project_hole(
         _ => return None,
     };
     let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
-        1 if depth.0 > 0.0 => Termination::Blind { length: depth },
-        4 => Termination::ThroughNext,
-        5 => Termination::ThroughAll,
+        1 if depth.0 > 0.0 => LinearTermination::Blind { length: depth },
+        4 => LinearTermination::ThroughNext,
+        5 => LinearTermination::ThroughAll,
         _ => return None,
     };
     let transform_reference = source.properties.references.get(8)?;
@@ -2351,7 +2351,7 @@ mod tests {
                 direction: ExtrudeDirection::Explicit(Vector3 { z: -1.0, .. }),
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: Termination::Blind {
+                        termination: LinearTermination::Blind {
                             length: Length(12.0)
                         },
                         draft: Some(Angle(0.1)),
@@ -2496,7 +2496,7 @@ mod tests {
                     drill_point_angle: Angle(2.0)
                 },
                 diameter: Some(Length(5.0)),
-                extent: Some(Termination::ThroughAll),
+                extent: Some(LinearTermination::ThroughAll),
                 ..
             } if matches!(
                 placements.as_slice(),

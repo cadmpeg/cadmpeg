@@ -684,8 +684,8 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
 #[test]
 fn semantic_writer_round_trips_sparse_positional_extrusions() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ParameterValue,
-        Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
+        ParameterValue,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -709,7 +709,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             FeatureDefinition::Extrude {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: Termination::Blind {
+                        termination: LinearTermination::Blind {
                             length: Length(200.0)
                         },
                         ..
@@ -726,7 +726,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(3.0)
                     },
                     ..
@@ -741,7 +741,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(4.0)
                     },
                     ..
@@ -771,7 +771,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                 ExtrudeExtent::OneSided {
                     side:
                         ExtrudeSide {
-                            termination: Termination::Blind { length },
+                            termination: LinearTermination::Blind { length },
                             ..
                         },
                 },
@@ -786,7 +786,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                 ExtrudeExtent::OneSided {
                     side:
                         ExtrudeSide {
-                            termination: Termination::Blind { length },
+                            termination: LinearTermination::Blind { length },
                             ..
                         },
                 },
@@ -823,7 +823,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(250.0)
                     },
                     ..
@@ -838,7 +838,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(4.5)
                     },
                     ..
@@ -853,7 +853,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(4.0)
                     },
                     ..
@@ -961,8 +961,8 @@ fn semantic_writer_round_trips_feature_output_scope() {
 #[test]
 fn semantic_writer_round_trips_all_extrusion_forms() {
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ProfileRef,
-        Termination,
+        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
+        ProfileRef,
     };
     use cadmpeg_ir::math::Vector3;
 
@@ -985,7 +985,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length: Length(2.0) },
+                    termination: LinearTermination::Blind { length: Length(2.0) },
                     draft: None,
                     ..
                 }
@@ -1000,7 +1000,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length: Length(4.0) },
+                    termination: LinearTermination::Blind { length: Length(4.0) },
                     draft: Some(Angle(value)),
                     ..
                 }
@@ -1014,13 +1014,13 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(3.0)
                     },
                     ..
                 },
                 second: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(7.0)
                     },
                     ..
@@ -1040,7 +1040,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             }),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ThroughAll,
+                    termination: LinearTermination::ThroughAll,
                     ..
                 }
             },
@@ -1062,14 +1062,14 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         *direction = cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(1.0, 0.0, 0.0));
         *extent = ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(8.0),
                 },
                 draft: Some(Angle(0.1)),
                 offset: None,
             },
             second: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(9.0),
                 },
                 draft: None,
@@ -1086,7 +1086,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         *direction = cadmpeg_ir::features::ExtrudeDirection::ProfileNormal;
         *extent = ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::ThroughAll,
+                termination: LinearTermination::ThroughAll,
                 draft: None,
                 offset: None,
             },
@@ -1119,7 +1119,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
 #[test]
 fn semantic_writer_round_trips_extrusion_to_face() {
     use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, Termination,
+        ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, LinearTermination,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1142,7 +1142,7 @@ fn semantic_writer_round_trips_extrusion_to_face() {
             extent,
             &ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToFace {
+                    termination: LinearTermination::ToFace {
                         face: FaceSelection::Native("face:12".into()),
                         offset: None,
                     },
@@ -1153,7 +1153,7 @@ fn semantic_writer_round_trips_extrusion_to_face() {
         );
         *extent = ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::ToFace {
+                termination: LinearTermination::ToFace {
                     face: FaceSelection::Native("face:13".into()),
                     offset: None,
                 },
@@ -1181,7 +1181,7 @@ fn semantic_writer_round_trips_extrusion_to_face() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToFace {
+                    termination: LinearTermination::ToFace {
                         face: FaceSelection::Native(face),
                         ..
                     },

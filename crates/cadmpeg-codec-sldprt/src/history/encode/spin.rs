@@ -9,9 +9,9 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, LoftSection, PathRef, ProfileRef, RevolutionConstruction, RevolveExtent,
-    SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent, SweepSection,
-    SweepTransformation, SweepTransition, Termination,
+    Angle, AngularTermination, BooleanOp, LoftSection, PathRef, ProfileRef, RevolutionConstruction,
+    RevolveExtent, SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent, SweepSection,
+    SweepTransformation, SweepTransition,
 };
 
 #[allow(
@@ -70,20 +70,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 parameters.remove("Angle2");
                 match extent {
                     RevolveExtent::OneSided {
-                        termination: Termination::Angle { angle },
+                        termination: AngularTermination::Angle { angle },
                     } => {
                         properties.insert("EndCondition".into(), "OneSided".into());
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                     }
                     RevolveExtent::Symmetric {
-                        termination: Termination::Angle { angle },
+                        termination: AngularTermination::Angle { angle },
                     } => {
                         properties.insert("EndCondition".into(), "Symmetric".into());
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                     }
                     RevolveExtent::TwoSided {
-                        first: Termination::Angle { angle: first },
-                        second: Termination::Angle { angle: second },
+                        first: AngularTermination::Angle { angle: first },
+                        second: AngularTermination::Angle { angle: second },
                     } => {
                         properties.insert("EndCondition".into(), "TwoSided".into());
                         parameters.insert("Angle".into(), format_angle_rad(first.0));

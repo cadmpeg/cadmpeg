@@ -27,8 +27,8 @@ use crate::decode::sweep::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length, RadiusForm,
-    RadiusSpec, Termination,
+    ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length,
+    LinearTermination, RadiusForm, RadiusSpec,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
@@ -286,7 +286,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         sweep.extent,
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(8.0),
                 },
                 draft: None,
@@ -1204,14 +1204,14 @@ fn asymmetric_cap_planes_define_two_sided_extent() {
         Some((
             ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(3.0),
                     },
                     draft: None,
                     offset: None,
                 },
                 second: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(2.0),
                     },
                     draft: None,
@@ -1234,7 +1234,7 @@ fn one_negative_cap_offset_reverses_blind_direction() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(48.0),
                     },
                     draft: None,
@@ -1260,7 +1260,7 @@ fn zero_offset_support_plane_does_not_obscure_blind_cap() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(48.0),
                     },
                     draft: None,
@@ -1287,7 +1287,7 @@ fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(38.0),
                     },
                     draft: None,
@@ -1323,7 +1323,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(34.0)
                     },
                     draft: None,
@@ -1479,7 +1479,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let expected = Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(8.0),
                 },
                 draft: None,
@@ -1556,7 +1556,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(8.0),
                     },
                     draft: None,
@@ -1711,7 +1711,7 @@ fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(2.0),
                     },
                     draft: None,
@@ -1755,7 +1755,7 @@ fn ordered_parallel_caps_define_blind_direction_and_depth() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(10.0),
                     },
                     draft: None,
@@ -1770,7 +1770,7 @@ fn ordered_parallel_caps_define_blind_direction_and_depth() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(10.0),
                     },
                     draft: None,
@@ -1844,7 +1844,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(6.0),
                     },
                     draft: None,
@@ -1930,7 +1930,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(42.0),
                     },
                     draft: None,
@@ -1946,7 +1946,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(42.0),
                     },
                     draft: None,
@@ -1962,7 +1962,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(42.0),
                     },
                     draft: None,

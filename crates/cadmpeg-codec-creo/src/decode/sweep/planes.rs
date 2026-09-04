@@ -8,7 +8,7 @@ use super::super::holes::blind_extrude_side;
 use super::super::sketch::normalized;
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
 use std::collections::{BTreeMap, BTreeSet};
@@ -407,7 +407,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
     Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(length),
                 },
                 draft: None,

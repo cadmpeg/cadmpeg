@@ -4,9 +4,9 @@
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, FeatureDefinition, Length, PathRef, ProfileRef, RevolutionAxis,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, SweepMode,
-    Termination,
+    Angle, AngularTermination, BooleanOp, FeatureDefinition, Length, PathRef, ProfileRef,
+    RevolutionAxis, RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide,
+    SweepMode,
 };
 use std::collections::HashMap;
 
@@ -275,16 +275,16 @@ pub(crate) fn project_revolve(
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("OneSided") => angle("Angle", 0).map(|angle| RevolveExtent::OneSided {
-            termination: Termination::Angle { angle },
+            termination: AngularTermination::Angle { angle },
         }),
         Some("Symmetric") => angle("Angle", 0).map(|angle| RevolveExtent::Symmetric {
-            termination: Termination::Angle { angle },
+            termination: AngularTermination::Angle { angle },
         }),
         Some("TwoSided") => angle("Angle", 0)
             .zip(angle("Angle2", 1))
             .map(|(first, second)| RevolveExtent::TwoSided {
-                first: Termination::Angle { angle: first },
-                second: Termination::Angle { angle: second },
+                first: AngularTermination::Angle { angle: first },
+                second: AngularTermination::Angle { angle: second },
             }),
         Some(_) => None,
     };

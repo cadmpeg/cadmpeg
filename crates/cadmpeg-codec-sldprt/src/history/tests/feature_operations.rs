@@ -13,7 +13,7 @@ use crate::SldprtCodec;
 fn decode_resolves_feature_topology_selections() {
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition,
-        PathRef, ProfileRef, Termination,
+        LinearTermination, PathRef, ProfileRef,
     };
 
     // Two bodies so the combine has disjoint operands: a body cannot be both
@@ -84,7 +84,7 @@ fn decode_resolves_feature_topology_selections() {
             profile: ProfileRef::Faces(profile_faces),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToFace {
+                    termination: LinearTermination::ToFace {
                         face: FaceSelection::Resolved { faces, native },
                         ..
                     },
@@ -131,7 +131,7 @@ fn decode_resolves_feature_topology_selections() {
             ExtrudeExtent::OneSided {
                 side:
                     ExtrudeSide {
-                        termination: Termination::ToFace { face, .. },
+                        termination: LinearTermination::ToFace { face, .. },
                         ..
                     },
             },
@@ -505,7 +505,7 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
 
 #[test]
 fn decode_projects_generic_revolution_with_explicit_operation() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, RevolveExtent, Termination};
+    use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureDefinition, RevolveExtent};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -521,7 +521,7 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle },
+                    termination: AngularTermination::Angle { angle },
                 }),
                 ..
             },
@@ -1027,7 +1027,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         extent,
         &cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
-                termination: cadmpeg_ir::features::Termination::Blind {
+                termination: cadmpeg_ir::features::LinearTermination::Blind {
                     length: cadmpeg_ir::features::Length(25.0),
                 },
                 draft: None,

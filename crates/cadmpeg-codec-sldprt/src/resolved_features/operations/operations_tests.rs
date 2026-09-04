@@ -476,8 +476,9 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 #[test]
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
     use cadmpeg_ir::features::{
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FeatureDefinition, Length,
-        ProfileRef, RevolutionAxis, RevolutionConstruction, RevolveExtent, Termination,
+        AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+        FeatureDefinition, Length, LinearTermination, ProfileRef, RevolutionAxis,
+        RevolutionConstruction, RevolveExtent,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
@@ -488,7 +489,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         start: ExtrudeStart::ProfilePlane,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(1.0),
                 },
                 draft: None,
@@ -511,7 +512,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
                 direction: Vector3::new(0.0, 0.0, 1.0),
             }),
             extent: Some(RevolveExtent::OneSided {
-                termination: Termination::ThroughAll,
+                termination: AngularTermination::ThroughAll,
             }),
             axis_reference: None,
             solid: Some(true),

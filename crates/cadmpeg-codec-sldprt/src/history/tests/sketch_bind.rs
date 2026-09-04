@@ -318,8 +318,8 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, ProfileRef,
-        Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, LinearTermination,
+        ProfileRef,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchId};
@@ -386,7 +386,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: Termination::Unresolved,
+                        termination: LinearTermination::Unresolved,
                         draft: None,
                         offset: None,
                     },

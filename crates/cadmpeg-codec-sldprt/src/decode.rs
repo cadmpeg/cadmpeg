@@ -352,9 +352,9 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
 
 fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     use cadmpeg_ir::features::{
-        BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent,
-        FaceSelection, FeatureDefinition, FeatureSourceContent, PathRef, ProfileRef, RadiusSpec,
-        RevolveExtent, SplitFaceTool, Termination,
+        AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec,
+        EdgeSelection, ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureSourceContent,
+        LinearTermination, PathRef, ProfileRef, RadiusSpec, RevolveExtent, SplitFaceTool,
     };
     use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 
@@ -1053,34 +1053,45 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 | cadmpeg_ir::features::VertexSelection::Native(_)
         )
     };
-    let incomplete_termination = |termination: &Termination| match termination {
-        Termination::Unresolved => true,
-        Termination::ToFace { face, .. }
-        | Termination::OffsetFromFace { face, .. }
-        | Termination::ToShape { target: face } => incomplete_face_selection(face),
-        Termination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
-        Termination::Blind { .. }
-        | Termination::ThroughAll
-        | Termination::ThroughNext
-        | Termination::ToFirst
-        | Termination::ToLast
-        | Termination::Angle { .. } => false,
+    let incomplete_linear_termination = |termination: &LinearTermination| match termination {
+        LinearTermination::Unresolved => true,
+        LinearTermination::ToFace { face, .. }
+        | LinearTermination::OffsetFromFace { face, .. }
+        | LinearTermination::ToShape { target: face } => incomplete_face_selection(face),
+        LinearTermination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
+        LinearTermination::Blind { .. }
+        | LinearTermination::ThroughAll
+        | LinearTermination::ThroughNext
+        | LinearTermination::ToFirst
+        | LinearTermination::ToLast => false,
+    };
+    let incomplete_angular_termination = |termination: &AngularTermination| match termination {
+        AngularTermination::Unresolved => true,
+        AngularTermination::ToFace { face, .. }
+        | AngularTermination::OffsetFromFace { face, .. }
+        | AngularTermination::ToShape { target: face } => incomplete_face_selection(face),
+        AngularTermination::ToVertex { vertex } => incomplete_vertex_selection(vertex),
+        AngularTermination::ThroughAll
+        | AngularTermination::ThroughNext
+        | AngularTermination::ToFirst
+        | AngularTermination::ToLast
+        | AngularTermination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-            incomplete_termination(&side.termination)
+            incomplete_linear_termination(&side.termination)
         }
         ExtrudeExtent::TwoSided { first, second } => {
-            incomplete_termination(&first.termination)
-                || incomplete_termination(&second.termination)
+            incomplete_linear_termination(&first.termination)
+                || incomplete_linear_termination(&second.termination)
         }
     };
     let incomplete_revolve_extent = |extent: &RevolveExtent| match extent {
         RevolveExtent::OneSided { termination } | RevolveExtent::Symmetric { termination } => {
-            incomplete_termination(termination)
+            incomplete_angular_termination(termination)
         }
         RevolveExtent::TwoSided { first, second } => {
-            incomplete_termination(first) || incomplete_termination(second)
+            incomplete_angular_termination(first) || incomplete_angular_termination(second)
         }
     };
     let incomplete_typed_features = evaluated_feature_states
@@ -1620,7 +1631,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     || kind.is_unresolved()
                     || exit_kind_is_unresolved
                     || diameter.is_none()
-                    || extent.as_ref().is_none_or(incomplete_termination)
+                    || extent
+                        .as_ref()
+                        .is_none_or(incomplete_linear_termination)
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
                 seeds.is_empty()
@@ -3960,12 +3973,12 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         }
         let incomplete = diameter.is_none()
             || extent.as_ref().is_none_or(|extent| {
-                matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
+                matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved)
             })
             || kind.is_unresolved();
         let resolved_complete = resolved_diameter.is_some()
             && resolved_extent.as_ref().is_some_and(|extent| {
-                !matches!(extent, cadmpeg_ir::features::Termination::Unresolved)
+                !matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved)
             })
             && !matches!(
                 resolved_kind,

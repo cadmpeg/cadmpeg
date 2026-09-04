@@ -3,7 +3,7 @@
 
 use crate::decode::sweep::generated_nurbs_translation_extent;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -35,7 +35,7 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
     (
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(2.0),
                 },
                 draft: None,

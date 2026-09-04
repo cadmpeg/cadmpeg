@@ -5608,8 +5608,8 @@ pub(crate) fn project_fixed_revolve_with_entities(
     curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        Angle, FeatureDefinition, ProfileRef, RevolutionAxis, RevolutionConstruction,
-        RevolveExtent, Termination,
+        Angle, AngularTermination, FeatureDefinition, ProfileRef, RevolutionAxis,
+        RevolutionConstruction, RevolveExtent,
     };
 
     let DesignPathFeatureConstruction::Revolve {
@@ -5693,7 +5693,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
             profile: Some(ProfileRef::Native(profile.id.clone())),
             axis,
             extent: Some(RevolveExtent::OneSided {
-                termination: Termination::Angle {
+                termination: AngularTermination::Angle {
                     angle: Angle(*angle),
                 },
             }),
@@ -7131,7 +7131,7 @@ fn project_hole(
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, HoleBottom, HoleKind, Termination,
+        FaceSelection, FeatureDefinition, HoleBottom, HoleKind, LinearTermination,
     };
 
     if scope.kind != "Hole" || !matches!(parameters.len(), 3 | 5) {
@@ -7224,7 +7224,7 @@ fn project_hole(
         kind,
         exit_kind: None,
         diameter: Some(diameter),
-        extent: Some(Termination::Blind { length: depth }),
+        extent: Some(LinearTermination::Blind { length: depth }),
         bottom,
         taper_angle: None,
         specification: None,
@@ -7626,17 +7626,17 @@ pub(crate) fn project_extrude(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-        FaceSelection, FeatureDefinition, Length, ProfileRef, Termination,
+        FaceSelection, FeatureDefinition, Length, LinearTermination, ProfileRef,
     };
 
     // Per-side terminations without side-local modifiers; drafts and offsets
     // are attached below once they are resolved.
     enum ExtentShape {
-        OneSided(Termination),
-        Symmetric(Termination),
+        OneSided(LinearTermination),
+        Symmetric(LinearTermination),
         TwoSided {
-            first: Termination,
-            second: Termination,
+            first: LinearTermination,
+            second: LinearTermination,
         },
     }
 
@@ -7898,7 +7898,7 @@ pub(crate) fn project_extrude(
                 && effective_side_one_offset.is_none() =>
         {
             (
-                ExtentShape::OneSided(Termination::Blind {
+                ExtentShape::OneSided(LinearTermination::Blind {
                     length: Length(along.0.abs()),
                 }),
                 match along_direction {
@@ -7919,10 +7919,10 @@ pub(crate) fn project_extrude(
         {
             (
                 ExtentShape::TwoSided {
-                    first: Termination::Blind {
+                    first: LinearTermination::Blind {
                         length: Length(along.0.abs()),
                     },
-                    second: Termination::Blind {
+                    second: LinearTermination::Blind {
                         length: Length(against.0.abs()),
                     },
                 },
@@ -7945,10 +7945,10 @@ pub(crate) fn project_extrude(
             };
             (
                 ExtentShape::TwoSided {
-                    first: Termination::Blind {
+                    first: LinearTermination::Blind {
                         length: Length(along.0.abs()),
                     },
-                    second: Termination::ToFace {
+                    second: LinearTermination::ToFace {
                         face: resolved_historical_face_group(scope, termination, face_operands)
                             .or_else(|| resolved_face_group(termination, face_operands))
                             .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
@@ -7969,13 +7969,13 @@ pub(crate) fn project_extrude(
             };
             (
                 ExtentShape::TwoSided {
-                    first: Termination::ToFace {
+                    first: LinearTermination::ToFace {
                         face: resolved_historical_face_group(scope, first, face_operands)
                             .or_else(|| resolved_face_group(first, face_operands))
                             .unwrap_or_else(|| FaceSelection::Native(first.id.clone())),
                         offset: side_one_offset.filter(|offset| offset.0 != 0.0),
                     },
-                    second: Termination::ToFace {
+                    second: LinearTermination::ToFace {
                         face: resolved_historical_face_group(scope, second, face_operands)
                             .or_else(|| resolved_face_group(second, face_operands))
                             .unwrap_or_else(|| FaceSelection::Native(second.id.clone())),
@@ -7995,7 +7995,7 @@ pub(crate) fn project_extrude(
             && effective_side_one_offset.is_none() =>
         {
             (
-                ExtentShape::Symmetric(Termination::Blind {
+                ExtentShape::Symmetric(LinearTermination::Blind {
                     length: Length(along.0.abs()),
                 }),
                 along.0 < 0.0,
@@ -8006,7 +8006,7 @@ pub(crate) fn project_extrude(
                 && termination_groups.is_empty()
                 && effective_side_one_offset.is_none() =>
         {
-            (ExtentShape::Symmetric(Termination::ThroughAll), false)
+            (ExtentShape::Symmetric(LinearTermination::ThroughAll), false)
         }
         (DesignExtrudeExtent::OneSidedToFace, None, None) => {
             match (
@@ -8016,7 +8016,7 @@ pub(crate) fn project_extrude(
                 ([termination], []) => {
                     let offset = face_side_one_offset?;
                     (
-                        ExtentShape::OneSided(Termination::ToFace {
+                        ExtentShape::OneSided(LinearTermination::ToFace {
                             face: resolved_historical_face_group(scope, termination, face_operands)
                                 .or_else(|| resolved_face_group(termination, face_operands))
                                 .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
@@ -8026,7 +8026,7 @@ pub(crate) fn project_extrude(
                     )
                 }
                 ([], [target]) if effective_side_one_offset.is_none() => (
-                    ExtentShape::OneSided(Termination::ToShape {
+                    ExtentShape::OneSided(LinearTermination::ToShape {
                         target: resolved_body_recipe_shape(scope, target, body_recipe_operands)
                             .unwrap_or_else(|| FaceSelection::Native(target.id.clone())),
                     }),
@@ -8039,7 +8039,7 @@ pub(crate) fn project_extrude(
             if termination_groups.is_empty() && effective_side_one_offset.is_none() =>
         {
             (
-                ExtentShape::OneSided(Termination::ThroughNext),
+                ExtentShape::OneSided(LinearTermination::ThroughNext),
                 prologue.direction_reversed(),
             )
         }
@@ -8047,7 +8047,7 @@ pub(crate) fn project_extrude(
             if termination_groups.is_empty() && effective_side_one_offset.is_none() =>
         {
             (
-                ExtentShape::OneSided(Termination::ThroughAll),
+                ExtentShape::OneSided(LinearTermination::ThroughAll),
                 prologue.direction_reversed(),
             )
         }

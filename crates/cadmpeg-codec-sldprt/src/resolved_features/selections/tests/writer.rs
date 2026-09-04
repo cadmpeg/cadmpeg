@@ -95,7 +95,9 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
 
 #[test]
 fn semantic_writer_rejects_compact_surface_selection_edits() {
-    use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, FeatureDefinition, Termination};
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, FaceSelection, FeatureDefinition, LinearTermination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -175,7 +177,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
         else {
             panic!("typed extrusion");
         };
-        let Termination::ToFace { face, .. } = &mut side.termination else {
+        let LinearTermination::ToFace { face, .. } = &mut side.termination else {
             panic!("to-face termination");
         };
         *face = FaceSelection::Native("changed".into());

@@ -240,7 +240,7 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -273,7 +273,7 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },
@@ -476,7 +476,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             profile: cadmpeg_ir::features::ProfileRef::Native(profile),
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 }
             },

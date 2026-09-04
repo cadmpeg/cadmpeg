@@ -18,7 +18,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{alloc_filled, View};
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, HoleBottom, HoleKind, HolePlacement, Length, Termination,
+    Angle, FeatureDefinition, HoleBottom, HoleKind, HolePlacement, Length, LinearTermination,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -586,7 +586,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
 #[derive(Clone)]
 struct ProfiledHoleConstruction {
     diameter: Length,
-    extent: Termination,
+    extent: LinearTermination,
     kind: HoleKind,
     bottom: Option<HoleBottom>,
     taper_angle: Option<Angle>,
@@ -667,7 +667,7 @@ fn profiled_hole_construction_with_evidence(
         match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
             ([diameter], [depth], []) => Some(ProfiledHoleConstruction {
                 diameter: Length(*diameter),
-                extent: Termination::Blind {
+                extent: LinearTermination::Blind {
                     length: Length(*depth),
                 },
                 kind: HoleKind::Simple,
@@ -676,7 +676,7 @@ fn profiled_hole_construction_with_evidence(
             }),
             ([diameter], [depth], [drill_point_angle]) => Some(ProfiledHoleConstruction {
                 diameter: Length(*diameter),
-                extent: Termination::Blind {
+                extent: LinearTermination::Blind {
                     length: Length(*depth),
                 },
                 kind: HoleKind::SimpleDrilled {
@@ -763,7 +763,7 @@ fn profiled_hole_construction_with_evidence(
         })
     };
     if let Some(construction) = dimension_only {
-        let Termination::Blind { length } = construction.extent else {
+        let LinearTermination::Blind { length } = construction.extent else {
             unreachable!("dimension-only hole profiles are blind");
         };
         let radius = construction.diameter.0 / 2.0;
@@ -838,7 +838,7 @@ fn profiled_hole_construction_with_evidence(
                         if profile_translation(&edges, 2).is_some() {
                             return Some(ProfiledHoleConstruction {
                                 diameter: Length(*diameter),
-                                extent: Termination::ThroughAll,
+                                extent: LinearTermination::ThroughAll,
                                 kind: HoleKind::Counterdrill {
                                     diameter: Length(*recess_diameter),
                                     entry_diameter: Some(Length(*entry_diameter)),
@@ -906,7 +906,7 @@ fn profiled_hole_construction_with_evidence(
                         }
                         return Some(ProfiledHoleConstruction {
                             diameter: Length(entry_radius * 2.0),
-                            extent: Termination::Blind {
+                            extent: LinearTermination::Blind {
                                 length: Length(*depth),
                             },
                             kind: HoleKind::Simple,
@@ -937,11 +937,11 @@ fn profiled_hole_construction_with_evidence(
                         let (kind, extent) = match angles.as_slice() {
                             [] => {
                                 let extent = if flat_bottom {
-                                    Termination::Blind {
+                                    LinearTermination::Blind {
                                         length: Length(*depth),
                                     }
                                 } else {
-                                    Termination::ThroughAll
+                                    LinearTermination::ThroughAll
                                 };
                                 (
                                     HoleKind::Counterbore {
@@ -970,7 +970,7 @@ fn profiled_hole_construction_with_evidence(
                                         depth: Length(*entry_depth),
                                         drill_point_angle: Angle(*drill_point_angle),
                                     },
-                                    Termination::Blind {
+                                    LinearTermination::Blind {
                                         length: Length(*depth),
                                     },
                                 )
@@ -1015,7 +1015,7 @@ fn profiled_hole_construction_with_evidence(
                     if profile_matches {
                         return Some(ProfiledHoleConstruction {
                             diameter: Length(*diameter),
-                            extent: Termination::ThroughAll,
+                            extent: LinearTermination::ThroughAll,
                             kind: HoleKind::Countersink {
                                 diameter: Length(*entry_diameter),
                                 angle: Angle(*sink_angle),
@@ -1045,7 +1045,7 @@ fn profiled_hole_construction_with_evidence(
                     if profile_translation(&edges, 2).is_some() {
                         return Some(ProfiledHoleConstruction {
                             diameter: Length(*diameter),
-                            extent: Termination::Blind {
+                            extent: LinearTermination::Blind {
                                 length: Length(*depth),
                             },
                             kind: HoleKind::Countersink {
@@ -1077,13 +1077,14 @@ pub(crate) fn project_profiled_hole_constructions(
     let mut ownership_histories = enriched_histories.clone();
     enrich_history_hole_constructions(&mut ownership_histories, lanes);
     let histories = enriched_histories.as_slice();
-    let incomplete = |diameter: &Option<Length>, extent: &Option<Termination>, kind: &HoleKind| {
-        diameter.is_none()
-            || extent
-                .as_ref()
-                .is_none_or(|extent| matches!(extent, Termination::Unresolved))
-            || kind.is_unresolved()
-    };
+    let incomplete =
+        |diameter: &Option<Length>, extent: &Option<LinearTermination>, kind: &HoleKind| {
+            diameter.is_none()
+                || extent
+                    .as_ref()
+                    .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
+                || kind.is_unresolved()
+        };
     let complete_native_holes = features
         .iter()
         .filter_map(|feature| {
@@ -2149,7 +2150,7 @@ fn project_flat_blind_topology_axes(
                 kind: HoleKind::Simple,
                 diameter: Some(Length(diameter)),
                 extent:
-                    Some(Termination::Blind {
+                    Some(LinearTermination::Blind {
                         length: Length(length),
                     }),
                 bottom: Some(HoleBottom::Flat),
@@ -2212,7 +2213,7 @@ fn project_drilled_hole_topology_axes(
                     },
                 diameter: Some(Length(diameter)),
                 extent:
-                    Some(Termination::Blind {
+                    Some(LinearTermination::Blind {
                         length: Length(length),
                     }),
                 bottom:
@@ -2323,9 +2324,10 @@ fn expand_seeded_drilled_hole_topology_axes(
                     drill_point_angle: Angle(drill_point_angle),
                 },
             diameter: Some(Length(diameter)),
-            extent: Some(Termination::Blind {
-                length: Length(length),
-            }),
+            extent:
+                Some(LinearTermination::Blind {
+                    length: Length(length),
+                }),
             bottom:
                 Some(HoleBottom::Angled {
                     included_angle: Angle(bottom_angle),
@@ -3203,7 +3205,7 @@ pub(crate) fn project_topological_hole_constructions(
             || (diameter.is_some()
                 && extent
                     .as_ref()
-                    .is_some_and(|extent| !matches!(extent, Termination::Unresolved)))
+                    .is_some_and(|extent| !matches!(extent, LinearTermination::Unresolved)))
         {
             continue;
         }
@@ -3258,9 +3260,9 @@ pub(crate) fn project_topological_hole_constructions(
         }
         if extent
             .as_ref()
-            .is_none_or(|extent| matches!(extent, Termination::Unresolved))
+            .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
         {
-            *extent = Some(Termination::Blind {
+            *extent = Some(LinearTermination::Blind {
                 length: Length(*depth),
             });
         }

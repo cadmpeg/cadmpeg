@@ -1118,7 +1118,7 @@ pub(crate) fn bind_profile_revolution_axes(
         let generated_axis_surfaces = if matches!(
             construction.extent.as_ref(),
             Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                termination: cadmpeg_ir::features::Termination::Angle { angle },
+                termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
             }) if (angle.0.abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9
         ) {
             surfaces

@@ -19,7 +19,7 @@ use super::terminations::is_extrusion_end_spec_owner;
 #[cfg(test)]
 use crate::records::FeatureInputClass;
 #[cfg(test)]
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, Length, Termination};
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, Length, LinearTermination};
 #[cfg(test)]
 use std::collections::BTreeMap;
 
@@ -788,7 +788,7 @@ mod idless_history_binding_tests {
                     start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                     extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                         side: cadmpeg_ir::features::ExtrudeSide {
-                            termination: Termination::Blind {
+                            termination: LinearTermination::Blind {
                                 length: Length(1.0),
                             },
                             draft: None,

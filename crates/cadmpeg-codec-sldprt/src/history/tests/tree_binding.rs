@@ -54,7 +54,7 @@ fn decode_extracts_parametric_history() {
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
                         length: cadmpeg_ir::features::Length(12.5),
                     },
                     draft: None,
@@ -233,7 +233,7 @@ fn decode_leaves_position_allocated_tree_nodes_untyped() {
 
 #[test]
 fn reserved_tree_node_ids_require_builtin_record_shape() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination};
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -253,7 +253,7 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 }
             },

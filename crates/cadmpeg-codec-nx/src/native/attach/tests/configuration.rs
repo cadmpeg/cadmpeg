@@ -1144,7 +1144,7 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
 #[test]
 fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, ProfileRef, Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination, ProfileRef,
     };
 
     assert_eq!(
@@ -1159,7 +1159,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     draft: None,
                     offset: None,
                 },

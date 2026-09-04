@@ -51,7 +51,9 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         SimpleHoleForm,
     };
     use cadmpeg_ir::document::{CadIr, Model};
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length, Termination};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, HoleKind, HolePlacement, Length, LinearTermination,
+    };
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
@@ -243,7 +245,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                 direction: Vector3::new(0.0, 0.0, 1.0),
             }],
             diameter: Some(Length(4.0)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(3.0),
             }),
             ..super::HoleProjection::default()
@@ -255,7 +257,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         FeatureDefinition::Hole {
             kind: HoleKind::Simple,
             diameter: Some(Length(4.0)),
-            extent: Some(Termination::Blind { length: Length(3.0) }),
+            extent: Some(LinearTermination::Blind { length: Length(3.0) }),
             placements,
             ..
         } if placements == [HolePlacement::Directed {
@@ -585,7 +587,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 depth: Length(2.0),
             },
             diameter: Some(Length(4.0)),
-            extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             placements,
             ..
         } if placements == [HolePlacement::Axis {

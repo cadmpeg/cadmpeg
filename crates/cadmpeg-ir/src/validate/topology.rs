@@ -1830,7 +1830,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
 fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     use crate::features::{
         EdgeSelection, ExtrudeExtent, FeatureDefinition, PathRef, ProfileRef, ScaleCenter,
-        Termination,
     };
 
     let mut configuration_ordinals = HashSet::new();
@@ -2041,10 +2040,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
                 if matches!(
-                    termination,
-                    Termination::ToVertex {
-                        vertex: crate::features::VertexSelection::Generated { vertex, native },
-                    } if native.trim().is_empty() || vertex.local_id.trim().is_empty()
+                    termination.vertex(),
+                    Some(crate::features::VertexSelection::Generated { vertex, native })
+                        if native.trim().is_empty() || vertex.local_id.trim().is_empty()
                 ) {
                     geometry_error(
                         findings,
@@ -4735,10 +4733,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     entity: Some(feature.id.0.clone()),
                 });
             }
-            if let Termination::ToFace {
-                face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
-                ..
-            } = termination
+            if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
+                termination.face()
             {
                 check_ids(
                     findings,
@@ -4748,9 +4744,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     |identity| ids.faces(identity).is_some(),
                 );
             }
-            if let Termination::ToShape {
-                target: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
-            } = termination
+            if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
+                termination.shape()
             {
                 check_ids(
                     findings,
@@ -4760,7 +4755,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     |identity| ids.faces(identity).is_some(),
                 );
             }
-            if let Termination::ToVertex { vertex } = termination {
+            if let Some(vertex) = termination.vertex() {
                 vertex_selections.push((vertex, "termination"));
             }
         }
@@ -5383,14 +5378,14 @@ fn regeneration_references(
         }
         _ => {}
     }
-    references.extend(definition_terminations(definition).filter_map(
-        |termination| match termination {
-            crate::features::Termination::ToVertex {
-                vertex: crate::features::VertexSelection::Generated { vertex, .. },
-            } => Some(&vertex.feature),
+    references.extend(
+        definition_terminations(definition).filter_map(|termination| match termination.vertex() {
+            Some(crate::features::VertexSelection::Generated { vertex, .. }) => {
+                Some(&vertex.feature)
+            }
             _ => None,
-        },
-    ));
+        }),
+    );
     for profile in definition_profiles(definition) {
         match profile {
             crate::features::ProfileRef::Feature(feature) => {
@@ -5447,18 +5442,57 @@ fn definition_profiles(
     profiles.into_iter()
 }
 
+#[derive(Clone, Copy)]
+enum TerminationRef<'a> {
+    Linear(&'a crate::features::LinearTermination),
+    Angular(&'a crate::features::AngularTermination),
+}
+
+impl<'a> TerminationRef<'a> {
+    fn face(self) -> Option<&'a crate::features::FaceSelection> {
+        match self {
+            Self::Linear(crate::features::LinearTermination::ToFace { face, .. })
+            | Self::Angular(crate::features::AngularTermination::ToFace { face, .. }) => Some(face),
+            _ => None,
+        }
+    }
+
+    fn shape(self) -> Option<&'a crate::features::FaceSelection> {
+        match self {
+            Self::Linear(crate::features::LinearTermination::ToShape { target })
+            | Self::Angular(crate::features::AngularTermination::ToShape { target }) => {
+                Some(target)
+            }
+            _ => None,
+        }
+    }
+
+    fn vertex(self) -> Option<&'a crate::features::VertexSelection> {
+        match self {
+            Self::Linear(crate::features::LinearTermination::ToVertex { vertex })
+            | Self::Angular(crate::features::AngularTermination::ToVertex { vertex }) => {
+                Some(vertex)
+            }
+            _ => None,
+        }
+    }
+}
+
 fn definition_terminations(
     definition: &crate::features::FeatureDefinition,
-) -> impl Iterator<Item = &crate::features::Termination> {
+) -> impl Iterator<Item = TerminationRef<'_>> {
     let mut terminations = Vec::new();
     match definition {
         crate::features::FeatureDefinition::Extrude { extent, .. } => match extent {
             crate::features::ExtrudeExtent::OneSided { side }
             | crate::features::ExtrudeExtent::Symmetric { side } => {
-                terminations.push(&side.termination);
+                terminations.push(TerminationRef::Linear(&side.termination));
             }
             crate::features::ExtrudeExtent::TwoSided { first, second } => {
-                terminations.extend([&first.termination, &second.termination]);
+                terminations.extend([
+                    TerminationRef::Linear(&first.termination),
+                    TerminationRef::Linear(&second.termination),
+                ]);
             }
         },
         crate::features::FeatureDefinition::Revolve { construction, .. } => {
@@ -5466,9 +5500,12 @@ fn definition_terminations(
                 Some(
                     crate::features::RevolveExtent::OneSided { termination }
                     | crate::features::RevolveExtent::Symmetric { termination },
-                ) => terminations.push(termination),
+                ) => terminations.push(TerminationRef::Angular(termination)),
                 Some(crate::features::RevolveExtent::TwoSided { first, second }) => {
-                    terminations.extend([first, second]);
+                    terminations.extend([
+                        TerminationRef::Angular(first),
+                        TerminationRef::Angular(second),
+                    ]);
                 }
                 None => {}
             }
@@ -5476,29 +5513,50 @@ fn definition_terminations(
         crate::features::FeatureDefinition::Hole {
             extent: Some(extent),
             ..
-        } => terminations.push(extent),
+        } => terminations.push(TerminationRef::Linear(extent)),
         _ => {}
     }
     terminations.into_iter()
 }
 
-fn termination_magnitude_is_valid(termination: &crate::features::Termination) -> bool {
+fn termination_magnitude_is_valid(termination: TerminationRef<'_>) -> bool {
     match termination {
-        crate::features::Termination::Blind { length } => length.0.is_finite() && length.0 != 0.0,
-        crate::features::Termination::Angle { angle } => angle.0.is_finite() && angle.0 > 0.0,
-        crate::features::Termination::OffsetFromFace { offset, .. } => {
-            offset.0.is_finite() && offset.0 > 0.0
+        TerminationRef::Linear(crate::features::LinearTermination::Blind { length }) => {
+            length.0.is_finite() && length.0 != 0.0
         }
-        crate::features::Termination::ToFace { offset, .. } => {
+        TerminationRef::Angular(crate::features::AngularTermination::Angle { angle }) => {
+            angle.0.is_finite() && angle.0 > 0.0
+        }
+        TerminationRef::Linear(crate::features::LinearTermination::OffsetFromFace {
+            offset,
+            ..
+        })
+        | TerminationRef::Angular(crate::features::AngularTermination::OffsetFromFace {
+            offset,
+            ..
+        }) => offset.0.is_finite() && offset.0 > 0.0,
+        TerminationRef::Linear(crate::features::LinearTermination::ToFace { offset, .. })
+        | TerminationRef::Angular(crate::features::AngularTermination::ToFace { offset, .. }) => {
             offset.is_none_or(|offset| offset.0.is_finite())
         }
-        crate::features::Termination::Unresolved
-        | crate::features::Termination::ThroughAll
-        | crate::features::Termination::ThroughNext
-        | crate::features::Termination::ToFirst
-        | crate::features::Termination::ToLast
-        | crate::features::Termination::ToVertex { .. }
-        | crate::features::Termination::ToShape { .. } => true,
+        TerminationRef::Linear(
+            crate::features::LinearTermination::Unresolved
+            | crate::features::LinearTermination::ThroughAll
+            | crate::features::LinearTermination::ThroughNext
+            | crate::features::LinearTermination::ToFirst
+            | crate::features::LinearTermination::ToLast
+            | crate::features::LinearTermination::ToVertex { .. }
+            | crate::features::LinearTermination::ToShape { .. },
+        )
+        | TerminationRef::Angular(
+            crate::features::AngularTermination::Unresolved
+            | crate::features::AngularTermination::ThroughAll
+            | crate::features::AngularTermination::ThroughNext
+            | crate::features::AngularTermination::ToFirst
+            | crate::features::AngularTermination::ToLast
+            | crate::features::AngularTermination::ToVertex { .. }
+            | crate::features::AngularTermination::ToShape { .. },
+        ) => true,
     }
 }
 

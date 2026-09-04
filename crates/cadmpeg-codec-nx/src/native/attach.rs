@@ -15,8 +15,8 @@ use cadmpeg_ir::features::{
     CurveProjectionDirectionState, DesignConfiguration, DesignParameter, EdgeSelection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
     FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
-    HolePlacement, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
-    RadiusForm, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, SweepMode, Termination,
+    HolePlacement, Length, LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind,
+    ProfileRef, RadiusForm, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, SweepMode,
     ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
@@ -3509,7 +3509,7 @@ fn attach_feature_operations(
                                 extent: blind_hole_depths
                                     .get(label.id.as_str())
                                     .copied()
-                                    .map(|length| Termination::Blind { length }),
+                                    .map(|length| LinearTermination::Blind { length }),
                                 counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
                                 chamfer: simple_hole_chamfers
                                     .get(label.id.as_str())
@@ -4967,7 +4967,7 @@ fn extrude_feature_definition(
         start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Unresolved,
+                termination: LinearTermination::Unresolved,
                 draft: None,
                 offset: None,
             },
@@ -5936,7 +5936,7 @@ fn non_modeling_history_definition(
 struct HoleProjection {
     pub(crate) placements: Vec<HolePlacement>,
     pub(crate) diameter: Option<Length>,
-    pub(crate) extent: Option<Termination>,
+    pub(crate) extent: Option<LinearTermination>,
     pub(crate) counterbore: Option<CounterboreDimensions>,
     pub(crate) chamfer: Option<HoleKind>,
     pub(crate) grouped_simple_through: bool,
@@ -6082,7 +6082,7 @@ fn non_boolean_feature_definition_with_parameters(
                     };
                     let extent = match extent {
                         crate::native::features::SimpleHoleExtent::Through => {
-                            Some(cadmpeg_ir::features::Termination::ThroughAll)
+                            Some(cadmpeg_ir::features::LinearTermination::ThroughAll)
                         }
                         crate::native::features::SimpleHoleExtent::Blind => None,
                     };
@@ -6163,7 +6163,7 @@ fn non_boolean_feature_definition_with_parameters(
             diameter: hole.diameter,
             extent: hole
                 .grouped_simple_through
-                .then_some(cadmpeg_ir::features::Termination::ThroughAll),
+                .then_some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             bottom: None,
             taper_angle: None,
             specification: None,
