@@ -574,32 +574,6 @@ pub fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
     })
 }
 
-/// A circle carrier in the standard `0x60` edge-support table.
-#[derive(Debug, Clone)]
-pub struct StandardCircle {
-    /// Offset of the support row.
-    pub pos: usize,
-    /// Native allocation tag of the support row.
-    pub tag: u32,
-    /// The two incident standard face ordinals.
-    pub faces: [usize; 2],
-    /// Circle center in millimetres.
-    pub center: Point3,
-    /// Circle radius in millimetres.
-    pub radius: f64,
-}
-
-/// A line carrier in the standard `0x60` edge-support table.
-#[derive(Debug, Clone)]
-pub struct StandardLine {
-    /// Offset of the support row.
-    pub pos: usize,
-    /// Native allocation tag of the support row.
-    pub tag: u32,
-    /// The two incident standard face ordinals.
-    pub faces: [usize; 2],
-}
-
 /// Geometry family carried by one positional standard `0x60` edge row.
 #[derive(Debug, Clone)]
 pub enum StandardCurveGeometry {
@@ -768,48 +742,6 @@ fn standard_curve_support_has_predecessor(brep: &[u8], face_count: usize, start:
         standard_curve_support_row_at(brep, face_count, candidate)
             .is_some_and(|(_, end)| end == start)
     })
-}
-
-/// Parse complete circle rows from a standard `0x60` support table.  The table
-/// is accepted only as a contiguous run whose face references stay in range.
-pub fn standard_circles(
-    brep: &[u8],
-    face_count: usize,
-    edge_count: Option<usize>,
-) -> Vec<StandardCircle> {
-    standard_curve_supports(brep, face_count, edge_count)
-        .into_iter()
-        .filter_map(|row| match row.geometry {
-            StandardCurveGeometry::Circle { center, radius } => Some(StandardCircle {
-                pos: row.pos,
-                tag: row.tag,
-                faces: row.faces,
-                center,
-                radius,
-            }),
-            StandardCurveGeometry::Line | StandardCurveGeometry::Bspline => None,
-        })
-        .collect()
-}
-
-/// Parse standard line support rows.  The line equation is supplied by the two
-/// incident plane carriers, not inline in the row.
-pub fn standard_lines(
-    brep: &[u8],
-    face_count: usize,
-    edge_count: Option<usize>,
-) -> Vec<StandardLine> {
-    standard_curve_supports(brep, face_count, edge_count)
-        .into_iter()
-        .filter_map(|row| match row.geometry {
-            StandardCurveGeometry::Line => Some(StandardLine {
-                pos: row.pos,
-                tag: row.tag,
-                faces: row.faces,
-            }),
-            StandardCurveGeometry::Circle { .. } | StandardCurveGeometry::Bspline => None,
-        })
-        .collect()
 }
 
 /// Decode the analytic parameters carried inline in a curved surface's kind

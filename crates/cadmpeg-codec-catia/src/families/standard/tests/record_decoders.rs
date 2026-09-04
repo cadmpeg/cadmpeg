@@ -736,7 +736,9 @@ fn topology_binds_logical_vertices_from_exact_edge_endpoint_pairs() {
 fn standard_circle_parser_rejects_non_support_marker() {
     let mut bytes = vec![0x61, 0, 0, 0, 0, 0x12, 0, 0x33, 0x37];
     bytes.extend_from_slice(&[0; 18]);
-    assert!(crate::families::standard::records::standard_circles(&bytes, 1, Some(1)).is_empty());
+    assert!(
+        crate::families::standard::records::standard_curve_supports(&bytes, 1, Some(1)).is_empty()
+    );
 }
 
 #[test]
@@ -746,10 +748,12 @@ fn standard_circle_parser_has_no_model_size_cutoff() {
         bytes.extend_from_slice(&value.to_be_bytes());
     }
     bytes.extend_from_slice(&[0, 1]);
-    assert_eq!(
-        crate::families::standard::records::standard_circles(&bytes, 2, Some(1))[0].radius,
-        2_000_000.0
-    );
+    let StandardCurveGeometry::Circle { radius, .. } =
+        crate::families::standard::records::standard_curve_supports(&bytes, 2, Some(1))[0].geometry
+    else {
+        panic!("circle row");
+    };
+    assert_eq!(radius, 2_000_000.0);
 }
 
 #[test]
@@ -1433,8 +1437,9 @@ fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence(
 #[test]
 fn standard_line_parser_reads_face_incidence() {
     let bytes = [0x60, 1, 2, 3, 0, 2, 0, 0x33, 0x36, 0, 1];
-    let lines = crate::families::standard::records::standard_lines(&bytes, 2, Some(1));
-    assert_eq!(lines.len(), 1);
-    assert_eq!(lines[0].tag, 0x03_0201);
-    assert_eq!(lines[0].faces, [0, 1]);
+    let rows = crate::families::standard::records::standard_curve_supports(&bytes, 2, Some(1));
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].tag, 0x03_0201);
+    assert_eq!(rows[0].faces, [0, 1]);
+    assert!(matches!(rows[0].geometry, StandardCurveGeometry::Line));
 }
