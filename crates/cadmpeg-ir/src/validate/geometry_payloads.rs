@@ -711,20 +711,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                         entry.parameter.is_finite()
                             && entry.profile.iter().all(|member| {
                                 let table = member.form.subdata();
-                                let expected_rows = if table.type_code == 211 {
-                                    1
-                                } else {
-                                    usize::try_from(table.row_count).unwrap_or(usize::MAX)
-                                };
-                                table.rows.len() == expected_rows
-                                    && table.rows.iter().all(|row| {
-                                        row.parameters.iter().all(|value| value.is_finite())
-                                            && row
-                                                .columns
-                                                .iter()
-                                                .flatten()
-                                                .all(|value| value.is_finite())
-                                    })
+                                table.row_values_are_finite()
                             })
                     });
             let bridge_valid = bridge.iter().all(|token| match token {
@@ -784,16 +771,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 scale.members.iter().all(|member| {
                     let data = &member.data;
                     let table = &data.subdata;
-                    let expected_rows = if table.type_code == 211 {
-                        1
-                    } else {
-                        usize::try_from(table.row_count).unwrap_or(usize::MAX)
-                    };
-                    table.rows.len() == expected_rows
-                        && table.rows.iter().all(|row| {
-                            row.parameters.iter().all(|value| value.is_finite())
-                                && row.columns.iter().flatten().all(|value| value.is_finite())
-                        })
+                    table.row_values_are_finite()
                         && data.direction.as_ref().is_none_or(&vector_finite)
                 })
             });
@@ -859,16 +837,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 scale.members.iter().all(|member| {
                     let data = &member.data;
                     let table = &data.subdata;
-                    let expected_rows = if table.type_code == 211 {
-                        1
-                    } else {
-                        usize::try_from(table.row_count).unwrap_or(usize::MAX)
-                    };
-                    table.rows.len() == expected_rows
-                        && table.rows.iter().all(|row| {
-                            row.parameters.iter().all(|value| value.is_finite())
-                                && row.columns.iter().flatten().all(|value| value.is_finite())
-                        })
+                    table.row_values_are_finite()
                         && data.direction.as_ref().is_none_or(&vector_finite)
                 })
             });
@@ -1040,34 +1009,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     usize::try_from(construction.inner_count).ok() == Some(profiles.len())
                         && profiles.iter().all(|profile| {
                             let table = &profile.data.subdata;
-                            let expected_rows = if table.type_code == 211 {
-                                1
-                            } else {
-                                usize::try_from(table.row_count).unwrap_or(usize::MAX)
-                            };
-                            table.rows.len() == expected_rows
-                                && table.rows.iter().all(|row| {
-                                    row.parameters.iter().all(|value| value.is_finite())
-                                        && row
-                                            .columns
-                                            .iter()
-                                            .flatten()
-                                            .all(|value| value.is_finite())
-                                })
+                            table.row_values_are_finite()
                                 && profile.data.direction.as_ref().is_none_or(&vector_finite)
                         })
                 }
                 crate::geometry::SkinSurfaceLayout::Compact { subdata, .. } => {
-                    let expected_rows = if subdata.type_code == 211 {
-                        1
-                    } else {
-                        usize::try_from(subdata.row_count).unwrap_or(usize::MAX)
-                    };
-                    subdata.rows.len() == expected_rows
-                        && subdata.rows.iter().all(|row| {
-                            row.parameters.iter().all(|value| value.is_finite())
-                                && row.columns.iter().flatten().all(|value| value.is_finite())
-                        })
+                    subdata.row_values_are_finite()
                 }
             };
             let formula_valid = if construction.formula.name == "null_law" {
@@ -1144,20 +1091,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     entry.parameter.is_finite()
                         && entry.profile.iter().all(|member| {
                             let table = member.form.subdata();
-                            let expected_rows = if table.type_code == 211 {
-                                1
-                            } else {
-                                usize::try_from(table.row_count).unwrap_or(usize::MAX)
-                            };
-                            table.rows.len() == expected_rows
-                                && table.rows.iter().all(|row| {
-                                    row.parameters.iter().all(|value| value.is_finite())
-                                        && row
-                                            .columns
-                                            .iter()
-                                            .flatten()
-                                            .all(|value| value.is_finite())
-                                })
+                            table.row_values_are_finite()
                         })
                 })
             });

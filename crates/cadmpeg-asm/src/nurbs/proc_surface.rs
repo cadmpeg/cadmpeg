@@ -1664,6 +1664,9 @@ fn loft_subdata_form(
     let type_code = cur.take_long()?;
     let row_count = cur.take_long()?;
     let column_count = cur.take_long()?;
+    if type_code == 211 && (row_count != 1 || column_count != 0) {
+        return None;
+    }
     let rows_to_read = if type_code == 211 {
         1
     } else {
@@ -1693,12 +1696,14 @@ fn loft_subdata_form(
             extra,
         });
     }
-    Some(LoftSubdata {
-        type_code,
-        row_count,
-        column_count,
-        rows,
-    })
+    if type_code == 211 {
+        let [row] = rows.as_slice() else {
+            return None;
+        };
+        Some(LoftSubdata::type_211(row.parameters))
+    } else {
+        LoftSubdata::table(type_code, rows)
+    }
 }
 
 fn loft_profile_data(cur: &mut Cur<'_>) -> Option<EmbeddedLoftProfileData> {

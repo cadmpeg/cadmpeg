@@ -1402,41 +1402,22 @@ fn native_loft_subdata(
     bytes: &mut Vec<u8>,
     subdata: &cadmpeg_ir::geometry::LoftSubdata,
 ) -> Result<(), CodecError> {
-    let expected_rows = if subdata.type_code == 211 {
-        1
-    } else {
-        usize::try_from(subdata.row_count)
-            .map_err(|_| CodecError::Malformed("negative loft row count".into()))?
-    };
-    let expected_columns = usize::try_from(subdata.column_count)
-        .map_err(|_| CodecError::Malformed("negative loft column count".into()))?;
-    if subdata.rows.len() != expected_rows
-        || (subdata.type_code != 211
-            && subdata
-                .rows
-                .iter()
-                .any(|row| row.columns.len() != expected_columns))
-    {
-        return Err(CodecError::Malformed(
-            "loft subdata counts do not match their rows".into(),
-        ));
-    }
-    native_i64(bytes, subdata.type_code);
-    native_i64(bytes, subdata.row_count);
-    native_i64(bytes, subdata.column_count);
-    for row in &subdata.rows {
-        for value in row.parameters {
-            native_f64(bytes, value);
+    native_i64(bytes, subdata.type_code());
+    native_i64(bytes, subdata.row_count());
+    native_i64(bytes, subdata.column_count());
+    subdata.visit_rows(|parameters, columns, extra| {
+        for value in parameters {
+            native_f64(bytes, *value);
         }
-        for column in &row.columns {
+        for column in columns {
             native_f64(bytes, column[0]);
             native_f64(bytes, column[1]);
         }
-        if let Some(extra) = row.extra {
+        if let Some(extra) = extra {
             native_f64(bytes, extra[0]);
             native_f64(bytes, extra[1]);
         }
-    }
+    });
     Ok(())
 }
 

@@ -3368,3 +3368,17 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::geometry::CurveGeometry::Procedural"
 reason = "the carrier variant owns its optional solved cache so the construction link and cached geometry cannot diverge"
+
+[[change]]
+commit = "4b56c1c3a90733ce942ffba4735b5ab92a7a7bf8"
+crate = "cadmpeg-ir"
+kind = "struct"
+item = "cadmpeg_ir::geometry::LoftSubdata"
+reason = "type 211 and ordinary rectangular loft tables are distinct enum variants with checked payloads"
+
+[[change]]
+commit = "4b56c1c3a90733ce942ffba4735b5ab92a7a7bf8"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::LoftSubdata::{type_code,row_count,column_count,rows}"
+reason = "the discriminator and dimensions are derived from a checked table payload instead of stored independently"
