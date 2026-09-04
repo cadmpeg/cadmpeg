@@ -403,12 +403,12 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
     value_blocks.retain(|block| {
         !object_graphs
             .iter()
-            .any(|graph| extent_contains(graph.pos, graph.total_len, block.pos, block.total_len))
+            .any(|graph| extent_contains(graph.pos, graph.total_len, block.pos, block.total_len()))
     });
     object_graphs.retain(|graph| {
         !value_blocks
             .iter()
-            .any(|block| extent_contains(block.pos, block.total_len, graph.pos, graph.total_len))
+            .any(|block| extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len))
     });
     let catalogs = catalog::parse(data)
         .into_iter()
@@ -416,7 +416,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
             !object_graphs.iter().any(|graph| {
                 extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
             }) && !value_blocks.iter().any(|block| {
-                extent_contains(block.pos, block.total_len, catalog.pos, catalog.total_len)
+                extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
             })
         })
         .collect::<Vec<_>>();
@@ -429,7 +429,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
             .any(|graph| extents_overlap(row_start, 24, graph.pos, graph.total_len))
             && !value_blocks
                 .iter()
-                .any(|block| extents_overlap(row_start, 24, block.pos, block.total_len))
+                .any(|block| extents_overlap(row_start, 24, block.pos, block.total_len()))
             && !catalogs
                 .iter()
                 .any(|catalog| extents_overlap(row_start, 24, catalog.pos, catalog.total_len))
@@ -606,7 +606,7 @@ fn bind_catalog(
             value_blocks
                 .iter()
                 .find(|block| block.pos == graph_end)
-                .and_then(|block| block.pos.checked_add(block.total_len))
+                .and_then(|block| block.pos.checked_add(block.total_len()))
                 .and_then(|value_end| catalogs.iter().find(|schema| schema.pos == value_end))
         });
     let Some(schema) = schema else {
