@@ -200,7 +200,7 @@ pub(crate) fn inventory(
         if segment.kind != SegmentKind::PmDc {
             continue;
         }
-        let Some(version) = segment.registry_version_major else {
+        let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
         if !(15..=22).contains(&version) {

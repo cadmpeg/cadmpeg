@@ -398,7 +398,7 @@ pub(crate) fn inventory<'a>(
         if !matches!(segment.kind, SegmentKind::PmApp | SegmentKind::PmGraphics) {
             continue;
         }
-        let Some(version) = segment.registry_version_major else {
+        let Some(version) = segment.registry.map(|join| join.version_major) else {
             continue;
         };
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {

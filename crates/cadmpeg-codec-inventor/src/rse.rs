@@ -104,7 +104,13 @@ pub(crate) enum SegmentKind {
     AmRx,
     Notebook,
     DesignView,
+    Unresolved,
     Unknown(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RegistryJoin {
+    pub(crate) version_major: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +188,7 @@ impl SegmentKind {
             Self::AmRx => "am_rx",
             Self::Notebook => "notebook",
             Self::DesignView => "design_view",
+            Self::Unresolved => "unresolved",
             Self::Unknown(name) => name,
         }
     }
@@ -239,8 +246,7 @@ impl SegmentMetaState<'_> {
 #[derive(Debug)]
 pub(crate) struct SegmentDescriptor<'a> {
     pub(crate) pair: SegmentPair,
-    pub(crate) registry_index: Option<usize>,
-    pub(crate) registry_version_major: Option<u8>,
+    pub(crate) registry: Option<RegistryJoin>,
     pub(crate) kind: SegmentKind,
     pub(crate) identity_issues: Vec<String>,
     pub(crate) meta: SegmentMetaState<'a>,
@@ -447,9 +453,8 @@ impl<'a> RseInventory<'a> {
                 };
                 Ok(SegmentDescriptor {
                     pair,
-                    registry_index: None,
-                    registry_version_major: None,
-                    kind: SegmentKind::Unknown("unresolved".into()),
+                    registry: None,
+                    kind: SegmentKind::Unresolved,
                     identity_issues: Vec::new(),
                     meta,
                     bulk,
@@ -462,6 +467,8 @@ impl<'a> RseInventory<'a> {
             for segment in &mut segments {
                 if let SegmentMetaState::Parsed(meta) = &segment.meta {
                     segment.kind = SegmentKind::classify(&meta.display_name, None);
+                } else {
+                    segment.kind = SegmentKind::Unresolved;
                 }
                 segment
                     .identity_issues
@@ -534,15 +541,15 @@ fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegis
             segment
                 .identity_issues
                 .push("segment metadata is unavailable".into());
+            segment.kind = SegmentKind::Unresolved;
             continue;
         };
         let matches = registry
             .entries
             .iter()
-            .enumerate()
-            .filter(|(_, entry)| entry.segment_id == meta.segment_id)
+            .filter(|entry| entry.segment_id == meta.segment_id)
             .collect::<Vec<_>>();
-        let [(index, entry)] = matches.as_slice() else {
+        let [entry] = matches.as_slice() else {
             segment.identity_issues.push(if matches.is_empty() {
                 "metadata segment id is absent from the registry".into()
             } else {
@@ -551,8 +558,9 @@ fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegis
             segment.kind = SegmentKind::classify(&meta.display_name, None);
             continue;
         };
-        segment.registry_index = Some(*index);
-        segment.registry_version_major = Some(entry.version.major);
+        segment.registry = Some(RegistryJoin {
+            version_major: entry.version.major,
+        });
         segment.kind = SegmentKind::classify(&entry.display_name, Some(&entry.type_name));
         if entry.display_name != meta.display_name {
             segment.identity_issues.push(format!(
@@ -601,9 +609,9 @@ fn frame_segment_records<'a>(
             continue;
         };
         let expanded = bulk.expanded;
-        let result = match (&segment.meta, segment.registry_version_major) {
-            (SegmentMetaState::Parsed(meta), Some(version)) => {
-                frame_bulk_records(ctx, expanded, &meta.tables, version)
+        let result = match (&segment.meta, segment.registry) {
+            (SegmentMetaState::Parsed(meta), Some(registry)) => {
+                frame_bulk_records(ctx, expanded, &meta.tables, registry.version_major)
             }
             (SegmentMetaState::Parsed(_), None) => Err(CodecError::Malformed(
                 "RSe record framing requires the segment registry version".into(),

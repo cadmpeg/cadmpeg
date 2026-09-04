@@ -169,7 +169,7 @@ pub(crate) fn select_active_carrier<'a>(
             carriers.len()
         ));
     };
-    let Some(version) = segment.registry_version_major else {
+    let Some(version) = segment.registry.map(|join| join.version_major) else {
         return ActiveCarrierState::Unavailable(
             "PmBRep segment version is unavailable from the registry".into(),
         );
