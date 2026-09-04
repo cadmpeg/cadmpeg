@@ -609,29 +609,54 @@ pub struct EntityRecord {
     pub total_len: usize,
     /// Byte between the `7C05` length and nested `7C06` marker.
     pub lead: u8,
-    /// Complete alternate inline body, including its lead byte, when nested
-    /// `7C06` and `7C07` frames are absent.
-    pub inline_body: Option<Vec<u8>>,
-    /// Stored nested `7C06` length.
-    pub definition_len: u32,
-    /// Exact definition prefix before the `0xEA` identity delimiter.
-    pub definition_prefix: Vec<u8>,
-    /// Source-schema selectors decoded from the complete definition prefix.
-    pub definition_schema_selectors: Vec<DefinitionSchemaSelector>,
     /// Stored entity identity.
     pub entity_id: u32,
-    /// Exact definition bytes after the identity.
-    pub definition_suffix: Vec<u8>,
-    /// Stored nested `7C07` total length.
-    pub value_len: u32,
-    /// Exact nested `7C07` payload.
-    pub value_payload: Vec<u8>,
+    /// Inline body or nested definition/value frames.
+    pub body: EntityBody,
+}
+
+/// Body of a length-closed `7C05` entity-table record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EntityBody {
+    /// Complete alternate inline body, including its lead byte.
+    Inline(Vec<u8>),
+    /// Nested `7C06` definition and `7C07` value frames.
+    Nested {
+        /// Stored nested `7C06` length.
+        definition_len: u32,
+        /// Exact definition prefix before the `0xEA` identity delimiter.
+        prefix: Vec<u8>,
+        /// Source-schema selectors decoded from the complete definition prefix.
+        selectors: Vec<DefinitionSchemaSelector>,
+        /// Exact definition bytes after the identity.
+        suffix: Vec<u8>,
+        /// Stored nested `7C07` total length.
+        value_len: u32,
+        /// Exact nested `7C07` payload.
+        value_payload: Vec<u8>,
+        /// Exact bytes after the nested `7C07` frame.
+        record_suffix: Vec<u8>,
+    },
+}
+
+impl EntityRecord {
     /// Complete numeric-pair view when the entire value payload has that production.
-    pub numeric_pair: Option<NumericPair>,
+    #[must_use]
+    pub fn numeric_pair(&self) -> Option<NumericPair> {
+        match &self.body {
+            EntityBody::Nested { value_payload, .. } => parse_numeric_pair(value_payload),
+            EntityBody::Inline(_) => None,
+        }
+    }
+
     /// Complete reference-signature view when the entire value payload has that production.
-    pub reference_signature: Option<ReferenceSignature>,
-    /// Exact bytes after the nested `7C07` frame.
-    pub record_suffix: Vec<u8>,
+    #[must_use]
+    pub fn reference_signature(&self) -> Option<ReferenceSignature> {
+        match &self.body {
+            EntityBody::Nested { value_payload, .. } => parse_reference_signature(value_payload),
+            EntityBody::Inline(_) => None,
+        }
+    }
 }
 
 /// Parse every maximal contiguous run of length-closed `7C05` records.
@@ -896,17 +921,8 @@ fn materialize_record(
             pos: candidate.pos,
             total_len: candidate.total_len,
             lead: candidate.lead,
-            inline_body: Some(data.get(candidate.pos + 6..record_end)?.to_vec()),
-            definition_len: 0,
-            definition_prefix: Vec::new(),
-            definition_schema_selectors: Vec::new(),
             entity_id: identity.entity_id,
-            definition_suffix: Vec::new(),
-            value_len: 0,
-            value_payload: Vec::new(),
-            numeric_pair: None,
-            reference_signature: None,
-            record_suffix: Vec::new(),
+            body: EntityBody::Inline(data.get(candidate.pos + 6..record_end)?.to_vec()),
         });
     }
     let EntityRecordLayout::Nested {
@@ -926,17 +942,16 @@ fn materialize_record(
         pos: candidate.pos,
         total_len: candidate.total_len,
         lead: candidate.lead,
-        inline_body: None,
-        definition_len,
-        definition_prefix: prefix.to_vec(),
-        definition_schema_selectors: parse_definition_schema_selectors(prefix),
         entity_id: identity.entity_id,
-        definition_suffix: data.get(identity_end..definition_end)?.to_vec(),
-        value_len,
-        value_payload: value_payload.to_vec(),
-        numeric_pair: parse_numeric_pair(value_payload),
-        reference_signature: parse_reference_signature(value_payload),
-        record_suffix: data.get(value_end..record_end)?.to_vec(),
+        body: EntityBody::Nested {
+            definition_len,
+            prefix: prefix.to_vec(),
+            selectors: parse_definition_schema_selectors(prefix),
+            suffix: data.get(identity_end..definition_end)?.to_vec(),
+            value_len,
+            value_payload: value_payload.to_vec(),
+            record_suffix: data.get(value_end..record_end)?.to_vec(),
+        },
     })
 }
 
@@ -1198,6 +1213,39 @@ mod tests {
     use super::*;
     use crate::value_block;
 
+    fn nested_body(
+        record: &EntityRecord,
+    ) -> (
+        u32,
+        &[u8],
+        &[DefinitionSchemaSelector],
+        &[u8],
+        u32,
+        &[u8],
+        &[u8],
+    ) {
+        match &record.body {
+            EntityBody::Nested {
+                definition_len,
+                prefix,
+                selectors,
+                suffix,
+                value_len,
+                value_payload,
+                record_suffix,
+            } => (
+                *definition_len,
+                prefix.as_slice(),
+                selectors.as_slice(),
+                suffix.as_slice(),
+                *value_len,
+                value_payload.as_slice(),
+                record_suffix.as_slice(),
+            ),
+            EntityBody::Inline(_) => panic!("expected nested entity body"),
+        }
+    }
+
     fn record_with_definition_suffix(
         prefix: &[u8],
         entity_id: u32,
@@ -1243,19 +1291,21 @@ mod tests {
             panic!("one entity-table run");
         };
 
-        assert_eq!(run[0].definition_prefix, prefix);
+        let (_, prefix_bytes, selectors, suffix, value_len, value_payload, record_suffix) =
+            nested_body(&run[0]);
+        assert_eq!(prefix_bytes, prefix);
         assert_eq!(
-            run[0].definition_schema_selectors,
+            selectors,
             [DefinitionSchemaSelector {
                 value: 0x0000_00ea,
                 offset: 0,
             }]
         );
         assert_eq!(run[0].entity_id, 37);
-        assert_eq!(run[0].definition_suffix, [0xaa]);
-        assert_eq!(run[0].value_len, 7);
-        assert_eq!(run[0].value_payload, [0xfe]);
-        assert_eq!(run[0].record_suffix, [0xbb]);
+        assert_eq!(suffix, [0xaa]);
+        assert_eq!(value_len, 7);
+        assert_eq!(value_payload, [0xfe]);
+        assert_eq!(record_suffix, [0xbb]);
     }
 
     #[test]
@@ -1274,7 +1324,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [89, 90, 91]
         );
-        assert_eq!(run[1].definition_prefix, [0xe9, 0xea]);
+        assert_eq!(nested_body(&run[1]).1, [0xe9, 0xea]);
     }
 
     #[test]
@@ -1299,8 +1349,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [1, 2]
         );
-        assert_eq!(run[0].definition_suffix, first_frame);
-        assert_eq!(run[1].definition_suffix, second_frame);
+        assert_eq!(nested_body(&run[0]).3, first_frame);
+        assert_eq!(nested_body(&run[1]).3, second_frame);
     }
 
     #[test]
@@ -1316,7 +1366,7 @@ mod tests {
             panic!("one inline entity-table run");
         };
         assert_eq!(run[0].entity_id, 37);
-        assert_eq!(run[0].inline_body.as_deref(), Some(&bytes[6..]));
+        assert_eq!(run[0].body, EntityBody::Inline(bytes[6..].to_vec()));
     }
 
     #[test]
@@ -1338,8 +1388,9 @@ mod tests {
         };
         assert_eq!(run.len(), 1);
         assert_eq!(run[0].entity_id, 89);
-        assert_eq!(run[0].record_suffix.first(), Some(&0xbb));
-        assert_eq!(&run[0].record_suffix[1..], nested);
+        let record_suffix = nested_body(&run[0]).6;
+        assert_eq!(record_suffix.first(), Some(&0xbb));
+        assert_eq!(&record_suffix[1..], nested);
     }
 
     #[test]
