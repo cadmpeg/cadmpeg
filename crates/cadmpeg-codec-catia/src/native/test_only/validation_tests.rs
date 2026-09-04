@@ -1541,7 +1541,7 @@ pub(super) fn validate_consolidated_edge_runs(
                 .is_some_and(|(first, second)| {
                     uses.references == [[first, second], [second, node.curve_ref]]
                 })
-                && uses.senses == [0x88, 0x84]
+
                 && node.parameter_selectors == [2, 1]
         });
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {

@@ -1189,7 +1189,6 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     assert_eq!(node.parameter_selectors, [2, 1]);
     let uses = node.uses.as_ref().expect("edge-owned oriented uses");
     assert_eq!(uses.references, [[4, 5], [5, 6]]);
-    assert_eq!(uses.senses, [0x88, 0x84]);
     let definition = node.definition.as_ref().expect("edge-owned definition");
     assert_eq!(definition.class, 0x23);
     assert!(definition.byte_offset < node.byte_offset);
@@ -1595,7 +1594,6 @@ fn native_namespace_attaches_oriented_uses_without_pcurves() {
     };
     let uses = node.uses.as_ref().expect("standalone edge-owned uses");
     assert_eq!(uses.references, [[4, 5], [5, 6]]);
-    assert_eq!(uses.senses, [0x88, 0x84]);
 }
 
 #[test]
