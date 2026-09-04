@@ -604,7 +604,6 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             },
         },
         op: BooleanOp::NewBody,
-        direction_source: None,
         solid: Some(true),
         face_maker: None,
         inner_wire_taper: None,

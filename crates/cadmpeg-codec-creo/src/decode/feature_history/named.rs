@@ -175,7 +175,10 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
         (ExtrudeDirection::ProfileNormal, unresolved_extrude_extent()),
         |(extent, direction)| {
             (
-                ExtrudeDirection::Explicit(Vector3::new(direction[0], direction[1], direction[2])),
+                ExtrudeDirection::Explicit {
+                    vector: Vector3::new(direction[0], direction[1], direction[2]),
+                    source: None,
+                },
                 extent,
             )
         },
@@ -186,7 +189,6 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent,
         op,
-        direction_source: None,
         solid: sweep_solid(output_kind),
         face_maker: None,
         inner_wire_taper: None,

@@ -177,7 +177,6 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
                 },
             },
             op: BooleanOp::Join,
-            direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
@@ -433,9 +432,10 @@ fn encoder_writes_source_less_line_sketches() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
-                0.0, 0.0, 1.0,
-            )),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: Vector3::new(0.0, 0.0, 1.0),
+                source: None,
+            },
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -447,7 +447,6 @@ fn encoder_writes_source_less_line_sketches() {
                 },
             },
             op: BooleanOp::Join,
-            direction_source: None,
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,

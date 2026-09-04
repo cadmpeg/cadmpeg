@@ -915,7 +915,6 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             },
         },
         op: BooleanOp::NewBody,
-        direction_source: None,
         solid,
         face_maker: None,
         inner_wire_taper: None,
@@ -953,7 +952,10 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             Some(true),
         ),
         definition(
-            ExtrudeDirection::Explicit(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
+            ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0),
+                source: None,
+            },
             ExtrudeStart::ProfilePlane,
             Some(true),
         ),

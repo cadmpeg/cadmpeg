@@ -391,7 +391,6 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
                     },
                 },
                 op: BooleanOp::Join,
-                direction_source: None,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,

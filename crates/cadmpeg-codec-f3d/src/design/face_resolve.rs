@@ -1845,7 +1845,7 @@ pub(crate) fn bind_extrude_target_faces(
         let sweep_direction = match direction {
             ExtrudeDirection::ProfileNormal => profile_normal,
             ExtrudeDirection::ReversedProfileNormal => profile_normal.scale(-1.0),
-            ExtrudeDirection::Explicit(direction) => *direction,
+            ExtrudeDirection::Explicit { vector, .. } => *vector,
             ExtrudeDirection::Unresolved => continue,
         };
         if !sweep_direction.x.is_finite()

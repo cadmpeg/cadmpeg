@@ -945,7 +945,10 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
     assert!(matches!(
         definition("Symmetric"),
         FeatureDefinition::Extrude {
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: direction,
+                ..
+            },
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length },
@@ -960,7 +963,12 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         definition("PartExtrusion"),
         FeatureDefinition::Extrude {
             profile: _,
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: direction,
+                source: Some(ExtrusionDirectionSource::Edge {
+                    reference: PathRef::Native(reference),
+                }),
+            },
             extent: ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind { length: first },
@@ -973,7 +981,6 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                     ..
                 },
             },
-            direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
             solid: Some(true),
             face_maker: Some(face_maker),
             inner_wire_taper: Some(InnerWireTaper::SameAsOuter),
@@ -988,14 +995,16 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
     assert!(matches!(
         definition("NegativeProfileNormal"),
         FeatureDefinition::Extrude {
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: direction,
+                source: Some(ExtrusionDirectionSource::ProfileNormal),
+            },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length },
                     ..
                 }
             },
-            direction_source: Some(ExtrusionDirectionSource::ProfileNormal),
             ..
         } if direction.z == -1.0 && length.0 == 5.0
     ));
@@ -1026,7 +1035,10 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
         &pocket.definition,
         FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Native(_),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: direction,
+                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
+            },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
         } if (direction.x - 1.0).abs() < 1.0e-12
@@ -1099,7 +1111,6 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
                     ..
                 }
             },
-            direction_source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
             solid: Some(false),
             ..
         } if length.0 == 12.0 && (*draft - 3_f64.to_radians()).abs() < 1.0e-12
@@ -1143,8 +1154,10 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
     assert!(matches!(
         extrusion_definition(&result),
         FeatureDefinition::Extrude {
-            direction_source: Some(ExtrusionDirectionSource::Custom),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: direction,
+                source: Some(ExtrusionDirectionSource::Custom),
+            },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -1340,8 +1353,12 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
                     offset: Some(Length(-2.0)),
                 },
             },
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
-            direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: direction,
+                source: Some(ExtrusionDirectionSource::Edge {
+                    reference: PathRef::Native(reference),
+                }),
+            },
             length_along_profile_normal: Some(false),
             allow_multi_profile_faces: Some(true),
             ..
@@ -1637,7 +1654,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                     assert!(matches!(
                         feature_definition(&absent, name),
                         FeatureDefinition::Extrude {
-                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                                vector: direction,
+                                ..
+                            },
                             ..
                         } if direction.x == 1.0
                     ));
@@ -1648,7 +1668,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                     assert!(matches!(
                         feature_definition(&absent, name),
                         FeatureDefinition::Extrude {
-                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                                vector: direction,
+                                ..
+                            },
                             ..
                         } if direction.z == 1.0
                     ));
@@ -1715,7 +1738,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                     assert!(matches!(
                         feature_definition(&valid, name),
                         FeatureDefinition::Extrude {
-                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                                vector: direction,
+                                ..
+                            },
                             ..
                         } if direction.x == -1.0
                     ));
@@ -1726,7 +1752,10 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                     assert!(matches!(
                         feature_definition(&valid, name),
                         FeatureDefinition::Extrude {
-                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+                            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                                vector: direction,
+                                ..
+                            },
                             ..
                         } if direction.x == 1.0
                     ));

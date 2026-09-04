@@ -1057,7 +1057,6 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
                     },
                 },
                 op: BooleanOp::Join,
-                direction_source: None,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,

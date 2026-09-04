@@ -1560,3 +1560,67 @@ fn revolve_construction_admits_only_typed_partial_states() {
         .to_string();
     assert!(error.contains("axis_reference requires a revolution axis"));
 }
+
+#[test]
+fn extrude_direction_preserves_the_flat_source_wire_shape() {
+    use crate::features::{ExtrudeDirection, ExtrusionDirectionSource, FeatureDefinition, PathRef};
+
+    let wire = serde_json::json!({
+        "definition": "extrude",
+        "profile": {"kind": "native", "value": "test:profile"},
+        "direction": {
+            "kind": "explicit",
+            "value": {"x": 0.0, "y": 1.0, "z": 0.0}
+        },
+        "start": {"kind": "profile_plane"},
+        "extent": {
+            "kind": "one_sided",
+            "side": {
+                "termination": {"kind": "blind", "length": 4.0}
+            }
+        },
+        "op": "new_body",
+        "direction_source": {
+            "kind": "edge",
+            "reference": {"kind": "native", "value": "test:direction-edge"}
+        },
+        "solid": true
+    });
+    let definition: FeatureDefinition = serde_json::from_value(wire.clone()).unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Extrude {
+            direction: ExtrudeDirection::Explicit {
+                source: Some(ExtrusionDirectionSource::Edge {
+                    reference: PathRef::Native(ref reference),
+                }),
+                ..
+            },
+            ..
+        } if reference == "test:direction-edge"
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), wire);
+}
+
+#[test]
+fn extrude_direction_rejects_a_source_without_an_explicit_vector() {
+    use crate::features::FeatureDefinition;
+
+    let invalid = serde_json::json!({
+        "definition": "extrude",
+        "profile": {"kind": "native", "value": "test:profile"},
+        "start": {"kind": "profile_plane"},
+        "extent": {
+            "kind": "one_sided",
+            "side": {
+                "termination": {"kind": "blind", "length": 4.0}
+            }
+        },
+        "op": "new_body",
+        "direction_source": {"kind": "custom"}
+    });
+    let error = serde_json::from_value::<FeatureDefinition>(invalid)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("direction_source requires an explicit extrusion direction"));
+}

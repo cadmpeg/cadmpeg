@@ -997,7 +997,10 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
         decoded.ir().model.features[2].definition,
         FeatureDefinition::Extrude {
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                source: None,
+            },
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: Length(4.0) },
@@ -1033,11 +1036,14 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
         decoded.ir().model.features[4].definition,
         FeatureDefinition::Extrude {
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3 {
-                x: 0.0,
-                y: 1.0,
-                z: 0.0
-            }),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: Vector3 {
+                    x: 0.0,
+                    y: 1.0,
+                    z: 0.0,
+                },
+                source: None,
+            },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll,
@@ -1059,7 +1065,10 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         else {
             panic!("typed extrusion");
         };
-        *direction = cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(1.0, 0.0, 0.0));
+        *direction = cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            vector: Vector3::new(1.0, 0.0, 0.0),
+            source: None,
+        };
         *extent = ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: LinearTermination::Blind {

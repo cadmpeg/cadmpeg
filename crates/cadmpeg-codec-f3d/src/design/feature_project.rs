@@ -8107,7 +8107,6 @@ pub(crate) fn project_extrude(
         start,
         extent,
         op,
-        direction_source: None,
         solid: Some(prologue.solid_operation()),
         face_maker: None,
         inner_wire_taper: None,

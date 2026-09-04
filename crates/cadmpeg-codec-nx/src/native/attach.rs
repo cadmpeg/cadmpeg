@@ -4971,7 +4971,6 @@ fn extrude_feature_definition(
             },
         },
         op,
-        direction_source: None,
         solid,
         face_maker: None,
         inner_wire_taper: None,

@@ -970,7 +970,6 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             },
             op: BooleanOp::Unresolved,
             start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
-            direction_source: None,
             solid: None,
             face_maker: None,
             inner_wire_taper: None,

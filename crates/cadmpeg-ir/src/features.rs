@@ -1480,8 +1480,9 @@ pub enum FeatureDefinition {
     Extrude {
         /// Profile swept along `direction`.
         profile: ProfileRef,
-        /// Direction in which the profile is swept.
-        #[serde(default, skip_serializing_if = "ExtrudeDirection::is_profile_normal")]
+        /// Direction in which the profile is swept and its optional persisted source.
+        #[serde(flatten, with = "extrude_direction_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "ExtrudeDirectionSchemaWire"))]
         direction: ExtrudeDirection,
         /// Plane or face from which the extrusion begins.
         #[serde(default)]
@@ -1490,9 +1491,6 @@ pub enum FeatureDefinition {
         extent: ExtrudeExtent,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
-        /// Persisted source used to resolve the extrusion direction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction_source: Option<ExtrusionDirectionSource>,
         /// Whether the result is a solid (`true`) or sheet (`false`), when selectable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         solid: Option<bool>,
@@ -2174,7 +2172,7 @@ impl FeatureDefinition {
 /// Direction in which an extrusion sweeps its profile.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExtrudeDirection {
     /// Native direction selection is present structurally but unresolved.
     Unresolved,
@@ -2184,13 +2182,110 @@ pub enum ExtrudeDirection {
     /// Sweep opposite the profile's positive normal.
     ReversedProfileNormal,
     /// Sweep along an explicit model-space vector.
+    Explicit {
+        /// Directed model-space sweep vector.
+        vector: Vector3,
+        /// Persisted selection or rule used to resolve the vector, when retained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<ExtrusionDirectionSource>,
+    },
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+enum ExtrudeDirectionValueWire {
+    Unresolved,
+    #[default]
+    ProfileNormal,
+    ReversedProfileNormal,
     Explicit(Vector3),
 }
 
-impl ExtrudeDirection {
-    /// Whether this is the default positive profile-normal direction.
-    pub fn is_profile_normal(&self) -> bool {
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(
+    dead_code,
+    reason = "fields define the extrusion-direction wire schema"
+)]
+struct ExtrudeDirectionSchemaWire {
+    #[serde(
+        default,
+        skip_serializing_if = "ExtrudeDirectionValueWire::is_profile_normal"
+    )]
+    direction: ExtrudeDirectionValueWire,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    direction_source: Option<ExtrusionDirectionSource>,
+}
+
+impl ExtrudeDirectionValueWire {
+    fn is_profile_normal(&self) -> bool {
         matches!(self, Self::ProfileNormal)
+    }
+}
+
+mod extrude_direction_wire {
+    use super::{ExtrudeDirection, ExtrudeDirectionValueWire, ExtrusionDirectionSource};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct Wire {
+        #[serde(
+            default,
+            skip_serializing_if = "ExtrudeDirectionValueWire::is_profile_normal"
+        )]
+        direction: ExtrudeDirectionValueWire,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction_source: Option<ExtrusionDirectionSource>,
+    }
+
+    pub fn serialize<S>(value: &ExtrudeDirection, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let (direction, direction_source) = match value {
+            ExtrudeDirection::Unresolved => (ExtrudeDirectionValueWire::Unresolved, None),
+            ExtrudeDirection::ProfileNormal => (ExtrudeDirectionValueWire::ProfileNormal, None),
+            ExtrudeDirection::ReversedProfileNormal => {
+                (ExtrudeDirectionValueWire::ReversedProfileNormal, None)
+            }
+            ExtrudeDirection::Explicit { vector, source } => {
+                (ExtrudeDirectionValueWire::Explicit(*vector), source.clone())
+            }
+        };
+        Wire {
+            direction,
+            direction_source,
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<ExtrudeDirection, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let Wire {
+            direction,
+            direction_source,
+        } = Wire::deserialize(deserializer)?;
+        match direction {
+            ExtrudeDirectionValueWire::Explicit(vector) => Ok(ExtrudeDirection::Explicit {
+                vector,
+                source: direction_source,
+            }),
+            ExtrudeDirectionValueWire::Unresolved if direction_source.is_none() => {
+                Ok(ExtrudeDirection::Unresolved)
+            }
+            ExtrudeDirectionValueWire::ProfileNormal if direction_source.is_none() => {
+                Ok(ExtrudeDirection::ProfileNormal)
+            }
+            ExtrudeDirectionValueWire::ReversedProfileNormal if direction_source.is_none() => {
+                Ok(ExtrudeDirection::ReversedProfileNormal)
+            }
+            _ => Err(serde::de::Error::custom(
+                "direction_source requires an explicit extrusion direction",
+            )),
+        }
     }
 }
 /// One complete spatial placement in a hole operation.

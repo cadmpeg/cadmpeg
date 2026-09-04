@@ -2782,7 +2782,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 direction,
                 start,
                 extent,
-                direction_source,
                 ..
             } => {
                 let sides = match extent {
@@ -2791,15 +2790,15 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     }
                     ExtrudeExtent::TwoSided { first, second } => vec![first, second],
                 };
-                if let crate::features::ExtrudeDirection::Explicit(vector) = direction {
+                if let crate::features::ExtrudeDirection::Explicit { vector, source } = direction {
                     if !valid_feature_direction(*vector) {
                         feature_geometry_error(findings, feature, "extrusion direction is invalid");
                     }
-                }
-                if let Some(crate::features::ExtrusionDirectionSource::Edge { reference }) =
-                    direction_source
-                {
-                    paths.push(reference);
+                    if let Some(crate::features::ExtrusionDirectionSource::Edge { reference }) =
+                        source
+                    {
+                        paths.push(reference);
+                    }
                 }
                 if sides.iter().any(|side| {
                     side.draft.is_some_and(|angle| {

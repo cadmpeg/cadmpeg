@@ -497,7 +497,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             },
         },
         op,
-        direction_source: None,
         solid: Some(true),
         face_maker: None,
         inner_wire_taper: None,

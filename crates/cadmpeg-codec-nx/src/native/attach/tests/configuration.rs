@@ -1161,7 +1161,6 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
             },
             op: BooleanOp::NewBody,
             start: cadmpeg_ir::features::ExtrudeStart::Unresolved,
-            direction_source: None,
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,

@@ -3757,11 +3757,13 @@ fn extrusion_definition(
         };
         return Some(FeatureDefinition::Extrude {
             profile,
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: direction,
+                source: Some(direction_source),
+            },
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent,
             op: BooleanOp::NewBody,
-            direction_source: Some(direction_source),
             solid: Some(bool_selector(properties, "Solid", false)?),
             face_maker,
             inner_wire_taper,
@@ -3882,24 +3884,20 @@ fn extrusion_definition(
     }) {
         return None;
     }
-    let (mut direction, direction_source) = if use_custom {
-        (
-            cadmpeg_ir::features::ExtrudeDirection::Explicit(
-                vector_property(properties, "Direction")?.unit()?,
-            ),
-            ExtrusionDirectionSource::Custom,
-        )
+    let mut direction = if use_custom {
+        cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            vector: vector_property(properties, "Direction")?.unit()?,
+            source: Some(ExtrusionDirectionSource::Custom),
+        }
     } else if let Some(reference_axis) = reference_axis {
-        (
-            cadmpeg_ir::features::ExtrudeDirection::Explicit(
-                vector_property(properties, "Direction")?.unit()?,
-            ),
-            ExtrusionDirectionSource::Edge {
+        cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            vector: vector_property(properties, "Direction")?.unit()?,
+            source: Some(ExtrusionDirectionSource::Edge {
                 reference: PathRef::Native(reference_axis.id.clone()),
-            },
-        )
+            }),
+        }
     } else {
-        let direction = match &profile {
+        match &profile {
             ProfileRef::Sketch(sketch_id) => sketches
                 .iter()
                 .find(|sketch| sketch.id == *sketch_id)
@@ -3909,24 +3907,27 @@ fn extrusion_definition(
                 .and_then(Vector3::unit)
                 .map_or(
                     cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                    cadmpeg_ir::features::ExtrudeDirection::Explicit,
+                    |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                        vector,
+                        source: Some(ExtrusionDirectionSource::ProfileNormal),
+                    },
                 ),
             ProfileRef::Native(_) => profile_normal.and_then(Vector3::unit).map_or(
                 cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                cadmpeg_ir::features::ExtrudeDirection::Explicit,
+                |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                    vector,
+                    source: Some(ExtrusionDirectionSource::ProfileNormal),
+                },
             ),
             ProfileRef::Unresolved(_) => return None,
             _ => return None,
-        };
-        (direction, ExtrusionDirectionSource::ProfileNormal)
+        }
     };
     if bool_selector(properties, "Reversed", false)? {
-        let cadmpeg_ir::features::ExtrudeDirection::Explicit(vector) = direction else {
+        let cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } = &mut direction else {
             return None;
         };
-        direction = cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
-            -vector.x, -vector.y, -vector.z,
-        ));
+        *vector = Vector3::new(-vector.x, -vector.y, -vector.z);
     }
     let length_along_profile_normal = Some(bool_selector(properties, "AlongSketchNormal", true)?);
     let allow_multi_profile_faces = Some(bool_selector(properties, "AllowMultiFace", false)?);
@@ -3940,7 +3941,6 @@ fn extrusion_definition(
         } else {
             BooleanOp::Join
         },
-        direction_source: Some(direction_source),
         solid: Some(true),
         face_maker: None,
         inner_wire_taper: None,

@@ -638,7 +638,6 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         extent,
         op,
         solid,
-        direction_source,
         ..
     } = &feature.definition
     else {
@@ -652,20 +651,20 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         )
         || matches!(
             direction,
-            cadmpeg_ir::features::ExtrudeDirection::Explicit(direction)
-                if !valid_feature_direction(*direction)
+            cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. }
+                if !valid_feature_direction(*vector)
         )
         || extrude_start_is_incomplete(start)
         || extrude_extent_is_incomplete(extent, &feature.dependencies)
         || matches!(op, BooleanOp::Unresolved)
         || solid.is_none()
-        || direction_source.as_ref().is_some_and(|source| {
-            matches!(
-                source,
-                cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }
-                    if path_ref_is_incomplete(reference)
-            )
-        })
+        || matches!(
+            direction,
+            cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }),
+                ..
+            } if path_ref_is_incomplete(reference)
+        )
 }
 
 pub(crate) fn revolve_definition_is_incomplete(feature: &Feature) -> bool {

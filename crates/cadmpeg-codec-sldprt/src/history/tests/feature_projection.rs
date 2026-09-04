@@ -1679,7 +1679,6 @@ fn profile_consumers_require_a_regeneration_profile() {
             },
         },
         op: BooleanOp::Unresolved,
-        direction_source: None,
         solid: None,
         face_maker: None,
         inner_wire_taper: None,

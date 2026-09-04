@@ -567,7 +567,10 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 942, 942, "Surface"),
         IrFeatureDefinition::Extrude {
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: direction,
+                ..
+            },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -1043,7 +1046,9 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     let IrFeatureDefinition::Extrude {
-        direction: ExtrudeDirection::Explicit(direction),
+        direction: ExtrudeDirection::Explicit {
+            vector: direction, ..
+        },
         extent:
             ExtrudeExtent::OneSided {
                 side:
@@ -1498,7 +1503,6 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
             },
             op: BooleanOp::NewBody,
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            direction_source: None,
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
@@ -1593,9 +1597,10 @@ fn circular_sweep_projects_profile_direction_and_extent() {
         ),
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
-                0.0, 0.0, -1.0
-            )),
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                vector: Vector3::new(0.0, 0.0, -1.0),
+                source: None,
+            },
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -1607,7 +1612,6 @@ fn circular_sweep_projects_profile_direction_and_extent() {
             },
             op: BooleanOp::Join,
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
-            direction_source: None,
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,

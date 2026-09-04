@@ -189,10 +189,13 @@ pub(crate) fn project_extrude(
         Some(_) => one_sided(LinearTermination::Unresolved),
     };
     let direction = match feature.properties.get("Direction") {
-        Some(value) => cadmpeg_ir::features::ExtrudeDirection::Explicit(parse_vector3(value)?),
+        Some(value) => cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            vector: parse_vector3(value)?,
+            source: None,
+        },
         None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
     };
-    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit(value) if !valid_direction(value))
+    if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector))
     {
         return None;
     }
@@ -219,7 +222,6 @@ pub(crate) fn project_extrude(
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
         extent,
         op,
-        direction_source: None,
         solid: Some(!matches!(
             feature
                 .input_class

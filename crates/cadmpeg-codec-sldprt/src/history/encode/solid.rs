@@ -12,9 +12,9 @@ use crate::classification::{classify, FeatureClass};
 use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, ExtrusionDirectionSource,
-    FaceMaker, FaceSelection, HoleBottom, HoleConstruction, HoleKind, HolePlacement,
-    HoleProfileFilter, InnerWireTaper, Length, LinearTermination, ProfileRef,
+    Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection,
+    HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, InnerWireTaper,
+    Length, LinearTermination, ProfileRef,
 };
 
 #[allow(
@@ -32,7 +32,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         start: &ExtrudeStart,
         extent: &ExtrudeExtent,
         op: &BooleanOp,
-        direction_source: &Option<ExtrusionDirectionSource>,
         solid: &Option<bool>,
         face_maker: &Option<FaceMaker>,
         inner_wire_taper: &Option<InnerWireTaper>,
@@ -63,6 +62,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ExtrudeExtent::OneSided { side }
                 if matches!(side.termination, LinearTermination::Unresolved)
             );
+            let direction_source = match direction {
+                ExtrudeDirection::Explicit { source, .. } => source.as_ref(),
+                _ => None,
+            };
             if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane)
                 || second_side_draft.is_some()
                 || direction_source.is_some()
@@ -267,9 +270,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         feature.id
                     )));
                 }
-                cadmpeg_ir::features::ExtrudeDirection::Explicit(direction) => {
-                    require_direction(*direction, &feature.id, "extrusion direction")?;
-                    properties.insert("Direction".into(), format_vector3(*direction));
+                cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } => {
+                    require_direction(*vector, &feature.id, "extrusion direction")?;
+                    properties.insert("Direction".into(), format_vector3(*vector));
                 }
             }
             if let Some(draft) = first_draft {
