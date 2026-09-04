@@ -445,7 +445,7 @@ pub(crate) fn consolidated_edge_blocks_from_records(
                 let first = pcurves.get(&first_record.range.start)?;
                 let second = pcurves.get(&second_record.range.start)?;
                 let parameters = parameters.get(&parameter_record.range.start)?;
-                let co_parametric = first.points.len() == second.points.len()
+                let co_parametric = first.sites.len() == second.sites.len()
                     && first.range == second.range
                     && first.range == parameters.range;
                 Some(ConsolidatedEdgeBlock {
@@ -1257,20 +1257,15 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                 }) else {
                     continue;
                 };
+                let partner_points = block.pcurves[partner].points();
                 let winners: Vec<_> = surfaces
                     .iter()
                     .filter_map(|surface| {
-                        nurbs_carrier_offset(
-                            &surface.geometry,
-                            &block.pcurves[partner].points,
-                            &anchor_points,
-                        )
-                        .map(|offset| {
-                            ConsolidatedSupportBinding::NurbsCarrier {
+                        nurbs_carrier_offset(&surface.geometry, &partner_points, &anchor_points)
+                            .map(|offset| ConsolidatedSupportBinding::NurbsCarrier {
                                 pos: surface.pos,
                                 offset,
-                            }
-                        })
+                            })
                     })
                     .collect();
                 if let [winner] = winners.as_slice() {
@@ -1360,9 +1355,9 @@ fn support_points(
         ConsolidatedSupportBinding::Cylinder { pos } => {
             let carrier = carriers.cylinders.iter().find(|value| value.pos == *pos)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|uv| b2_cylinder_point(carrier, *uv))
+                .map(|site| b2_cylinder_point(carrier, site.point))
                 .collect()
         }
         ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. } => {
@@ -1372,42 +1367,48 @@ fn support_points(
                 .find(|value| value.pos == *pos)?
                 .cylinder;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|uv| b2_cylinder_point(carrier, *uv))
+                .map(|site| b2_cylinder_point(carrier, site.point))
                 .collect()
         }
         ConsolidatedSupportBinding::Cone { pos } => {
             let carrier = carriers.cones.iter().find(|value| value.pos == *pos)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|uv| b2_cone_point(carrier, *uv))
+                .map(|site| b2_cone_point(carrier, site.point))
                 .collect()
         }
         ConsolidatedSupportBinding::Sphere { pos } => {
             let carrier = carriers.spheres.iter().find(|value| value.pos == *pos)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|&[u, v]| cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v))
+                .map(|site| {
+                    let [u, v] = site.point;
+                    cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v)
+                })
                 .collect()
         }
         ConsolidatedSupportBinding::Torus { pos } => {
             let carrier = carriers.tori.iter().find(|value| value.pos == *pos)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|uv| b2_torus_point(carrier, *uv))
+                .map(|site| b2_torus_point(carrier, site.point))
                 .collect()
         }
         ConsolidatedSupportBinding::Plane { pos } => {
             let carrier = carriers.planes.iter().find(|value| value.pos == *pos)?;
             let geometry = b2_plane_geometry(carrier)?;
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|&[u, v]| cadmpeg_ir::eval::surface_point(&geometry, u, v))
+                .map(|site| {
+                    let [u, v] = site.point;
+                    cadmpeg_ir::eval::surface_point(&geometry, u, v)
+                })
                 .collect()
         }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
@@ -1420,9 +1421,10 @@ fn support_points(
                 return None;
             };
             pcurve
-                .points
+                .sites
                 .iter()
-                .map(|&[u, v]| {
+                .map(|site| {
+                    let [u, v] = site.point;
                     let partials = nurbs_surface_partials(surface, u, v)?;
                     let normal = partials.du.cross(partials.dv).unit()?;
                     Some(Point3::new(
@@ -1491,7 +1493,10 @@ fn nurbs_carrier_offset(
 }
 
 fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool {
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
     let span = circle.range[1] - circle.range[0];
@@ -1507,10 +1512,13 @@ fn pcurve_endpoints_match_cone(
     cone: &B2Cone,
     vertices: &[Point3],
 ) -> bool {
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
-    [*first, *last].into_iter().all(|uv| {
+    [first, last].into_iter().all(|uv| {
         b2_cone_point(cone, uv).is_some_and(|point| {
             vertices
                 .iter()
@@ -1524,10 +1532,13 @@ fn pcurve_endpoints_match_torus(
     torus: &B2Torus,
     vertices: &[Point3],
 ) -> bool {
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
-    [*first, *last].into_iter().all(|uv| {
+    [first, last].into_iter().all(|uv| {
         b2_torus_point(torus, uv).is_some_and(|point| {
             vertices
                 .iter()
@@ -1541,10 +1552,13 @@ fn pcurve_endpoints_match_sphere(
     sphere: &B2Sphere,
     vertices: &[Point3],
 ) -> bool {
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
-    [*first, *last].into_iter().all(|[u, v]| {
+    [first, last].into_iter().all(|[u, v]| {
         cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(sphere), u, v).is_some_and(|point| {
             vertices
                 .iter()
@@ -1561,10 +1575,13 @@ fn pcurve_endpoints_match_plane(
     let Some(geometry) = b2_plane_geometry(plane) else {
         return false;
     };
-    let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
+    let (Some(first), Some(last)) = (
+        pcurve.sites.first().map(|site| site.point),
+        pcurve.sites.last().map(|site| site.point),
+    ) else {
         return false;
     };
-    [*first, *last].into_iter().all(|[u, v]| {
+    [first, last].into_iter().all(|[u, v]| {
         cadmpeg_ir::eval::surface_point(&geometry, u, v).is_some_and(|point| {
             vertices
                 .iter()
@@ -1579,16 +1596,16 @@ fn pcurve_endpoints_match_vertices(
     vertices: &[Point3],
 ) -> bool {
     let Some(first) = pcurve
-        .points
+        .sites
         .first()
-        .and_then(|uv| b2_cylinder_point(cylinder, *uv))
+        .and_then(|site| b2_cylinder_point(cylinder, site.point))
     else {
         return false;
     };
     let Some(last) = pcurve
-        .points
+        .sites
         .last()
-        .and_then(|uv| b2_cylinder_point(cylinder, *uv))
+        .and_then(|site| b2_cylinder_point(cylinder, site.point))
     else {
         return false;
     };
@@ -1727,15 +1744,22 @@ mod tests {
             full_circle: false,
             chart_shift: 0.0,
         };
-        let pcurve = |points| ConsolidatedPcurve {
+        let pcurve = |points: Vec<[f64; 2]>| ConsolidatedPcurve {
             pos: 0,
             support_id: 1,
-            degree: 1,
             extrapolation_sites: 0,
-            knots: vec![0.0, span],
-            points,
-            first_derivatives: Vec::new(),
-            second_derivatives: Vec::new(),
+            sites: points
+                .into_iter()
+                .enumerate()
+                .map(
+                    |(index, point)| crate::wire::records::ConsolidatedPcurveSite {
+                        knot: if index == 0 { 0.0 } else { span },
+                        point,
+                        first_derivatives: [0.0, 0.0],
+                        second_derivatives: [0.0, 0.0],
+                    },
+                )
+                .collect(),
             range: [0.0, span],
             tail: Vec::new(),
         };

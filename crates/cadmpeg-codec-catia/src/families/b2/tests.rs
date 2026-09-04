@@ -17,8 +17,7 @@ fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
     let pcurves = crate::families::b2::records::b2_pcurves(&b2_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x1234);
-    assert_eq!(pcurves[0].degree, 5);
-    assert_eq!(pcurves[0].second_derivatives, vec![[0.0, 0.0]; 2]);
+    assert_eq!(pcurves[0].second_derivatives(), vec![[0.0, 0.0]; 2]);
 }
 
 #[test]

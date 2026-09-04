@@ -21,6 +21,19 @@ use crate::layout::b_family_frame as b_frame;
 
 use super::bytes::{compact_int, f64_le};
 
+/// One knot of a degree-5 consolidated UV jet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConsolidatedPcurveSite {
+    /// Global parameter at this site.
+    pub knot: f64,
+    /// UV position.
+    pub point: [f64; 2],
+    /// UV first derivative.
+    pub first_derivatives: [f64; 2],
+    /// UV second derivative.
+    pub second_derivatives: [f64; 2],
+}
+
 /// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
 #[derive(Debug, Clone)]
 pub struct ConsolidatedPcurve {
@@ -28,22 +41,40 @@ pub struct ConsolidatedPcurve {
     pub pos: usize,
     /// Referenced support-surface identifier.
     pub support_id: u32,
-    /// Parametric curve degree.
-    pub degree: u32,
     /// Number of leading extrapolation sites encoded by the array marker.
     pub extrapolation_sites: u32,
-    /// Global parameters at the stored sites.
-    pub knots: Vec<f64>,
-    /// UV positions at the stored sites.
-    pub points: Vec<[f64; 2]>,
-    /// UV first derivatives at the stored sites.
-    pub first_derivatives: Vec<[f64; 2]>,
-    /// UV second derivatives at the stored sites.
-    pub second_derivatives: Vec<[f64; 2]>,
+    /// Knot-aligned UV jet samples.
+    pub sites: Vec<ConsolidatedPcurveSite>,
     /// Native parameter range.
     pub range: [f64; 2],
     /// Bytes following the native range inside the framed record.
     pub tail: Vec<u8>,
+}
+
+impl ConsolidatedPcurve {
+    pub const DEGREE: u32 = 5;
+
+    pub fn knots(&self) -> Vec<f64> {
+        self.sites.iter().map(|site| site.knot).collect()
+    }
+
+    pub fn points(&self) -> Vec<[f64; 2]> {
+        self.sites.iter().map(|site| site.point).collect()
+    }
+
+    pub fn first_derivatives(&self) -> Vec<[f64; 2]> {
+        self.sites
+            .iter()
+            .map(|site| site.first_derivatives)
+            .collect()
+    }
+
+    pub fn second_derivatives(&self) -> Vec<[f64; 2]> {
+        self.sites
+            .iter()
+            .map(|site| site.second_derivatives)
+            .collect()
+    }
 }
 
 pub(crate) fn parse_consolidated_pcurve(
@@ -130,12 +161,21 @@ pub(crate) fn parse_consolidated_pcurve(
     Some(ConsolidatedPcurve {
         pos,
         support_id,
-        degree,
         extrapolation_sites,
-        knots,
-        points: u.into_iter().zip(v).map(|p| [p.0, p.1]).collect(),
-        first_derivatives: du.into_iter().zip(dv).map(|p| [p.0, p.1]).collect(),
-        second_derivatives: ddu.into_iter().zip(ddv).map(|p| [p.0, p.1]).collect(),
+        sites: knots
+            .into_iter()
+            .zip(u.into_iter().zip(v))
+            .zip(du.into_iter().zip(dv))
+            .zip(ddu.into_iter().zip(ddv))
+            .map(
+                |(((knot, (u, v)), (du, dv)), (ddu, ddv))| ConsolidatedPcurveSite {
+                    knot,
+                    point: [u, v],
+                    first_derivatives: [du, dv],
+                    second_derivatives: [ddu, ddv],
+                },
+            )
+            .collect(),
         range,
         tail: data[at..end].to_vec(),
     })
