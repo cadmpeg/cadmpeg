@@ -309,12 +309,11 @@ fn decode_with_occurrence_limits(
             retained_source,
         ));
 
-    let mut ir = CadIr::empty();
+    let primary = crate::dialect::classify(representation, &parse.global);
+    let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
     if let Some(context) = &length_context {
         ir.tolerances.linear = context.minimum_resolution_mm();
     }
-    let primary = crate::dialect::classify(representation, &parse.global);
-    ir.source = Some(source_meta(&parse.global, representation, primary));
     let projection = match length_context.filter(|_| !ctx.container_only()) {
         Some(context) => {
             charge_work(ctx, parameter_tokens, "iges_geometry_projection")?;

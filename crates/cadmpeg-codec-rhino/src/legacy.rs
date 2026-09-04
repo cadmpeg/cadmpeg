@@ -2133,8 +2133,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     // table, so no openNURBS writer-version stamp is declared.
     let primary = ArchiveVersion::V1.classify(None);
 
-    let mut ir = CadIr::empty();
-    ir.source = Some(crate::container::source_meta(
+    let mut ir = CadIr::decoded(crate::container::source_meta(
         primary,
         crate::container::SourceMetaDetail::FlatLegacyArchive,
     ));

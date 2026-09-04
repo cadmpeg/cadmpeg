@@ -1331,9 +1331,22 @@ impl CadIr {
     }
 
     /// Construct an empty current-version document with default tolerances.
+    ///
+    /// Fixtures and in-progress assembly use this constructor. Decoders that
+    /// have classified source metadata use [`Self::decoded`].
     pub fn empty() -> Self {
         Self {
             source: None,
+            tolerances: Tolerances::default(),
+            model: Model::default(),
+            native: Native::default(),
+        }
+    }
+
+    /// Construct a decoded document with classified source metadata.
+    pub fn decoded(source: SourceMeta) -> Self {
+        Self {
+            source: Some(source),
             tolerances: Tolerances::default(),
             model: Model::default(),
             native: Native::default(),

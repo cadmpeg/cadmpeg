@@ -1197,7 +1197,6 @@ fn chunked_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
 
 /// Build an empty current-version IR and a container-only report.
 pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
-    let mut ir = CadIr::empty();
     let mut notes = vec![scan.version_note()];
     notes.extend(scan.warnings.iter().cloned());
     notes.extend(
@@ -1221,7 +1220,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     }));
     let primary = dialect_match(scan);
     losses.extend(crate::dialect::admission_loss(&primary));
-    ir.source = Some(source_meta(primary, SourceMetaDetail::ContainerOnly(scan)));
+    let ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan)));
     Decoded {
         ir,
         body: DecodeBody {

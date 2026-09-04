@@ -107,7 +107,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         ctx: &'ctx DecodeContext<'arena>,
         packaging: Packaging,
     ) -> Self {
-        let mut ir = CadIr::empty();
         let mut attributes = BTreeMap::new();
         attributes.insert("schema".into(), schema_name(exchange));
         attributes.insert("data_sections".into(), exchange.data.len().to_string());
@@ -120,7 +119,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
-        ir.source = Some(SourceMeta::classified(
+        let ir = CadIr::decoded(SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(primary),
             attributes,
         ));

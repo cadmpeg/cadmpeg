@@ -172,10 +172,7 @@ fn build_result(
     matched: DialectMatch,
     kernel: &DialectMatch,
 ) -> Result<Decoded, CodecError> {
-    let mut ir = CadIr::empty();
-    // Identity is authored once, here; the sealed wrapper stamps the report
-    // from it.
-    ir.source = Some(SourceMeta::classified(
+    let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(matched).with(kernel.clone()),
         attributes,
     ));

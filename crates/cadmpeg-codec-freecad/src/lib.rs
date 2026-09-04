@@ -1106,7 +1106,6 @@ impl CodecBackend for FcstdCodec {
         if let Some((_, thumbnail)) = thumbnail {
             attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
         }
-        let mut ir = CadIr::empty();
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
@@ -1114,7 +1113,7 @@ impl CodecBackend for FcstdCodec {
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
-        ir.source = Some(SourceMeta::classified(dialects.clone(), attributes));
+        let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
         if let Some((name, bytes)) = thumbnail {
             ctx.charge_retained(bytes.len() as u64, "retain FCStd thumbnail", None)?;
             source_fidelity.attach_native_unknown_records(
