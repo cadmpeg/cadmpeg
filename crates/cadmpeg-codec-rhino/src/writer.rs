@@ -1338,8 +1338,13 @@ fn planar_sheet_brep_payload(
             record.extend(indexes(
                 &range.clone().map(|trim| trim as i32).collect::<Vec<_>>(),
             ));
-            record
-                .extend(brep_loop_type(model.loops[index].boundary_role, index == 0).to_le_bytes());
+            record.extend(
+                brep_loop_type(
+                    model.loops[index].boundary_role_in(&model.faces),
+                    index == 0,
+                )
+                .to_le_bytes(),
+            );
             record.extend(0_i32.to_le_bytes());
             record
         })
@@ -2003,8 +2008,11 @@ fn multi_face_brep_payload(
                     .collect::<Vec<_>>(),
             ));
             record.extend(
-                brep_loop_type(loop_.boundary_role, face.loops.first() == Some(&loop_.id))
-                    .to_le_bytes(),
+                brep_loop_type(
+                    loop_.boundary_role_in(&model.faces),
+                    face.loops.first() == Some(&loop_.id),
+                )
+                .to_le_bytes(),
             );
             record.extend(face_index[&loop_.face.0].to_le_bytes());
             record

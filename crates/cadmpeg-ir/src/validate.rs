@@ -60,8 +60,8 @@ use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
-    check_coedge_pairing, check_loops, check_references, check_shell_connectivity,
-    check_tolerances, check_wire_topology,
+    check_coedge_pairing, check_references, check_shell_connectivity, check_tolerances,
+    check_wire_topology,
 };
 
 /// A radius/length that is not a finite positive number is invalid geometry.
@@ -97,7 +97,6 @@ fn validate_model_with_index(
     check_tolerances(ir, &mut findings);
     check_references(ir, ids, &mut findings);
     check_pmi(ir, &mut findings);
-    check_loops(ir, ids, &mut findings);
     check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);

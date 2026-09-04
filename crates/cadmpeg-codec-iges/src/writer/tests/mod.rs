@@ -53,8 +53,9 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
     let model_only_loop_id = decoded.ir().model.faces[0].loops[0].clone();
     {
         let mut ir = decoded.ir_mut();
-        for loop_ in &mut ir.model.loops {
-            loop_.boundary_role = LoopBoundaryRole::Unspecified;
+        for face in &mut ir.model.faces {
+            let ids = face.loops.to_vec();
+            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
         }
         let coedge_ids = ir
             .model
@@ -786,7 +787,10 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         shell: ShellId::from("shell"),
         surface: SurfaceId::from("surface"),
         sense: Sense::Forward,
-        loops: vec![inner_id.clone(), outer_id.clone()],
+        loops: cadmpeg_ir::topology::FaceLoops::classified(
+            Some(outer_id.clone()),
+            vec![inner_id.clone()],
+        ),
         name: None,
         color: None,
         tolerance: None,
@@ -796,7 +800,6 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         Loop {
             id: inner_id,
             face: face_id.clone(),
-            boundary_role: LoopBoundaryRole::Inner,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: Vec::new(),
                 vertex_uses: Vec::new(),
@@ -805,7 +808,6 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         Loop {
             id: outer_id.clone(),
             face: face_id,
-            boundary_role: LoopBoundaryRole::Outer,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: Vec::new(),
                 vertex_uses: Vec::new(),
@@ -830,7 +832,10 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         shell: ShellId::from("shell"),
         surface: SurfaceId::from("surface"),
         sense: Sense::Forward,
-        loops: vec![inner_id.clone(), unclassified_id.clone()],
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
+            unclassified_id.clone(),
+            inner_id.clone(),
+        ]),
         name: None,
         color: None,
         tolerance: None,
@@ -840,7 +845,6 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         Loop {
             id: inner_id,
             face: face_id.clone(),
-            boundary_role: LoopBoundaryRole::Inner,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: Vec::new(),
                 vertex_uses: Vec::new(),
@@ -849,7 +853,6 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         Loop {
             id: unclassified_id.clone(),
             face: face_id,
-            boundary_role: LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: Vec::new(),
                 vertex_uses: Vec::new(),
@@ -859,5 +862,5 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
 
     let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, unclassified_id);
-    assert!(face_outer_loop(&ordered).is_none());
+    assert!(face_outer_loop(&face, &ordered).is_none());
 }

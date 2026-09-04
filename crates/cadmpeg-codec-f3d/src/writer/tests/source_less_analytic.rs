@@ -1407,7 +1407,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         shell,
         surface: surface.clone(),
         sense: Sense::Forward,
-        loops: loops.to_vec(),
+        loops: loops.to_vec().into(),
         name: None,
         color: None,
         tolerance: None,
@@ -1427,7 +1427,6 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         source_less.model.loops.push(Loop {
             id: loops[index].clone(),
             face: face.clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: vec![coedges[index].clone()],
                 vertex_uses: Vec::new(),

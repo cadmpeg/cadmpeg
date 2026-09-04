@@ -2633,7 +2633,7 @@ mod tests {
             shell: ShellId::mint("sldprt:brep:shell#1").expect("identity grammar"),
             surface: SurfaceId::mint("sldprt:brep:surf#22").expect("identity grammar"),
             sense: Sense::Forward,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,

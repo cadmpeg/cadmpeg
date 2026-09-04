@@ -956,7 +956,6 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ir.model.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary_role: LoopBoundaryRole::Outer,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: coedge_ids.clone(),
             vertex_uses: Vec::new(),
@@ -967,7 +966,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         shell: shell_id.clone(),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: vec![loop_id],
+        loops: vec![loop_id].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -1540,7 +1539,11 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.loops[0].boundary_role = LoopBoundaryRole::Unspecified;
+    {
+        let mut ir = decoded.ir_mut();
+        let ids = ir.model.faces[0].loops.to_vec();
+        ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
+    }
 
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
@@ -1550,7 +1553,7 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().model.loops[0].boundary_role,
+        round_trip.ir().model.loops[0].boundary_role_in(&round_trip.ir().model.faces),
         LoopBoundaryRole::Unspecified
     );
     assert!(
@@ -1744,7 +1747,10 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter_mut()
         .find(|face| face.id == target_face_id)
         .unwrap()
-        .loops = vec![moved_loop_id.clone(), outer_loop_id.clone()];
+        .loops = cadmpeg_ir::topology::FaceLoops::classified(
+        Some(outer_loop_id.clone()),
+        vec![moved_loop_id.clone()],
+    );
     decoded
         .ir_mut()
         .model
@@ -1768,7 +1774,6 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
             .find(|loop_| loop_.id == moved_loop_id)
             .unwrap();
         moved_loop.face = target_face_id;
-        moved_loop.boundary_role = LoopBoundaryRole::Inner;
     }
 
     let emitted_loop_ids = decoded

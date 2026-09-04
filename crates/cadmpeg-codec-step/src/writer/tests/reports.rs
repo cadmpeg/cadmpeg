@@ -79,7 +79,6 @@ fn edgeless_doc() -> CadIr {
     ir.model.loops.push(Loop {
         id: LoopId::mint("lp0").expect("identity grammar"),
         face: FaceId::mint("f0").expect("identity grammar"),
-        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: vec![CoedgeId::mint("ce0").expect("identity grammar")],
             vertex_uses: Vec::new(),
@@ -90,7 +89,7 @@ fn edgeless_doc() -> CadIr {
         shell: ShellId::mint("sh0").expect("identity grammar"),
         surface: SurfaceId::mint("s0").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("lp0").expect("identity grammar")],
+        loops: vec![LoopId::mint("lp0").expect("identity grammar")].into(),
         name: None,
         color: None,
         tolerance: None,

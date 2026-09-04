@@ -2035,17 +2035,14 @@ impl<'a> Builder<'a> {
                 face_refs.push(r);
             } else {
                 let outer = self.faces.get(fid.as_str()).is_some_and(|face| {
-                    face.loops.iter().any(|loop_id| {
-                        self.loops
-                            .get(loop_id.as_str())
-                            .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
-                    }) || face.loops.first().is_some_and(|loop_id| {
-                        !face.loops.iter().any(|candidate| {
-                            self.loops
-                                .get(candidate.as_str())
-                                .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
-                        }) && self.loops.contains_key(loop_id.as_str())
-                    })
+                    face.loops
+                        .iter()
+                        .any(|loop_id| face.loop_role(loop_id) == LoopBoundaryRole::Outer)
+                        || face.loops.first().is_some_and(|loop_id| {
+                            !face.loops.iter().any(|candidate| {
+                                face.loop_role(candidate) == LoopBoundaryRole::Outer
+                            }) && self.loops.contains_key(loop_id.as_str())
+                        })
                 });
                 self.topology_relation_loss(
                     format!("shell:{shell_id}:face:{fid}"),
@@ -2091,18 +2088,15 @@ impl<'a> Builder<'a> {
 
         let mut bound_refs = Vec::new();
         for (i, lid) in loop_ids.iter().enumerate() {
+            let loop_id = &face.loops[i];
             if let Some(loop_ref) = self.emit_loop(lid) {
-                let kind = if matches!(
-                    self.loops
-                        .get(lid.as_str())
-                        .map(|loop_| loop_.boundary_role),
-                    Some(LoopBoundaryRole::Outer)
-                ) || (i == 0
-                    && !loop_ids.iter().any(|id| {
-                        self.loops
-                            .get(id.as_str())
-                            .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
-                    })) {
+                let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer
+                    || (i == 0
+                        && !face
+                            .loops
+                            .iter()
+                            .any(|id| face.loop_role(id) == LoopBoundaryRole::Outer))
+                {
                     "FACE_OUTER_BOUND"
                 } else {
                     "FACE_BOUND"
@@ -2110,16 +2104,12 @@ impl<'a> Builder<'a> {
                 let b = self.emitter.emit(kind, &format!("'',{loop_ref},.T."));
                 bound_refs.push(b);
             } else {
-                let outer = self
-                    .loops
-                    .get(lid.as_str())
-                    .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+                let outer = face.loop_role(loop_id) == LoopBoundaryRole::Outer
                     || (i == 0
-                        && !loop_ids.iter().any(|id| {
-                            self.loops
-                                .get(id.as_str())
-                                .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
-                        }));
+                        && !face
+                            .loops
+                            .iter()
+                            .any(|id| face.loop_role(id) == LoopBoundaryRole::Outer));
                 self.topology_relation_loss(
                     format!("face:{face_id}:loop:{lid}"),
                     if outer {

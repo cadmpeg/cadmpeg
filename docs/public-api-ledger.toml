@@ -4152,3 +4152,17 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::topology::Coedge::{next,previous}"
 reason = "loop ring order is Loop.coedges so a contradictory next or previous pointer cannot be stored"
+
+[[change]]
+commit = "fb396b95e83db546c3e937b20c4044d802fe5d54"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::topology::Face::loops"
+reason = "face loop membership is FaceLoops so a loop cannot be both the outer boundary and an inner hole"
+
+[[change]]
+commit = "fb396b95e83db546c3e937b20c4044d802fe5d54"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::topology::Loop::boundary_role"
+reason = "loop outer/inner classification is stored on the owning face so a loop cannot disagree with face membership"

@@ -1664,7 +1664,9 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             source_object: None,
         });
         let mut face_loops = Vec::with_capacity(face_record.loops.len());
+        let mut loop_roles = Vec::with_capacity(face_record.loops.len());
         for (loop_index, loop_record) in face_record.loops.into_iter().enumerate() {
+            loop_roles.push(loop_record.role);
             let loop_id: cadmpeg_ir::ids::LoopId =
                 format!("rhino:object:loop#{suffix}.face-{face_index}-{loop_index}").into();
             let mut coedge_ids = Vec::with_capacity(loop_record.trims.len());
@@ -1728,7 +1730,6 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role: loop_record.role,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: coedge_ids,
                     vertex_uses: Vec::new(),
@@ -1745,7 +1746,11 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             } else {
                 Sense::Forward
             },
-            loops: face_loops,
+            loops: {
+                let mut loops = cadmpeg_ir::topology::FaceLoops::from(face_loops);
+                loops.apply_roles(&loop_roles);
+                loops
+            },
             name: None,
             color: None,
             tolerance: None,

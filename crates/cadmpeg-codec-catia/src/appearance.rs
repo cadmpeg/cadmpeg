@@ -335,7 +335,7 @@ mod tests {
                 shell: ShellId::mint("shell").expect("identity grammar"),
                 surface: SurfaceId::mint(format!("surface-{index}")).expect("identity grammar"),
                 sense: Sense::Forward,
-                loops: vec![],
+                loops: vec![].into(),
                 name: None,
                 color: None,
                 tolerance: None,

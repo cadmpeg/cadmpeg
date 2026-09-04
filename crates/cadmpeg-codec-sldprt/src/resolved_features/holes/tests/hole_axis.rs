@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
+use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 
 use super::super::super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::super::super::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
@@ -87,7 +87,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             shell: ShellId::mint("shell").expect("identity grammar"),
             surface: surfaces[0].id.clone(),
             sense: Sense::Reversed,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,
@@ -97,7 +97,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             shell: ShellId::mint("shell").expect("identity grammar"),
             surface: surfaces[1].id.clone(),
             sense: Sense::Forward,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,
@@ -107,7 +107,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             shell: ShellId::mint("shell").expect("identity grammar"),
             surface: surfaces[2].id.clone(),
             sense: Sense::Reversed,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,
@@ -199,7 +199,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
             shell: ShellId::mint("shell").expect("identity grammar"),
             surface: surface.id.clone(),
             sense: Sense::Forward,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,
@@ -268,7 +268,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
             shell: ShellId::mint("shell").expect("identity grammar"),
             surface: surface.id.clone(),
             sense: Sense::Forward,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,
@@ -420,7 +420,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         shell: ShellId::mint("shell").expect("identity grammar"),
         surface: surface.id.clone(),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("loop").expect("identity grammar")],
+        loops: vec![LoopId::mint("loop").expect("identity grammar")].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -428,7 +428,6 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let loop_ = Loop {
         id: LoopId::mint("loop").expect("identity grammar"),
         face: face.id.clone(),
-        boundary_role: LoopBoundaryRole::Outer,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: vec![CoedgeId::mint("coedge").expect("identity grammar")],
             vertex_uses: Vec::new(),
@@ -738,7 +737,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
             shell: ShellId::mint("shell").expect("identity grammar"),
             surface: surface.id.clone(),
             sense: Sense::Reversed,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,

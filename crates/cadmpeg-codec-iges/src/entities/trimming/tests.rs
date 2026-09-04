@@ -525,16 +525,7 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
     let roles = face
         .loops
         .iter()
-        .map(|id| {
-            result
-                .ir()
-                .model
-                .loops
-                .iter()
-                .find(|loop_| loop_.id == *id)
-                .unwrap()
-                .boundary_role
-        })
+        .map(|id| face.loop_role(id))
         .collect::<Vec<_>>();
     assert_eq!(
         roles,
@@ -624,7 +615,7 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .find(|loop_| loop_.id == face.loops[0])
         .unwrap();
     assert_eq!(
-        loop_.boundary_role,
+        loop_.boundary_role_in(&result.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Inner
     );
     assert_eq!(face.surface.0, "iges:model:surface#D15:implicit-outer");
@@ -1160,7 +1151,7 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(
-        loop_.boundary_role,
+        loop_.boundary_role_in(&result.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
     assert_eq!(coedge.pcurves.len(), 1);
@@ -1423,7 +1414,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .find(|loop_| loop_.id == face.loops[0])
         .unwrap();
     assert_eq!(
-        loop_.boundary_role,
+        loop_.boundary_role_in(&result.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert_eq!(loop_.coedges().len(), 1);

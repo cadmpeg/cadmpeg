@@ -128,7 +128,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             loops: vec![
                 LoopId::mint(format!("loop-{ordinal}-0")).expect("identity grammar"),
                 LoopId::mint(format!("loop-{ordinal}-1")).expect("identity grammar"),
-            ],
+            ]
+            .into(),
             name: None,
             color: None,
             tolerance: None,
@@ -401,7 +402,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         loops: vec![
             LoopId::mint("unowned-loop-a").expect("identity grammar"),
             LoopId::mint("unowned-loop-b").expect("identity grammar"),
-        ],
+        ]
+        .into(),
         name: None,
         color: None,
         tolerance: None,
@@ -527,7 +529,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 shell: ShellId::mint("shell").expect("identity grammar"),
                 surface,
                 sense: Sense::Reversed,
-                loops: loops.to_vec(),
+                loops: loops.to_vec().into(),
                 name: None,
                 color: None,
                 tolerance: None,
@@ -620,7 +622,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         loops: vec![
             LoopId::mint("unrelated-a").expect("identity grammar"),
             LoopId::mint("unrelated-b").expect("identity grammar"),
-        ],
+        ]
+        .into(),
         name: None,
         color: None,
         tolerance: None,

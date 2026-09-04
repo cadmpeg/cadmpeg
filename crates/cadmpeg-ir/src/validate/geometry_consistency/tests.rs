@@ -12,7 +12,7 @@ use crate::geometry::{
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::Check;
-use crate::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Sense, Vertex};
+use crate::topology::{Coedge, Edge, Face, Loop, PcurveUse, Sense, Vertex};
 use crate::validate::validate_neutral;
 
 macro_rules! procedural_surface {
@@ -210,7 +210,6 @@ fn untrimmed_surface_curve() -> CadIr {
     ir.model.loops.push(Loop {
         id: "loop".into(),
         face: "face".into(),
-        boundary_role: LoopBoundaryRole::Outer,
         boundary: crate::topology::LoopBoundary::Ring {
             coedges: vec!["coedge".into()],
             vertex_uses: Vec::new(),
@@ -221,7 +220,7 @@ fn untrimmed_surface_curve() -> CadIr {
         shell: "shell".into(),
         surface: "surface".into(),
         sense: Sense::Forward,
-        loops: vec!["loop".into()],
+        loops: vec!["loop".into()].into(),
         name: None,
         color: None,
         tolerance: None,

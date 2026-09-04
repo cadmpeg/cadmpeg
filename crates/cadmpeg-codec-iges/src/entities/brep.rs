@@ -788,7 +788,7 @@ pub(super) fn project(
                     FaceId::mint(format!("iges:model:face#{shell_stem}:D{face_sequence}"))
                         .expect("identity grammar");
                 let mut face_loops = Vec::new();
-                for (face_loop_index, loop_sequence) in
+                for (_face_loop_index, loop_sequence) in
                     face_definition.loops.into_iter().enumerate()
                 {
                     let uses = loops[&loop_sequence].clone();
@@ -1083,13 +1083,6 @@ pub(super) fn project(
                     candidate.model_mut().loops.push(Loop {
                         id: loop_id.clone(),
                         face: face_id.clone(),
-                        boundary_role: if face_definition.has_outer_loop && face_loop_index == 0 {
-                            cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                        } else if face_definition.has_outer_loop {
-                            cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                        } else {
-                            cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
-                        },
                         boundary,
                     });
                     face_loops.push(loop_id);
@@ -1103,7 +1096,14 @@ pub(super) fn project(
                     shell: shell_id.clone(),
                     surface: surface_id,
                     sense: face_sense,
-                    loops: face_loops,
+                    loops: {
+                        let mut loops = cadmpeg_ir::topology::FaceLoops::from(face_loops);
+                        if face_definition.has_outer_loop {
+                            let outer = loops.first().cloned();
+                            loops.classify_outer(outer.as_ref());
+                        }
+                        loops
+                    },
                     name: None,
                     color: None,
                     tolerance: None,

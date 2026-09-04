@@ -427,6 +427,7 @@ macro_rules! declare_model {
                 S: Serializer,
             {
                 crate::topology::install_coedge_ring_neighbors(&self.loops, &self.coedges);
+                crate::topology::install_loop_boundary_roles(&self.faces);
                 let result = ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -481,6 +482,8 @@ macro_rules! declare_model {
                             .map_err(serde::de::Error::custom)?,
                     );
                 }
+                crate::topology::rebind_face_loop_roles(&mut model.faces)
+                    .map_err(serde::de::Error::custom)?;
                 Ok(model)
             }
         }
@@ -594,6 +597,7 @@ macro_rules! declare_model_view {
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedModel<'_> {
                 crate::topology::install_coedge_ring_neighbors(&self.loops, &self.coedges);
+                crate::topology::install_loop_boundary_roles(&self.faces);
                 SortedModel {
                     $($field: sorted_model_value!(self, $field),)*
                 }

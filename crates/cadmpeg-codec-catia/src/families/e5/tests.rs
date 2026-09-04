@@ -478,7 +478,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.loops.len(), 1);
     assert_eq!(
-        result.ir().model.loops[0].boundary_role,
+        result.ir().model.loops[0].boundary_role_in(&result.ir().model.faces),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert_eq!(result.ir().model.coedges.len(), 4);

@@ -407,7 +407,7 @@ mod consolidated_revolution_binding_tests {
         VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
 
     #[test]
@@ -472,7 +472,7 @@ mod consolidated_revolution_binding_tests {
                 shell: ShellId::mint("shell".to_string()).expect("identity grammar"),
                 surface: surface.clone(),
                 sense: Sense::Forward,
-                loops: vec![loop_id.clone()],
+                loops: vec![loop_id.clone()].into(),
                 name: None,
                 color: None,
                 tolerance: None,
@@ -480,7 +480,6 @@ mod consolidated_revolution_binding_tests {
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face,
-                boundary_role: LoopBoundaryRole::Unspecified,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: vec![coedge.clone()],
                     vertex_uses: Vec::new(),
@@ -3083,7 +3082,7 @@ pub(crate) fn attach_standard_faces(
             } else {
                 Sense::Reversed
             },
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,
@@ -5203,7 +5202,6 @@ fn emit_standard_topology(
                 id: loop_id.clone(),
                 face: FaceId::mint(format!("catia:standard:face#{face_index}"))
                     .expect("identity grammar"),
-                boundary_role,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: coedge_ids,
                     vertex_uses,
@@ -5211,6 +5209,9 @@ fn emit_standard_topology(
             });
             ir.model.faces[face_index].loops.push(loop_id);
         }
+        ir.model.faces[face_index]
+            .loops
+            .apply_roles(&boundary_roles);
     }
     for uses in edge_coedges {
         for (position, current) in uses.iter().enumerate() {

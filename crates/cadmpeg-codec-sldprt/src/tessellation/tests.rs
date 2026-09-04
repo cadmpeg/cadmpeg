@@ -17,7 +17,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex,
 };
 
 fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
@@ -311,7 +311,6 @@ fn add_face(
     model.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary_role: LoopBoundaryRole::Outer,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: coedge_ids,
             vertex_uses: Vec::new(),
@@ -322,7 +321,7 @@ fn add_face(
         shell: ShellId::mint("shell").expect("identity grammar"),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: vec![loop_id],
+        loops: vec![loop_id].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -495,7 +494,6 @@ fn add_cylindrical_patch_face(
     model.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary_role: LoopBoundaryRole::Outer,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: coedge_ids,
             vertex_uses: Vec::new(),
@@ -506,7 +504,7 @@ fn add_cylindrical_patch_face(
         shell: ShellId::mint("shell").expect("identity grammar"),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: vec![loop_id],
+        loops: vec![loop_id].into(),
         name: None,
         color: None,
         tolerance: None,

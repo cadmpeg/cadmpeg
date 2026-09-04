@@ -1567,7 +1567,6 @@ fn decode_graph(
             out.loops.push(Loop {
                 id: LoopId::mint(id_loop(*loop_attr)).expect("identity grammar"),
                 face: FaceId::mint(id_face(f.bridge_attr)).expect("identity grammar"),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges,
                     vertex_uses: Vec::new(),
@@ -1853,7 +1852,7 @@ fn decode_graph(
             .expect("identity grammar"),
             surface: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
             sense: surface_sense(f.marker, surface_orientation_reversed),
-            loops,
+            loops: loops.into(),
             name: None,
             color: t
                 .bridges
@@ -4943,7 +4942,7 @@ fn synthesize_cylinder_seams(
             }
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
-            face.loops = vec![loop_a];
+            face.loops = vec![loop_a].into();
         }
         removed.insert(loop_b);
     }
@@ -5808,7 +5807,7 @@ mod tests {
             shell: ShellId::mint("shell").expect("identity grammar"),
             surface: SurfaceId::mint(format!("surface-{id}")).expect("identity grammar"),
             sense: Sense::Forward,
-            loops: vec![LoopId::mint(lp).expect("identity grammar")],
+            loops: vec![LoopId::mint(lp).expect("identity grammar")].into(),
             name: None,
             color: None,
             tolerance: None,
@@ -5816,7 +5815,6 @@ mod tests {
         let lp = |id: &str, face: &str, coedge: &str| Loop {
             id: LoopId::mint(id).expect("identity grammar"),
             face: FaceId::mint(face).expect("identity grammar"),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: vec![CoedgeId::mint(coedge).expect("identity grammar")],
                 vertex_uses: Vec::new(),
@@ -6471,7 +6469,7 @@ mod tests {
                 shell: cadmpeg_ir::ids::ShellId::mint("shell").expect("identity grammar"),
                 surface: surface_id,
                 sense: Sense::Forward,
-                loops: vec![loop_id.clone()],
+                loops: vec![loop_id.clone()].into(),
                 name: None,
                 color: None,
                 tolerance: None,
@@ -6479,7 +6477,6 @@ mod tests {
             loops: vec![Loop {
                 id: loop_id.clone(),
                 face: FaceId::mint("face").expect("identity grammar"),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::default(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: vec![coedge_id.clone()],
                     vertex_uses: Vec::new(),

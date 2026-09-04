@@ -13,7 +13,7 @@ use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{EdgeId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Loop, LoopBoundaryRole, Shell};
+use cadmpeg_ir::topology::{Loop, Shell};
 use std::collections::{HashMap, HashSet};
 
 const FORMAT: IdFormat<'static> = IdFormat("f3d");
@@ -737,7 +737,6 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         loops: vec![Loop {
             id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
             face: FaceId::mint("face").expect("identity grammar"),
-            boundary_role: LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: Vec::new(),
                 vertex_uses: Vec::new(),
