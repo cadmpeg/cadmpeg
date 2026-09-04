@@ -35,7 +35,7 @@ use crate::wire::bytes::{
 };
 use crate::wire::records::{
     consolidated_records, records_are_contiguous, scan_vertex_record_ranges, ConsolidatedFamily,
-    ConsolidatedPcurve, ConsolidatedRecord,
+    ConsolidatedPcurve, ConsolidatedRawFrame, ConsolidatedRecord,
 };
 
 const EPS_TRANSVERSE_RESIDUAL: f64 = 1.0e-6;
@@ -80,16 +80,8 @@ pub struct ConsolidatedAnalyticCircleEdgeRun {
 /// Exact class-`0x18` frame attached to an analytic circle carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConsolidatedAnalyticCircleDescriptor {
-    /// Record byte offset.
-    pub pos: usize,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent framing flag.
-    pub flag: u8,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Complete class-specific payload.
-    pub payload: Vec<u8>,
+    /// Framed record.
+    pub frame: ConsolidatedRawFrame,
 }
 
 /// Complete class-`0x25` edge run with its adjacent class-`0x18` descriptor.
@@ -149,20 +141,16 @@ pub(crate) struct ConsolidatedOwnerBoundaryCycle {
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConsolidatedEdgeDefinition {
-    /// Record byte offset.
-    pub pos: usize,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent framing flag.
-    pub flag: u8,
+    /// Framed record.
+    pub frame: ConsolidatedRawFrame,
     /// Edge-definition class in `0x23..=0x25`.
     pub class: u8,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Complete class-specific payload.
-    pub payload: Vec<u8>,
-    /// Structurally decoded class-specific payload, when its complete grammar closes.
-    pub data: Option<ConsolidatedEdgeDefinitionData>,
+}
+
+impl ConsolidatedEdgeDefinition {
+    pub fn data(&self) -> Option<ConsolidatedEdgeDefinitionData> {
+        consolidated_edge_definition_data(self.class, &self.frame.payload)
+    }
 }
 
 /// Closed payload grammar of a consolidated edge-definition frame.
@@ -546,17 +534,19 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             }
             let use_run = use_runs.get(&use0.range.start)?;
             let definition = use_run.definition.clone()?;
-            match definition.data.as_ref()? {
+            match definition.data()? {
                 ConsolidatedEdgeDefinitionData::Scalar { values, .. } if values.len() == 8 => {}
                 _ => return None,
             }
             Some(ConsolidatedAnalyticCircleEdgeRun {
                 descriptor: ConsolidatedAnalyticCircleDescriptor {
-                    pos: parameter.range.start,
-                    width: parameter.width,
-                    flag: parameter.flag,
-                    header_token: parameter.header_token,
-                    payload: data[parameter.payload.clone()].to_vec(),
+                    frame: ConsolidatedRawFrame {
+                        pos: parameter.range.start,
+                        width: parameter.width,
+                        flag: parameter.flag,
+                        header_token: parameter.header_token,
+                        payload: data[parameter.payload.clone()].to_vec(),
+                    },
                 },
                 circle: circles.get(&circle.range.start)?.clone(),
                 #[cfg(test)]
@@ -613,7 +603,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             let use_run = use_runs.get(&use0.range.start)?;
             let definition = use_run.definition.clone()?;
             if !matches!(
-                definition.data.as_ref(),
+                definition.data(),
                 Some(
                     ConsolidatedEdgeDefinitionData::Scalar25 { .. }
                         | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
@@ -694,16 +684,14 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         && matches!(record.class, 0x23..=0x25)
                 })
                 .map(|record| ConsolidatedEdgeDefinition {
-                    pos: record.range.start,
-                    width: record.width,
-                    flag: record.flag,
+                    frame: ConsolidatedRawFrame {
+                        pos: record.range.start,
+                        width: record.width,
+                        flag: record.flag,
+                        header_token: record.header_token,
+                        payload: data[record.payload.clone()].to_vec(),
+                    },
                     class: record.class,
-                    header_token: record.header_token,
-                    payload: data[record.payload.clone()].to_vec(),
-                    data: consolidated_edge_definition_data(
-                        record.class,
-                        &data[record.payload.clone()],
-                    ),
                 });
             identity_chain_consistent.then(|| ConsolidatedEdgeUseRun {
                 definition,
@@ -752,13 +740,14 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         };
         identity_chain_consistent.then(|| ConsolidatedEdgeUseRun {
             definition: Some(ConsolidatedEdgeDefinition {
-                pos: definition_record.range.start,
-                width: definition_record.width,
-                flag: definition_record.flag,
+                frame: ConsolidatedRawFrame {
+                    pos: definition_record.range.start,
+                    width: definition_record.width,
+                    flag: definition_record.flag,
+                    header_token: definition_record.header_token,
+                    payload: data[definition_record.payload.clone()].to_vec(),
+                },
                 class: definition_record.class,
-                header_token: definition_record.header_token,
-                payload: data[definition_record.payload.clone()].to_vec(),
-                data: definition_data,
             }),
             uses,
             node,

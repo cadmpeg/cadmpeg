@@ -22,7 +22,7 @@ use crate::wire::bytes::{
 use crate::wire::records::{b_family_frames, consolidated_records};
 use crate::wire::records::{
     b_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFamily, ConsolidatedFrame,
-    ConsolidatedPcurve, ConsolidatedRecord,
+    ConsolidatedPcurve, ConsolidatedRawFrame, ConsolidatedRecord,
 };
 
 const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -456,24 +456,16 @@ pub struct B2Long61 {
 /// assigned until a source-closed relation establishes one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B2Class5b5cRecord {
-    /// Record byte offset.
-    pub pos: usize,
+    /// Framed record.
+    pub frame: ConsolidatedRawFrame,
     /// Zero-based bounded record-source ordinal.
     pub source_index: usize,
     /// Logical offset within the bounded record source.
     pub source_offset: usize,
     /// Complete framed-record byte length.
     pub byte_len: usize,
-    /// Header-token width in bytes.
-    pub width: u8,
-    /// Independent frame flag.
-    pub flag: u8,
     /// Record class (`0x5b` or `0x5c`).
     pub class: u8,
-    /// Width-coded frame header token.
-    pub header_token: u32,
-    /// Complete opaque payload in source order.
-    pub payload: Vec<u8>,
 }
 
 /// Target encoding of a structurally complete class-`0x5f` node.
@@ -1521,15 +1513,17 @@ pub(crate) fn b2_class5b5c_records_from_records(
             let payload = data.get(record.payload.clone())?;
             let byte_len = record.range.end.checked_sub(record.range.start)?;
             Some(B2Class5b5cRecord {
-                pos: record.range.start,
+                frame: ConsolidatedRawFrame {
+                    pos: record.range.start,
+                    width: record.width,
+                    flag: record.flag,
+                    header_token: record.header_token,
+                    payload: payload.to_vec(),
+                },
                 source_index: record.source_index,
                 source_offset: record.source_range.start,
                 byte_len,
-                width: record.width,
-                flag: record.flag,
                 class: record.class,
-                header_token: record.header_token,
-                payload: payload.to_vec(),
             })
         })
         .collect()

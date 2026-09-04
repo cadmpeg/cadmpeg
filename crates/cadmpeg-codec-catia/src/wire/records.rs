@@ -181,6 +181,21 @@ pub(crate) fn parse_consolidated_pcurve(
     })
 }
 
+/// Length-closed A/B-family frame shared by edge-definition and descriptor records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsolidatedRawFrame {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent framing flag.
+    pub flag: u8,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Complete class-specific payload.
+    pub payload: Vec<u8>,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct ConsolidatedFrame {
     pub(crate) pos: usize,
