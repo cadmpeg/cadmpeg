@@ -604,9 +604,9 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
     ));
     assert_eq!(construction.direction.z, 1.0);
     assert_eq!(construction.trailing_parameter, 0.75);
-    assert_eq!(construction.formula.name, "skin-law");
+    assert_eq!(construction.formula.name(), "skin-law");
     assert!(matches!(
-        construction.formula.variables.as_slice(),
+        construction.formula.variables(),
         [LawExpression::Spline {
             native_id: 5,
             knots,
@@ -635,7 +635,7 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
         panic!("expected round-trip skin surface")
     };
     assert!(matches!(
-        construction.formula.variables.as_slice(),
+        construction.formula.variables(),
         [LawExpression::Spline { native_id: 5, .. }]
     ));
 }
@@ -664,16 +664,16 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
             construction.parameter_ranges,
             legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
         );
-        assert_eq!(construction.primary.name, "primary-law");
+        assert_eq!(construction.primary.name(), "primary-law");
         assert!(matches!(
-            construction.primary.variables.as_slice(),
+            construction.primary.variables(),
             [LawExpression::Algebraic { operator, operands }]
                 if operator == "SET" && operands.len() == 1
         ));
         assert_eq!(construction.additional.len(), 1);
-        assert_eq!(construction.additional[0].name, "aux-law");
+        assert_eq!(construction.additional[0].name(), "aux-law");
         assert!(matches!(
-            construction.additional[0].variables.as_slice(),
+            construction.additional[0].variables(),
             [LawExpression::Algebraic { operator, operands }]
                 if operator == "TERM" && operands.len() == 2
         ));
@@ -872,7 +872,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
         panic!("expected skin surface")
     };
     assert!(matches!(
-        construction.formula.variables.as_slice(),
+        construction.formula.variables(),
         [
             LawExpression::Null,
             LawExpression::Transform {
@@ -885,7 +885,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
             }
         ]
     ));
-    let LawExpression::Edge { curve, .. } = &construction.formula.variables[2] else {
+    let LawExpression::Edge { curve, .. } = &construction.formula.variables()[2] else {
         unreachable!()
     };
     let law_edge = curve.id.clone();
@@ -916,8 +916,8 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     else {
         panic!("expected round-trip skin surface")
     };
-    assert_eq!(construction.formula.variables.len(), 3);
-    let LawExpression::Edge { curve, .. } = &construction.formula.variables[2] else {
+    assert_eq!(construction.formula.variables().len(), 3);
+    let LawExpression::Edge { curve, .. } = &construction.formula.variables()[2] else {
         panic!("expected round-trip edge law")
     };
     assert!(matches!(
@@ -1023,7 +1023,7 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
         panic!("expected skin surface")
     };
     assert!(matches!(
-        construction.formula.variables.as_slice(),
+        construction.formula.variables(),
         [
             LawExpression::Algebraic {
                 operator,
@@ -1057,12 +1057,12 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
     else {
         panic!("expected round-trip skin surface")
     };
-    assert_eq!(construction.formula.variables.len(), 2);
+    assert_eq!(construction.formula.variables().len(), 2);
 }
 
 #[test]
 fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::{LawExpression, LawFormula, ProceduralSurfaceDefinition};
 
     let decoded = F3dCodec
         .decode(
@@ -1077,7 +1077,10 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         let ProceduralSurfaceDefinition::Skin { construction } = definition else {
             panic!()
         };
-        construction.formula.variables[0] = LawExpression::Algebraic {
+        let LawFormula::Named { variables, .. } = &mut construction.formula else {
+            panic!()
+        };
+        variables[0] = LawExpression::Algebraic {
             operator: "SIN".into(),
             operands: Vec::new(),
         };
@@ -1092,7 +1095,10 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         let ProceduralSurfaceDefinition::Skin { construction } = definition else {
             panic!()
         };
-        construction.formula.variables[0] = LawExpression::Algebraic {
+        let LawFormula::Named { variables, .. } = &mut construction.formula else {
+            panic!()
+        };
+        variables[0] = LawExpression::Algebraic {
             operator: "MIN".into(),
             operands: vec![LawExpression::Double { value: 1.0 }],
         };
@@ -1106,7 +1112,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
 
 #[test]
 fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::{LawExpression, LawFormula, ProceduralSurfaceDefinition};
     use cadmpeg_ir::math::Vector3;
 
     let decoded = F3dCodec
@@ -1122,7 +1128,10 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
         let ProceduralSurfaceDefinition::Skin { construction } = definition else {
             panic!()
         };
-        construction.formula.variables = vec![
+        let LawFormula::Named { variables, .. } = &mut construction.formula else {
+            panic!()
+        };
+        *variables = vec![
             LawExpression::Algebraic {
                 operator: "SET".into(),
                 operands: vec![LawExpression::Double { value: -2.0 }],
@@ -1178,7 +1187,7 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
         panic!()
     };
     assert!(matches!(
-        construction.formula.variables.as_slice(),
+        construction.formula.variables(),
         [
             LawExpression::Algebraic { operator: set, operands: set_operands },
             LawExpression::Algebraic { operator: compose, operands: compose_operands },

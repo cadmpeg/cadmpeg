@@ -5485,23 +5485,30 @@ fn unit_domain_sweep_formula(name: &str) -> bool {
 }
 
 fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
-    if formula.variables.is_empty() {
-        let name = formula
-            .name
-            .chars()
-            .filter(|character| !character.is_whitespace())
-            .collect::<String>();
-        if name == "null_law" || unit_domain_sweep_formula(&name) {
+    match formula {
+        LawFormula::Null => {
             return Some([
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             ]);
         }
-        return None;
+        LawFormula::Named { name, variables } if variables.is_empty() => {
+            let name = name
+                .as_str()
+                .chars()
+                .filter(|character| !character.is_whitespace())
+                .collect::<String>();
+            return unit_domain_sweep_formula(&name).then_some([
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ]);
+        }
+        LawFormula::Named { .. } => {}
     }
     let name = formula
-        .name
+        .name()
         .chars()
         .filter(|character| !character.is_whitespace())
         .collect::<String>();
@@ -5515,7 +5522,7 @@ fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
         vectors,
         scale,
         flags,
-    }] = formula.variables.as_slice()
+    }] = formula.variables()
     else {
         return None;
     };

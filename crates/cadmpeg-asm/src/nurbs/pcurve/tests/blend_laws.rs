@@ -132,7 +132,7 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
             panic!("expected law surface at width {int_width}")
         };
         assert_eq!(construction.parameter_ranges, None);
-        assert_eq!(construction.primary.name, "primary-law");
+        assert_eq!(construction.primary.name(), "primary-law");
         assert_eq!(construction.additional.len(), 1);
         assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
         assert_eq!(decoded.cache_fit_tolerance, Some(0.07));

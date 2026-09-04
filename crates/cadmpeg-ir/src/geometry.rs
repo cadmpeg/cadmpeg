@@ -4033,14 +4033,125 @@ pub struct ScaledCompoundLoftConstruction {
     pub tail_curve: CurveId,
 }
 
-/// One recursively framed native law formula.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A native law formula name that cannot be the `null_law` sentinel.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LawFormula {
-    /// Native formula name, or `null_law` for the sentinel.
-    pub name: String,
-    /// Ordered recursive variables; empty for `null_law`.
-    pub variables: Vec<LawExpression>,
+#[serde(transparent)]
+pub struct LawFormulaName(String);
+
+impl LawFormulaName {
+    /// Construct a non-sentinel law formula name.
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Option<Self> {
+        let name = name.into();
+        (name != "null_law").then_some(Self(name))
+    }
+
+    /// Borrow the native formula name.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for LawFormulaName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let name = String::deserialize(deserializer)?;
+        Self::new(name)
+            .ok_or_else(|| serde::de::Error::custom("law formula name cannot be null_law"))
+    }
+}
+
+impl std::fmt::Display for LawFormulaName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// One recursively framed native law formula.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LawFormula {
+    /// Native `null_law` with no variables.
+    Null,
+    /// Named formula and its ordered recursive variables.
+    Named {
+        /// Non-sentinel native formula name.
+        name: LawFormulaName,
+        /// Ordered recursive variables.
+        variables: Vec<LawExpression>,
+    },
+}
+
+impl LawFormula {
+    /// Native formula name, including `null_law` for the null variant.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Null => "null_law",
+            Self::Named { name, .. } => name.as_str(),
+        }
+    }
+
+    /// Ordered recursive variables; empty for the null variant.
+    #[must_use]
+    pub fn variables(&self) -> &[LawExpression] {
+        match self {
+            Self::Null => &[],
+            Self::Named { variables, .. } => variables,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct LawFormulaWire {
+    name: String,
+    variables: Vec<LawExpression>,
+}
+
+impl Serialize for LawFormula {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("LawFormula", 2)?;
+        state.serialize_field("name", self.name())?;
+        state.serialize_field("variables", self.variables())?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for LawFormula {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = LawFormulaWire::deserialize(deserializer)?;
+        match LawFormulaName::new(wire.name) {
+            Some(name) => Ok(Self::Named {
+                name,
+                variables: wire.variables,
+            }),
+            None if wire.variables.is_empty() => Ok(Self::Null),
+            None => Err(serde::de::Error::custom(
+                "null_law formula cannot carry variables",
+            )),
+        }
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for LawFormula {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "LawFormula".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        LawFormulaWire::json_schema(generator)
+    }
 }
 
 /// Complete recursive construction stored by a native law spline surface.

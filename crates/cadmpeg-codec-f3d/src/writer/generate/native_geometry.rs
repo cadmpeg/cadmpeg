@@ -2364,21 +2364,16 @@ fn native_law_formula(
     target: &CadIr,
     formula: &cadmpeg_ir::geometry::LawFormula,
 ) -> Result<(), CodecError> {
-    native_length_prefixed_string(bytes, &formula.name)?;
-    if formula.name == "null_law" {
-        if !formula.variables.is_empty() {
-            return Err(CodecError::Malformed(
-                "null_law formula cannot carry variables".into(),
-            ));
-        }
+    native_length_prefixed_string(bytes, formula.name())?;
+    let cadmpeg_ir::geometry::LawFormula::Named { variables, .. } = formula else {
         return Ok(());
-    }
+    };
     native_i64(
         bytes,
-        i64::try_from(formula.variables.len())
+        i64::try_from(variables.len())
             .map_err(|_| CodecError::NotImplemented("law variable count exceeds i64".into()))?,
     );
-    for variable in &formula.variables {
+    for variable in variables {
         native_law_expression(bytes, target, variable, 0)?;
     }
     Ok(())

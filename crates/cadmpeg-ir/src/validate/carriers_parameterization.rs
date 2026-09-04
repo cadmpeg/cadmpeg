@@ -254,7 +254,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
                 curves.insert(&construction.parameter_curve.0);
-                for variable in &construction.formula.variables {
+                for variable in construction.formula.variables() {
                     collect_law_curves(variable, &mut curves);
                 }
             }
@@ -278,7 +278,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 for formula in
                     std::iter::once(&construction.primary).chain(&construction.additional)
                 {
-                    for variable in &formula.variables {
+                    for variable in formula.variables() {
                         collect_law_curves(variable, &mut curves);
                     }
                 }
@@ -317,7 +317,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
                 for formula in construction.formulas.iter() {
-                    for variable in &formula.variables {
+                    for variable in formula.variables() {
                         collect_law_curves(variable, &mut curves);
                     }
                 }
@@ -484,7 +484,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         }
                     };
                     for formula in formulas {
-                        for variable in &formula.variables {
+                        for variable in formula.variables() {
                             collect_law_curves(variable, &mut curves);
                         }
                     }
@@ -595,7 +595,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
                 for formula in std::iter::once(primary).chain(additional) {
-                    for variable in &formula.variables {
+                    for variable in formula.variables() {
                         collect(variable, &mut curves);
                     }
                 }
