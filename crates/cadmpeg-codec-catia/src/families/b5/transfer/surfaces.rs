@@ -770,11 +770,13 @@ fn emit_extrusion_procedure(
                     ProceduralCurveDefinition::Offset {
                         source: source_id,
                         distance,
-                        direction: Some(direction),
-                        support: Some(surface_ids[&support.surface_object_id].clone()),
-                        normal: None,
-                        parameter_range: Some(source_parameter_range),
-                        distance_law: None,
+                        side: cadmpeg_ir::geometry::OffsetSide::Direction {
+                            direction,
+                            support: Some(surface_ids[&support.surface_object_id].clone()),
+                        },
+                        range: Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
+                            parameter_range: source_parameter_range,
+                        }),
                     },
                 ),
             );

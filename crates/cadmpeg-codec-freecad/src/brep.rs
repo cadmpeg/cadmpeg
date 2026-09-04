@@ -3965,11 +3965,11 @@ pub(crate) fn append_text_curve(
                     ProceduralCurveDefinition::Offset {
                         source: basis_id,
                         distance: *distance,
-                        direction: Some(*direction),
-                        support: None,
-                        distance_law: None,
-                        normal: None,
-                        parameter_range: None,
+                        side: cadmpeg_ir::geometry::OffsetSide::Direction {
+                            direction: *direction,
+                            support: None,
+                        },
+                        range: None,
                     },
                 ),
             ));

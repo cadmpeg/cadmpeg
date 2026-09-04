@@ -687,17 +687,23 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             }
             ProceduralCurveDefinition::Offset {
                 source,
-                support,
-                distance_law,
+                side,
+                range,
                 ..
             } => {
                 curves.insert(&source.0);
-                if let Some(support) = support {
+                if let crate::geometry::OffsetSide::Direction {
+                    support: Some(support),
+                    ..
+                } = side
+                {
                     surfaces.insert(&support.0);
                 }
-                if let Some(crate::geometry::CurveOffsetDistanceLaw::Coordinate {
-                    function, ..
-                }) = distance_law
+                if let Some(crate::geometry::CurveOffsetRange::Variable {
+                    distance_law:
+                        crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
+                    ..
+                }) = range
                 {
                     curves.insert(&function.0);
                 }

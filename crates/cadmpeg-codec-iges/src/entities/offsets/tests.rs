@@ -309,18 +309,16 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
     assert!(vector_distance(ref_direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!((radius - 1.5).abs() < EPS_PLACED_OFFSET);
     let procedural = &result.ir().model.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { source, normal, .. } =
-        procedural.definition()
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
+        source,
+        side: cadmpeg_ir::geometry::OffsetSide::PlaneNormal(normal),
+        ..
+    } = procedural.definition()
     else {
         panic!("expected an offset construction");
     };
     assert_eq!(source.0, "iges:model:curve#D3-placed-source");
-    assert!(
-        vector_distance(
-            normal.expect("placed offset normal"),
-            Vector3::new(0.0, 0.0, 1.0)
-        ) < EPS_PLACED_OFFSET
-    );
+    assert!(vector_distance(*normal, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -532,11 +530,15 @@ fn decode_solves_a_parameter_linear_line_offset() {
             ]
         );
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-            distance_law:
-                Some(cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
-                    basis,
-                    distances,
-                    control_range,
+            range:
+                Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+                    distance_law:
+                        cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
+                            basis,
+                            distances,
+                            control_range,
+                        },
+                    ..
                 }),
             ..
         } = &result.ir().model.procedural_curves[0].definition()
@@ -580,13 +582,17 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
         ]
     );
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
-        distance_law:
-            Some(cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Coordinate {
-                function,
-                coordinate,
-                basis,
-                function_parameter_offset,
-                function_parameter_scale,
+        range:
+            Some(cadmpeg_ir::geometry::CurveOffsetRange::Variable {
+                distance_law:
+                    cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Coordinate {
+                        function,
+                        coordinate,
+                        basis,
+                        function_parameter_offset,
+                        function_parameter_scale,
+                    },
+                ..
             }),
         ..
     } = &result.ir().model.procedural_curves[0].definition()

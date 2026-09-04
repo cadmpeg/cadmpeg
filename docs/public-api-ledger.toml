@@ -3837,3 +3837,17 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::VariableBlendInterpolationPoint::tangents"
 reason = "unset interpolation derivatives are represented by Option instead of the native 1e37 sentinel"
+
+[[change]]
+commit = "f2d75ed9334da6670588c250471b1ef40b7da08f"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset"
+reason = "offset orientation and optional support are one exclusive side enum, and a variable distance law cannot exist without its parameter range"
+
+[[change]]
+commit = "f2d75ed9334da6670588c250471b1ef40b7da08f"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset::{direction,support,normal,parameter_range,distance_law}"
+reason = "independent optional fields admitted contradictory side carriers and a distance law without its required parameter interval"

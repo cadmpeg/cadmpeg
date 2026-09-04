@@ -2069,48 +2069,67 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
     for procedural in &ir.model.procedural_curves {
         if let ProceduralCurveDefinition::Offset {
             distance,
-            normal,
-            parameter_range,
-            distance_law,
+            side,
+            range,
             ..
         } = procedural.definition()
         {
-            let normal_valid = normal.is_none_or(|normal| {
-                normal.x.is_finite()
-                    && normal.y.is_finite()
-                    && normal.z.is_finite()
-                    && (normal.norm() - 1.0).abs() <= EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E10
-            });
-            let range_valid = parameter_range.is_none_or(|range| {
-                range.iter().all(|value| value.is_finite()) && range[0] < range[1]
-            });
-            let law_valid = distance_law.as_ref().is_none_or(|law| match law {
-                crate::geometry::CurveOffsetDistanceLaw::Linear {
-                    distances,
-                    control_range,
-                    ..
-                } => {
-                    distances.iter().all(|value| value.is_finite())
-                        && control_range.iter().all(|value| value.is_finite())
-                        && control_range[0] < control_range[1]
+            let side_valid = match side {
+                crate::geometry::OffsetSide::PlaneNormal(normal) => {
+                    normal.x.is_finite()
+                        && normal.y.is_finite()
+                        && normal.z.is_finite()
+                        && (normal.norm() - 1.0).abs() <= EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E10
                 }
-                crate::geometry::CurveOffsetDistanceLaw::Coordinate {
-                    coordinate,
-                    function_parameter_offset,
-                    function_parameter_scale,
-                    ..
-                } => {
-                    matches!(coordinate, 1..=3)
-                        && function_parameter_offset.is_finite()
-                        && function_parameter_scale.is_finite()
-                        && *function_parameter_scale != 0.0
+                crate::geometry::OffsetSide::Direction { direction, .. } => {
+                    direction.x.is_finite()
+                        && direction.y.is_finite()
+                        && direction.z.is_finite()
+                        && direction.norm() > 0.0
                 }
+            };
+            let range_valid = range.as_ref().is_none_or(|range| {
+                let parameter_range = match range {
+                    crate::geometry::CurveOffsetRange::Uniform { parameter_range }
+                    | crate::geometry::CurveOffsetRange::Variable {
+                        parameter_range, ..
+                    } => parameter_range,
+                };
+                parameter_range.iter().all(|value| value.is_finite())
+                    && parameter_range[0] < parameter_range[1]
             });
-            if !distance.is_finite() || !normal_valid || !range_valid || !law_valid {
+            let law_valid = match range {
+                Some(crate::geometry::CurveOffsetRange::Variable { distance_law, .. }) => {
+                    match distance_law {
+                        crate::geometry::CurveOffsetDistanceLaw::Linear {
+                            distances,
+                            control_range,
+                            ..
+                        } => {
+                            distances.iter().all(|value| value.is_finite())
+                                && control_range.iter().all(|value| value.is_finite())
+                                && control_range[0] < control_range[1]
+                        }
+                        crate::geometry::CurveOffsetDistanceLaw::Coordinate {
+                            coordinate,
+                            function_parameter_offset,
+                            function_parameter_scale,
+                            ..
+                        } => {
+                            matches!(coordinate, 1..=3)
+                                && function_parameter_offset.is_finite()
+                                && function_parameter_scale.is_finite()
+                                && *function_parameter_scale != 0.0
+                        }
+                    }
+                }
+                _ => true,
+            };
+            if !distance.is_finite() || !side_valid || !range_valid || !law_valid {
                 bounds_err(
                     findings,
                     &procedural.id.0,
-                    "curve offset distance, normal, range, or law is invalid",
+                    "curve offset distance, side, range, or law is invalid",
                 );
             }
             continue;
@@ -2359,27 +2378,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     findings,
                     &procedural.id.0,
                     "tolerant intersection supports or endpoint bounds are invalid",
-                );
-            }
-            continue;
-        }
-        if let ProceduralCurveDefinition::Offset {
-            distance,
-            direction,
-            ..
-        } = procedural.definition()
-        {
-            let direction_valid = direction.is_none_or(|direction| {
-                direction.x.is_finite()
-                    && direction.y.is_finite()
-                    && direction.z.is_finite()
-                    && direction.norm() > 0.0
-            });
-            if !distance.is_finite() || !direction_valid {
-                bounds_err(
-                    findings,
-                    &procedural.id.0,
-                    "offset curve distance or direction is invalid",
                 );
             }
             continue;
