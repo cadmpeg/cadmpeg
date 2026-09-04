@@ -121,58 +121,36 @@ pub(crate) fn parse<'a>(
         return Ok(UfrxState::Absent);
     };
     let source = snapshot.open(ctx, stream)?;
-    Ok(match parse_stream(ctx, source, document_kind) {
-        Ok(document) => UfrxState::Parsed(Box::new(UfrxDocument {
-            stream: stream.id(),
-            schema: document.schema,
-            section_versions: document.section_versions,
-            original_file_name: document.original_file_name,
-            caption: document.caption,
-            representation: document.representation,
-            model_states: document.model_states,
-            references: document.references,
-            embedded_references: document.embedded_references,
-            occurrences: document.occurrences,
-            unparsed_tail: document.unparsed_tail,
-        })),
-        Err(CodecError::NotImplemented(detail)) => {
-            let (schema, section_versions) = parse_schema_table(ctx, source)?;
-            UfrxState::Unsupported {
-                stream: stream.id(),
-                schema,
-                section_versions,
-                source,
-                detail,
+    Ok(
+        match parse_stream(ctx, source, stream.id(), document_kind) {
+            Ok(document) => UfrxState::Parsed(Box::new(document)),
+            Err(CodecError::NotImplemented(detail)) => {
+                let (schema, section_versions) = parse_schema_table(ctx, source)?;
+                UfrxState::Unsupported {
+                    stream: stream.id(),
+                    schema,
+                    section_versions,
+                    source,
+                    detail,
+                }
             }
-        }
-        Err(error) => UfrxState::Malformed {
-            stream: stream.id(),
-            detail: crate::issue_detail(error)?,
+            Err(error) => UfrxState::Malformed {
+                stream: stream.id(),
+                detail: crate::issue_detail(error)?,
+            },
         },
-    })
-}
-
-struct ParsedUfrx<'a> {
-    schema: u16,
-    section_versions: Vec<u16>,
-    original_file_name: String,
-    caption: String,
-    representation: Option<UfrxRepresentationState>,
-    model_states: Vec<UfrxModelState<'a>>,
-    references: Vec<InventorExternalReference>,
-    embedded_references: Vec<InventorEmbeddedReference<'a>>,
-    occurrences: Vec<UfrxOccurrence<'a>>,
-    unparsed_tail: View<'a>,
+    )
 }
 
 fn parse_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
+    stream: CompoundStreamId,
     document_kind: &DocumentKind,
-) -> Result<ParsedUfrx<'a>, CodecError> {
+) -> Result<UfrxDocument<'a>, CodecError> {
     let mut declaration = Cursor::new(source);
     let schema = declaration.u16("schema")?;
-    match parse_stream_grammar(ctx, source, document_kind) {
+    match parse_stream_grammar(ctx, source, stream, document_kind) {
         Ok(document) => Ok(document),
         Err(error) if !(11..=15).contains(&schema) => match error {
             CodecError::ResourceLimit(_) => Err(error),
@@ -187,8 +165,9 @@ fn parse_stream<'a>(
 fn parse_stream_grammar<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
+    stream: CompoundStreamId,
     document_kind: &DocumentKind,
-) -> Result<ParsedUfrx<'a>, CodecError> {
+) -> Result<UfrxDocument<'a>, CodecError> {
     let mut cursor = Cursor::new(source);
     let schema = cursor.u16("schema")?;
     let section_count = cursor.count16("section-version count", 256)?;
@@ -381,7 +360,8 @@ fn parse_stream_grammar<'a>(
     let unparsed_tail = source
         .child(source.start() + cursor.position(), source.end())
         .ok_or_else(|| CodecError::Malformed("UFRxDoc tail range is invalid".into()))?;
-    Ok(ParsedUfrx {
+    Ok(UfrxDocument {
+        stream,
         schema,
         section_versions,
         original_file_name,
@@ -935,6 +915,7 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_container::compound::CompoundStreamId;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use super::*;
@@ -947,8 +928,13 @@ mod tests {
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic UFRxDoc fits policy");
-            let document = parse_stream(&ctx, root, &DocumentKind::Assembly)
-                .unwrap_or_else(|error| panic!("synthetic UFRxDoc schema {schema}: {error}"));
+            let document = parse_stream(
+                &ctx,
+                root,
+                CompoundStreamId::from_directory_id(0),
+                &DocumentKind::Assembly,
+            )
+            .unwrap_or_else(|error| panic!("synthetic UFRxDoc schema {schema}: {error}"));
             assert_eq!(document.schema, schema);
             assert_eq!(document.original_file_name, "synthetic.ipt");
             assert_eq!(document.references.len(), 1);
@@ -993,8 +979,13 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic part UFRxDoc fits policy");
 
-        let document =
-            parse_stream(&ctx, root, &DocumentKind::Part).expect("schema-15 part UFRxDoc parses");
+        let document = parse_stream(
+            &ctx,
+            root,
+            CompoundStreamId::from_directory_id(0),
+            &DocumentKind::Part,
+        )
+        .expect("schema-15 part UFRxDoc parses");
 
         let representation = document.representation.expect("model-state header parses");
         assert_eq!(representation.active_representation, None);
@@ -1010,8 +1001,13 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
-        let document = parse_stream(&ctx, root, &DocumentKind::Assembly)
-            .expect("foreign schema uses the residual grammar");
+        let document = parse_stream(
+            &ctx,
+            root,
+            CompoundStreamId::from_directory_id(0),
+            &DocumentKind::Assembly,
+        )
+        .expect("foreign schema uses the residual grammar");
         assert_eq!(document.schema, 16);
         assert_eq!(document.original_file_name, "synthetic.ipt");
         assert_eq!(document.references.len(), 1);
@@ -1024,7 +1020,12 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
-        let Err(error) = parse_stream(&ctx, root, &DocumentKind::Assembly) else {
+        let Err(error) = parse_stream(
+            &ctx,
+            root,
+            CompoundStreamId::from_directory_id(0),
+            &DocumentKind::Assembly,
+        ) else {
             panic!("broken foreign schema must recover as unsupported");
         };
         assert!(
@@ -1042,7 +1043,13 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic UFRxDoc fits policy");
-        assert!(parse_stream(&ctx, root, &DocumentKind::Assembly).is_err());
+        assert!(parse_stream(
+            &ctx,
+            root,
+            CompoundStreamId::from_directory_id(0),
+            &DocumentKind::Assembly,
+        )
+        .is_err());
     }
 
     #[test]
