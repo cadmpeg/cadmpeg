@@ -21,6 +21,27 @@ pub(crate) struct PmDcReference {
     pub(crate) qualified: bool,
 }
 
+impl PmDcReference {
+    pub(crate) fn zip(indices: Vec<u32>, qualifiers: Vec<bool>) -> Result<Vec<Self>, String> {
+        if indices.len() != qualifiers.len() {
+            return Err(format!(
+                "reference count {} differs from qualifier count {}",
+                indices.len(),
+                qualifiers.len()
+            ));
+        }
+        Ok(indices
+            .into_iter()
+            .zip(qualifiers)
+            .map(|(index, qualified)| Self { index, qualified })
+            .collect())
+    }
+
+    pub(crate) fn unzip(refs: &[Self]) -> (Vec<u32>, Vec<bool>) {
+        refs.iter().map(|r| (r.index, r.qualified)).unzip()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcContentHeader {
     pub(crate) header_value: u32,

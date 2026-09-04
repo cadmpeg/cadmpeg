@@ -1196,16 +1196,14 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 Some(record.id.clone()),
             ));
         }
-        if record.edge_references.len() != record.edge_reference_qualifiers.len() {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor PmGraphics face edge-reference qualifier count differs from its reference count".into(),
-                Some(record.id.clone()),
-            ));
-        }
         for reference in std::iter::once(record.surface_reference)
             .chain(std::iter::once(record.parent_reference))
-            .chain(record.edge_references.iter().copied())
+            .chain(
+                record
+                    .edge_references
+                    .iter()
+                    .map(|reference| reference.index),
+            )
             .filter(|reference| *reference != 0)
         {
             let Some(ordinal) = reference.checked_sub(1) else {
@@ -1242,22 +1240,18 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 Some(record.id.clone()),
             ));
         }
-        if record.style_references.len() != record.style_reference_qualifiers.len() {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor PmGraphics style-reference qualifier count differs from its reference count"
-                    .into(),
-                Some(record.id.clone()),
-            ));
-        }
         for reference in &record.style_references {
-            if *reference == 0
-                || !raw_keys.contains(&(record.segment_token.as_str(), reference.saturating_sub(1)))
+            if reference.index == 0
+                || !raw_keys.contains(&(
+                    record.segment_token.as_str(),
+                    reference.index.saturating_sub(1),
+                ))
             {
                 findings.push(finding(
                     Check::NativeLinks,
                     format!(
-                        "Inventor PmGraphics style-collection reference {reference} does not resolve"
+                        "Inventor PmGraphics style-collection reference {} does not resolve",
+                        reference.index
                     ),
                     Some(record.id.clone()),
                 ));
