@@ -4985,14 +4985,74 @@ pub(crate) fn object_stream_populations(stream: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// Unique object population selected across reconstructed logical streams.
-pub(crate) struct ObjectStreamSelection {
-    pub(crate) source: Vec<u8>,
-    pub(crate) frames: Vec<ObjectFrame>,
-    pub(crate) records: Vec<B5Record>,
-    pub(crate) census_records: Vec<B5Record>,
-    pub(crate) run_count: usize,
-    pub(crate) selected: bool,
-    pub(crate) exhausted: bool,
+pub(crate) enum ObjectStreamSelection {
+    /// Work budget ran out before a population could be chosen.
+    Exhausted {
+        /// Number of object runs observed before exhaustion.
+        run_count: usize,
+    },
+    /// No unique topology-root (or unique unrooted) run.
+    Unselected {
+        /// Number of object runs in the reconstructed streams.
+        run_count: usize,
+        /// Records scanned across every run for census.
+        census_records: Vec<B5Record>,
+    },
+    /// One topology-root population, or the unique unrooted run.
+    Selected {
+        /// Bytes of the selected run, with isolated referenced geometry appended.
+        source: Vec<u8>,
+        /// Frames of the selected population, rebased to `source`.
+        frames: Vec<ObjectFrame>,
+        /// Records of the selected population, rebased to `source`.
+        records: Vec<B5Record>,
+        /// Records scanned across every run for census.
+        census_records: Vec<B5Record>,
+        /// Number of object runs in the reconstructed streams.
+        run_count: usize,
+    },
+}
+
+#[cfg(test)]
+impl ObjectStreamSelection {
+    pub(crate) fn run_count(&self) -> usize {
+        match self {
+            Self::Exhausted { run_count }
+            | Self::Unselected { run_count, .. }
+            | Self::Selected { run_count, .. } => *run_count,
+        }
+    }
+
+    pub(crate) fn selected(&self) -> bool {
+        matches!(self, Self::Selected { .. })
+    }
+
+    pub(crate) fn exhausted(&self) -> bool {
+        matches!(self, Self::Exhausted { .. })
+    }
+
+    pub(crate) fn source(&self) -> &[u8] {
+        match self {
+            Self::Selected { source, .. } => source,
+            Self::Exhausted { .. } | Self::Unselected { .. } => &[],
+        }
+    }
+
+    pub(crate) fn records(&self) -> &[B5Record] {
+        match self {
+            Self::Selected { records, .. } => records,
+            Self::Exhausted { .. } | Self::Unselected { .. } => &[],
+        }
+    }
+
+    pub(crate) fn census_records(&self) -> &[B5Record] {
+        match self {
+            Self::Selected { census_records, .. } | Self::Unselected { census_records, .. } => {
+                census_records
+            }
+            Self::Exhausted { .. } => &[],
+        }
+    }
 }
 
 struct IndexedObjectRun {
@@ -5013,15 +5073,7 @@ pub(crate) fn select_object_stream_population(
         .map(|stream| object_stream_run_ranges(stream))
         .collect::<Vec<_>>();
     let run_count = stream_ranges.iter().map(Vec::len).sum();
-    let exhausted = || ObjectStreamSelection {
-        source: Vec::new(),
-        frames: Vec::new(),
-        records: Vec::new(),
-        census_records: Vec::new(),
-        run_count,
-        selected: false,
-        exhausted: true,
-    };
+    let exhausted = || ObjectStreamSelection::Exhausted { run_count };
     let mut stream_frames = Vec::with_capacity(streams.len());
     let mut runs = Vec::new();
     for (stream_index, (stream, ranges)) in streams.iter().zip(stream_ranges).enumerate() {
@@ -5073,14 +5125,9 @@ pub(crate) fn select_object_stream_population(
             }
             census_records.extend(records);
         }
-        return ObjectStreamSelection {
-            source: Vec::new(),
-            frames: Vec::new(),
-            records: Vec::new(),
-            census_records,
+        return ObjectStreamSelection::Unselected {
             run_count,
-            selected: false,
-            exhausted: false,
+            census_records,
         };
     };
     let selected = &runs[selected_index];
@@ -5178,14 +5225,12 @@ pub(crate) fn select_object_stream_population(
             records = records_from_frames(&source, &frames);
         }
     }
-    ObjectStreamSelection {
+    ObjectStreamSelection::Selected {
         source,
         frames,
         records,
         census_records,
         run_count,
-        selected: true,
-        exhausted: false,
     }
 }
 

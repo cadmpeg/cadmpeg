@@ -287,13 +287,44 @@ pub(crate) fn try_decode_freeform_surfaces(
         &logical_streams,
         Some(&selection_budget),
     );
-    let object_stream_run_count = object_selection.run_count;
-    let selected_object_stream_run_count = usize::from(object_selection.selected);
-    let object_stream_selection_exhausted = object_selection.exhausted;
-    let object_source = object_selection.source;
-    let object_frames = object_selection.frames;
-    let selected_object_records = object_selection.records;
-    let census_object_records = object_selection.census_records;
+    let (
+        object_stream_run_count,
+        selected_object_stream_run_count,
+        object_stream_selection_exhausted,
+        object_source,
+        object_frames,
+        selected_object_records,
+        census_object_records,
+    ) = match object_selection {
+        crate::families::b5::graph::ObjectStreamSelection::Exhausted { run_count } => (
+            run_count,
+            0,
+            true,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::families::b5::graph::ObjectStreamSelection::Unselected {
+            run_count,
+            census_records,
+        } => (
+            run_count,
+            0,
+            false,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            census_records,
+        ),
+        crate::families::b5::graph::ObjectStreamSelection::Selected {
+            source,
+            frames,
+            records,
+            census_records,
+            run_count,
+        } => (run_count, 1, false, source, frames, records, census_records),
+    };
     let consolidated_records = crate::wire::records::consolidated_records_in_sources(
         &scan.data,
         container::consolidated_record_sources(scan),
@@ -2769,9 +2800,9 @@ mod tests {
             &[unrelated, topology.clone()],
             None,
         );
-        assert_eq!(selection.run_count, 2);
-        assert!(selection.selected);
-        assert_eq!(selection.source, topology);
+        assert_eq!(selection.run_count(), 2);
+        assert!(selection.selected());
+        assert_eq!(selection.source(), topology);
     }
 
     #[test]
@@ -2782,9 +2813,9 @@ mod tests {
             None,
         );
 
-        assert_eq!(selection.run_count, 2);
-        assert!(!selection.selected);
-        assert!(selection.source.is_empty());
+        assert_eq!(selection.run_count(), 2);
+        assert!(!selection.selected());
+        assert!(selection.source().is_empty());
     }
 
     #[test]
@@ -2795,11 +2826,11 @@ mod tests {
         let selection =
             crate::families::b5::graph::select_object_stream_population(&[topology], Some(&budget));
 
-        assert_eq!(selection.run_count, 1);
-        assert!(!selection.selected);
-        assert!(selection.source.is_empty());
-        assert!(selection.records.is_empty());
-        assert!(selection.exhausted);
+        assert_eq!(selection.run_count(), 1);
+        assert!(!selection.selected());
+        assert!(selection.source().is_empty());
+        assert!(selection.records().is_empty());
+        assert!(selection.exhausted());
         assert!(budget.exhausted());
     }
 

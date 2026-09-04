@@ -369,8 +369,8 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
 
     assert_eq!(topology_root_run_ranges(&bytes), vec![0..bytes.len()]);
     let selection = select_object_stream_population(&[bytes], None);
-    assert!(selection.selected);
-    assert!(!selection.source.is_empty());
+    assert!(selection.selected());
+    assert!(!selection.source().is_empty());
 }
 
 #[test]
@@ -434,11 +434,11 @@ fn indexed_population_selection_preserves_records_and_census() {
     let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
     let actual = select_object_stream_population(std::slice::from_ref(&topology), Some(&budget));
 
-    assert!(actual.selected);
-    assert!(!actual.exhausted);
-    assert_eq!(actual.source, expected.source);
-    assert_eq!(actual.records, expected.records);
-    assert_eq!(actual.census_records, expected.census_records);
+    assert!(actual.selected());
+    assert!(!actual.exhausted());
+    assert_eq!(actual.source(), expected.source());
+    assert_eq!(actual.records(), expected.records());
+    assert_eq!(actual.census_records(), expected.census_records());
 }
 
 fn a8_class21_test_payload() -> Vec<u8> {
