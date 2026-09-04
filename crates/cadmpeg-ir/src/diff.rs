@@ -63,7 +63,11 @@ pub struct SourceDiff {
     pub format_change: Option<FormatChange>,
     /// `(left, right)` complete dialect-layer sets, present when they differ.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dialects_change: Option<(Option<DialectLayers>, Option<DialectLayers>)>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "Option<(Option<DialectLayers>, Option<DialectLayers>)>")
+    )]
+    pub dialects_change: Option<DialectsChange>,
     /// Differing attributes, each a difference.
     pub attributes: Vec<AttributeChange>,
     /// Differing machine-local digest attributes, reported for information and
@@ -107,6 +111,43 @@ impl Serialize for FormatChange {
         let mut tuple = serializer.serialize_tuple(2)?;
         tuple.serialize_element(self.before().unwrap_or(""))?;
         tuple.serialize_element(self.after().unwrap_or(""))?;
+        tuple.end()
+    }
+}
+
+/// A change between two complete dialect-layer sets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DialectsChange {
+    before: Option<DialectLayers>,
+    after: Option<DialectLayers>,
+}
+
+impl DialectsChange {
+    fn between(before: Option<&DialectLayers>, after: Option<&DialectLayers>) -> Option<Self> {
+        (before != after).then(|| Self {
+            before: before.cloned(),
+            after: after.cloned(),
+        })
+    }
+
+    /// Returns the left-hand dialect layers, or `None` when they were absent.
+    #[must_use]
+    pub fn before(&self) -> Option<&DialectLayers> {
+        self.before.as_ref()
+    }
+
+    /// Returns the right-hand dialect layers, or `None` when they are absent.
+    #[must_use]
+    pub fn after(&self) -> Option<&DialectLayers> {
+        self.after.as_ref()
+    }
+}
+
+impl Serialize for DialectsChange {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut tuple = serializer.serialize_tuple(2)?;
+        tuple.serialize_element(&self.before)?;
+        tuple.serialize_element(&self.after)?;
         tuple.end()
     }
 }
@@ -368,8 +409,7 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
         .map_or(&empty_attributes, |source| &source.attributes);
     let mut result = SourceDiff {
         format_change: FormatChange::between(left_format, right_format),
-        dialects_change: (left_dialects != right_dialects)
-            .then(|| (left_dialects.cloned(), right_dialects.cloned())),
+        dialects_change: DialectsChange::between(left_dialects, right_dialects),
         ..SourceDiff::default()
     };
     for change in attribute_changes(left_attributes, right_attributes) {
@@ -748,13 +788,9 @@ mod tests {
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());
-        assert_eq!(
-            result.source.dialects_change,
-            Some((
-                left.source.as_ref().unwrap().dialects().cloned(),
-                right.source.as_ref().unwrap().dialects().cloned(),
-            ))
-        );
+        let change = result.source.dialects_change.as_ref().unwrap();
+        assert_eq!(change.before(), left.source.as_ref().unwrap().dialects());
+        assert_eq!(change.after(), right.source.as_ref().unwrap().dialects());
 
         let mut declared_left = with_source(&[]);
         let mut declared_right = declared_left.clone();
@@ -775,12 +811,14 @@ mod tests {
 
         let declared = diff(&declared_left, &declared_right);
         assert!(!declared.is_empty());
+        let declared_change = declared.source.dialects_change.as_ref().unwrap();
         assert_eq!(
-            declared.source.dialects_change,
-            Some((
-                declared_left.source.as_ref().unwrap().dialects().cloned(),
-                declared_right.source.as_ref().unwrap().dialects().cloned(),
-            ))
+            declared_change.before(),
+            declared_left.source.as_ref().unwrap().dialects()
+        );
+        assert_eq!(
+            declared_change.after(),
+            declared_right.source.as_ref().unwrap().dialects()
         );
         assert!(declared.source.attributes.is_empty());
     }
@@ -827,8 +865,7 @@ mod tests {
                 .dialects_change
                 .as_ref()
                 .unwrap()
-                .1
-                .as_ref()
+                .after()
                 .unwrap()
                 .iter()
                 .count(),

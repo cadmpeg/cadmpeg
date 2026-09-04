@@ -4054,3 +4054,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::spreadsheets::SpreadsheetRange::{start,end}"
 reason = "merged ranges are typed cell addresses with start strictly upper-left of end"
+
+[[change]]
+commit = "7a02b99a20688d745c8f92c400a028fd38eec18d"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::diff::SourceDiff::dialects_change"
+reason = "dialect layer changes are a DialectsChange built only when before and after differ"
