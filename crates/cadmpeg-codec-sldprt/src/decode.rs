@@ -2280,9 +2280,8 @@ fn build_geometry_ir(
         mut brep,
         configuration_bodies,
     } = decoded;
-    let mut ir = CadIr::empty();
     let appearance_definitions = crate::appearance::definitions(scan);
-    ir.source = Some(source_meta(scan, classification, header));
+    let mut ir = CadIr::decoded(source_meta(scan, classification, header));
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);

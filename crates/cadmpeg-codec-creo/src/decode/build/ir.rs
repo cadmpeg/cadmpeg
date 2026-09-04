@@ -45,10 +45,9 @@ pub(in super::super) fn build_container_ir(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
     let (meta, coverage) = source_meta(scan, classification);
-    ir.source = Some(meta);
+    let mut ir = CadIr::decoded(meta);
+    let mut annotations = AnnotationBuilder::new();
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
@@ -507,11 +506,10 @@ pub(in super::super) fn build_ir(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
     let (meta, mut coverage) = source_meta(scan, classification);
+    let mut ir = CadIr::decoded(meta);
+    let mut annotations = AnnotationBuilder::new();
     let mut brep_diagnostics = BrepTransferDiagnostics::default();
-    ir.source = Some(meta);
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;

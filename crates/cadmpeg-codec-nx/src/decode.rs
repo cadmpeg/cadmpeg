@@ -269,10 +269,9 @@ fn build_container_only_ir(
     scan: &Scan<'_>,
     dialects: &DialectLayers,
 ) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
-    let mut ir = CadIr::empty();
+    let mut ir = CadIr::decoded(source_meta(scan, dialects));
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan, dialects));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind.is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
@@ -412,10 +411,9 @@ fn build_metadata_ir(
     scan: &Scan,
     dialects: &DialectLayers,
 ) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
-    let mut ir = CadIr::empty();
+    let mut ir = CadIr::decoded(source_meta(scan, dialects));
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    ir.source = Some(source_meta(scan, dialects));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind.is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
