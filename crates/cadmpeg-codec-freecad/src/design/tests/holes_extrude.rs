@@ -1859,8 +1859,8 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Body"))
         .expect("body");
-    assert_eq!(pad.parent.as_ref(), Some(&body.id));
-    assert_eq!(pocket.parent.as_ref(), Some(&body.id));
+    assert_eq!(result.ir().model.feature_parent(&pad.id), Some(&body.id));
+    assert_eq!(result.ir().model.feature_parent(&pocket.id), Some(&body.id));
     assert_eq!(
         body.source_properties.get("Tip").map(String::as_str),
         Some("fcstd:native:object#Pocket")

@@ -188,7 +188,6 @@ fn offset_plane_frame_translates_its_reference_frame() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,

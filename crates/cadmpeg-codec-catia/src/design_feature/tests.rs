@@ -49,7 +49,6 @@ fn feature(id: &str, native_ref: &str) -> Feature {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -322,10 +321,10 @@ fn assigns_parent_from_an_exact_transferred_owner_chain() {
 
     transfer.assign_feature_parents(&mut ir, &native);
 
-    assert_eq!(ir.model.features[0].parent, None);
+    assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
     assert_eq!(
-        ir.model.features[1].parent,
-        Some(FeatureId::from("parent-feature"))
+        ir.model.feature_parent(&ir.model.features[1].id),
+        Some(&FeatureId::from("parent-feature"))
     );
 }
 
@@ -360,8 +359,8 @@ fn assigns_parent_from_the_nearest_transferred_ancestor() {
     transfer.assign_feature_parents(&mut ir, &native);
 
     assert_eq!(
-        ir.model.features[1].parent,
-        Some(FeatureId::from("parent-feature"))
+        ir.model.feature_parent(&ir.model.features[1].id),
+        Some(&FeatureId::from("parent-feature"))
     );
 }
 
@@ -398,7 +397,7 @@ fn rejects_a_parent_that_does_not_precede_its_child() {
         .model
         .features
         .iter()
-        .all(|feature| feature.parent.is_none()));
+        .all(|feature| ir.model.feature_parent(&feature.id).is_none()));
 }
 
 #[test]
@@ -416,7 +415,7 @@ fn does_not_assign_a_self_parent() {
 
     transfer.assign_feature_parents(&mut ir, &native);
 
-    assert_eq!(ir.model.features[0].parent, None);
+    assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
 }
 
 #[test]
@@ -452,7 +451,7 @@ fn omits_all_parents_in_an_owner_cycle() {
         .model
         .features
         .iter()
-        .all(|feature| feature.parent.is_none()));
+        .all(|feature| ir.model.feature_parent(&feature.id).is_none()));
 }
 
 #[test]
@@ -605,8 +604,8 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     assert_eq!(ir.model.features[0].ordinal, 10);
     assert_eq!(ir.model.features[1].ordinal, 20);
     assert_eq!(
-        ir.model.features[1].parent,
-        Some(FeatureId::from("parent-object:feature"))
+        ir.model.feature_parent(&ir.model.features[1].id),
+        Some(&FeatureId::from("parent-object:feature"))
     );
     assert!(matches!(
         ir.model.features[0].definition,
@@ -1333,8 +1332,8 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
     let child_feature = FeatureId::from("child-operation:feature");
     assert_eq!(ir.model.parameters[0].owner, Some(child_feature.clone()));
     assert_eq!(
-        ir.model.features[1].parent,
-        Some(FeatureId::from("parent-operation:feature"))
+        ir.model.feature_parent(&ir.model.features[1].id),
+        Some(&FeatureId::from("parent-operation:feature"))
     );
     assert_eq!(
         ir.model.features[1]
@@ -1353,7 +1352,6 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Prism_ThickThin1".to_string()),
@@ -1405,7 +1403,6 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some("CircPattern_RadialNumber".to_string()),

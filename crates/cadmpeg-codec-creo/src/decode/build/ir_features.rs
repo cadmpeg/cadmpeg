@@ -67,6 +67,8 @@ pub(super) fn emit_model_features(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
+    let mut tree_edges = Vec::new();
+    let mut regeneration_edges = Vec::new();
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan);
     let operation_feature_ids = scan
         .features
@@ -95,7 +97,6 @@ pub(super) fn emit_model_features(
             ordinal: ir.model.features.len() as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -133,7 +134,6 @@ pub(super) fn emit_model_features(
             ordinal: ir.model.features.len() as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -227,6 +227,16 @@ pub(super) fn emit_model_features(
                     .any(|feature| feature.id == parent)
                     .then_some(parent)
             });
+        if let Some(parent) = parent {
+            if ir.model.features.iter().any(|feature| {
+                feature.id == parent
+                    && matches!(feature.definition, IrFeatureDefinition::TreeNode { .. })
+            }) {
+                tree_edges.push((parent, id.clone()));
+            } else {
+                regeneration_edges.push((id.clone(), parent));
+            }
+        }
         let operation_section = scan
             .framing
             .sections
@@ -269,9 +279,6 @@ pub(super) fn emit_model_features(
             if name.is_some() {
                 existing.name = name;
             }
-            if existing.parent.is_none() {
-                existing.parent = parent;
-            }
             for dependency in dependencies {
                 if !existing.dependencies.contains(&dependency) {
                     existing.dependencies.push(dependency);
@@ -312,7 +319,6 @@ pub(super) fn emit_model_features(
             ordinal: (operation_ordinal_base + operation_index) as u64,
             name,
             suppressed: Some(false),
-            parent,
             dependencies,
             source_properties,
             source_tag,
@@ -398,7 +404,6 @@ pub(super) fn emit_model_features(
                 reference_name.map_or_else(|| format!("{kind} id {feature_id}"), str::to_string),
             ),
             suppressed: Some(false),
-            parent: None,
             dependencies: feature_dependencies(
                 scan,
                 ir,
@@ -414,6 +419,31 @@ pub(super) fn emit_model_features(
             native_ref: owning_feature_definition_ref(scan, feature_id),
         });
         refresh_feature_outputs(scan, ir);
+    }
+    for (parent, child) in tree_edges {
+        let Some(feature) = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.id == parent)
+        else {
+            continue;
+        };
+        let IrFeatureDefinition::TreeNode { children, .. } = &mut feature.definition else {
+            continue;
+        };
+        if !children.contains(&child) {
+            children.push(child);
+        }
+    }
+    for (child, parent) in regeneration_edges {
+        if ir
+            .model
+            .set_feature_regeneration_parent(child, parent)
+            .is_err()
+        {
+            continue;
+        }
     }
     geometry_generator_feature_count
 }

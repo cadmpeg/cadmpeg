@@ -422,6 +422,15 @@ pub(in super::super) fn reconcile_feature_links(
         .iter()
         .map(|feature| feature.id.clone())
         .collect::<BTreeSet<_>>();
+    let tree_nodes = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| matches!(feature.definition, IrFeatureDefinition::TreeNode { .. }))
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut tree_edges = Vec::new();
+    let mut regeneration_edges = Vec::new();
     for feature in &mut ir.model.features {
         let Some(feature_id) = feature
             .id
@@ -456,12 +465,53 @@ pub(in super::super) fn reconcile_feature_links(
             native_dependencies.chain(generated_dependencies),
             &emitted,
         );
-        if feature.parent.is_none() {
-            feature.parent = current_feature_recipe_parent(&scan.features.operations, feature_id)
-                .map(|parent| IrFeatureId(format!("creo:model:feature#{parent}")))
-                .filter(|parent| *parent != feature.id && emitted.contains(parent));
+        let parent = current_feature_recipe_parent(&scan.features.operations, feature_id)
+            .map(|parent| IrFeatureId(format!("creo:model:feature#{parent}")))
+            .filter(|parent| *parent != feature.id && emitted.contains(parent));
+        if let Some(parent) = parent {
+            if tree_nodes.contains(&parent) {
+                tree_edges.push((parent, feature.id.clone()));
+            } else {
+                regeneration_edges.push((feature.id.clone(), parent));
+            }
         }
     }
+    for (parent, child) in &tree_edges {
+        let Some(feature) = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.id == *parent)
+        else {
+            continue;
+        };
+        let IrFeatureDefinition::TreeNode { children, .. } = &mut feature.definition else {
+            continue;
+        };
+        if !children.contains(child) {
+            children.push(child.clone());
+        }
+    }
+    for (child, parent) in regeneration_edges {
+        if ir
+            .model
+            .set_feature_regeneration_parent(child, parent)
+            .is_err()
+        {
+            continue;
+        }
+    }
+    let parent_by_child = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            Some((
+                feature.id.clone(),
+                ir.model.feature_parent(&feature.id)?.clone(),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
     let mut remaining = (0..ir.model.features.len()).collect::<Vec<_>>();
     let mut ordered = Vec::with_capacity(remaining.len());
     let mut preceding = BTreeSet::new();
@@ -471,7 +521,7 @@ pub(in super::super) fn reconcile_feature_links(
             feature
                 .dependencies
                 .iter()
-                .chain(feature.parent.iter())
+                .chain(parent_by_child.get(&feature.id))
                 .all(|required| !emitted.contains(required) || preceding.contains(required))
         }) else {
             break;

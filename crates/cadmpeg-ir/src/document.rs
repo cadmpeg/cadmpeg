@@ -16,7 +16,7 @@ use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
 use crate::features::{
     DesignConfiguration, DesignConfigurationReadWire, DesignParameter, Feature,
-    FeatureInputTopology, FeatureResultTopology,
+    FeatureInputTopology, FeatureReadWire, FeatureResultTopology, FeatureWriteWire,
 };
 use crate::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveReadWire, ProceduralSurface,
@@ -38,6 +38,9 @@ use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
+
+#[derive(Debug, Clone, Default, PartialEq)]
+struct FeatureRegenerationParents(BTreeMap<crate::features::FeatureId, crate::features::FeatureId>);
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -184,6 +187,7 @@ macro_rules! model_write_type {
     (curves, $ty:ty, $l:lifetime) => { Vec<CurveWire<$l>> };
     (procedural_surfaces, $ty:ty, $l:lifetime) => { Vec<ProceduralSurfaceWire<$l>> };
     (procedural_curves, $ty:ty, $l:lifetime) => { Vec<ProceduralCurveWire<$l>> };
+    (features, $ty:ty, $l:lifetime) => { Vec<FeatureWriteWire<$l>> };
     ($field:ident, $ty:ty, $l:lifetime) => { &$l Vec<$ty> };
 }
 
@@ -214,6 +218,13 @@ macro_rules! model_write_value {
             })
             .collect()
     };
+    ($model:expr, features) => {
+        $model
+            .features
+            .iter()
+            .map(|feature| FeatureWriteWire::new(feature, $model.feature_parent(&feature.id)))
+            .collect()
+    };
     ($model:expr, $field:ident) => {
         &$model.$field
     };
@@ -223,6 +234,7 @@ macro_rules! model_read_type {
     (procedural_surfaces, $ty:ty) => { Vec<ProceduralSurfaceReadWire> };
     (procedural_curves, $ty:ty) => { Vec<ProceduralCurveReadWire> };
     (configurations, $ty:ty) => { Vec<DesignConfigurationReadWire> };
+    (features, $ty:ty) => { Vec<FeatureReadWire> };
     ($field:ident, $ty:ty) => { Vec<$ty> };
 }
 
@@ -234,6 +246,9 @@ macro_rules! model_read_value {
         Vec::new()
     };
     ($wire:expr, configurations) => {
+        Vec::new()
+    };
+    ($wire:expr, features) => {
         Vec::new()
     };
     ($wire:expr, $field:ident) => {
@@ -249,6 +264,12 @@ struct SurfaceCacheRewrite {
 #[derive(Serialize, Deserialize)]
 struct CurveCacheRewrite {
     geometry: CurveGeometry,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureRegenerationEdge {
+    child: crate::features::FeatureId,
+    parent: crate::features::FeatureId,
 }
 
 fn rewrite_surface<R: EntityRewrite>(
@@ -319,6 +340,7 @@ macro_rules! sorted_model_type {
     (curves, $ty:ty, $l:lifetime) => { Vec<CurveWire<$l>> };
     (procedural_surfaces, $ty:ty, $l:lifetime) => { Vec<ProceduralSurfaceWire<$l>> };
     (procedural_curves, $ty:ty, $l:lifetime) => { Vec<ProceduralCurveWire<$l>> };
+    (features, $ty:ty, $l:lifetime) => { Vec<FeatureWriteWire<$l>> };
     ($field:ident, $ty:ty, $l:lifetime) => { Vec<&$l $ty> };
 }
 
@@ -353,6 +375,12 @@ macro_rules! sorted_model_value {
             })
             .collect()
     };
+    ($model:expr, features) => {
+        sorted_refs(&$model.features)
+            .into_iter()
+            .map(|feature| FeatureWriteWire::new(feature, $model.feature_parent(&feature.id)))
+            .collect()
+    };
     ($model:expr, $field:ident) => {
         sorted_refs(&$model.$field)
     };
@@ -369,6 +397,8 @@ macro_rules! declare_model {
                 #[doc = $doc]
                 pub $field: Vec<$ty>,
             )*
+            #[cfg_attr(feature = "schema", schemars(skip))]
+            feature_regeneration_parents: FeatureRegenerationParents,
         }
 
         #[derive(Serialize)]
@@ -408,9 +438,18 @@ macro_rules! declare_model {
                 let procedural_surfaces = std::mem::take(&mut wire.procedural_surfaces);
                 let procedural_curves = std::mem::take(&mut wire.procedural_curves);
                 let configurations = std::mem::take(&mut wire.configurations);
+                let feature_wires = std::mem::take(&mut wire.features);
+                let (features, feature_parents): (Vec<_>, Vec<_>) = feature_wires
+                    .into_iter()
+                    .map(FeatureReadWire::into_parts)
+                    .unzip();
                 let mut model = Self {
                     $($field: model_read_value!(wire, $field),)*
+                    feature_regeneration_parents: FeatureRegenerationParents::default(),
                 };
+                model.features = features;
+                reconcile_feature_parents(&mut model, feature_parents)
+                    .map_err(serde::de::Error::custom)?;
                 for wire in procedural_surfaces {
                     let (owner, procedural) = wire.into_parts().map_err(serde::de::Error::custom)?;
                     let owner = owner.ok_or_else(|| serde::de::Error::custom(
@@ -473,6 +512,11 @@ macro_rules! declare_model {
                 $(for entity in &self.$field {
                     crate::schema::EntitySchema::visit_references(entity, visitor);
                 })*
+                for parent in self.feature_regeneration_parents.0.values() {
+                    visitor(crate::schema::Reference {
+                        target: parent.0.clone(),
+                    });
+                }
             }
 
             /// Sort each arena lexicographically by its entity identity.
@@ -502,6 +546,11 @@ macro_rules! declare_model {
                         self.$field.push(model_rewrite_entity!(rewrite, $field, entity)?);
                     }
                 )*
+                for (child, parent) in other.feature_regeneration_parents.0 {
+                    let edge = rewrite.rewrite(FeatureRegenerationEdge { child, parent })?;
+                    self.feature_regeneration_parents.0
+                        .insert(edge.child, edge.parent);
+                }
                 Ok(())
             }
         }
@@ -557,6 +606,152 @@ pub const IR_VERSION: &str = "5";
 arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
+
+fn reconcile_feature_parents(
+    model: &mut Model,
+    wire_parents: Vec<Option<crate::features::FeatureId>>,
+) -> Result<(), String> {
+    use crate::features::FeatureDefinition;
+    use std::collections::HashMap;
+
+    let indices = model
+        .features
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (feature.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let mut tree_parents = HashMap::<crate::features::FeatureId, crate::features::FeatureId>::new();
+    for parent in &model.features {
+        let FeatureDefinition::TreeNode {
+            children,
+            active_child,
+            ..
+        } = &parent.definition
+        else {
+            continue;
+        };
+        if active_child
+            .as_ref()
+            .is_some_and(|active| !children.contains(active))
+        {
+            return Err(format!(
+                "feature `{}` has an active child outside its child list",
+                parent.id
+            ));
+        }
+        for child in children {
+            if let Some(previous) = tree_parents.insert(child.clone(), parent.id.clone()) {
+                return Err(format!(
+                    "feature `{child}` has two tree parents `{previous}` and `{}`",
+                    parent.id
+                ));
+            }
+        }
+    }
+
+    for (child_index, wire_parent) in wire_parents.into_iter().enumerate() {
+        let child_id = model.features[child_index].id.clone();
+        let Some(parent_id) = wire_parent else {
+            if let Some(parent) = tree_parents.get(&child_id) {
+                return Err(format!(
+                    "tree child `{child_id}` is missing its serialized parent `{parent}`"
+                ));
+            }
+            continue;
+        };
+        let Some(&parent_index) = indices.get(&parent_id) else {
+            return Err(format!(
+                "feature `{child_id}` names missing parent `{parent_id}`"
+            ));
+        };
+        if model.features[parent_index].ordinal >= model.features[child_index].ordinal {
+            return Err(format!(
+                "parent feature `{parent_id}` does not precede child `{child_id}`"
+            ));
+        }
+        if matches!(
+            model.features[parent_index].definition,
+            FeatureDefinition::TreeNode { .. }
+        ) {
+            if let Some(existing) = tree_parents.get(&child_id) {
+                if existing != &parent_id {
+                    return Err(format!(
+                        "tree child `{child_id}` names parent `{parent_id}` but is owned by `{existing}`"
+                    ));
+                }
+            } else if let FeatureDefinition::TreeNode { children, .. } =
+                &mut model.features[parent_index].definition
+            {
+                children.push(child_id.clone());
+                tree_parents.insert(child_id.clone(), parent_id);
+            }
+        } else {
+            model
+                .feature_regeneration_parents
+                .0
+                .insert(child_id, parent_id);
+        }
+    }
+    Ok(())
+}
+
+impl Model {
+    /// Structural tree owner of `child`, derived from tree-node child lists.
+    pub fn feature_tree_parent(
+        &self,
+        child: &crate::features::FeatureId,
+    ) -> Option<&crate::features::FeatureId> {
+        self.features.iter().find_map(|candidate| {
+            let crate::features::FeatureDefinition::TreeNode { children, .. } =
+                &candidate.definition
+            else {
+                return None;
+            };
+            children.contains(child).then_some(&candidate.id)
+        })
+    }
+
+    /// Legacy parent projection: structural owner or regeneration predecessor.
+    pub fn feature_parent(
+        &self,
+        child: &crate::features::FeatureId,
+    ) -> Option<&crate::features::FeatureId> {
+        self.feature_tree_parent(child)
+            .or_else(|| self.feature_regeneration_parents.0.get(child))
+    }
+
+    /// Set the non-tree containing operation used to order regeneration.
+    pub fn set_feature_regeneration_parent(
+        &mut self,
+        child: crate::features::FeatureId,
+        parent: crate::features::FeatureId,
+    ) -> Result<(), String> {
+        if self.feature_tree_parent(&child).is_some() {
+            return Err(format!(
+                "tree child `{child}` already has a structural parent"
+            ));
+        }
+        let child_ordinal = self
+            .features
+            .iter()
+            .find(|feature| feature.id == child)
+            .map(|feature| feature.ordinal)
+            .ok_or_else(|| format!("missing child feature `{child}`"))?;
+        let parent_ordinal = self
+            .features
+            .iter()
+            .find(|feature| feature.id == parent)
+            .map(|feature| feature.ordinal)
+            .ok_or_else(|| format!("missing parent feature `{parent}`"))?;
+        if parent_ordinal >= child_ordinal {
+            return Err(format!(
+                "parent feature `{parent}` does not precede child `{child}`"
+            ));
+        }
+        self.feature_regeneration_parents.0.insert(child, parent);
+        Ok(())
+    }
+}
 
 /// Failure to attach a procedural construction to its sole carrier.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

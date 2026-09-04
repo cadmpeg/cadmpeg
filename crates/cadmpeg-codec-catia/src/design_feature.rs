@@ -116,6 +116,30 @@ impl DesignFeatureTransfer {
     /// that does not precede its child is omitted rather than creating an
     /// invalid neutral history.
     pub(crate) fn assign_feature_parents(&self, ir: &mut CadIr, native: &CatiaNative) {
+        let parents = self.feature_parents(ir, native);
+        for feature in &mut ir.model.features {
+            feature.dependencies.retain(|dependency| {
+                parents
+                    .get(&feature.id)
+                    .is_none_or(|parent| dependency != parent)
+            });
+        }
+        for (child, parent) in parents {
+            if ir
+                .model
+                .set_feature_regeneration_parent(child, parent)
+                .is_err()
+            {
+                continue;
+            }
+        }
+    }
+
+    pub(crate) fn feature_parent_count(&self, ir: &CadIr, native: &CatiaNative) -> usize {
+        self.feature_parents(ir, native).len()
+    }
+
+    fn feature_parents(&self, ir: &CadIr, native: &CatiaNative) -> HashMap<FeatureId, FeatureId> {
         let design_objects = native
             .design_objects
             .iter()
@@ -127,7 +151,7 @@ impl DesignFeatureTransfer {
             .iter()
             .map(|feature| (feature.id.clone(), feature.ordinal))
             .collect::<HashMap<_, _>>();
-        let parents = ir
+        let mut parents = ir
             .model
             .features
             .iter()
@@ -145,18 +169,13 @@ impl DesignFeatureTransfer {
                     .then(|| (feature.id.clone(), parent))
             })
             .collect::<HashMap<_, _>>();
-
-        for feature in &mut ir.model.features {
-            if feature.parent.is_some() {
-                continue;
-            }
-            let Some(parent) = parents.get(&feature.id) else {
-                continue;
-            };
-            if feature_parent_chain_is_acyclic(&feature.id, &parents) {
-                feature.parent = Some(parent.clone());
-            }
-        }
+        let acyclic = parents
+            .keys()
+            .filter(|feature| feature_parent_chain_is_acyclic(feature, &parents))
+            .cloned()
+            .collect::<HashSet<_>>();
+        parents.retain(|feature, _| acyclic.contains(feature));
+        parents
     }
 
     /// Bind exact payload references to earlier transferred features as
@@ -578,7 +597,6 @@ fn transfer_principal_plane(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some(candidate.declaration_class.to_string()),
@@ -611,7 +629,6 @@ fn transfer_reference_plane(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some(candidate.kind.to_string()),
@@ -649,7 +666,6 @@ fn transfer_sketch(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Sketch".to_string()),
@@ -772,7 +788,6 @@ fn transfer_native_operation(
         ordinal: object.first_field_byte_offset,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties,
         source_tag: Some(kind.clone()),

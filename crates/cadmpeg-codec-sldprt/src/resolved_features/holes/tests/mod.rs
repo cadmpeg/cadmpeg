@@ -51,7 +51,6 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
         ordinal: 0,
         name: Some("Hole".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::default(),
         source_tag: None,

@@ -285,7 +285,6 @@ mod tests {
             ordinal,
             name: Some(id.into()),
             suppressed: None,
-            parent: None,
             dependencies,
             source_properties,
             source_tag: native.then(|| "NX_OPERATION".to_string()),
@@ -513,7 +512,6 @@ mod tests {
                 ordinal: 0,
                 name: Some("base".into()),
                 suppressed: Some(false),
-                parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
@@ -589,7 +587,6 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::from([(
                 "segment_body_binding.0".into(),

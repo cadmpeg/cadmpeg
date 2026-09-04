@@ -2444,7 +2444,6 @@ mod tests {
             ordinal,
             name: Some(name.into()),
             suppressed: None,
-            parent: None,
             dependencies,
             source_properties: BTreeMap::new(),
             source_tag: None,

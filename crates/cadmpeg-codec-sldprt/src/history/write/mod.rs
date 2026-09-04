@@ -13,7 +13,7 @@ use crate::history::configuration::{
 };
 use crate::history::hash::{feature_hash, history_hash, native_parameter_hash};
 use crate::history::parameters::expression_identifier_tokens;
-use crate::history::project::project_features;
+use crate::history::project::{project_feature_model, project_features, FeatureProjection};
 
 mod configurations;
 mod features;
@@ -120,7 +120,7 @@ pub fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
-    let neutral_hash = feature_hash(&ir.model.features);
+    let neutral_hash = feature_hash(&ir.model);
     let native_hash = native
         .as_ref()
         .map(|value| history_hash(&value.feature_histories));
@@ -145,21 +145,17 @@ pub fn prepare_features_for_write(
         validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
         validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
         validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
-        return sync_neutral_features(
-            &ir.model.features,
-            &ir.model.parameters,
-            &ir.model.bodies,
-            native,
-        );
+        return sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native);
     }
     match (neutral_changed, native_changed) {
         (false, _) => Ok(()),
         (true, true) => {
-            let projected = native
+            let projected_model = native
                 .as_ref()
-                .map(project_features_with_native_inputs)
+                .map(project_feature_model_with_native_inputs)
+                .map(FeatureProjection::into_model)
                 .unwrap_or_default();
-            if feature_hash(&projected) == neutral_hash {
+            if feature_hash(&projected_model) == neutral_hash {
                 Ok(())
             } else {
                 Err(CodecError::Malformed(
@@ -173,12 +169,7 @@ pub fn prepare_features_for_write(
             validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
             validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
             validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
-            sync_neutral_features(
-                &ir.model.features,
-                &ir.model.parameters,
-                &ir.model.bodies,
-                native,
-            )
+            sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native)
         }
     }
 }
@@ -275,6 +266,12 @@ pub(crate) fn validate_surface_sweep_profile_edits(
 pub(crate) fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
 ) -> Vec<cadmpeg_ir::features::Feature> {
+    project_feature_model_with_native_inputs(native).features
+}
+
+fn project_feature_model_with_native_inputs(
+    native: &crate::native::SldprtNative,
+) -> FeatureProjection {
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
         &mut histories,
@@ -282,31 +279,32 @@ pub(crate) fn project_features_with_native_inputs(
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
     );
-    let mut features = project_features(&histories);
+    let mut projection = project_feature_model(&histories);
+    let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
-        &mut features,
+        features,
         &histories,
         &native.feature_input_lanes,
     );
     crate::resolved_features::operations::bind_sweep_operations(
-        &mut features,
+        features,
         &histories,
         &native.feature_input_lanes,
         None,
     );
-    project_compact_and_generated(&mut features, &histories, &native.feature_input_lanes);
+    project_compact_and_generated(features, &histories, &native.feature_input_lanes);
     crate::resolved_features::operations::bind_revolution_operations(
-        &mut features,
+        features,
         &histories,
         &native.feature_input_lanes,
         None,
     );
     let _ = crate::resolved_features::markers::spatial_sketches(
-        &mut features,
+        features,
         &histories,
         &native.feature_input_lanes,
     );
-    features
+    projection
 }
 
 pub(crate) fn validate_compact_body_selection_edits(

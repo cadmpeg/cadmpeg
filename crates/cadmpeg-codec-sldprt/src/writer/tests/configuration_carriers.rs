@@ -65,7 +65,6 @@ fn encoder_writes_source_less_datum_features() {
             ordinal: ordinal as u64,
             name: Some(format!("Datum {ordinal}")),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
@@ -619,7 +618,6 @@ fn encoder_writes_source_less_neutral_parameters() {
         ordinal: 0,
         name: Some("Equation".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -1488,11 +1486,17 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
         Some(native[1].id.as_str())
     );
     assert_eq!(
-        decoded.ir().model.features[1].parent.as_ref(),
+        decoded
+            .ir()
+            .model
+            .feature_parent(&decoded.ir().model.features[1].id),
         Some(&decoded.ir().model.features[0].id)
     );
     assert_eq!(
-        decoded.ir().model.features[2].parent.as_ref(),
+        decoded
+            .ir()
+            .model
+            .feature_parent(&decoded.ir().model.features[2].id),
         Some(&decoded.ir().model.features[1].id)
     );
     decoded.ir_mut().model.features[2].name = Some("Edited Profile".into());

@@ -563,7 +563,6 @@ pub(crate) fn transfer_curve_expression_features(
             ordinal,
             name: Some(format!("Curve Equation {}", record.entity_id)),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: Some("crv_fr_eqn".to_string()),

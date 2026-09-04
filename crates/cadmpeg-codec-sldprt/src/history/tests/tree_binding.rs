@@ -66,7 +66,10 @@ fn decode_extracts_parametric_history() {
         } if profile == &history.features[0].id
     ));
     assert_eq!(
-        result.ir().model.features[1].parent.as_ref(),
+        result
+            .ir()
+            .model
+            .feature_parent(&result.ir().model.features[1].id),
         Some(&neutral.id)
     );
 }

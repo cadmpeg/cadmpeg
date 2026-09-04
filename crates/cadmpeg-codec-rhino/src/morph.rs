@@ -573,7 +573,6 @@ pub(crate) fn project(
         ordinal: u64::try_from(morph.source_range.start).expect("source offset fits u64"),
         name,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: Some("RhinoMorphControl".to_string()),

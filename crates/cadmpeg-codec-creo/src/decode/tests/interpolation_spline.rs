@@ -1463,7 +1463,6 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,

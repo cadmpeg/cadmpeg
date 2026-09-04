@@ -85,7 +85,6 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,

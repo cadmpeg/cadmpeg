@@ -476,21 +476,11 @@ pub(crate) fn transfer(
             }
             dependencies
         };
-        let parent = parent_by_member
-            .get(object.id.as_str())
-            .filter(|_| !cycle_affected)
-            .filter(|parent| {
-                ordinal_by_feature
-                    .get(*parent)
-                    .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
-            })
-            .cloned();
         ir.model.features.push(Feature {
             id,
             ordinal: feature_ordinals[object.id.as_str()],
             name: Some(object.name.clone()),
             suppressed: bool_property(&owned, "Suppressed"),
-            parent,
             dependencies,
             source_properties: feature_state(&owned),
             source_tag: Some(object.type_name.clone()),
@@ -533,7 +523,6 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             };
             feature.dependencies.clear();
-            feature.parent = None;
         }
     }
     Ok(cycle_affected)

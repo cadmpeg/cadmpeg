@@ -125,7 +125,7 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
-    assert!(feature.parent.is_none());
+    assert!(result.ir().model.feature_parent(&feature.id).is_none());
     assert_eq!(
         feature
             .dependencies
@@ -1000,9 +1000,10 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
     );
     assert_eq!(feature.name, None);
     assert_eq!(
-        feature
-            .parent
-            .as_ref()
+        result
+            .ir()
+            .model
+            .feature_parent(&feature.id)
             .map(cadmpeg_ir::features::FeatureId::as_str),
         Some("creo:model:feature#8051")
     );

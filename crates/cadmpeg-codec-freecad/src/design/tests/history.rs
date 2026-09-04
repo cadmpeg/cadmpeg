@@ -232,7 +232,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
                 .features
                 .iter()
                 .find(|feature| feature.id == *child)
-                .and_then(|feature| feature.parent.as_ref()),
+                .and_then(|feature| result.ir().model.feature_parent(&feature.id)),
             Some(&body.id)
         );
     }
@@ -786,7 +786,14 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
     assert!(features
         .iter()
         .all(|feature| feature.dependencies.is_empty()));
-    assert!(features.iter().all(|feature| feature.parent.is_none()));
+    assert!(features.iter().all(|feature| {
+        !features.iter().any(|candidate| {
+            matches!(
+                &candidate.definition,
+                FeatureDefinition::TreeNode { children, .. } if children.contains(&feature.id)
+            )
+        })
+    }));
     assert_eq!(
         result
             .report()
@@ -834,7 +841,6 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
         .expect("cyclic expression graph");
     assert!(result.ir().model.features.iter().all(|feature| {
         feature.dependencies.is_empty()
-            && feature.parent.is_none()
             && matches!(feature.definition, FeatureDefinition::Native { .. })
     }));
     let parameters = result

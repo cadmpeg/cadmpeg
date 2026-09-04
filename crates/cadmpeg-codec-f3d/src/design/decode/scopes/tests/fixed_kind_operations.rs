@@ -716,7 +716,6 @@ pub(super) fn continue_fixed_kind_operations(
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: Default::default(),
         source_tag: None,
