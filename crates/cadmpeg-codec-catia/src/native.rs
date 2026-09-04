@@ -252,6 +252,38 @@ pub struct CatiaOwnerNumericTail {
     pub bounds: [[f32; 2]; 3],
 }
 
+/// Selected class of a fixed-nine owner identity target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CatiaOwnerIdentityClass {
+    /// Class-`0x5d` vertex record.
+    Vertex,
+    /// Class-`0x5e` edge record.
+    Edge,
+}
+
+impl From<CatiaOwnerIdentityClass> for u8 {
+    fn from(value: CatiaOwnerIdentityClass) -> Self {
+        match value {
+            CatiaOwnerIdentityClass::Vertex => 0x5d,
+            CatiaOwnerIdentityClass::Edge => 0x5e,
+        }
+    }
+}
+
+impl TryFrom<u8> for CatiaOwnerIdentityClass {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x5d => Ok(Self::Vertex),
+            0x5e => Ok(Self::Edge),
+            other => Err(format!("target_class {other:#x} is not 0x5d or 0x5e")),
+        }
+    }
+}
+
 /// One fixed-nine owner identity resolved within its allocation source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -263,7 +295,7 @@ pub struct CatiaOwnerIdentityTarget {
     /// Byte offset of the selected class-`0x5d` or class-`0x5e` record.
     pub target_byte_offset: u64,
     /// Selected record class.
-    pub target_class: u8,
+    pub target_class: CatiaOwnerIdentityClass,
 }
 
 /// Parameter axis held constant by selectors `0x05` and `0x09` in a

@@ -260,7 +260,7 @@ pub struct B2OwnerIdentityTarget {
     /// Selected class-`0x5d` or class-`0x5e` record offset.
     pub target_pos: usize,
     /// Selected record class.
-    pub target_class: u8,
+    pub target_class: crate::native::CatiaOwnerIdentityClass,
 }
 
 /// One fixed-nine identity that resolves to a closed owner-boundary edge.
@@ -989,13 +989,17 @@ pub(crate) fn b2_owner_identity_targets_from_records(
                 continue;
             };
             let target = &records[target_index];
+            let Ok(target_class) = crate::native::CatiaOwnerIdentityClass::try_from(target.class)
+            else {
+                continue;
+            };
             targets.push(B2OwnerIdentityTarget {
                 owner_pos: packet.pos,
                 source_index: packet.source_index,
                 slot,
                 distance,
                 target_pos: target.range.start,
-                target_class: target.class,
+                target_class,
             });
         }
     }
@@ -1010,7 +1014,11 @@ pub(crate) fn b2_closed_owner_boundary_edges(
     targets: &[B2OwnerIdentityTarget],
     endpoint_records: &HashMap<usize, [usize; 2]>,
 ) -> Option<[B2OwnerBoundaryEdge; 4]> {
-    if targets.len() != 4 || targets.iter().any(|target| target.target_class != 0x5e) {
+    if targets.len() != 4
+        || targets
+            .iter()
+            .any(|target| target.target_class != crate::native::CatiaOwnerIdentityClass::Edge)
+    {
         return None;
     }
     let mut edges = targets

@@ -304,7 +304,7 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
                 target.slot,
                 target.distance,
                 target.target_pos,
-                target.target_class,
+                u8::from(target.target_class),
             ))
             .collect::<Vec<_>>(),
         [
@@ -367,7 +367,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
             slot,
             distance: 1,
             target_pos,
-            target_class: 0x5e,
+            target_class: crate::native::CatiaOwnerIdentityClass::Edge,
         })
         .collect::<Vec<_>>();
     let endpoints = HashMap::from([
@@ -387,7 +387,7 @@ fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
     assert!(b2_closed_owner_boundary_edges(&targets, &open).is_none());
 
     let mut mixed_classes = targets.clone();
-    mixed_classes[0].target_class = 0x5d;
+    mixed_classes[0].target_class = crate::native::CatiaOwnerIdentityClass::Vertex;
     assert!(b2_closed_owner_boundary_edges(&mixed_classes, &endpoints).is_none());
 
     let mut duplicate = endpoints;
