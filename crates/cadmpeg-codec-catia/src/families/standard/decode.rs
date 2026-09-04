@@ -588,19 +588,12 @@ fn refine_consolidated_analytic_surfaces(
                 radius,
                 ..
             }) => exactly_one(cylinders.iter().filter_map(|cylinder| {
-                let geometry = &cylinder.geometry;
-                let SurfaceGeometry::Cylinder {
-                    axis: exact_axis, ..
-                } = geometry
-                else {
-                    return None;
-                };
                 (same_point(*origin, cylinder.origin)
-                    && same_axis(*axis, [exact_axis.x, exact_axis.y, exact_axis.z])
+                    && same_axis(*axis, cylinder.axis)
                     && radius.to_bits() == quantized(cylinder.radius).to_bits())
-                .then_some((geometry, cylinder.pos))
+                .then_some((cylinder.surface_geometry(), cylinder.pos))
             }))
-            .map(|(geometry, pos)| (geometry.clone(), pos)),
+            .map(|(geometry, pos)| (geometry, pos)),
             Some(SurfaceGeometry::Cone {
                 origin,
                 axis,
