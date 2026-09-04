@@ -37,30 +37,17 @@ pub(crate) fn project_offset_plane(
         .and_then(|source| by_source.get(source.as_str()).cloned())
         .map(DatumPlaneReference::Feature)
         .or_else(|| {
-            Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
+            Some(DatumPlaneReference::ResolvedPlane {
                 origin: parse_point3_mm(feature.properties.get("ReferenceFaceOrigin")?)?,
                 normal: parse_vector3(feature.properties.get("ReferenceFaceNormal")?)?,
                 u_axis: parse_vector3(feature.properties.get("ReferenceFaceUAxis")?)?,
             })
         })
         .or_else(|| {
-            let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
-            let normal = parse_vector3(feature.properties.get("Normal")?)?;
             let native = feature.properties.get("ReferenceFaceNative")?;
-            let origin = crate::history::offset_plane_support_origin(
-                &feature.properties,
-                Some(native),
-                origin,
-                normal,
-                distance,
-            );
-            Some(DatumPlaneReference::Face {
-                face: FaceSelection::Native(native.clone()),
-                origin,
-                normal,
-                u_axis: parse_vector3(feature.properties.get("UAxis")?)?,
-            })
+            Some(DatumPlaneReference::Face(FaceSelection::Native(
+                native.clone(),
+            )))
         });
     Some(FeatureDefinition::DatumOffsetPlane {
         reference,

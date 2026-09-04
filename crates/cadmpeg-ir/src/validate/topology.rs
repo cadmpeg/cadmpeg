@@ -4374,13 +4374,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 Some(_) => {}
                             }
                         }
-                        DatumPlaneReference::Face {
-                            face,
+                        DatumPlaneReference::Face(face) => face_selections.push(face),
+                        DatumPlaneReference::ResolvedPlane {
                             origin,
                             normal,
                             u_axis,
                         } => {
-                            face_selections.push(face);
                             if !finite_feature_point(*origin)
                                 || !valid_feature_direction(*normal)
                                 || !valid_feature_direction(*u_axis)
@@ -4543,13 +4542,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 Some(_) => {}
                             }
                         }
-                        DatumPlaneReference::Face {
-                            face,
+                        DatumPlaneReference::Face(face) => face_selections.push(face),
+                        DatumPlaneReference::ResolvedPlane {
                             origin,
                             normal,
                             u_axis,
                         } => {
-                            face_selections.push(face);
                             if !origin.x.is_finite()
                                 || !origin.y.is_finite()
                                 || !origin.z.is_finite()

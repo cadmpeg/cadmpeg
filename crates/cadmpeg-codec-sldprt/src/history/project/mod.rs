@@ -5,7 +5,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::records::{Feature, FeatureContent, FeatureHistory};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::features::{
-    ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration, FaceSelection,
+    ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration,
     FeatureDefinition, FeatureId, FeatureSourceContent, Length, ParameterId, PathRef, ProfileRef,
     SplitFaceTool,
 };
@@ -529,10 +529,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 };
                 let frame_reference_pending = matches!(
                     reference,
-                    None | Some(DatumPlaneReference::Face {
-                        face: FaceSelection::Unresolved,
-                        ..
-                    })
+                    None | Some(DatumPlaneReference::ResolvedPlane { .. })
                 );
                 if !frame_reference_pending {
                     return None;
@@ -634,8 +631,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             continue;
         };
         *reference = (|| {
-            Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
+            Some(DatumPlaneReference::ResolvedPlane {
                 origin: parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
                 normal: parse_vector3(feature.source_properties.get("ReferenceFaceNormal")?)?,
                 u_axis: parse_vector3(feature.source_properties.get("ReferenceFaceUAxis")?)?,

@@ -129,7 +129,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
 }
 
 #[test]
-fn legacy_face_alias_support_preserves_native_identity() {
+fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
     let surface = Surface {
         id: SurfaceId("plane".into()),
         geometry: SurfaceGeometry::Plane {
@@ -149,7 +149,6 @@ fn legacy_face_alias_support_preserves_native_identity() {
         color: None,
         tolerance: None,
     };
-    let native = "sldprt:feature-input:legacy-face-alias#lane:40:200";
     let mut features = vec![cadmpeg_ir::features::Feature {
         id: FeatureId("feature".into()),
         ordinal: 0,
@@ -162,8 +161,7 @@ fn legacy_face_alias_support_preserves_native_identity() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Native(native.into()),
+            reference: Some(DatumPlaneReference::ResolvedPlane {
                 origin: Point3::new(0.0, 0.0, 5.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
@@ -180,19 +178,13 @@ fn legacy_face_alias_support_preserves_native_identity() {
     );
 
     let FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face { face, .. }),
+        reference: Some(DatumPlaneReference::Face(face)),
         ..
     } = &features[0].definition
     else {
         panic!("expected offset-plane face reference");
     };
-    assert_eq!(
-        face,
-        &FaceSelection::Resolved {
-            faces: vec![FaceId("face".into())],
-            native: native.into(),
-        }
-    );
+    assert_eq!(face, &FaceSelection::Faces(vec![FaceId("face".into())]));
 }
 
 #[test]
@@ -229,12 +221,9 @@ fn generic_native_offset_plane_support_stays_native() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Native(native.into()),
-                origin: Point3::new(0.0, 0.0, 5.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                u_axis: Vector3::new(1.0, 0.0, 0.0),
-            }),
+            reference: Some(DatumPlaneReference::Face(FaceSelection::Native(
+                native.into(),
+            ))),
             distance: Length(4.0),
         },
         native_ref: None,
@@ -247,7 +236,7 @@ fn generic_native_offset_plane_support_stays_native() {
     );
 
     let FeatureDefinition::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face { face, .. }),
+        reference: Some(DatumPlaneReference::Face(face)),
         ..
     } = &features[0].definition
     else {

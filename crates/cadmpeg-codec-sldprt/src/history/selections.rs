@@ -38,22 +38,10 @@ pub(crate) struct TopologySelectionInputs<'a> {
 
 const SURFACE_COMPONENT_SELECTION_PREFIX: &str = "sldprt:feature-input:surface-component-ids";
 
-/// Return the native expression retained by a face selection, when present.
-pub(crate) fn face_selection_native(selection: &FaceSelection) -> Option<&str> {
-    match selection {
-        FaceSelection::Resolved { native, .. }
-        | FaceSelection::Historical { native, .. }
-        | FaceSelection::HistoricalPartial { native, .. }
-        | FaceSelection::Generated { native, .. }
-        | FaceSelection::Native(native) => Some(native),
-        FaceSelection::Unresolved | FaceSelection::Faces(_) => None,
-    }
-}
-
-/// Resolve the support origin represented by a face-backed offset reference.
-/// Explicit face frames and legacy face aliases store the support origin. A
-/// surface-component selection stores the resulting plane origin, so its
-/// support is one signed `D1` displacement along the stored normal.
+/// Resolve the support origin represented by a frame-backed offset reference.
+/// An explicit reference-face origin takes precedence. A surface-component
+/// selection stores the resulting plane origin, so its support is one signed
+/// `D1` displacement along the stored normal.
 pub(crate) fn offset_plane_support_origin(
     source_properties: &BTreeMap<String, String>,
     native: Option<&str>,
@@ -208,71 +196,68 @@ pub fn bind_topology_selections(
         }
         match &mut feature.definition {
             FeatureDefinition::DatumOffsetPlane {
-                reference:
-                    Some(DatumPlaneReference::Face {
-                        face: reference,
-                        origin,
-                        normal,
-                        ..
-                    }),
+                reference,
                 distance,
-            } => {
-                let native = face_selection_native(reference).or_else(|| {
-                    feature
+            } => match reference {
+                Some(DatumPlaneReference::Face(reference)) => resolve_face(reference),
+                Some(DatumPlaneReference::ResolvedPlane { origin, normal, .. }) => {
+                    let origin = *origin;
+                    let normal = *normal;
+                    let native = feature
                         .source_properties
                         .get("ReferenceFaceNative")
-                        .map(String::as_str)
-                });
-                let support_origin = offset_plane_support_origin(
-                    &feature.source_properties,
-                    native,
-                    *origin,
-                    *normal,
-                    *distance,
-                );
-                *origin = support_origin;
-                resolve_offset_plane_face_selection(
-                    reference,
-                    support_origin,
-                    *normal,
-                    &face_selection_context,
-                    faces,
-                    &surfaces_by_id,
-                );
-            }
-            FeatureDefinition::DatumOffsetPlane { reference, .. } if reference.is_none() => {
-                let Some(origin) = feature
-                    .source_properties
-                    .get("Origin")
-                    .and_then(|value| parse_point3_mm(value))
-                else {
-                    continue;
-                };
-                let Some(normal) = feature
-                    .source_properties
-                    .get("Normal")
-                    .and_then(|value| parse_vector3(value))
-                else {
-                    continue;
-                };
-                let Some(u_axis) = feature
-                    .source_properties
-                    .get("UAxis")
-                    .and_then(|value| parse_vector3(value))
-                else {
-                    continue;
-                };
-                let mut face = FaceSelection::Unresolved;
-                resolve_planar_face_selection(&mut face, origin, normal, faces, &surfaces_by_id);
-                if !matches!(face, FaceSelection::Unresolved) {
-                    *reference = Some(DatumPlaneReference::Face {
-                        face,
+                        .map(String::as_str);
+                    let support_origin = offset_plane_support_origin(
+                        &feature.source_properties,
+                        native,
                         origin,
                         normal,
-                        u_axis,
-                    });
+                        *distance,
+                    );
+                    let mut face = native
+                        .map(|native| FaceSelection::Native(native.to_owned()))
+                        .unwrap_or(FaceSelection::Unresolved);
+                    resolve_offset_plane_face_selection(
+                        &mut face,
+                        support_origin,
+                        normal,
+                        &face_selection_context,
+                        faces,
+                        &surfaces_by_id,
+                    );
+                    if !matches!(face, FaceSelection::Unresolved) {
+                        *reference = Some(DatumPlaneReference::Face(face));
+                    }
                 }
-            }
+                None => {
+                    let Some(origin) = feature
+                        .source_properties
+                        .get("Origin")
+                        .and_then(|value| parse_point3_mm(value))
+                    else {
+                        continue;
+                    };
+                    let Some(normal) = feature
+                        .source_properties
+                        .get("Normal")
+                        .and_then(|value| parse_vector3(value))
+                    else {
+                        continue;
+                    };
+                    let mut face = FaceSelection::Unresolved;
+                    resolve_planar_face_selection(
+                        &mut face,
+                        origin,
+                        normal,
+                        faces,
+                        &surfaces_by_id,
+                    );
+                    if !matches!(face, FaceSelection::Unresolved) {
+                        *reference = Some(DatumPlaneReference::Face(face));
+                    }
+                }
+                Some(DatumPlaneReference::Feature(_)) => {}
+            },
             FeatureDefinition::Extrude {
                 profile, extent, ..
             } => {

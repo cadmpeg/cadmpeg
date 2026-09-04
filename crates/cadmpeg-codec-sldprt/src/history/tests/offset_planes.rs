@@ -97,8 +97,7 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         "offset".into(),
         0,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
+            reference: Some(DatumPlaneReference::ResolvedPlane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(1.0, 0.0, 0.0),
                 u_axis: Vector3::new(0.0, 0.0, -1.0),
@@ -183,8 +182,7 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         "offset".into(),
         2,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
+            reference: Some(DatumPlaneReference::ResolvedPlane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(1.0, 0.0, 0.0),
                 u_axis: Vector3::new(0.0, 0.0, -1.0),
@@ -317,10 +315,7 @@ fn unresolved_face_frame_does_not_resolve_ambiguous_parallel_planes() {
     assert!(matches!(
         &projected[2].definition,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
-                ..
-            }),
+            reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             distance: Length(6.0),
         }
     ));
@@ -486,20 +481,13 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
 }
 
 #[test]
-fn native_face_offset_reference_keeps_support_frame() {
-    for (native, source_origin, distance_text, expected_origin, expected_distance) in [
-        (
-            "native-face",
-            "0mm,0mm,0mm",
-            "6mm",
-            Point3::new(0.0, 0.0, 0.0),
-            Length(6.0),
-        ),
+fn native_face_offset_reference_uses_identity_without_a_duplicate_frame() {
+    for (native, source_origin, distance_text, expected_distance) in [
+        ("native-face", "0mm,0mm,0mm", "6mm", Length(6.0)),
         (
             "sldprt:feature-input:surface-component-ids:630506365",
             "0mm,0mm,210mm",
             "40mm",
-            Point3::new(0.0, 0.0, 250.0),
             Length(40.0),
         ),
     ] {
@@ -517,14 +505,13 @@ fn native_face_offset_reference_keeps_support_frame() {
 
         let definition = project_offset_plane(&offset, &HashMap::new()).unwrap();
         let FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face { face, origin, .. }),
+            reference: Some(DatumPlaneReference::Face(face)),
             distance,
         } = definition
         else {
             panic!("native face offset did not project as a face reference");
         };
         assert_eq!(face, FaceSelection::Native(native.into()));
-        assert_eq!(origin, expected_origin);
         assert_eq!(distance, expected_distance);
     }
 }
@@ -703,10 +690,7 @@ fn incompatible_later_principal_falls_back_to_the_serialized_face_frame() {
     assert!(matches!(
         &projected[0].definition,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Face {
-                face: FaceSelection::Unresolved,
-                ..
-            }),
+            reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
             distance: Length(0.0),
         }
     ));
