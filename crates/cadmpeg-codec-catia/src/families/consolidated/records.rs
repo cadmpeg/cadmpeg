@@ -50,8 +50,6 @@ pub struct ConsolidatedEdgeBlock {
     pub pcurves: [ConsolidatedPcurve; 2],
     /// Shared parameter range and tolerance packet.
     pub parameters: B2EdgeParameters,
-    /// Both pcurves and the edge packet store the same native range and site count.
-    pub co_parametric: bool,
 }
 
 /// Complete consolidated edge run serialized as two side pcurves, their shared
@@ -60,14 +58,8 @@ pub struct ConsolidatedEdgeBlock {
 pub struct ConsolidatedTopologyEdgeRun {
     /// Co-parametric side definitions and shared range packet.
     pub edge: ConsolidatedEdgeBlock,
-    /// The two serialized edge uses, in side order.
-    #[cfg(test)]
-    pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-    /// Whether the two counted use-reference vectors form the allocation chain
-    /// ending at the node's curve reference.
-    pub identity_chain_consistent: bool,
 }
 
 /// Complete analytic-circle edge run serialized as a class-`0x18` descriptor,
@@ -83,8 +75,6 @@ pub struct ConsolidatedAnalyticCircleEdgeRun {
     pub definition: ConsolidatedEdgeDefinition,
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-    /// Whether the use references and endpoint selectors close one allocation chain.
-    pub identity_chain_consistent: bool,
 }
 
 /// Exact class-`0x18` frame attached to an analytic circle carrier.
@@ -109,8 +99,6 @@ pub struct ConsolidatedClass25EdgeRun {
     pub descriptor: B2Class25Descriptor,
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-    /// Whether the use references and endpoint selectors close one allocation chain.
-    pub identity_chain_consistent: bool,
 }
 
 /// Two adjacent oriented uses and their terminal native edge node.
@@ -122,8 +110,6 @@ pub struct ConsolidatedEdgeUseRun {
     pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-    /// Whether the use references and endpoint selectors close one allocation chain.
-    pub identity_chain_consistent: bool,
 }
 
 /// Compact edge node selected by its zero-based ordinal in one face-owner allocation.
@@ -325,8 +311,6 @@ pub struct ConsolidatedNativeEdgeGraph {
 #[derive(Debug, Clone)]
 #[cfg(test)]
 pub struct ConsolidatedNativeGraphEdge {
-    /// Complete serialized edge run.
-    pub run: ConsolidatedTopologyEdgeRun,
     /// Compact endpoint indices into [`ConsolidatedNativeEdgeGraph::vertex_identities`].
     pub vertices: [usize; 2],
 }
@@ -448,10 +432,9 @@ pub(crate) fn consolidated_edge_blocks_from_records(
                 let co_parametric = first.sites.len() == second.sites.len()
                     && first.range == second.range
                     && first.range == parameters.range;
-                Some(ConsolidatedEdgeBlock {
+                co_parametric.then(|| ConsolidatedEdgeBlock {
                     pcurves: [first.clone(), second.clone()],
                     parameters: parameters.clone(),
-                    co_parametric,
                 })
             } else {
                 None
@@ -505,10 +488,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
                 let use_run = use_runs.get(&use0.range.start)?;
                 Some(ConsolidatedTopologyEdgeRun {
                     edge: edges.get(&pcurve0.range.start)?.clone(),
-                    #[cfg(test)]
-                    uses: use_run.uses.clone(),
                     node: use_run.node,
-                    identity_chain_consistent: use_run.identity_chain_consistent,
                 })
             } else {
                 None
@@ -582,7 +562,6 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
                 #[cfg(test)]
                 definition,
                 node: use_run.node,
-                identity_chain_consistent: use_run.identity_chain_consistent,
             })
         })
         .collect()
@@ -645,7 +624,6 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             Some(ConsolidatedClass25EdgeRun {
                 descriptor: descriptors.get(&descriptor.range.start)?.clone(),
                 node: use_run.node,
-                identity_chain_consistent: use_run.identity_chain_consistent,
             })
         })
         .collect()
@@ -727,11 +705,10 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         &data[record.payload.clone()],
                     ),
                 });
-            Some(ConsolidatedEdgeUseRun {
+            identity_chain_consistent.then(|| ConsolidatedEdgeUseRun {
                 definition,
                 uses,
                 node,
-                identity_chain_consistent,
             })
         })
         .collect::<Vec<_>>();
@@ -773,7 +750,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             }
             _ => false,
         };
-        Some(ConsolidatedEdgeUseRun {
+        identity_chain_consistent.then(|| ConsolidatedEdgeUseRun {
             definition: Some(ConsolidatedEdgeDefinition {
                 pos: definition_record.range.start,
                 width: definition_record.width,
@@ -785,7 +762,6 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             }),
             uses,
             node,
-            identity_chain_consistent,
         })
     });
     preceding.into_iter().chain(succeeding).collect()
@@ -1079,9 +1055,6 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
     let mut vertex_identities = Vec::new();
     let mut edges = Vec::with_capacity(runs.len());
     for run in runs {
-        if !run.identity_chain_consistent {
-            return None;
-        }
         let vertices = [run.node.start_vertex_ref, run.node.end_vertex_ref].map(|identity| {
             *vertex_indices.entry(identity).or_insert_with(|| {
                 let index = vertex_identities.len();
@@ -1089,7 +1062,7 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
                 index
             })
         });
-        edges.push(ConsolidatedNativeGraphEdge { run, vertices });
+        edges.push(ConsolidatedNativeGraphEdge { vertices });
     }
     let mut vertex_edges = vec![Vec::new(); vertex_identities.len()];
     for (edge, value) in edges.iter().enumerate() {
