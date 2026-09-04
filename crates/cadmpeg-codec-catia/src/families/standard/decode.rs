@@ -490,8 +490,6 @@ mod consolidated_revolution_binding_tests {
                 id: coedge.clone(),
                 owner_loop: loop_id,
                 edge: EdgeId::mint("seam-edge".to_string()).expect("identity grammar"),
-                next: coedge.clone(),
-                previous: coedge.clone(),
                 radial_next: CoedgeId::mint(format!("coedge#{}", 1 - side))
                     .expect("identity grammar"),
                 sense: if side == 0 {
@@ -5169,9 +5167,6 @@ fn emit_standard_topology(
                     owner_loop: loop_id.clone(),
                     edge: EdgeId::mint(format!("catia:standard:edge#{}", edge_use.edge_row))
                         .expect("identity grammar"),
-                    next: coedge_ids[(coedge_index + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(coedge_index + coedge_ids.len() - 1) % coedge_ids.len()]
-                        .clone(),
                     radial_next: coedge_ids[coedge_index].clone(),
                     sense: if edge_use.reversed ^ edge_reversed[edge_use.edge_row] {
                         Sense::Reversed

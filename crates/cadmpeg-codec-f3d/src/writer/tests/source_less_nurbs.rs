@@ -470,24 +470,13 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
                 edge: edge_id,
-                next: coedge_id.clone(),
-                previous: coedge_id.clone(),
                 radial_next: coedge_id,
                 sense: cadmpeg_ir::topology::Sense::Reversed,
                 pcurves: Vec::new(),
                 use_curve: None,
             });
     }
-    for index in 0..3 {
-        let coedge = source_less
-            .model
-            .coedges
-            .iter_mut()
-            .find(|coedge| coedge.id == coedge_ids[index])
-            .unwrap();
-        coedge.next = coedge_ids[(index + 1) % 3].clone();
-        coedge.previous = coedge_ids[(index + 2) % 3].clone();
-    }
+
     let face_id = source_less.model.faces[0].id.clone();
     source_less.model.loops.push(cadmpeg_ir::topology::Loop {
         id: loop_id.clone(),

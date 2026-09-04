@@ -2205,9 +2205,6 @@ pub(super) fn project(
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id,
-                    next: coedge_ids[(segment_index + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(segment_index + coedge_ids.len() - 1) % coedge_ids.len()]
-                        .clone(),
                     radial_next: coedge_id,
                     sense: item.segment.sense,
                     pcurves: pcurve_uses,

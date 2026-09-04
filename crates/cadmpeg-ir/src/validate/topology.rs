@@ -336,12 +336,6 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         if ids.edges(&ce.edge.0).is_none() {
             ref_error(findings, &ce.id.0, "edge", &ce.edge.0);
         }
-        if ids.coedges(&ce.next.0).is_none() {
-            ref_error(findings, &ce.id.0, "coedge(next)", &ce.next.0);
-        }
-        if ids.coedges(&ce.previous.0).is_none() {
-            ref_error(findings, &ce.id.0, "coedge(previous)", &ce.previous.0);
-        }
         if ids.coedges(&ce.radial_next.0).is_none() {
             ref_error(findings, &ce.id.0, "coedge(radial_next)", &ce.radial_next.0);
         }
@@ -6248,13 +6242,6 @@ fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
 }
 
 pub(super) fn check_loops(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
-    let by_id: HashMap<&str, &Coedge> = ir
-        .model
-        .coedges
-        .iter()
-        .map(|c| (c.id.0.as_str(), c))
-        .collect();
-
     for face in &ir.model.faces {
         let outer_count = face
             .loops
@@ -6268,47 +6255,6 @@ pub(super) fn check_loops(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<F
                 severity: Severity::Error,
                 message: "face has more than one explicit outer loop".into(),
                 entity: Some(face.id.0.clone()),
-            });
-        }
-    }
-
-    for lp in &ir.model.loops {
-        let crate::topology::LoopBoundary::Ring { coedges, .. } = &lp.boundary else {
-            continue;
-        };
-        // Walk the `next` chain from the first listed coedge and confirm it is a
-        // simple cycle whose members are exactly the loop's coedge set.
-        let expected: HashSet<&str> = coedges.iter().map(|c| c.0.as_str()).collect();
-        let Some(start) = coedges.first().map(|coedge| coedge.0.as_str()) else {
-            continue;
-        };
-        let mut visited: HashSet<&str> = HashSet::new();
-        let mut cur = start;
-        let mut broke = false;
-        for _ in 0..coedges.len() {
-            if !visited.insert(cur) {
-                break; // returned early to an already-seen node
-            }
-            match by_id.get(cur) {
-                Some(ce) => cur = ce.next.0.as_str(),
-                None => {
-                    broke = true; // dangling next; referential check already flags it
-                    break;
-                }
-            }
-        }
-        if broke {
-            continue;
-        }
-        if visited != expected || cur != start {
-            findings.push(Finding {
-                check: Check::LoopClosure,
-                severity: Severity::Error,
-                message: format!(
-                    "coedge `next` ring does not close over the loop's {} coedges",
-                    coedges.len()
-                ),
-                entity: Some(lp.id.0.clone()),
             });
         }
     }

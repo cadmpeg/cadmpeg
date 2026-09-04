@@ -190,8 +190,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 id: cap_coedge.clone(),
                 owner_loop: cap_loop.clone(),
                 edge: edge_id.clone(),
-                next: cap_coedge.clone(),
-                previous: cap_coedge.clone(),
                 radial_next: side_coedge.clone(),
                 sense: if side_index == 0 {
                     Sense::Reversed
@@ -263,8 +261,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 id: coedge.clone(),
                 owner_loop: loop_id.clone(),
                 edge,
-                next: coedge.clone(),
-                previous: coedge.clone(),
                 radial_next: cap_coedges[side_index].clone(),
                 sense: if side_index == 0 {
                     Sense::Forward

@@ -3856,8 +3856,6 @@ pub(crate) fn emit_coedges(
                 id: CoedgeId::mint(id(format, i)).expect("identity grammar"),
                 owner_loop: LoopId::mint(id(format, owner)).expect("identity grammar"),
                 edge: EdgeId::mint(id(format, edge)).expect("identity grammar"),
-                next: CoedgeId::mint(id(format, next)).expect("identity grammar"),
-                previous: CoedgeId::mint(id(format, prev)).expect("identity grammar"),
                 radial_next: partner.map_or_else(
                     || CoedgeId::mint(id(format, i)).expect("identity grammar"),
                     |p| CoedgeId::mint(id(format, p)).expect("identity grammar"),

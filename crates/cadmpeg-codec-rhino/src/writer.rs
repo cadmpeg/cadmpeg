@@ -1052,12 +1052,7 @@ fn planar_sheet_brep_payload(
         let end = ordered_coedges.len();
         for index in start..end {
             let current = ordered_coedges[index];
-            let offset = index - start;
-            let count = end - start;
-            if current.next != ordered_coedges[start + (offset + 1) % count].id
-                || current.previous != ordered_coedges[start + (offset + count - 1) % count].id
-                || current.radial_next != current.id
-            {
+            if current.radial_next != current.id {
                 return Err(CodecError::malformed(format_args!(
                     "coedge {} ring is inconsistent",
                     current.id.as_str()
@@ -1631,12 +1626,7 @@ fn multi_face_brep_payload(
                 .iter()
                 .find(|coedge| coedge.id == *id)
                 .ok_or_else(|| CodecError::malformed(format_args!("coedge {} is missing", id.0)))?;
-            if !owned_coedges.insert(id.0.clone())
-                || coedge.owner_loop != loop_.id
-                || coedge.next != loop_.coedges()[(offset + 1) % loop_.coedges().len()]
-                || coedge.previous
-                    != loop_.coedges()[(offset + loop_.coedges().len() - 1) % loop_.coedges().len()]
-            {
+            if !owned_coedges.insert(id.0.clone()) || coedge.owner_loop != loop_.id {
                 return Err(CodecError::NotImplemented(format!(
                     "coedge {} ownership or ring is not writable",
                     coedge.id.as_str()
@@ -1654,10 +1644,11 @@ fn multi_face_brep_payload(
             } else {
                 &edge.start
             };
+            let next_id = loop_.coedges()[(offset + 1) % loop_.coedges().len()].clone();
             let next = model
                 .coedges
                 .iter()
-                .find(|candidate| candidate.id == coedge.next)
+                .find(|candidate| candidate.id == next_id)
                 .expect("validated next coedge");
             let next_edge = model
                 .edges

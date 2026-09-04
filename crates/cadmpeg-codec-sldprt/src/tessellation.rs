@@ -1231,7 +1231,7 @@ fn closed_planar_circle(
 ) -> Option<CircularHole> {
     let coedge = *coedges.get(&loop_.coedges()[0])?;
     let edge = *edges.get(&coedge.edge)?;
-    if coedge.owner_loop != loop_.id || coedge.next != coedge.id || coedge.previous != coedge.id {
+    if coedge.owner_loop != loop_.id || loop_.coedges().len() != 1 {
         return None;
     }
     let CurveGeometry::Circle {
@@ -1514,14 +1514,10 @@ fn planar_trim(
         let mut polygon = Vec::with_capacity(loop_.coedges().len());
         let mut first_start = None;
         let mut previous_end = None;
-        for (index, coedge_id) in loop_.coedges().iter().enumerate() {
+        for coedge_id in loop_.coedges() {
             let coedge = *coedges.get(coedge_id)?;
             let edge = *edges.get(&coedge.edge)?;
-            if coedge.owner_loop != loop_.id
-                || coedge.next != loop_.coedges()[(index + 1) % loop_.coedges().len()]
-                || coedge.previous
-                    != loop_.coedges()[(index + loop_.coedges().len() - 1) % loop_.coedges().len()]
-            {
+            if coedge.owner_loop != loop_.id {
                 return None;
             }
             let (start, end) = match coedge.sense {
@@ -1704,13 +1700,9 @@ fn cylindrical_trim(
     }
     let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
     let mut axial_bounds = None::<(f64, f64)>;
-    for (index, coedge_id) in loop_.coedges().iter().enumerate() {
+    for coedge_id in loop_.coedges() {
         let coedge = *coedges.get(coedge_id)?;
-        if coedge.owner_loop != loop_.id
-            || coedge.next != loop_.coedges()[(index + 1) % loop_.coedges().len()]
-            || coedge.previous
-                != loop_.coedges()[(index + loop_.coedges().len() - 1) % loop_.coedges().len()]
-        {
+        if coedge.owner_loop != loop_.id {
             return None;
         }
         let edge = *edges.get(&coedge.edge)?;
@@ -1824,13 +1816,9 @@ fn conical_trim(
     let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
     let mut axial_bounds = None::<(f64, f64)>;
     let mut angles = Vec::new();
-    for (index, coedge_id) in loop_.coedges().iter().enumerate() {
+    for coedge_id in loop_.coedges() {
         let coedge = *coedges.get(coedge_id)?;
-        if coedge.owner_loop != loop_.id
-            || coedge.next != loop_.coedges()[(index + 1) % loop_.coedges().len()]
-            || coedge.previous
-                != loop_.coedges()[(index + loop_.coedges().len() - 1) % loop_.coedges().len()]
-        {
+        if coedge.owner_loop != loop_.id {
             return None;
         }
         let edge = *edges.get(&coedge.edge)?;

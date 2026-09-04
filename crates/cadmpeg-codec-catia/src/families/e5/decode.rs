@@ -1852,7 +1852,7 @@ fn emit_e5_faces_loops_coedges(
                     vertex_uses,
                 },
             });
-            for (position, member) in members.iter().enumerate() {
+            for member in members {
                 let index = member.serialized_index;
                 let edge_ref = loop_.edge_uses[index];
                 let pcurve_ref = loop_.pcurves[index];
@@ -1886,9 +1886,6 @@ fn emit_e5_faces_loops_coedges(
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_ids[&edge_ref].clone(),
-                    next: coedge_ids[(position + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(position + coedge_ids.len() - 1) % coedge_ids.len()]
-                        .clone(),
                     radial_next: id,
                     sense: if member.reversed {
                         Sense::Reversed

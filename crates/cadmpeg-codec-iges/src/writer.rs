@@ -785,7 +785,7 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                             loop_.id
                         )));
                     }
-                    for (index, coedge_id) in loop_.coedges().iter().enumerate() {
+                    for coedge_id in loop_.coedges() {
                         let coedge = ir
                             .model
                             .coedges
@@ -797,14 +797,7 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                                     loop_.id, coedge_id
                                 ))
                             })?;
-                        let next = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
-                        let previous = &loop_.coedges()
-                            [(index + loop_.coedges().len() - 1) % loop_.coedges().len()];
-                        if coedge.owner_loop != loop_.id
-                            || coedge.next != *next
-                            || coedge.previous != *previous
-                            || coedge.use_curve.is_some()
-                        {
+                        if coedge.owner_loop != loop_.id || coedge.use_curve.is_some() {
                             return Err(CodecError::malformed(format_args!(
                                 "IGES coedge {} is not a valid loop use",
                                 coedge.id
@@ -2332,7 +2325,7 @@ fn validate_trimmed_sheet_topology(
                 }
                 bounded_representation = Some(loop_has_pcurves);
             }
-            for (index, coedge_id) in loop_.coedges().iter().enumerate() {
+            for coedge_id in loop_.coedges() {
                 let coedge = ir
                     .model
                     .coedges
@@ -2350,12 +2343,7 @@ fn validate_trimmed_sheet_topology(
                         coedge.id
                     )));
                 }
-                let next = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
-                let previous =
-                    &loop_.coedges()[(index + loop_.coedges().len() - 1) % loop_.coedges().len()];
                 if coedge.owner_loop != loop_.id
-                    || coedge.next != *next
-                    || coedge.previous != *previous
                     || coedge.radial_next != coedge.id
                     || coedge.use_curve.is_some()
                 {

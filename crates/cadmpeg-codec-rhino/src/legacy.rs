@@ -1668,7 +1668,6 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             let loop_id: cadmpeg_ir::ids::LoopId =
                 format!("rhino:object:loop#{suffix}.face-{face_index}-{loop_index}").into();
             let mut coedge_ids = Vec::with_capacity(loop_record.trims.len());
-            let coedge_start = ir.model.coedges.len();
             for (trim_index, trim) in loop_record.trims.into_iter().enumerate() {
                 let root = roots[global_trim];
                 let pcurve_id: cadmpeg_ir::ids::PcurveId = format!(
@@ -1711,8 +1710,6 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: group_edges[&root].clone(),
-                    next: coedge_id.clone(),
-                    previous: coedge_id.clone(),
                     radial_next: coedge_id,
                     sense: if trim.reversed {
                         Sense::Reversed
@@ -1727,12 +1724,6 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                     use_curve: None,
                 });
                 global_trim += 1;
-            }
-            for index in 0..coedge_ids.len() {
-                let coedge = &mut ir.model.coedges[coedge_start + index];
-                coedge.previous =
-                    coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone();
-                coedge.next = coedge_ids[(index + 1) % coedge_ids.len()].clone();
             }
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),

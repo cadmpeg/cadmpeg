@@ -1724,8 +1724,6 @@ fn plane_face_draft(
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
-            next: coedge_id.clone(),
-            previous: coedge_id.clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
             pcurves: Vec::new(),

@@ -1222,8 +1222,6 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         id: CoedgeId::mint(id(6)).expect("identity grammar"),
         owner_loop: LoopId::mint(id(5)).expect("identity grammar"),
         edge: EdgeId::mint(id(7)).expect("identity grammar"),
-        next: CoedgeId::mint(id(6)).expect("identity grammar"),
-        previous: CoedgeId::mint(id(6)).expect("identity grammar"),
         radial_next: CoedgeId::mint(id(6)).expect("identity grammar"),
         sense: Sense::Forward,
         pcurves: Vec::new(),

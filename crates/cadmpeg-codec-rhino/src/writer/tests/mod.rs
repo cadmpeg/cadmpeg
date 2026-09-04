@@ -193,8 +193,6 @@ pub(crate) fn polygon_sheet(points: &[Point3]) -> CadIr {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_ids[index].clone(),
-            next: coedge_ids[(index + 1) % points.len()].clone(),
-            previous: coedge_ids[(index + points.len() - 1) % points.len()].clone(),
             radial_next: coedge_ids[index].clone(),
             sense: Sense::Forward,
             pcurves: Vec::new(),
@@ -294,8 +292,6 @@ pub(crate) fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_ids[index].clone(),
-            next: coedge_ids[next_index].clone(),
-            previous: coedge_ids[(index + points.len() - 1) % points.len()].clone(),
             radial_next: coedge_ids[index].clone(),
             sense: Sense::Forward,
             pcurves: Vec::new(),
@@ -473,8 +469,6 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
         (1, Sense::Reversed),
     ];
     for (index, (edge, sense)) in uses.into_iter().enumerate() {
-        let loop_start = if index < 4 { 0 } else { 4 };
-        let offset = index - loop_start;
         let radial_next = if index == 1 {
             7
         } else if index == 7 {
@@ -486,8 +480,6 @@ pub(crate) fn adjacent_quad_sheet() -> CadIr {
             id: coedge_ids[index].clone(),
             owner_loop: loop_ids[usize::from(index >= 4)].clone(),
             edge: edge_ids[edge].clone(),
-            next: coedge_ids[loop_start + (offset + 1) % 4].clone(),
-            previous: coedge_ids[loop_start + (offset + 3) % 4].clone(),
             radial_next: coedge_ids[radial_next].clone(),
             sense,
             pcurves: Vec::new(),
@@ -691,8 +683,6 @@ pub(crate) fn planar_tetrahedron() -> CadIr {
                 id: coedge_ids[index].clone(),
                 owner_loop: loop_ids[face].clone(),
                 edge: edge_ids[face_uses[face][offset].0].clone(),
-                next: coedge_ids[start + (offset + 1) % 3].clone(),
-                previous: coedge_ids[start + (offset + 2) % 3].clone(),
                 radial_next: coedge_ids[index].clone(),
                 sense: face_uses[face][offset].1,
                 pcurves: Vec::new(),

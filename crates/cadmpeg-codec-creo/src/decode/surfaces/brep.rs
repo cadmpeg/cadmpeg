@@ -2001,9 +2001,6 @@ pub(in super::super) fn transfer_native_brep(
                         owner_loop: loop_id.clone(),
                         edge: EdgeId::mint(format!("creo:visibgeom:edge#{}", half_edge.curve_id))
                             .expect("identity grammar"),
-                        next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
-                        previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()]
-                            .clone(),
                         radial_next,
                         sense: if half_edge.side == 0 {
                             Sense::Forward

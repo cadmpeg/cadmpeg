@@ -261,8 +261,6 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id,
-                    next: coedge_id.clone(),
-                    previous: coedge_id,
                     radial_next: CoedgeId::mint(format!(
                         "{prefix}:coedge:{radial_index}:{radial_boundary}"
                     ))

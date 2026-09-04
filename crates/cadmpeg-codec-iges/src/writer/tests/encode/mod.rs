@@ -947,8 +947,6 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_ids[index].clone(),
-            next: coedge_ids[end].clone(),
-            previous: coedge_ids[(index + 3) % 4].clone(),
             radial_next: coedge_ids[index].clone(),
             sense: Sense::Forward,
             pcurves: pcurve_uses,
@@ -1005,7 +1003,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     if let Some((coedges, _)) = ir.model.loops[0].ring_mut() {
         *coedges = reversed_order.to_vec();
     }
-    for (index, coedge_id) in reversed_order.iter().enumerate() {
+    for coedge_id in &reversed_order {
         let coedge = ir
             .model
             .coedges
@@ -1013,9 +1011,6 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             .find(|coedge| coedge.id == *coedge_id)
             .unwrap();
         coedge.sense = Sense::Reversed;
-        coedge.next = reversed_order[(index + 1) % reversed_order.len()].clone();
-        coedge.previous =
-            reversed_order[(index + reversed_order.len() - 1) % reversed_order.len()].clone();
     }
 
     let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();

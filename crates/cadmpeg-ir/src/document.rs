@@ -426,10 +426,13 @@ macro_rules! declare_model {
             where
                 S: Serializer,
             {
-                ModelWriteWire {
+                crate::topology::install_coedge_ring_neighbors(&self.loops, &self.coedges);
+                let result = ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
-                .serialize(serializer)
+                .serialize(serializer);
+                crate::topology::clear_coedge_ring_neighbors();
+                result
             }
         }
 
@@ -590,6 +593,7 @@ macro_rules! declare_model_view {
         impl Model {
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedModel<'_> {
+                crate::topology::install_coedge_ring_neighbors(&self.loops, &self.coedges);
                 SortedModel {
                     $($field: sorted_model_value!(self, $field),)*
                 }

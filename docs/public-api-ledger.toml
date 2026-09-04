@@ -4145,3 +4145,10 @@ crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::transform::Transform2::rows"
 reason = "a 2d affine transform stores a private matrix built by affine/from_rows so a non-affine bottom row cannot be represented"
+
+[[change]]
+commit = "85d17beadd67254560f2eaf6991c44d405cf2300"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::topology::Coedge::{next,previous}"
+reason = "loop ring order is Loop.coedges so a contradictory next or previous pointer cannot be stored"

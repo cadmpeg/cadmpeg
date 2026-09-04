@@ -37,24 +37,6 @@ fn coedge_use_curve_requires_a_resolved_carrier() {
 }
 
 #[test]
-fn broken_loop_ring_is_flagged() {
-    let mut ir = unit_cube();
-    // Redirect a coedge's `next` to a valid coedge in a different loop, so the
-    // referenced id resolves but the ring no longer closes.
-    let foreign = ir.model.coedges[20].id.clone();
-    ir.model.coedges[0].next = foreign;
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(
-        report
-            .findings
-            .iter()
-            .any(|f| f.check == Check::LoopClosure),
-        "expected a loop-closure finding, got: {:?}",
-        report.findings
-    );
-}
-
-#[test]
 fn mismatched_partner_edge_is_flagged() {
     let mut ir = unit_cube();
     // Force a coedge's partner to reference a coedge on a different edge by

@@ -1033,10 +1033,6 @@ pub(super) fn project(
                             id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
                             edge: edge_id,
-                            next: coedge_ids[(coedge_position + 1) % coedge_ids.len()].clone(),
-                            previous: coedge_ids
-                                [(coedge_position + coedge_ids.len() - 1) % coedge_ids.len()]
-                            .clone(),
                             radial_next: coedge_id.clone(),
                             sense: *sense,
                             pcurves: projected,
