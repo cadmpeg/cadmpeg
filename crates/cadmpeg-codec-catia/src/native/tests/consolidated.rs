@@ -1032,23 +1032,39 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
         .find(|alias| alias.tag == 101)
         .expect("support-pcurve alias");
     assert_eq!(
-        support_surfaces[0].alias_row.as_deref(),
+        support_surfaces[0]
+            .alias
+            .as_ref()
+            .map(|binding| binding.row.as_str()),
         Some(surface_alias.id.as_str())
     );
-    assert_eq!(support_surfaces[0].canonical_surface_tag, Some(200));
     assert_eq!(
-        support_pcurves[0].alias_row.as_deref(),
+        support_surfaces[0]
+            .alias
+            .as_ref()
+            .and_then(|binding| binding.canonical_tag),
+        Some(200)
+    );
+    assert_eq!(
+        support_pcurves[0]
+            .alias
+            .as_ref()
+            .map(|binding| binding.row.as_str()),
         Some(pcurve_alias.id.as_str())
     );
-    assert_eq!(support_pcurves[0].canonical_surface_tag, Some(101));
+    assert_eq!(
+        support_pcurves[0]
+            .alias
+            .as_ref()
+            .and_then(|binding| binding.canonical_tag),
+        Some(101)
+    );
     assert_ne!(
         support_pcurves[1].encoding,
         crate::native::CatiaAllocationReferenceEncoding::WidthCoded
     );
-    assert_eq!(support_pcurves[1].alias_row, None);
-    assert_eq!(support_pcurves[1].canonical_surface_tag, None);
-    assert_eq!(carrier_surface.alias_row, None);
-    assert_eq!(carrier_surface.canonical_surface_tag, None);
+    assert_eq!(support_pcurves[1].alias, None);
+    assert_eq!(carrier_surface.alias, None);
 
     let mut legacy = native.clone();
     let Some(chart) = legacy.consolidated_owner_packets[0].owner_chart.as_mut() else {
@@ -1063,8 +1079,7 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
         panic!("supported-surface bridge")
     };
     for reference in support_surfaces.iter_mut().chain(support_pcurves) {
-        reference.alias_row = None;
-        reference.canonical_surface_tag = None;
+        reference.alias = None;
     }
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     legacy
@@ -1085,7 +1100,9 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     else {
         panic!("supported-surface bridge")
     };
-    support_surfaces[0].canonical_surface_tag = Some(100);
+    if let Some(alias) = &mut support_surfaces[0].alias {
+        alias.canonical_tag = Some(100);
+    }
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid
         .store(&mut namespace)
@@ -1117,8 +1134,7 @@ fn owner_chart_duplicate_alias_tags_remain_unresolved() {
     else {
         panic!("supported-surface bridge")
     };
-    assert_eq!(support_surfaces[0].alias_row, None);
-    assert_eq!(support_surfaces[0].canonical_surface_tag, None);
+    assert_eq!(support_surfaces[0].alias, None);
 }
 
 #[test]

@@ -294,20 +294,88 @@ pub enum CatiaOwnerChartCarrier {
     A32,
 }
 
+/// Outer alias row selected by a unique width-coded support tag.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerChartAliasBinding {
+    /// Exact outer alias row.
+    pub row: String,
+    /// Canonical persistent surface tag selected through the alias row.
+    pub canonical_tag: Option<u32>,
+}
+
 /// One allocation-local reference in an owner-chart bridge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaOwnerChartBridgeReferenceWire",
+    into = "CatiaOwnerChartBridgeReferenceWire"
+)]
 pub struct CatiaOwnerChartBridgeReference {
     /// Decoded allocation-local value.
     pub value: u32,
     /// Wire addressing form retained from the allocation-reference token.
     pub encoding: CatiaAllocationReferenceEncoding,
-    /// Exact outer alias row selected by a unique width-coded support tag.
+    /// Alias binding admitted only for width-coded addressing.
+    pub alias: Option<CatiaOwnerChartAliasBinding>,
+}
+
+impl CatiaOwnerChartBridgeReference {
+    pub fn from_parts(
+        value: u32,
+        encoding: CatiaAllocationReferenceEncoding,
+        alias: Option<CatiaOwnerChartAliasBinding>,
+    ) -> Result<Self, String> {
+        if alias.is_some() && encoding != CatiaAllocationReferenceEncoding::WidthCoded {
+            return Err("owner-chart alias binding requires width-coded addressing".to_owned());
+        }
+        Ok(Self {
+            value,
+            encoding,
+            alias,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaOwnerChartBridgeReferenceWire {
+    value: u32,
+    encoding: CatiaAllocationReferenceEncoding,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub alias_row: Option<String>,
-    /// Canonical persistent surface tag selected through the alias row.
+    alias_row: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub canonical_surface_tag: Option<u32>,
+    canonical_surface_tag: Option<u32>,
+}
+
+impl From<CatiaOwnerChartBridgeReference> for CatiaOwnerChartBridgeReferenceWire {
+    fn from(value: CatiaOwnerChartBridgeReference) -> Self {
+        let (alias_row, canonical_surface_tag) = match value.alias {
+            Some(binding) => (Some(binding.row), binding.canonical_tag),
+            None => (None, None),
+        };
+        Self {
+            value: value.value,
+            encoding: value.encoding,
+            alias_row,
+            canonical_surface_tag,
+        }
+    }
+}
+
+impl TryFrom<CatiaOwnerChartBridgeReferenceWire> for CatiaOwnerChartBridgeReference {
+    type Error = String;
+
+    fn try_from(wire: CatiaOwnerChartBridgeReferenceWire) -> Result<Self, Self::Error> {
+        let alias = match (wire.alias_row, wire.canonical_surface_tag) {
+            (None, None) => None,
+            (None, Some(_)) => {
+                return Err("owner-chart canonical_surface_tag requires alias_row".to_owned());
+            }
+            (Some(row), canonical_tag) => Some(CatiaOwnerChartAliasBinding { row, canonical_tag }),
+        };
+        Self::from_parts(wire.value, wire.encoding, alias)
+    }
 }
 
 /// Structurally complete class-`0x37` owner-chart bridge.
@@ -7837,8 +7905,7 @@ fn consolidated_owner_packets(
                     CatiaOwnerChartBridgeReference {
                         value: reference.value,
                         encoding: native_allocation_reference_encoding(reference.encoding),
-                        alias_row: None,
-                        canonical_surface_tag: None,
+                        alias: None,
                     }
                 };
             (
@@ -8597,16 +8664,17 @@ fn resolve_owner_chart_support_aliases(
             .or_insert(Some(alias));
     }
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
-        reference.alias_row = None;
-        reference.canonical_surface_tag = None;
+        reference.alias = None;
         if reference.encoding != CatiaAllocationReferenceEncoding::WidthCoded {
             return;
         }
         let Some(alias) = unique_by_tag.get(&reference.value).copied().flatten() else {
             return;
         };
-        reference.alias_row = Some(alias.id.clone());
-        reference.canonical_surface_tag = alias.canonical_surface_tag;
+        reference.alias = Some(CatiaOwnerChartAliasBinding {
+            row: alias.id.clone(),
+            canonical_tag: alias.canonical_surface_tag,
+        });
     };
     for packet in packets {
         let Some(chart) = packet.owner_chart.as_mut() else {
