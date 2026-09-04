@@ -58,7 +58,7 @@ fn blend_tail_enum_deserializes_under_its_former_name() {
 
 #[test]
 fn generated_revision_exact_surface_carries_two_unextended_intervals() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
+    use cadmpeg_ir::geometry::{ExactSpline, ProceduralSurfaceDefinition};
 
     // Two distinct non-[0,1] unextended parameter intervals: U then V.
     let smbh = synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
@@ -76,17 +76,18 @@ fn generated_revision_exact_surface_carries_two_unextended_intervals() {
         )
         .expect("revision exact decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    let ProceduralSurfaceDefinition::Exact { parameters, .. } = procedural.definition() else {
+    let ProceduralSurfaceDefinition::Exact { spline } = procedural.definition() else {
         panic!("expected exact definition");
     };
+    let ExactSpline::Revision { intervals, .. } = spline else {
+        panic!("expected revision exact-spline layout")
+    };
     assert_eq!(
-        parameters,
-        &SplineSurfaceParameters::RevisionRanges {
-            intervals: [
-                [Some(0.0), Some(std::f64::consts::FRAC_PI_2)],
-                [Some(0.5), Some(2.0)],
-            ],
-        }
+        *intervals,
+        [
+            [Some(0.0), Some(std::f64::consts::FRAC_PI_2)],
+            [Some(0.5), Some(2.0)],
+        ]
     );
     assert_revision_surface_round_trip(smbh, "exact");
 }

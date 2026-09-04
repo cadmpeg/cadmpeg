@@ -754,6 +754,112 @@ pub enum SplineSurfaceParameters {
     },
 }
 
+/// Mutually exclusive legacy and revision-gated exact-spline layouts.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExactSpline {
+    /// Legacy solved-cache layout with ordered U/V ranges.
+    Legacy {
+        /// Ordered U and V parameter ranges.
+        ranges: [[f64; 2]; 2],
+        /// Native ASM extension integer following the ranges.
+        extension: i64,
+    },
+    /// Revision-gated layout with optional interval bounds and shared form.
+    Revision {
+        /// Two optional-bound parameter intervals in wire order.
+        intervals: [[Option<f64>; 2]; 2],
+        /// Native ASM extension enum following the intervals.
+        extension: i64,
+        /// Required revision-gated form.
+        form: RevisionSurfaceForm,
+    },
+}
+
+#[derive(Serialize)]
+struct ExactSplineWriteWire<'a> {
+    parameters: SplineSurfaceParameters,
+    extension: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    revision_form: Option<&'a RevisionSurfaceForm>,
+}
+
+#[derive(Deserialize)]
+struct ExactSplineReadWire {
+    parameters: SplineSurfaceParameters,
+    extension: i64,
+    #[serde(default)]
+    revision_form: Option<RevisionSurfaceForm>,
+}
+
+#[cfg(feature = "schema")]
+#[derive(JsonSchema)]
+#[expect(dead_code, reason = "fields define the exact-spline wire schema")]
+struct ExactSplineSchemaWire {
+    parameters: SplineSurfaceParameters,
+    extension: i64,
+    revision_form: Option<RevisionSurfaceForm>,
+}
+
+impl Serialize for ExactSpline {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let (parameters, extension, revision_form) = match self {
+            Self::Legacy { ranges, extension } => (
+                SplineSurfaceParameters::OrderedRanges { ranges: *ranges },
+                *extension,
+                None,
+            ),
+            Self::Revision {
+                intervals,
+                extension,
+                form,
+            } => (
+                SplineSurfaceParameters::RevisionRanges {
+                    intervals: *intervals,
+                },
+                *extension,
+                Some(form),
+            ),
+        };
+        ExactSplineWriteWire {
+            parameters,
+            extension,
+            revision_form,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ExactSpline {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = ExactSplineReadWire::deserialize(deserializer)?;
+        match (wire.parameters, wire.revision_form) {
+            (SplineSurfaceParameters::OrderedRanges { ranges }, None) => Ok(Self::Legacy {
+                ranges,
+                extension: wire.extension,
+            }),
+            (SplineSurfaceParameters::RevisionRanges { intervals }, Some(form)) => {
+                Ok(Self::Revision {
+                    intervals,
+                    extension: wire.extension,
+                    form,
+                })
+            }
+            (SplineSurfaceParameters::OrderedRanges { .. }, Some(_)) => Err(
+                serde::de::Error::custom("exact spline ordered ranges cannot carry revision_form"),
+            ),
+            (SplineSurfaceParameters::RevisionRanges { .. }, None) => Err(
+                serde::de::Error::custom("exact spline revision ranges require revision_form"),
+            ),
+        }
+    }
+}
+
 /// Neutral semantics for a procedural surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -761,15 +867,10 @@ pub enum SplineSurfaceParameters {
 pub enum ProceduralSurfaceDefinition {
     /// Exact native NURBS surface with retained parameter fields.
     Exact {
-        /// Legacy ordered ranges or revision-native scalar values.
-        parameters: SplineSurfaceParameters,
-        /// Native ASM extension integer following the intervals.
-        extension: i64,
-        /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The revision layout stores the shared tail before `parameters`
-        /// and the extension as an enum.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        revision_form: Option<RevisionSurfaceForm>,
+        /// Complete legacy or revision-gated exact-spline layout.
+        #[serde(flatten)]
+        #[cfg_attr(feature = "schema", schemars(with = "ExactSplineSchemaWire"))]
+        spline: ExactSpline,
     },
     /// Ordered native compound of a solved surface and component surfaces.
     Compound {
@@ -1091,8 +1192,10 @@ pub enum ProceduralSurfaceDefinition {
 impl ProceduralSurfaceDefinition {
     fn revision_cache(&self) -> Option<&RevisionCacheForm> {
         match self {
-            Self::Exact { revision_form, .. }
-            | Self::Taper { revision_form, .. }
+            Self::Exact {
+                spline: ExactSpline::Revision { form, .. },
+            } => Some(&form.cache),
+            Self::Taper { revision_form, .. }
             | Self::Extrusion { revision_form, .. }
             | Self::Revolution { revision_form, .. }
             | Self::Sum { revision_form, .. } => revision_form.as_ref().map(|form| &form.cache),
@@ -1123,8 +1226,10 @@ impl ProceduralSurfaceDefinition {
 
     fn revision_cache_mut(&mut self) -> Option<&mut RevisionCacheForm> {
         match self {
-            Self::Exact { revision_form, .. }
-            | Self::Taper { revision_form, .. }
+            Self::Exact {
+                spline: ExactSpline::Revision { form, .. },
+            } => Some(&mut form.cache),
+            Self::Taper { revision_form, .. }
             | Self::Extrusion { revision_form, .. }
             | Self::Revolution { revision_form, .. }
             | Self::Sum { revision_form, .. } => revision_form.as_mut().map(|form| &mut form.cache),

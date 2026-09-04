@@ -137,7 +137,7 @@ fn nurbs_surface_block_decodes_to_carrier() {
 
 #[test]
 fn generated_exact_spline_surfaces_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
+    use cadmpeg_ir::geometry::{ExactSpline, ProceduralSurfaceDefinition};
 
     for name in ["exact_spl_sur", "exactsur"] {
         let result = F3dCodec
@@ -151,11 +151,10 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
         assert_eq!(
             procedural.definition(),
             &ProceduralSurfaceDefinition::Exact {
-                parameters: SplineSurfaceParameters::OrderedRanges {
+                spline: ExactSpline::Legacy {
                     ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                    extension: 7,
                 },
-                extension: 7,
-                revision_form: None,
             }
         );
 
@@ -173,11 +172,10 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
         assert_eq!(
             round_trip.ir().model.procedural_surfaces[0].definition(),
             &ProceduralSurfaceDefinition::Exact {
-                parameters: SplineSurfaceParameters::OrderedRanges {
+                spline: ExactSpline::Legacy {
                     ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                    extension: 7,
                 },
-                extension: 7,
-                revision_form: None,
             }
         );
     }
