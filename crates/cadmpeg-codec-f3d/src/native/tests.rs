@@ -511,17 +511,22 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id == procedural.curve)
-        .and_then(|curve| match &curve.geometry {
-            CurveGeometry::Nurbs(nurbs) => Some(nurbs.clone()),
+        .find(|curve| decoded.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
+        .and_then(|curve| match curve.geometry.solved_cache() {
+            Some(CurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
             _ => None,
         })
         .expect("solved cache");
+    let owner = decoded
+        .ir()
+        .model
+        .procedural_curve_owner(&procedural.id)
+        .expect("law curve owner");
     let mut regenerated = Vec::new();
     crate::writer::generate::native_geometry::native_procedural_curve(
         &mut regenerated,
         decoded.ir(),
-        &procedural.curve,
+        owner,
         &solved,
     )
     .expect("regenerate stamped law curve");
@@ -568,17 +573,22 @@ fn legacy_law_intcurve_round_trips_byte_exactly() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id == procedural.curve)
-        .and_then(|curve| match &curve.geometry {
-            CurveGeometry::Nurbs(nurbs) => Some(nurbs.clone()),
+        .find(|curve| decoded.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
+        .and_then(|curve| match curve.geometry.solved_cache() {
+            Some(CurveGeometry::Nurbs(nurbs)) => Some(nurbs.clone()),
             _ => None,
         })
         .expect("solved cache");
+    let owner = decoded
+        .ir()
+        .model
+        .procedural_curve_owner(&procedural.id)
+        .expect("law curve owner");
     let mut regenerated = Vec::new();
     crate::writer::generate::native_geometry::native_procedural_curve(
         &mut regenerated,
         decoded.ir(),
-        &procedural.curve,
+        owner,
         &solved,
     )
     .expect("regenerate legacy law curve");

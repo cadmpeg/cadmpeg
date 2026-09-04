@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
-use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::Point2;
 
 use crate::loss::StepLossCode;
@@ -155,7 +155,12 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
             && matches!(curve.geometry, CurveGeometry::Line { .. })
     }));
     assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
-        curve.curve.as_str() == "step:data:curve#70"
+        decoded
+            .ir()
+            .model
+            .procedural_curve_owner(&curve.id)
+            .map(CurveId::as_str)
+            == Some("step:data:curve#70")
             && matches!(
                 curve.definition(),
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { source, .. }
@@ -382,7 +387,12 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
         .procedural_surfaces
         .iter()
         .any(|surface| {
-            surface.surface.as_str() == "step:data:surface#28"
+            decoded
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("step:data:surface#28")
                 && matches!(
                     surface.definition(),
                     cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep { .. }

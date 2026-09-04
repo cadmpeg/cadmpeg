@@ -1,10 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::document::{Model, SourceMeta};
+use crate::document::{EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
+use crate::geometry::{
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 use crate::{diff, CadIr};
+use serde::{de::DeserializeOwned, Serialize};
+
+struct SerdeIdentity;
+
+impl EntityRewrite for SerdeIdentity {
+    type Error = serde_json::Error;
+
+    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error> {
+        serde_json::from_value(serde_json::to_value(entity)?)
+    }
+}
 
 #[test]
 fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
@@ -77,6 +94,65 @@ fn current_json_without_configurations_defaults_to_empty() {
 
     let decoded: CadIr = serde_json::from_value(value).unwrap();
     assert!(decoded.model.configurations.is_empty());
+}
+
+#[test]
+fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
+    let mut ir = CadIr::empty();
+    let surface = SurfaceId("test:surface#cache".into());
+    let surface_construction = ProceduralSurfaceId("test:surface-construction#cache".into());
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model
+        .add_procedural_surface(
+            surface.clone(),
+            ProceduralSurface::new(
+                surface_construction,
+                ProceduralSurfaceDefinition::Unknown { record: None },
+                None,
+            ),
+        )
+        .unwrap();
+
+    let curve = CurveId("test:curve#direct".into());
+    let curve_construction = ProceduralCurveId("test:curve-construction#direct".into());
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction: curve_construction.clone(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model
+        .add_procedural_curve(
+            curve.clone(),
+            ProceduralCurve::new(curve_construction, ProceduralCurveDefinition::Exact),
+        )
+        .unwrap();
+
+    let value = serde_json::to_value(&ir).unwrap();
+    let model = value["model"].as_object().unwrap();
+    assert_eq!(model["surfaces"][0]["geometry"]["kind"], "plane");
+    assert!(model["surfaces"][0]["geometry"].get("cache").is_none());
+    assert_eq!(model["procedural_surfaces"][0]["surface"], surface.0);
+    assert_eq!(model["curves"][0]["geometry"]["kind"], "procedural");
+    assert!(model["curves"][0]["geometry"].get("cache").is_none());
+    assert_eq!(model["procedural_curves"][0]["curve"], curve.0);
+    assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
+
+    let mut rewritten = Model::default();
+    rewritten
+        .extend_rewritten(ir.model, &mut SerdeIdentity)
+        .unwrap();
+    assert!(rewritten.surfaces[0].geometry.solved_cache().is_some());
 }
 
 #[test]

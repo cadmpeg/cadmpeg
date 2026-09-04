@@ -176,6 +176,7 @@ pub(crate) fn keep_faces_and_carriers(
                             construction: ProceduralSurfaceId(format!(
                                 "{format}:brep:procedural_surface#{surf_ref}"
                             )),
+                            cache: None,
                         }
                     } else {
                         SurfaceGeometry::Unknown {
@@ -476,6 +477,7 @@ pub(crate) fn walk_reachable_topology(
                                                             "{format}:brep:procedural_curve#{cv}"
                                                         )
                                                         .into(),
+                                                        cache: None,
                                                     },
                                                 );
                                                 cacheless_procedural_curve_defs
@@ -761,6 +763,7 @@ fn keep_wire_edge(
                 }
                 entry.insert(CurveGeometry::Procedural {
                     construction: format!("{format}:brep:procedural_curve#{curve_index}").into(),
+                    cache: None,
                 });
                 cacheless_procedural_curve_defs.insert(curve_index, (native_kind, definition));
                 kept_curves.insert(curve_index);

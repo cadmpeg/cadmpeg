@@ -3796,7 +3796,9 @@ fn surface_selection_parameter_domains(
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == *surface_id)
+        .find(|procedural| {
+            index.ir().model.procedural_surface_owner(&procedural.id) == Some(surface_id)
+        })
         .map(|procedural| procedural.definition());
     match definition {
         Some(ProceduralSurfaceDefinition::Subset {
@@ -3826,6 +3828,10 @@ fn surface_selection_parameter_domains_from_geometry(
     surface: &SurfaceGeometry,
 ) -> [Option<[f64; 2]>; 2] {
     match surface {
+        SurfaceGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => surface_selection_parameter_domains_from_geometry(geometry),
         SurfaceGeometry::Nurbs(surface) => {
             let (Ok(u_count), Ok(v_count)) = (
                 usize::try_from(surface.u_count),

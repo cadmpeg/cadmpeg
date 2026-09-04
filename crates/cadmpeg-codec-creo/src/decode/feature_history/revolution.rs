@@ -322,25 +322,27 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     instance_path: Vec::new(),
                 }),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                procedural_id,
+            let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix: curve_id,
-                    axis_origin: axis.origin,
-                    axis_direction: axis.direction,
-                    angular_interval: [0.0, std::f64::consts::TAU],
-                    angular_parameter_interval: None,
-                    parameter_interval: [
-                        *directrix.knots.first().expect("validated spline knots"),
-                        *directrix.knots.last().expect("validated spline knots"),
-                    ]
-                    .into(),
-                    transposed: false,
-                    revision_form: None,
-                },
-                None,
-            ));
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: curve_id,
+                        axis_origin: axis.origin,
+                        axis_direction: axis.direction,
+                        angular_interval: [0.0, std::f64::consts::TAU],
+                        angular_parameter_interval: None,
+                        parameter_interval: [
+                            *directrix.knots.first().expect("validated spline knots"),
+                            *directrix.knots.last().expect("validated spline knots"),
+                        ]
+                        .into(),
+                        transposed: false,
+                        revision_form: None,
+                    },
+                    None,
+                ),
+            );
             transferred += 1;
         }
     }

@@ -350,7 +350,10 @@ fn decode_projects_a_v5_type_142_constituent_through_its_model_curve() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| curve.curve == CurveId("iges:model:curve#D9".into()))
+        .find(|curve| {
+            result.ir().model.procedural_curve_owner(&curve.id)
+                == Some(&CurveId("iges:model:curve#D9".into()))
+        })
         .expect("Type 102 neutral carrier");
     let ProceduralCurveDefinition::Compound { components, .. } = composite.definition() else {
         panic!("expected a compound neutral carrier");
@@ -403,7 +406,10 @@ fn decode_projects_a_v5_type_130_constituent_after_its_offset_carrier() {
         .model
         .procedural_curves
         .iter()
-        .find(|curve| curve.curve == CurveId("iges:model:curve#D5".into()))
+        .find(|curve| {
+            result.ir().model.procedural_curve_owner(&curve.id)
+                == Some(&CurveId("iges:model:curve#D5".into()))
+        })
         .expect("Type 102 neutral carrier");
     let ProceduralCurveDefinition::Compound { components, .. } = composite.definition() else {
         panic!("expected a compound neutral carrier");

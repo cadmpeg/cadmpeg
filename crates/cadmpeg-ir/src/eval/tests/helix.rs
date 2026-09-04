@@ -21,12 +21,12 @@ fn helix_fixture() -> (CadIr, CurveId) {
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction_id.clone(),
+            cache: None,
         },
         source_object: None,
     });
     ir.model.procedural_curves.push(procedural_curve! {
         id: construction_id,
-        curve: curve_id.clone(),
         definition: definition,
         cache_fit_tolerance: None,
     });

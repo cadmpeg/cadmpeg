@@ -202,7 +202,7 @@ impl Brep {
         for surface in &mut self.surfaces {
             surface.id.0 = qualify(&surface.id.0);
             match &mut surface.geometry {
-                SurfaceGeometry::Procedural { construction } => {
+                SurfaceGeometry::Procedural { construction, .. } => {
                     construction.0 = qualify(&construction.0);
                 }
                 SurfaceGeometry::Unknown {
@@ -215,7 +215,6 @@ impl Brep {
         }
         for procedural in &mut self.procedural_surfaces {
             procedural.id.0 = qualify(&procedural.id.0);
-            procedural.surface.0 = qualify(&procedural.surface.0);
             procedural.edit_definition(|definition| match definition {
                 ProceduralSurfaceDefinition::Blend {
                     supports, spine, ..
@@ -535,7 +534,6 @@ fn emit_offset_surface(
         .tag("00_3c");
     out.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
-        surface.clone(),
         ProceduralSurfaceDefinition::Offset {
             support,
             distance: offset.distance,
@@ -550,7 +548,10 @@ fn emit_offset_surface(
     out.surfaces.push(Surface {
         id: surface,
         source_object: None,
-        geometry: SurfaceGeometry::Procedural { construction },
+        geometry: SurfaceGeometry::Procedural {
+            construction,
+            cache: None,
+        },
     });
 }
 
@@ -1767,7 +1768,6 @@ fn decode_graph(
                     ));
                     out.procedural_surfaces.push(ProceduralSurface::new(
                         procedural_id.clone(),
-                        SurfaceId(id_surf(f.bridge_attr)),
                         ProceduralSurfaceDefinition::Blend {
                             supports: [
                                 Some(BlendSupport {
@@ -1796,6 +1796,7 @@ fn decode_graph(
                         source_object: None,
                         geometry: SurfaceGeometry::Procedural {
                             construction: procedural_id,
+                            cache: None,
                         },
                     });
                 } else if let Some((geometry, offset, tag, derived)) =
@@ -5976,7 +5977,7 @@ mod tests {
             BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurface,
             ProceduralSurfaceDefinition,
         };
-        use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+        use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 
         let spine = CurveId("spine".into());
         let mut brep = super::Brep {
@@ -5990,7 +5991,6 @@ mod tests {
             }],
             procedural_surfaces: vec![ProceduralSurface::new(
                 ProceduralSurfaceId("blend".into()),
-                SurfaceId("surface".into()),
                 ProceduralSurfaceDefinition::Blend {
                     supports: [None, None],
                     spine: Some(spine.clone()),

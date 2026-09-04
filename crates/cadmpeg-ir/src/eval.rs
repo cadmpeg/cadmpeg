@@ -2961,6 +2961,10 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
         } => polyline_tangent(points, parameters.as_deref(), t),
         CurveGeometry::Transformed { basis, transform } => curve_tangent_inner(basis, t, depth + 1)
             .map(|tangent| affine_vector(*transform, tangent)),
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => curve_tangent_inner(geometry, t, depth + 1),
         CurveGeometry::Degenerate { .. }
         | CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
@@ -3030,6 +3034,10 @@ fn curve_second_derivative_inner(
             curve_second_derivative_inner(basis, t, depth + 1)
                 .map(|derivative| affine_vector(*transform, derivative))
         }
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => curve_second_derivative_inner(geometry, t, depth + 1),
         CurveGeometry::Degenerate { .. }
         | CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
@@ -3277,12 +3285,19 @@ fn model_curve_differential_by_id_inner(
     if let Some(budget) = budget {
         budget.charge().then_some(())?;
     }
+    if let Some(cache) = curve.geometry.solved_cache() {
+        return Some(ModelCurveDifferential {
+            point: budget.map_or_else(
+                || curve_point(cache, parameter),
+                |budget| curve_point_with_budget(cache, parameter, budget),
+            )?,
+            tangent: curve_tangent(cache, parameter)?,
+            acceleration: curve_second_derivative(cache, parameter)?,
+        });
+    }
     if let Some(procedural) = index
-        .ir()
-        .model
-        .procedural_curves
-        .iter()
-        .find(|procedural| procedural.curve == *curve_id)
+        .procedural_curves_for_curve(curve_id.0.as_str())
+        .and_then(|procedurals| procedurals.first().copied())
     {
         match procedural.definition() {
             ProceduralCurveDefinition::Replica { source, transform } => {
@@ -3704,21 +3719,21 @@ fn model_curve_point_by_id_inner(
     if let Some(budget) = budget {
         budget.charge().then_some(())?;
     }
+    if let Some(cache) = curve.geometry.solved_cache() {
+        return budget.map_or_else(
+            || curve_point(cache, parameter),
+            |budget| curve_point_with_budget(cache, parameter, budget),
+        );
+    }
     let Some(procedural) = index
-        .ir()
-        .model
-        .procedural_curves
-        .iter()
-        .find(|procedural| procedural.curve == *curve_id)
+        .procedural_curves_for_curve(curve_id.0.as_str())
+        .and_then(|procedurals| procedurals.first().copied())
     else {
         return budget.map_or_else(
             || curve_point(&curve.geometry, parameter),
             |budget| curve_point_with_budget(&curve.geometry, parameter, budget),
         );
     };
-    if procedural.curve != *curve_id {
-        return None;
-    }
     match procedural.definition() {
         ProceduralCurveDefinition::Replica { source, transform } => {
             model_curve_point_by_id_inner(index, source, parameter, depth + 1, budget)
@@ -3864,12 +3879,12 @@ fn model_curve_parameter_near_point_with_tolerance(
         return None;
     }
     let curve = index.curves(&curve_id.0)?;
+    if let Some(cache) = curve.geometry.solved_cache() {
+        return direct_curve_parameter_near_point(cache, point, seed, tolerance);
+    }
     if let Some(procedural) = index
-        .ir()
-        .model
-        .procedural_curves
-        .iter()
-        .find(|procedural| procedural.curve == *curve_id)
+        .procedural_curves_for_curve(curve_id.0.as_str())
+        .and_then(|procedurals| procedurals.first().copied())
     {
         match procedural.definition() {
             ProceduralCurveDefinition::Replica { source, transform } => {
@@ -3940,13 +3955,8 @@ fn model_curve_parameter_near_point_with_tolerance(
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
         return curve_parameter_near_point(&curve.geometry, point, seed, tolerance);
     }
-    let CurveGeometry::Procedural { construction } = &curve.geometry else {
-        unreachable!("direct carriers return before procedural inversion");
-    };
+    let construction = curve.geometry.procedural_construction()?;
     let procedural = index.procedural_curves(&construction.0)?;
-    if procedural.curve != *curve_id {
-        return None;
-    }
     let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
         supports,
         tolerance,
@@ -4228,6 +4238,10 @@ fn direct_curve_parameter_near_point(
                 .hypot(stored.z - point.z);
             (error.is_finite() && error <= tolerance).then_some(seed)?
         }
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => direct_curve_parameter_near_point(geometry, point, seed, tolerance)?,
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Unknown { .. } => return None,
@@ -4439,6 +4453,10 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
         CurveGeometry::Transformed { basis, transform } => {
             curve_point_inner(basis, t, depth + 1).map(|point| affine_point(*transform, point))
         }
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => curve_point_inner(geometry, t, depth + 1),
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Unknown { .. } => None,
@@ -4571,6 +4589,10 @@ fn surface_point_with_budget_inner(
             surface_point_with_budget_inner(basis, u, v, depth + 1, budget)
                 .map(|point| affine_point(*transform, point))
         }
+        SurfaceGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => surface_point_with_budget_inner(geometry, u, v, depth + 1, budget),
         SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => None,
@@ -5032,6 +5054,10 @@ fn surface_second_partials_inner(
                 }
             })
         }
+        SurfaceGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => surface_second_partials_inner(geometry, u, v, depth + 1),
         SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => None,
@@ -5046,7 +5072,10 @@ pub fn model_surface_point(
     u: f64,
     v: f64,
 ) -> Option<Point3> {
-    let SurfaceGeometry::Procedural { construction } = geometry else {
+    if let Some(cache) = geometry.solved_cache() {
+        return surface_point(cache, u, v);
+    }
+    let Some(construction) = geometry.procedural_construction() else {
         return surface_point(geometry, u, v);
     };
     let procedural = ir

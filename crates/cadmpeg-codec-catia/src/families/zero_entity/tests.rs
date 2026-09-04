@@ -156,10 +156,14 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert!(matches!(
         &curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Procedural {
-            construction: id
+            construction: id,
+            ..
         } if id == &construction.id
     ));
-    assert_eq!(construction.curve, curve.id);
+    assert_eq!(
+        result.ir().model.procedural_curve_owner(&construction.id),
+        Some(&curve.id)
+    );
     assert_eq!(construction.cache_fit_tolerance(), None);
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
         family,

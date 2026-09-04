@@ -44,6 +44,7 @@ fn variable_blend_eval_fixture(
             id: blend_surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: ProceduralSurfaceId("variable-blend-construction".into()),
+                cache: None,
             },
             source_object: None,
         },
@@ -72,7 +73,6 @@ fn variable_blend_eval_fixture(
     };
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId("variable-blend-construction".into()),
-        surface: blend_surface.clone(),
         definition: ProceduralSurfaceDefinition::VariableBlend {
             construction: Box::new(VariableBlendConstruction {
                 subtype: VariableBlendSurfaceSubtype::VariableBlend,
@@ -428,12 +428,12 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         id: replica_surface.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: replica_construction.clone(),
+            cache: None,
         },
         source_object: None,
     });
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: replica_construction,
-        surface: replica_surface.clone(),
         definition: ProceduralSurfaceDefinition::Replica {
             source: blend_surface.clone(),
             transform: Transform {

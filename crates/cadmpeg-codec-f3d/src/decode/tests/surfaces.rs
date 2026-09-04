@@ -364,9 +364,12 @@ fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| surface.id == procedural.surface)
+                .find(|surface| {
+                    result.ir().model.procedural_surface_owner(&procedural.id)
+                        == Some(&surface.id)
+                })
                 .map(|surface| &surface.geometry),
-            Some(SurfaceGeometry::Procedural { construction })
+            Some(SurfaceGeometry::Procedural { construction, .. })
                 if construction == &procedural.id
         ));
 
@@ -570,9 +573,11 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == procedural.surface)
+        .find(|surface| {
+            result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+        })
         .expect("compound solved surface");
-    let SurfaceGeometry::Nurbs(solved) = &solved.geometry else {
+    let Some(SurfaceGeometry::Nurbs(solved)) = solved.geometry.solved_cache() else {
         panic!("expected solved NURBS surface")
     };
     assert!(solved.weights.is_none());
@@ -1023,7 +1028,12 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
             matches!(construction.profile, HelixSurfaceProfile::Circle { .. })
         );
 
-        let surface_id = decoded.ir().model.procedural_surfaces[0].surface.clone();
+        let surface_id = decoded
+            .ir()
+            .model
+            .procedural_surface_owner(&decoded.ir().model.procedural_surfaces[0].id)
+            .expect("helix surface owner")
+            .clone();
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
@@ -1036,7 +1046,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         assert!(
             matches!(
                 &surface.geometry,
-                SurfaceGeometry::Procedural { construction }
+                SurfaceGeometry::Procedural { construction, .. }
                     if *construction == source_less.model.procedural_surfaces[0].id
             ),
             "unexpected helix carrier: {:?}",

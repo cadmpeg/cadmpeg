@@ -653,7 +653,9 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                 .model
                 .procedural_surfaces
                 .iter()
-                .find(|surface| &surface.surface == surface_id)
+                .find(|surface| {
+                    decoded.ir().model.procedural_surface_owner(&surface.id) == Some(surface_id)
+                })
                 .expect("offset NURBS construction");
             let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
                 support, distance, ..
@@ -787,11 +789,13 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == procedural.surface)
+        .find(|surface| {
+            decoded.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+        })
         .expect("rolling-ball surface");
     assert!(matches!(
         &surface.geometry,
-        SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+        SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
     ));
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
         degree,

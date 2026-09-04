@@ -5100,7 +5100,10 @@ fn blend_feature_definition(
     let mut laws = Vec::new();
     let mut support_pairs = Vec::new();
     for procedural in &ir.model.procedural_surfaces {
-        if !body_surfaces.contains(&procedural.surface) {
+        let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+            continue;
+        };
+        if !body_surfaces.contains(owner) {
             continue;
         }
         let ProceduralSurfaceDefinition::Blend {
@@ -5115,7 +5118,7 @@ fn blend_feature_definition(
         if *cross_section != BlendCrossSection::Circular {
             return None;
         }
-        surfaces.push(procedural.surface.clone());
+        surfaces.push(owner.clone());
         laws.push(radius);
         support_pairs.push(supports);
     }
@@ -5329,7 +5332,10 @@ fn owned_offset_carriers<'a>(
     let body_surfaces = body_surface_ids(ir, body)?;
     let mut carriers = Vec::new();
     for procedural in &ir.model.procedural_surfaces {
-        if !body_surfaces.contains(&procedural.surface) {
+        let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+            continue;
+        };
+        if !body_surfaces.contains(owner) {
             continue;
         }
         let ProceduralSurfaceDefinition::Offset {

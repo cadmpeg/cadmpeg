@@ -391,7 +391,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for s in &ir.model.surfaces {
-        match &s.geometry {
+        match s.geometry.wire_geometry() {
             SurfaceGeometry::Plane {
                 origin,
                 normal,
@@ -1857,7 +1857,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for c in &ir.model.curves {
-        match &c.geometry {
+        match c.geometry.wire_geometry() {
             CurveGeometry::Line { origin, direction } => {
                 if !point3_finite(origin) {
                     bounds_err(findings, &c.id.0, "line origin is not finite");
@@ -2815,6 +2815,10 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
         SurfaceGeometry::Transformed { basis, transform } => {
             transform.is_affine() && valid_surface_basis(basis)
         }
+        SurfaceGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => valid_surface_basis(geometry),
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => true,
     }
 }
@@ -2860,6 +2864,10 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
         CurveGeometry::Transformed { basis, transform } => {
             transform.is_affine() && valid_curve_basis(basis)
         }
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => valid_curve_basis(geometry),
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Unknown { .. } => true,

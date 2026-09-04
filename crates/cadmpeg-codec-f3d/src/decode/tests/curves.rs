@@ -146,19 +146,35 @@ fn decode_retains_generated_helix_construction() {
     edited.model.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.012))
         .unwrap();
-    let solved_curve_id = edited.model.procedural_curves[0].curve.clone();
+    let solved_curve_id = edited
+        .model
+        .procedural_curve_owner(&edited.model.procedural_curves[0].id)
+        .expect("helix solved curve owner")
+        .clone();
     let solved_curve = edited
         .model
         .curves
         .iter_mut()
         .find(|curve| curve.id == solved_curve_id)
         .expect("helix solved curve");
-    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(solved_cache) = &mut solved_curve.geometry
+    let cadmpeg_ir::geometry::CurveGeometry::Procedural {
+        cache: Some(solved_cache),
+        ..
+    } = &mut solved_curve.geometry
+    else {
+        panic!("expected procedural helix carrier")
+    };
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(mut edited_cache) =
+        solved_cache.as_geometry().clone()
     else {
         panic!("expected helix NURBS cache")
     };
-    solved_cache.control_points[1].x = 17.0;
-    solved_cache.control_points[1].z = -2.0;
+    edited_cache.control_points[1].x = 17.0;
+    edited_cache.control_points[1].z = -2.0;
+    *solved_cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(edited_cache),
+    )
+    .unwrap();
     let edited_definition = edited.model.procedural_curves[0].definition().clone();
     let edited_cache = solved_curve.geometry.clone();
     let mut regenerated = Vec::new();
@@ -233,9 +249,11 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
             .model
             .curves
             .iter()
-            .find(|curve| curve.id == procedural.curve)
+            .find(|curve| {
+                result.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id)
+            })
             .map(|curve| &curve.geometry),
-        Some(CurveGeometry::Procedural { construction }) if *construction == procedural.id
+        Some(CurveGeometry::Procedural { construction, .. }) if *construction == procedural.id
     ));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(
@@ -685,7 +703,11 @@ fn generated_intcurve_sense_uses_token_adjacent_to_subtype() {
                 &DecodeOptions::default(),
             )
             .expect("generated exact intcurve decode");
-        let curve_id = &result.ir().model.procedural_curves[0].curve;
+        let curve_id = result
+            .ir()
+            .model
+            .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
+            .expect("exact intcurve owner");
         result
             .ir()
             .model
@@ -712,7 +734,11 @@ fn generated_spline_surface_sense_uses_token_adjacent_to_subtype() {
                 &DecodeOptions::default(),
             )
             .expect("generated exact spline-surface decode");
-        let surface_id = &result.ir().model.procedural_surfaces[0].surface;
+        let surface_id = result
+            .ir()
+            .model
+            .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
+            .expect("exact spline-surface owner");
         let geometry = result
             .ir()
             .model

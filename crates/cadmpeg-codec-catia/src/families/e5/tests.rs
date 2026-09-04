@@ -426,11 +426,14 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
     let [procedural] = result.ir().model.procedural_surfaces.as_slice() else {
         panic!("one standalone rolling-ball construction");
     };
-    assert_eq!(procedural.surface, result.ir().model.surfaces[0].id);
+    assert_eq!(
+        result.ir().model.procedural_surface_owner(&procedural.id),
+        Some(&result.ir().model.surfaces[0].id)
+    );
     let surface = &result.ir().model.surfaces[0];
     assert!(matches!(
         &surface.geometry,
-        SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+        SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
     ));
     assert!(matches!(
         procedural.definition(),

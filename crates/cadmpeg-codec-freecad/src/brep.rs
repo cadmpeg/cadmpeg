@@ -3817,7 +3817,7 @@ impl<'a> TokenCursor<'a> {
 #[derive(Default)]
 pub(crate) struct CurveTransfer {
     pub(crate) curves: Vec<Curve>,
-    pub(crate) procedural: Vec<ProceduralCurve>,
+    pub(crate) procedural: Vec<(CurveId, ProceduralCurve)>,
 }
 
 pub(crate) fn transfer_text_curves(
@@ -3938,14 +3938,16 @@ pub(crate) fn append_text_curve(
                 Some(*parameter_range),
             )
             .unwrap_or(*parameter_range);
-            transfer.procedural.push(ProceduralCurve::new(
-                ProceduralCurveId(format!("{}:construction", id.0)),
+            transfer.procedural.push((
                 id.clone(),
-                ProceduralCurveDefinition::Subset {
-                    source: basis_id,
-                    parameter_range,
-                    sense: true,
-                },
+                ProceduralCurve::new(
+                    ProceduralCurveId(format!("{}:construction", id.0)),
+                    ProceduralCurveDefinition::Subset {
+                        source: basis_id,
+                        parameter_range,
+                        sense: true,
+                    },
+                ),
             ));
             basis_geometry
         }
@@ -3956,18 +3958,20 @@ pub(crate) fn append_text_curve(
         } => {
             let basis_id = CurveId(format!("{}:basis", id.0));
             append_text_curve(basis, basis_id.clone(), association, transfer);
-            transfer.procedural.push(ProceduralCurve::new(
-                ProceduralCurveId(format!("{}:construction", id.0)),
+            transfer.procedural.push((
                 id.clone(),
-                ProceduralCurveDefinition::Offset {
-                    source: basis_id,
-                    distance: *distance,
-                    direction: Some(*direction),
-                    support: None,
-                    distance_law: None,
-                    normal: None,
-                    parameter_range: None,
-                },
+                ProceduralCurve::new(
+                    ProceduralCurveId(format!("{}:construction", id.0)),
+                    ProceduralCurveDefinition::Offset {
+                        source: basis_id,
+                        distance: *distance,
+                        direction: Some(*direction),
+                        support: None,
+                        distance_law: None,
+                        normal: None,
+                        parameter_range: None,
+                    },
+                ),
             ));
             CurveGeometry::Unknown { record: None }
         }
@@ -3983,7 +3987,7 @@ pub(crate) fn append_text_curve(
 #[derive(Default)]
 pub(crate) struct SurfaceTransfer {
     pub(crate) surfaces: Vec<Surface>,
-    pub(crate) procedural: Vec<ProceduralSurface>,
+    pub(crate) procedural: Vec<(SurfaceId, ProceduralSurface)>,
 }
 
 pub(crate) fn transfer_text_surfaces(
@@ -4111,17 +4115,19 @@ pub(crate) fn append_text_surface(
         } => {
             let directrix_id = CurveId(format!("{}:directrix", id.0));
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
-            transfer.procedural.push(ProceduralSurface::new(
-                ProceduralSurfaceId(format!("{}:construction", id.0)),
+            transfer.procedural.push((
                 id.clone(),
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: directrix_id,
-                    parameter_interval: None,
-                    direction: *direction,
-                    native_position: None,
-                    revision_form: None,
-                },
-                None,
+                ProceduralSurface::new(
+                    ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    ProceduralSurfaceDefinition::Extrusion {
+                        directrix: directrix_id,
+                        parameter_interval: None,
+                        direction: *direction,
+                        native_position: None,
+                        revision_form: None,
+                    },
+                    None,
+                ),
             ));
             SurfaceGeometry::Unknown { record: None }
         }
@@ -4132,20 +4138,22 @@ pub(crate) fn append_text_surface(
         } => {
             let directrix_id = CurveId(format!("{}:directrix", id.0));
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
-            transfer.procedural.push(ProceduralSurface::new(
-                ProceduralSurfaceId(format!("{}:construction", id.0)),
+            transfer.procedural.push((
                 id.clone(),
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix: directrix_id,
-                    axis_origin: *axis_origin,
-                    axis_direction: *axis_direction,
-                    angular_interval: [0.0, std::f64::consts::TAU],
-                    angular_parameter_interval: None,
-                    parameter_interval: None,
-                    transposed: true,
-                    revision_form: None,
-                },
-                None,
+                ProceduralSurface::new(
+                    ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: directrix_id,
+                        axis_origin: *axis_origin,
+                        axis_direction: *axis_direction,
+                        angular_interval: [0.0, std::f64::consts::TAU],
+                        angular_parameter_interval: None,
+                        parameter_interval: None,
+                        transposed: true,
+                        revision_form: None,
+                    },
+                    None,
+                ),
             ));
             SurfaceGeometry::Unknown { record: None }
         }
@@ -4170,16 +4178,18 @@ pub(crate) fn append_text_surface(
                 curve_transfer,
                 transfer,
             );
-            transfer.procedural.push(ProceduralSurface::new(
-                ProceduralSurfaceId(format!("{}:construction", id.0)),
+            transfer.procedural.push((
                 id.clone(),
-                ProceduralSurfaceDefinition::Subset {
-                    support: basis_id,
-                    parameter_ranges,
-                    u_sense: None,
-                    v_sense: None,
-                },
-                None,
+                ProceduralSurface::new(
+                    ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    ProceduralSurfaceDefinition::Subset {
+                        support: basis_id,
+                        parameter_ranges,
+                        u_sense: None,
+                        v_sense: None,
+                    },
+                    None,
+                ),
             ));
             basis_geometry
         }
@@ -4192,19 +4202,21 @@ pub(crate) fn append_text_surface(
                 curve_transfer,
                 transfer,
             );
-            transfer.procedural.push(ProceduralSurface::new(
-                ProceduralSurfaceId(format!("{}:construction", id.0)),
+            transfer.procedural.push((
                 id.clone(),
-                ProceduralSurfaceDefinition::Offset {
-                    support: basis_id,
-                    distance: *distance,
-                    u_sense: None,
-                    v_sense: None,
-                    support_extension: None,
-                    extension_flags: Vec::new(),
-                    revision_form: None,
-                },
-                None,
+                ProceduralSurface::new(
+                    ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    ProceduralSurfaceDefinition::Offset {
+                        support: basis_id,
+                        distance: *distance,
+                        u_sense: None,
+                        v_sense: None,
+                        support_extension: None,
+                        extension_flags: Vec::new(),
+                        revision_form: None,
+                    },
+                    None,
+                ),
             ));
             SurfaceGeometry::Unknown { record: None }
         }
@@ -4957,7 +4969,7 @@ pub(crate) mod tests {
             &mut surfaces,
         );
         assert!(matches!(
-            surfaces.procedural[0].definition(),
+            surfaces.procedural[0].1.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
                 transposed: true,
                 ..

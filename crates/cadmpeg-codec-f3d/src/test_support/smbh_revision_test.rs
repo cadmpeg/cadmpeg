@@ -167,9 +167,10 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == procedural.surface)
+        .find(|surface| ir.model.procedural_surface_owner(&procedural.id) == Some(&surface.id))
         .expect("solved surface");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(cache) = &surface.geometry else {
+    let Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(cache)) = surface.geometry.solved_cache()
+    else {
         panic!("expected a solved NURBS cache")
     };
     let mut bytes = Vec::new();

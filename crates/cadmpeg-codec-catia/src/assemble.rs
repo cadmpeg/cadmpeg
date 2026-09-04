@@ -110,7 +110,9 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                 _ => false,
             };
             if resolved {
-                changed |= resolved_surfaces.insert(procedural.surface.clone());
+                if let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) {
+                    changed |= resolved_surfaces.insert(owner.clone());
+                }
             }
         }
         for procedural in &ir.model.procedural_curves {
@@ -136,7 +138,9 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                 _ => false,
             };
             if resolved {
-                changed |= resolved_curves.insert(procedural.curve.clone());
+                if let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) {
+                    changed |= resolved_curves.insert(owner.clone());
+                }
             }
         }
         if !changed {
@@ -995,14 +999,18 @@ mod route_tests {
             },
             source_object: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            ProceduralCurveId("catia:test:procedural-curve#0".into()),
-            curve_id,
-            ProceduralCurveDefinition::Unknown {
-                native_kind: None,
-                record: Some(record_id.clone()),
-            },
-        ));
+        ir.model
+            .add_procedural_curve(
+                curve_id,
+                ProceduralCurve::new(
+                    ProceduralCurveId("catia:test:procedural-curve#0".into()),
+                    ProceduralCurveDefinition::Unknown {
+                        native_kind: None,
+                        record: Some(record_id.clone()),
+                    },
+                ),
+            )
+            .unwrap();
         let unknowns = [UnknownRecord::retained(
             record_id,
             0,
@@ -1036,36 +1044,48 @@ mod route_tests {
         });
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            ProceduralCurveId("procedural-curve-0".to_string()),
-            curve_id,
-            ProceduralCurveDefinition::Unknown {
-                native_kind: None,
-                record: Some(UnknownId("record-0".to_string())),
-            },
-        ));
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            ProceduralSurfaceId("procedural-surface-0".to_string()),
-            surface_id.clone(),
-            ProceduralSurfaceDefinition::Unknown {
-                record: Some(UnknownId("record-1".to_string())),
-            },
-            None,
-        ));
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            ProceduralSurfaceId("procedural-surface-1".to_string()),
-            offset_id,
-            ProceduralSurfaceDefinition::Offset {
-                support: surface_id,
-                distance: 2.0,
-                u_sense: Some(1),
-                v_sense: Some(1),
-                support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
-            },
-            None,
-        ));
+        ir.model
+            .add_procedural_curve(
+                curve_id,
+                ProceduralCurve::new(
+                    ProceduralCurveId("procedural-curve-0".to_string()),
+                    ProceduralCurveDefinition::Unknown {
+                        native_kind: None,
+                        record: Some(UnknownId("record-0".to_string())),
+                    },
+                ),
+            )
+            .unwrap();
+        ir.model
+            .add_procedural_surface(
+                surface_id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId("procedural-surface-0".to_string()),
+                    ProceduralSurfaceDefinition::Unknown {
+                        record: Some(UnknownId("record-1".to_string())),
+                    },
+                    None,
+                ),
+            )
+            .unwrap();
+        ir.model
+            .add_procedural_surface(
+                offset_id,
+                ProceduralSurface::new(
+                    ProceduralSurfaceId("procedural-surface-1".to_string()),
+                    ProceduralSurfaceDefinition::Offset {
+                        support: surface_id,
+                        distance: 2.0,
+                        u_sense: Some(1),
+                        v_sense: Some(1),
+                        support_extension: None,
+                        extension_flags: Vec::new(),
+                        revision_form: None,
+                    },
+                    None,
+                ),
+            )
+            .unwrap();
         assert_eq!(unresolved_carrier_counts(&ir), (1, 2));
 
         ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Exact);

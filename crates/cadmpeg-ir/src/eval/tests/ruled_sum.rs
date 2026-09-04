@@ -31,12 +31,12 @@ fn direct_surface_fixture(
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
+            cache: None,
         },
         source_object: None,
     });
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
-        surface: surface_id.clone(),
         definition: definition,
         cache_fit_tolerance: None,
         record_bounds: None,

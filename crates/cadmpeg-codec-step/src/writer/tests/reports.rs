@@ -960,6 +960,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
             construction: ProceduralCurveId("step:test:construction#standalone-unsupported".into()),
+            cache: None,
         },
         source_object: None,
     });
@@ -1395,6 +1396,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
+            cache: None,
         },
         source_object: None,
     });
@@ -1402,7 +1404,6 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         .procedural_surfaces
         .push(cadmpeg_ir::geometry::ProceduralSurface::new(
             construction_id,
-            surface_id.clone(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound {
                 parameters: Vec::new(),
                 components: Vec::new(),
@@ -1433,6 +1434,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction_id.clone(),
+            cache: None,
         },
         source_object: None,
     });
@@ -1440,7 +1442,6 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
         .procedural_curves
         .push(cadmpeg_ir::geometry::ProceduralCurve::new(
             construction_id,
-            curve_id.clone(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact,
         ));
 
@@ -1513,26 +1514,25 @@ fn elliptical_cone_reduction_is_reported() {
 #[test]
 fn procedural_construction_reduction_is_reported() {
     let mut ir = unit_cube();
-    ir.model.procedural_curves.push(
-        cadmpeg_ir::geometry::ProceduralCurve::try_new(
-            ProceduralCurveId("generated_int_cur".into()),
-            ir.model.curves[0].id.clone(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
-                context: cadmpeg_ir::geometry::IntcurveSupportContext {
-                    sides: std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
-                        surface: None,
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    }),
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: std::array::from_fn(|_| Vec::new()),
-                },
-                discontinuity_flag: false,
+    let owner = ir.model.curves[0].id.clone();
+    let procedural = cadmpeg_ir::geometry::ProceduralCurve::try_new(
+        ProceduralCurveId("generated_int_cur".into()),
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+            context: cadmpeg_ir::geometry::IntcurveSupportContext {
+                sides: std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                    pcurve_parameter_range: None,
+                }),
+                parameter_range: [0.0, 1.0],
+                discontinuities: std::array::from_fn(|_| Vec::new()),
             },
-            Some(0.01),
-        )
-        .unwrap(),
-    );
+            discontinuity_flag: false,
+        },
+        Some(0.01),
+    )
+    .unwrap();
+    ir.model.add_procedural_curve(owner, procedural).unwrap();
 
     let mut buf = Vec::new();
     let report = write_step(

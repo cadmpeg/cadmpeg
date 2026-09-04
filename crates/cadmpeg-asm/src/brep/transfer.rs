@@ -113,8 +113,16 @@ pub fn transfer_into_ir(
     ir.model.surfaces.extend(surfaces);
     ir.model.curves.extend(curves);
     ir.model.pcurves.extend(pcurves);
-    ir.model.procedural_surfaces.extend(procedural_surfaces);
-    ir.model.procedural_curves.extend(procedural_curves);
+    for (owner, procedural) in procedural_surfaces {
+        ir.model
+            .add_procedural_surface(owner, procedural)
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+    }
+    for (owner, procedural) in procedural_curves {
+        ir.model
+            .add_procedural_curve(owner, procedural)
+            .map_err(|error| CodecError::malformed(error.to_string()))?;
+    }
     ir.model.attributes.extend(attributes);
     ctx.charge_entities(
         ir.model.entity_count().saturating_sub(before) as u64,

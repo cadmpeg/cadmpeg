@@ -62,7 +62,9 @@ fn decode_transfers_positional_line_extrusion_plane() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface == carrier_id)
+        .find(|surface| {
+            result.ir().model.procedural_surface_owner(&surface.id) == Some(&carrier_id)
+        })
         .expect("extrusion construction");
     assert!(matches!(
         construction.definition(),

@@ -113,8 +113,13 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             assert_eq!(*u_sense, None);
             assert_eq!(*v_sense, None);
             assert!(extension_flags.is_empty());
-            assert_ne!(procedural.surface, *support);
-            assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
+            let owner = result
+                .ir()
+                .model
+                .procedural_surface_owner(&procedural.id)
+                .expect("offset carrier");
+            assert_ne!(owner, support);
+            assert_eq!(&result.ir().model.faces[0].surface, owner);
             let records = result
                 .ir()
                 .native
@@ -134,7 +139,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| surface.id == procedural.surface)
+                .find(|surface| &surface.id == owner)
                 .expect("offset carrier");
             assert_eq!(
                 carrier
@@ -145,7 +150,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             );
             assert!(matches!(
                 &carrier.geometry,
-                SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+                SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
             ));
             assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
         }
@@ -215,7 +220,12 @@ fn decode_emits_rolling_ball_blend_surface() {
     assert_eq!(supports[1].as_ref().map(|side| side.reversed), Some(false));
     assert!(spine.is_none());
     assert!(native.is_none());
-    assert_eq!(result.ir().model.faces[0].surface, procedural.surface);
+    let owner = result
+        .ir()
+        .model
+        .procedural_surface_owner(&procedural.id)
+        .expect("blend carrier");
+    assert_eq!(&result.ir().model.faces[0].surface, owner);
     let records = result
         .ir()
         .native
@@ -233,7 +243,7 @@ fn decode_emits_rolling_ball_blend_surface() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == procedural.surface)
+        .find(|surface| &surface.id == owner)
         .expect("required invariant");
     assert_eq!(
         carrier
@@ -281,7 +291,13 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         Some(&records[0].id)
     );
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
-    assert_eq!(result.ir().model.procedural_curves[0].curve, curve.id);
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .procedural_curve_owner(&result.ir().model.procedural_curves[0].id),
+        Some(&curve.id)
+    );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == LossCategory::Geometry
             && loss.message.starts_with("1 surface-intersection record(s)")
@@ -320,7 +336,10 @@ fn decode_preserves_deltas_intersection_data_curve() {
     assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
     assert_eq!(
         result.ir().model.edges[0].curve.as_ref(),
-        Some(&result.ir().model.procedural_curves[0].curve)
+        result
+            .ir()
+            .model
+            .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
     );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -394,9 +413,9 @@ fn decode_emits_charted_surface_intersection_construction() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id == procedural.curve)
+        .find(|curve| result.ir().model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
         .expect("solved chart cache");
-    let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+    let Some(CurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
         panic!("charted NURBS cache");
     };
     assert_eq!(nurbs.degree, 1);

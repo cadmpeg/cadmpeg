@@ -3326,3 +3326,45 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::products::ExternalResolution"
 reason = "resolution is encoded by ExternalDocument variants instead of stored independently"
+
+[[change]]
+commit = "cbc15ab25dabfbdd53c77b1cf4ef9fcc05eefb87"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::ProceduralSurface::surface"
+reason = "the owning SurfaceGeometry::Procedural carrier is the sole construction-to-surface link"
+
+[[change]]
+commit = "cbc15ab25dabfbdd53c77b1cf4ef9fcc05eefb87"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::ProceduralCurve::curve"
+reason = "the owning CurveGeometry::Procedural carrier is the sole construction-to-curve link"
+
+[[change]]
+commit = "cbc15ab25dabfbdd53c77b1cf4ef9fcc05eefb87"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::geometry::ProceduralSurface::{new,try_new}"
+reason = "constructors no longer accept the deleted carrier back-pointer"
+
+[[change]]
+commit = "cbc15ab25dabfbdd53c77b1cf4ef9fcc05eefb87"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::geometry::ProceduralCurve::{new,try_new}"
+reason = "constructors no longer accept the deleted carrier back-pointer"
+
+[[change]]
+commit = "cbc15ab25dabfbdd53c77b1cf4ef9fcc05eefb87"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::SurfaceGeometry::Procedural"
+reason = "the carrier variant owns its optional solved cache so the construction link and cached geometry cannot diverge"
+
+[[change]]
+commit = "cbc15ab25dabfbdd53c77b1cf4ef9fcc05eefb87"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::CurveGeometry::Procedural"
+reason = "the carrier variant owns its optional solved cache so the construction link and cached geometry cannot diverge"

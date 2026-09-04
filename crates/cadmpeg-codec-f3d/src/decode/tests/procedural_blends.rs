@@ -429,11 +429,17 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == current_procedural.surface)
+        .find(|surface| {
+            current
+                .ir()
+                .model
+                .procedural_surface_owner(&current_procedural.id)
+                == Some(&surface.id)
+        })
         .expect("current variable-blend carrier");
     assert!(matches!(
-        current_carrier.geometry,
-        SurfaceGeometry::Nurbs(_)
+        current_carrier.geometry.solved_cache(),
+        Some(SurfaceGeometry::Nurbs(_))
     ));
     assert!(current_procedural.cache_fit_tolerance().is_some());
 
@@ -451,7 +457,13 @@ fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == stale_procedural.surface)
+        .find(|surface| {
+            stale
+                .ir()
+                .model
+                .procedural_surface_owner(&stale_procedural.id)
+                == Some(&surface.id)
+        })
         .expect("stale variable-blend carrier");
     assert!(matches!(
         stale_carrier.geometry,
@@ -502,7 +514,9 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == expected.surface)
+            .find(|surface| {
+                source_less.model.procedural_surface_owner(&expected.id) == Some(&surface.id)
+            })
             .expect("blend surface carrier");
         assert!(matches!(
             carrier.geometry,

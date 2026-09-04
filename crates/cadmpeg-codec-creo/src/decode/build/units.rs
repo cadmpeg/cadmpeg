@@ -1664,39 +1664,49 @@ mod tests {
     #[test]
     fn scales_procedural_model_lengths_and_cache_tolerances() {
         let mut ir = CadIr::empty();
-        ir.model.procedural_surfaces.push(
-            cadmpeg_ir::geometry::ProceduralSurface::try_new(
-                cadmpeg_ir::ids::ProceduralSurfaceId("surface-construction".into()),
-                cadmpeg_ir::ids::SurfaceId("surface".into()),
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
-                    directrix: cadmpeg_ir::ids::CurveId("directrix".into()),
-                    parameter_interval: Some([1.0, 2.0]),
-                    direction: Vector3::new(1.0, 2.0, 3.0),
-                    native_position: Some(Point3::new(4.0, 5.0, 6.0)),
-                    revision_form: None,
-                },
-                Some(7.0),
-                Some([Some(8.0), None, Some(9.0), None]),
-            )
-            .unwrap(),
-        );
-        ir.model.procedural_curves.push(
-            cadmpeg_ir::geometry::ProceduralCurve::try_new(
-                cadmpeg_ir::ids::ProceduralCurveId("curve-construction".into()),
-                cadmpeg_ir::ids::CurveId("curve".into()),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-                    angle_range: [0.0, 1.0],
-                    center: Point3::new(1.0, 2.0, 3.0),
-                    major: Vector3::new(4.0, 5.0, 6.0),
-                    minor: Vector3::new(7.0, 8.0, 9.0),
-                    pitch: Vector3::new(10.0, 11.0, 12.0),
-                    apex_factor: 0.25,
-                    axis: Vector3::new(0.0, 0.0, 1.0),
-                },
-                Some(13.0),
-            )
-            .unwrap(),
-        );
+        let surface_id = cadmpeg_ir::ids::SurfaceId("surface".into());
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: surface_id.clone(),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        let surface = cadmpeg_ir::geometry::ProceduralSurface::try_new(
+            cadmpeg_ir::ids::ProceduralSurfaceId("surface-construction".into()),
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+                directrix: cadmpeg_ir::ids::CurveId("directrix".into()),
+                parameter_interval: Some([1.0, 2.0]),
+                direction: Vector3::new(1.0, 2.0, 3.0),
+                native_position: Some(Point3::new(4.0, 5.0, 6.0)),
+                revision_form: None,
+            },
+            Some(7.0),
+            Some([Some(8.0), None, Some(9.0), None]),
+        )
+        .unwrap();
+        ir.model
+            .add_procedural_surface(surface_id, surface)
+            .unwrap();
+        let curve_id = cadmpeg_ir::ids::CurveId("curve".into());
+        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+            id: curve_id.clone(),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        let curve = cadmpeg_ir::geometry::ProceduralCurve::try_new(
+            cadmpeg_ir::ids::ProceduralCurveId("curve-construction".into()),
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+                angle_range: [0.0, 1.0],
+                center: Point3::new(1.0, 2.0, 3.0),
+                major: Vector3::new(4.0, 5.0, 6.0),
+                minor: Vector3::new(7.0, 8.0, 9.0),
+                pitch: Vector3::new(10.0, 11.0, 12.0),
+                apex_factor: 0.25,
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            Some(13.0),
+        )
+        .unwrap();
+        ir.model.add_procedural_curve(curve_id, curve).unwrap();
 
         normalize_model_lengths(&mut ir, 25.4);
 

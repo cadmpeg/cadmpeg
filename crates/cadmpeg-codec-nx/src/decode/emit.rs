@@ -242,7 +242,7 @@ pub(super) fn emit_topology(
         .model
         .procedural_curves
         .iter()
-        .map(|procedural| procedural.curve.clone())
+        .filter_map(|procedural| ir.model.procedural_curve_owner(&procedural.id).cloned())
         .collect();
     let mut curve_point_cache = CurvePointCache::default();
     let mut edges = BTreeMap::new();
@@ -297,33 +297,36 @@ pub(super) fn emit_topology(
                     id: carrier.clone(),
                     geometry: CurveGeometry::Procedural {
                         construction: construction.clone(),
+                        cache: None,
                     },
                     source_object: None,
                 });
-                ir.model.procedural_curves.push(ProceduralCurve::new(
-                    construction,
+                let _attached = ir.model.add_procedural_curve(
                     carrier.clone(),
-                    ProceduralCurveDefinition::SurfaceCurve {
-                        family: SurfaceCurveFamily::Parametric,
-                        context: IntcurveSupportContext {
-                            sides: [
-                                IntcurveSupportSide {
-                                    surface: Some(surface),
-                                    pcurve: Some(pcurve),
-                                    pcurve_parameter_range: None,
-                                },
-                                IntcurveSupportSide {
-                                    surface: None,
-                                    pcurve: None,
-                                    pcurve_parameter_range: None,
-                                },
-                            ],
-                            parameter_range,
-                            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                    ProceduralCurve::new(
+                        construction,
+                        ProceduralCurveDefinition::SurfaceCurve {
+                            family: SurfaceCurveFamily::Parametric,
+                            context: IntcurveSupportContext {
+                                sides: [
+                                    IntcurveSupportSide {
+                                        surface: Some(surface),
+                                        pcurve: Some(pcurve),
+                                        pcurve_parameter_range: None,
+                                    },
+                                    IntcurveSupportSide {
+                                        surface: None,
+                                        pcurve: None,
+                                        pcurve_parameter_range: None,
+                                    },
+                                ],
+                                parameter_range,
+                                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                            },
+                            tail: None,
                         },
-                        tail: None,
-                    },
-                ));
+                    ),
+                );
                 curve = Some(carrier);
                 param_range = None;
             }
@@ -531,9 +534,10 @@ pub(super) fn emit_topology(
             else {
                 return None;
             };
+            let owner = ir.model.procedural_curve_owner(&procedural.id)?.clone();
             Some(context.sides.iter().filter_map(move |side| {
                 Some((
-                    (procedural.curve.clone(), side.surface.clone()?),
+                    (owner.clone(), side.surface.clone()?),
                     (
                         side.pcurve.clone()?,
                         context.parameter_range,
@@ -1035,7 +1039,7 @@ pub(crate) fn orient_edge_range_with_budget(
         .model
         .procedural_curves
         .iter()
-        .any(|procedural| procedural.curve == *curve);
+        .any(|procedural| ir.model.procedural_curve_owner(&procedural.id) == Some(curve));
     let mut curve_point_cache = CurvePointCache::default();
     orient_edge_range_for_geometry_with_budget(
         geometry,

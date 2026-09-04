@@ -99,12 +99,12 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
+            cache: None,
         },
         source_object: None,
     });
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
-        surface: surface_id.clone(),
         definition: ProceduralSurfaceDefinition::Sweep {
             profile: profile_id,
             spine: spine_id,

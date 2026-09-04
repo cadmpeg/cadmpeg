@@ -1044,7 +1044,9 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == procedural.surface)
+        .find(|surface| {
+            decoded.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+        })
         .map(|surface| &surface.geometry)
         .expect("extrusion surface carrier");
     let surface_point = cadmpeg_ir::eval::model_surface_point(decoded.ir(), surface_geometry, u, v)
@@ -1058,9 +1060,11 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == procedural.surface)
+            .find(|surface| {
+                decoded.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            })
             .map(|surface| &surface.geometry),
-        Some(SurfaceGeometry::Procedural { construction }) if *construction == procedural.id
+        Some(SurfaceGeometry::Procedural { construction, .. }) if *construction == procedural.id
     ));
 
     let expected_definition = procedural.definition().clone();
@@ -1090,9 +1094,13 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == round_trip.ir().model.procedural_surfaces[0].surface)
+            .find(|surface| {
+                round_trip.ir().model.procedural_surface_owner(
+                    &round_trip.ir().model.procedural_surfaces[0].id,
+                ) == Some(&surface.id)
+            })
             .map(|surface| &surface.geometry),
-        Some(SurfaceGeometry::Procedural { construction })
+        Some(SurfaceGeometry::Procedural { construction, .. })
             if *construction == round_trip.ir().model.procedural_surfaces[0].id
     ));
 
@@ -1162,21 +1170,30 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == round_trip.ir().model.procedural_surfaces[0].surface)
+        .find(|surface| {
+            round_trip
+                .ir()
+                .model
+                .procedural_surface_owner(&round_trip.ir().model.procedural_surfaces[0].id)
+                == Some(&surface.id)
+        })
         .expect("extrusion carrier");
     let SurfaceGeometry::Cylinder {
         origin,
         axis,
         ref_direction,
         radius,
-    } = surface.geometry
+    } = surface
+        .geometry
+        .solved_cache()
+        .expect("extrusion solved cache")
     else {
         panic!("unexpected extrusion carrier: {:?}", surface.geometry)
     };
     assert!((origin.x - 2.0).abs() < 1.0e-12);
     assert!((origin.y - 3.0).abs() < 1.0e-12);
     assert!((origin.z - 4.0).abs() < 1.0e-12);
-    assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
+    assert_eq!(*axis, Vector3::new(0.0, 0.0, -1.0));
     assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);

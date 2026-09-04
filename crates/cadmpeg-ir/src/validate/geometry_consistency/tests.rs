@@ -18,31 +18,23 @@ use crate::validate::validate_neutral;
 
 macro_rules! procedural_surface {
     (
-        id: $id:expr,
-        surface: $surface:expr,
-        definition: $definition:expr,
+            id: $id:expr,
+            definition: $definition:expr,
         cache_fit_tolerance: $cache_fit_tolerance:expr,
         record_bounds: $record_bounds:expr $(,)?
     ) => {
-        ProceduralSurface::try_new(
-            $id,
-            $surface,
-            $definition,
-            $cache_fit_tolerance,
-            $record_bounds,
-        )
-        .expect("valid procedural surface fixture")
+        ProceduralSurface::try_new($id, $definition, $cache_fit_tolerance, $record_bounds)
+            .expect("valid procedural surface fixture")
     };
 }
 
 macro_rules! procedural_curve {
     (
-        id: $id:expr,
-        curve: $curve:expr,
-        definition: $definition:expr,
+            id: $id:expr,
+            definition: $definition:expr,
         cache_fit_tolerance: $cache_fit_tolerance:expr $(,)?
     ) => {
-        ProceduralCurve::try_new($id, $curve, $definition, $cache_fit_tolerance)
+        ProceduralCurve::try_new($id, $definition, $cache_fit_tolerance)
             .expect("valid procedural curve fixture")
     };
 }
@@ -68,9 +60,8 @@ fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(procedural_curve! {
+    let construction = procedural_curve! {
         id: ProceduralCurveId("surface-curve".to_string()),
-        curve: curve,
         definition: ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric,
             context: IntcurveSupportContext {
@@ -95,14 +86,18 @@ fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
             tail: None,
         },
         cache_fit_tolerance: None,
-    });
+    };
+    ir.model.add_procedural_curve(curve, construction).unwrap();
     ir
 }
 
 fn mapped_surface_offset() -> CadIr {
     let mut ir = mapped_surface_curve([2.0, 3.0]);
     let base = CurveId("base".to_string());
-    ir.model.curves[0].geometry = CurveGeometry::Line {
+    *ir.model.curves[0]
+        .geometry
+        .solved_cache_mut()
+        .expect("mapped curve has a solved cache") = CurveGeometry::Line {
         origin: Point3::new(2.0, 0.0, 25.0),
         direction: Vector3::new(1.0, 0.0, 0.0),
     };
@@ -309,9 +304,8 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         geometry: base_geometry,
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(procedural_surface! {
+    let construction = procedural_surface! {
         id: ProceduralSurfaceId("trimmed-surface".into()),
-        surface: "surface".into(),
         definition: ProceduralSurfaceDefinition::Subset {
             support: base_id,
             parameter_ranges: [[2.0, 0.0], [0.0, 2.0]],
@@ -320,7 +314,10 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         },
         cache_fit_tolerance: None,
         record_bounds: None,
-    });
+    };
+    ir.model
+        .add_procedural_surface(SurfaceId("surface".into()), construction)
+        .unwrap();
     ir.model.points[0].position = Point3::new(1.0, 2.0, 0.0);
     ir.model.points[1].position = Point3::new(2.0, 1.0, 0.0);
     ir.model.curves[0].geometry = CurveGeometry::Circle {
@@ -492,14 +489,13 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
 #[test]
 fn procedural_surface_carrier_requires_its_exact_owner() {
     let mut ir = unit_cube();
-    let surface = ir.model.surfaces[0].id.clone();
     let construction = ProceduralSurfaceId("synthetic:cube:procedural-surface#0".into());
     ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
         construction: construction.clone(),
+        cache: None,
     };
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction.clone(),
-        surface: surface.clone(),
         definition: ProceduralSurfaceDefinition::Exact {
             parameters: SplineSurfaceParameters::OrderedRanges {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
@@ -513,23 +509,9 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:?}", report.findings);
 
-    ir.model.procedural_surfaces[0]
-        .set_cache_fit_tolerance(Some(0.01))
-        .unwrap();
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding
-                .message
-                .contains("construction-backed surface cannot carry a cache-fit tolerance")
-        }));
-    ir.model.procedural_surfaces[0]
-        .set_cache_fit_tolerance(None)
-        .unwrap();
-
     ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
         construction: ProceduralSurfaceId("synthetic:missing".into()),
+        cache: None,
     };
     assert!(validate_neutral(&ir, Vec::new())
         .findings
@@ -539,26 +521,18 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
                 .message
                 .contains("references missing procedural surface construction")
         }));
-
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural { construction };
-    ir.model.procedural_surfaces[0].surface = ir.model.surfaces[1].id.clone();
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("does not produce surface")));
 }
 
 #[test]
 fn procedural_curve_carrier_requires_its_exact_owner() {
     let mut ir = unit_cube();
-    let curve = ir.model.curves[0].id.clone();
     let construction = ProceduralCurveId("synthetic:cube:procedural-curve#0".into());
     ir.model.curves[0].geometry = CurveGeometry::Procedural {
         construction: construction.clone(),
+        cache: None,
     };
     ir.model.procedural_curves.push(procedural_curve! {
         id: construction.clone(),
-        curve: curve.clone(),
         definition: ProceduralCurveDefinition::Helix {
             angle_range: [0.0, std::f64::consts::TAU],
             center: Point3::new(0.0, 0.0, 0.0),
@@ -573,23 +547,9 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.is_ok(), "{:?}", report.findings);
 
-    ir.model.procedural_curves[0]
-        .set_cache_fit_tolerance(Some(0.01))
-        .unwrap();
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding
-                .message
-                .contains("construction-backed curve cannot carry a cache-fit tolerance")
-        }));
-    ir.model.procedural_curves[0]
-        .set_cache_fit_tolerance(None)
-        .unwrap();
-
     ir.model.curves[0].geometry = CurveGeometry::Procedural {
         construction: ProceduralCurveId("synthetic:missing".into()),
+        cache: None,
     };
     assert!(validate_neutral(&ir, Vec::new())
         .findings
@@ -599,13 +559,6 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
                 .message
                 .contains("references missing procedural curve construction")
         }));
-
-    ir.model.curves[0].geometry = CurveGeometry::Procedural { construction };
-    ir.model.procedural_curves[0].curve = ir.model.curves[1].id.clone();
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("does not produce curve")));
 }
 
 #[test]
@@ -675,9 +628,8 @@ fn edge_endpoint_mismatch_is_flagged() {
     );
 
     let curve = ir.model.edges[0].curve.clone().expect("cube edge curve");
-    ir.model.procedural_curves.push(procedural_curve! {
+    let procedural = procedural_curve! {
         id: ProceduralCurveId("synthetic:cube:curve-cache#0".into()),
-        curve: curve,
         definition: ProceduralCurveDefinition::Intersection {
             context: crate::geometry::IntcurveSupportContext {
                 sides: std::array::from_fn(|_| crate::geometry::IntcurveSupportSide {
@@ -691,7 +643,8 @@ fn edge_endpoint_mismatch_is_flagged() {
             discontinuity_flag: false,
         },
         cache_fit_tolerance: Some(0.99),
-    });
+    };
+    ir.model.add_procedural_curve(curve, procedural).unwrap();
     let report = validate_neutral(&ir, Vec::new());
     assert!(
         report
@@ -818,7 +771,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         parameter_range: None,
     }];
     let owner_loop = coedge.owner_loop.clone();
-    let face = procedural
+    let surface = procedural
         .model
         .loops
         .iter()
@@ -829,27 +782,28 @@ fn pcurve_surface_mismatch_is_flagged() {
                 .faces
                 .iter()
                 .find(|face| face.id == lp.face)
+                .map(|face| face.surface.clone())
         })
         .expect("coedge owner face");
+    let construction = procedural_surface! {
+    id: ProceduralSurfaceId("synthetic:cube:procedural-surface#0".into()),
+    definition: ProceduralSurfaceDefinition::Revolution {
+            directrix: procedural.model.curves[0].id.clone(),
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            angular_interval: [0.0, std::f64::consts::TAU],
+            angular_parameter_interval: None,
+            parameter_interval: Some([0.0, 1.0]),
+            transposed: false,
+            revision_form: None,
+        },
+        cache_fit_tolerance: Some(0.01),
+        record_bounds: None,
+    };
     procedural
         .model
-        .procedural_surfaces
-        .push(procedural_surface! {
-            id: ProceduralSurfaceId("synthetic:cube:procedural-surface#0".into()),
-            surface: face.surface.clone(),
-            definition: ProceduralSurfaceDefinition::Revolution {
-                directrix: procedural.model.curves[0].id.clone(),
-                axis_origin: Point3::new(0.0, 0.0, 0.0),
-                axis_direction: Vector3::new(0.0, 0.0, 1.0),
-                angular_interval: [0.0, std::f64::consts::TAU],
-                angular_parameter_interval: None,
-                parameter_interval: Some([0.0, 1.0]),
-                transposed: false,
-                revision_form: None,
-            },
-            cache_fit_tolerance: Some(0.01),
-            record_bounds: None,
-        });
+        .add_procedural_surface(surface, construction)
+        .unwrap();
     let procedural_report = validate_neutral(&procedural, Vec::new());
     assert!(
         !procedural_report

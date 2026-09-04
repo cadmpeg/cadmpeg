@@ -41,8 +41,8 @@ use cadmpeg_ir::features::{
     Angle, FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, Length, Termination,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1437,14 +1437,18 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             instance_path: Vec::new(),
         }),
     };
-    let surfaces = vec![
+    let mut surfaces = vec![
         plane("derived-id-independent-of-native-id", 41),
         plane("wrong-family", 42),
         plane("extrusion-carrier", 44),
     ];
+    let cache = surfaces[2].geometry.clone();
+    surfaces[2].geometry = SurfaceGeometry::Procedural {
+        construction: ProceduralSurfaceId("extrusion-construction".to_string()),
+        cache: Some(SolvedSurfaceGeometry::new(cache).unwrap()),
+    };
     let procedural_surfaces = vec![ProceduralSurface::new(
         ProceduralSurfaceId("extrusion-construction".to_string()),
-        SurfaceId("extrusion-carrier".to_string()),
         ProceduralSurfaceDefinition::Extrusion {
             directrix: CurveId("directrix".to_string()),
             parameter_interval: None,

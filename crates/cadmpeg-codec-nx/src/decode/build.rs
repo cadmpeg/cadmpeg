@@ -388,6 +388,7 @@ pub(crate) fn try_decode_geometry(
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Procedural {
                             construction: procedural_id.clone(),
+                            cache: None,
                         },
                         source_object: Some(SourceObjectAssociation {
                             format: "nx".into(),
@@ -407,7 +408,6 @@ pub(crate) fn try_decode_geometry(
             annotations.derived(&procedural_id, "definition");
             if let Ok(procedural) = ProceduralSurface::try_new(
                 procedural_id,
-                surface_id.clone(),
                 ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: offset.distance,
@@ -421,7 +421,9 @@ pub(crate) fn try_decode_geometry(
                 cache_fit_tolerance,
                 None,
             ) {
-                ir.model.procedural_surfaces.push(procedural);
+                let _attached = ir
+                    .model
+                    .add_procedural_surface(surface_id.clone(), procedural);
             }
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
@@ -438,6 +440,7 @@ pub(crate) fn try_decode_geometry(
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
+                    cache: None,
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: "nx".to_string(),
@@ -454,23 +457,27 @@ pub(crate) fn try_decode_geometry(
                 .tag("BLEND_SURF");
             annotations.derived(&procedural_id, "definition");
             let procedural_index = ir.model.procedural_surfaces.len();
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                procedural_id,
+            let attached = ir.model.add_procedural_surface(
                 surface_id.clone(),
-                ProceduralSurfaceDefinition::Blend {
-                    supports: [None, None],
-                    spine: None,
-                    radius: BlendRadiusLaw::Constant {
-                        signed_radius: blend.offsets[0],
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Blend {
+                        supports: [None, None],
+                        spine: None,
+                        radius: BlendRadiusLaw::Constant {
+                            signed_radius: blend.offsets[0],
+                        },
+                        cross_section: BlendCrossSection::Circular,
+                        native: None,
                     },
-                    cross_section: BlendCrossSection::Circular,
-                    native: None,
-                },
-                None,
-            ));
-            pending_blend_supports.push((procedural_index, blend.supports, blend.offsets));
-            if blend.spine > 1 {
-                pending_blend_spines.push((procedural_index, blend.spine));
+                    None,
+                ),
+            );
+            if attached.is_ok() {
+                pending_blend_supports.push((procedural_index, blend.supports, blend.offsets));
+                if blend.spine > 1 {
+                    pending_blend_spines.push((procedural_index, blend.spine));
+                }
             }
             surfaces_by_xmt.insert(blend.xmt, surface_id);
             counts.blend_surfaces += 1;
@@ -677,6 +684,7 @@ pub(crate) fn try_decode_geometry(
                 } else if uncharted.is_some() {
                     CurveGeometry::Procedural {
                         construction: procedural_id.clone(),
+                        cache: None,
                     }
                 } else {
                     CurveGeometry::Unknown {
@@ -753,11 +761,10 @@ pub(crate) fn try_decode_geometry(
             };
             if let Ok(procedural) = ProceduralCurve::try_new(
                 procedural_id,
-                curve_id.clone(),
                 definition,
                 charted.map(|charted| charted.fit_tolerance),
             ) {
-                ir.model.procedural_curves.push(procedural);
+                let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
             }
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
@@ -1146,7 +1153,10 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
     loop {
         let previous = (used_surfaces.len(), used_curves.len());
         for procedural in &ir.model.procedural_surfaces {
-            if !used_surfaces.contains(&procedural.surface) {
+            let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+                continue;
+            };
+            if !used_surfaces.contains(owner) {
                 continue;
             }
             match procedural.definition() {
@@ -1168,7 +1178,10 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             }
         }
         for procedural in &ir.model.procedural_curves {
-            if !used_curves.contains(&procedural.curve) {
+            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+                continue;
+            };
+            if !used_curves.contains(owner) {
                 continue;
             }
             match procedural.definition() {
@@ -1565,7 +1578,10 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
         let old_surface_count = surfaces.len();
         let old_curve_count = curves.len();
         for procedural in &ir.model.procedural_surfaces {
-            if !surfaces.contains(&procedural.surface) {
+            let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+                continue;
+            };
+            if !surfaces.contains(owner) {
                 continue;
             }
             match procedural.definition() {
@@ -1587,7 +1603,10 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
             }
         }
         for procedural in &ir.model.procedural_curves {
-            if !curves.contains(&procedural.curve) {
+            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+                continue;
+            };
+            if !curves.contains(owner) {
                 continue;
             }
             match procedural.definition() {
@@ -1603,12 +1622,26 @@ pub(crate) fn prune_inactive_geometry(ir: &mut CadIr) {
         }
     }
 
+    let surface_constructions = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surfaces.contains(&surface.id))
+        .filter_map(|surface| surface.geometry.procedural_construction().cloned())
+        .collect::<BTreeSet<_>>();
+    let curve_constructions = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| curves.contains(&curve.id))
+        .filter_map(|curve| curve.geometry.procedural_construction().cloned())
+        .collect::<BTreeSet<_>>();
     ir.model
         .procedural_surfaces
-        .retain(|procedural| surfaces.contains(&procedural.surface));
+        .retain(|procedural| surface_constructions.contains(&procedural.id));
     ir.model
         .procedural_curves
-        .retain(|procedural| curves.contains(&procedural.curve));
+        .retain(|procedural| curve_constructions.contains(&procedural.id));
     ir.model
         .surfaces
         .retain(|surface| surfaces.contains(&surface.id));

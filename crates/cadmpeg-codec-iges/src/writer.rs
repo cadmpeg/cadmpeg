@@ -145,7 +145,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             append_surface_entities(&mut entities, ir, &surface.geometry, version)?;
         }
         for directrix in ir.model.surfaces.iter().filter_map(|surface| {
-            let SurfaceGeometry::Procedural { construction } = &surface.geometry else {
+            let SurfaceGeometry::Procedural { construction, .. } = &surface.geometry else {
                 return None;
             };
             ir.model
@@ -432,15 +432,24 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         ) {
             continue;
         }
+        let owner = ir
+            .model
+            .procedural_surface_owner(&procedural.id)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "IGES procedural surface {} has no unique carrier",
+                    procedural.id
+                ))
+            })?;
         let surface = ir
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == procedural.surface)
+            .find(|surface| surface.id == *owner)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES procedural surface {} references missing solved surface {}",
-                    procedural.id, procedural.surface
+                    procedural.id, owner
                 ))
             })?;
         if is_native_surface_construction(
@@ -450,8 +459,9 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         ) {
             continue;
         }
+        let geometry = surface.geometry.solved_cache().unwrap_or(&surface.geometry);
         if !matches!(
-            &surface.geometry,
+            geometry,
             SurfaceGeometry::Plane { .. }
                 | SurfaceGeometry::Nurbs(_)
                 | SurfaceGeometry::Cylinder { .. }
@@ -466,15 +476,24 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         }
     }
     for procedural in &ir.model.procedural_curves {
+        let owner = ir
+            .model
+            .procedural_curve_owner(&procedural.id)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "IGES procedural curve {} has no unique carrier",
+                    procedural.id
+                ))
+            })?;
         let curve = ir
             .model
             .curves
             .iter()
-            .find(|curve| curve.id == procedural.curve)
+            .find(|curve| curve.id == *owner)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES procedural curve {} references missing solved curve {}",
-                    procedural.id, procedural.curve
+                    procedural.id, owner
                 ))
             })?;
         let geometry = flatten_curve(&curve.geometry)?;
@@ -505,12 +524,9 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             ) {
                 return false;
             }
-            let Some(surface) = ir
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == procedural.surface)
-            else {
+            let Some(surface) = ir.model.surfaces.iter().find(|surface| {
+                ir.model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            }) else {
                 return true;
             };
             !is_native_surface_construction(
@@ -537,7 +553,7 @@ fn is_native_surface_construction(
     if !matches!(
         geometry,
         SurfaceGeometry::Procedural {
-            construction: owner
+            construction: owner, ..
         } if owner == construction
     ) {
         return false;
@@ -3179,11 +3195,10 @@ fn procedural_pcurve_source_map(
     ir: &CadIr,
     surface_id: &SurfaceId,
 ) -> Result<Option<(f64, f64, f64, f64)>, CodecError> {
-    let Some(procedural) = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.surface == *surface_id)
+    let Some(procedural) =
+        ir.model.procedural_surfaces.iter().find(|procedural| {
+            ir.model.procedural_surface_owner(&procedural.id) == Some(surface_id)
+        })
     else {
         return Ok(None);
     };
@@ -4355,7 +4370,7 @@ fn surface_entities_for_ir(
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     match geometry {
-        SurfaceGeometry::Procedural { construction } => {
+        SurfaceGeometry::Procedural { construction, .. } => {
             let procedural = ir
                 .model
                 .procedural_surfaces
@@ -5527,6 +5542,10 @@ fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
 
 fn default_range(geometry: &CurveGeometry) -> Result<[f64; 2], CodecError> {
     match geometry {
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => default_range(geometry),
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => Ok([0.0, TAU]),
         CurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
         CurveGeometry::Polyline {
@@ -5567,6 +5586,10 @@ fn curve_entity(
         ));
     }
     match geometry {
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => curve_entity(geometry, span, version),
         CurveGeometry::Line { .. } => {
             let span = span.ok_or_else(|| {
                 CodecError::NotImplemented(
@@ -5956,6 +5979,10 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> boo
 
 fn flatten_curve(geometry: &CurveGeometry) -> Result<CurveGeometry, CodecError> {
     match geometry {
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => flatten_curve(geometry),
         CurveGeometry::Transformed { basis, transform } => {
             if !transform.is_proper_rigid() {
                 return Err(CodecError::NotImplemented(

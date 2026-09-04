@@ -361,21 +361,23 @@ fn emit_carrier_surface(
         };
         if let Ok(procedural) = ProceduralSurface::try_new(
             format!("{format}:brep:procedural_surface#{i}").into(),
-            SurfaceId(id(format, i)),
             definition,
             procedural.cache_fit_tolerance,
             nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
         ) {
-            out.procedural_surfaces.push(procedural);
+            out.procedural_surfaces
+                .push((SurfaceId(id(format, i)), procedural));
         }
     } else if cached_unknown_procedural_surfaces.contains(&i) {
-        out.procedural_surfaces.push(ProceduralSurface::new(
-            format!("{format}:brep:procedural_surface#{i}").into(),
+        out.procedural_surfaces.push((
             SurfaceId(id(format, i)),
-            ProceduralSurfaceDefinition::Unknown {
-                record: Some(UnknownId(unknown_record_id(r, format))),
-            },
-            None,
+            ProceduralSurface::new(
+                format!("{format}:brep:procedural_surface#{i}").into(),
+                ProceduralSurfaceDefinition::Unknown {
+                    record: Some(UnknownId(unknown_record_id(r, format))),
+                },
+                None,
+            ),
         ));
     }
 }
@@ -2962,17 +2964,19 @@ fn emit_carrier_curve(
         };
         if let Ok(procedural) = ProceduralCurve::try_new(
             format!("{format}:brep:procedural_curve#{i}").into(),
-            CurveId(id(format, i)),
             definition,
             procedural.15,
         ) {
-            out.procedural_curves.push(procedural);
+            out.procedural_curves
+                .push((CurveId(id(format, i)), procedural));
         }
     } else if let Some((_native_kind, definition)) = cacheless_procedural_curve_defs.remove(&i) {
-        out.procedural_curves.push(ProceduralCurve::new(
-            format!("{format}:brep:procedural_curve#{i}").into(),
+        out.procedural_curves.push((
             CurveId(id(format, i)),
-            definition,
+            ProceduralCurve::new(
+                format!("{format}:brep:procedural_curve#{i}").into(),
+                definition,
+            ),
         ));
     }
 }
@@ -4339,11 +4343,11 @@ pub(crate) fn emit_annotation_records(
     let procedural_ids = out
         .procedural_surfaces
         .iter()
-        .map(|entity| entity.id.0.as_str())
+        .map(|(_, entity)| entity.id.0.as_str())
         .chain(
             out.procedural_curves
                 .iter()
-                .map(|entity| entity.id.0.as_str()),
+                .map(|(_, entity)| entity.id.0.as_str()),
         )
         .collect::<HashSet<_>>();
     for record in records {

@@ -203,6 +203,7 @@ pub(crate) fn try_decode_e5(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: procedural_id.clone(),
+                cache: None,
             },
             source_object: None,
         });
@@ -219,7 +220,6 @@ pub(crate) fn try_decode_e5(
             .derived(&procedural_id, "definition");
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
-            surface_id,
             jet.definition(),
             None,
         ));
@@ -1511,14 +1511,16 @@ fn emit_e5_curves_and_edges(
             Exactness::Derived,
         );
         annotations.derived(&id, "curve").derived(&id, "definition");
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            id,
+        let _attached = ir.model.add_procedural_curve(
             curve,
-            ProceduralCurveDefinition::Intersection {
-                context: context.clone(),
-                discontinuity_flag: false,
-            },
-        ));
+            ProceduralCurve::new(
+                id,
+                ProceduralCurveDefinition::Intersection {
+                    context: context.clone(),
+                    discontinuity_flag: false,
+                },
+            ),
+        );
     }
     for (&record_id, (surface, pcurve, range)) in surface_curve_plan {
         if intersection_plan.contains_key(&record_id) {
@@ -1535,30 +1537,32 @@ fn emit_e5_curves_and_edges(
             Exactness::Derived,
         );
         annotations.derived(&id, "curve").derived(&id, "definition");
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            id,
+        let _attached = ir.model.add_procedural_curve(
             curve,
-            ProceduralCurveDefinition::SurfaceCurve {
-                family: SurfaceCurveFamily::Parametric,
-                context: IntcurveSupportContext {
-                    sides: [
-                        IntcurveSupportSide {
-                            surface: Some(surface.clone()),
-                            pcurve: Some(pcurve.clone()),
-                            pcurve_parameter_range: None,
-                        },
-                        IntcurveSupportSide {
-                            surface: None,
-                            pcurve: None,
-                            pcurve_parameter_range: None,
-                        },
-                    ],
-                    parameter_range: *range,
-                    discontinuities: std::array::from_fn(|_| Vec::new()),
+            ProceduralCurve::new(
+                id,
+                ProceduralCurveDefinition::SurfaceCurve {
+                    family: SurfaceCurveFamily::Parametric,
+                    context: IntcurveSupportContext {
+                        sides: [
+                            IntcurveSupportSide {
+                                surface: Some(surface.clone()),
+                                pcurve: Some(pcurve.clone()),
+                                pcurve_parameter_range: None,
+                            },
+                            IntcurveSupportSide {
+                                surface: None,
+                                pcurve: None,
+                                pcurve_parameter_range: None,
+                            },
+                        ],
+                        parameter_range: *range,
+                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                    },
+                    tail: None,
                 },
-                tail: None,
-            },
-        ));
+            ),
+        );
     }
     for (&record_id, edge) in &topology.edges {
         let id = edge_ids[&record_id].clone();

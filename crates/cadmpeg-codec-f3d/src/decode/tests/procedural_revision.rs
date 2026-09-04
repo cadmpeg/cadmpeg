@@ -750,12 +750,18 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == result.ir().model.procedural_surfaces[0].surface)
+            .find(|surface| {
+                result
+                    .ir()
+                    .model
+                    .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
+                    == Some(&surface.id)
+            })
             .expect("vertex-blend owner");
         assert!(
             matches!(
                 owner.geometry,
-                SurfaceGeometry::Procedural { ref construction }
+                SurfaceGeometry::Procedural { ref construction, .. }
                     if *construction == result.ir().model.procedural_surfaces[0].id
             ),
             "unexpected vertex-blend carrier: {:?}",
@@ -1331,7 +1337,11 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less rolling-ball round trip");
-    let carrier_id = &round_trip.ir().model.procedural_surfaces[0].surface;
+    let carrier_id = round_trip
+        .ir()
+        .model
+        .procedural_surface_owner(&round_trip.ir().model.procedural_surfaces[0].id)
+        .expect("rolling-ball carrier");
     assert!(matches!(
         round_trip
             .ir()

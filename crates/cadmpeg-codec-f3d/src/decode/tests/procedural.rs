@@ -530,7 +530,12 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
             ..
         }
     ));
-    let owner = decoded.ir().model.procedural_surfaces[0].surface.clone();
+    let owner = decoded
+        .ir()
+        .model
+        .procedural_surface_owner(&decoded.ir().model.procedural_surfaces[0].id)
+        .expect("procedural surface owner")
+        .clone();
     assert!(matches!(
         decoded
             .ir()
@@ -540,7 +545,7 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
             .find(|surface| surface.id == owner)
             .expect("procedural owner")
             .geometry,
-        SurfaceGeometry::Procedural { ref construction }
+        SurfaceGeometry::Procedural { ref construction, .. }
             if *construction == decoded.ir().model.procedural_surfaces[0].id
     ));
     let (mut source_less, _, _) = decoded.into_parts();
@@ -740,7 +745,9 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| surface.id == procedural.surface)
+                .find(|surface| {
+                    decoded.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+                })
                 .map(|surface| &surface.geometry),
             Some(SurfaceGeometry::Procedural { .. })
         ));
@@ -817,7 +824,13 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
                 .model
                 .surfaces
                 .iter()
-                .find(|surface| surface.id == decoded.ir().model.procedural_surfaces[0].surface)
+                .find(|surface| {
+                    decoded
+                        .ir()
+                        .model
+                        .procedural_surface_owner(&decoded.ir().model.procedural_surfaces[0].id)
+                        == Some(&surface.id)
+                })
                 .map(|surface| &surface.geometry),
             Some(cadmpeg_ir::geometry::SurfaceGeometry::Procedural { .. })
         ));
