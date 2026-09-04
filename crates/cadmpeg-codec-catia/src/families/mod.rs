@@ -23,10 +23,6 @@ pub(crate) struct FamilyOutput {
     pub(crate) report: DecodeBody,
     pub(crate) annotations: Annotations,
     pub(crate) unknowns: Vec<UnknownRecord>,
-    /// The neutral face population was emitted from standard FBB face rows.
-    /// This provenance is required before the row color sequence can bind
-    /// positionally; a container variant alone is not sufficient.
-    pub(crate) standard_face_population: bool,
 }
 
 /// One entry in the ordered decode route table.
@@ -36,6 +32,8 @@ pub(crate) struct FamilyOutput {
 pub(crate) struct Route {
     pub(crate) applicable: fn(Variant) -> bool,
     pub(crate) decode: fn(&DecodeContext<'_>, &ContainerScan) -> Option<FamilyOutput>,
+    /// The route emits the standard FBB face population.
+    pub(crate) standard_face_population: bool,
 }
 
 /// Ordered decode routes.
@@ -47,14 +45,17 @@ pub(crate) const ROUTES: &[Route] = &[
     Route {
         applicable: |v| matches!(v, Variant::StandardNested | Variant::FbbOnly),
         decode: standard::decode::try_decode_standard,
+        standard_face_population: true,
     },
     Route {
         applicable: |v| v == Variant::ZeroEntity,
         decode: zero_entity::decode::try_decode_zero_entity,
+        standard_face_population: false,
     },
     Route {
         applicable: |v| v == Variant::E5Stream,
         decode: e5::decode::try_decode_e5,
+        standard_face_population: false,
     },
     Route {
         applicable: |v| {
@@ -64,5 +65,6 @@ pub(crate) const ROUTES: &[Route] = &[
             )
         },
         decode: freeform::try_decode_freeform_surfaces,
+        standard_face_population: false,
     },
 ];

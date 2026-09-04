@@ -2358,7 +2358,6 @@ fn try_decode_standard_population(
         report,
         annotations,
         unknowns,
-        standard_face_population: true,
     })
 }
 
