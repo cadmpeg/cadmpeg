@@ -27,7 +27,8 @@ use cadmpeg_ir::sketches::{
     SketchNativeOperand,
 };
 use cadmpeg_ir::spreadsheets::{
-    Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange,
+    CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,
+    SpreadsheetRange,
 };
 
 use crate::brep::ShapePayloadRecord;
@@ -871,7 +872,7 @@ fn append_spreadsheet(
         )));
     }
     let mut cell_ids = Vec::with_capacity(records.len());
-    let mut merged_ranges = Vec::new();
+    let mut merged_ranges: Vec<SpreadsheetRange> = Vec::new();
     for (index, cell) in records.into_iter().enumerate() {
         let address = cell.attribute("address").ok_or_else(|| {
             CodecError::malformed(format_args!("{} cell has no address", property.id))
@@ -897,11 +898,17 @@ fn append_spreadsheet(
             "fcstd:design:parameter#{}:cell:{address}",
             object.name
         ));
-        cell_ids.push(id.clone());
+        let cell_address = CellAddress::parse(address).ok_or_else(|| {
+            CodecError::malformed(format_args!("{} cell has invalid address", property.id))
+        })?;
+        cell_ids.push(SpreadsheetCell {
+            address: cell_address,
+            parameter: id.clone(),
+        });
         if let Some(range) = merged_range(cell)? {
             if !merged_ranges
                 .iter()
-                .any(|existing| range_contains_address(existing, &range.start))
+                .any(|existing| existing.contains(range.start()))
             {
                 merged_ranges.push(range);
             }
@@ -1001,10 +1008,27 @@ fn spreadsheet_dimensions(
                         property.id
                     ))
                 })?;
-            Ok(SpreadsheetDimension {
-                name: name.to_owned(),
-                pixels,
-            })
+            let index = if element == "Column" {
+                CellAddress::parse(&format!("{name}1"))
+                    .map(|address| address.col())
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "{} dimension has invalid column {name}",
+                            property.id
+                        ))
+                    })?
+            } else {
+                name.parse::<u32>()
+                    .ok()
+                    .filter(|row| *row > 0)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "{} dimension has invalid row {name}",
+                            property.id
+                        ))
+                    })?
+            };
+            Ok(SpreadsheetDimension { index, pixels })
         })
         .collect()
 }
@@ -1029,10 +1053,13 @@ fn merged_range(cell: roxmltree::Node<'_, '_>) -> Result<Option<SpreadsheetRange
         .ok_or_else(|| CodecError::Malformed("spreadsheet cell has no address".into()))?;
     let end = offset_cell_address(start, (rows - 1) as u32, (columns - 1) as u32)
         .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))?;
-    Ok(Some(SpreadsheetRange {
-        start: start.to_owned(),
-        end,
-    }))
+    let start = CellAddress::parse(start)
+        .ok_or_else(|| CodecError::Malformed("spreadsheet cell has invalid address".into()))?;
+    let end = CellAddress::parse(&end)
+        .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))?;
+    SpreadsheetRange::new(start, end)
+        .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))
+        .map(Some)
 }
 
 fn offset_cell_address(address: &str, rows: u32, columns: u32) -> Option<String> {
@@ -1066,16 +1093,7 @@ fn cell_address(address: &str) -> Option<(u32, u32)> {
 }
 
 fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
-    let Some((row, column)) = cell_address(address) else {
-        return false;
-    };
-    let Some((start_row, start_column)) = cell_address(&range.start) else {
-        return false;
-    };
-    let Some((end_row, end_column)) = cell_address(&range.end) else {
-        return false;
-    };
-    (start_row..=end_row).contains(&row) && (start_column..=end_column).contains(&column)
+    CellAddress::parse(address).is_some_and(|address| range.contains(address))
 }
 
 fn append_operation_parameters(
@@ -6202,10 +6220,11 @@ mod profile_tests {
 
     #[test]
     fn detects_cells_covered_by_a_merged_range() {
-        let range = SpreadsheetRange {
-            start: "A1".into(),
-            end: "I2".into(),
-        };
+        let range = SpreadsheetRange::new(
+            CellAddress::parse("A1").expect("A1"),
+            CellAddress::parse("I2").expect("I2"),
+        )
+        .expect("A1:I2");
 
         assert!(range_contains_address(&range, "B1"));
         assert!(range_contains_address(&range, "I2"));

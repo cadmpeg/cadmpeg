@@ -134,7 +134,10 @@ pub use source_fidelity::{
     SourceFidelity, DECODE_SIDECAR_VERSION, DECODE_SIDECAR_VERSION_V1, DECODE_SIDECAR_VERSION_V2,
     DECODE_SIDECAR_VERSION_V3, SOURCE_FIDELITY_VERSION,
 };
-pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
+pub use spreadsheets::{
+    CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,
+    SpreadsheetRange,
+};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
     SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,

@@ -29,11 +29,11 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
         let mut cells = HashSet::new();
         let mut addresses = HashSet::new();
         for cell in &sheet.cells {
-            let Some(parameter) = parameters.get(cell) else {
+            let Some(parameter) = parameters.get(&cell.parameter) else {
                 spreadsheet_finding(findings, &sheet.id.0, "spreadsheet cell does not resolve");
                 continue;
             };
-            if !cells.insert(cell) {
+            if !cells.insert(&cell.parameter) {
                 spreadsheet_finding(findings, &sheet.id.0, "spreadsheet repeats a cell identity");
             }
             if parameter.owner.as_ref() != Some(&sheet.feature) {
@@ -43,11 +43,7 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
                     "spreadsheet cell has a different owner",
                 );
             }
-            let Some(address) = parameter.properties.get("address") else {
-                spreadsheet_finding(findings, &sheet.id.0, "spreadsheet cell has no address");
-                continue;
-            };
-            if cell_address(address).is_none() || !addresses.insert(address) {
+            if !addresses.insert(cell.address) {
                 spreadsheet_finding(
                     findings,
                     &sheet.id.0,
@@ -55,34 +51,19 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        check_dimensions(findings, &sheet.id.0, &sheet.column_widths, |name| {
-            column_index(name).is_some()
-        });
-        check_dimensions(findings, &sheet.id.0, &sheet.row_heights, |name| {
-            name.parse::<u32>().is_ok_and(|row| row > 0)
-        });
+        check_dimensions(findings, &sheet.id.0, &sheet.column_widths);
+        check_dimensions(findings, &sheet.id.0, &sheet.row_heights);
         let mut ranges = Vec::new();
         for range in &sheet.merged_ranges {
-            let Some(start) = cell_address(&range.start) else {
-                spreadsheet_finding(findings, &sheet.id.0, "merged range start is invalid");
-                continue;
-            };
-            let Some(end) = cell_address(&range.end) else {
-                spreadsheet_finding(findings, &sheet.id.0, "merged range end is invalid");
-                continue;
-            };
-            if start.0 > end.0
-                || start.1 > end.1
-                || start == end
-                || !addresses.contains(&range.start)
-            {
+            if !addresses.contains(&range.start()) {
                 spreadsheet_finding(findings, &sheet.id.0, "merged range is invalid");
                 continue;
             }
-            if ranges.iter().any(|other| overlaps(*other, (start, end))) {
+            let span = (range.start(), range.end());
+            if ranges.iter().any(|other| overlaps(*other, span)) {
                 spreadsheet_finding(findings, &sheet.id.0, "merged ranges overlap");
             }
-            ranges.push((start, end));
+            ranges.push(span);
         }
     }
 }
@@ -91,11 +72,10 @@ fn check_dimensions(
     findings: &mut Vec<Finding>,
     sheet: &str,
     dimensions: &[crate::spreadsheets::SpreadsheetDimension],
-    valid_name: impl Fn(&str) -> bool,
 ) {
     let mut names = HashSet::new();
     for dimension in dimensions {
-        if !valid_name(&dimension.name) || !names.insert(&dimension.name) {
+        if dimension.index == 0 || !names.insert(dimension.index) {
             spreadsheet_finding(
                 findings,
                 sheet,
@@ -105,29 +85,20 @@ fn check_dimensions(
     }
 }
 
-fn cell_address(value: &str) -> Option<(u32, u32)> {
-    let split = value.find(|character: char| character.is_ascii_digit())?;
-    let column = column_index(&value[..split])?;
-    let row = value[split..].parse::<u32>().ok()?;
-    (row > 0).then_some((row, column))
-}
-
-fn column_index(value: &str) -> Option<u32> {
-    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_uppercase()) {
-        return None;
-    }
-    value.bytes().try_fold(0_u32, |index, byte| {
-        index
-            .checked_mul(26)?
-            .checked_add(u32::from(byte - b'A' + 1))
-    })
-}
-
-fn overlaps(left: ((u32, u32), (u32, u32)), right: ((u32, u32), (u32, u32))) -> bool {
-    left.0 .0 <= right.1 .0
-        && right.0 .0 <= left.1 .0
-        && left.0 .1 <= right.1 .1
-        && right.0 .1 <= left.1 .1
+fn overlaps(
+    left: (
+        crate::spreadsheets::CellAddress,
+        crate::spreadsheets::CellAddress,
+    ),
+    right: (
+        crate::spreadsheets::CellAddress,
+        crate::spreadsheets::CellAddress,
+    ),
+) -> bool {
+    left.0.row() <= right.1.row()
+        && right.0.row() <= left.1.row()
+        && left.0.col() <= right.1.col()
+        && right.0.col() <= left.1.col()
 }
 
 fn spreadsheet_finding(findings: &mut Vec<Finding>, entity: &str, message: &str) {
