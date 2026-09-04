@@ -3021,7 +3021,7 @@ impl<'a> Builder<'a> {
                 let mut groups = BTreeMap::<(u32, Option<u32>), Vec<_>>::new();
                 for reference in references {
                     groups
-                        .entry((reference.precedence, reference.common_group))
+                        .entry((reference.precedence.get(), reference.common_group))
                         .or_default()
                         .push(reference);
                 }

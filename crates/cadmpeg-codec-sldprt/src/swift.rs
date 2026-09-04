@@ -3,6 +3,7 @@
 #![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
@@ -1985,9 +1986,9 @@ fn deviation(
 fn datum_references(entity: &Entity, datum_ids: &BTreeMap<&str, PmiId>) -> Vec<DatumReference> {
     let mut result = Vec::new();
     for (name, precedence) in [
-        ("PrimaryDatums", 1),
-        ("SecondaryDatums", 2),
-        ("TertiaryDatums", 3),
+        ("PrimaryDatums", NonZeroU32::MIN),
+        ("SecondaryDatums", NonZeroU32::MIN.saturating_add(1)),
+        ("TertiaryDatums", NonZeroU32::MIN.saturating_add(2)),
     ] {
         let Some(collection) = unique_related(entity, name) else {
             continue;
@@ -2008,7 +2009,7 @@ fn datum_references(entity: &Entity, datum_ids: &BTreeMap<&str, PmiId>) -> Vec<D
             result.push(DatumReference {
                 datum: (*id).clone(),
                 precedence,
-                common_group: (applied.len() > 1).then_some(precedence),
+                common_group: (applied.len() > 1).then_some(precedence.get()),
                 modifiers: integer_modifier(datum.entity.integers.get("Modifier").copied()),
             });
         }
@@ -2953,7 +2954,7 @@ mod tests {
         };
         assert_eq!(references.len(), 1);
         let datum_reference = references.first().expect("primary datum reference");
-        assert_eq!(datum_reference.precedence, 1);
+        assert_eq!(datum_reference.precedence.get(), 1);
         assert_eq!(datum_reference.modifiers, ["least_material_requirement"]);
 
         let diameter = annotations

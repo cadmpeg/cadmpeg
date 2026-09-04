@@ -100,17 +100,14 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             "unresolved datum reference",
                         );
                     }
-                    if reference.precedence == 0 {
-                        invalid(findings, annotation.id.as_str(), "invalid datum precedence");
-                    }
                     compartments
-                        .entry(reference.precedence)
+                        .entry(reference.precedence.get())
                         .or_default()
                         .push(reference);
                     if let Some(group) = reference.common_group {
                         if common_groups
-                            .insert(group, reference.precedence)
-                            .is_some_and(|precedence| precedence != reference.precedence)
+                            .insert(group, reference.precedence.get())
+                            .is_some_and(|precedence| precedence != reference.precedence.get())
                         {
                             invalid(
                                 findings,
