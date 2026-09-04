@@ -3532,12 +3532,11 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::Hole {
                 profile_filter,
                 face,
-                kind,
+                construction,
                 exit_kind,
                 diameter,
                 bottom,
                 taper_angle,
-                specification,
                 placements,
                 ..
             } => {
@@ -3591,20 +3590,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             && angle.0 > 0.0
                             && angle.0 < std::f64::consts::PI
                     }
-                    HoleKind::Threaded {
-                        major_diameter,
-                        thread_depth,
-                        pitch,
-                        drill_point_angle,
-                    } => {
-                        positive_feature_length(*major_diameter)
-                            && positive_feature_length(*thread_depth)
-                            && pitch.is_none_or(positive_feature_length)
-                            && drill_point_angle.0.is_finite()
-                            && drill_point_angle.0 > 0.0
-                            && drill_point_angle.0 < std::f64::consts::PI
-                            && diameter.is_some_and(|diameter| major_diameter.0 > diameter.0)
-                    }
                     HoleKind::Counterdrill {
                         diameter,
                         entry_diameter,
@@ -3620,6 +3605,27 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             && angle.0 > 0.0
                             && angle.0 < std::f64::consts::PI
                     }
+                };
+                let (construction_valid, specification) = match construction {
+                    crate::features::HoleConstruction::Form {
+                        kind,
+                        specification,
+                    } => (kind_valid(kind), specification.as_deref()),
+                    crate::features::HoleConstruction::NativeThread {
+                        major_diameter,
+                        thread_depth,
+                        pitch,
+                        drill_point_angle,
+                    } => (
+                        positive_feature_length(*major_diameter)
+                            && positive_feature_length(*thread_depth)
+                            && pitch.is_none_or(positive_feature_length)
+                            && drill_point_angle.0.is_finite()
+                            && drill_point_angle.0 > 0.0
+                            && drill_point_angle.0 < std::f64::consts::PI
+                            && diameter.is_some_and(|diameter| major_diameter.0 > diameter.0),
+                        None,
+                    ),
                 };
                 let placements_valid = placements.iter().flatten().all(|placement| {
                     let (point, direction) = match placement {
@@ -3644,25 +3650,37 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 let taper_valid = taper_angle.is_none_or(|angle| {
                     angle.0.is_finite() && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
                 });
-                let specification_valid = specification.as_deref().is_none_or(|specification| {
-                    !specification.standard.is_empty()
-                        && specification.pitch.is_none_or(positive_feature_length)
-                        && specification
-                            .major_diameter
-                            .is_none_or(positive_feature_length)
-                        && specification
-                            .clearance
-                            .is_none_or(|value| value.0.is_finite())
-                        && match specification.depth {
+                let specification_valid = specification.is_none_or(|specification| {
+                    let (standard, pitch, major_diameter, clearance, depth) = match specification {
+                        crate::features::HoleSpecification::Clearance {
+                            standard,
+                            clearance,
+                            depth,
+                            ..
+                        } => (standard, None, None, clearance, depth),
+                        crate::features::HoleSpecification::Threaded {
+                            standard,
+                            pitch,
+                            major_diameter,
+                            clearance,
+                            depth,
+                            ..
+                        } => (standard, *pitch, *major_diameter, clearance, depth),
+                    };
+                    !standard.is_empty()
+                        && pitch.is_none_or(positive_feature_length)
+                        && major_diameter.is_none_or(positive_feature_length)
+                        && clearance.is_none_or(|value| value.0.is_finite())
+                        && match depth {
                             crate::features::HoleThreadDepth::Blind { depth } => {
-                                positive_feature_length(depth)
+                                positive_feature_length(*depth)
                             }
                             crate::features::HoleThreadDepth::HoleDepth
                             | crate::features::HoleThreadDepth::TappedStandard => true,
                         }
                 });
                 if diameter.is_some_and(|value| !positive_feature_length(value))
-                    || !kind_valid(kind)
+                    || !construction_valid
                     || exit_kind.as_ref().is_some_and(|kind| !kind_valid(kind))
                     || !placements_valid
                     || !filter_valid

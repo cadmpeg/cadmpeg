@@ -1016,10 +1016,10 @@ fn encoder_writes_source_less_native_features() {
                 position: Point3::new(3.0, 4.0, 5.0),
                 direction: Vector3::new(0.0, 0.0, -1.0),
             }]),
-            kind: HoleKind::Countersink {
+            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Countersink {
                 diameter: Length(8.0),
                 angle: Angle(1.4),
-            },
+            }),
             exit_kind: None,
             diameter: Some(Length(5.0)),
             extent: Some(LinearTermination::Blind {
@@ -1027,7 +1027,6 @@ fn encoder_writes_source_less_native_features() {
             }),
             bottom: None,
             taper_angle: None,
-            specification: None,
             allow_multi_profile_faces: None,
         },
     ];

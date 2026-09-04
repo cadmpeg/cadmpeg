@@ -12,13 +12,13 @@ use cadmpeg_ir::features::{
     ChamferSpec, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide,
     ExtrusionDirectionSource, ExtrusionFaceMaker, Feature, FeatureDefinition, FeatureId,
     FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat, HelicalSweepConstruction,
-    HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleKind, HoleProfileFilter,
-    HoleSpecification, HoleThreadDepth, InnerWireTaper, Length, LinearTermination, ParameterId,
-    ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed, PatternStage,
-    PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RevolutionFuseOrder, RevolveExtent, RuledCurveOrientation, ScaleCenter,
-    ScaleFactors, ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation,
-    SweepTransformation, SweepTransition, ThreadHand,
+    HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleConstruction, HoleKind,
+    HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, Length,
+    LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter,
+    PatternSeed, PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec,
+    RevolutionAxis, RevolutionConstruction, RevolutionFuseOrder, RevolveExtent,
+    RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SurfaceProjectionMode,
+    SweepMode, SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -5004,46 +5004,56 @@ fn hole_definition(
         None
     } else {
         let threaded = bool_selector(properties, "Threaded", false)?;
-        Some(Box::new(HoleSpecification {
-            standard: thread_standard(thread_type)?.into(),
-            designation: enumeration_label(properties, "ThreadSize"),
-            class: if threaded {
-                enumeration_label(properties, "ThreadClass")
-            } else {
-                None
+        let standard = thread_standard(thread_type)?.into();
+        let designation = enumeration_label(properties, "ThreadSize");
+        let modeled = if property(properties, "ModelThread").is_some() {
+            bool_selector(properties, "ModelThread", false)?
+        } else {
+            bool_selector(properties, "ModelActualThread", false)?
+        };
+        let cosmetic = bool_selector(properties, "CosmeticThread", false)?;
+        let hand = match enumeration_selector(properties, "ThreadDirection", 0)? {
+            0 => ThreadHand::Right,
+            1 => ThreadHand::Left,
+            _ => return None,
+        };
+        let depth = match enumeration_selector(properties, "ThreadDepthType", 0)? {
+            0 => HoleThreadDepth::HoleDepth,
+            1 => HoleThreadDepth::Blind {
+                depth: Length(positive("ThreadDepth")?),
             },
-            fit: if threaded {
-                None
-            } else {
-                enumeration_label(properties, "ThreadFit")
-            },
-            threaded,
-            modeled: if property(properties, "ModelThread").is_some() {
-                bool_selector(properties, "ModelThread", false)?
-            } else {
-                bool_selector(properties, "ModelActualThread", false)?
-            },
-            cosmetic: bool_selector(properties, "CosmeticThread", false)?,
-            pitch: positive("ThreadPitch").map(Length),
-            major_diameter: positive("ThreadDiameter").map(Length),
-            hand: match enumeration_selector(properties, "ThreadDirection", 0)? {
-                0 => ThreadHand::Right,
-                1 => ThreadHand::Left,
-                _ => return None,
-            },
-            depth: match enumeration_selector(properties, "ThreadDepthType", 0)? {
-                0 => HoleThreadDepth::HoleDepth,
-                1 => HoleThreadDepth::Blind {
-                    depth: Length(positive("ThreadDepth")?),
-                },
-                2 => HoleThreadDepth::TappedStandard,
-                _ => return None,
-            },
-            clearance: if bool_selector(properties, "UseCustomThreadClearance", false)? {
-                Some(Length(scalar_named(properties, "CustomThreadClearance")?))
-            } else {
-                None
-            },
+            2 => HoleThreadDepth::TappedStandard,
+            _ => return None,
+        };
+        let clearance = if bool_selector(properties, "UseCustomThreadClearance", false)? {
+            Some(Length(scalar_named(properties, "CustomThreadClearance")?))
+        } else {
+            None
+        };
+        Some(Box::new(if threaded {
+            HoleSpecification::Threaded {
+                standard,
+                designation,
+                class: enumeration_label(properties, "ThreadClass"),
+                modeled,
+                cosmetic,
+                pitch: positive("ThreadPitch").map(Length),
+                major_diameter: positive("ThreadDiameter").map(Length),
+                hand,
+                depth,
+                clearance,
+            }
+        } else {
+            HoleSpecification::Clearance {
+                standard,
+                designation,
+                fit: enumeration_label(properties, "ThreadFit"),
+                modeled,
+                cosmetic,
+                hand,
+                depth,
+                clearance,
+            }
         }))
     };
     Some(FeatureDefinition::Hole {
@@ -5051,13 +5061,15 @@ fn hole_definition(
         profile_filter: Some(profile_filter),
         face: None,
         placements: None,
-        kind,
+        construction: HoleConstruction::Form {
+            kind,
+            specification,
+        },
         exit_kind: None,
         diameter: Some(Length(diameter)),
         extent: Some(extent),
         bottom: Some(bottom),
         taper_angle,
-        specification,
         allow_multi_profile_faces: Some(bool_selector(properties, "AllowMultiFace", false)?),
     })
 }

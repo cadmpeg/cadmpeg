@@ -251,7 +251,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
     assert!(matches!(
         decoded.ir().model.features[4].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: Some(Length(4.0)),
             ..
         }

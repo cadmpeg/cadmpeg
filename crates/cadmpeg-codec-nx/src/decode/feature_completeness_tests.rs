@@ -262,12 +262,10 @@ fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
         Some(Angle(std::f64::consts::PI)),
         None,
     ));
-    let invalid_specification = HoleSpecification {
+    let invalid_specification = HoleSpecification::Threaded {
         standard: " ".into(),
         designation: None,
         class: None,
-        fit: None,
-        threaded: true,
         modeled: false,
         cosmetic: true,
         pitch: Some(Length(0.0)),

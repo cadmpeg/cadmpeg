@@ -6108,18 +6108,21 @@ fn non_boolean_feature_definition_with_parameters(
                 profile_filter: None,
                 face: None,
                 placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
-                kind: match (measured_chamfer, hole_template) {
-                    (
-                        Some(chamfer),
-                        Some((
-                            _,
-                            crate::native::features::SimpleHoleForm::Simple,
-                            crate::native::features::SimpleHoleExtent::Through,
-                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
-                            crate::native::features::SimpleHoleEndTreatment::Chamfer,
-                        )),
-                    ) => chamfer,
-                    _ => template_kind,
+                construction: cadmpeg_ir::features::HoleConstruction::Form {
+                    kind: match (measured_chamfer, hole_template) {
+                        (
+                            Some(chamfer),
+                            Some((
+                                _,
+                                crate::native::features::SimpleHoleForm::Simple,
+                                crate::native::features::SimpleHoleExtent::Through,
+                                crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                                crate::native::features::SimpleHoleEndTreatment::Chamfer,
+                            )),
+                        ) => chamfer,
+                        _ => template_kind,
+                    },
+                    specification: None,
                 },
                 exit_kind: match (measured_chamfer, hole_template) {
                     (
@@ -6138,7 +6141,6 @@ fn non_boolean_feature_definition_with_parameters(
                 extent: hole.extent.or(template_extent),
                 bottom: None,
                 taper_angle: None,
-                specification: None,
                 allow_multi_profile_faces: None,
             }
         }
@@ -6147,10 +6149,13 @@ fn non_boolean_feature_definition_with_parameters(
             profile_filter: None,
             face: None,
             placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
-            kind: if hole.grouped_simple_through {
-                hole.chamfer.unwrap_or(HoleKind::Simple)
-            } else {
-                HoleKind::Unresolved(None)
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: if hole.grouped_simple_through {
+                    hole.chamfer.unwrap_or(HoleKind::Simple)
+                } else {
+                    HoleKind::Unresolved(None)
+                },
+                specification: None,
             },
             exit_kind: hole
                 .grouped_simple_through
@@ -6162,7 +6167,6 @@ fn non_boolean_feature_definition_with_parameters(
                 .then_some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             bottom: None,
             taper_angle: None,
-            specification: None,
             allow_multi_profile_faces: None,
         },
         "RIB" => FeatureDefinition::Rib {

@@ -13,8 +13,8 @@ use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, ExtrusionDirectionSource,
-    ExtrusionFaceMaker, FaceSelection, HoleBottom, HoleKind, HolePlacement, HoleProfileFilter,
-    HoleSpecification, InnerWireTaper, Length, LinearTermination, ProfileRef,
+    ExtrusionFaceMaker, FaceSelection, HoleBottom, HoleConstruction, HoleKind, HolePlacement,
+    HoleProfileFilter, InnerWireTaper, Length, LinearTermination, ProfileRef,
 };
 
 #[allow(
@@ -319,17 +319,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         profile_filter: &Option<HoleProfileFilter>,
         face: &Option<FaceSelection>,
         placements: &Option<Vec<HolePlacement>>,
-        kind: &HoleKind,
+        construction: &HoleConstruction,
         exit_kind: &Option<HoleKind>,
         diameter: &Option<Length>,
         extent: &Option<LinearTermination>,
         bottom: &Option<HoleBottom>,
         taper_angle: &Option<Angle>,
-        specification: &Option<Box<HoleSpecification>>,
         allow_multi_profile_faces: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
+        let (kind, specification) = match construction {
+            HoleConstruction::Form {
+                kind,
+                specification,
+            } => (Some(kind), specification.as_ref()),
+            HoleConstruction::NativeThread { .. } => (None, None),
+        };
         Ok({
             if profile.is_some()
                 || profile_filter.is_some()
@@ -362,116 +368,121 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(diameter) = diameter {
                 parameters.insert("Diameter".into(), format_length_mm(diameter.0));
             }
-            match kind {
-                HoleKind::Unresolved(_)
-                | HoleKind::PartialCounterbore { .. }
-                | HoleKind::PartialCountersink { .. }
-                    if existing.is_some() => {}
-                HoleKind::Unresolved(_)
-                | HoleKind::PartialCounterbore { .. }
-                | HoleKind::PartialCountersink { .. } => {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unresolved hole entry construction",
-                        feature.id
-                    )));
-                }
-                HoleKind::Simple => {
-                    parameters.remove("CounterboreDiameter");
-                    parameters.remove("CounterboreDepth");
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.remove("DrillPointAngle");
-                }
-                HoleKind::SimpleDrilled { drill_point_angle } => {
-                    parameters.remove("CounterboreDiameter");
-                    parameters.remove("CounterboreDepth");
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.insert(
-                        "DrillPointAngle".into(),
-                        format_angle_rad(drill_point_angle.0),
-                    );
-                }
-                HoleKind::Counterbore { diameter, depth } => {
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                    parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
-                    parameters.remove("DrillPointAngle");
-                }
-                HoleKind::CounterboreDrilled {
-                    diameter,
-                    depth,
-                    drill_point_angle,
-                } => {
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
-                    parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
-                    parameters.insert(
-                        "DrillPointAngle".into(),
-                        format_angle_rad(drill_point_angle.0),
-                    );
-                }
-                HoleKind::Countersink { diameter, angle } => {
-                    parameters.remove("CounterboreDiameter");
-                    parameters.remove("CounterboreDepth");
-                    parameters.remove("ThreadMajorDiameter");
-                    parameters.remove("ThreadDepth");
-                    parameters.remove("ThreadPitch");
-                    parameters.remove("DrillPointAngle");
-                    parameters.insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
-                    parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
-                }
-                HoleKind::Threaded {
-                    major_diameter,
-                    thread_depth,
-                    pitch,
-                    drill_point_angle,
-                } => {
-                    parameters.remove("CounterboreDiameter");
-                    parameters.remove("CounterboreDepth");
-                    parameters.remove("CountersinkDiameter");
-                    parameters.remove("CountersinkAngle");
-                    parameters.insert(
-                        "ThreadMajorDiameter".into(),
-                        format_length_mm(major_diameter.0),
-                    );
-                    parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.0));
-                    if let Some(pitch) = pitch {
-                        parameters.insert("ThreadPitch".into(), format_length_mm(pitch.0));
-                    } else {
-                        parameters.remove("ThreadPitch");
+            if let Some(kind) = kind {
+                match kind {
+                    HoleKind::Unresolved(_)
+                    | HoleKind::PartialCounterbore { .. }
+                    | HoleKind::PartialCountersink { .. }
+                        if existing.is_some() => {}
+                    HoleKind::Unresolved(_)
+                    | HoleKind::PartialCounterbore { .. }
+                    | HoleKind::PartialCountersink { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unresolved hole entry construction",
+                            feature.id
+                        )));
                     }
-                    parameters.insert(
-                        "DrillPointAngle".into(),
-                        format_angle_rad(drill_point_angle.0),
-                    );
+                    HoleKind::Simple => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters.remove("DrillPointAngle");
+                    }
+                    HoleKind::SimpleDrilled { drill_point_angle } => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters.insert(
+                            "DrillPointAngle".into(),
+                            format_angle_rad(drill_point_angle.0),
+                        );
+                    }
+                    HoleKind::Counterbore { diameter, depth } => {
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters
+                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
+                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                        parameters.remove("DrillPointAngle");
+                    }
+                    HoleKind::CounterboreDrilled {
+                        diameter,
+                        depth,
+                        drill_point_angle,
+                    } => {
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters
+                            .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
+                        parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
+                        parameters.insert(
+                            "DrillPointAngle".into(),
+                            format_angle_rad(drill_point_angle.0),
+                        );
+                    }
+                    HoleKind::Countersink { diameter, angle } => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("ThreadMajorDiameter");
+                        parameters.remove("ThreadDepth");
+                        parameters.remove("ThreadPitch");
+                        parameters.remove("DrillPointAngle");
+                        parameters
+                            .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
+                        parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
+                    }
+                    HoleKind::Counterdrill { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unsupported counterdrill construction",
+                            feature.id
+                        )));
+                    }
+                    HoleKind::Chamfer { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unsupported chamfered-hole construction",
+                            feature.id
+                        )));
+                    }
                 }
-                HoleKind::Counterdrill { .. } => {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unsupported counterdrill construction",
-                        feature.id
-                    )));
+            } else if let HoleConstruction::NativeThread {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            } = construction
+            {
+                parameters.remove("CounterboreDiameter");
+                parameters.remove("CounterboreDepth");
+                parameters.remove("CountersinkDiameter");
+                parameters.remove("CountersinkAngle");
+                parameters.insert(
+                    "ThreadMajorDiameter".into(),
+                    format_length_mm(major_diameter.0),
+                );
+                parameters.insert("ThreadDepth".into(), format_length_mm(thread_depth.0));
+                if let Some(pitch) = pitch {
+                    parameters.insert("ThreadPitch".into(), format_length_mm(pitch.0));
+                } else {
+                    parameters.remove("ThreadPitch");
                 }
-                HoleKind::Chamfer { .. } => {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} has unsupported chamfered-hole construction",
-                        feature.id
-                    )));
-                }
+                parameters.insert(
+                    "DrillPointAngle".into(),
+                    format_angle_rad(drill_point_angle.0),
+                );
             }
             let mut properties = feature.source_properties.clone();
             match face {

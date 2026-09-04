@@ -2464,13 +2464,12 @@ mod tests {
             profile_filter: None,
             face: None,
             placements: None,
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
             exit_kind: None,
             diameter: Some(Length(diameter)),
             extent: None,
             bottom: None,
             taper_angle: None,
-            specification: None,
             allow_multi_profile_faces: None,
         }
     }

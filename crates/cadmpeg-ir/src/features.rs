@@ -1934,9 +1934,10 @@ pub enum FeatureDefinition {
         /// Complete one-or-many hole placements, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         placements: Option<Vec<HolePlacement>>,
-        /// Structural drilling, entry-treatment, and threading form.
-        #[cfg_attr(feature = "schema", schemars(with = "HoleKindWire"))]
-        kind: HoleKind,
+        /// Structural drilling, entry-treatment, and standard/thread construction.
+        #[serde(flatten)]
+        #[cfg_attr(feature = "schema", schemars(flatten))]
+        construction: HoleConstruction,
         /// Exit treatment at the far side, when distinct from the entry treatment.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "schema", schemars(with = "Option<HoleKindWire>"))]
@@ -1954,9 +1955,6 @@ pub enum FeatureDefinition {
         /// Included taper angle for a conical hole, when enabled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         taper_angle: Option<Angle>,
-        /// Standard sizing and thread construction, when specified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        specification: Option<Box<HoleSpecification>>,
         /// Whether a profile containing multiple faces is accepted as one operation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         allow_multi_profile_faces: Option<bool>,
@@ -4760,18 +4758,6 @@ pub enum HoleKind {
         /// Countersink included angle.
         angle: Angle,
     },
-    /// Internally threaded hole terminating in a conical drill point.
-    Threaded {
-        /// Nominal major diameter of the internal thread.
-        major_diameter: Length,
-        /// Axial length over which the thread is cut.
-        thread_depth: Length,
-        /// Thread pitch, when carried independently of the nominal designation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pitch: Option<Length>,
-        /// Included angle of the conical drill point.
-        drill_point_angle: Angle,
-    },
     /// Hole with a conical entry followed by a wider cylindrical recess.
     Counterdrill {
         /// Cylindrical entry-recess diameter.
@@ -4784,6 +4770,42 @@ pub enum HoleKind {
         /// Included conical entry angle.
         angle: Angle,
     },
+}
+
+/// Mutually exclusive ordinary and source-native threaded hole constructions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "HoleConstructionWire", into = "HoleConstructionWire")]
+pub enum HoleConstruction {
+    /// Entry treatment with optional named standard sizing or thread metadata.
+    Form {
+        /// Structural entry treatment.
+        kind: HoleKind,
+        /// Standard sizing and thread construction, when specified.
+        specification: Option<Box<HoleSpecification>>,
+    },
+    /// SLDPRT native thread geometry carried without a named standard specification.
+    NativeThread {
+        /// Nominal major diameter of the internal thread.
+        major_diameter: Length,
+        /// Axial length over which the thread is cut.
+        thread_depth: Length,
+        /// Thread pitch, when carried independently of a nominal designation.
+        pitch: Option<Length>,
+        /// Included angle of the conical drill point.
+        drill_point_angle: Angle,
+    },
+}
+
+impl HoleConstruction {
+    /// Creates an entry treatment without standard sizing metadata.
+    #[must_use]
+    pub const fn form(kind: HoleKind) -> Self {
+        Self::Form {
+            kind,
+            specification: None,
+        }
+    }
 }
 
 impl HoleKind {
@@ -4901,17 +4923,6 @@ impl From<HoleKind> for HoleKindWire {
                 drill_point_angle,
             },
             HoleKind::Countersink { diameter, angle } => Self::Countersink { diameter, angle },
-            HoleKind::Threaded {
-                major_diameter,
-                thread_depth,
-                pitch,
-                drill_point_angle,
-            } => Self::Threaded {
-                major_diameter,
-                thread_depth,
-                pitch,
-                drill_point_angle,
-            },
             HoleKind::Counterdrill {
                 diameter,
                 entry_diameter,
@@ -4976,17 +4987,9 @@ impl TryFrom<HoleKindWire> for HoleKind {
                 drill_point_angle,
             },
             HoleKindWire::Countersink { diameter, angle } => Self::Countersink { diameter, angle },
-            HoleKindWire::Threaded {
-                major_diameter,
-                thread_depth,
-                pitch,
-                drill_point_angle,
-            } => Self::Threaded {
-                major_diameter,
-                thread_depth,
-                pitch,
-                drill_point_angle,
-            },
+            HoleKindWire::Threaded { .. } => {
+                return Err("threaded hole kind requires a HoleConstruction".to_string())
+            }
             HoleKindWire::Counterdrill {
                 diameter,
                 entry_diameter,
@@ -4999,6 +5002,75 @@ impl TryFrom<HoleKindWire> for HoleKind {
                 angle,
             },
         })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct HoleConstructionWire {
+    #[serde(flatten)]
+    kind: HoleKindWire,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    specification: Option<Box<HoleSpecification>>,
+}
+
+impl From<HoleConstruction> for HoleConstructionWire {
+    fn from(value: HoleConstruction) -> Self {
+        match value {
+            HoleConstruction::Form {
+                kind,
+                specification,
+            } => Self {
+                kind: kind.into(),
+                specification,
+            },
+            HoleConstruction::NativeThread {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            } => Self {
+                kind: HoleKindWire::Threaded {
+                    major_diameter,
+                    thread_depth,
+                    pitch,
+                    drill_point_angle,
+                },
+                specification: None,
+            },
+        }
+    }
+}
+
+impl TryFrom<HoleConstructionWire> for HoleConstruction {
+    type Error = String;
+
+    fn try_from(value: HoleConstructionWire) -> Result<Self, Self::Error> {
+        match value.kind {
+            HoleKindWire::Threaded {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            } => {
+                if value.specification.is_some() {
+                    return Err(
+                        "a native threaded hole cannot also carry a standard specification"
+                            .to_string(),
+                    );
+                }
+                Ok(Self::NativeThread {
+                    major_diameter,
+                    thread_depth,
+                    pitch,
+                    drill_point_angle,
+                })
+            }
+            kind => Ok(Self::Form {
+                kind: kind.try_into()?,
+                specification: value.specification,
+            }),
+        }
     }
 }
 
@@ -5033,37 +5105,183 @@ pub enum HoleBottom {
 /// Standard sizing and optional physical-thread construction for a hole.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct HoleSpecification {
-    /// Named thread or fastener standard family.
-    pub standard: String,
-    /// Nominal size designation within the standard.
+#[serde(try_from = "HoleSpecificationWire", into = "HoleSpecificationWire")]
+pub enum HoleSpecification {
+    /// Clearance-hole sizing, which may carry a fit but cannot carry thread data.
+    Clearance {
+        /// Named fastener standard family.
+        standard: String,
+        /// Nominal size designation within the standard.
+        designation: Option<String>,
+        /// Clearance-hole fit class.
+        fit: Option<String>,
+        /// Whether exact standard geometry is modeled.
+        modeled: bool,
+        /// Whether cosmetic presentation is requested.
+        cosmetic: bool,
+        /// Standard direction value retained from the source record.
+        hand: ThreadHand,
+        /// Standard depth rule retained from the source record.
+        depth: HoleThreadDepth,
+        /// Additional radial clearance used for modeled geometry.
+        clearance: Option<Length>,
+    },
+    /// Internally threaded-hole sizing and thread geometry.
+    Threaded {
+        /// Named thread standard family.
+        standard: String,
+        /// Nominal size designation within the standard.
+        designation: Option<String>,
+        /// Tolerance or thread class.
+        class: Option<String>,
+        /// Whether exact helical thread geometry is modeled.
+        modeled: bool,
+        /// Whether cosmetic thread presentation is requested.
+        cosmetic: bool,
+        /// Thread pitch in canonical millimeters.
+        pitch: Option<Length>,
+        /// Nominal major thread diameter.
+        major_diameter: Option<Length>,
+        /// Thread handedness.
+        hand: ThreadHand,
+        /// Axial thread-depth construction.
+        depth: HoleThreadDepth,
+        /// Additional radial thread clearance used for modeled geometry.
+        clearance: Option<Length>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct HoleSpecificationWire {
+    standard: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub designation: Option<String>,
-    /// Tolerance or thread class.
+    designation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class: Option<String>,
-    /// Clearance-hole fit class when the hole is not threaded.
+    class: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fit: Option<String>,
-    /// Whether the hole is internally threaded rather than a clearance hole.
-    pub threaded: bool,
-    /// Whether exact helical thread geometry is modeled.
-    pub modeled: bool,
-    /// Whether cosmetic thread presentation is requested.
-    pub cosmetic: bool,
-    /// Thread pitch in canonical millimeters.
+    fit: Option<String>,
+    threaded: bool,
+    modeled: bool,
+    cosmetic: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pitch: Option<Length>,
-    /// Nominal major thread diameter.
+    pitch: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub major_diameter: Option<Length>,
-    /// Thread handedness.
-    pub hand: ThreadHand,
-    /// Axial thread-depth construction.
-    pub depth: HoleThreadDepth,
-    /// Additional radial thread clearance used for modeled geometry.
+    major_diameter: Option<Length>,
+    hand: ThreadHand,
+    depth: HoleThreadDepth,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub clearance: Option<Length>,
+    clearance: Option<Length>,
+}
+
+impl From<HoleSpecification> for HoleSpecificationWire {
+    fn from(value: HoleSpecification) -> Self {
+        match value {
+            HoleSpecification::Clearance {
+                standard,
+                designation,
+                fit,
+                modeled,
+                cosmetic,
+                hand,
+                depth,
+                clearance,
+            } => Self {
+                standard,
+                designation,
+                class: None,
+                fit,
+                threaded: false,
+                modeled,
+                cosmetic,
+                pitch: None,
+                major_diameter: None,
+                hand,
+                depth,
+                clearance,
+            },
+            HoleSpecification::Threaded {
+                standard,
+                designation,
+                class,
+                modeled,
+                cosmetic,
+                pitch,
+                major_diameter,
+                hand,
+                depth,
+                clearance,
+            } => Self {
+                standard,
+                designation,
+                class,
+                fit: None,
+                threaded: true,
+                modeled,
+                cosmetic,
+                pitch,
+                major_diameter,
+                hand,
+                depth,
+                clearance,
+            },
+        }
+    }
+}
+
+impl TryFrom<HoleSpecificationWire> for HoleSpecification {
+    type Error = String;
+
+    fn try_from(value: HoleSpecificationWire) -> Result<Self, Self::Error> {
+        let HoleSpecificationWire {
+            standard,
+            designation,
+            class,
+            fit,
+            threaded,
+            modeled,
+            cosmetic,
+            pitch,
+            major_diameter,
+            hand,
+            depth,
+            clearance,
+        } = value;
+        if threaded {
+            if fit.is_some() {
+                return Err("fit must be absent for a threaded hole specification".to_string());
+            }
+            Ok(Self::Threaded {
+                standard,
+                designation,
+                class,
+                modeled,
+                cosmetic,
+                pitch,
+                major_diameter,
+                hand,
+                depth,
+                clearance,
+            })
+        } else {
+            if class.is_some() || pitch.is_some() || major_diameter.is_some() {
+                return Err(
+                    "class, pitch, and major_diameter must be absent for a clearance hole specification"
+                        .to_string(),
+                );
+            }
+            Ok(Self::Clearance {
+                standard,
+                designation,
+                fit,
+                modeled,
+                cosmetic,
+                hand,
+                depth,
+                clearance,
+            })
+        }
+    }
 }
 
 /// Thread handedness.

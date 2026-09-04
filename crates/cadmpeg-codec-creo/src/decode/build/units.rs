@@ -487,26 +487,22 @@ fn scale_feature_definition(definition: &mut FeatureDefinition, scale: f64) {
         FeatureDefinition::Scale { .. } => {}
         FeatureDefinition::Hole {
             placements,
-            kind,
+            construction,
             exit_kind,
             diameter,
             extent,
-            specification,
             ..
         } => {
             for placement in placements.iter_mut().flatten() {
                 scale_hole_placement(placement, scale);
             }
-            scale_hole_kind(kind, scale);
+            scale_hole_construction(construction, scale);
             if let Some(exit_kind) = exit_kind {
                 scale_hole_kind(exit_kind, scale);
             }
             scale_optional_length(diameter, scale);
             if let Some(extent) = extent {
                 scale_linear_termination(extent, scale);
-            }
-            if let Some(specification) = specification {
-                scale_hole_specification(specification, scale);
             }
         }
         FeatureDefinition::Pattern { pattern, .. } => scale_pattern_kind(pattern, scale),
@@ -891,16 +887,6 @@ fn scale_hole_kind(kind: &mut cadmpeg_ir::features::HoleKind, scale: f64) {
             scale_length(diameter, scale);
             scale_length(depth, scale);
         }
-        HoleKind::Threaded {
-            major_diameter,
-            thread_depth,
-            pitch,
-            ..
-        } => {
-            scale_length(major_diameter, scale);
-            scale_length(thread_depth, scale);
-            scale_optional_length(pitch, scale);
-        }
         HoleKind::Counterdrill {
             diameter,
             entry_diameter,
@@ -915,14 +901,54 @@ fn scale_hole_kind(kind: &mut cadmpeg_ir::features::HoleKind, scale: f64) {
     }
 }
 
+fn scale_hole_construction(construction: &mut cadmpeg_ir::features::HoleConstruction, scale: f64) {
+    match construction {
+        cadmpeg_ir::features::HoleConstruction::Form {
+            kind,
+            specification,
+        } => {
+            scale_hole_kind(kind, scale);
+            if let Some(specification) = specification {
+                scale_hole_specification(specification, scale);
+            }
+        }
+        cadmpeg_ir::features::HoleConstruction::NativeThread {
+            major_diameter,
+            thread_depth,
+            pitch,
+            ..
+        } => {
+            scale_length(major_diameter, scale);
+            scale_length(thread_depth, scale);
+            scale_optional_length(pitch, scale);
+        }
+    }
+}
+
 fn scale_hole_specification(
     specification: &mut cadmpeg_ir::features::HoleSpecification,
     scale: f64,
 ) {
-    scale_optional_length(&mut specification.pitch, scale);
-    scale_optional_length(&mut specification.major_diameter, scale);
-    scale_optional_length(&mut specification.clearance, scale);
-    if let cadmpeg_ir::features::HoleThreadDepth::Blind { depth } = &mut specification.depth {
+    let (pitch, major_diameter, clearance, depth) = match specification {
+        cadmpeg_ir::features::HoleSpecification::Clearance {
+            clearance, depth, ..
+        } => (None, None, clearance, depth),
+        cadmpeg_ir::features::HoleSpecification::Threaded {
+            pitch,
+            major_diameter,
+            clearance,
+            depth,
+            ..
+        } => (Some(pitch), Some(major_diameter), clearance, depth),
+    };
+    if let Some(pitch) = pitch {
+        scale_optional_length(pitch, scale);
+    }
+    if let Some(major_diameter) = major_diameter {
+        scale_optional_length(major_diameter, scale);
+    }
+    scale_optional_length(clearance, scale);
+    if let cadmpeg_ir::features::HoleThreadDepth::Blind { depth } = depth {
         scale_length(depth, scale);
     }
 }

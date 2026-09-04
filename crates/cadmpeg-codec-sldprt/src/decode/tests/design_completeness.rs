@@ -834,13 +834,14 @@ fn hole_completeness_checks_optional_operands_when_present() {
             position: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
         }]),
-        kind: cadmpeg_ir::features::HoleKind::Simple,
+        construction: cadmpeg_ir::features::HoleConstruction::form(
+            cadmpeg_ir::features::HoleKind::Simple,
+        ),
         exit_kind,
         diameter: Some(Length(5.0)),
         extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
         bottom: None,
         taper_angle: None,
-        specification: None,
         allow_multi_profile_faces: None,
     };
     for (ordinal, definition) in [

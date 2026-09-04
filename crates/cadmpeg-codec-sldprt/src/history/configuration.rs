@@ -762,13 +762,12 @@ pub(crate) fn inherit_configuration_hole_semantics(
         profile_filter,
         face,
         placements,
-        kind,
+        construction,
         exit_kind,
         diameter,
         extent,
         bottom,
         taper_angle,
-        specification,
         allow_multi_profile_faces,
     } = definition
     else {
@@ -779,13 +778,12 @@ pub(crate) fn inherit_configuration_hole_semantics(
         profile_filter: base_profile_filter,
         face: base_face,
         placements: base_placements,
-        kind: base_kind,
+        construction: base_construction,
         exit_kind: base_exit_kind,
         diameter: base_diameter,
         extent: base_extent,
         bottom: base_bottom,
         taper_angle: base_taper_angle,
-        specification: base_specification,
         allow_multi_profile_faces: base_allow_multi_profile_faces,
     } = base_definition
     else {
@@ -807,8 +805,35 @@ pub(crate) fn inherit_configuration_hole_semantics(
     if inherit_placements && placements.is_none() {
         placements.clone_from(base_placements);
     }
-    if missing_construction || kind.is_unresolved() {
-        kind.clone_from(base_kind);
+    match (&mut *construction, base_construction) {
+        (
+            cadmpeg_ir::features::HoleConstruction::Form {
+                kind,
+                specification,
+            },
+            cadmpeg_ir::features::HoleConstruction::Form {
+                kind: base_kind,
+                specification: base_specification,
+            },
+        ) => {
+            if missing_construction || kind.is_unresolved() {
+                kind.clone_from(base_kind);
+            }
+            if specification.is_none() {
+                specification.clone_from(base_specification);
+            }
+        }
+        (construction, base_construction)
+            if missing_construction
+                || matches!(
+                    &*construction,
+                    cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                        if kind.is_unresolved()
+                ) =>
+        {
+            construction.clone_from(base_construction);
+        }
+        _ => {}
     }
     if exit_kind.is_none() || exit_kind.is_some_and(|kind| kind.is_unresolved()) {
         exit_kind.clone_from(base_exit_kind);
@@ -827,9 +852,6 @@ pub(crate) fn inherit_configuration_hole_semantics(
     }
     if taper_angle.is_none() {
         taper_angle.clone_from(base_taper_angle);
-    }
-    if specification.is_none() {
-        specification.clone_from(base_specification);
     }
     if allow_multi_profile_faces.is_none() {
         allow_multi_profile_faces.clone_from(base_allow_multi_profile_faces);

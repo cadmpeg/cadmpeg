@@ -829,8 +829,11 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             "Hole"
         ),
         IrFeatureDefinition::Hole {
-            kind: HoleKind::SimpleDrilled {
-                drill_point_angle: Angle(angle),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::SimpleDrilled {
+                    drill_point_angle: Angle(angle),
+                },
+                ..
             },
             diameter: Some(Length(8.4)),
             extent: Some(LinearTermination::Blind {
@@ -876,7 +879,10 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
     assert!(matches!(
         schema_feature_definition(&scan, &CadIr::empty(), 9, 911, "Hole"),
         IrFeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: None,
             extent: None,
             ..

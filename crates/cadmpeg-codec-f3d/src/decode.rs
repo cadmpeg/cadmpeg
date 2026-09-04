@@ -720,7 +720,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             profile,
             face,
             placements,
-            kind,
+            construction: cadmpeg_ir::features::HoleConstruction::Form { kind, .. },
             diameter,
             extent,
             ..

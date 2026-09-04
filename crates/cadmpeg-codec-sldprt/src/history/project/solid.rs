@@ -5,7 +5,7 @@ use crate::classification::{classify, native_object_class, FeatureClass, NativeC
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, HoleBottom,
-    HoleKind, Length, LinearTermination, ProfileRef, VertexSelection,
+    HoleConstruction, HoleKind, Length, LinearTermination, ProfileRef, VertexSelection,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -289,8 +289,8 @@ pub(crate) fn project_hole(
                 .map(Length),
         )
         .zip(drill_point_angle)
-        .map(
-            |((major_diameter, thread_depth), drill_point_angle)| HoleKind::Threaded {
+        .map(|((major_diameter, thread_depth), drill_point_angle)| {
+            HoleConstruction::NativeThread {
                 major_diameter,
                 thread_depth,
                 pitch: feature
@@ -299,35 +299,36 @@ pub(crate) fn project_hole(
                     .and_then(|value| parse_positive_length_mm(value))
                     .map(Length),
                 drill_point_angle,
-            },
-        );
-    let kind = if has_counterbore && has_countersink {
-        HoleKind::Unresolved(None)
+            }
+        });
+    let construction = if has_counterbore && has_countersink {
+        hole_form(HoleKind::Unresolved(None))
     } else if has_counterbore {
         match (counterbore_diameter, counterbore_depth) {
-            (Some(diameter), Some(depth)) => drill_point_angle.map_or(
+            (Some(diameter), Some(depth)) => hole_form(drill_point_angle.map_or(
                 HoleKind::Counterbore { diameter, depth },
                 |drill_point_angle| HoleKind::CounterboreDrilled {
                     diameter,
                     depth,
                     drill_point_angle,
                 },
-            ),
-            (diameter, depth) => HoleKind::PartialCounterbore { diameter, depth },
+            )),
+            (diameter, depth) => hole_form(HoleKind::PartialCounterbore { diameter, depth }),
         }
     } else if has_countersink {
         match (countersink_diameter, countersink_angle) {
-            (Some(diameter), Some(angle)) => HoleKind::Countersink { diameter, angle },
-            (diameter, angle) => HoleKind::PartialCountersink { diameter, angle },
+            (Some(diameter), Some(angle)) => hole_form(HoleKind::Countersink { diameter, angle }),
+            (diameter, angle) => hole_form(HoleKind::PartialCountersink { diameter, angle }),
         }
     } else if let Some(thread) = thread {
         thread
     } else if let Some(drill_point_angle) = drill_point_angle {
-        HoleKind::SimpleDrilled { drill_point_angle }
+        hole_form(HoleKind::SimpleDrilled { drill_point_angle })
     } else {
-        profile
-            .as_ref()
-            .map_or(HoleKind::Simple, |profile| profile.kind)
+        profile.as_ref().map_or_else(
+            || hole_form(HoleKind::Simple),
+            |profile| profile.construction.clone(),
+        )
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("Blind")
@@ -372,13 +373,12 @@ pub(crate) fn project_hole(
                     direction,
                 }]
             }),
-        kind,
+        construction,
         exit_kind: profile.as_ref().and_then(|profile| profile.exit_kind),
         diameter,
         extent,
         bottom: profile.as_ref().and_then(|profile| profile.bottom),
         taper_angle: profile.as_ref().and_then(|profile| profile.taper_angle),
-        specification: None,
         allow_multi_profile_faces: None,
     }
 }
@@ -392,7 +392,7 @@ pub(crate) fn threaded_hole_major_diameter(
         return None;
     }
     let FeatureDefinition::Hole {
-        kind: HoleKind::Threaded { major_diameter, .. },
+        construction: HoleConstruction::NativeThread { major_diameter, .. },
         ..
     } = project_hole(feature, features_by_source, history_features)
     else {
@@ -405,10 +405,17 @@ pub(crate) fn threaded_hole_major_diameter(
 pub(crate) struct HoleProfileConstruction {
     pub(crate) diameter: Length,
     pub(crate) depth: Option<Length>,
-    pub(crate) kind: HoleKind,
+    pub(crate) construction: HoleConstruction,
     pub(crate) exit_kind: Option<HoleKind>,
     pub(crate) bottom: Option<HoleBottom>,
     pub(crate) taper_angle: Option<Angle>,
+}
+
+fn hole_form(kind: HoleKind) -> HoleConstruction {
+    HoleConstruction::Form {
+        kind,
+        specification: None,
+    }
 }
 
 pub(crate) fn hole_profile_construction(
@@ -499,7 +506,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
         ([diameter], [depth], []) => Some(HoleProfileConstruction {
             diameter: *diameter,
             depth: Some(*depth),
-            kind: HoleKind::Simple,
+            construction: hole_form(HoleKind::Simple),
             exit_kind: None,
             bottom: Some(HoleBottom::Flat),
             taper_angle: None,
@@ -507,9 +514,9 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
         ([diameter], [depth], [drill_point_angle]) => Some(HoleProfileConstruction {
             diameter: *diameter,
             depth: Some(*depth),
-            kind: HoleKind::SimpleDrilled {
+            construction: hole_form(HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
-            },
+            }),
             exit_kind: None,
             bottom: Some(HoleBottom::Angled {
                 included_angle: *drill_point_angle,
@@ -532,7 +539,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*drill_depth),
-                kind: HoleKind::Threaded {
+                construction: HoleConstruction::NativeThread {
                     major_diameter: *major_diameter,
                     thread_depth: *thread_depth,
                     pitch: None,
@@ -557,7 +564,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*drill_depth),
-                kind: HoleKind::Threaded {
+                construction: HoleConstruction::NativeThread {
                     major_diameter: *major_diameter,
                     thread_depth: *thread_depth,
                     pitch: None,
@@ -579,11 +586,11 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*depth),
-                kind: HoleKind::CounterboreDrilled {
+                construction: hole_form(HoleKind::CounterboreDrilled {
                     diameter: *entry_diameter,
                     depth: *entry_depth,
                     drill_point_angle: *drill_point_angle,
-                },
+                }),
                 exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
                     included_angle: *drill_point_angle,
@@ -612,10 +619,10 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*through_depth),
-                kind: HoleKind::Counterbore {
+                construction: hole_form(HoleKind::Counterbore {
                     diameter: *counterbore_diameter,
                     depth: *counterbore_depth,
-                },
+                }),
                 exit_kind: Some(HoleKind::Countersink {
                     diameter: *exit_diameter,
                     angle: *exit_angle,
@@ -636,12 +643,12 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             Some(HoleProfileConstruction {
                 diameter: *diameter,
                 depth: Some(*drill_depth),
-                kind: HoleKind::Counterdrill {
+                construction: hole_form(HoleKind::Counterdrill {
                     diameter: *recess_diameter,
                     entry_diameter: Some(*entry_diameter),
                     depth: *recess_depth,
                     angle: *entry_angle,
-                },
+                }),
                 exit_kind: None,
                 bottom: Some(HoleBottom::Angled {
                     included_angle: *drill_point_angle,
