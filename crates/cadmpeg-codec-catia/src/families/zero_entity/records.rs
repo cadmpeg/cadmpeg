@@ -195,6 +195,36 @@ pub struct ZeroEntityOrientedUsePair {
     pub uses: [ZeroEntityOrientedUse; 2],
 }
 
+/// Counted allocation vector of a zero-entity vertex-incidence record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ZeroEntityVertexAllocations {
+    /// Tag `050b`: two allocations.
+    Two([u32; 2]),
+    /// Tag `0510`: three allocations.
+    Three([u32; 3]),
+    /// Tag `0515`: four allocations.
+    Four([u32; 4]),
+}
+
+impl ZeroEntityVertexAllocations {
+    /// Complete two-byte record tag for this allocation arity.
+    pub fn tag(&self) -> [u8; 2] {
+        match self {
+            Self::Two(_) => [0x05, 0x0b],
+            Self::Three(_) => [0x05, 0x10],
+            Self::Four(_) => [0x05, 0x15],
+        }
+    }
+
+    pub fn as_slice(&self) -> &[u32] {
+        match self {
+            Self::Two(allocations) => allocations,
+            Self::Three(allocations) => allocations,
+            Self::Four(allocations) => allocations,
+        }
+    }
+}
+
 /// One counted zero-entity vertex-incidence record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZeroEntityVertexIncidence {
@@ -202,10 +232,15 @@ pub struct ZeroEntityVertexIncidence {
     pub pos: usize,
     /// One-based global record ordinal in the zero-entity stream.
     pub record_ordinal: u32,
-    /// Complete two-byte record tag.
-    pub tag: [u8; 2],
-    /// Stored allocation values.
-    pub allocations: Vec<u32>,
+    /// Stored allocation values whose length selects the record tag.
+    pub allocations: ZeroEntityVertexAllocations,
+}
+
+impl ZeroEntityVertexIncidence {
+    /// Complete two-byte record tag selected by allocation arity.
+    pub fn tag(&self) -> [u8; 2] {
+        self.allocations.tag()
+    }
 }
 
 /// The terminal zero-entity body hierarchy.
@@ -1805,16 +1840,21 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
             {
                 return None;
             }
-            let allocations = (0..count)
-                .map(|index| tagged_u32(data, record.pos + 13 + index * 5))
-                .collect::<Option<Vec<_>>>()?;
-            if allocations.contains(&0) {
+            let slot = |index: usize| tagged_u32(data, record.pos + 13 + index * 5);
+            let allocations = match record.tag {
+                [0x05, 0x0b] => ZeroEntityVertexAllocations::Two([slot(0)?, slot(1)?]),
+                [0x05, 0x10] => ZeroEntityVertexAllocations::Three([slot(0)?, slot(1)?, slot(2)?]),
+                [0x05, 0x15] => {
+                    ZeroEntityVertexAllocations::Four([slot(0)?, slot(1)?, slot(2)?, slot(3)?])
+                }
+                _ => return None,
+            };
+            if allocations.as_slice().contains(&0) {
                 return None;
             }
             Some(ZeroEntityVertexIncidence {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
-                tag: record.tag,
                 allocations,
             })
         })
@@ -2680,8 +2720,8 @@ mod tests {
             panic!("one vertex incidence")
         };
         assert_eq!(incidence.record_ordinal, 5);
-        assert_eq!(incidence.tag, [0x05, 0x10]);
-        assert_eq!(incidence.allocations, [1, 2, 5]);
+        assert_eq!(incidence.tag(), [0x05, 0x10]);
+        assert_eq!(incidence.allocations.as_slice(), &[1, 2, 5]);
     }
 
     #[test]
@@ -2734,7 +2774,7 @@ mod tests {
         let [incidence] = incidences.as_slice() else {
             panic!("one vertex incidence")
         };
-        assert_eq!(incidence.allocations, [105, 106, 107]);
+        assert_eq!(incidence.allocations.as_slice(), &[105, 106, 107]);
     }
 
     #[test]

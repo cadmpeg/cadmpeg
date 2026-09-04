@@ -8527,8 +8527,8 @@ fn zero_entity_vertex_incidences(
                 id: format!("catia:zero-entity:vertex-incidence#{index}"),
                 byte_offset: record.pos as u64,
                 record_ordinal: record.record_ordinal,
-                tag: record.tag,
-                allocations: record.allocations,
+                tag: record.tag(),
+                allocations: record.allocations.as_slice().to_vec(),
                 vertex_record,
             }
         })
