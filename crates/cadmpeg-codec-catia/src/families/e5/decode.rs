@@ -701,8 +701,8 @@ pub(crate) fn e5_native_uv_endpoints(
                 center[1] + radius * angle.sin(),
             ]
         })),
-        crate::families::e5::graph::E5Pcurve::Jet { points, .. } => {
-            finite([*points.first()?, *points.last()?])
+        crate::families::e5::graph::E5Pcurve::Jet { sites, .. } => {
+            finite([sites.first()?.point, sites.last()?.point])
         }
         crate::families::e5::graph::E5Pcurve::Nurbs {
             degree,
@@ -2028,27 +2028,30 @@ pub(crate) fn e5_pcurve_on_surface(
             }
             Some((geometry, angular_range, endpoints))
         }
-        crate::families::e5::graph::E5Pcurve::Jet {
-            degree,
-            knots,
-            points,
-            first_derivatives,
-            second_derivatives,
-            range,
-            ..
-        } => {
+        crate::families::e5::graph::E5Pcurve::Jet { sites, range, .. } => {
             let scale = decoded_surface.uv_scale;
-            let points = points
+            let knots = sites.iter().map(|site| site.knot).collect::<Vec<_>>();
+            let points = sites
                 .iter()
-                .map(|point| [point[0] * scale[0], point[1] * scale[1]])
+                .map(|site| [site.point[0] * scale[0], site.point[1] * scale[1]])
                 .collect::<Vec<_>>();
-            let first_derivatives = first_derivatives
+            let first_derivatives = sites
                 .iter()
-                .map(|value| [value[0] * scale[0], value[1] * scale[1]])
+                .map(|site| {
+                    [
+                        site.first_derivatives[0] * scale[0],
+                        site.first_derivatives[1] * scale[1],
+                    ]
+                })
                 .collect::<Vec<_>>();
-            let second_derivatives = second_derivatives
+            let second_derivatives = sites
                 .iter()
-                .map(|value| [value[0] * scale[0], value[1] * scale[1]])
+                .map(|site| {
+                    [
+                        site.second_derivatives[0] * scale[0],
+                        site.second_derivatives[1] * scale[1],
+                    ]
+                })
                 .collect::<Vec<_>>();
             if !scale.into_iter().all(f64::is_finite)
                 || !range.iter().copied().all(f64::is_finite)
@@ -2068,8 +2071,8 @@ pub(crate) fn e5_pcurve_on_surface(
                 return None;
             }
             let geometry = quintic_jet_pcurve(
-                *degree,
-                knots,
+                crate::families::e5::graph::E5Pcurve::JET_DEGREE,
+                &knots,
                 &points,
                 &first_derivatives,
                 &second_derivatives,
@@ -2808,7 +2811,7 @@ mod route_tests {
 
     use crate::families::e5::graph::{
         E5BoundEntry, E5Bounds, E5CurveSupport, E5Edge, E5Face, E5Loop, E5OrientedMember, E5Pcurve,
-        E5Topology,
+        E5PcurveJetSite, E5Topology,
     };
     use crate::families::e5::records::E5Surface;
 
@@ -2823,6 +2826,28 @@ mod route_tests {
     use cadmpeg_ir::AnnotationBuilder;
 
     use std::collections::{BTreeMap, HashMap};
+
+    fn jet_pcurve(
+        surface: u32,
+        knots: Vec<f64>,
+        multiplicities: Vec<u32>,
+        points: Vec<[f64; 2]>,
+        first_derivatives: Vec<[f64; 2]>,
+        second_derivatives: Vec<[f64; 2]>,
+        range: [f64; 2],
+    ) -> E5Pcurve {
+        E5Pcurve::Jet {
+            surface,
+            sites: E5PcurveJetSite::zip(
+                knots,
+                multiplicities,
+                points,
+                first_derivatives,
+                second_derivatives,
+            ),
+            range,
+        }
+    }
 
     #[test]
     fn e5_native_uv_endpoints_reject_nonfinite_results() {
@@ -2844,16 +2869,15 @@ mod route_tests {
         };
         assert!(e5_native_uv_endpoints(&circle).is_none());
 
-        let jet = E5Pcurve::Jet {
-            surface: 0,
-            degree: 5,
-            knots: vec![0.0, 1.0],
-            multiplicities: vec![6, 6],
-            points: vec![[0.0, 0.0], [f64::INFINITY, 0.0]],
-            first_derivatives: Vec::new(),
-            second_derivatives: Vec::new(),
-            range: [0.0, 1.0],
-        };
+        let jet = jet_pcurve(
+            0,
+            vec![0.0, 1.0],
+            vec![6, 6],
+            vec![[0.0, 0.0], [f64::INFINITY, 0.0]],
+            vec![[0.0, 0.0], [0.0, 0.0]],
+            vec![[0.0, 0.0], [0.0, 0.0]],
+            [0.0, 1.0],
+        );
         assert!(e5_native_uv_endpoints(&jet).is_none());
     }
 
@@ -3970,16 +3994,15 @@ mod route_tests {
         let points = vec![[0.0, 0.0], [1.0, 2.0]];
         let first = vec![[1.0, 2.0], [1.0, 2.0]];
         let second = vec![[0.0, 0.0], [0.0, 0.0]];
-        let native = crate::families::e5::graph::E5Pcurve::Jet {
-            surface: 0,
-            degree: 5,
-            knots: vec![0.0, 1.0],
-            multiplicities: vec![6, 6],
-            points: points.clone(),
-            first_derivatives: first.clone(),
-            second_derivatives: second.clone(),
-            range: [0.0, 1.0],
-        };
+        let native = jet_pcurve(
+            0,
+            vec![0.0, 1.0],
+            vec![6, 6],
+            points.clone(),
+            first.clone(),
+            second.clone(),
+            [0.0, 1.0],
+        );
         let pcurve =
             quintic_jet_pcurve(5, &[0.0, 1.0], &points, &first, &second).expect("quintic pcurve");
         let (curve, range) = e5_boundary_curve(
@@ -4014,12 +4037,7 @@ mod route_tests {
         };
         let native = E5Pcurve::Jet {
             surface: 0,
-            degree: 1,
-            knots: vec![0.0, 1.0],
-            multiplicities: vec![2, 2],
-            points: Vec::new(),
-            first_derivatives: Vec::new(),
-            second_derivatives: Vec::new(),
+            sites: Vec::new(),
             range: [0.0, 1.0],
         };
         let pcurve = PcurveGeometry::Nurbs {
@@ -4124,16 +4142,15 @@ mod route_tests {
             },
             uv_scale: [0.5, 1.0],
         };
-        let pcurve = crate::families::e5::graph::E5Pcurve::Jet {
-            surface: 7,
-            degree: 5,
-            knots: vec![0.0, 1.0],
-            multiplicities: vec![6, 6],
-            points: vec![[0.0, 3.0], [std::f64::consts::PI, 3.0]],
-            first_derivatives: vec![[std::f64::consts::PI, 0.0], [std::f64::consts::PI, 0.0]],
-            second_derivatives: vec![[0.0, 0.0], [0.0, 0.0]],
-            range: [0.0, 1.0],
-        };
+        let pcurve = jet_pcurve(
+            7,
+            vec![0.0, 1.0],
+            vec![6, 6],
+            vec![[0.0, 3.0], [std::f64::consts::PI, 3.0]],
+            vec![[std::f64::consts::PI, 0.0], [std::f64::consts::PI, 0.0]],
+            vec![[0.0, 0.0], [0.0, 0.0]],
+            [0.0, 1.0],
+        );
         let (geometry, range, endpoints) =
             e5_pcurve_on_surface(&pcurve, &surface).expect("normalized cylinder jet");
         assert_eq!(range, [0.0, 1.0]);
@@ -4228,16 +4245,15 @@ mod route_tests {
             },
             uv_scale: [0.5, half_angle.cos() / 4.0],
         };
-        let pcurve = E5Pcurve::Jet {
-            surface: 7,
-            degree: 5,
-            knots: vec![0.0, 1.0],
-            multiplicities: vec![6, 6],
-            points: vec![[0.0, 4.0], [std::f64::consts::PI, 4.0]],
-            first_derivatives: vec![[std::f64::consts::PI, 4.0], [std::f64::consts::PI, 4.0]],
-            second_derivatives: vec![[0.0, 0.0], [0.0, 0.0]],
-            range: [0.0, 1.0],
-        };
+        let pcurve = jet_pcurve(
+            7,
+            vec![0.0, 1.0],
+            vec![6, 6],
+            vec![[0.0, 4.0], [std::f64::consts::PI, 4.0]],
+            vec![[std::f64::consts::PI, 4.0], [std::f64::consts::PI, 4.0]],
+            vec![[0.0, 0.0], [0.0, 0.0]],
+            [0.0, 1.0],
+        );
 
         let (geometry, range, endpoints) =
             e5_pcurve_on_surface(&pcurve, &surface).expect("normalized cone jet");
@@ -4337,16 +4353,15 @@ mod route_tests {
             },
             uv_scale: [1.0, 1.0],
         };
-        let pcurve = crate::families::e5::graph::E5Pcurve::Jet {
-            surface: 7,
-            degree: 5,
-            knots: vec![0.0, 1.0],
-            multiplicities: vec![6, 6],
-            points: vec![[f64::MAX, 0.0], [f64::MAX, 0.0]],
-            first_derivatives: vec![[f64::MAX, 0.0], [f64::MAX, 0.0]],
-            second_derivatives: vec![[0.0, 0.0], [0.0, 0.0]],
-            range: [0.0, 1.0],
-        };
+        let pcurve = jet_pcurve(
+            7,
+            vec![0.0, 1.0],
+            vec![6, 6],
+            vec![[f64::MAX, 0.0], [f64::MAX, 0.0]],
+            vec![[f64::MAX, 0.0], [f64::MAX, 0.0]],
+            vec![[0.0, 0.0], [0.0, 0.0]],
+            [0.0, 1.0],
+        );
         assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
     }
 
