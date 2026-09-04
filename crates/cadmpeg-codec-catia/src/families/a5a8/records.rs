@@ -486,6 +486,19 @@ pub struct RollingBallSite {
     pub radius: f64,
 }
 
+/// One knot of a degree-5 rolling-ball jet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A5FreeformJet {
+    /// Distinct knot.
+    pub knot: f64,
+    /// Position channels at this knot.
+    pub site: RollingBallSite,
+    /// Ten first-derivative channels.
+    pub first_derivatives: [f64; 10],
+    /// Ten second-derivative channels.
+    pub second_derivatives: [f64; 10],
+}
+
 /// Consolidated degree-5 rolling-ball jet.
 #[derive(Debug, Clone)]
 pub struct A5FreeformCurve {
@@ -493,16 +506,16 @@ pub struct A5FreeformCurve {
     pub pos: usize,
     /// Schema token immediately before the payload.
     pub header_token: u32,
-    /// Parametric degree.
-    pub degree: u32,
-    /// Distinct knots.
-    pub knots: Vec<f64>,
-    /// Position channels at each knot.
-    pub sites: Vec<RollingBallSite>,
-    /// Ten first-derivative channels per knot.
-    pub first_derivatives: Vec<[f64; 10]>,
-    /// Ten second-derivative channels per knot.
-    pub second_derivatives: Vec<[f64; 10]>,
+    /// Knot-aligned jet samples.
+    pub sites: Vec<A5FreeformJet>,
+}
+
+impl A5FreeformCurve {
+    pub const DEGREE: u32 = 5;
+
+    pub fn knots(&self) -> Vec<f64> {
+        self.sites.iter().map(|site| site.knot).collect()
+    }
 }
 
 /// Lower either limiting locus of a complete rolling-ball jet to its exact
@@ -515,28 +528,40 @@ pub(crate) fn rolling_ball_limit_curve(
     let positions = jet
         .sites
         .iter()
-        .map(|site| {
+        .map(|sample| {
             if second_limit {
-                site.limit2
+                sample.site.limit2
             } else {
-                site.limit1
+                sample.site.limit1
             }
         })
         .collect::<Vec<_>>();
     let first = jet
-        .first_derivatives
+        .sites
         .iter()
-        .map(|values| [values[offset], values[offset + 1], values[offset + 2]])
+        .map(|sample| {
+            let values = sample.first_derivatives;
+            [values[offset], values[offset + 1], values[offset + 2]]
+        })
         .collect::<Vec<_>>();
     let second = jet
-        .second_derivatives
+        .sites
         .iter()
-        .map(|values| [values[offset], values[offset + 1], values[offset + 2]])
+        .map(|sample| {
+            let values = sample.second_derivatives;
+            [values[offset], values[offset + 1], values[offset + 2]]
+        })
         .collect::<Vec<_>>();
-    let (knots, control_points) =
-        crate::nurbs::quintic_jet_bspline3(jet.degree, &jet.knots, &positions, &first, &second)?;
+    let knots = jet.knots();
+    let (knots, control_points) = crate::nurbs::quintic_jet_bspline3(
+        A5FreeformCurve::DEGREE,
+        &knots,
+        &positions,
+        &first,
+        &second,
+    )?;
     NurbsCurve::new(
-        jet.degree,
+        A5FreeformCurve::DEGREE,
         knots,
         control_points
             .into_iter()
@@ -986,11 +1011,20 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     Some(A5FreeformCurve {
         pos,
         header_token,
-        degree,
-        knots,
-        sites,
-        first_derivatives,
-        second_derivatives,
+        sites: knots
+            .into_iter()
+            .zip(sites)
+            .zip(first_derivatives)
+            .zip(second_derivatives)
+            .map(
+                |(((knot, site), first_derivatives), second_derivatives)| A5FreeformJet {
+                    knot,
+                    site,
+                    first_derivatives,
+                    second_derivatives,
+                },
+            )
+            .collect(),
     })
 }
 
