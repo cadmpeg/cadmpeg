@@ -2741,7 +2741,7 @@ mod tests {
         VertexId,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
 
     #[test]
@@ -3082,7 +3082,7 @@ mod tests {
                 shell: ShellId::mint("shell".to_string()).expect("identity grammar"),
                 surface: support_id.clone(),
                 sense: Sense::Forward,
-                loops: vec![loop_id.clone()],
+                loops: vec![loop_id.clone()].into(),
                 name: None,
                 color: None,
                 tolerance: None,
@@ -3090,7 +3090,6 @@ mod tests {
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id,
-                boundary_role: LoopBoundaryRole::Unspecified,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: vec![coedge_id.clone()],
                     vertex_uses: Vec::new(),

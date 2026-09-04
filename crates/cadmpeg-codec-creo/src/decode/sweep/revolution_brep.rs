@@ -251,7 +251,6 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
-                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                         coedges: vec![coedge_id.clone()],
                         vertex_uses: Vec::new(),
@@ -280,7 +279,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 shell: shell_id.clone(),
                 surface: surface_id,
                 sense: face_sense,
-                loops,
+                loops: loops.into(),
                 name: None,
                 color: None,
                 tolerance: None,

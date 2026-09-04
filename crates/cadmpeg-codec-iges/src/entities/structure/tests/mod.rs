@@ -1349,16 +1349,7 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
         let loop_roles = face
             .loops
             .iter()
-            .map(|loop_id| {
-                result
-                    .ir()
-                    .model
-                    .loops
-                    .iter()
-                    .find(|loop_| loop_.id == *loop_id)
-                    .expect("legacy face loop")
-                    .boundary_role
-            })
+            .map(|loop_id| face.loop_role(loop_id))
             .collect::<Vec<_>>();
         assert_eq!(
             loop_roles,

@@ -2214,15 +2214,6 @@ pub(super) fn project(
             candidate.model_mut().loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role: if trimmed_surface {
-                    if has_explicit_outer && boundary_index == 0 {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                    } else {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                    }
-                } else {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
-                },
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: coedge_ids,
                     vertex_uses: Vec::new(),
@@ -2293,7 +2284,14 @@ pub(super) fn project(
             shell: shell_id.clone(),
             surface: face_surface_id,
             sense: Sense::Forward,
-            loops: loop_ids,
+            loops: {
+                let mut loops = cadmpeg_ir::topology::FaceLoops::from(loop_ids);
+                if trimmed_surface {
+                    let outer = has_explicit_outer.then(|| loops.first().cloned()).flatten();
+                    loops.classify_outer(outer.as_ref());
+                }
+                loops
+            },
             name: None,
             color: None,
             tolerance: (face_tolerance > 0.0).then_some(face_tolerance),

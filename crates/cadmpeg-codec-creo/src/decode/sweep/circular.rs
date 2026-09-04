@@ -180,7 +180,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: vec![cap_coedge.clone()],
                     vertex_uses: Vec::new(),
@@ -212,7 +211,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 } else {
                     Sense::Forward
                 },
-                loops: vec![cap_loop],
+                loops: vec![cap_loop].into(),
                 name: None,
                 color: None,
                 tolerance: None,
@@ -251,7 +250,6 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face: side_face.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: vec![coedge.clone()],
                     vertex_uses: Vec::new(),
@@ -281,7 +279,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             shell: shell_id.clone(),
             surface: side_surface,
             sense: Sense::Forward,
-            loops: side_loops,
+            loops: side_loops.into(),
             name: None,
             color: None,
             tolerance: None,

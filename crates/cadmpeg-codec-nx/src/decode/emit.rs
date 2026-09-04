@@ -461,7 +461,7 @@ pub(super) fn emit_topology(
             shell: shell.clone(),
             surface,
             sense: sense(Some(fields.sense)),
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: decoded_tolerance(fields.tolerance),
@@ -501,7 +501,6 @@ pub(super) fn emit_topology(
         ir.model.loops.push(Loop {
             id: id.clone(),
             face: face.clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: Vec::new(),
                 vertex_uses: Vec::new(),

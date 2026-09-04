@@ -405,11 +405,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: bottom_loop.clone(),
                 face: bottom_face.clone(),
-                boundary_role: if profile_index == 0 {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                } else {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                },
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: bottom_coedges.clone(),
                     vertex_uses: Vec::new(),
@@ -418,11 +413,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: top_loop.clone(),
                 face: top_face.clone(),
-                boundary_role: if profile_index == 0 {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                } else {
-                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                },
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: top_coedges.clone(),
                     vertex_uses: Vec::new(),
@@ -534,7 +524,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
-                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                         coedges: coedges.to_vec(),
                         vertex_uses: Vec::new(),
@@ -595,7 +584,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     } else {
                         Sense::Reversed
                     },
-                    loops: vec![loop_id],
+                    loops: vec![loop_id].into(),
                     name: None,
                     color: None,
                     tolerance: None,
@@ -612,7 +601,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             } else {
                 Sense::Forward
             },
-            loops: bottom_loops,
+            loops: bottom_loops.into(),
             name: None,
             color: None,
             tolerance: None,
@@ -626,7 +615,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             } else {
                 Sense::Reversed
             },
-            loops: top_loops,
+            loops: top_loops.into(),
             name: None,
             color: None,
             tolerance: None,

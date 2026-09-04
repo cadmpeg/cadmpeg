@@ -3697,7 +3697,6 @@ fn stage_extrusion_caps(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: vec![coedge_id.clone()],
                     vertex_uses: Vec::new(),
@@ -3724,7 +3723,7 @@ fn stage_extrusion_caps(
             } else {
                 Sense::Forward
             },
-            loops: loop_ids,
+            loops: loop_ids.into(),
             name: None,
             color: association.color,
             tolerance: None,
@@ -4213,7 +4212,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             shell: format!("rhino:object:shell#{key}.component-{component}").into(),
             surface,
             sense: face_sense(face.reversed_surface != 0),
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: face.color.map(color),
             tolerance: None,
@@ -4278,7 +4277,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         staged.draft.model_mut().loops.push(Loop {
             id: id.clone(),
             face: face_id.clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges,
                 vertex_uses: Vec::new(),

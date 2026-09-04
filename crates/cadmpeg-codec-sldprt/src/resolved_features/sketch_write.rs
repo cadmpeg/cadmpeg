@@ -185,7 +185,6 @@ pub(super) fn sketch_brep(
         ir.model.loops.push(Loop {
             id: loop_id,
             face: face_id.clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: coedge_ids,
                 vertex_uses: Vec::new(),
@@ -236,7 +235,6 @@ pub(super) fn sketch_brep(
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: vec![coedge_id],
                 vertex_uses: Vec::new(),
@@ -255,7 +253,7 @@ pub(super) fn sketch_brep(
         shell: shell_id.clone(),
         surface: surface_id,
         sense: Sense::Forward,
-        loops: face_loops,
+        loops: face_loops.into(),
         name: sketch.name.clone(),
         color: None,
         tolerance: None,

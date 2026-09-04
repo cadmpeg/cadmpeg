@@ -487,7 +487,8 @@ pub(super) fn emit_faces(
                 .map(|loop_id| {
                     LoopId::mint(format!("catia:b5:loop#{loop_id}")).expect("identity grammar")
                 })
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             name: None,
             color: None,
             tolerance: None,
@@ -544,7 +545,6 @@ pub(super) fn emit_faces(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: coedge_ids.clone(),
                     vertex_uses,
@@ -600,6 +600,12 @@ pub(super) fn emit_faces(
                 });
             }
         }
+        ir.model
+            .faces
+            .last_mut()
+            .expect("b5 face was just pushed")
+            .loops
+            .apply_roles(&boundary_roles);
     }
     for occurrences in coedges_by_edge.values() {
         for (position, &arena_index) in occurrences.iter().enumerate() {

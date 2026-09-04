@@ -54,7 +54,7 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
             .find(|loop_| loop_.id == face.loops[0])
             .unwrap();
         assert_eq!(
-            loop_.boundary_role,
+            loop_.boundary_role_in(&result.ir().model.faces),
             cadmpeg_ir::topology::LoopBoundaryRole::Outer
         );
         assert_eq!(loop_.coedges().len(), 1);

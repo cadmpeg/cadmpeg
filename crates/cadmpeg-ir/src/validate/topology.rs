@@ -6241,25 +6241,6 @@ fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
     }
 }
 
-pub(super) fn check_loops(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
-    for face in &ir.model.faces {
-        let outer_count = face
-            .loops
-            .iter()
-            .filter_map(|id| ids.loops(&id.0))
-            .filter(|loop_| loop_.boundary_role == crate::topology::LoopBoundaryRole::Outer)
-            .count();
-        if outer_count > 1 {
-            findings.push(Finding {
-                check: Check::LoopClosure,
-                severity: Severity::Error,
-                message: "face has more than one explicit outer loop".into(),
-                entity: Some(face.id.0.clone()),
-            });
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
 enum RadialStatus {
     Closed(usize),

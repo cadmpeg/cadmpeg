@@ -22,8 +22,7 @@ use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Region, Sense, Shell,
-    Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 
@@ -1186,7 +1185,7 @@ fn build_geometric_set(
             shell: shell.clone(),
             surface,
             sense: Sense::Forward,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,
@@ -2168,11 +2167,6 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if is_outer_bound {
-                            LoopBoundaryRole::Outer
-                        } else {
-                            LoopBoundaryRole::Inner
-                        },
                         boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
                             vertex: scoped_vertex_id(
                                 vertex_step,
@@ -2265,11 +2259,6 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if is_outer_bound {
-                            LoopBoundaryRole::Outer
-                        } else {
-                            LoopBoundaryRole::Inner
-                        },
                         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                             coedges: coedge_ids,
                             vertex_uses: Vec::new(),
@@ -2476,11 +2465,6 @@ fn build_one(
                 loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
-                    boundary_role: if is_outer_bound {
-                        LoopBoundaryRole::Outer
-                    } else {
-                        LoopBoundaryRole::Inner
-                    },
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                         coedges: coedge_ids,
                         vertex_uses: Vec::new(),
@@ -2490,7 +2474,14 @@ fn build_one(
                 typed.extend([bound_step, loop_step]);
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
-            let loop_ids = loop_ids.into_iter().map(|(_, id)| id).collect();
+            let outer = loop_ids
+                .iter()
+                .find(|(is_outer, _)| *is_outer)
+                .map(|(_, id)| id.clone());
+            let inner = loop_ids
+                .into_iter()
+                .filter_map(|(is_outer, id)| (!is_outer).then_some(id))
+                .collect();
             let face_forward = face_same_sense == shell_forward;
             faces.push(Face {
                 id: fid.clone(),
@@ -2501,7 +2492,7 @@ fn build_one(
                 } else {
                     Sense::Reversed
                 },
-                loops: loop_ids,
+                loops: cadmpeg_ir::topology::FaceLoops::classified(outer, inner),
                 name,
                 color: None,
                 tolerance: None,

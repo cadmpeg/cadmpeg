@@ -1204,7 +1204,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         shell: ShellId::mint(id(3)).expect("identity grammar"),
         surface: SurfaceId::mint(id(20)).expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint(id(5)).expect("identity grammar")],
+        loops: vec![LoopId::mint(id(5)).expect("identity grammar")].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -1212,7 +1212,6 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     brep.loops.push(Loop {
         id: LoopId::mint(id(5)).expect("identity grammar"),
         face: FaceId::mint(id(4)).expect("identity grammar"),
-        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: vec![CoedgeId::mint(id(6)).expect("identity grammar")],
             vertex_uses: Vec::new(),

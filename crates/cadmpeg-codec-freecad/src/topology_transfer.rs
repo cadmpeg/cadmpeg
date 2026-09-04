@@ -872,7 +872,6 @@ impl<'a> Builder<'a> {
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: coedge_ids,
                     vertex_uses: Vec::new(),
@@ -891,7 +890,7 @@ impl<'a> Builder<'a> {
             shell: shell.clone(),
             surface: surface_id,
             sense: sense(face_reversed),
-            loops,
+            loops: loops.into(),
             name: None,
             color: None,
             tolerance: positive_tolerance(tolerance),

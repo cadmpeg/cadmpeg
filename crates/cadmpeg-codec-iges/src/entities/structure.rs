@@ -20,9 +20,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell,
-};
+use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1732,11 +1730,6 @@ fn plane_face_draft(
         candidate.model_mut().loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
-            boundary_role: if boundary_index == 0 {
-                LoopBoundaryRole::Outer
-            } else {
-                LoopBoundaryRole::Inner
-            },
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: vec![coedge_id],
                 vertex_uses: Vec::new(),
@@ -1750,7 +1743,12 @@ fn plane_face_draft(
         surface: SurfaceId::mint(format!("iges:model:surface#D{surface_sequence}"))
             .expect("identity grammar"),
         sense: Sense::Forward,
-        loops: loop_ids,
+        loops: {
+            let mut loops = cadmpeg_ir::topology::FaceLoops::from(loop_ids);
+            let outer = loops.first().cloned();
+            loops.classify_outer(outer.as_ref());
+            loops
+        },
         name: None,
         color: None,
         tolerance: (resolution > 0.0).then_some(resolution),

@@ -243,7 +243,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         shell: ShellId::mint("shell").expect("identity grammar"),
         surface: SurfaceId::mint("surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: Vec::new(),
+        loops: Vec::new().into(),
         name: None,
         color: None,
         tolerance: None,

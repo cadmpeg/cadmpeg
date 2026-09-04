@@ -1820,12 +1820,17 @@ pub(in super::super) fn transfer_native_brep(
                 shell: shell_id.clone(),
                 surface,
                 sense: face_sense,
-                loops: loop_ids.clone(),
+                loops: {
+                    let mut loops = cadmpeg_ir::topology::FaceLoops::from(loop_ids.clone());
+                    let outer = loops.first().cloned();
+                    loops.classify_outer(outer.as_ref());
+                    loops
+                },
                 name: None,
                 color: None,
                 tolerance: None,
             });
-            for (boundary_index, (native_loop, loop_id)) in
+            for (_boundary_index, (native_loop, loop_id)) in
                 native_loops.iter().zip(loop_ids).enumerate()
             {
                 let coedge_ids = native_loop
@@ -1842,11 +1847,6 @@ pub(in super::super) fn transfer_native_brep(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face.clone(),
-                    boundary_role: if boundary_index == 0 {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Outer
-                    } else {
-                        cadmpeg_ir::topology::LoopBoundaryRole::Inner
-                    },
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                         coedges: coedge_ids.clone(),
                         vertex_uses: Vec::new(),

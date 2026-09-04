@@ -3912,7 +3912,6 @@ pub(crate) fn emit_loops(
             out.loops.push(Loop {
                 id: LoopId::mint(id(format, i)).expect("identity grammar"),
                 face: FaceId::mint(id(format, owner)).expect("identity grammar"),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges,
                     vertex_uses: Vec::new(),
@@ -3969,7 +3968,7 @@ pub(crate) fn emit_faces(
                 shell: ShellId::mint(id(format, owner)).expect("identity grammar"),
                 surface: SurfaceId::mint(id(format, surface)).expect("identity grammar"),
                 sense,
-                loops,
+                loops: loops.into(),
                 name: attribute_name(r),
                 color: attribute_color(r),
                 tolerance: None,

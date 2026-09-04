@@ -3561,7 +3561,7 @@ mod tests {
         VertexId,
     };
     use cadmpeg_ir::math::Point2;
-    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Sense};
+    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Sense};
 
     #[test]
     fn opposite_chart_geometry_work_limit_reallocates_unused_remainder() {
@@ -3652,7 +3652,7 @@ mod tests {
             shell: ShellId::mint("nx:s1:shell#0").expect("identity grammar"),
             surface: completed_surface.clone(),
             sense: Sense::Forward,
-            loops: vec![loop_id.clone()],
+            loops: vec![loop_id.clone()].into(),
             name: None,
             color: None,
             tolerance: None,
@@ -3660,7 +3660,6 @@ mod tests {
         ir.model.loops.push(Loop {
             id: loop_id,
             face: face_id,
-            boundary_role: LoopBoundaryRole::default(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: vec![CoedgeId::mint("nx:s0:fin#0").expect("identity grammar")],
                 vertex_uses: Vec::new(),

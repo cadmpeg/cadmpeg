@@ -697,13 +697,13 @@ fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(),
                 let face_loops = face_loop_order(ir, face)?;
                 let has_unspecified_loop = face_loops
                     .iter()
-                    .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
+                    .any(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
                 let has_outer_loop = face_loops
                     .iter()
-                    .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer);
+                    .any(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Outer);
                 let has_inner_loop = face_loops
                     .iter()
-                    .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Inner);
+                    .any(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Inner);
                 if has_unspecified_loop && (has_outer_loop || has_inner_loop) {
                     return Err(CodecError::NotImplemented(format!(
                         "IGES B-rep writer cannot mix classified and unspecified boundary loops ({})",
@@ -1557,7 +1557,7 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
                     CodecError::malformed(format_args!("IGES B-rep face {face_id} is missing"))
                 })?;
             let loops = face_loop_order(ir, face)?;
-            let has_outer = face_outer_loop(&loops).is_some();
+            let has_outer = face_outer_loop(face, &loops).is_some();
             let mut parameters = format!(
                 "510,{},{},{}",
                 reference_marker(surface_indices[face.surface.as_str()]),
@@ -2002,7 +2002,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
         let loops = face_loop_order(ir, face)?;
         let bounded = loops
             .iter()
-            .all(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
+            .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
         for loop_ in loops {
             if bounded {
                 let boundary = boundary_entity(
@@ -2044,7 +2044,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
         let loops = face_loop_order(ir, face)?;
         let bounded = loops
             .iter()
-            .all(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
+            .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
         let mut parameters = if bounded {
             let representation = loops
                 .first()
@@ -2062,7 +2062,7 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
                 loops.len()
             )
         } else {
-            let outer = face_outer_loop(&loops);
+            let outer = face_outer_loop(face, &loops);
             let inner = if outer.is_some() {
                 &loops[1..]
             } else {
@@ -2277,10 +2277,10 @@ fn validate_trimmed_sheet_topology(
         }
         let has_unspecified_loop = loops
             .iter()
-            .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
+            .any(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
         let has_explicit_loop = loops
             .iter()
-            .any(|loop_| loop_.boundary_role != LoopBoundaryRole::Unspecified);
+            .any(|loop_| face.loop_role(&loop_.id) != LoopBoundaryRole::Unspecified);
         if has_unspecified_loop && has_explicit_loop {
             return Err(CodecError::NotImplemented(format!(
                 "IGES semantic writer cannot mix classified and unspecified boundary loops ({})",
@@ -2544,7 +2544,7 @@ fn face_loop_order<'a>(
     }
     if loops
         .iter()
-        .filter(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+        .filter(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Outer)
         .count()
         > 1
     {
@@ -2553,7 +2553,7 @@ fn face_loop_order<'a>(
             face.id
         )));
     }
-    loops.sort_by_key(|loop_| match loop_.boundary_role {
+    loops.sort_by_key(|loop_| match face.loop_role(&loop_.id) {
         LoopBoundaryRole::Outer => 0,
         LoopBoundaryRole::Unspecified => 1,
         LoopBoundaryRole::Inner => 2,
@@ -2561,11 +2561,11 @@ fn face_loop_order<'a>(
     Ok(loops)
 }
 
-fn face_outer_loop<'a>(loops: &'a [&Loop]) -> Option<&'a Loop> {
+fn face_outer_loop<'a>(face: &cadmpeg_ir::topology::Face, loops: &'a [&Loop]) -> Option<&'a Loop> {
     loops
         .first()
         .copied()
-        .filter(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+        .filter(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Outer)
 }
 
 fn boundary_entity(

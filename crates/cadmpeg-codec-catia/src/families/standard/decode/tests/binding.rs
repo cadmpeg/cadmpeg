@@ -762,7 +762,7 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             shell: ShellId::mint("shell-0").expect("identity grammar"),
             surface: SurfaceId::mint("surface-0").expect("identity grammar"),
             sense: Sense::Forward,
-            loops: Vec::new(),
+            loops: Vec::new().into(),
             name: None,
             color: None,
             tolerance: None,

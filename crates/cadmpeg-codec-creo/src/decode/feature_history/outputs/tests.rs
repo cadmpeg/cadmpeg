@@ -7,9 +7,7 @@ use super::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FaceSelection, Feature, FeatureDefinition, GeneratedFaceRef};
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId};
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Face, Loop as IrLoop, LoopBoundaryRole, Region, Sense, Shell,
-};
+use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Face, Loop as IrLoop, Region, Sense, Shell};
 use std::collections::BTreeMap;
 
 #[test]
@@ -165,7 +163,8 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         shell: ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
         surface: SurfaceId::mint("creo:visibgeom:surface#7".to_string()).expect("identity grammar"),
         sense: cadmpeg_ir::topology::Sense::Forward,
-        loops: vec![LoopId::mint("creo:generated:loop#7".to_string()).expect("identity grammar")],
+        loops: vec![LoopId::mint("creo:generated:loop#7".to_string()).expect("identity grammar")]
+            .into(),
         name: None,
         color: None,
         tolerance: None,
@@ -263,7 +262,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         shell: shell_id.clone(),
         surface: SurfaceId::mint("creo:test:surface".to_string()).expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![loop_id.clone()],
+        loops: vec![loop_id.clone()].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -271,7 +270,6 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     ir.model.loops.push(IrLoop {
         id: loop_id.clone(),
         face: face_id.clone(),
-        boundary_role: LoopBoundaryRole::default(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: vec![coedge_id.clone()],
             vertex_uses: Vec::new(),
@@ -295,7 +293,6 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     duplicate_loop.model.loops.push(IrLoop {
         id: loop_id.clone(),
         face: FaceId::mint("creo:ambiguous:face".to_string()).expect("identity grammar"),
-        boundary_role: LoopBoundaryRole::default(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: Vec::new(),
             vertex_uses: Vec::new(),
@@ -309,7 +306,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         shell: ShellId::mint("creo:ambiguous:shell".to_string()).expect("identity grammar"),
         surface: SurfaceId::mint("creo:test:surface-2".to_string()).expect("identity grammar"),
         sense: Sense::Forward,
-        loops: Vec::new(),
+        loops: Vec::new().into(),
         name: None,
         color: None,
         tolerance: None,

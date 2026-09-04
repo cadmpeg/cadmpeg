@@ -12,8 +12,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
-    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse,
-    Point, Region, Sense, Shell, Vertex,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense,
+    Shell, Vertex,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -532,7 +532,12 @@ pub(crate) fn transfer_closed_face_topology(
             shell: shell_id.clone(),
             surface: surface_ids_by_position[&run.carrier_pos].clone(),
             sense: outer_sense,
-            loops: loop_ids.clone(),
+            loops: {
+                let mut loops = cadmpeg_ir::topology::FaceLoops::from(loop_ids.clone());
+                let outer = loops.first().cloned();
+                loops.classify_outer(outer.as_ref());
+                loops
+            },
             name: None,
             color: None,
             tolerance: None,
@@ -563,11 +568,6 @@ pub(crate) fn transfer_closed_face_topology(
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
-            let boundary_role = if loop_index == 0 {
-                LoopBoundaryRole::Outer
-            } else {
-                LoopBoundaryRole::Inner
-            };
             annotate(
                 annotations,
                 loop_id,
@@ -583,7 +583,6 @@ pub(crate) fn transfer_closed_face_topology(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges: coedge_ids.clone(),
                     vertex_uses,

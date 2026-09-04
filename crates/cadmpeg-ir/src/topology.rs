@@ -14,7 +14,7 @@ use crate::math::Point3;
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -143,8 +143,11 @@ pub struct Face {
     pub surface: SurfaceId,
     /// Whether the face normal agrees with the surface normal.
     pub sense: Sense,
-    /// Boundary loops (first is conventionally the outer loop).
-    pub loops: Vec<LoopId>,
+    /// Boundary loops. Classification lives here so a loop cannot disagree
+    /// with face membership.
+    #[serde(with = "face_loops_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<LoopId>"))]
+    pub loops: FaceLoops,
     /// Optional display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -156,7 +159,277 @@ pub struct Face {
     pub tolerance: Option<f64>,
 }
 
-/// A loop's boundary role within its owning face.
+impl Face {
+    /// Explicit outer loop, or the first loop when the source did not classify.
+    #[must_use]
+    pub fn outer(&self) -> Option<&LoopId> {
+        self.loops.outer()
+    }
+
+    /// Inner loops, excluding the outer when one is present.
+    pub fn inner(&self) -> impl Iterator<Item = &LoopId> {
+        self.loops.inner()
+    }
+
+    /// Role of `id` when it is a member of this face.
+    #[must_use]
+    pub fn loop_role(&self, id: &LoopId) -> LoopBoundaryRole {
+        self.loops.role(id)
+    }
+}
+
+/// Face loop ids with at most one outer loop.
+///
+/// `Unspecified` keeps source order when the source did not classify outer
+/// versus inner. That state stays representable so CADIR JSON that emitted
+/// `boundary_role: unspecified` is unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FaceLoops {
+    ids: Vec<LoopId>,
+    classification: FaceLoopClassification,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FaceLoopClassification {
+    Unspecified,
+    Classified { outer: Option<usize> },
+}
+
+impl Default for FaceLoops {
+    fn default() -> Self {
+        Self::unspecified(Vec::new())
+    }
+}
+
+impl FaceLoops {
+    /// Source order with no outer/inner classification.
+    #[must_use]
+    pub fn unspecified(ids: Vec<LoopId>) -> Self {
+        Self {
+            ids,
+            classification: FaceLoopClassification::Unspecified,
+        }
+    }
+
+    /// Classified loops. `outer` is omitted when the surface domain is the
+    /// exterior. Loop order is outer (when present) then inner.
+    #[must_use]
+    pub fn classified(outer: Option<LoopId>, inner: Vec<LoopId>) -> Self {
+        let mut ids = Vec::with_capacity(outer.is_some() as usize + inner.len());
+        let outer_index = outer.as_ref().map(|_| 0);
+        if let Some(outer) = outer {
+            ids.push(outer);
+        }
+        ids.extend(inner);
+        Self {
+            ids,
+            classification: FaceLoopClassification::Classified { outer: outer_index },
+        }
+    }
+
+    /// Explicit outer loop, or the first loop when unclassified.
+    #[must_use]
+    pub fn outer(&self) -> Option<&LoopId> {
+        match self.classification {
+            FaceLoopClassification::Unspecified => self.ids.first(),
+            FaceLoopClassification::Classified { outer } => {
+                outer.and_then(|index| self.ids.get(index))
+            }
+        }
+    }
+
+    /// Inner loops, excluding the outer when one is present.
+    pub fn inner(&self) -> impl Iterator<Item = &LoopId> + '_ {
+        let outer = match self.classification {
+            FaceLoopClassification::Unspecified => Some(0).filter(|_| !self.ids.is_empty()),
+            FaceLoopClassification::Classified { outer } => outer,
+        };
+        self.ids.iter().enumerate().filter_map(
+            move |(index, id)| {
+                if Some(index) == outer {
+                    None
+                } else {
+                    Some(id)
+                }
+            },
+        )
+    }
+
+    /// Ordered loop ids.
+    #[must_use]
+    pub fn as_slice(&self) -> &[LoopId] {
+        &self.ids
+    }
+
+    /// Number of loops.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    /// Whether the face has no loops.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    /// Append a loop. A classified face treats the new loop as inner.
+    pub fn push(&mut self, id: LoopId) {
+        self.ids.push(id);
+    }
+
+    /// Drop every loop and return to unspecified.
+    pub fn clear(&mut self) {
+        self.ids.clear();
+        self.classification = FaceLoopClassification::Unspecified;
+    }
+
+    /// Whether the source left outer/inner unclassified.
+    #[must_use]
+    pub fn is_unspecified(&self) -> bool {
+        matches!(self.classification, FaceLoopClassification::Unspecified)
+    }
+
+    /// Mark loops as classified. `outer` must be a member, or `None` when every
+    /// loop is inner.
+    pub fn classify_outer(&mut self, outer: Option<&LoopId>) {
+        let outer = outer.and_then(|id| self.ids.iter().position(|member| member == id));
+        self.classification = FaceLoopClassification::Classified { outer };
+    }
+
+    /// Apply per-loop roles in id order. Unspecified-only leaves the face
+    /// unclassified. More than one outer keeps the first.
+    pub fn apply_roles(&mut self, roles: &[LoopBoundaryRole]) {
+        let mut outer = None;
+        let mut classified = false;
+        for (index, role) in roles.iter().copied().enumerate().take(self.ids.len()) {
+            match role {
+                LoopBoundaryRole::Unspecified => {}
+                LoopBoundaryRole::Outer => {
+                    classified = true;
+                    if outer.is_none() {
+                        outer = Some(index);
+                    }
+                }
+                LoopBoundaryRole::Inner => classified = true,
+            }
+        }
+        if classified {
+            self.classification = FaceLoopClassification::Classified { outer };
+        }
+    }
+
+    fn classify_from_roles(
+        &mut self,
+        roles: &HashMap<LoopId, LoopBoundaryRole>,
+    ) -> Result<(), String> {
+        let mut outer = None;
+        let mut classified = false;
+        for (index, id) in self.ids.iter().enumerate() {
+            match roles.get(id).copied().unwrap_or_default() {
+                LoopBoundaryRole::Unspecified => {}
+                LoopBoundaryRole::Outer => {
+                    classified = true;
+                    if outer.is_some() {
+                        return Err("face has more than one explicit outer loop".into());
+                    }
+                    outer = Some(index);
+                }
+                LoopBoundaryRole::Inner => classified = true,
+            }
+        }
+        if classified {
+            self.classification = FaceLoopClassification::Classified { outer };
+        }
+        Ok(())
+    }
+
+    /// Role of `id` when it is a member of this face.
+    #[must_use]
+    pub fn role(&self, id: &LoopId) -> LoopBoundaryRole {
+        self.iter()
+            .position(|member| member == id)
+            .map(|index| self.role_of(index))
+            .unwrap_or(LoopBoundaryRole::Unspecified)
+    }
+
+    fn role_of(&self, index: usize) -> LoopBoundaryRole {
+        match self.classification {
+            FaceLoopClassification::Unspecified => LoopBoundaryRole::Unspecified,
+            FaceLoopClassification::Classified { outer: Some(outer) } if outer == index => {
+                LoopBoundaryRole::Outer
+            }
+            FaceLoopClassification::Classified { .. } => LoopBoundaryRole::Inner,
+        }
+    }
+}
+
+impl From<Vec<LoopId>> for FaceLoops {
+    fn from(ids: Vec<LoopId>) -> Self {
+        Self::unspecified(ids)
+    }
+}
+
+impl std::ops::Deref for FaceLoops {
+    type Target = [LoopId];
+
+    fn deref(&self) -> &[LoopId] {
+        &self.ids
+    }
+}
+
+impl std::ops::DerefMut for FaceLoops {
+    fn deref_mut(&mut self) -> &mut [LoopId] {
+        &mut self.ids
+    }
+}
+
+impl PartialEq<Vec<LoopId>> for FaceLoops {
+    fn eq(&self, other: &Vec<LoopId>) -> bool {
+        self.ids == *other
+    }
+}
+
+impl PartialEq<FaceLoops> for Vec<LoopId> {
+    fn eq(&self, other: &FaceLoops) -> bool {
+        *self == other.ids
+    }
+}
+
+impl<'a> IntoIterator for &'a FaceLoops {
+    type Item = &'a LoopId;
+    type IntoIter = std::slice::Iter<'a, LoopId>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.ids.iter()
+    }
+}
+
+mod face_loops_wire {
+    use super::{FaceLoops, LoopId};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(value: &FaceLoops, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        value.ids.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<FaceLoops, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(FaceLoops::unspecified(Vec::<LoopId>::deserialize(
+            deserializer,
+        )?))
+    }
+}
+
+/// Classification of a loop within its owning face.
+///
+/// Stored on [`FaceLoops`], not on [`Loop`], so a loop cannot disagree with
+/// face membership. Serialize still emits `boundary_role` on each loop.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -171,22 +444,103 @@ pub enum LoopBoundaryRole {
     Inner,
 }
 
+thread_local! {
+    static LOOP_BOUNDARY_ROLES: RefCell<HashMap<LoopId, LoopBoundaryRole>> =
+        RefCell::new(HashMap::new());
+}
+
+pub(crate) fn install_loop_boundary_roles(faces: &[Face]) {
+    let mut roles = HashMap::with_capacity(faces.iter().map(|face| face.loops.len()).sum());
+    for face in faces {
+        for (index, id) in face.loops.iter().enumerate() {
+            roles.insert(id.clone(), face.loops.role_of(index));
+        }
+    }
+    LOOP_BOUNDARY_ROLES.with(|slot| *slot.borrow_mut() = roles);
+}
+
+pub(crate) fn record_loop_boundary_role(id: LoopId, role: LoopBoundaryRole) {
+    LOOP_BOUNDARY_ROLES.with(|slot| {
+        slot.borrow_mut().insert(id, role);
+    });
+}
+
+pub(crate) fn rebind_face_loop_roles(faces: &mut [Face]) -> Result<(), String> {
+    let result = LOOP_BOUNDARY_ROLES.with(|slot| {
+        let roles = slot.borrow();
+        for face in faces.iter_mut() {
+            face.loops.classify_from_roles(&roles)?;
+        }
+        Ok(())
+    });
+    LOOP_BOUNDARY_ROLES.with(|slot| slot.borrow_mut().clear());
+    result
+}
+
+pub(crate) fn loop_boundary_role_for(id: &LoopId) -> LoopBoundaryRole {
+    LOOP_BOUNDARY_ROLES.with(|slot| {
+        slot.borrow()
+            .get(id)
+            .copied()
+            .unwrap_or(LoopBoundaryRole::Unspecified)
+    })
+}
+
 /// A closed boundary of a face, expressed as an ordered ring of coedges or one
 /// vertex use at a surface singularity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Loop {
     /// Arena id.
     pub id: LoopId,
     /// Owning face.
     pub face: FaceId,
-    /// Boundary role within the owning face.
-    #[serde(default)]
-    pub boundary_role: LoopBoundaryRole,
     /// Vertex-only or coedge-ring boundary.
-    #[serde(flatten, with = "loop_boundary_wire")]
     #[cfg_attr(feature = "schema", schemars(with = "LoopBoundarySchemaWire"))]
     pub boundary: LoopBoundary,
+}
+
+#[derive(Deserialize)]
+struct LoopReadWire {
+    id: LoopId,
+    face: FaceId,
+    #[serde(default)]
+    boundary_role: LoopBoundaryRole,
+    #[serde(flatten, with = "loop_boundary_wire")]
+    boundary: LoopBoundary,
+}
+
+impl<'de> Deserialize<'de> for Loop {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = LoopReadWire::deserialize(deserializer)?;
+        record_loop_boundary_role(wire.id.clone(), wire.boundary_role);
+        Ok(Self {
+            id: wire.id,
+            face: wire.face,
+            boundary: wire.boundary,
+        })
+    }
+}
+
+#[derive(Serialize)]
+struct LoopWriteWire<'a> {
+    id: &'a LoopId,
+    face: &'a FaceId,
+    boundary_role: LoopBoundaryRole,
+    #[serde(flatten, with = "loop_boundary_wire")]
+    boundary: &'a LoopBoundary,
+}
+
+impl Serialize for Loop {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        LoopWriteWire {
+            id: &self.id,
+            face: &self.face,
+            boundary_role: loop_boundary_role_for(&self.id),
+            boundary: &self.boundary,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// One ordered parameter-space representation of a coedge.
@@ -224,6 +578,16 @@ pub enum LoopBoundary {
 }
 
 impl Loop {
+    /// Role of this loop on its owning face.
+    #[must_use]
+    pub fn boundary_role_in(&self, faces: &[Face]) -> LoopBoundaryRole {
+        faces
+            .iter()
+            .find(|face| face.id == self.face)
+            .map(|face| face.loop_role(&self.id))
+            .unwrap_or_default()
+    }
+
     /// Returns the ordered coedges when this is a ring boundary.
     #[must_use]
     pub fn coedges(&self) -> &[CoedgeId] {

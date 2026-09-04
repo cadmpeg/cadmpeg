@@ -1097,7 +1097,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             shell: ShellId::mint("nx:test:shell").expect("identity grammar"),
             surface: surfaces[index].clone(),
             sense: Sense::Forward,
-            loops: vec![loops[index].clone()],
+            loops: vec![loops[index].clone()].into(),
             name: None,
             color: None,
             tolerance: Some(0.03),
@@ -1105,7 +1105,6 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         ir.model.loops.push(Loop {
             id: loops[index].clone(),
             face: faces[index].clone(),
-            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: vec![coedges[index].clone()],
                 vertex_uses: Vec::new(),

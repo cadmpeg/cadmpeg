@@ -508,7 +508,7 @@ impl_entity_schema!(crate::topology::Body, Body, id.0; id, kind, regions, transf
 impl_entity_schema!(crate::topology::Region, Region, id.0; id, body, shells);
 impl_entity_schema!(crate::topology::Shell, Shell, id.0; id, region, faces, wire_edges, free_vertices);
 impl_entity_schema!(crate::topology::Face, Face, id.0; id, shell, surface, sense, loops, name, color, tolerance);
-impl_entity_schema!(crate::topology::Loop, Loop, id.0; id, face, boundary_role, boundary);
+impl_entity_schema!(crate::topology::Loop, Loop, id.0; id, face, boundary);
 impl_entity_schema!(crate::topology::Coedge, Coedge, id.0; id, owner_loop, edge, radial_next, sense, pcurves, use_curve);
 impl_entity_schema!(crate::topology::Edge, Edge, id.0; id, curve, start, end, param_range, tolerance);
 impl_entity_schema!(crate::topology::Vertex, Vertex, id.0; id, point, tolerance);
