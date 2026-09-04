@@ -774,7 +774,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .iter()
             .flat_map(|section| &section.entries)
             .all(|entry| entry.path.auxiliaries.len() == 1));
-        let line_profile = sections[0].entries[0].profile[0].curve.clone();
+        let line_profile = sections[0].entries[0].profile[0].curve.id.clone();
 
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
@@ -834,7 +834,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 .model
                 .curves
                 .iter()
-                .find(|curve| curve.id == *profile)
+                .find(|curve| curve.id == profile.id)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
                 if curve.degree == 1

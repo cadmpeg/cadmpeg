@@ -2546,14 +2546,23 @@ impl LoftMemberForm {
     }
 }
 
+/// One referenced curve together with its optional native parameter bounds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct LoftPathCurve {
+    /// Referenced curve carrier.
+    #[serde(rename = "curve")]
+    pub id: CurveId,
+    /// Optional parameter endpoints following the curve in a revision-gated encoding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoints: Option<[Option<f64>; 2]>,
+}
+
 /// One curve member of a loft profile.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoftProfileMember {
-    /// Profile curve.
-    pub curve: CurveId,
-    /// Optional parameter endpoints following the curve in the revision-gated
-    /// encoding; absent from the pre-revision encoding.
-    pub endpoints: Option<[Option<f64>; 2]>,
+    /// Profile curve and its revision-gated parameter endpoints.
+    pub curve: LoftPathCurve,
     /// Structurally selected surface-side constraint form.
     pub form: LoftMemberForm,
 }
@@ -2609,8 +2618,8 @@ impl Serialize for LoftProfileMember {
         };
         LoftProfileMemberWire {
             type_code: self.form.type_code(),
-            curve: self.curve.clone(),
-            endpoints: self.endpoints,
+            curve: self.curve.id.clone(),
+            endpoints: self.curve.endpoints,
             data,
         }
         .serialize(serializer)
@@ -2670,8 +2679,10 @@ impl<'de> Deserialize<'de> for LoftProfileMember {
             }
         };
         Ok(Self {
-            curve: wire.curve,
-            endpoints: wire.endpoints,
+            curve: LoftPathCurve {
+                id: wire.curve,
+                endpoints: wire.endpoints,
+            },
             form,
         })
     }
@@ -2689,20 +2700,74 @@ impl JsonSchema for LoftProfileMember {
 }
 
 /// Native path data attached to one loft section entry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LoftPath {
-    /// Primary path curve, absent for the native `null_curve` sentinel.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curve: Option<CurveId>,
-    /// Optional parameter endpoints following a present curve in the
-    /// revision-gated encoding.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoints: Option<[Option<f64>; 2]>,
+    /// Primary path curve and its optional endpoints, absent for `null_curve`.
+    pub curve: Option<LoftPathCurve>,
     /// Ordered auxiliary BS3 curves.
     pub auxiliaries: Vec<CurveId>,
     /// Native path tail integer.
     pub flag: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct LoftPathWire {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    curve: Option<CurveId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    endpoints: Option<[Option<f64>; 2]>,
+    auxiliaries: Vec<CurveId>,
+    flag: i64,
+}
+
+impl Serialize for LoftPath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        LoftPathWire {
+            curve: self.curve.as_ref().map(|curve| curve.id.clone()),
+            endpoints: self.curve.as_ref().and_then(|curve| curve.endpoints),
+            auxiliaries: self.auxiliaries.clone(),
+            flag: self.flag,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for LoftPath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = LoftPathWire::deserialize(deserializer)?;
+        let curve = match (wire.curve, wire.endpoints) {
+            (Some(id), endpoints) => Some(LoftPathCurve { id, endpoints }),
+            (None, None) => None,
+            (None, Some(_)) => {
+                return Err(serde::de::Error::custom(
+                    "loft path endpoints require a curve",
+                ));
+            }
+        };
+        Ok(Self {
+            curve,
+            auxiliaries: wire.auxiliaries,
+            flag: wire.flag,
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for LoftPath {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "LoftPath".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        LoftPathWire::json_schema(generator)
+    }
 }
 
 /// One parameterized entry in a native loft section.
@@ -4079,12 +4144,9 @@ pub enum LawExpression {
     },
     /// Curve-backed edge law.
     Edge {
-        /// Embedded curve carrier.
-        curve: CurveId,
-        /// Two optional parameter endpoints following the curve in the
-        /// revision-gated encoding; absent from the pre-revision encoding.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        endpoints: Option<[Option<f64>; 2]>,
+        /// Embedded curve carrier and its optional revision-gated endpoints.
+        #[serde(flatten)]
+        curve: LoftPathCurve,
         /// Two native curve parameters.
         parameters: [f64; 2],
     },
