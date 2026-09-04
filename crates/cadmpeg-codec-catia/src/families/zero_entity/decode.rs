@@ -206,7 +206,7 @@ fn transfer_closed_wire_loops(
             continue;
         };
 
-        for loop_record in &face.loops {
+        for loop_record in face.loops.iter().flatten() {
             let Some(members) = closed_wire_loop_members(run, loop_record, support_curve_ids)
             else {
                 continue;
@@ -996,21 +996,23 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![8],
-                    loop_terminals: vec![1],
-                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
-                        pos: 20,
-                        record_ordinal: 3,
-                        tag: [0x62, 0x14],
-                        member_ids: vec![7, 6],
-                        typed_references: vec![1, 2],
-                        support_record_ordinals: vec![4, 5],
-                        terminal_id: 8,
-                        gap: 1,
-                        loop_class: 0x41,
-                        forward_senses: vec![true, true],
-                        oriented_model_endpoints: vec![[first, corner], [corner, first]],
-                    }],
-                    terminal_control: 0x05,
+                    loops: Some(vec![
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 20,
+                            record_ordinal: 3,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![7, 6],
+                            typed_references: vec![1, 2],
+                            support_record_ordinals: vec![4, 5],
+                            terminal_id: 8,
+                            gap: 1,
+                            loop_class: 0x41,
+                            forward_senses: vec![true, true],
+                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                        },
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![
                     support_with_parameters(
@@ -1074,8 +1076,7 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![9, 8],
-                    loop_terminals: vec![1, 1, 1],
-                    loops: vec![
+                    loops: Some(vec![
                         crate::families::zero_entity::records::ZeroEntityLoop {
                             pos: 20,
                             record_ordinal: 3,
@@ -1115,8 +1116,9 @@ mod tests {
                             forward_senses: vec![true],
                             oriented_model_endpoints: vec![[first, corner]],
                         },
-                    ],
-                    terminal_control: 0x05,
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![
                     support_with_parameters(4, 30, [first, corner], Some([1.0, 0.0])),
@@ -1233,21 +1235,23 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![8],
-                    loop_terminals: vec![1],
-                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
-                        pos: 20,
-                        record_ordinal: 3,
-                        tag: [0x62, 0x14],
-                        member_ids: vec![7, 6],
-                        typed_references: vec![1, 2],
-                        support_record_ordinals: vec![4, 5],
-                        terminal_id: 8,
-                        gap: 1,
-                        loop_class: 0x41,
-                        forward_senses: vec![true, true],
-                        oriented_model_endpoints: vec![[first, corner], [corner, first]],
-                    }],
-                    terminal_control: 0x05,
+                    loops: Some(vec![
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 20,
+                            record_ordinal: 3,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![7, 6],
+                            typed_references: vec![1, 2],
+                            support_record_ordinals: vec![4, 5],
+                            terminal_id: 8,
+                            gap: 1,
+                            loop_class: 0x41,
+                            forward_senses: vec![true, true],
+                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                        },
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![
                     support_with_parameters(
@@ -1334,21 +1338,23 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![8],
-                    loop_terminals: vec![1],
-                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
-                        pos: 20,
-                        record_ordinal: 3,
-                        tag: [0x62, 0x14],
-                        member_ids: vec![7, 6],
-                        typed_references: vec![1, 2],
-                        support_record_ordinals: vec![4, 4],
-                        terminal_id: 8,
-                        gap: 1,
-                        loop_class: 0x41,
-                        forward_senses: vec![true, false],
-                        oriented_model_endpoints: vec![[first, corner], [corner, first]],
-                    }],
-                    terminal_control: 0x05,
+                    loops: Some(vec![
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 20,
+                            record_ordinal: 3,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![7, 6],
+                            typed_references: vec![1, 2],
+                            support_record_ordinals: vec![4, 4],
+                            terminal_id: 8,
+                            gap: 1,
+                            loop_class: 0x41,
+                            forward_senses: vec![true, false],
+                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                        },
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![support_with_parameters(
                     4,
@@ -1424,21 +1430,23 @@ mod tests {
                     record_ordinal: 2,
                     tag: [0x5f, 0x0c],
                     allocations: vec![9, 8],
-                    loop_terminals: vec![1],
-                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
-                        pos: 20,
-                        record_ordinal: 3,
-                        tag: [0x62, 0x14],
-                        member_ids: vec![7],
-                        typed_references: vec![1],
-                        support_record_ordinals: vec![4],
-                        terminal_id: 8,
-                        gap: 1,
-                        loop_class: 0x41,
-                        forward_senses: vec![true],
-                        oriented_model_endpoints: vec![[first, second]],
-                    }],
-                    terminal_control: 0x05,
+                    loops: Some(vec![
+                        crate::families::zero_entity::records::ZeroEntityLoop {
+                            pos: 20,
+                            record_ordinal: 3,
+                            tag: [0x62, 0x14],
+                            member_ids: vec![7],
+                            typed_references: vec![1],
+                            support_record_ordinals: vec![4],
+                            terminal_id: 8,
+                            gap: 1,
+                            loop_class: 0x41,
+                            forward_senses: vec![true],
+                            oriented_model_endpoints: vec![[first, second]],
+                        },
+                    ]),
+                    terminal_control:
+                        crate::families::zero_entity::records::ZeroEntityFaceControl::Control05,
                 }),
                 supports: vec![support(4, 30, [first, second])],
             },

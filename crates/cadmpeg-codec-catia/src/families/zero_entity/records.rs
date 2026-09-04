@@ -70,6 +70,32 @@ pub struct ZeroEntitySupportRun {
     pub supports: Vec<ZeroEntitySupportOccurrence>,
 }
 
+/// Terminal control byte following a zero-entity face allocation lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZeroEntityFaceControl {
+    /// Control byte `0x03`.
+    Control03,
+    /// Control byte `0x05`.
+    Control05,
+}
+
+impl ZeroEntityFaceControl {
+    pub fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x03 => Some(Self::Control03),
+            0x05 => Some(Self::Control05),
+            _ => None,
+        }
+    }
+
+    pub fn as_byte(self) -> u8 {
+        match self {
+            Self::Control03 => 0x03,
+            Self::Control05 => 0x05,
+        }
+    }
+}
+
 /// One counted zero-entity `5fxx` face record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZeroEntityFace {
@@ -81,12 +107,22 @@ pub struct ZeroEntityFace {
     pub tag: [u8; 2],
     /// Counted allocation values in storage order.
     pub allocations: Vec<u32>,
-    /// Ordered loop terminals `allocations[0] - allocations[1..]`.
-    pub loop_terminals: Vec<u32>,
     /// Positionally aligned loop records when the complete flattened roster agrees.
-    pub loops: Vec<ZeroEntityLoop>,
+    pub loops: Option<Vec<ZeroEntityLoop>>,
     /// Terminal control byte following the allocation lane.
-    pub terminal_control: u8,
+    pub terminal_control: ZeroEntityFaceControl,
+}
+
+impl ZeroEntityFace {
+    pub fn loop_terminals(&self) -> Vec<u32> {
+        let Some(first) = self.allocations.first().copied() else {
+            return Vec::new();
+        };
+        self.allocations[1..]
+            .iter()
+            .filter_map(|allocation| first.checked_sub(*allocation))
+            .collect()
+    }
 }
 
 /// One counted zero-entity `62xx` loop record.
@@ -670,7 +706,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
     let loops = zero_entity_loops_from_records(data, &records);
     let flattened_terminals = faces
         .iter()
-        .flat_map(|face| face.loop_terminals.iter().copied())
+        .flat_map(|face| face.loop_terminals())
         .collect::<Vec<_>>();
     let loop_terminals = loops
         .iter()
@@ -679,7 +715,8 @@ pub(crate) fn zero_entity_support_runs_in_range(
     let loop_roster_is_valid = flattened_terminals == loop_terminals && {
         let mut loop_index = 0;
         faces.iter().all(|face| {
-            let loop_end = loop_index + face.loop_terminals.len();
+            let terminals = face.loop_terminals();
+            let loop_end = loop_index + terminals.len();
             let face_loops = &loops[loop_index..loop_end];
             loop_index = loop_end;
             face_loops.first().is_some_and(|outer| {
@@ -691,8 +728,9 @@ pub(crate) fn zero_entity_support_runs_in_range(
     if loop_roster_is_valid {
         let mut loop_index = 0;
         for face in &mut faces {
-            let loop_end = loop_index + face.loop_terminals.len();
-            face.loops.extend_from_slice(&loops[loop_index..loop_end]);
+            let terminals = face.loop_terminals();
+            let loop_end = loop_index + terminals.len();
+            face.loops = Some(loops[loop_index..loop_end].to_vec());
             loop_index = loop_end;
         }
     }
@@ -722,7 +760,11 @@ fn bind_face_support_occurrences(
     face: &mut ZeroEntityFace,
     supports: &[ZeroEntitySupportOccurrence],
 ) {
-    if face.loops.len() != face.loop_terminals.len() {
+    let loop_count = face.loops.as_ref().map(Vec::len);
+    let Some(loop_count) = loop_count else {
+        return;
+    };
+    if loop_count != face.loop_terminals().len() {
         return;
     }
     let mut supports_by_slot = HashMap::<u32, Option<u32>>::new();
@@ -734,7 +776,9 @@ fn bind_face_support_occurrences(
     }
     let bindings = face
         .loops
-        .iter()
+        .as_ref()
+        .into_iter()
+        .flatten()
         .map(|loop_record| {
             loop_record
                 .member_ids
@@ -756,14 +800,17 @@ fn bind_face_support_occurrences(
     if bound.len() != supports.len() {
         return;
     }
-    for (loop_record, support_record_ordinals) in face.loops.iter_mut().zip(bindings) {
+    let Some(face_loops) = face.loops.as_mut() else {
+        return;
+    };
+    for (loop_record, support_record_ordinals) in face_loops.iter_mut().zip(bindings) {
         loop_record.support_record_ordinals = support_record_ordinals;
     }
     let supports_by_ordinal = supports
         .iter()
         .map(|support| (support.record_ordinal, support))
         .collect::<HashMap<_, _>>();
-    for loop_record in &mut face.loops {
+    for loop_record in face.loops.as_mut().into_iter().flatten() {
         let endpoints = loop_record
             .support_record_ordinals
             .iter()
@@ -859,17 +906,13 @@ fn zero_entity_faces_from_records(
             {
                 return None;
             }
-            let terminal_control = *data.get(record.end - 1)?;
-            if !matches!(terminal_control, 0x03 | 0x05) {
-                return None;
-            }
+            let terminal_control = ZeroEntityFaceControl::from_byte(*data.get(record.end - 1)?)?;
             Some(ZeroEntityFace {
                 pos: record.pos,
                 record_ordinal: record.ordinal,
                 tag: record.tag,
                 allocations,
-                loop_terminals,
-                loops: Vec::new(),
+                loops: None,
                 terminal_control,
             })
         })
@@ -2720,8 +2763,8 @@ mod tests {
         assert_eq!(face.record_ordinal, 3);
         assert_eq!(face.tag, [0x5f, 0x0c]);
         assert_eq!(face.allocations, [10, 3]);
-        assert_eq!(face.loop_terminals, [7]);
-        assert_eq!(face.terminal_control, 0x05);
+        assert_eq!(face.loop_terminals(), [7]);
+        assert_eq!(face.terminal_control, ZeroEntityFaceControl::Control05);
     }
 
     #[test]
@@ -2734,7 +2777,8 @@ mod tests {
                     .face
                     .as_ref()
                     .expect("admitted face")
-                    .terminal_control,
+                    .terminal_control
+                    .as_byte(),
                 control
             );
         }
@@ -2803,7 +2847,7 @@ mod tests {
             panic!("one support run")
         };
         let face = run.face.as_ref().expect("face");
-        let [loop_record] = face.loops.as_slice() else {
+        let [loop_record] = face.loops.as_deref().unwrap_or(&[]) else {
             panic!("one loop")
         };
         assert_eq!(loop_record.record_ordinal, 4);
@@ -2824,7 +2868,7 @@ mod tests {
         stream[loop_record.end - 3] = 0x50;
         let runs = zero_entity_support_runs(&stream);
         let face = runs[0].face.as_ref().expect("face");
-        assert!(face.loops.is_empty());
+        assert!(face.loops.is_none());
     }
 
     #[test]
@@ -2886,7 +2930,10 @@ mod tests {
 
         let runs = zero_entity_support_runs(&stream);
         let face = runs[0].face.as_ref().expect("face");
-        assert_eq!(face.loops[0].support_record_ordinals, [2]);
+        assert_eq!(
+            face.loops.as_ref().expect("aligned loops")[0].support_record_ordinals,
+            [2]
+        );
     }
 
     #[test]
@@ -2906,7 +2953,9 @@ mod tests {
 
         let runs = zero_entity_support_runs(&stream);
         let face = runs[0].face.as_ref().expect("face");
-        assert!(face.loops[0].support_record_ordinals.is_empty());
+        assert!(face.loops.as_ref().expect("aligned loops")[0]
+            .support_record_ordinals
+            .is_empty());
     }
 
     #[test]
@@ -2915,6 +2964,6 @@ mod tests {
         *stream.last_mut().expect("loop terminator") = 0;
         let runs = zero_entity_support_runs(&stream);
         let face = runs[0].face.as_ref().expect("face");
-        assert!(face.loops.is_empty());
+        assert!(face.loops.is_none());
     }
 }

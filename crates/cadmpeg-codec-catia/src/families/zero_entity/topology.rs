@@ -64,7 +64,7 @@ fn zero_entity_oriented_occurrences(
             .iter()
             .filter_map(|support| Some((support.record_ordinal, support.model_midpoint?)))
             .collect::<HashMap<_, _>>();
-        for loop_record in &face.loops {
+        for loop_record in face.loops.iter().flatten() {
             for (support_record_ordinal, model_endpoints) in loop_record
                 .support_record_ordinals
                 .iter()
