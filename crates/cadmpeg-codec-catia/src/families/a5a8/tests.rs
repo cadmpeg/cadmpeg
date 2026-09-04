@@ -1309,9 +1309,20 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
     assert_eq!(graph.loops.len(), 1);
     assert_eq!(graph.pcurves.len(), 3);
     assert_eq!(graph.edges.len(), 3);
-    assert_eq!(graph.logical_vertex_refs, [600, 601, 602]);
     assert_eq!(
-        graph.logical_vertex_points,
+        graph
+            .logical_vertices
+            .iter()
+            .map(|vertex| vertex.object_id)
+            .collect::<Vec<_>>(),
+        [600, 601, 602]
+    );
+    assert_eq!(
+        graph
+            .logical_vertices
+            .iter()
+            .map(|vertex| vertex.point)
+            .collect::<Vec<_>>(),
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
     );
 

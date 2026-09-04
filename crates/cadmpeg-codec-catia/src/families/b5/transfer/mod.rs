@@ -270,9 +270,7 @@ fn referenced_surface_ids(
 /// when any referenced surface, pcurve, edge endpoint, or loop chain fails to
 /// close so the caller leaves the model untouched.
 fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
-    if graph.faces.is_empty()
-        || graph.logical_vertex_refs.len() != graph.logical_vertex_points.len()
-    {
+    if graph.faces.is_empty() {
         return None;
     }
 

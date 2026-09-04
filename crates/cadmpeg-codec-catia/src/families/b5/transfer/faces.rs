@@ -46,7 +46,7 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     let vertex_count = graph
         .vertex_points
         .len()
-        .checked_add(graph.logical_vertex_points.len())?;
+        .checked_add(graph.logical_vertices.len())?;
     let mut parents = UnionFind::new(graph.faces.len());
     let mut first_face_by_edge = HashMap::<u32, usize>::new();
     let mut edge_uses = HashMap::<u32, usize>::new();
@@ -733,8 +733,7 @@ mod tests {
             edges: BTreeMap::new(),
             vertex_incidence_links: BTreeMap::new(),
             vertex_points: points,
-            logical_vertex_points: Vec::new(),
-            logical_vertex_refs: Vec::new(),
+            logical_vertices: Vec::new(),
             edge_vertices,
             edge_parameter_incidences: BTreeMap::new(),
             vertex_tolerances: BTreeMap::new(),

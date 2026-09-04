@@ -2,10 +2,10 @@
 
 use super::super::super::graph::{
     bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, pcurve_parameter_domain,
-    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata,
-    B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveParameterization,
-    B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters,
-    B5Surface,
+    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5LogicalVertex, B5Loop,
+    B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve,
+    B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
+    B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
     b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
@@ -255,8 +255,10 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[0.0, 0.0, 0.0]],
-        logical_vertex_refs: vec![50],
+        logical_vertices: vec![B5LogicalVertex {
+            object_id: 50,
+            point: [0.0, 0.0, 0.0],
+        }],
         edge_vertices: BTreeMap::from([(30, [0, 0])]),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
         vertex_tolerances: BTreeMap::new(),
@@ -355,8 +357,20 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]],
-        logical_vertex_refs: vec![50, 51, 52],
+        logical_vertices: vec![
+            B5LogicalVertex {
+                object_id: 50,
+                point: [0.0, 0.0, 0.0],
+            },
+            B5LogicalVertex {
+                object_id: 51,
+                point: [0.5, 0.0, 0.0],
+            },
+            B5LogicalVertex {
+                object_id: 52,
+                point: [1.0, 0.0, 0.0],
+            },
+        ],
         // Edges 33, 34, and 35 have no entry: their carrier resolves no
         // endpoint locus, which is what excludes face 3.
         edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
@@ -481,8 +495,20 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]],
-        logical_vertex_refs: vec![50, 51, 52],
+        logical_vertices: vec![
+            B5LogicalVertex {
+                object_id: 50,
+                point: [0.0, 0.0, 0.0],
+            },
+            B5LogicalVertex {
+                object_id: 51,
+                point: [0.5, 0.0, 0.0],
+            },
+            B5LogicalVertex {
+                object_id: 52,
+                point: [1.0, 0.0, 0.0],
+            },
+        ],
         edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
         edge_parameter_incidences: BTreeMap::from([(30, [40, 41]), (31, [41, 42]), (32, [42, 40])]),
         vertex_tolerances: BTreeMap::new(),
@@ -853,8 +879,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
-        logical_vertex_points: Vec::new(),
-        logical_vertex_refs: Vec::new(),
+        logical_vertices: Vec::new(),
         edge_vertices: BTreeMap::from([(3, [0, 1])]),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -961,8 +986,7 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: Vec::new(),
-        logical_vertex_refs: Vec::new(),
+        logical_vertices: Vec::new(),
         edge_vertices: BTreeMap::new(),
         edge_parameter_incidences: BTreeMap::new(),
         vertex_tolerances: BTreeMap::new(),
@@ -1049,8 +1073,16 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertex_points: Vec::new(),
-        logical_vertex_points: vec![[0.25, 0.0, 1e-4], [0.75, 0.0, 0.0]],
-        logical_vertex_refs: vec![10, 11],
+        logical_vertices: vec![
+            B5LogicalVertex {
+                object_id: 10,
+                point: [0.25, 0.0, 1e-4],
+            },
+            B5LogicalVertex {
+                object_id: 11,
+                point: [0.75, 0.0, 0.0],
+            },
+        ],
         edge_vertices: BTreeMap::from([(3, [0, 1])]),
         edge_parameter_incidences: BTreeMap::from([(3, [20, 21])]),
         vertex_tolerances: BTreeMap::new(),

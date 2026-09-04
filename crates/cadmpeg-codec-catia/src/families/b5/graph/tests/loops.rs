@@ -963,8 +963,19 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
     );
 
     assert_eq!(bound.edges, BTreeMap::from([(3, [0, 1])]));
-    assert_eq!(bound.refs, vec![10, 11]);
-    assert_eq!(bound.points, endpoints);
+    assert_eq!(
+        bound.vertices,
+        vec![
+            B5LogicalVertex {
+                object_id: 10,
+                point: endpoints[0],
+            },
+            B5LogicalVertex {
+                object_id: 11,
+                point: endpoints[1],
+            },
+        ]
+    );
     assert!(bound.tolerances.is_empty());
 
     let mismatched = bind_native_vertices(
@@ -976,8 +987,19 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
         &[],
     );
     assert_eq!(mismatched.edges, BTreeMap::from([(3, [0, 1])]));
-    assert_eq!(mismatched.refs, vec![10, 11]);
-    assert_eq!(mismatched.points, [endpoints[1], endpoints[1]]);
+    assert_eq!(
+        mismatched.vertices,
+        vec![
+            B5LogicalVertex {
+                object_id: 10,
+                point: endpoints[1],
+            },
+            B5LogicalVertex {
+                object_id: 11,
+                point: endpoints[1],
+            },
+        ]
+    );
     assert_eq!(mismatched.tolerances.len(), 1);
     assert!((mismatched.tolerances[&0] - (5.0 + 1.0e-9)).abs() < f64::EPSILON);
 }

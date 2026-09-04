@@ -93,8 +93,7 @@ pub(super) fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]
     graph.vertex_points.get(vertex).copied().or_else(|| {
         vertex
             .checked_sub(graph.vertex_points.len())
-            .and_then(|index| graph.logical_vertex_points.get(index))
-            .copied()
+            .and_then(|index| graph.logical_vertices.get(index).map(|vertex| vertex.point))
     })
 }
 

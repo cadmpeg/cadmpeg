@@ -5568,8 +5568,7 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
 ) -> Option<Vec<Option<[usize; 2]>>> {
     let graph = graph?;
     let identity_points = unique_native_identity_points(
-        &graph.logical_vertex_refs,
-        &graph.logical_vertex_points,
+        &graph.logical_vertices,
         graph.vertex_points.len(),
         &graph.vertex_tolerances,
         points,
@@ -5823,20 +5822,17 @@ pub(crate) fn corroborate_successor_endpoint_points(
 }
 
 pub(crate) fn unique_native_identity_points(
-    identities: &[u32],
-    coordinates: &[[f64; 3]],
+    vertices: &[crate::families::b5::graph::B5LogicalVertex],
     raw_point_count: usize,
     tolerances: &BTreeMap<usize, f64>,
     points: &[Point],
 ) -> HashMap<u32, usize> {
     const MATCH_TOLERANCE: f64 = 2e-3;
 
-    identities
+    vertices
         .iter()
-        .copied()
-        .zip(coordinates)
         .enumerate()
-        .filter_map(|(rank, (identity, coordinate))| {
+        .filter_map(|(rank, vertex)| {
             let tolerance = tolerances
                 .get(&(raw_point_count + rank))
                 .copied()
@@ -5848,7 +5844,11 @@ pub(crate) fn unique_native_identity_points(
                 .filter_map(|(index, point)| {
                     (point
                         .position
-                        .distance_squared(Point3::new(coordinate[0], coordinate[1], coordinate[2]))
+                        .distance_squared(Point3::new(
+                            vertex.point[0],
+                            vertex.point[1],
+                            vertex.point[2],
+                        ))
                         .sqrt()
                         <= tolerance)
                         .then_some(index)
@@ -5856,7 +5856,7 @@ pub(crate) fn unique_native_identity_points(
                 .collect::<Vec<_>>();
             <[usize; 1]>::try_from(matches)
                 .ok()
-                .map(|[point]| (identity, point))
+                .map(|[point]| (vertex.object_id, point))
         })
         .collect()
 }
