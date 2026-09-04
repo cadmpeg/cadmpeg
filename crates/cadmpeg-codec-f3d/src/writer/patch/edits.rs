@@ -3068,15 +3068,16 @@ pub(crate) fn validate_pcurve_edits(
             && after_points
                 .iter()
                 .all(|point| point.u.is_finite() && point.v.is_finite());
-        let contract_valid = before.wrapper_reversed.is_some() == after.wrapper_reversed.is_some()
-            && before.native_tail_flags.is_some() == after.native_tail_flags.is_some()
-            && before.parameter_range.is_some() == after.parameter_range.is_some()
-            && before.fit_tolerance.is_some() == after.fit_tolerance.is_some()
+        let contract_valid = before.wrapper_reversed().is_some()
+            == after.wrapper_reversed().is_some()
+            && before.native_tail_flags().is_some() == after.native_tail_flags().is_some()
+            && before.parameter_range().is_some() == after.parameter_range().is_some()
+            && before.fit_tolerance().is_some() == after.fit_tolerance().is_some()
             && after
-                .parameter_range
+                .parameter_range()
                 .is_none_or(|range| range.into_iter().all(f64::is_finite) && range[0] <= range[1])
             && after
-                .fit_tolerance
+                .fit_tolerance()
                 .is_none_or(|tolerance| tolerance.is_finite() && tolerance >= 0.0);
         if !valid || !contract_valid {
             return Err(CodecError::NotImplemented(format!(
@@ -3088,17 +3089,17 @@ pub(crate) fn validate_pcurve_edits(
             NurbsPcurveEdit {
                 native_geometry: after_native,
                 periodic: (before_periodic != after_periodic).then_some(*after_periodic),
-                wrapper_reversed: (before.wrapper_reversed != after.wrapper_reversed)
-                    .then_some(after.wrapper_reversed)
+                wrapper_reversed: (before.wrapper_reversed() != after.wrapper_reversed())
+                    .then_some(after.wrapper_reversed())
                     .flatten(),
-                native_tail_flags: (before.native_tail_flags != after.native_tail_flags)
-                    .then_some(after.native_tail_flags)
+                native_tail_flags: (before.native_tail_flags() != after.native_tail_flags())
+                    .then_some(after.native_tail_flags())
                     .flatten(),
-                parameter_range: (before.parameter_range != after.parameter_range)
-                    .then_some(after.parameter_range)
+                parameter_range: (before.parameter_range() != after.parameter_range())
+                    .then_some(after.parameter_range())
                     .flatten(),
-                fit_tolerance: (before.fit_tolerance != after.fit_tolerance)
-                    .then_some(after.fit_tolerance)
+                fit_tolerance: (before.fit_tolerance() != after.fit_tolerance())
+                    .then_some(after.fit_tolerance())
                     .flatten(),
             },
         );

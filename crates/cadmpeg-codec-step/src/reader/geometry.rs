@@ -1888,10 +1888,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         ir.model.pcurves.push(Pcurve {
             id: PcurveId(StepIdentity::data("pcurve", id)),
             geometry,
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: None,
-            fit_tolerance: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
         });
         typed.insert(id);
         if let Some(representation) =

@@ -1953,10 +1953,11 @@ pub(in super::super) fn transfer_native_brep(
                                 ir.model.pcurves.push(Pcurve {
                                     id: pcurve.clone(),
                                     geometry,
-                                    wrapper_reversed: None,
-                                    native_tail_flags: None,
-                                    parameter_range,
-                                    fit_tolerance: None,
+                                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                                        None,
+                                        parameter_range,
+                                        None,
+                                    ),
                                 });
                             }
                             PcurveUse {

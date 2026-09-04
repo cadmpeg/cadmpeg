@@ -521,7 +521,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ir.model
             .pcurves
             .iter()
-            .map(|pcurve| pcurve.parameter_range)
+            .map(|pcurve| pcurve.parameter_range())
             .collect::<Vec<_>>(),
         [Some([0.0, 0.5]), Some([0.0, 1.0]), Some([0.5, 1.0])]
     );

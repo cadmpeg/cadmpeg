@@ -901,10 +901,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                 weights: None,
                 periodic: false,
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some([0.0, 1.0]),
-            fit_tolerance: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 1.0]), None),
         });
         let mut pcurve_uses = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: pcurve_ids[index].clone(),
@@ -923,10 +920,11 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                     weights: None,
                     periodic: false,
                 },
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: Some([0.0, 1.0]),
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    Some([0.0, 1.0]),
+                    None,
+                ),
             });
             pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: split_pcurve_id,
@@ -1461,10 +1459,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             weights: None,
             periodic: false,
         },
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: Some([0.0, 1.0]),
-        fit_tolerance: None,
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 1.0]), None),
     });
     decoded.ir_mut().model.coedges[coedge_index]
         .pcurves

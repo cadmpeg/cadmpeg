@@ -1511,10 +1511,11 @@ fn decode_graph(
                         out.pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
-                            wrapper_reversed: None,
-                            native_tail_flags: None,
-                            parameter_range: Some(parameter_range),
-                            fit_tolerance: Some(support_data.fit_tolerance_mm),
+                            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                                None,
+                                Some(parameter_range),
+                                Some(support_data.fit_tolerance_mm),
+                            ),
                         });
                         Some(vec![cadmpeg_ir::topology::PcurveUse {
                             pcurve: id,
@@ -2413,10 +2414,7 @@ fn derive_planar_pcurves(
         let pcurve = Pcurve {
             id: id.clone(),
             geometry,
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: None,
-            fit_tolerance: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
         };
         derived.push((coedge.id.clone(), id, pcurve));
     }
@@ -2695,10 +2693,11 @@ fn derive_cylindrical_pcurves(
             Pcurve {
                 id,
                 geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range,
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    parameter_range,
+                    None,
+                ),
             },
         ));
     }
@@ -3120,10 +3119,7 @@ fn derive_revolved_circle_pcurves(
                     origin: cadmpeg_ir::math::Point2::new(phase, v),
                     direction: cadmpeg_ir::math::Point2::new(sense, 0.0),
                 },
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: None,
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
             },
         ));
     }
@@ -3259,10 +3255,7 @@ fn derive_spherical_pcurves(
             Pcurve {
                 id,
                 geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: None,
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
             },
         ));
     }
@@ -3413,10 +3406,11 @@ fn derive_nurbs_isoparametric_pcurves(
             Pcurve {
                 id,
                 geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range,
-                fit_tolerance,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    parameter_range,
+                    fit_tolerance,
+                ),
             },
             cache,
         ));
@@ -3432,7 +3426,7 @@ fn derive_nurbs_isoparametric_pcurves(
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.clone(),
                 isoparametric: None,
-                parameter_range: pcurve.parameter_range,
+                parameter_range: pcurve.parameter_range(),
             }];
         }
         annotations.note(&id, source_stream, 0).tag(if cache {
@@ -5222,10 +5216,11 @@ fn synthesize_sphere_seams(
                 origin: cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2),
                 direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some([0.0, std::f64::consts::TAU]),
-            fit_tolerance: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some([0.0, std::f64::consts::TAU]),
+                None,
+            ),
         });
         ring.push(coedge_id.clone());
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());

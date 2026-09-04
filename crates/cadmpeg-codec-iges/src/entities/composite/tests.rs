@@ -1893,7 +1893,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         result.ir().model.pcurves[0].geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree: 3, .. }
     ));
-    assert_eq!(result.ir().model.pcurves[0].fit_tolerance, None);
+    assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), None);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

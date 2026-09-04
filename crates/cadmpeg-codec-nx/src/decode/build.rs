@@ -566,10 +566,7 @@ pub(crate) fn try_decode_geometry(
             ir.model.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry: pcurve.geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: None,
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
             });
             if let Some(node) = graph.at_pos(pcurve.pos) {
                 pcurves_by_xmt.insert(node.xmt, id);
@@ -858,7 +855,17 @@ pub(crate) fn try_decode_geometry(
                         .get(&pcurve)
                         .and_then(|index| ir.model.pcurves.get_mut(*index))
                     {
-                        carrier.fit_tolerance = decoded_tolerance(surface_curve.tolerance);
+                        let fit_tolerance = decoded_tolerance(surface_curve.tolerance);
+                        match &mut carrier.metadata {
+                            cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
+                                metadata.fit_tolerance = fit_tolerance;
+                            }
+                            cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) => {
+                                if let Some(fit_tolerance) = fit_tolerance {
+                                    inline.fit_tolerance = fit_tolerance;
+                                }
+                            }
+                        }
                     }
                     pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
                     if let Some(support) = surfaces_by_xmt.get(&surface_curve.surface).cloned() {

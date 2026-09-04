@@ -2392,13 +2392,13 @@ fn explicit_brep_c2_curve(
         .iter()
         .find(|pcurve| pcurve.id == *pcurve_id)
         .ok_or_else(|| CodecError::malformed(format_args!("pcurve {} is missing", pcurve_id.0)))?;
-    if pcurve.wrapper_reversed == Some(true)
-        || pcurve.native_tail_flags.is_some()
+    if pcurve.wrapper_reversed() == Some(true)
+        || pcurve.native_tail_flags().is_some()
         || pcurve
-            .parameter_range
+            .parameter_range()
             .is_some_and(|range| Some(range) != edge.param_range)
         || pcurve
-            .fit_tolerance
+            .fit_tolerance()
             .is_some_and(|value| !value.is_finite() || value < 0.0)
     {
         return Err(CodecError::NotImplemented(format!(
@@ -2513,7 +2513,7 @@ fn brep_pcurve_fit_tolerance(
         .first()
         .map(|pcurve_use| &pcurve_use.pcurve)
         .and_then(|id| model.pcurves.iter().find(|pcurve| pcurve.id == *id))
-        .and_then(|pcurve| pcurve.fit_tolerance)
+        .and_then(|pcurve| pcurve.fit_tolerance())
         .unwrap_or(0.0)
 }
 
@@ -2623,7 +2623,7 @@ fn validate_nurbs_trim_loop(
 
         let tolerance = face_tolerance
             .max(edge.tolerance.unwrap_or(0.0))
-            .max(pcurve.fit_tolerance.unwrap_or(0.0))
+            .max(pcurve.fit_tolerance().unwrap_or(0.0))
             .max(EPS_WRITE_DEGENERATE);
         for span in breaks.windows(2) {
             for step in 0..=16 {

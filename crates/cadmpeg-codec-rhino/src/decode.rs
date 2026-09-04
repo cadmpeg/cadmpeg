@@ -3680,10 +3680,11 @@ fn stage_extrusion_caps(
                     weights: pcurve.weights.clone(),
                     periodic: pcurve.periodic,
                 },
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: Some(parameter_range),
-                fit_tolerance: None,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    Some(parameter_range),
+                    None,
+                ),
             });
             ir.model.coedges.push(Coedge {
                 id: coedge_id.clone(),
@@ -4843,10 +4844,11 @@ fn decode_pcurves(
                 weights: nurbs.weights,
                 periodic: nurbs.periodic,
             },
-            wrapper_reversed: Some(trim.proxy_reversed != 0),
-            native_tail_flags: None,
-            parameter_range: Some(trim.domain.0),
-            fit_tolerance: finite_tolerance(trim.tolerances[0]),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                Some(trim.proxy_reversed != 0),
+                Some(trim.domain.0),
+                finite_tolerance(trim.tolerances[0]),
+            ),
         });
         ids.insert(index as i32, id);
     }

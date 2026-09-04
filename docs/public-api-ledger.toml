@@ -3851,3 +3851,17 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset::{direction,support,normal,parameter_range,distance_law}"
 reason = "independent optional fields admitted contradictory side carriers and a distance law without its required parameter interval"
+
+[[change]]
+commit = "cb2d6703df9b2d6e10b4faa6593267809d2f5324"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::Pcurve::metadata"
+reason = "pcurve source metadata now distinguishes a complete ASM inline record from independently meaningful metadata used by other formats"
+
+[[change]]
+commit = "cb2d6703df9b2d6e10b4faa6593267809d2f5324"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::geometry::Pcurve::{wrapper_reversed,native_tail_flags,parameter_range,fit_tolerance}"
+reason = "an ASM native tail can no longer be constructed without its wrapper reversal, parameter interval, and fit tolerance"

@@ -656,10 +656,11 @@ mod tests {
                             end_point[1] - start_point[1],
                         ),
                     },
-                    wrapper_reversed: None,
-                    native_tail_flags: None,
-                    parameter_range: Some([0.0, 1.0]),
-                    fit_tolerance: None,
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                        None,
+                        Some([0.0, 1.0]),
+                        None,
+                    ),
                 });
                 pcurve_uses.insert(
                     (loop_id, member),

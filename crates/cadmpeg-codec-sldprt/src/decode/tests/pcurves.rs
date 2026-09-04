@@ -305,7 +305,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
             if origin == cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2)
                 && direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
     ));
-    assert_eq!(pole.parameter_range, Some([0.0, std::f64::consts::TAU]));
+    assert_eq!(pole.parameter_range(), Some([0.0, std::f64::consts::TAU]));
     let seam = result
         .ir()
         .model

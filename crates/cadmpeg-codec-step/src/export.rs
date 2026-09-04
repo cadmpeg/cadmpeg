@@ -3925,10 +3925,10 @@ impl<'a> Builder<'a> {
             .flat_map(|coedge| &coedge.pcurves)
             .filter_map(|use_| self.pcurves.get(use_.pcurve.as_str()))
             .filter(|pcurve| {
-                pcurve.wrapper_reversed.is_some()
-                    || pcurve.native_tail_flags.is_some()
-                    || pcurve.parameter_range.is_some()
-                    || pcurve.fit_tolerance.is_some()
+                pcurve.wrapper_reversed().is_some()
+                    || pcurve.native_tail_flags().is_some()
+                    || pcurve.parameter_range().is_some()
+                    || pcurve.fit_tolerance().is_some()
             })
             .count();
         if reduced_pcurve_count > 0 {

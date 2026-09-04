@@ -512,8 +512,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                 *start_tol,
                 *end_tol,
                 face.tolerance,
-                first.fit_tolerance,
-                last.fit_tolerance,
+                first.fit_tolerance(),
+                last.fit_tolerance(),
             ],
         );
         // Recovering an occurrence interval is a topological operation. A
@@ -550,11 +550,11 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             match (
                 first_use
                     .parameter_range
-                    .or(first.parameter_range)
+                    .or(first.parameter_range())
                     .or_else(|| pcurve_parameter_extremes(first)),
                 last_use
                     .parameter_range
-                    .or(last.parameter_range)
+                    .or(last.parameter_range())
                     .or_else(|| pcurve_parameter_extremes(last)),
             ) {
                 (Some([t0, _]), Some([_, t1])) => Some(vec![[t0, t1]]),
@@ -614,7 +614,7 @@ fn pcurve_parameter_ranges(
     edge_range: Option<[f64; 2]>,
 ) -> Option<Vec<[f64; 2]>> {
     let mut ranges = Vec::with_capacity(4);
-    if let Some(range) = pcurve_range.or(pcurve.parameter_range) {
+    if let Some(range) = pcurve_range.or(pcurve.parameter_range()) {
         ranges.push(range);
     }
     if let Some([start, end]) = edge_range {
@@ -779,7 +779,7 @@ fn unique_finite(values: impl IntoIterator<Item = f64>) -> Vec<f64> {
 
 fn pcurve_parameter_seeds(pcurve: &crate::geometry::Pcurve) -> Vec<f64> {
     let mut seeds = vec![0.0];
-    if let Some(range) = pcurve.parameter_range {
+    if let Some(range) = pcurve.parameter_range() {
         seeds.extend(range);
     }
     if let Some([start, end]) = pcurve_parameter_domain(&pcurve.geometry) {
@@ -878,7 +878,7 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
 /// edge occurrence.
 fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
     pcurve
-        .parameter_range
+        .parameter_range()
         .or_else(|| pcurve_geometry_trim_range(&pcurve.geometry))
 }
 

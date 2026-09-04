@@ -117,7 +117,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         .model
         .pcurves
         .iter()
-        .all(|pcurve| pcurve.parameter_range == Some([0.0, 1.0])));
+        .all(|pcurve| pcurve.parameter_range() == Some([0.0, 1.0])));
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),

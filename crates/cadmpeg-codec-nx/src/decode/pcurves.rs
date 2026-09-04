@@ -499,10 +499,10 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             };
             let ranges = [
                 first_use_range
-                    .or(first.parameter_range)
+                    .or(first.parameter_range())
                     .or_else(|| pcurve_parameter_range(&first.geometry)),
                 second_use_range
-                    .or(second.parameter_range)
+                    .or(second.parameter_range())
                     .or_else(|| pcurve_parameter_range(&second.geometry)),
             ];
             let [Some(first_range), Some(second_range)] = ranges else {
@@ -527,8 +527,8 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 continue;
             }
             let Some(()) = first
-                .fit_tolerance
-                .zip(second.fit_tolerance)
+                .fit_tolerance()
+                .zip(second.fit_tolerance())
                 .map(|(first, second)| first + second)
                 .filter(|bound| bound.is_finite() && *bound <= endpoint_tolerance)
                 .map(|_| ())
@@ -3664,10 +3664,7 @@ mod tests {
                 origin: Point2::new(0.0, 0.0),
                 direction: Point2::new(1.0, 0.0),
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: None,
-            fit_tolerance: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, None, None),
         });
 
         index.complete_from_stream(&mut ir, later_starts);

@@ -1558,7 +1558,7 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     );
     assert!(weights.is_none());
     assert!(!periodic);
-    assert_eq!(result.ir().model.pcurves[0].fit_tolerance, Some(0.01));
+    assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), Some(0.01));
     assert_eq!(
         result.ir().model.points[0].position,
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
@@ -1592,7 +1592,7 @@ fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.pcurves[0].parameter_range, None);
+    assert_eq!(result.ir().model.pcurves[0].parameter_range(), None);
     assert_eq!(
         result.ir().model.coedges[0].pcurves[0].parameter_range,
         Some([0.0, 1.0])
@@ -1617,7 +1617,7 @@ fn decode_omits_surface_curve_missing_tolerance_sentinel() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.pcurves[0].fit_tolerance, None);
+    assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), None);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 

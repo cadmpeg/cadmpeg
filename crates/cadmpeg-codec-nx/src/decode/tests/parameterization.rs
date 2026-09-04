@@ -1194,7 +1194,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .iter()
         .find(|pcurve| pcurve.id.0.contains("intersection-pcurve-completed"))
         .expect("validated completed support lane attaches");
-    assert_eq!(completed.fit_tolerance, edge_tolerance);
+    assert_eq!(completed.fit_tolerance(), edge_tolerance);
     assert!(ir.model.coedges.iter().any(|coedge| coedge
         .pcurves
         .iter()

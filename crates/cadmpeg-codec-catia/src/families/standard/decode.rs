@@ -5098,10 +5098,11 @@ fn emit_standard_topology(
                     ir.model.pcurves.push(Pcurve {
                         id: id.clone(),
                         geometry,
-                        wrapper_reversed: None,
-                        parameter_range: Some(range),
-                        fit_tolerance: None,
-                        native_tail_flags: None,
+                        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                            None,
+                            Some(range),
+                            None,
+                        ),
                     });
                     (id, range)
                 });
