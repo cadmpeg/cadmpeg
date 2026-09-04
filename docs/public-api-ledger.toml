@@ -3746,3 +3746,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::pmi::DatumReference::precedence"
 reason = "datum-system precedence is a NonZeroU32, so the documented one-based ordering cannot contain zero"
+
+[[change]]
+commit = "6f65fcec60f533ddfa9068fe595b744f6525a28a"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::pmi::PmiDefinition::Dimension"
+reason = "a semantic dimension requires its nominal value and carries at most one complete plus-minus or limits-and-fits tolerance"
