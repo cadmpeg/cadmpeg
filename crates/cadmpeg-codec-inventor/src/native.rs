@@ -523,34 +523,259 @@ pub(crate) struct RseRecordRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ActiveCarrierRecord {
-    pub(crate) id: String,
-    pub(crate) state: ActiveCarrierRecordState,
-    pub(crate) segment_token: Option<String>,
-    pub(crate) record_ordinal: Option<u32>,
-    pub(crate) segment_version_major: Option<u8>,
-    pub(crate) family: Option<String>,
-    pub(crate) header_state: Option<u32>,
-    pub(crate) header_kind: Option<u16>,
-    pub(crate) header_value: Option<u32>,
-    pub(crate) schema: Option<u32>,
-    pub(crate) carrier_len: Option<u64>,
-    pub(crate) carrier_offset: Option<u64>,
-    pub(crate) carrier_sha256: Option<String>,
-    pub(crate) selected_key: Option<u32>,
-    pub(crate) enabled: Option<bool>,
-    pub(crate) delta_state: Option<i32>,
-    pub(crate) history_reference: Option<u32>,
-    pub(crate) detail: Option<String>,
+#[serde(try_from = "ActiveCarrierRecordWire", into = "ActiveCarrierRecordWire")]
+pub(crate) enum ActiveCarrierRecord {
+    NotApplicable {
+        id: String,
+    },
+    NotExpanded {
+        id: String,
+    },
+    Unavailable {
+        id: String,
+        detail: String,
+    },
+    Selected {
+        id: String,
+        segment_token: String,
+        record_ordinal: u32,
+        segment_version_major: u8,
+        family: crate::kernel::KernelFamily,
+        header_state: u32,
+        header_kind: u16,
+        header_value: u32,
+        schema: u32,
+        carrier_len: std::num::NonZeroU64,
+        carrier_offset: u64,
+        carrier_sha256: String,
+        selected_key: u32,
+        enabled: bool,
+        delta_state: i32,
+        history_reference: u32,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+struct ActiveCarrierRecordWire {
+    id: String,
+    state: ActiveCarrierRecordState,
+    segment_token: Option<String>,
+    record_ordinal: Option<u32>,
+    segment_version_major: Option<u8>,
+    family: Option<String>,
+    header_state: Option<u32>,
+    header_kind: Option<u16>,
+    header_value: Option<u32>,
+    schema: Option<u32>,
+    carrier_len: Option<u64>,
+    carrier_offset: Option<u64>,
+    carrier_sha256: Option<String>,
+    selected_key: Option<u32>,
+    enabled: Option<bool>,
+    delta_state: Option<i32>,
+    history_reference: Option<u32>,
+    detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ActiveCarrierRecordState {
+enum ActiveCarrierRecordState {
     NotApplicable,
     NotExpanded,
     Selected,
     Unavailable,
+}
+
+impl From<ActiveCarrierRecord> for ActiveCarrierRecordWire {
+    fn from(value: ActiveCarrierRecord) -> Self {
+        match value {
+            ActiveCarrierRecord::NotApplicable { id } => Self {
+                id,
+                state: ActiveCarrierRecordState::NotApplicable,
+                segment_token: None,
+                record_ordinal: None,
+                segment_version_major: None,
+                family: None,
+                header_state: None,
+                header_kind: None,
+                header_value: None,
+                schema: None,
+                carrier_len: None,
+                carrier_offset: None,
+                carrier_sha256: None,
+                selected_key: None,
+                enabled: None,
+                delta_state: None,
+                history_reference: None,
+                detail: None,
+            },
+            ActiveCarrierRecord::NotExpanded { id } => Self {
+                id,
+                state: ActiveCarrierRecordState::NotExpanded,
+                segment_token: None,
+                record_ordinal: None,
+                segment_version_major: None,
+                family: None,
+                header_state: None,
+                header_kind: None,
+                header_value: None,
+                schema: None,
+                carrier_len: None,
+                carrier_offset: None,
+                carrier_sha256: None,
+                selected_key: None,
+                enabled: None,
+                delta_state: None,
+                history_reference: None,
+                detail: None,
+            },
+            ActiveCarrierRecord::Unavailable { id, detail } => Self {
+                id,
+                state: ActiveCarrierRecordState::Unavailable,
+                segment_token: None,
+                record_ordinal: None,
+                segment_version_major: None,
+                family: None,
+                header_state: None,
+                header_kind: None,
+                header_value: None,
+                schema: None,
+                carrier_len: None,
+                carrier_offset: None,
+                carrier_sha256: None,
+                selected_key: None,
+                enabled: None,
+                delta_state: None,
+                history_reference: None,
+                detail: Some(detail),
+            },
+            ActiveCarrierRecord::Selected {
+                id,
+                segment_token,
+                record_ordinal,
+                segment_version_major,
+                family,
+                header_state,
+                header_kind,
+                header_value,
+                schema,
+                carrier_len,
+                carrier_offset,
+                carrier_sha256,
+                selected_key,
+                enabled,
+                delta_state,
+                history_reference,
+            } => Self {
+                id,
+                state: ActiveCarrierRecordState::Selected,
+                segment_token: Some(segment_token),
+                record_ordinal: Some(record_ordinal),
+                segment_version_major: Some(segment_version_major),
+                family: Some(family.label().into()),
+                header_state: Some(header_state),
+                header_kind: Some(header_kind),
+                header_value: Some(header_value),
+                schema: Some(schema),
+                carrier_len: Some(carrier_len.get()),
+                carrier_offset: Some(carrier_offset),
+                carrier_sha256: Some(carrier_sha256),
+                selected_key: Some(selected_key),
+                enabled: Some(enabled),
+                delta_state: Some(delta_state),
+                history_reference: Some(history_reference),
+                detail: None,
+            },
+        }
+    }
+}
+
+impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
+    type Error = String;
+
+    fn try_from(wire: ActiveCarrierRecordWire) -> Result<Self, Self::Error> {
+        match wire.state {
+            ActiveCarrierRecordState::NotApplicable => Ok(Self::NotApplicable { id: wire.id }),
+            ActiveCarrierRecordState::NotExpanded => Ok(Self::NotExpanded { id: wire.id }),
+            ActiveCarrierRecordState::Unavailable => {
+                let detail = wire
+                    .detail
+                    .ok_or_else(|| "unavailable active carrier requires detail".to_owned())?;
+                Ok(Self::Unavailable {
+                    id: wire.id,
+                    detail,
+                })
+            }
+            ActiveCarrierRecordState::Selected => {
+                let family = match wire.family.as_deref() {
+                    Some("asm") => crate::kernel::KernelFamily::Asm,
+                    Some("acis") => crate::kernel::KernelFamily::Acis,
+                    other => {
+                        return Err(format!(
+                            "selected active carrier family must be asm or acis, got {other:?}"
+                        ))
+                    }
+                };
+                let carrier_len = std::num::NonZeroU64::new(wire.carrier_len.unwrap_or(0))
+                    .ok_or_else(|| "selected active carrier_len must be nonzero".to_owned())?;
+                Ok(Self::Selected {
+                    id: wire.id,
+                    segment_token: wire.segment_token.ok_or_else(|| {
+                        "selected active carrier requires segment_token".to_owned()
+                    })?,
+                    record_ordinal: wire.record_ordinal.ok_or_else(|| {
+                        "selected active carrier requires record_ordinal".to_owned()
+                    })?,
+                    segment_version_major: wire.segment_version_major.ok_or_else(|| {
+                        "selected active carrier requires segment_version_major".to_owned()
+                    })?,
+                    family,
+                    header_state: wire.header_state.ok_or_else(|| {
+                        "selected active carrier requires header_state".to_owned()
+                    })?,
+                    header_kind: wire
+                        .header_kind
+                        .ok_or_else(|| "selected active carrier requires header_kind".to_owned())?,
+                    header_value: wire.header_value.ok_or_else(|| {
+                        "selected active carrier requires header_value".to_owned()
+                    })?,
+                    schema: wire
+                        .schema
+                        .ok_or_else(|| "selected active carrier requires schema".to_owned())?,
+                    carrier_len,
+                    carrier_offset: wire.carrier_offset.ok_or_else(|| {
+                        "selected active carrier requires carrier_offset".to_owned()
+                    })?,
+                    carrier_sha256: wire.carrier_sha256.ok_or_else(|| {
+                        "selected active carrier requires carrier_sha256".to_owned()
+                    })?,
+                    selected_key: wire.selected_key.ok_or_else(|| {
+                        "selected active carrier requires selected_key".to_owned()
+                    })?,
+                    enabled: wire
+                        .enabled
+                        .ok_or_else(|| "selected active carrier requires enabled".to_owned())?,
+                    delta_state: wire
+                        .delta_state
+                        .ok_or_else(|| "selected active carrier requires delta_state".to_owned())?,
+                    history_reference: wire.history_reference.ok_or_else(|| {
+                        "selected active carrier requires history_reference".to_owned()
+                    })?,
+                })
+            }
+        }
+    }
+}
+
+impl ActiveCarrierRecord {
+    pub(crate) fn id(&self) -> &str {
+        match self {
+            Self::NotApplicable { id }
+            | Self::NotExpanded { id }
+            | Self::Unavailable { id, .. }
+            | Self::Selected { id, .. } => id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
