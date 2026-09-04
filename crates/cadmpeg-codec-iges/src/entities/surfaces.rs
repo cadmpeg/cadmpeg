@@ -14,8 +14,8 @@ use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface,
-    SurfaceGeometry, SurfaceParameterAxis,
+    NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -2284,11 +2284,10 @@ pub(super) fn project(
             ProceduralSurface::new(
                 ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
                 ProceduralSurfaceDefinition::Exact {
-                    parameters: SplineSurfaceParameters::OrderedRanges {
+                    spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                         ranges: [u_range, v_range],
+                        extension: 0,
                     },
-                    extension: 0,
-                    revision_form: None,
                 },
                 Some([
                     Some(u_range[0]),

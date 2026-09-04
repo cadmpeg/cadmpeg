@@ -121,15 +121,9 @@ fn emit_carrier_surface(
             DecodedProceduralSurfaceDefinition::TSpline(construction) => {
                 ProceduralSurfaceDefinition::TSpline { construction }
             }
-            DecodedProceduralSurfaceDefinition::Exact {
-                parameters,
-                extension,
-                revision_form,
-            } => ProceduralSurfaceDefinition::Exact {
-                parameters,
-                extension,
-                revision_form,
-            },
+            DecodedProceduralSurfaceDefinition::Exact { spline } => {
+                ProceduralSurfaceDefinition::Exact { spline }
+            }
             DecodedProceduralSurfaceDefinition::Compound {
                 parameters,
                 components,

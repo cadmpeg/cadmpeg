@@ -1091,11 +1091,10 @@ mod route_tests {
 
         ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Exact);
         ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Exact {
-            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+            spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
+                extension: 0,
             },
-            extension: 0,
-            revision_form: None,
         });
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }

@@ -7,8 +7,7 @@ use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, Pcurve,
     PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SplineSurfaceParameters, Surface, SurfaceCurveFamily,
-    SurfaceGeometry,
+    ProceduralSurfaceDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -497,11 +496,10 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction.clone(),
         definition: ProceduralSurfaceDefinition::Exact {
-            parameters: SplineSurfaceParameters::OrderedRanges {
+            spline: crate::geometry::ExactSpline::Legacy {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
+                extension: 0,
             },
-            extension: 0,
-            revision_form: None,
         },
         cache_fit_tolerance: None,
         record_bounds: None,
@@ -815,11 +813,10 @@ fn pcurve_surface_mismatch_is_flagged() {
     );
     procedural.model.procedural_surfaces[0].replace_definition(
         ProceduralSurfaceDefinition::Exact {
-            parameters: crate::geometry::SplineSurfaceParameters::OrderedRanges {
+            spline: crate::geometry::ExactSpline::Legacy {
                 ranges: [[0.0, 1.0], [0.0, 1.0]],
+                extension: 0,
             },
-            extension: 0,
-            revision_form: None,
         },
     );
     let exact_report = validate_neutral(&procedural, Vec::new());

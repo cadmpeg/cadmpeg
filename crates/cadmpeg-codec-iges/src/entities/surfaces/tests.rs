@@ -1229,8 +1229,7 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
         Some([Some(0.2), Some(0.8), Some(-1.0), Some(1.0)])
     );
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Exact {
-        parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges },
-        ..
+        spline: cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. },
     } = procedural.definition()
     else {
         panic!("expected exact Type 128 construction")

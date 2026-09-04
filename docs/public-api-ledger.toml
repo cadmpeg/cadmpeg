@@ -3767,3 +3767,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::RevisionSurfaceForm::flags"
 reason = "the flag carrier is generic so offset revision forms require exactly four booleans while other surface families retain their distinct wire arities"
+
+[[change]]
+commit = "d9d6749ae1640e6f5ee0d86c7e5dd1d8ce68c21d"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Exact"
+reason = "legacy ordered ranges and revision intervals now carry only the form required by their exact-spline layout"

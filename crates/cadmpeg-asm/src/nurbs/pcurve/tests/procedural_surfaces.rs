@@ -516,9 +516,7 @@ fn exact_surface_uses_leading_cache_ranges_then_extension() {
             .unwrap_or_else(|| panic!("exact surface {name} at width {int_width}"));
             let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
             let DecodedProceduralSurfaceDefinition::Exact {
-                parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges },
-                extension,
-                revision_form: None,
+                spline: cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, extension },
             } = decoded.definition
             else {
                 panic!("expected legacy exact surface");

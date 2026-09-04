@@ -1846,11 +1846,10 @@ fn geometry_signal_excludes_opaque_carriers() {
         ProceduralSurface::new(
             ProceduralSurfaceId("procedural".to_string()),
             ProceduralSurfaceDefinition::Exact {
-                parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+                spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                     ranges: [[0.0, 1.0], [0.0, 1.0]],
+                    extension: 0,
                 },
-                extension: 0,
-                revision_form: None,
             },
             None,
         ),

@@ -506,64 +506,50 @@ fn native_procedural_surface_definition(
             native_i64(bytes, construction.trailing_value);
             bytes.push(0x10);
         }
-        ProceduralSurfaceDefinition::Exact {
-            parameters,
-            extension,
-            revision_form,
-        } => {
+        ProceduralSurfaceDefinition::Exact { spline } => {
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "exact_spl_sur")?;
-            if let (
-                Some(form),
-                cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges { intervals },
-            ) = (revision_form, parameters)
-            {
-                if form.revision <= 0 {
-                    return Err(CodecError::Malformed(
-                        "revision-gated exact_spl_sur requires a positive revision".into(),
-                    ));
-                }
-                native_i64(bytes, form.revision);
-                native_revision_surface_tail(
-                    bytes,
-                    "exact spline surface",
+            match spline {
+                cadmpeg_ir::geometry::ExactSpline::Revision {
+                    intervals,
+                    extension,
                     form,
-                    Some(solved_cache),
-                )?;
-                for interval in intervals {
-                    for bound in interval {
-                        native_optional_f64(bytes, *bound);
+                } => {
+                    if form.revision <= 0 {
+                        return Err(CodecError::Malformed(
+                            "revision-gated exact_spl_sur requires a positive revision".into(),
+                        ));
                     }
+                    native_i64(bytes, form.revision);
+                    native_revision_surface_tail(
+                        bytes,
+                        "exact spline surface",
+                        form,
+                        Some(solved_cache),
+                    )?;
+                    for interval in intervals {
+                        for bound in interval {
+                            native_optional_f64(bytes, *bound);
+                        }
+                    }
+                    native_enum(bytes, *extension);
                 }
-                native_enum(bytes, *extension);
-                bytes.push(0x10);
-                return Ok(true);
-            }
-            let cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges } =
-                parameters
-            else {
-                return Err(CodecError::Malformed(
-                    "exact spline parameter fields conflict with its revision form".into(),
-                ));
-            };
-            if revision_form.is_some() {
-                return Err(CodecError::Malformed(
-                    "exact spline ordered ranges cannot carry a revision form".into(),
-                ));
-            }
-            native_nurbs_surface(bytes, solved_cache)?;
-            native_solved_cache_fit_tolerance(
-                bytes,
-                "exact spline surface",
-                procedural.cache_fit_tolerance(),
-            )?;
-            for range in ranges {
-                for value in range {
-                    native_f64(bytes, *value);
+                cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, extension } => {
+                    native_nurbs_surface(bytes, solved_cache)?;
+                    native_solved_cache_fit_tolerance(
+                        bytes,
+                        "exact spline surface",
+                        procedural.cache_fit_tolerance(),
+                    )?;
+                    for range in ranges {
+                        for value in range {
+                            native_f64(bytes, *value);
+                        }
+                    }
+                    native_i64(bytes, *extension);
                 }
             }
-            native_i64(bytes, *extension);
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::Compound {

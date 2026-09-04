@@ -591,14 +591,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Exact { parameters, .. } = procedural.definition() {
-            let valid = match parameters {
-                crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
-                    ranges.iter().all(|range| {
-                        range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
-                    })
-                }
-                crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => intervals
+        if let ProceduralSurfaceDefinition::Exact { spline } = procedural.definition() {
+            let valid = match spline {
+                crate::geometry::ExactSpline::Legacy { ranges, .. } => ranges.iter().all(|range| {
+                    range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                }),
+                crate::geometry::ExactSpline::Revision { intervals, .. } => intervals
                     .iter()
                     .flatten()
                     .flatten()

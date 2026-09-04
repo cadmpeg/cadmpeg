@@ -37,12 +37,8 @@ pub struct DecodedProceduralSurface {
 pub enum DecodedProceduralSurfaceDefinition {
     /// Exact NURBS construction and retained native parameter fields.
     Exact {
-        /// Legacy ordered ranges or revision-native scalar values.
-        parameters: cadmpeg_ir::geometry::SplineSurfaceParameters,
-        /// Native ASM extension integer.
-        extension: i64,
-        /// Revision-gated form fields.
-        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
+        /// Complete legacy or revision-gated exact-spline layout.
+        spline: cadmpeg_ir::geometry::ExactSpline,
     },
     /// Native compound surface with ordered scalar/component pairs.
     Compound {
@@ -3683,21 +3679,21 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Exact {
-                parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges {
+                spline: cadmpeg_ir::geometry::ExactSpline::Revision {
                     intervals: unextended_ranges,
+                    extension,
+                    form: cadmpeg_ir::geometry::RevisionSurfaceForm {
+                        revision,
+                        support_bounds: [None; 4],
+                        reference_endpoints: [None; 2],
+                        second_endpoints: [None; 2],
+                        flags: Vec::new(),
+                        cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                        discontinuities,
+                        tail_flag,
+                        trailing_flags: Vec::new(),
+                    },
                 },
-                extension,
-                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
-                    revision,
-                    support_bounds: [None; 4],
-                    reference_endpoints: [None; 2],
-                    second_endpoints: [None; 2],
-                    flags: Vec::new(),
-                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
-                    discontinuities,
-                    tail_flag,
-                    trailing_flags: Vec::new(),
-                }),
             },
             cache_fit_tolerance: fit_tolerance,
         });
@@ -3714,11 +3710,10 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let _ = name;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Exact {
-            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+            spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                 ranges: parameter_ranges,
+                extension,
             },
-            extension,
-            revision_form: None,
         },
         cache_fit_tolerance,
     })
