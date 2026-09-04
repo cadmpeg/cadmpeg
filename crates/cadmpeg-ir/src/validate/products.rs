@@ -173,7 +173,12 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.assembly_joints.push(AssemblyJoint::paired(
             JointId("test:model:joint#root".into()),
-            PairedJointKind::try_from(crate::products::JointKind::Fixed).expect("fixed"),
+            PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
             [
                 JointConnector {
                     operand: root_operand("root:first"),
