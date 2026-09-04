@@ -113,6 +113,43 @@ pub(crate) enum MeshCandidateSolve {
     Exhausted(MeshCandidateExhaustion),
 }
 
+/// Exclusive search status: a solved candidate cannot also be ambiguous or exhausted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SearchOutcome<T> {
+    Open,
+    Solved(T),
+    Ambiguous,
+    Exhausted,
+}
+
+impl<T> SearchOutcome<T> {
+    pub(crate) fn is_closed(&self) -> bool {
+        matches!(self, Self::Ambiguous | Self::Exhausted)
+    }
+
+    pub(crate) fn exhaust(&mut self) {
+        if !self.is_closed() {
+            *self = Self::Exhausted;
+        }
+    }
+
+    pub(crate) fn mark_ambiguous(&mut self) {
+        if !self.is_closed() {
+            *self = Self::Ambiguous;
+        }
+    }
+
+    pub(crate) fn record_solved(&mut self, candidate: T, equivalent: impl FnOnce(&T, &T) -> bool) {
+        match self {
+            Self::Solved(previous) if !equivalent(previous, &candidate) => {
+                *self = Self::Ambiguous;
+            }
+            Self::Open => *self = Self::Solved(candidate),
+            Self::Solved(_) | Self::Ambiguous | Self::Exhausted => {}
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum MeshFaceDomainCandidateSolve {
     Solved(Vec<[usize; 2]>, StandardTopology, Vec<usize>),
@@ -3740,9 +3777,7 @@ pub(crate) struct MeshSelectionSearch<'a> {
     pub(crate) edge_has_fixed_direction: Vec<bool>,
     pub(crate) selected: Vec<MeshFaceSelection>,
     pub(crate) visited_states: HashSet<MeshSelectionStateSignature>,
-    pub(crate) solution: Option<(StandardTopology, Vec<usize>)>,
-    pub(crate) ambiguous: bool,
-    pub(crate) exhausted: bool,
+    pub(crate) outcome: SearchOutcome<(StandardTopology, Vec<usize>)>,
     pub(crate) face_equation_cache: MeshFaceEquationCache,
 }
 
@@ -6066,9 +6101,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
             Err(_) => return MeshEndpointResolve::Rejected,
         },
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     if use_fixed_direction_search {
@@ -6076,14 +6109,13 @@ fn resolve_fixed_mesh_endpoint_pairs(
     } else {
         search.search_with_budget(&quotient, budget, budget);
     }
-    if search.exhausted {
-        MeshEndpointResolve::Exhausted
-    } else if search.ambiguous {
-        MeshEndpointResolve::Ambiguous
-    } else if let Some((topology, assignment)) = search.solution {
-        MeshEndpointResolve::Solved(topology, assignment)
-    } else {
-        MeshEndpointResolve::Rejected
+    match search.outcome {
+        SearchOutcome::Exhausted => MeshEndpointResolve::Exhausted,
+        SearchOutcome::Ambiguous => MeshEndpointResolve::Ambiguous,
+        SearchOutcome::Solved((topology, assignment)) => {
+            MeshEndpointResolve::Solved(topology, assignment)
+        }
+        SearchOutcome::Open => MeshEndpointResolve::Rejected,
     }
 }
 
@@ -6125,19 +6157,17 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         port_identities: &[[u32; 2]],
         budget: &WorkBudget<'_>,
         candidate_gauge: Option<MeshCandidateGauge<'_>>,
-        solution: &mut Option<(StandardTopology, Vec<usize>)>,
-        ambiguous: &mut bool,
-        exhausted: &mut bool,
+        outcome: &mut SearchOutcome<(StandardTopology, Vec<usize>)>,
     ) {
-        if *ambiguous || *exhausted || budget.exhausted() {
+        if outcome.is_closed() || budget.exhausted() {
             return;
         }
         if !budget.charge() {
-            *exhausted = true;
+            outcome.exhaust();
             return;
         }
         if face == assignment_domains.len() {
-            let outcome = resolve_fixed_mesh_endpoint_pairs(
+            let resolved = resolve_fixed_mesh_endpoint_pairs(
                 edge_rows,
                 vertex_points,
                 edge_candidates,
@@ -6146,26 +6176,16 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
                 budget,
                 candidate_gauge,
             );
-            match outcome {
+            match resolved {
                 MeshEndpointResolve::Solved(topology, assignment) => {
                     let candidate = (topology, assignment);
-                    match solution {
-                        Some(previous)
-                            if !mesh_candidates_equivalent_with_context(
-                                previous,
-                                &candidate,
-                                candidate_gauge,
-                            ) =>
-                        {
-                            *ambiguous = true;
-                        }
-                        None => *solution = Some(candidate),
-                        Some(_) => {}
-                    }
+                    outcome.record_solved(candidate, |previous, next| {
+                        mesh_candidates_equivalent_with_context(previous, next, candidate_gauge)
+                    });
                 }
                 MeshEndpointResolve::Rejected => {}
-                MeshEndpointResolve::Ambiguous => *ambiguous = true,
-                MeshEndpointResolve::Exhausted => *exhausted = true,
+                MeshEndpointResolve::Ambiguous => outcome.mark_ambiguous(),
+                MeshEndpointResolve::Exhausted => outcome.exhaust(),
             }
             return;
         }
@@ -6181,20 +6201,16 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
                 port_identities,
                 budget,
                 candidate_gauge,
-                solution,
-                ambiguous,
-                exhausted,
+                outcome,
             );
             selected.pop();
-            if *ambiguous || *exhausted {
+            if outcome.is_closed() {
                 return;
             }
         }
     }
 
-    let mut solution = None;
-    let mut ambiguous = false;
-    let mut exhausted = false;
+    let mut outcome = SearchOutcome::Open;
     visit(
         0,
         assignment_domains,
@@ -6205,15 +6221,13 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         port_identities,
         budget,
         candidate_gauge,
-        &mut solution,
-        &mut ambiguous,
-        &mut exhausted,
+        &mut outcome,
     );
-    if ambiguous {
+    if matches!(outcome, SearchOutcome::Ambiguous) {
         MeshEndpointResolve::Ambiguous
-    } else if exhausted || budget.exhausted() {
+    } else if matches!(outcome, SearchOutcome::Exhausted) || budget.exhausted() {
         MeshEndpointResolve::Exhausted
-    } else if let Some((topology, assignment)) = solution {
+    } else if let SearchOutcome::Solved((topology, assignment)) = outcome {
         MeshEndpointResolve::Solved(topology, assignment)
     } else {
         MeshEndpointResolve::Rejected
@@ -6320,7 +6334,7 @@ pub(crate) fn prune_mesh_endpoint_pair_support_with_limit(
 
 impl MeshSelectionSearch<'_> {
     pub(crate) fn should_stop(&self) -> bool {
-        self.ambiguous || self.exhausted
+        self.outcome.is_closed()
     }
 
     fn has_exact_singleton_endpoint_domains(&self) -> bool {
@@ -6877,7 +6891,7 @@ impl MeshSelectionSearch<'_> {
             return;
         }
         if !budget.charge() {
-            self.exhausted = true;
+            self.outcome.exhaust();
             return;
         }
         let mut measured = quotient.clone();
@@ -7031,23 +7045,14 @@ impl MeshSelectionSearch<'_> {
             match outcome {
                 MeshEndpointResolve::Solved(topology, assignment) => {
                     let candidate = (topology, assignment);
-                    match &self.solution {
-                        Some(solution)
-                            if *solution != candidate
-                                && !mesh_candidates_equivalent_with_context(
-                                    solution,
-                                    &candidate,
-                                    self.candidate_gauge,
-                                ) =>
-                        {
-                            self.ambiguous = true;
-                        }
-                        None => self.solution = Some(candidate),
-                        Some(_) => {}
-                    }
+                    let gauge = self.candidate_gauge;
+                    self.outcome.record_solved(candidate, |previous, next| {
+                        previous == next
+                            || mesh_candidates_equivalent_with_context(previous, next, gauge)
+                    });
                 }
-                MeshEndpointResolve::Ambiguous => self.ambiguous = true,
-                MeshEndpointResolve::Exhausted => self.exhausted = true,
+                MeshEndpointResolve::Ambiguous => self.outcome.mark_ambiguous(),
+                MeshEndpointResolve::Exhausted => self.outcome.exhaust(),
                 MeshEndpointResolve::Rejected => {}
             }
             return;
@@ -7055,7 +7060,7 @@ impl MeshSelectionSearch<'_> {
         let previous_orientations = self.fixed_edge_orientations.clone();
         let options = self.fixed_direction_options(&measured, face, Some(budget));
         if budget.exhausted() {
-            self.exhausted = true;
+            self.outcome.exhaust();
             return;
         }
         for (directions, next_quotient, next_orientations) in options {
@@ -7103,7 +7108,7 @@ impl MeshSelectionSearch<'_> {
             return;
         }
         if !budget.charge() {
-            self.exhausted = true;
+            self.outcome.exhaust();
             return;
         }
         if self.visited_states.len() < MAX_SELECTION_STATE_MEMO_ENTRIES {
@@ -7149,7 +7154,7 @@ impl MeshSelectionSearch<'_> {
                 )
             {
                 if propagation_budget.exhausted() {
-                    self.exhausted = true;
+                    self.outcome.exhaust();
                 }
                 return;
             }
@@ -7263,7 +7268,7 @@ impl MeshSelectionSearch<'_> {
             })
             .min();
         if budget.exhausted() {
-            self.exhausted = true;
+            self.outcome.exhaust();
             return;
         }
         let Some((_, supported, _, _, _, face)) = next else {
@@ -7305,23 +7310,16 @@ impl MeshSelectionSearch<'_> {
                         match outcome {
                             MeshEndpointResolve::Solved(topology, assignment) => {
                                 let candidate = (topology, assignment);
-                                match &self.solution {
-                                    Some(solution)
-                                        if *solution != candidate
-                                            && !mesh_candidates_equivalent_with_context(
-                                                solution,
-                                                &candidate,
-                                                self.candidate_gauge,
-                                            ) =>
-                                    {
-                                        self.ambiguous = true;
-                                    }
-                                    None => self.solution = Some(candidate),
-                                    Some(_) => {}
-                                }
+                                let gauge = self.candidate_gauge;
+                                self.outcome.record_solved(candidate, |previous, next| {
+                                    previous == next
+                                        || mesh_candidates_equivalent_with_context(
+                                            previous, next, gauge,
+                                        )
+                                });
                             }
-                            MeshEndpointResolve::Ambiguous => self.ambiguous = true,
-                            MeshEndpointResolve::Exhausted => self.exhausted = true,
+                            MeshEndpointResolve::Ambiguous => self.outcome.mark_ambiguous(),
+                            MeshEndpointResolve::Exhausted => self.outcome.exhaust(),
                             MeshEndpointResolve::Rejected => {}
                         }
                         if self.should_stop() {
@@ -7337,7 +7335,7 @@ impl MeshSelectionSearch<'_> {
                 Some(budget),
             ) else {
                 if budget.exhausted() {
-                    self.exhausted = true;
+                    self.outcome.exhaust();
                 }
                 return;
             };
@@ -7405,20 +7403,11 @@ impl MeshSelectionSearch<'_> {
                 ))
             });
             if let Some(candidate) = candidate {
-                match &self.solution {
-                    Some(solution)
-                        if *solution != candidate
-                            && !mesh_candidates_equivalent_with_context(
-                                solution,
-                                &candidate,
-                                self.candidate_gauge,
-                            ) =>
-                    {
-                        self.ambiguous = true;
-                    }
-                    None => self.solution = Some(candidate),
-                    Some(_) => {}
-                }
+                let gauge = self.candidate_gauge;
+                self.outcome.record_solved(candidate, |previous, next| {
+                    previous == next
+                        || mesh_candidates_equivalent_with_context(previous, next, gauge)
+                });
             }
             return;
         };
@@ -7427,13 +7416,13 @@ impl MeshSelectionSearch<'_> {
         }
         let remaining_work = budget.remaining();
         if remaining_work == 0 {
-            self.exhausted = true;
+            self.outcome.exhaust();
             return;
         }
         let mut options = Vec::new();
         for assignment_index in 0..self.assignments[face].len() {
             if !budget.charge() {
-                self.exhausted = true;
+                self.outcome.exhaust();
                 return;
             }
             let remaining = remaining_work.saturating_sub(options.len());
@@ -7465,7 +7454,7 @@ impl MeshSelectionSearch<'_> {
                 )
             };
             if budget.exhausted() {
-                self.exhausted = true;
+                self.outcome.exhaust();
                 return;
             }
             options.extend(
@@ -7493,7 +7482,7 @@ impl MeshSelectionSearch<'_> {
                     // forced suffix without another memo entry or preflight.
                     self.search_state(&next_quotient, true, budget, propagation_budget);
                 } else if budget.exhausted() || propagation_budget.exhausted() {
-                    self.exhausted = true;
+                    self.outcome.exhaust();
                 }
             }
             self.selected[face] = None;
@@ -7519,7 +7508,7 @@ impl MeshSelectionSearch<'_> {
                     // entry preflight to this quotient.
                     self.search_from_state(&next_quotient, true, budget, propagation_budget);
                 } else if budget.exhausted() || propagation_budget.exhausted() {
-                    self.exhausted = true;
+                    self.outcome.exhaust();
                 }
             }
             self.selected[face] = None;
@@ -8368,20 +8357,17 @@ fn resolve_standard_mesh_endpoint_candidates(
             Err(_) => return MeshEndpointResolve::Rejected,
         },
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     search.search_with_budget(&quotient, budget, budget);
-    if search.exhausted {
-        MeshEndpointResolve::Exhausted
-    } else if search.ambiguous {
-        MeshEndpointResolve::Ambiguous
-    } else if let Some((topology, assignment)) = search.solution {
-        MeshEndpointResolve::Solved(topology, assignment)
-    } else {
-        MeshEndpointResolve::Rejected
+    match search.outcome {
+        SearchOutcome::Exhausted => MeshEndpointResolve::Exhausted,
+        SearchOutcome::Ambiguous => MeshEndpointResolve::Ambiguous,
+        SearchOutcome::Solved((topology, assignment)) => {
+            MeshEndpointResolve::Solved(topology, assignment)
+        }
+        SearchOutcome::Open => MeshEndpointResolve::Rejected,
     }
 }
 

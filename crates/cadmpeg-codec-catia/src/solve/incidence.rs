@@ -14,7 +14,7 @@ use crate::solve::mesh_quotient::{
     mesh_face_endpoint_configurations, CoordinateRootClosure, MeshCoordinateRootDomains,
     MeshEndpointCandidates, MeshEndpointPair, MeshEndpointSolutionFilter,
     MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates, MeshPartialEndpointConstraint,
-    MeshQuotient, MeshQuotientGaugeState, MAX_FACE_ENDPOINT_CONFIGURATION_WORK,
+    MeshQuotient, MeshQuotientGaugeState, SearchOutcome, MAX_FACE_ENDPOINT_CONFIGURATION_WORK,
     MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
@@ -664,7 +664,7 @@ pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) degree_support_budget: &'a WorkBudget<'a>,
     pub(crate) coordinate_propagation_budget: &'a WorkBudget<'a>,
     pub(crate) boundary_propagation_budget: &'a WorkBudget<'a>,
-    pub(crate) exhausted: bool,
+    pub(crate) outcome: SearchOutcome<()>,
     pub(crate) stopped: bool,
 }
 
@@ -2481,7 +2481,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 CompactBoundaryAdvanceOutcome::Complete(states) => Some(states),
                 CompactBoundaryAdvanceOutcome::Rejected => None,
                 CompactBoundaryAdvanceOutcome::Exhausted => {
-                    self.exhausted = true;
+                    self.outcome.exhaust();
                     None
                 }
             }
@@ -2695,7 +2695,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     factors.restore(applied.factor_checkpoint);
                 }
             }
-            if self.exhausted || self.stopped {
+            if self.outcome.is_closed() || self.stopped {
                 return;
             }
         }
@@ -2745,7 +2745,7 @@ impl IncidenceComponentSearch<'_, '_> {
             next_coordinate_domains.as_deref(),
         ) {
             if self.budget.exhausted() {
-                self.exhausted = true;
+                self.outcome.exhaust();
             }
             self.rollback_face_configuration(assigned);
             return None;
@@ -2804,7 +2804,7 @@ impl IncidenceComponentSearch<'_, '_> {
             domains = applied.coordinate_domains;
             let face_options = self.face_configuration_options_for(component_faces);
             if self.budget.exhausted() {
-                self.exhausted = true;
+                self.outcome.exhaust();
                 break;
             }
             match face_options {
@@ -2829,7 +2829,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     break;
                 }
             }
-            if self.exhausted || self.stopped {
+            if self.outcome.is_closed() || self.stopped {
                 break;
             }
         }
@@ -2852,7 +2852,9 @@ impl IncidenceComponentSearch<'_, '_> {
             coordinate_domains.as_ref(),
             &component_faces,
         );
-        self.exhausted |= self.budget.exhausted();
+        if self.budget.exhausted() {
+            self.outcome.exhaust();
+        }
     }
 
     fn search_with_quotient(
@@ -2861,11 +2863,11 @@ impl IncidenceComponentSearch<'_, '_> {
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) {
-        if self.exhausted || self.stopped {
+        if self.outcome.is_closed() || self.stopped {
             return;
         }
         if !self.budget.charge() {
-            self.exhausted = true;
+            self.outcome.exhaust();
             return;
         }
         let state = self
@@ -2878,7 +2880,7 @@ impl IncidenceComponentSearch<'_, '_> {
         }
         let solutions_before = self.solutions.len();
         self.search_state(quotient_states, coordinate_domains, component_faces);
-        if !self.exhausted && self.solutions.len() == solutions_before {
+        if !self.outcome.is_closed() && self.solutions.len() == solutions_before {
             self.dead_states.insert(state);
         }
     }
@@ -2890,16 +2892,16 @@ impl IncidenceComponentSearch<'_, '_> {
         component_faces: &[usize],
     ) {
         const MAX_SOLUTIONS: usize = 256;
-        if self.exhausted || self.stopped {
+        if self.outcome.is_closed() || self.stopped {
             return;
         }
         if self.solution_visitor.is_none() && self.solutions.len() >= MAX_SOLUTIONS {
-            self.exhausted = true;
+            self.outcome.exhaust();
             return;
         }
         let face_options = self.face_configuration_options_for(component_faces);
         if self.budget.exhausted() {
-            self.exhausted = true;
+            self.outcome.exhaust();
             return;
         }
         if let Some(options) = face_options {
@@ -2924,7 +2926,7 @@ impl IncidenceComponentSearch<'_, '_> {
     ) {
         let branch = self.branch(coordinate_domains.map(Arc::as_ref));
         if self.budget.exhausted() {
-            self.exhausted = true;
+            self.outcome.exhaust();
             return;
         }
         let Some(mut options) = branch else {
@@ -2965,7 +2967,7 @@ impl IncidenceComponentSearch<'_, '_> {
         };
         for (edge, pair) in std::iter::once(first_option).chain(options) {
             if !self.budget.charge() {
-                self.exhausted = true;
+                self.outcome.exhaust();
                 return;
             }
             if self.assignment[edge].is_some() {
@@ -2973,7 +2975,7 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             if !self.candidate_fits_in(edge, pair, coordinate_domains.map(Arc::as_ref)) {
                 if self.budget.exhausted() {
-                    self.exhausted = true;
+                    self.outcome.exhaust();
                     return;
                 }
                 continue;
@@ -3021,7 +3023,7 @@ impl IncidenceComponentSearch<'_, '_> {
             if let Some(factors) = &mut self.face_configuration_domains {
                 factors.restore(factor_checkpoint);
             }
-            if self.exhausted || self.stopped {
+            if self.outcome.is_closed() || self.stopped {
                 return;
             }
         }
@@ -3750,11 +3752,11 @@ where
             degree_support_budget: &degree_support_budget,
             coordinate_propagation_budget,
             boundary_propagation_budget,
-            exhausted: false,
+            outcome: SearchOutcome::Open,
             stopped: false,
         };
         search.search();
-        search.exhausted
+        search.outcome.is_closed()
     }
 
     #[allow(clippy::too_many_arguments)]
