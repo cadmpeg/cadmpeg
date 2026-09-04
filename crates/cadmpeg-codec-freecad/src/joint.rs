@@ -231,6 +231,23 @@ pub(crate) fn transfer_neutral(
                 "constraint",
             ));
             let kind = joint_kind(&record.kind);
+            let angle = scalar("Angle").map(f64::to_radians);
+            let distance = scalar("Distance");
+            let distance2 = scalar("Distance2");
+            let angular_limits = enabled_limits(
+                "AngleMin",
+                "AngleMax",
+                "EnableAngleMin",
+                "EnableAngleMax",
+                std::f64::consts::PI / 180.0,
+            );
+            let linear_limits = enabled_limits(
+                "LengthMin",
+                "LengthMax",
+                "EnableLengthMin",
+                "EnableLengthMax",
+                1.0,
+            );
             let mut joint = if kind == JointKind::Grounded {
                 let [operand] = operands.try_into().ok()?;
                 let [frame] = frames.try_into().ok()?;
@@ -239,9 +256,67 @@ pub(crate) fn transfer_neutral(
                     [offset] => Some(*offset),
                     _ => return None,
                 };
-                AssemblyJoint::grounded(id, JointConnector { operand, frame }, offset_frame)
+                AssemblyJoint::grounded(
+                    id,
+                    JointConnector {
+                        operand,
+                        frame,
+                        detached: bool_value("Detach1").unwrap_or(false),
+                    },
+                    offset_frame,
+                )
             } else {
                 let kind = PairedJointKind::try_from(kind).ok()?;
+                let kind = match kind {
+                    PairedJointKind::Fixed { .. } => PairedJointKind::Fixed {
+                        angle,
+                        translation_offset: None,
+                        angular_limits,
+                        linear_limits,
+                    },
+                    PairedJointKind::Revolute { .. } => PairedJointKind::Revolute {
+                        angle,
+                        angular_limits,
+                    },
+                    PairedJointKind::Slider { .. } => PairedJointKind::Slider {
+                        distance,
+                        translation_offset: None,
+                        linear_limits,
+                    },
+                    PairedJointKind::Cylindrical { .. } => PairedJointKind::Cylindrical {
+                        angle,
+                        distance,
+                        angular_limits,
+                        linear_limits,
+                    },
+                    PairedJointKind::Ball => PairedJointKind::Ball,
+                    PairedJointKind::Distance { .. } => PairedJointKind::Distance { distance },
+                    PairedJointKind::Parallel => PairedJointKind::Parallel,
+                    PairedJointKind::Perpendicular => PairedJointKind::Perpendicular,
+                    PairedJointKind::Angle { .. } => PairedJointKind::Angle { angle },
+                    PairedJointKind::RackPinion { .. } => PairedJointKind::RackPinion {
+                        distance,
+                        distance2,
+                    },
+                    PairedJointKind::Screw { .. } => PairedJointKind::Screw { distance },
+                    PairedJointKind::Gears { .. } => PairedJointKind::Gears {
+                        distance,
+                        distance2,
+                    },
+                    PairedJointKind::Belt { .. } => PairedJointKind::Belt {
+                        distance,
+                        distance2,
+                    },
+                    PairedJointKind::Native { name, .. } => PairedJointKind::Native {
+                        name,
+                        angle,
+                        translation_offset: None,
+                        distance,
+                        distance2,
+                        angular_limits,
+                        linear_limits,
+                    },
+                };
                 let [first_operand, second_operand] = operands.try_into().ok()?;
                 let [first_frame, second_frame] = frames.try_into().ok()?;
                 let offset_frames = if offsets.is_empty() {
@@ -256,38 +331,18 @@ pub(crate) fn transfer_neutral(
                         JointConnector {
                             operand: first_operand,
                             frame: first_frame,
+                            detached: bool_value("Detach1").unwrap_or(false),
                         },
                         JointConnector {
                             operand: second_operand,
                             frame: second_frame,
+                            detached: bool_value("Detach2").unwrap_or(false),
                         },
                     ],
                     offset_frames,
                 )
             };
             joint.suppressed = bool_value("Suppressed").unwrap_or(false);
-            joint.detached = [
-                bool_value("Detach1").unwrap_or(false),
-                bool_value("Detach2").unwrap_or(false),
-            ];
-            joint.angle = scalar("Angle").map(f64::to_radians);
-            joint.distance = scalar("Distance");
-            joint.distance2 = scalar("Distance2");
-            joint.angular_limits = enabled_limits(
-                "AngleMin",
-                "AngleMax",
-                "EnableAngleMin",
-                "EnableAngleMax",
-                std::f64::consts::PI / 180.0,
-            );
-            joint.linear_limits = enabled_limits(
-                "LengthMin",
-                "LengthMax",
-                "EnableLengthMin",
-                "EnableLengthMax",
-                1.0,
-            );
-            joint.properties = record.parameters.clone();
             joint.native_ref = Some(record.id.clone());
             Some(joint)
         })
@@ -685,9 +740,9 @@ pub(crate) mod tests {
         assert_eq!(offset_frames[0].rows[0][3], 0.5);
         assert_eq!(offset_frames[1].rows[0][3], 1.5);
         assert!(joint.suppressed);
-        assert_eq!(joint.detached, [true, false]);
-        assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
-        let limits = joint.angular_limits.as_ref().expect("angular limits");
+        assert_eq!(joint.detached(), [true, false]);
+        assert!((joint.angle().expect("angle") - 15_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
+        let limits = joint.angular_limits().expect("angular limits");
         assert!(
             (limits.minimum().expect("minimum") - (-30_f64).to_radians()).abs() < EPS_JOINT_SCALAR
         );
@@ -697,10 +752,12 @@ pub(crate) mod tests {
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
         let mut corrupted = result.ir().clone();
-        corrupted.model.assembly_joints[0].angular_limits = Some(cadmpeg_ir::JointLimits::Both {
-            minimum: 2.0,
-            maximum: 1.0,
-        });
+        corrupted.model.assembly_joints[0].set_angular_limits(Some(
+            cadmpeg_ir::JointLimits::Both {
+                minimum: 2.0,
+                maximum: 1.0,
+            },
+        ));
         assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
             .findings
             .iter()

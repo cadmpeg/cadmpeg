@@ -3984,3 +3984,17 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::geometry::CurveGeometry::Polyline::{points,parameters,chordal_deflection}"
 reason = "the independent polyline fields admitted a parameter array whose length disagreed with the point count"
+
+[[change]]
+commit = "3d50ba14f878452a2e167f201a4126e9cd58af1c"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::products::PairedJointKind::{Fixed,Revolute,Slider,Cylindrical,Distance,Angle,RackPinion,Screw,Gears,Belt,Native}"
+reason = "kind-specific joint scalars move into the family payloads so a revolute joint cannot carry a linear offset"
+
+[[change]]
+commit = "3d50ba14f878452a2e167f201a4126e9cd58af1c"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::products::AssemblyJoint::{detached,angle,translation_offset,distance,distance2,angular_limits,linear_limits,properties}"
+reason = "detached belongs on each connector; kind-specific scalars live on PairedJointKind; properties duplicated the parsed parameter map"

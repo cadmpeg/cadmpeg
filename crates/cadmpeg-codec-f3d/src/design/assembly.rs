@@ -323,23 +323,26 @@ pub(crate) fn project_assembly_joints(
         joints.entry(id.0.clone()).or_insert_with(|| {
             let mut joint = AssemblyJoint::paired(
                 id,
-                PairedJointKind::Fixed,
+                PairedJointKind::Fixed {
+                    angle: Some(alignment.angle),
+                    translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
+                    angular_limits,
+                    linear_limits,
+                },
                 [
                     JointConnector {
                         operand: first_operand,
                         frame: first_frame,
+                        detached: false,
                     },
                     JointConnector {
                         operand: second_operand,
                         frame: second_frame,
+                        detached: false,
                     },
                 ],
                 None,
             );
-            joint.angle = Some(alignment.angle);
-            joint.translation_offset = Some(alignment.offset.map(|value| value * 10.0));
-            joint.angular_limits = angular_limits;
-            joint.linear_limits = linear_limits;
             joint.native_ref = Some(scope.id.clone());
             joint
         });

@@ -113,21 +113,21 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .chain(joint.offset_frames())
             .all(crate::transform::Transform::is_affine)
             && joint
-                .angle
+                .angle()
                 .into_iter()
-                .chain(joint.translation_offset.into_iter().flatten())
-                .chain(joint.distance)
-                .chain(joint.distance2)
+                .chain(joint.translation_offset().into_iter().flatten())
+                .chain(joint.distance())
+                .chain(joint.distance2())
                 .chain(
                     joint
-                        .angular_limits
-                        .iter()
-                        .chain(joint.linear_limits.iter())
+                        .angular_limits()
+                        .into_iter()
+                        .chain(joint.linear_limits())
                         .flat_map(|limits| [limits.minimum(), limits.maximum()])
                         .flatten(),
                 )
                 .all(f64::is_finite);
-        let ordered = [joint.angular_limits.as_ref(), joint.linear_limits.as_ref()]
+        let ordered = [joint.angular_limits(), joint.linear_limits()]
             .into_iter()
             .flatten()
             .all(|limits| match (limits.minimum(), limits.maximum()) {
@@ -173,15 +173,17 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.assembly_joints.push(AssemblyJoint::paired(
             JointId("test:model:joint#root".into()),
-            PairedJointKind::Fixed,
+            PairedJointKind::try_from(crate::products::JointKind::Fixed).expect("fixed"),
             [
                 JointConnector {
                     operand: root_operand("root:first"),
                     frame: Transform::identity(),
+                    detached: false,
                 },
                 JointConnector {
                     operand: root_operand("root:second"),
                     frame: Transform::identity(),
+                    detached: false,
                 },
             ],
             None,

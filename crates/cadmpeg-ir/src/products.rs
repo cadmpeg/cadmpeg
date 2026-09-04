@@ -1079,6 +1079,8 @@ pub struct JointConnector {
     pub operand: JointOperand,
     /// Connector-local frame.
     pub frame: Transform,
+    /// Whether this connector is detached from the solve.
+    pub detached: bool,
 }
 
 /// Structurally complete operands and frames for an assembly joint.
@@ -1105,55 +1107,329 @@ pub enum JointOperands {
 }
 
 /// Assembly-joint families that connect two operands.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PairedJointKind {
     /// Rigid connection with no relative degrees of freedom.
-    Fixed,
+    Fixed {
+        /// Angular offset in radians.
+        angle: Option<f64>,
+        /// Connector-local translation offset in document length units.
+        translation_offset: Option<[f64; 3]>,
+        /// Enabled angular interval in radians.
+        angular_limits: Option<JointLimits>,
+        /// Enabled linear interval in document length units.
+        linear_limits: Option<JointLimits>,
+    },
     /// Rotation about one axis.
-    Revolute,
+    Revolute {
+        /// Angular offset in radians.
+        angle: Option<f64>,
+        /// Enabled angular interval in radians.
+        angular_limits: Option<JointLimits>,
+    },
     /// Translation along one axis.
-    Slider,
+    Slider {
+        /// Primary linear offset in document length units.
+        distance: Option<f64>,
+        /// Connector-local translation offset in document length units.
+        translation_offset: Option<[f64; 3]>,
+        /// Enabled linear interval in document length units.
+        linear_limits: Option<JointLimits>,
+    },
     /// Coupled rotation and translation on one axis.
-    Cylindrical,
+    Cylindrical {
+        /// Angular offset in radians.
+        angle: Option<f64>,
+        /// Primary linear offset in document length units.
+        distance: Option<f64>,
+        /// Enabled angular interval in radians.
+        angular_limits: Option<JointLimits>,
+        /// Enabled linear interval in document length units.
+        linear_limits: Option<JointLimits>,
+    },
     /// Rotation about a common point.
     Ball,
     /// Maintains a scalar separation.
-    Distance,
+    Distance {
+        /// Primary linear offset in document length units.
+        distance: Option<f64>,
+    },
     /// Maintains parallel connector directions.
     Parallel,
     /// Maintains perpendicular connector directions.
     Perpendicular,
     /// Maintains an angular separation.
-    Angle,
+    Angle {
+        /// Angular offset in radians.
+        angle: Option<f64>,
+    },
     /// Couples rack translation to pinion rotation.
-    RackPinion,
+    RackPinion {
+        /// Primary linear offset in document length units.
+        distance: Option<f64>,
+        /// Secondary linear offset in document length units.
+        distance2: Option<f64>,
+    },
     /// Couples translation and rotation by screw pitch.
-    Screw,
+    Screw {
+        /// Primary linear offset in document length units.
+        distance: Option<f64>,
+    },
     /// Couples two gear rotations.
-    Gears,
+    Gears {
+        /// Primary linear offset in document length units.
+        distance: Option<f64>,
+        /// Secondary linear offset in document length units.
+        distance2: Option<f64>,
+    },
     /// Couples two pulley rotations through a belt.
-    Belt,
+    Belt {
+        /// Primary linear offset in document length units.
+        distance: Option<f64>,
+        /// Secondary linear offset in document length units.
+        distance2: Option<f64>,
+    },
     /// Future application-defined family retained without relabeling.
-    Native(String),
+    Native {
+        /// Application-defined family name.
+        name: String,
+        /// Angular offset in radians.
+        angle: Option<f64>,
+        /// Connector-local translation offset in document length units.
+        translation_offset: Option<[f64; 3]>,
+        /// Primary linear offset in document length units.
+        distance: Option<f64>,
+        /// Secondary linear offset in document length units.
+        distance2: Option<f64>,
+        /// Enabled angular interval in radians.
+        angular_limits: Option<JointLimits>,
+        /// Enabled linear interval in document length units.
+        linear_limits: Option<JointLimits>,
+    },
+}
+
+/// Kind-specific scalars carried on the CADIR joint wire.
+struct JointScalars {
+    angle: Option<f64>,
+    translation_offset: Option<[f64; 3]>,
+    distance: Option<f64>,
+    distance2: Option<f64>,
+    angular_limits: Option<JointLimits>,
+    linear_limits: Option<JointLimits>,
+}
+
+impl PairedJointKind {
+    fn from_wire(kind: JointKind, scalars: JointScalars) -> Result<Self, &'static str> {
+        let JointScalars {
+            angle,
+            translation_offset,
+            distance,
+            distance2,
+            angular_limits,
+            linear_limits,
+        } = scalars;
+        match kind {
+            JointKind::Fixed => Ok(Self::Fixed {
+                angle,
+                translation_offset,
+                angular_limits,
+                linear_limits,
+            }),
+            JointKind::Revolute => Ok(Self::Revolute {
+                angle,
+                angular_limits,
+            }),
+            JointKind::Slider => Ok(Self::Slider {
+                distance,
+                translation_offset,
+                linear_limits,
+            }),
+            JointKind::Cylindrical => Ok(Self::Cylindrical {
+                angle,
+                distance,
+                angular_limits,
+                linear_limits,
+            }),
+            JointKind::Ball => Ok(Self::Ball),
+            JointKind::Distance => Ok(Self::Distance { distance }),
+            JointKind::Parallel => Ok(Self::Parallel),
+            JointKind::Perpendicular => Ok(Self::Perpendicular),
+            JointKind::Angle => Ok(Self::Angle { angle }),
+            JointKind::RackPinion => Ok(Self::RackPinion {
+                distance,
+                distance2,
+            }),
+            JointKind::Screw => Ok(Self::Screw { distance }),
+            JointKind::Gears => Ok(Self::Gears {
+                distance,
+                distance2,
+            }),
+            JointKind::Belt => Ok(Self::Belt {
+                distance,
+                distance2,
+            }),
+            JointKind::Native(name) => Ok(Self::Native {
+                name,
+                angle,
+                translation_offset,
+                distance,
+                distance2,
+                angular_limits,
+                linear_limits,
+            }),
+            JointKind::Grounded => Err("paired joint cannot use the grounded kind"),
+        }
+    }
+
+    fn scalars(&self) -> JointScalars {
+        match self {
+            Self::Fixed {
+                angle,
+                translation_offset,
+                angular_limits,
+                linear_limits,
+            } => JointScalars {
+                angle: *angle,
+                translation_offset: *translation_offset,
+                distance: None,
+                distance2: None,
+                angular_limits: angular_limits.clone(),
+                linear_limits: linear_limits.clone(),
+            },
+            Self::Revolute {
+                angle,
+                angular_limits,
+            } => JointScalars {
+                angle: *angle,
+                translation_offset: None,
+                distance: None,
+                distance2: None,
+                angular_limits: angular_limits.clone(),
+                linear_limits: None,
+            },
+            Self::Slider {
+                distance,
+                translation_offset,
+                linear_limits,
+            } => JointScalars {
+                angle: None,
+                translation_offset: *translation_offset,
+                distance: *distance,
+                distance2: None,
+                angular_limits: None,
+                linear_limits: linear_limits.clone(),
+            },
+            Self::Cylindrical {
+                angle,
+                distance,
+                angular_limits,
+                linear_limits,
+            } => JointScalars {
+                angle: *angle,
+                translation_offset: None,
+                distance: *distance,
+                distance2: None,
+                angular_limits: angular_limits.clone(),
+                linear_limits: linear_limits.clone(),
+            },
+            Self::Ball | Self::Parallel | Self::Perpendicular => JointScalars {
+                angle: None,
+                translation_offset: None,
+                distance: None,
+                distance2: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            Self::Distance { distance } => JointScalars {
+                angle: None,
+                translation_offset: None,
+                distance: *distance,
+                distance2: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            Self::Angle { angle } => JointScalars {
+                angle: *angle,
+                translation_offset: None,
+                distance: None,
+                distance2: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            Self::RackPinion {
+                distance,
+                distance2,
+            }
+            | Self::Gears {
+                distance,
+                distance2,
+            }
+            | Self::Belt {
+                distance,
+                distance2,
+            } => JointScalars {
+                angle: None,
+                translation_offset: None,
+                distance: *distance,
+                distance2: *distance2,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            Self::Screw { distance } => JointScalars {
+                angle: None,
+                translation_offset: None,
+                distance: *distance,
+                distance2: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            Self::Native {
+                angle,
+                translation_offset,
+                distance,
+                distance2,
+                angular_limits,
+                linear_limits,
+                ..
+            } => JointScalars {
+                angle: *angle,
+                translation_offset: *translation_offset,
+                distance: *distance,
+                distance2: *distance2,
+                angular_limits: angular_limits.clone(),
+                linear_limits: linear_limits.clone(),
+            },
+        }
+    }
+
+    fn set_angular_limits(&mut self, limits: Option<JointLimits>) {
+        match self {
+            Self::Fixed { angular_limits, .. }
+            | Self::Revolute { angular_limits, .. }
+            | Self::Cylindrical { angular_limits, .. }
+            | Self::Native { angular_limits, .. } => *angular_limits = limits,
+            _ => {}
+        }
+    }
 }
 
 impl From<PairedJointKind> for JointKind {
     fn from(kind: PairedJointKind) -> Self {
         match kind {
-            PairedJointKind::Fixed => Self::Fixed,
-            PairedJointKind::Revolute => Self::Revolute,
-            PairedJointKind::Slider => Self::Slider,
-            PairedJointKind::Cylindrical => Self::Cylindrical,
+            PairedJointKind::Fixed { .. } => Self::Fixed,
+            PairedJointKind::Revolute { .. } => Self::Revolute,
+            PairedJointKind::Slider { .. } => Self::Slider,
+            PairedJointKind::Cylindrical { .. } => Self::Cylindrical,
             PairedJointKind::Ball => Self::Ball,
-            PairedJointKind::Distance => Self::Distance,
+            PairedJointKind::Distance { .. } => Self::Distance,
             PairedJointKind::Parallel => Self::Parallel,
             PairedJointKind::Perpendicular => Self::Perpendicular,
-            PairedJointKind::Angle => Self::Angle,
-            PairedJointKind::RackPinion => Self::RackPinion,
-            PairedJointKind::Screw => Self::Screw,
-            PairedJointKind::Gears => Self::Gears,
-            PairedJointKind::Belt => Self::Belt,
-            PairedJointKind::Native(kind) => Self::Native(kind),
+            PairedJointKind::Angle { .. } => Self::Angle,
+            PairedJointKind::RackPinion { .. } => Self::RackPinion,
+            PairedJointKind::Screw { .. } => Self::Screw,
+            PairedJointKind::Gears { .. } => Self::Gears,
+            PairedJointKind::Belt { .. } => Self::Belt,
+            PairedJointKind::Native { name, .. } => Self::Native(name),
         }
     }
 }
@@ -1162,23 +1438,18 @@ impl TryFrom<JointKind> for PairedJointKind {
     type Error = ();
 
     fn try_from(kind: JointKind) -> Result<Self, Self::Error> {
-        match kind {
-            JointKind::Fixed => Ok(Self::Fixed),
-            JointKind::Revolute => Ok(Self::Revolute),
-            JointKind::Slider => Ok(Self::Slider),
-            JointKind::Cylindrical => Ok(Self::Cylindrical),
-            JointKind::Ball => Ok(Self::Ball),
-            JointKind::Distance => Ok(Self::Distance),
-            JointKind::Parallel => Ok(Self::Parallel),
-            JointKind::Perpendicular => Ok(Self::Perpendicular),
-            JointKind::Angle => Ok(Self::Angle),
-            JointKind::RackPinion => Ok(Self::RackPinion),
-            JointKind::Screw => Ok(Self::Screw),
-            JointKind::Gears => Ok(Self::Gears),
-            JointKind::Belt => Ok(Self::Belt),
-            JointKind::Native(kind) => Ok(Self::Native(kind)),
-            JointKind::Grounded => Err(()),
-        }
+        Self::from_wire(
+            kind,
+            JointScalars {
+                angle: None,
+                translation_offset: None,
+                distance: None,
+                distance2: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+        )
+        .map_err(|_| ())
     }
 }
 
@@ -1191,22 +1462,6 @@ pub struct AssemblyJoint {
     operands: JointOperands,
     /// Whether solving this joint is suppressed.
     pub suppressed: bool,
-    /// Per-connector detach flags.
-    pub detached: [bool; 2],
-    /// Angular offset in radians.
-    pub angle: Option<f64>,
-    /// Connector-local translation offset in document length units.
-    pub translation_offset: Option<[f64; 3]>,
-    /// Primary linear offset in document length units.
-    pub distance: Option<f64>,
-    /// Secondary linear offset in document length units.
-    pub distance2: Option<f64>,
-    /// Enabled angular interval in radians.
-    pub angular_limits: Option<JointLimits>,
-    /// Enabled linear interval in document length units.
-    pub linear_limits: Option<JointLimits>,
-    /// Exact persisted scalar state, including future controls.
-    pub properties: BTreeMap<String, String>,
     /// Format-native joint record supplying this constraint.
     pub native_ref: Option<String>,
 }
@@ -1249,14 +1504,6 @@ impl AssemblyJoint {
             id,
             operands,
             suppressed: false,
-            detached: [false; 2],
-            angle: None,
-            translation_offset: None,
-            distance: None,
-            distance2: None,
-            angular_limits: None,
-            linear_limits: None,
-            properties: BTreeMap::new(),
             native_ref: None,
         }
     }
@@ -1297,6 +1544,99 @@ impl AssemblyJoint {
             _ => &[],
         };
         slice.iter()
+    }
+
+    /// Per-connector detach flags in operand order. Grounded joints emit a false second flag.
+    #[must_use]
+    pub fn detached(&self) -> [bool; 2] {
+        match &self.operands {
+            JointOperands::Grounded { connector, .. } => [connector.detached, false],
+            JointOperands::Pair { connectors, .. } => {
+                [connectors[0].detached, connectors[1].detached]
+            }
+        }
+    }
+
+    fn pair_kind(&self) -> Option<&PairedJointKind> {
+        match &self.operands {
+            JointOperands::Pair { kind, .. } => Some(kind),
+            JointOperands::Grounded { .. } => None,
+        }
+    }
+
+    fn pair_kind_mut(&mut self) -> Option<&mut PairedJointKind> {
+        match &mut self.operands {
+            JointOperands::Pair { kind, .. } => Some(kind),
+            JointOperands::Grounded { .. } => None,
+        }
+    }
+
+    fn scalars(&self) -> JointScalars {
+        self.pair_kind()
+            .map(PairedJointKind::scalars)
+            .unwrap_or(JointScalars {
+                angle: None,
+                translation_offset: None,
+                distance: None,
+                distance2: None,
+                angular_limits: None,
+                linear_limits: None,
+            })
+    }
+
+    /// Angular offset in radians.
+    #[must_use]
+    pub fn angle(&self) -> Option<f64> {
+        self.scalars().angle
+    }
+
+    /// Connector-local translation offset in document length units.
+    #[must_use]
+    pub fn translation_offset(&self) -> Option<[f64; 3]> {
+        self.scalars().translation_offset
+    }
+
+    /// Primary linear offset in document length units.
+    #[must_use]
+    pub fn distance(&self) -> Option<f64> {
+        self.scalars().distance
+    }
+
+    /// Secondary linear offset in document length units.
+    #[must_use]
+    pub fn distance2(&self) -> Option<f64> {
+        self.scalars().distance2
+    }
+
+    /// Enabled angular interval in radians.
+    #[must_use]
+    pub fn angular_limits(&self) -> Option<&JointLimits> {
+        match self.pair_kind() {
+            Some(PairedJointKind::Fixed { angular_limits, .. })
+            | Some(PairedJointKind::Revolute { angular_limits, .. })
+            | Some(PairedJointKind::Cylindrical { angular_limits, .. })
+            | Some(PairedJointKind::Native { angular_limits, .. }) => angular_limits.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Enabled linear interval in document length units.
+    #[must_use]
+    pub fn linear_limits(&self) -> Option<&JointLimits> {
+        match self.pair_kind() {
+            Some(PairedJointKind::Fixed { linear_limits, .. })
+            | Some(PairedJointKind::Slider { linear_limits, .. })
+            | Some(PairedJointKind::Cylindrical { linear_limits, .. })
+            | Some(PairedJointKind::Native { linear_limits, .. }) => linear_limits.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Replace the angular interval when the joint family admits one.
+    pub fn set_angular_limits(&mut self, limits: Option<JointLimits>) {
+        if let Some(kind) = self.pair_kind_mut() {
+            kind.set_angular_limits(limits);
+        }
     }
 }
 
@@ -1353,6 +1693,7 @@ impl From<&AssemblyJoint> for AssemblyJointWire {
                 offset_frames.iter().flatten().copied().collect::<Vec<_>>(),
             ),
         };
+        let scalars = joint.scalars();
         Self {
             id: joint.id.clone(),
             kind: joint.kind(),
@@ -1360,14 +1701,14 @@ impl From<&AssemblyJoint> for AssemblyJointWire {
             frames,
             offset_frames,
             suppressed: joint.suppressed,
-            detached: joint.detached,
-            angle: joint.angle,
-            translation_offset: joint.translation_offset,
-            distance: joint.distance,
-            distance2: joint.distance2,
-            angular_limits: joint.angular_limits.clone(),
-            linear_limits: joint.linear_limits.clone(),
-            properties: joint.properties.clone(),
+            detached: joint.detached(),
+            angle: scalars.angle,
+            translation_offset: scalars.translation_offset,
+            distance: scalars.distance,
+            distance2: scalars.distance2,
+            angular_limits: scalars.angular_limits,
+            linear_limits: scalars.linear_limits,
+            properties: BTreeMap::new(),
             native_ref: joint.native_ref.clone(),
         }
     }
@@ -1391,10 +1732,13 @@ impl TryFrom<AssemblyJointWire> for AssemblyJoint {
             distance2,
             angular_limits,
             linear_limits,
-            properties,
+            properties: _,
             native_ref,
         } = wire;
         let mut joint = if kind == JointKind::Grounded {
+            if detached[1] {
+                return Err("grounded joint cannot detach a second connector");
+            }
             let [operand] = operands
                 .try_into()
                 .map_err(|_| "grounded joint must contain one operand")?;
@@ -1406,10 +1750,27 @@ impl TryFrom<AssemblyJointWire> for AssemblyJoint {
                 [offset] => Some(*offset),
                 _ => return Err("grounded joint must contain zero or one offset frame"),
             };
-            Self::grounded(id, JointConnector { operand, frame }, offset_frame)
+            Self::grounded(
+                id,
+                JointConnector {
+                    operand,
+                    frame,
+                    detached: detached[0],
+                },
+                offset_frame,
+            )
         } else {
-            let kind = PairedJointKind::try_from(kind)
-                .map_err(|()| "paired joint cannot use the grounded kind")?;
+            let kind = PairedJointKind::from_wire(
+                kind,
+                JointScalars {
+                    angle,
+                    translation_offset,
+                    distance,
+                    distance2,
+                    angular_limits,
+                    linear_limits,
+                },
+            )?;
             let [first_operand, second_operand] = operands
                 .try_into()
                 .map_err(|_| "paired joint must contain two operands")?;
@@ -1431,24 +1792,18 @@ impl TryFrom<AssemblyJointWire> for AssemblyJoint {
                     JointConnector {
                         operand: first_operand,
                         frame: first_frame,
+                        detached: detached[0],
                     },
                     JointConnector {
                         operand: second_operand,
                         frame: second_frame,
+                        detached: detached[1],
                     },
                 ],
                 offset_frames,
             )
         };
         joint.suppressed = suppressed;
-        joint.detached = detached;
-        joint.angle = angle;
-        joint.translation_offset = translation_offset;
-        joint.distance = distance;
-        joint.distance2 = distance2;
-        joint.angular_limits = angular_limits;
-        joint.linear_limits = linear_limits;
-        joint.properties = properties;
         joint.native_ref = native_ref;
         Ok(joint)
     }
