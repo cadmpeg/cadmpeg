@@ -235,8 +235,8 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
     );
     for parameter in &data.pm_dc_parameters {
         let references = [
-            parameter.next.index,
-            parameter.context.index,
+            parameter.header.next.index,
+            parameter.header.context.index,
             parameter.unit.index,
             parameter.formula.index,
         ];

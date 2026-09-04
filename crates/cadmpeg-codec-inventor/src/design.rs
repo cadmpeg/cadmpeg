@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
 use serde::{Deserialize, Serialize};
 
-use crate::pmdc::{type_id_string, Cursor, PmDcReference};
+use crate::pmdc::{type_id_string, Cursor, PmDcContentHeader, PmDcReference};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EXPRESSION_VALUE_TYPE: [u8; 16] = id(0xf8a7_7a04);
@@ -68,12 +68,8 @@ pub(crate) struct PmDcParameter {
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) save_version_major: u8,
-    pub(crate) header_value: u32,
-    pub(crate) header_id: u16,
-    pub(crate) next: PmDcReference,
-    pub(crate) flags: u32,
-    pub(crate) context: PmDcReference,
-    pub(crate) source_index: u32,
+    #[serde(flatten)]
+    pub(crate) header: PmDcContentHeader,
     pub(crate) name: String,
     pub(crate) name_value: u32,
     pub(crate) unit: PmDcReference,
@@ -372,7 +368,7 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
         projected.push(DesignParameter {
             id: parameter_id(parameter),
             owner: None,
-            ordinal: parameter.source_index,
+            ordinal: parameter.header.source_index,
             name: parameter.name.clone(),
             expression,
             display: None,
@@ -608,12 +604,14 @@ fn parse_parameter(
         segment_token: String::new(),
         record_ordinal: 0,
         save_version_major: version,
-        header_value,
-        header_id,
-        next,
-        flags,
-        context,
-        source_index,
+        header: PmDcContentHeader {
+            header_value,
+            header_id,
+            next,
+            flags,
+            context,
+            source_index,
+        },
         name,
         name_value,
         unit,
@@ -1091,12 +1089,14 @@ mod tests {
             segment_token: token.clone(),
             record_ordinal: 3,
             save_version_major: 22,
-            header_value: 0,
-            header_id: 0,
-            next: reference(0, false),
-            flags: 0,
-            context: reference(0, false),
-            source_index: 0,
+            header: PmDcContentHeader {
+                header_value: 0,
+                header_id: 0,
+                next: reference(0, false),
+                flags: 0,
+                context: reference(0, false),
+                source_index: 0,
+            },
             name: "width".into(),
             name_value: 0,
             unit: reference(2, false),
@@ -1125,12 +1125,14 @@ mod tests {
             segment_token: token,
             record_ordinal: 5,
             save_version_major: 22,
-            header_value: 0,
-            header_id: 0,
-            next: reference(0, false),
-            flags: 0,
-            context: reference(0, false),
-            source_index: 1,
+            header: PmDcContentHeader {
+                header_value: 0,
+                header_id: 0,
+                next: reference(0, false),
+                flags: 0,
+                context: reference(0, false),
+                source_index: 1,
+            },
             name: "height".into(),
             name_value: 0,
             unit: reference(2, false),
