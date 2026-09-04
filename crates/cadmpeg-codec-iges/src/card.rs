@@ -602,7 +602,7 @@ pub(crate) fn summarize(
     }
     ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
-        "fixed-ascii",
+        cadmpeg_ir::ContainerKind::FixedAscii,
         entries,
         Vec::new(),
         vec![format!("source_bytes={}", scan.source.len())],

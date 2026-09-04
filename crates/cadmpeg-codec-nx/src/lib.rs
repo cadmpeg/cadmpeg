@@ -291,7 +291,8 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     }
 
     let (classification, notes) = decode::summarize(scan);
-    let container_kind = classification.container_kind();
+    let container_kind = cadmpeg_ir::ContainerKind::parse(classification.container_kind())
+        .expect("nx container kind is a closed label");
     let (dialects, dialect_losses) = classification.into_report_parts();
     ContainerSummary::classified(dialects, container_kind, entries, dialect_losses, notes)
 }

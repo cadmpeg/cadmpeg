@@ -1120,7 +1120,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         .collect();
     ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched),
-        "3dm-chunks",
+        cadmpeg_ir::ContainerKind::ThreeDmChunks,
         entries,
         losses,
         notes,
@@ -1247,7 +1247,7 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
             .collect();
         return Ok(ContainerSummary::classified(
             cadmpeg_core::dialect::DialectLayers::of(matched),
-            "3dm-chunks",
+            cadmpeg_ir::ContainerKind::ThreeDmChunks,
             Vec::new(),
             losses,
             vec![format!(

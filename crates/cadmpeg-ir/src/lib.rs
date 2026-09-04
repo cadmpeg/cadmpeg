@@ -80,7 +80,7 @@ pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote};
 pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult};
-pub use container::ContainerSummary;
+pub use container::{ContainerKind, ContainerSummary};
 pub use diff::{
     diff, ArenaDiff, ArenaKind, AttributeChange, DialectsChange, IrDiff, ModifiedEntity,
     NonEmptyFields, SourceDiff,

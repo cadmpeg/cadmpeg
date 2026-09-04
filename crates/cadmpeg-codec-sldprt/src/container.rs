@@ -799,9 +799,9 @@ pub fn summarize(scan: &ContainerScan, dialects: DialectLayers) -> ContainerSumm
     ContainerSummary::classified(
         dialects,
         if scan.compound_streams.is_empty() {
-            "sldprt-blocks"
+            cadmpeg_ir::ContainerKind::SldprtBlocks
         } else {
-            "compound-file-binary"
+            cadmpeg_ir::ContainerKind::CompoundFileBinary
         },
         entries,
         Vec::new(),

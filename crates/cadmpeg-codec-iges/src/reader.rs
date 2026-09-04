@@ -231,7 +231,8 @@ pub(crate) fn inspect(
         .extend(graph::summary_notes(&parse.references));
     summary.losses = losses;
     if representation != Representation::FixedAscii {
-        summary.container_kind = representation.as_str().into();
+        summary.container_kind = cadmpeg_ir::ContainerKind::parse(representation.as_str())
+            .expect("iges representation is a closed container kind");
         if let Some(note) = summary
             .notes
             .iter_mut()
