@@ -2061,20 +2061,8 @@ fn try_decode_standard_population(
         ir = topology_ir;
         annotations = topology_annotations;
     } else {
-        attach_standard_circles(
-            &mut ir,
-            &mut annotations,
-            &face_bindings,
-            brep,
-            standard_edge_count,
-        );
-        attach_standard_lines(
-            &mut ir,
-            &mut annotations,
-            &face_bindings,
-            brep,
-            standard_edge_count,
-        );
+        attach_standard_circles(&mut ir, &mut annotations, &face_bindings, &curve_supports);
+        attach_standard_lines(&mut ir, &mut annotations, &face_bindings, &curve_supports);
         if !ir.model.vertices.is_empty() {
             attach_free_vertices(
                 &mut ir,
@@ -8924,13 +8912,15 @@ pub(crate) fn attach_standard_circles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
-    brep: &[u8],
-    edge_count: Option<usize>,
+    supports: &[crate::families::standard::records::StandardCurveSupport],
 ) {
-    for circle in
-        crate::families::standard::records::standard_circles(brep, bindings.len(), edge_count)
-    {
-        let axes: Vec<Vector3> = circle
+    for support in supports {
+        let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
+            support.geometry
+        else {
+            continue;
+        };
+        let axes: Vec<Vector3> = support
             .faces
             .iter()
             .filter_map(|face| bindings.get(*face))
@@ -8941,7 +8931,7 @@ pub(crate) fn attach_standard_circles(
                     .find(|surface| surface.id == *surface_id)
             })
             .filter_map(|surface| {
-                standard_circle_axis_from_carrier(circle.center, circle.radius, &surface.geometry)
+                standard_circle_axis_from_carrier(center, radius, &surface.geometry)
             })
             .collect();
         let Some(axis) = axes.first().copied() else {
@@ -8960,7 +8950,7 @@ pub(crate) fn attach_standard_circles(
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
-            circle.pos as u64,
+            support.pos as u64,
             "curve_support_60_circle",
             Exactness::ByteExact,
         );
@@ -8968,12 +8958,12 @@ pub(crate) fn attach_standard_circles(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Circle {
-                center: circle.center,
+                center,
                 axis,
                 ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
-                radius: circle.radius,
+                radius,
             },
-            source_object: Some(cgm_source("edge-support", circle.tag)),
+            source_object: Some(cgm_source("edge-support", support.tag)),
         });
     }
 }
@@ -9148,15 +9138,19 @@ pub(crate) fn attach_standard_lines(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
-    brep: &[u8],
-    edge_count: Option<usize>,
+    supports: &[crate::families::standard::records::StandardCurveSupport],
 ) {
-    for line in crate::families::standard::records::standard_lines(brep, bindings.len(), edge_count)
-    {
-        let Some((origin_a, normal_a)) = plane_for_face(ir, bindings, line.faces[0]) else {
+    for support in supports {
+        if !matches!(
+            support.geometry,
+            crate::families::standard::records::StandardCurveGeometry::Line
+        ) {
+            continue;
+        }
+        let Some((origin_a, normal_a)) = plane_for_face(ir, bindings, support.faces[0]) else {
             continue;
         };
-        let Some((origin_b, normal_b)) = plane_for_face(ir, bindings, line.faces[1]) else {
+        let Some((origin_b, normal_b)) = plane_for_face(ir, bindings, support.faces[1]) else {
             continue;
         };
         let Some((origin, direction)) =
@@ -9170,7 +9164,7 @@ pub(crate) fn attach_standard_lines(
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
-            line.pos as u64,
+            support.pos as u64,
             "curve_support_60_line",
             Exactness::ByteExact,
         );
@@ -9180,7 +9174,7 @@ pub(crate) fn attach_standard_lines(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Line { origin, direction },
-            source_object: Some(cgm_source("edge-support", line.tag)),
+            source_object: Some(cgm_source("edge-support", support.tag)),
         });
     }
 }
