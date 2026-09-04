@@ -1148,7 +1148,6 @@ fn semantic_writer_applies_neutral_feature_edits() {
                     length: cadmpeg_ir::features::Length(18.0),
                 },
                 draft: None,
-                offset: None,
             },
         };
     }
@@ -1206,7 +1205,6 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
                     length: cadmpeg_ir::features::Length(18.0),
                 },
                 draft: None,
-                offset: None,
             },
         };
         update_sldprt_native(&mut ir_edit, |native| {
@@ -1255,7 +1253,6 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
                     length: cadmpeg_ir::features::Length(50.0),
                 },
                 draft: None,
-                offset: None,
             },
         };
         update_sldprt_native(&mut ir_edit, |native| {
@@ -1637,7 +1634,6 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
                     length: cadmpeg_ir::features::Length(50.0),
                 },
                 draft: None,
-                offset: None,
             },
         };
     }

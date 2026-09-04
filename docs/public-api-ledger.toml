@@ -3662,3 +3662,10 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::features::ExtrudeDirection::is_profile_normal"
 reason = "wire omission is handled by the private direction wire form and no semantic caller needs this predicate"
+
+[[change]]
+commit = "f0c3df8e8255a9ccd4afe299c227831da45df2a4"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::features::ExtrudeSide::offset"
+reason = "extrusion offsets are carried only by the linear termination variants whose geometry they modify"

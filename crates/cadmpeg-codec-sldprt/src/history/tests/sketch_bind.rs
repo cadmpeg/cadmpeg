@@ -387,7 +387,6 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
                     side: ExtrudeSide {
                         termination: LinearTermination::Unresolved,
                         draft: None,
-                        offset: None,
                     },
                 },
                 op: BooleanOp::Join,

@@ -1675,7 +1675,6 @@ fn profile_consumers_require_a_regeneration_profile() {
             side: ExtrudeSide {
                 termination: LinearTermination::Unresolved,
                 draft: None,
-                offset: None,
             },
         },
         op: BooleanOp::Unresolved,

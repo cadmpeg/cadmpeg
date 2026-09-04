@@ -790,7 +790,6 @@ mod idless_history_binding_tests {
                                 length: Length(1.0),
                             },
                             draft: None,
-                            offset: None,
                         },
                     },
                     op: BooleanOp::Join,

@@ -294,7 +294,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: Length(5.5) },
                     draft: Some(Angle(0.2)),
-                    offset: None,
                 },
             },
             op: BooleanOp::NewBody,
@@ -361,7 +360,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                         length: Length(5.5)
                     },
                     draft: Some(Angle(0.2)),
-                    offset: None,
                 },
             },
             ..
@@ -386,7 +384,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll,
                     draft: Some(Angle(0.2)),
-                    offset: None,
                 },
             },
             ..
@@ -411,7 +408,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll,
                     draft: Some(Angle(0.2)),
-                    offset: None,
                 },
             },
             ..
@@ -1000,7 +996,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     termination: LinearTermination::Blind {
                         length: Length(5.5)
                     },
-                    offset: None,
                     ..
                 },
             },

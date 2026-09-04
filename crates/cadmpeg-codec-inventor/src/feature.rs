@@ -1169,7 +1169,6 @@ fn project_extrusion(
     let side = ExtrudeSide {
         termination,
         draft: (taper.0 != 0.0).then_some(taper),
-        offset: None,
     };
     let extent = if boolean(source, 7, index)? {
         ExtrudeExtent::Symmetric { side }

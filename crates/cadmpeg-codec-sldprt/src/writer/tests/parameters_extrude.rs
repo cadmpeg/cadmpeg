@@ -1075,14 +1075,12 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                     length: Length(8.0),
                 },
                 draft: Some(Angle(0.1)),
-                offset: None,
             },
             second: ExtrudeSide {
                 termination: LinearTermination::Blind {
                     length: Length(9.0),
                 },
                 draft: None,
-                offset: None,
             },
         };
         *op = BooleanOp::Intersect;
@@ -1097,7 +1095,6 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             side: ExtrudeSide {
                 termination: LinearTermination::ThroughAll,
                 draft: None,
-                offset: None,
             },
         };
     }
@@ -1156,7 +1153,6 @@ fn semantic_writer_round_trips_extrusion_to_face() {
                         offset: None,
                     },
                     draft: None,
-                    offset: None,
                 }
             }
         );
@@ -1167,7 +1163,6 @@ fn semantic_writer_round_trips_extrusion_to_face() {
                     offset: None,
                 },
                 draft: None,
-                offset: None,
             },
         };
     }

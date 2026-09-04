@@ -292,7 +292,6 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
                         length: Length(10.0),
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::NewBody,
@@ -391,7 +390,6 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                         offset: None,
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::NewBody,
@@ -679,7 +677,6 @@ fn feature_extent_magnitudes_are_validated() {
     let side = |termination: LinearTermination| ExtrudeSide {
         termination,
         draft: None,
-        offset: None,
     };
     for extent in [
         ExtrudeExtent::OneSided {
@@ -881,7 +878,6 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
                         },
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::NewBody,
@@ -1264,7 +1260,6 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                             length: Length(5.0),
                         },
                         draft: None,
-                        offset: None,
                     },
                 },
                 op: BooleanOp::NewBody,
@@ -1465,7 +1460,6 @@ fn explicit_extrusion_direction_must_be_nonzero() {
                         length: Length(1.0),
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::NewBody,
@@ -1495,7 +1489,6 @@ fn extrusion_side_drafts_are_validated() {
             length: Length(length),
         },
         draft,
-        offset: None,
     };
     for (extent, expected_invalid) in [
         (

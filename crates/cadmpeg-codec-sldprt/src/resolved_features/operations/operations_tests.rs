@@ -493,7 +493,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
                     length: Length(1.0),
                 },
                 draft: None,
-                offset: None,
             },
         },
         op,

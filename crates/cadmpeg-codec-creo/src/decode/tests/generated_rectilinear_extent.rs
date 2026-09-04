@@ -21,7 +21,6 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
                     length: Length(42.0),
                 },
                 draft: None,
-                offset: None,
             },
         },
         [0.0, -1.0, 0.0],
@@ -50,7 +49,6 @@ fn blind(length: f64) -> ExtrudeSide {
             length: Length(length),
         },
         draft: None,
-        offset: None,
     }
 }
 

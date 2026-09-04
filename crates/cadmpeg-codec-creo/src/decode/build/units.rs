@@ -656,7 +656,6 @@ fn scale_extrude_start(start: &mut cadmpeg_ir::features::ExtrudeStart, scale: f6
 
 fn scale_extrude_side(side: &mut cadmpeg_ir::features::ExtrudeSide, scale: f64) {
     scale_linear_termination(&mut side.termination, scale);
-    scale_optional_length(&mut side.offset, scale);
 }
 
 fn scale_extrude_extent(extent: &mut cadmpeg_ir::features::ExtrudeExtent, scale: f64) {
@@ -1573,13 +1572,19 @@ mod tests {
                 start: ExtrudeStart::OffsetProfilePlane {
                     offset: Length(2.0),
                 },
-                extent: ExtrudeExtent::OneSided {
-                    side: ExtrudeSide {
+                extent: ExtrudeExtent::TwoSided {
+                    first: ExtrudeSide {
                         termination: LinearTermination::Blind {
                             length: Length(3.0),
                         },
                         draft: None,
-                        offset: Some(Length(4.0)),
+                    },
+                    second: ExtrudeSide {
+                        termination: LinearTermination::ToFace {
+                            face: cadmpeg_ir::features::FaceSelection::Native("face".into()),
+                            offset: Some(Length(4.0)),
+                        },
+                        draft: None,
                     },
                 },
                 op: BooleanOp::NewBody,
@@ -1615,14 +1620,21 @@ mod tests {
             panic!("test start changed family");
         };
         assert_close(offset.0, 50.8);
-        let ExtrudeExtent::OneSided { side } = extent else {
+        let ExtrudeExtent::TwoSided { first, second } = extent else {
             panic!("test extent changed family");
         };
-        let LinearTermination::Blind { length } = &side.termination else {
+        let LinearTermination::Blind { length } = &first.termination else {
             panic!("test termination changed family");
         };
         assert_close(length.0, 76.2);
-        assert_close(side.offset.expect("test offset").0, 101.6);
+        let LinearTermination::ToFace {
+            offset: Some(offset),
+            ..
+        } = &second.termination
+        else {
+            panic!("test offset termination changed family");
+        };
+        assert_close(offset.0, 101.6);
         let Some(ParameterValue::Length(length)) = ir.model.parameters[0].value.as_ref() else {
             panic!("test parameter changed family");
         };

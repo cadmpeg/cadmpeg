@@ -485,7 +485,6 @@ pub fn two_cap_circular_sweep_geometry(
             side: ExtrudeSide {
                 termination,
                 draft: None,
-                offset: None,
             },
         },
         geometry: circular_sweep_cylinder_from_cap_outlines([cap(first), cap(second)])?,
@@ -598,7 +597,6 @@ pub fn blind_extrude_side(length: f64) -> ExtrudeSide {
             length: Length(length),
         },
         draft: None,
-        offset: None,
     }
 }
 

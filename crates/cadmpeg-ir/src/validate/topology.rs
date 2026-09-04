@@ -2807,12 +2807,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }) {
                     feature_geometry_error(findings, feature, "extrusion draft is invalid");
                 }
-                if sides
-                    .iter()
-                    .any(|side| side.offset.is_some_and(|offset| !offset.0.is_finite()))
-                {
-                    feature_geometry_error(findings, feature, "extrusion construction is invalid");
-                }
                 match start {
                     ExtrudeStart::Unresolved => {}
                     ExtrudeStart::ProfilePlane => {}

@@ -224,7 +224,6 @@ pub(in super::super) fn unresolved_extrude_extent() -> ExtrudeExtent {
         side: ExtrudeSide {
             termination: LinearTermination::Unresolved,
             draft: None,
-            offset: None,
         },
     }
 }

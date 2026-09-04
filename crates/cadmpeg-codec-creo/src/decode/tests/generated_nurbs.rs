@@ -128,7 +128,6 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                         length: Length(2.0),
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             [0.0, 0.0, 1.0],

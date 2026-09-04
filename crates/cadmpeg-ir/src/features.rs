@@ -4282,9 +4282,6 @@ pub struct ExtrudeSide {
     /// Draft angle applied to this side's walls, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft: Option<Angle>,
-    /// Signed offset from this side's terminating geometry, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub offset: Option<Length>,
 }
 
 /// Extrusion sidedness around the profile plane.

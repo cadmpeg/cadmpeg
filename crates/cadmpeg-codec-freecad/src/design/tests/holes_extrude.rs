@@ -821,10 +821,11 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Type" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   </Properties></Object>
-  <Object name="ToFace"><Properties Count="3">
+  <Object name="ToFace"><Properties Count="4">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Type" type="App::PropertyEnumeration"><Integer value="3"/></Property>
     <Property name="UpToFace" type="App::PropertyLinkSub"><LinkSub value="PartExtrusion" count="1"><Sub value="Face1"/></LinkSub></Property>
+    <Property name="Offset" type="App::PropertyDistance"><Float value="2.5"/></Property>
   </Properties></Object>
   <Object name="ToShape"><Properties Count="3">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -910,7 +911,10 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: LinearTermination::ToFace { .. },
+                    termination: LinearTermination::ToFace {
+                        offset: Some(Length(2.5)),
+                        ..
+                    },
                     ..
                 }
             },
@@ -1345,12 +1349,10 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind { length: Length(-5.0) },
                     draft: Some(Angle(first_draft)),
-                    offset: Some(Length(1.0)),
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::ToShape { .. },
                     draft: Some(Angle(second_draft)),
-                    offset: Some(Length(-2.0)),
                 },
             },
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
@@ -1373,7 +1375,6 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             extent: ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll,
-                    offset: Some(Length(0.5)),
                     ..
                 }
             },

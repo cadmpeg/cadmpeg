@@ -111,11 +111,7 @@ pub(crate) fn project_extrude(
         None => None,
     };
     let one_sided = |termination| ExtrudeExtent::OneSided {
-        side: ExtrudeSide {
-            termination,
-            draft,
-            offset: None,
-        },
+        side: ExtrudeSide { termination, draft },
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None if !feature.parameters.contains_key("Depth")
@@ -137,7 +133,6 @@ pub(crate) fn project_extrude(
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length },
                     draft,
-                    offset: None,
                 },
             },
             None => one_sided(LinearTermination::Unresolved),
@@ -148,14 +143,12 @@ pub(crate) fn project_extrude(
                     length: length("Depth")?,
                 },
                 draft,
-                offset: None,
             },
             second: ExtrudeSide {
                 termination: LinearTermination::Blind {
                     length: length("Depth2")?,
                 },
                 draft: None,
-                offset: None,
             },
         },
         Some("ThroughAll") => one_sided(LinearTermination::ThroughAll),
@@ -163,12 +156,10 @@ pub(crate) fn project_extrude(
             first: ExtrudeSide {
                 termination: LinearTermination::ThroughAll,
                 draft,
-                offset: None,
             },
             second: ExtrudeSide {
                 termination: LinearTermination::ThroughAll,
                 draft: None,
-                offset: None,
             },
         },
         Some("ThroughNext") => one_sided(LinearTermination::ThroughNext),

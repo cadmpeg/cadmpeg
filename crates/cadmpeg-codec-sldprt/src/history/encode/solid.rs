@@ -47,14 +47,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             // Writer accepts only a first-side draft; second-side draft or
             // any side offset is rejected.
+            let has_offset = |side: &cadmpeg_ir::features::ExtrudeSide| {
+                matches!(
+                    side.termination,
+                    LinearTermination::ToFace {
+                        offset: Some(_),
+                        ..
+                    } | LinearTermination::OffsetFromFace { .. }
+                )
+            };
             let (first_draft, second_side_draft, any_side_offset) = match extent {
                 ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                    (side.draft, None, side.offset.is_some())
+                    (side.draft, None, has_offset(side))
                 }
                 ExtrudeExtent::TwoSided { first, second } => (
                     first.draft,
                     second.draft,
-                    first.offset.is_some() || second.offset.is_some(),
+                    has_offset(first) || has_offset(second),
                 ),
             };
             let extent_is_unresolved = matches!(
