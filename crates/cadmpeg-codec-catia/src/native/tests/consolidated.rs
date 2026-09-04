@@ -848,7 +848,7 @@ fn native_namespace_retains_fixed_owner_allocation_targets() {
                 target.slot,
                 target.distance,
                 target.target_byte_offset,
-                target.target_class,
+                u8::from(target.target_class),
             ))
             .collect::<Vec<_>>(),
         [
