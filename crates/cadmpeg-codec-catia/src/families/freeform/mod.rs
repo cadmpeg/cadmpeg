@@ -1523,7 +1523,6 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             data, records,
         )
         .into_iter()
-        .filter(|run| run.edge.co_parametric && run.identity_chain_consistent)
         .map(|run| (run.edge.pcurves[0].pos, run))
         .collect::<HashMap<_, _>>();
 

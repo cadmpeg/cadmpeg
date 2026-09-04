@@ -8628,9 +8628,6 @@ fn consolidated_edge_runs(
     )
     .into_iter()
     .filter_map(|run| {
-        if !run.edge.co_parametric || !run.identity_chain_consistent {
-            return None;
-        }
         let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| pcurve.pos as u64);
         Some((run, pcurve_offsets))
     })
@@ -8711,9 +8708,6 @@ fn consolidated_edge_nodes(
     )
     .into_iter()
     .filter_map(|run| {
-        if !run.identity_chain_consistent {
-            return None;
-        }
         Some((
             run.node.pos,
             (
@@ -8728,7 +8722,6 @@ fn consolidated_edge_nodes(
             bytes, records,
         )
             .into_iter()
-            .filter(|run| run.identity_chain_consistent)
             .filter_map(|run| {
                 let circle = circle_ids.get(&(run.circle.pos as u64))?;
                 Some((
@@ -8751,7 +8744,6 @@ fn consolidated_edge_nodes(
             bytes, records,
         )
         .into_iter()
-        .filter(|run| run.identity_chain_consistent)
         .map(|run| {
             (
                 run.node.pos,

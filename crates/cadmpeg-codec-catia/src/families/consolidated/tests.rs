@@ -51,7 +51,6 @@ fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
     let blocks =
         crate::families::consolidated::records::consolidated_edge_blocks(&a5_edge_block_stream());
     assert_eq!(blocks.len(), 1);
-    assert!(blocks[0].co_parametric);
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
     assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
     assert_eq!(blocks[0].parameters.range, [0.0, 1.0]);
@@ -62,7 +61,6 @@ fn consolidated_edge_block_groups_b_family_pcurves() {
     let blocks =
         crate::families::consolidated::records::consolidated_edge_blocks(&b2_edge_block_stream());
     assert_eq!(blocks.len(), 1);
-    assert!(blocks[0].co_parametric);
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
     assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
 }
@@ -198,10 +196,6 @@ fn consolidated_native_edge_graph_uses_persistent_endpoint_incidence() {
         [[0, 1], [1, 2], [2, 0]]
     );
     assert_eq!(graph.components, [vec![0, 1, 2]]);
-    assert!(graph
-        .edges
-        .iter()
-        .all(|edge| edge.run.identity_chain_consistent));
 }
 
 #[test]
@@ -543,7 +537,6 @@ fn consolidated_edge_use_run_is_independent_of_pcurve_availability() {
     let [run] = runs.as_slice() else {
         panic!("one standalone edge-use run");
     };
-    assert!(run.identity_chain_consistent);
     assert_eq!(run.uses[0].sense(), Some(B2UseSense::Sense88));
     assert_eq!(run.uses[1].sense(), Some(B2UseSense::Sense84));
     assert_eq!(run.node.start_vertex_ref, 139);
@@ -606,7 +599,6 @@ fn consolidated_edge_use_run_accepts_compact_successor_layout() {
     let [run] = runs.as_slice() else {
         panic!("one successor-layout edge run")
     };
-    assert!(run.identity_chain_consistent);
     assert_eq!(run.uses[0].sense(), Some(B2UseSense::Sense88));
     assert_eq!(run.uses[1].sense(), Some(B2UseSense::Sense84));
     assert_eq!(run.uses[0].references(), Some(&[1, 11][..]));
@@ -908,7 +900,6 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     };
     assert_eq!(run.descriptor.record_id, 0x1234);
     assert_eq!(run.descriptor.values, [3.0, 7.0]);
-    assert!(run.identity_chain_consistent);
     let native = crate::native::CatiaNative::decode(&described);
     assert_eq!(
         native.consolidated_edge_nodes[0]
@@ -955,7 +946,6 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     assert_eq!(run.circle.radius, 5.0);
     assert_eq!(run.descriptor.header_token, 0x15);
     assert_eq!(run.definition.pos, parameter.len() + circle.len() + 10);
-    assert!(run.identity_chain_consistent);
 
     let native = crate::native::CatiaNative::decode(&bytes);
     let binding = native.consolidated_edge_nodes[0]
@@ -1001,18 +991,18 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
 fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
     use crate::families::b2::records::B2UseSense;
 
-    let runs = crate::families::consolidated::records::consolidated_topology_edge_runs(
-        &a5_topology_edge_run_stream(),
+    let stream = a5_topology_edge_run_stream();
+    assert!(
+        crate::families::consolidated::records::consolidated_topology_edge_runs(&stream).is_empty()
     );
-    assert_eq!(runs.len(), 1);
-    assert!(runs[0].edge.co_parametric);
-    assert_eq!(runs[0].uses[0].sense(), Some(B2UseSense::Sense84));
-    assert_eq!(runs[0].uses[1].sense(), Some(B2UseSense::Sense88));
-    assert_eq!(runs[0].uses[0].references(), Some(&[1, 2][..]));
-    assert_eq!(runs[0].uses[1].references(), Some(&[2, 3][..]));
-    assert!(!runs[0].identity_chain_consistent);
-    assert_eq!(runs[0].node.start_vertex_ref, 889);
-    assert_eq!(runs[0].node.end_vertex_ref, 895);
+    let uses = crate::families::b2::records::b2_use_metadata(&stream);
+    let nodes = crate::families::b2::records::b2_edge_nodes(&stream);
+    assert_eq!(uses[0].sense(), Some(B2UseSense::Sense84));
+    assert_eq!(uses[1].sense(), Some(B2UseSense::Sense88));
+    assert_eq!(uses[0].references(), Some(&[1, 2][..]));
+    assert_eq!(uses[1].references(), Some(&[2, 3][..]));
+    assert_eq!(nodes[0].start_vertex_ref, 889);
+    assert_eq!(nodes[0].end_vertex_ref, 895);
 }
 
 #[test]
