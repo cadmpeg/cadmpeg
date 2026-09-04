@@ -554,7 +554,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             incident_endpoint_pair_endpoints: vec![
                 crate::native::CatiaZeroEntityEndpointPairEndpoint {
                     endpoint_pair: "catia:zero-entity:endpoint-pair-candidate#0".to_string(),
-                    endpoint_index: 0,
+                    endpoint_index: crate::native::CatiaZeroEntityEndpointIndex::Start,
                 },
             ],
             representative_point: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
