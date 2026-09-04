@@ -641,14 +641,13 @@ pub(crate) fn order_incidence_components_by_constraints(
 
 pub(crate) struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) choices: &'a [Vec<[usize; 2]>],
-    pub(crate) explicit_point_supports: Option<Vec<HashMap<usize, Vec<[usize; 2]>>>>,
-    pub(crate) point_support_edges: Option<Vec<HashMap<usize, Vec<usize>>>>,
+    pub(crate) explicit_point_supports: Vec<HashMap<usize, Vec<[usize; 2]>>>,
+    pub(crate) point_support_edges: Vec<HashMap<usize, Vec<usize>>>,
     pub(crate) degree_support_witnesses: DegreeSupportWitnesses,
     pub(crate) edge_faces: &'a [[usize; 2]],
     pub(crate) face_edges: &'a [Vec<usize>],
     pub(crate) mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
     pub(crate) face_configuration_domains: Option<PreparedFaceFactors>,
-    pub(crate) mesh_quotient: Option<&'a MeshQuotient>,
     pub(crate) coordinate_domains: Option<&'a MeshCoordinateRootDomains>,
     pub(crate) active: Vec<bool>,
     pub(crate) edges: &'a [usize],
@@ -1792,13 +1791,7 @@ impl IncidenceComponentSearch<'_, '_> {
         }
         IncidenceCandidatePairs::Options(
             required_point
-                .and_then(|point| {
-                    self.explicit_point_supports
-                        .as_ref()?
-                        .get(edge)?
-                        .get(&point)
-                        .cloned()
-                })
+                .and_then(|point| self.explicit_point_supports.get(edge)?.get(&point).cloned())
                 .unwrap_or_else(|| {
                     self.choices[edge]
                         .iter()
@@ -1964,8 +1957,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 }
                 let indexed_edges = self
                     .point_support_edges
-                    .as_ref()
-                    .and_then(|by_face| by_face.get(face))
+                    .get(face)
                     .and_then(|by_point| by_point.get(&point));
                 let supporting_edges =
                     indexed_edges.map_or(self.face_edges[face].as_slice(), Vec::as_slice);
@@ -2493,10 +2485,7 @@ impl IncidenceComponentSearch<'_, '_> {
         &mut self,
         faces: impl IntoIterator<Item = usize>,
     ) -> bool {
-        let states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
-            vec![(quotient.clone(), HashSet::new())]
-        });
-        self.advance_ordered_faces(faces, states).is_some()
+        self.advance_ordered_faces(faces, Vec::new()).is_some()
     }
 
     fn component_faces(&self) -> Vec<usize> {
@@ -2840,9 +2829,7 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     pub(crate) fn search(&mut self) {
-        let quotient_states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
-            vec![(quotient.clone(), HashSet::new())]
-        });
+        let quotient_states = Vec::new();
         let component_faces = self.component_faces();
         let coordinate_domains = self
             .coordinate_domains
@@ -3729,14 +3716,13 @@ where
         let degree_support_budget = budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let mut search = IncidenceComponentSearch {
             choices,
-            explicit_point_supports: Some(explicit_point_supports),
-            point_support_edges: Some(point_support_edges),
+            explicit_point_supports,
+            point_support_edges,
             degree_support_witnesses: RefCell::new(HashMap::new()),
             edge_faces,
             face_edges,
             mesh_assignments,
             face_configuration_domains,
-            mesh_quotient: None,
             coordinate_domains,
             active,
             edges: component,
