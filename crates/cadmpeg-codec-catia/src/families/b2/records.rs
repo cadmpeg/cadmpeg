@@ -2284,21 +2284,6 @@ pub struct B2Group {
     pub group_type: u32,
 }
 
-/// Construction-use wrapper stored in a `b2 03 30` record.
-#[derive(Debug, Clone)]
-pub struct B2ConstructionUse {
-    /// Record byte offset.
-    pub pos: usize,
-    /// Referenced support identifier.
-    pub support_id: u32,
-    /// Signed wall or offset scalar.
-    pub distance: f64,
-    /// Construction-type discriminant.
-    pub kind: u8,
-    /// Carrier domain `[u0, v0, u1, v1]` for kind `0x01`.
-    pub domain: Option<[f64; 4]>,
-}
-
 /// Cylinder frame following a type-3 `b2 03 60` group opener.
 #[derive(Debug, Clone)]
 pub struct B2EmbeddedCylinder {
@@ -2377,18 +2362,10 @@ pub(crate) fn b2_embedded_cylinders_from_records(
     out
 }
 
-/// Decode `b2 03 30` construction-use wrappers.
-#[must_use]
-#[cfg(test)]
-pub fn b2_construction_uses(data: &[u8]) -> Vec<B2ConstructionUse> {
-    let records = consolidated_records(data);
-    b2_construction_uses_from_records(data, &records)
-}
-
-pub(crate) fn b2_construction_uses_from_records(
+fn b2_construction_offset_supports_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2ConstructionUse> {
+) -> Vec<B2OffsetSupport> {
     let mut out = Vec::new();
     for frame in b_family_frames_from_records(records, 0x30) {
         let pos = frame.pos;
@@ -2420,17 +2397,21 @@ pub(crate) fn b2_construction_uses_from_records(
         let Some(fields) = read_f64_array::<4>(data, at + 9) else {
             continue;
         };
-        if at + 41 != frame.end || !distance.is_finite() || fields.iter().any(|v| !v.is_finite()) {
+        if kind != 0x01
+            || at + 41 != frame.end
+            || !distance.is_finite()
+            || fields.iter().any(|v| !v.is_finite())
+        {
             continue;
         }
-        let domain = (kind == 0x01)
-            .then_some([fields[0], fields[2], fields[1], fields[3]])
-            .filter(|domain| valid_offset_domain(*domain));
-        out.push(B2ConstructionUse {
+        let domain = [fields[0], fields[2], fields[1], fields[3]];
+        if !valid_offset_domain(domain) {
+            continue;
+        }
+        out.push(B2OffsetSupport {
             pos,
             support_id,
             distance,
-            kind,
             domain,
         });
     }
@@ -3239,21 +3220,7 @@ pub(crate) fn b2_offset_supports_from_records(
             })
         })
         .collect::<Vec<_>>();
-    offsets.extend(
-        b2_construction_uses_from_records(data, records)
-            .into_iter()
-            .filter_map(|construction| {
-                if construction.kind != 0x01 {
-                    return None;
-                }
-                Some(B2OffsetSupport {
-                    pos: construction.pos,
-                    support_id: construction.support_id,
-                    distance: construction.distance,
-                    domain: construction.domain?,
-                })
-            }),
-    );
+    offsets.extend(b2_construction_offset_supports_from_records(data, records));
     offsets.sort_unstable_by_key(|offset| offset.pos);
     offsets
 }
