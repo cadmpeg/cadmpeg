@@ -3697,3 +3697,24 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::features::FeatureDefinition::Native::properties"
 reason = "source-native attributes have one owner in Feature::source_properties instead of a second independently mutable map"
+
+[[change]]
+commit = "dd180c86358b0449c9b4456c98bfc321824b0dae"
+crate = "cadmpeg-ir"
+kind = "struct"
+item = "cadmpeg_ir::report::LossKind"
+reason = "shared and codec-local losses are distinct variants, and codec-local fields are private behind an invariant-bearing payload"
+
+[[change]]
+commit = "dd180c86358b0449c9b4456c98bfc321824b0dae"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::report::LossKind::{namespace,code,taxonomy}"
+reason = "public fields allowed a shared namespace to carry a code that disagreed with its taxonomy"
+
+[[change]]
+commit = "dd180c86358b0449c9b4456c98bfc321824b0dae"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::report::LossTaxonomy::as_str"
+reason = "the taxonomy now returns its static wire spelling directly so a shared LossKind does not store a derived code string"

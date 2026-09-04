@@ -184,8 +184,8 @@ fn retains_native_for_malformed_post_process_controls() {
     }
     assert_eq!(result.report().losses.len(), 5);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
 }
@@ -1251,8 +1251,8 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     }
     assert_eq!(result.report().losses.len(), 7);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
 }
@@ -1447,8 +1447,8 @@ fn rejects_noncanonical_subshape_binder_context_carrier() {
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        .all(|loss| loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking));
 }
 
@@ -1623,8 +1623,8 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace == "fcstd"
-                && loss.code.code == "feature.native-kind-retained"
+            loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::Severity::Blocking
         }));
     }
@@ -1942,8 +1942,8 @@ fn rejects_ambiguous_single_source_design_operands() {
     }
     assert_eq!(result.report().losses.len(), 5);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
 }

@@ -18,7 +18,10 @@ fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
     super::super::report_untyped_material_distances(&mut report, 2);
 
     assert_eq!(report.losses.len(), 1);
-    assert_eq!(report.losses[0].code.code, "material.distance-unit-untyped");
+    assert_eq!(
+        report.losses[0].code.local_code(),
+        "material.distance-unit-untyped"
+    );
 }
 
 #[test]

@@ -137,7 +137,7 @@ fn a_foreign_gui_schema_uses_the_schema_one_vocabulary() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code.code == "source.gui-schema-unverified")
+        .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
         .expect("GUI schema warning");
     assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
     assert!(loss.message.contains("declares schema 2"));
@@ -172,7 +172,7 @@ fn a_noncanonical_gui_schema_one_declaration_is_unverified() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code.code == "source.gui-schema-unverified")
+        .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
         .expect("GUI schema warning");
     assert!(loss.message.contains("declares schema 01"));
 }
@@ -197,7 +197,7 @@ fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code.code == "source.gui-schema-unverified")
+        .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
         .expect("GUI schema warning");
     assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
     assert!(loss
@@ -234,7 +234,7 @@ fn a_failed_foreign_gui_parse_does_not_apply_staged_appearances() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code.code == "source.gui-schema-unverified"));
+        .any(|loss| loss.code.local_code() == "source.gui-schema-unverified"));
 }
 
 #[test]
@@ -534,7 +534,10 @@ Co 1001000 +2 0 *
             .expect("producer-accepted topology color mismatch");
         assert_eq!(result.report().losses.len(), 1);
         let loss = &result.report().losses[0];
-        assert_eq!(loss.code.code, "appearance.topology-color-count-mismatch");
+        assert_eq!(
+            loss.code.local_code(),
+            "appearance.topology-color-count-mismatch"
+        );
         assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
         assert!(loss.message.contains(kind));
         assert!(loss.provenance.as_ref().is_some_and(|source| {

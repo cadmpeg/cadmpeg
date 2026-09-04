@@ -130,8 +130,8 @@ fn rejects_noncanonical_feature_base_carriers() {
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        .all(|loss| loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking));
 }
 
@@ -306,8 +306,8 @@ fn rejects_ambiguous_body_history_carriers() {
     }
     assert_eq!(result.report().losses.len(), 2);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
     assert_valid_document(result.ir());
@@ -799,7 +799,7 @@ fn retains_native_dependency_cycles_without_neutral_cycle_edges() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .filter(|loss| loss.code.local_code() == "feature.cyclic-history")
             .count(),
         2
     );
@@ -872,7 +872,7 @@ fn retains_cycle_affected_expression_links_only_in_native_properties() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .filter(|loss| loss.code.local_code() == "feature.cyclic-history")
             .count(),
         2
     );
@@ -921,7 +921,7 @@ fn retains_spreadsheet_expression_cycles_only_in_native_properties() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.code == "feature.cyclic-history")
+            .filter(|loss| loss.code.local_code() == "feature.cyclic-history")
             .count(),
         1
     );

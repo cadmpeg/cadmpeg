@@ -202,11 +202,50 @@ pub enum LossTaxonomy {
 
 impl LossTaxonomy {
     /// The stable `snake_case` identifier for this taxonomy variant.
-    pub fn as_str(self) -> String {
-        let Ok(serde_json::Value::String(name)) = serde_json::to_value(self) else {
-            unreachable!("a fieldless loss taxonomy always serializes as a string")
-        };
-        name
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingGeometryStream => "missing_geometry_stream",
+            Self::TopologyNotTransferred => "topology_not_transferred",
+            Self::SourceTopologyInvalid => "source_topology_invalid",
+            Self::GeometryNotTransferred => "geometry_not_transferred",
+            Self::ReferenceGraphNotClosed => "reference_graph_not_closed",
+            Self::TopologyGaugeSubstituted => "topology_gauge_substituted",
+            Self::CarrierAxisInferred => "carrier_axis_inferred",
+            Self::CarrierSummary => "carrier_summary",
+            Self::MaterialNotTransferred => "material_not_transferred",
+            Self::MetadataNotTransferred => "metadata_not_transferred",
+            Self::AttributesNotTransferred => "attributes_not_transferred",
+            Self::FeatureHistoryRetained => "feature_history_retained",
+            Self::AssemblyComponentsExternal => "assembly_components_external",
+            Self::AssemblyPlacementsNotTransferred => "assembly_placements_not_transferred",
+            Self::RecordNotTyped => "record_not_typed",
+            Self::DecodeDiagnostic => "decode_diagnostic",
+            Self::IntegrityFailure => "integrity_failure",
+            Self::NoncanonicalSourceSyntax => "noncanonical_source_syntax",
+            Self::SourceDialectUnverified => "source_dialect_unverified",
+            Self::SourceDialectDisplaced => "source_dialect_displaced",
+            Self::MeshVertexPrecision => "mesh_vertex_precision",
+            Self::ObjectRecordsUntransferred => "object_records_untransferred",
+            Self::UnsupportedObjectFamily => "unsupported_object_family",
+            Self::AssetNotTransferred => "asset_not_transferred",
+            Self::NoExportableSolids => "no_exportable_solids",
+            Self::HiddenBodyOmitted => "hidden_body_omitted",
+            Self::BodyTransformNotApplied => "body_transform_not_applied",
+            Self::AnalyticSurfaceNormalized => "analytic_surface_normalized",
+            Self::EllipticalConeReduced => "elliptical_cone_reduced",
+            Self::CurvelessEdgeOmitted => "curveless_edge_omitted",
+            Self::UnknownSurfaceFaceOmitted => "unknown_surface_face_omitted",
+            Self::PcurveOmitted => "pcurve_omitted",
+            Self::SubdOmitted => "subd_omitted",
+            Self::TessellationOmitted => "tessellation_omitted",
+            Self::PmiOmitted => "pmi_omitted",
+            Self::SourceAssociationOmitted => "source_association_omitted",
+            Self::PassthroughRecordOmitted => "passthrough_record_omitted",
+            Self::ProceduralReduced => "procedural_reduced",
+            Self::ParametricRecordOmitted => "parametric_record_omitted",
+            Self::AppearanceReduced => "appearance_reduced",
+            Self::PreservedSourceUnavailable => "preserved_source_unavailable",
+        }
     }
 
     /// Parse a v1 bare `snake_case` taxonomy identifier.
@@ -306,27 +345,34 @@ pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 /// `{ "namespace": "rhino", "code": "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" }`.
 /// The optional `strict_floor` field is omitted when it matches [`LossTaxonomy::strict_floor`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(rename_all = "snake_case"))]
-pub struct LossKind {
-    /// Codec namespace, or [`SHARED_LOSS_NAMESPACE`].
-    pub namespace: String,
-    /// Local code within the namespace.
-    pub code: String,
-    /// Shared taxonomy for category and default severity.
-    pub taxonomy: LossTaxonomy,
-    /// Pinned strict-mode floor; omitted on the wire when equal to the taxonomy floor.
-    #[cfg_attr(feature = "schema", schemars(skip))]
+pub enum LossKind {
+    /// Shared loss whose wire code is determined by its taxonomy.
+    Shared(LossTaxonomy),
+    /// Codec-local loss with an independently pinned strict-mode floor.
+    Namespaced(NamespacedLossKind),
+}
+
+/// Codec-local loss identity and classification.
+///
+/// Fields are private so the reserved `shared` namespace can be constructed
+/// only as [`LossKind::Shared`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NamespacedLossKind {
+    namespace: String,
+    code: String,
+    taxonomy: LossTaxonomy,
     strict_floor: Option<Severity>,
 }
 
 #[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct LossKindWire {
     namespace: String,
     code: String,
     kind: LossTaxonomy,
     /// Present when the floor differs from [`LossTaxonomy::strict_floor`]; may be JSON null.
     #[serde(default, deserialize_with = "deserialize_optional_strict_floor")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<Severity>"))]
     strict_floor: StrictFloorWire,
 }
 
@@ -372,16 +418,16 @@ struct LossKindSerializeWire<'a> {
 
 impl Serialize for LossKind {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let taxonomy_floor = self.taxonomy.strict_floor();
-        let strict_floor = if self.strict_floor == taxonomy_floor {
+        let taxonomy = self.taxonomy();
+        let strict_floor = if self.strict_floor() == taxonomy.strict_floor() {
             StrictFloorWire::Absent
         } else {
-            StrictFloorWire::Explicit(self.strict_floor)
+            StrictFloorWire::Explicit(self.strict_floor())
         };
         LossKindSerializeWire {
-            namespace: &self.namespace,
-            code: &self.code,
-            kind: self.taxonomy,
+            namespace: self.namespace(),
+            code: self.local_code(),
+            kind: taxonomy,
             strict_floor,
         }
         .serialize(serializer)
@@ -395,24 +441,44 @@ impl<'de> Deserialize<'de> for LossKind {
             StrictFloorWire::Absent => wire.kind.strict_floor(),
             StrictFloorWire::Explicit(floor) => floor,
         };
-        Ok(Self {
+        if wire.namespace == SHARED_LOSS_NAMESPACE {
+            if wire.code != wire.kind.as_str() {
+                return Err(serde::de::Error::custom(format!(
+                    "LossKind.code must be `{}` when LossKind.namespace is `{SHARED_LOSS_NAMESPACE}`",
+                    wire.kind.as_str()
+                )));
+            }
+            if strict_floor != wire.kind.strict_floor() {
+                return Err(serde::de::Error::custom(
+                    "LossKind.strict_floor cannot override a shared loss taxonomy",
+                ));
+            }
+            return Ok(Self::Shared(wire.kind));
+        }
+        Ok(Self::Namespaced(NamespacedLossKind {
             namespace: wire.namespace,
             code: wire.code,
             taxonomy: wire.kind,
             strict_floor,
-        })
+        }))
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for LossKind {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "LossKind".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        LossKindWire::json_schema(generator)
     }
 }
 
 impl LossKind {
     /// Shared-namespace code whose local id equals the taxonomy `snake_case` name.
     pub fn shared(taxonomy: LossTaxonomy) -> Self {
-        Self {
-            namespace: SHARED_LOSS_NAMESPACE.into(),
-            code: taxonomy.as_str(),
-            taxonomy,
-            strict_floor: taxonomy.strict_floor(),
-        }
+        Self::Shared(taxonomy)
     }
 
     /// Codec-local code under `namespace`, classified by `taxonomy` for category.
@@ -425,34 +491,60 @@ impl LossKind {
         code: impl Into<String>,
         taxonomy: LossTaxonomy,
     ) -> Self {
-        Self {
-            namespace: namespace.into(),
-            code: code.into(),
+        let namespace = namespace.into();
+        let code = code.into();
+        if namespace == SHARED_LOSS_NAMESPACE {
+            assert_eq!(
+                code,
+                taxonomy.as_str(),
+                "shared LossKind code must equal its taxonomy"
+            );
+            return Self::Shared(taxonomy);
+        }
+        Self::Namespaced(NamespacedLossKind {
+            namespace,
+            code,
             taxonomy,
             strict_floor: taxonomy.strict_floor(),
-        }
+        })
     }
 
     /// Pins the strict-mode severity floor independently of taxonomy.
     #[must_use]
     pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
-        self.strict_floor = floor;
+        match &mut self {
+            Self::Shared(taxonomy) => assert_eq!(
+                floor,
+                taxonomy.strict_floor(),
+                "shared LossKind strict floor is determined by its taxonomy"
+            ),
+            Self::Namespaced(kind) => kind.strict_floor = floor,
+        }
         self
     }
 
     /// Codec or `shared` namespace.
     pub fn namespace(&self) -> &str {
-        &self.namespace
+        match self {
+            Self::Shared(_) => SHARED_LOSS_NAMESPACE,
+            Self::Namespaced(kind) => &kind.namespace,
+        }
     }
 
     /// Local code within the namespace.
     pub fn local_code(&self) -> &str {
-        &self.code
+        match self {
+            Self::Shared(taxonomy) => taxonomy.as_str(),
+            Self::Namespaced(kind) => &kind.code,
+        }
     }
 
     /// Shared taxonomy used for category and default severity.
     pub const fn taxonomy(&self) -> LossTaxonomy {
-        self.taxonomy
+        match self {
+            Self::Shared(taxonomy) => *taxonomy,
+            Self::Namespaced(kind) => kind.taxonomy,
+        }
     }
 
     /// Stable display form `namespace/code`.
@@ -462,17 +554,20 @@ impl LossKind {
 
     /// Returns the subsystem affected by this kind of loss.
     pub const fn category(&self) -> LossCategory {
-        self.taxonomy.category()
+        self.taxonomy().category()
     }
 
     /// Returns the default severity from the taxonomy.
     pub const fn default_severity(&self) -> Severity {
-        self.taxonomy.default_severity()
+        self.taxonomy().default_severity()
     }
 
     /// Returns the pinned strict-mode severity floor.
     pub const fn strict_floor(&self) -> Option<Severity> {
-        self.strict_floor
+        match self {
+            Self::Shared(taxonomy) => taxonomy.strict_floor(),
+            Self::Namespaced(kind) => kind.strict_floor,
+        }
     }
 
     /// Reconstruct from a v1 bare taxonomy string (`"geometry_not_transferred"`).
@@ -489,7 +584,7 @@ impl From<LossTaxonomy> for LossKind {
 
 impl fmt::Display for LossKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", self.namespace, self.code)
+        write!(f, "{}/{}", self.namespace(), self.local_code())
     }
 }
 
