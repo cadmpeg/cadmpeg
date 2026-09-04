@@ -52,7 +52,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
         if mesh
-            .vertices
+            .vertices()
             .iter()
             .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
         {
@@ -64,22 +64,9 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
         if mesh
-            .triangles
+            .normals()
             .iter()
-            .flatten()
-            .any(|index| *index as usize >= mesh.vertices.len())
-        {
-            findings.push(Finding {
-                check: Check::Tessellation,
-                severity: Severity::Error,
-                message: "contains an out-of-range tessellation index".into(),
-                entity: Some(mesh.id.clone()),
-            });
-        }
-        if mesh
-            .normals
-            .iter()
-            .chain(&mesh.corner_normals)
+            .chain(mesh.corner_normals())
             .any(|normal| !normal.x.is_finite() || !normal.y.is_finite() || !normal.z.is_finite())
         {
             findings.push(Finding {
@@ -89,27 +76,9 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 entity: Some(mesh.id.clone()),
             });
         }
-        if !mesh.normals.is_empty() && mesh.normals.len() != mesh.vertices.len() {
-            findings.push(Finding {
-                check: Check::Tessellation,
-                severity: Severity::Error,
-                message: "tessellation normals do not match vertex count".into(),
-                entity: Some(mesh.id.clone()),
-            });
-        }
-        if !mesh.corner_normals.is_empty()
-            && mesh.triangles.len().checked_mul(3) != Some(mesh.corner_normals.len())
-        {
-            findings.push(Finding {
-                check: Check::Tessellation,
-                severity: Severity::Error,
-                message: "tessellation corner normals do not match triangle corners".into(),
-                entity: Some(mesh.id.clone()),
-            });
-        }
         if !mesh.triangle_groups.is_empty() {
             let mut memberships =
-                std::iter::repeat_n(0u32, mesh.triangles.len()).collect::<Vec<_>>();
+                std::iter::repeat_n(0u32, mesh.triangles().len()).collect::<Vec<_>>();
             let mut source_ids = std::collections::BTreeSet::new();
             let valid = mesh.triangle_groups.iter().all(|group| {
                 !group.triangles.is_empty()
@@ -141,7 +110,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if !mesh.texture_assignments.is_empty() {
             let mut memberships =
-                std::iter::repeat_n(0u32, mesh.triangles.len()).collect::<Vec<_>>();
+                std::iter::repeat_n(0u32, mesh.triangles().len()).collect::<Vec<_>>();
             let mut source_ids = std::collections::BTreeSet::new();
             let mut anonymous_textures = std::collections::BTreeSet::new();
             let valid = mesh.texture_assignments.iter().all(|assignment| {
@@ -180,7 +149,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if mesh.feature_edges.iter().any(|edge| {
             edge[0] >= edge[1]
-                || usize::try_from(edge[1]).map_or(true, |index| index >= mesh.vertices.len())
+                || usize::try_from(edge[1]).map_or(true, |index| index >= mesh.vertices().len())
         }) || mesh
             .feature_edges
             .windows(2)
@@ -190,85 +159,6 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tessellation,
                 severity: Severity::Error,
                 message: "contains an invalid tessellation feature edge".into(),
-                entity: Some(mesh.id.clone()),
-            });
-        }
-        if !mesh.strip_lengths.is_empty()
-            && mesh.strip_lengths.iter().try_fold(0usize, |total, length| {
-                usize::try_from(*length)
-                    .ok()
-                    .and_then(|length| total.checked_add(length))
-            }) != Some(mesh.vertices.len())
-        {
-            findings.push(Finding {
-                check: Check::Tessellation,
-                severity: Severity::Error,
-                message: "tessellation strips do not match vertex count".into(),
-                entity: Some(mesh.id.clone()),
-            });
-        }
-        if !mesh.strip_lengths.is_empty() {
-            let mut expected = Vec::new();
-            let mut base = 0u32;
-            let mut valid = true;
-            for length in &mesh.strip_lengths {
-                for index in 0..length.saturating_sub(2) {
-                    let Some(a) = base.checked_add(index) else {
-                        valid = false;
-                        break;
-                    };
-                    let Some(b) = a.checked_add(1) else {
-                        valid = false;
-                        break;
-                    };
-                    let Some(c) = a.checked_add(2) else {
-                        valid = false;
-                        break;
-                    };
-                    let triangle = if index % 2 == 0 { [a, b, c] } else { [a, c, b] };
-                    expected.push(triangle);
-                }
-                let Some(next) = base.checked_add(*length) else {
-                    valid = false;
-                    break;
-                };
-                base = next;
-            }
-            if !valid || expected != mesh.triangles {
-                findings.push(Finding {
-                    check: Check::Tessellation,
-                    severity: Severity::Error,
-                    message: "tessellation triangles do not match strips".into(),
-                    entity: Some(mesh.id.clone()),
-                });
-            }
-        }
-        if mesh.channels.iter().any(|channel| {
-            channel.data.len() != channel.item_size as usize * channel.count as usize
-        }) {
-            findings.push(Finding {
-                check: Check::Tessellation,
-                severity: Severity::Error,
-                message: "contains a malformed tessellation channel".into(),
-                entity: Some(mesh.id.clone()),
-            });
-        }
-        let corner_count = mesh.triangles.len().checked_mul(3);
-        if mesh.channels.iter().any(|channel| {
-            let expected_indices = match channel.domain {
-                crate::tessellation::TessellationChannelDomain::Vertex => Some(0usize),
-                crate::tessellation::TessellationChannelDomain::Corner => corner_count,
-                crate::tessellation::TessellationChannelDomain::Triangle => {
-                    Some(mesh.triangles.len())
-                }
-            };
-            expected_indices != Some(channel.indices.len())
-                || channel.indices.iter().any(|index| *index >= channel.count)
-        }) {
-            findings.push(Finding {
-                check: Check::Tessellation,
-                severity: Severity::Error,
-                message: "contains invalid tessellation channel indices".into(),
                 entity: Some(mesh.id.clone()),
             });
         }
@@ -498,12 +388,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check_knots(findings, &s.id.0, n.v_knots(), "v");
             }
             SurfaceGeometry::Procedural { .. } => {}
-            SurfaceGeometry::Polygonal {
-                vertices,
-                triangles,
-                chordal_deflection,
-            } => {
-                if !valid_polygonal_surface(vertices, triangles, *chordal_deflection) {
+            SurfaceGeometry::Polygonal(surface) => {
+                if !valid_polygonal_surface(surface) {
                     bounds_err(findings, &s.id.0, "polygonal surface payload is invalid");
                 }
             }
@@ -1840,12 +1726,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check_knots(findings, &c.id.0, n.knots(), "");
             }
             CurveGeometry::Procedural { .. } => {}
-            CurveGeometry::Polyline {
-                points,
-                parameters,
-                chordal_deflection,
-            } => {
-                if !valid_polyline(points, parameters.as_deref(), *chordal_deflection) {
+            CurveGeometry::Polyline(polyline) => {
+                if !valid_polyline(polyline) {
                     bounds_err(findings, &c.id.0, "polyline payload is invalid");
                 }
             }
@@ -2637,11 +2519,7 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
         SurfaceGeometry::Nurbs(n) => {
             knots_nondecreasing(n.u_knots()) && knots_nondecreasing(n.v_knots())
         }
-        SurfaceGeometry::Polygonal {
-            vertices,
-            triangles,
-            chordal_deflection,
-        } => valid_polygonal_surface(vertices, triangles, *chordal_deflection),
+        SurfaceGeometry::Polygonal(surface) => valid_polygonal_surface(surface),
         SurfaceGeometry::Transformed { basis, transform } => {
             transform.is_affine() && valid_surface_basis(basis)
         }
@@ -2684,11 +2562,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
             [point.x, point.y, point.z].into_iter().all(f64::is_finite)
         }
         CurveGeometry::Nurbs(n) => knots_nondecreasing(n.knots()),
-        CurveGeometry::Polyline {
-            points,
-            parameters,
-            chordal_deflection,
-        } => valid_polyline(points, parameters.as_deref(), *chordal_deflection),
+        CurveGeometry::Polyline(polyline) => valid_polyline(polyline),
         CurveGeometry::Transformed { basis, transform } => {
             transform.is_affine() && valid_curve_basis(basis)
         }
@@ -2702,41 +2576,27 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
     }
 }
 
-fn valid_polyline(
-    points: &[crate::math::Point3],
-    parameters: Option<&[f64]>,
-    deflection: f64,
-) -> bool {
-    points.len() >= 2
-        && deflection.is_finite()
-        && deflection >= 0.0
-        && points
+fn valid_polyline(polyline: &crate::geometry::PolylineCurve) -> bool {
+    polyline.chordal_deflection().is_finite()
+        && polyline.chordal_deflection() >= 0.0
+        && polyline
+            .points()
             .iter()
             .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
-        && parameters.is_none_or(|parameters| {
-            parameters.len() == points.len()
-                && parameters.iter().all(|value| value.is_finite())
+        && polyline.parameters().is_none_or(|parameters| {
+            parameters.iter().all(|value| value.is_finite())
                 && (parameters.windows(2).all(|window| window[0] < window[1])
                     || parameters.windows(2).all(|window| window[0] > window[1]))
         })
 }
 
-fn valid_polygonal_surface(
-    vertices: &[crate::math::Point3],
-    triangles: &[[u32; 3]],
-    deflection: f64,
-) -> bool {
-    vertices.len() >= 3
-        && !triangles.is_empty()
-        && deflection.is_finite()
-        && deflection >= 0.0
-        && vertices
+fn valid_polygonal_surface(surface: &crate::geometry::PolygonalSurface) -> bool {
+    surface.chordal_deflection().is_finite()
+        && surface.chordal_deflection() >= 0.0
+        && surface
+            .vertices()
             .iter()
             .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
-        && triangles
-            .iter()
-            .flatten()
-            .all(|index| usize::try_from(*index).is_ok_and(|index| index < vertices.len()))
 }
 
 fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) -> bool {

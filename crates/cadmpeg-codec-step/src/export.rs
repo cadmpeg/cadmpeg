@@ -1837,7 +1837,7 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            if !mesh.corner_normals.is_empty() {
+            if !mesh.corner_normals().is_empty() {
                 self.loss(
                     StepLossCode::TessellationCornerNormals,
                     format!(
@@ -1864,14 +1864,14 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            if mesh.vertices.is_empty()
-                || mesh.triangles.is_empty()
+            if mesh.vertices().is_empty()
+                || mesh.triangles().is_empty()
                 || mesh
-                    .triangles
+                    .triangles()
                     .iter()
                     .flatten()
-                    .any(|index| *index as usize >= mesh.vertices.len())
-                || (!mesh.normals.is_empty() && mesh.normals.len() != mesh.vertices.len())
+                    .any(|index| *index as usize >= mesh.vertices().len())
+                || (!mesh.normals().is_empty() && mesh.normals().len() != mesh.vertices().len())
             {
                 self.loss(
                     StepLossCode::TessellationInvalidCardinality,
@@ -1883,7 +1883,7 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let coordinates = mesh
-                .vertices
+                .vertices()
                 .iter()
                 .map(|point| format!("({},{},{})", real(point.x), real(point.y), real(point.z)))
                 .collect::<Vec<_>>()
@@ -1893,15 +1893,15 @@ impl<'a> Builder<'a> {
                 &format!(
                     "{}, {},({coordinates})",
                     string(&mesh.id),
-                    mesh.vertices.len()
+                    mesh.vertices().len()
                 ),
             );
-            let normals = if mesh.normals.is_empty() {
+            let normals = if mesh.normals().is_empty() {
                 "$".to_string()
             } else {
                 format!(
                     "({})",
-                    mesh.normals
+                    mesh.normals()
                         .iter()
                         .map(|normal| format!(
                             "({},{},{})",
@@ -1913,7 +1913,7 @@ impl<'a> Builder<'a> {
                         .join(",")
                 )
             };
-            let point_indices = (1..=mesh.vertices.len())
+            let point_indices = (1..=mesh.vertices().len())
                 .map(|index| index.to_string())
                 .collect::<Vec<_>>()
                 .join(",");
@@ -1940,8 +1940,8 @@ impl<'a> Builder<'a> {
             if mesh.chordal_deflection.is_some() {
                 reduced_fields.push("chordal deflection".to_string());
             }
-            if !mesh.channels.is_empty() {
-                reduced_fields.push(format!("{} data channel(s)", mesh.channels.len()));
+            if !mesh.channels().is_empty() {
+                reduced_fields.push(format!("{} data channel(s)", mesh.channels().len()));
             }
             if !reduced_fields.is_empty() {
                 self.loss(
@@ -1955,7 +1955,7 @@ impl<'a> Builder<'a> {
             }
             let item = if let Some((kind, link)) = linked_body {
                 let triangles = mesh
-                    .triangles
+                    .triangles()
                     .iter()
                     .map(|triangle| {
                         format!(
@@ -1972,7 +1972,7 @@ impl<'a> Builder<'a> {
                     &format!(
                         "{},{coordinates},{},{normals},$,({point_indices}),({triangles})",
                         string(&mesh.id),
-                        mesh.vertices.len()
+                        mesh.vertices().len()
                     ),
                 );
                 self.emitter.emit(
@@ -1985,7 +1985,7 @@ impl<'a> Builder<'a> {
                 )
             } else {
                 let triangles = mesh
-                    .triangles
+                    .triangles()
                     .iter()
                     .map(|triangle| {
                         format!(
@@ -2002,7 +2002,7 @@ impl<'a> Builder<'a> {
                     &format!(
                         "{},{coordinates},{},{normals},({point_indices}),({triangles})",
                         string(&mesh.id),
-                        mesh.vertices.len()
+                        mesh.vertices().len()
                     ),
                 )
             };

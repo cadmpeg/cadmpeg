@@ -3317,26 +3317,21 @@ fn project_mesh_bodies(
             &body.triangles,
             &mut unresolved,
         );
-        ir.model
-            .tessellations
-            .push(cadmpeg_ir::tessellation::Tessellation {
+        ir.model.tessellations.push(
+            cadmpeg_ir::tessellation::Tessellation::from_decoded(
                 id,
-                body: None,
-                faces: Vec::new(),
-                // The container stores no chordal deflection: a mesh body's
-                // triangles are its geometry, not an approximation of a surface.
-                chordal_deflection: None,
-                source_object: None,
-                vertices: body.vertices,
-                triangles: body.triangles,
-                feature_edges: body.feature_edges,
-                strip_lengths: Vec::new(),
-                normals: Vec::new(),
-                corner_normals: body.corner_normals,
-                triangle_groups,
-                texture_assignments,
+                body.vertices,
+                body.triangles,
+                Vec::new(),
+                Vec::new(),
+                body.corner_normals,
                 channels,
-            });
+            )
+            .map_err(|err| CodecError::Malformed(err.to_string()))?
+            .with_feature_edges(body.feature_edges)
+            .with_triangle_groups(triangle_groups)
+            .with_texture_assignments(texture_assignments),
+        );
     }
     if !texture_tables.is_empty() {
         return Err(CodecError::Malformed(
@@ -3472,31 +3467,33 @@ fn mesh_attribute_channels(
     let mut channels = Vec::new();
     for attribute in attributes {
         match (attribute.domain, attribute.item_size, attribute.count()) {
-            (MeshAttributeDomain::Vertex, Some(item_size), Some(count)) => {
-                channels.push(cadmpeg_ir::tessellation::TessellationChannel {
-                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
-                    item_size,
-                    kind: attribute.role,
-                    flags: attribute.element_code,
-                    count,
-                    data: attribute.values.clone(),
-                    indices: Vec::new(),
-                });
+            (MeshAttributeDomain::Vertex, Some(item_size), Some(_)) => {
+                channels.push(
+                    cadmpeg_ir::tessellation::TessellationChannel::new(
+                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                        item_size,
+                        attribute.role,
+                        attribute.element_code,
+                        attribute.values.clone(),
+                    )
+                    .expect("vertex mesh attribute payload is well formed"),
+                );
             }
-            (MeshAttributeDomain::Corner, Some(item_size), Some(count)) => {
+            (MeshAttributeDomain::Corner, Some(item_size), Some(_)) => {
                 let Some(selectors) = attribute.corner_selectors(vertices, triangles) else {
                     *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
                     continue;
                 };
-                channels.push(cadmpeg_ir::tessellation::TessellationChannel {
-                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::Corner,
-                    item_size,
-                    kind: attribute.role,
-                    flags: attribute.element_code,
-                    count,
-                    data: attribute.values.clone(),
-                    indices: selectors,
-                });
+                channels.push(
+                    cadmpeg_ir::tessellation::TessellationChannel::new(
+                        cadmpeg_ir::tessellation::ChannelAddressing::Corner(selectors),
+                        item_size,
+                        attribute.role,
+                        attribute.element_code,
+                        attribute.values.clone(),
+                    )
+                    .expect("corner mesh attribute payload is well formed"),
+                );
             }
             (MeshAttributeDomain::Triangle, Some(item_size), Some(count))
                 if usize::try_from(count) == Ok(triangles.len()) && item_size == 4 =>
@@ -3508,15 +3505,16 @@ fn mesh_attribute_channels(
                     *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1;
                     continue;
                 };
-                channels.push(cadmpeg_ir::tessellation::TessellationChannel {
-                    domain: cadmpeg_ir::tessellation::TessellationChannelDomain::Triangle,
-                    item_size,
-                    kind: attribute.role,
-                    flags: attribute.element_code,
-                    count,
-                    data: attribute.values.clone(),
-                    indices,
-                });
+                channels.push(
+                    cadmpeg_ir::tessellation::TessellationChannel::new(
+                        cadmpeg_ir::tessellation::ChannelAddressing::Triangle(indices),
+                        item_size,
+                        attribute.role,
+                        attribute.element_code,
+                        attribute.values.clone(),
+                    )
+                    .expect("triangle mesh attribute payload is well formed"),
+                );
             }
             (domain, _, _) => *unresolved.entry(domain).or_default() += 1,
         }

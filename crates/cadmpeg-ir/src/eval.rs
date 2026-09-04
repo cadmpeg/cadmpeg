@@ -2769,8 +2769,10 @@ pub fn curve_point_with_budget(
                     .then_some(())?;
                 curve_point(geometry, t)
             }
-            CurveGeometry::Polyline { points, .. } => {
-                budget.charge_by(points.len().max(1)).then_some(())?;
+            CurveGeometry::Polyline(polyline) => {
+                budget
+                    .charge_by(polyline.points().len().max(1))
+                    .then_some(())?;
                 curve_point(geometry, t)
             }
             CurveGeometry::Transformed { basis, transform } => {
@@ -2807,8 +2809,10 @@ pub fn curve_tangent_with_budget(
                     .then_some(())?;
                 curve_tangent(geometry, t)
             }
-            CurveGeometry::Polyline { points, .. } => {
-                budget.charge_by(points.len().max(1)).then_some(())?;
+            CurveGeometry::Polyline(polyline) => {
+                budget
+                    .charge_by(polyline.points().len().max(1))
+                    .then_some(())?;
                 curve_tangent(geometry, t)
             }
             CurveGeometry::Transformed { basis, transform } => {
@@ -2846,8 +2850,10 @@ pub fn curve_second_derivative_with_budget(
                     .then_some(())?;
                 curve_second_derivative(geometry, t)
             }
-            CurveGeometry::Polyline { points, .. } => {
-                budget.charge_by(points.len().max(1)).then_some(())?;
+            CurveGeometry::Polyline(polyline) => {
+                budget
+                    .charge_by(polyline.points().len().max(1))
+                    .then_some(())?;
                 curve_second_derivative(geometry, t)
             }
             CurveGeometry::Transformed { basis, transform } => {
@@ -2928,9 +2934,9 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
                 parameter,
             )
         }
-        CurveGeometry::Polyline {
-            points, parameters, ..
-        } => polyline_tangent(points, parameters.as_deref(), t),
+        CurveGeometry::Polyline(polyline) => {
+            polyline_tangent(polyline.points(), polyline.parameters(), t)
+        }
         CurveGeometry::Transformed { basis, transform } => curve_tangent_inner(basis, t, depth + 1)
             .map(|tangent| affine_vector(*transform, tangent)),
         CurveGeometry::Procedural {
@@ -2999,9 +3005,9 @@ fn curve_second_derivative_inner(
                 parameter,
             )
         }
-        CurveGeometry::Polyline {
-            points, parameters, ..
-        } => polyline_tangent(points, parameters.as_deref(), t).map(|_| zero),
+        CurveGeometry::Polyline(polyline) => {
+            polyline_tangent(polyline.points(), polyline.parameters(), t).map(|_| zero)
+        }
         CurveGeometry::Transformed { basis, transform } => {
             curve_second_derivative_inner(basis, t, depth + 1)
                 .map(|derivative| affine_vector(*transform, derivative))
@@ -4193,9 +4199,13 @@ fn direct_curve_parameter_near_point(
         CurveGeometry::Nurbs(curve) => {
             nurbs_curve_parameter_near_point(curve, point, tolerance, seed)?
         }
-        CurveGeometry::Polyline {
-            points, parameters, ..
-        } => polyline_parameter_near_point(points, parameters.as_deref(), point, tolerance, seed)?,
+        CurveGeometry::Polyline(polyline) => polyline_parameter_near_point(
+            polyline.points(),
+            polyline.parameters(),
+            point,
+            tolerance,
+            seed,
+        )?,
         CurveGeometry::Transformed { basis, transform } => {
             let (basis_point, tolerance_scale) = inverse_affine_point(*transform, point)?;
             let basis_tolerance = tolerance * tolerance_scale;
@@ -4419,9 +4429,9 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
                 parameter,
             )
         }
-        CurveGeometry::Polyline {
-            points, parameters, ..
-        } => polyline_point(points, parameters.as_deref(), t),
+        CurveGeometry::Polyline(polyline) => {
+            polyline_point(polyline.points(), polyline.parameters(), t)
+        }
         CurveGeometry::Transformed { basis, transform } => {
             curve_point_inner(basis, t, depth + 1).map(|point| affine_point(*transform, point))
         }
@@ -4565,7 +4575,7 @@ fn surface_point_with_budget_inner(
             cache: Some(geometry),
             ..
         } => surface_point_with_budget_inner(geometry, u, v, depth + 1, budget),
-        SurfaceGeometry::Polygonal { .. }
+        SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }
@@ -5030,7 +5040,7 @@ fn surface_second_partials_inner(
             cache: Some(geometry),
             ..
         } => surface_second_partials_inner(geometry, u, v, depth + 1),
-        SurfaceGeometry::Polygonal { .. }
+        SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }

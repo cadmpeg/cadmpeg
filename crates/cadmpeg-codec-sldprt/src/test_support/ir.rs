@@ -27,8 +27,8 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     pole.x += dx;
                 }
             }
-            CurveGeometry::Polyline { points, .. } => {
-                for point in points {
+            CurveGeometry::Polyline(polyline) => {
+                for point in polyline.points_mut() {
                     point.x += dx;
                 }
             }
@@ -57,8 +57,8 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     pole.x += dx;
                 }
             }
-            SurfaceGeometry::Polygonal { vertices, .. } => {
-                for vertex in vertices {
+            SurfaceGeometry::Polygonal(surface) => {
+                for vertex in surface.vertices_mut() {
                     vertex.x += dx;
                 }
             }

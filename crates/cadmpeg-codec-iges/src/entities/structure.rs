@@ -1573,16 +1573,15 @@ fn bounded_plane_curve_is_simple(
                     )
                 })
         }
-        CurveGeometry::Polyline {
-            points, parameters, ..
-        } => {
+        CurveGeometry::Polyline(polyline) => {
             let active_range_matches = parameter_range.is_none_or(|range| {
-                parameters.as_ref().is_some_and(|parameters| {
+                polyline.parameters().is_some_and(|parameters| {
                     parameters.first().copied() == Some(range[0])
                         && parameters.last().copied() == Some(range[1])
                 })
             });
-            let points = points
+            let points = polyline
+                .points()
                 .iter()
                 .copied()
                 .map(|point| context.transform.apply_point(point))

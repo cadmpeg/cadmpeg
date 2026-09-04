@@ -68,7 +68,7 @@ pub(in super::super) fn surface_kind_for_geometry(
         }
         SurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
         SurfaceGeometry::Transformed { basis, .. } => surface_kind_for_geometry(basis),
-        SurfaceGeometry::Polygonal { .. }
+        SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }

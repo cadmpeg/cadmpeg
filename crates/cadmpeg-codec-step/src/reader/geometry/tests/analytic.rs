@@ -25,18 +25,13 @@ const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
 fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
-    let CurveGeometry::Polyline {
-        points,
-        parameters,
-        chordal_deflection,
-    } = &curve.geometry
-    else {
+    let CurveGeometry::Polyline(polyline) = &curve.geometry else {
         panic!("expected tessellated curve to transfer as a polyline");
     };
-    assert!(parameters.is_none());
-    assert!(chordal_deflection.abs() < EPS_TESSELLATED_CURVE_POINT);
-    assert_eq!(points.len(), expected.len());
-    for (point, &(x, y, z)) in points.iter().zip(expected) {
+    assert!(polyline.parameters().is_none());
+    assert!(polyline.chordal_deflection().abs() < EPS_TESSELLATED_CURVE_POINT);
+    assert_eq!(polyline.points().len(), expected.len());
+    for (point, &(x, y, z)) in polyline.points().iter().zip(expected) {
         assert!((point.x - x).abs() < EPS_TESSELLATED_CURVE_POINT);
         assert!((point.y - y).abs() < EPS_TESSELLATED_CURVE_POINT);
         assert!((point.z - z).abs() < EPS_TESSELLATED_CURVE_POINT);

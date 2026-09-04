@@ -5560,7 +5560,7 @@ fn native_embedded_surface(
                     .into(),
             ));
         }
-        SurfaceGeometry::Polygonal { .. } => {
+        SurfaceGeometry::Polygonal(_) => {
             return Err(CodecError::NotImplemented(
                 "source-less F3D embedded polygonal support surfaces are unsupported".into(),
             ));
@@ -5986,7 +5986,7 @@ fn native_embedded_surface_with_bounds(
         }
         SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Transformed { .. } => {
             return Err(CodecError::Malformed(
                 "support bounds require an embeddable analytic or spline support".into(),

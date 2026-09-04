@@ -179,7 +179,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
             Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v]))
         }
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,

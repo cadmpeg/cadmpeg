@@ -35,7 +35,7 @@ pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
         | SurfaceGeometry::Torus { .. } => true,
         SurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
         SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Unknown { .. } => false,
     }
 }
@@ -70,7 +70,7 @@ pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
         | CurveGeometry::Degenerate { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline { .. } => true,
+        | CurveGeometry::Polyline(_) => true,
         CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
     }
 }
@@ -441,7 +441,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
         // These carrier families have no direct STEP representation; callers
         // report the omitted carrier instead of fabricating a placeholder.
         SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Unknown { .. } => return None,
     })
 }
@@ -512,8 +512,9 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
-        CurveGeometry::Polyline { points, .. } => {
-            let points = points
+        CurveGeometry::Polyline(polyline) => {
+            let points = polyline
+                .points()
                 .iter()
                 .map(|position| point(e, *position).to_string())
                 .collect::<Vec<_>>()

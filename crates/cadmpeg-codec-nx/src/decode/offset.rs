@@ -2243,7 +2243,7 @@ pub(crate) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Opt
         SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
         SurfaceGeometry::Transformed { basis, .. } => return surface_parameters(basis, uv),

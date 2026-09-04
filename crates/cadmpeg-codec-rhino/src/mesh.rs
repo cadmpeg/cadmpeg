@@ -520,22 +520,17 @@ pub(crate) fn decode(
     let quad_count = quad_face_count(&faces);
     let triangles = triangulate_faces(&faces, &vertices);
     Ok(DecodedMesh {
-        tessellation: Tessellation {
+        tessellation: Tessellation::from_decoded(
             id,
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: association,
             vertices,
             triangles,
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: decoded.normals,
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: decoded.channels,
-        },
+            Vec::new(),
+            decoded.normals,
+            Vec::new(),
+            decoded.channels,
+        )
+        .map_err(|err| error(reader.position(), &err.to_string()))?
+        .with_source_object(association),
         warnings: decoded.warnings,
         losses: decoded.losses,
         scaled: scale != 1.0,
@@ -1420,15 +1415,14 @@ fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
 }
 
 fn channel(kind: u32, item_size: u32, count: usize, data: Vec<u8>) -> TessellationChannel {
-    TessellationChannel {
-        domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
+    TessellationChannel::new(
+        cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
         item_size,
         kind,
-        flags: 0,
-        count: count as u32,
+        0,
         data,
-        indices: Vec::new(),
-    }
+    )
+    .unwrap_or_else(|_| panic!("channel payload length {count} * {item_size} is inconsistent"))
 }
 
 fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
@@ -1708,7 +1702,7 @@ mod tests {
             )
         })
         .expect("V5 double userdata mesh");
-        assert_eq!(decoded.tessellation.vertices[1].x, 1.0 + delta);
+        assert_eq!(decoded.tessellation.vertices()[1].x, 1.0 + delta);
         assert!(decoded.warnings.is_empty(), "{:?}", decoded.warnings);
     }
 
@@ -1737,7 +1731,7 @@ mod tests {
             )
         })
         .expect("float mesh survives V5 double userdata mismatch");
-        assert_eq!(decoded.tessellation.vertices[1].x, 1.0);
+        assert_eq!(decoded.tessellation.vertices()[1].x, 1.0);
         assert!(decoded
             .warnings
             .iter()

@@ -1240,7 +1240,7 @@ fn opposite_chart_transfer_priority(
             2
         }
         SurfaceGeometry::Procedural { .. } => 3,
-        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => 4,
+        SurfaceGeometry::Polygonal(_) | SurfaceGeometry::Unknown { .. } => 4,
     }
 }
 

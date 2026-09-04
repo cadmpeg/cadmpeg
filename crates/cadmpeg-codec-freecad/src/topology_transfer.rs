@@ -7,8 +7,8 @@ use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, PcurveNurbs, PolygonalSurface, PolylineCurve,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -299,12 +299,23 @@ impl<'a> Builder<'a> {
             if self.emitted_triangulations.contains(&index) {
                 continue;
             }
-            ir.model.tessellations.push(Tessellation {
-                id: crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
-                body: None,
-                faces: Vec::new(),
-                chordal_deflection: Some(triangulation.deflection),
-                source_object: Some(SourceObjectAssociation {
+            ir.model.tessellations.push(
+                Tessellation::from_decoded(
+                    crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
+                    triangulation.nodes.clone(),
+                    triangulation
+                        .triangles
+                        .iter()
+                        .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
+                        .collect(),
+                    Vec::new(),
+                    triangulation.normals.clone().unwrap_or_default(),
+                    Vec::new(),
+                    Vec::new(),
+                )
+                .expect("decoded triangulation is a valid tessellation")
+                .with_chordal_deflection(Some(triangulation.deflection))
+                .with_source_object(Some(SourceObjectAssociation {
                     format: "fcstd".into(),
                     object_id: self.source_object.clone(),
                     name: None,
@@ -312,21 +323,8 @@ impl<'a> Builder<'a> {
                     visible: None,
                     layer: None,
                     instance_path: Vec::new(),
-                }),
-                vertices: triangulation.nodes.clone(),
-                triangles: triangulation
-                    .triangles
-                    .iter()
-                    .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
-                    .collect(),
-                feature_edges: Vec::new(),
-                strip_lengths: Vec::new(),
-                normals: triangulation.normals.clone().unwrap_or_default(),
-                corner_normals: Vec::new(),
-                triangle_groups: Vec::new(),
-                texture_assignments: Vec::new(),
-                channels: Vec::new(),
-            });
+                })),
+            );
         }
     }
 
@@ -752,11 +750,14 @@ impl<'a> Builder<'a> {
             if self.emitted_surfaces.insert(id.clone()) {
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
-                    geometry: SurfaceGeometry::Polygonal {
-                        vertices: vertices.clone(),
-                        triangles: triangles.clone(),
-                        chordal_deflection: triangulation.deflection * deflection_scale,
-                    },
+                    geometry: SurfaceGeometry::Polygonal(
+                        PolygonalSurface::new(
+                            vertices.clone(),
+                            triangles.clone(),
+                            triangulation.deflection * deflection_scale,
+                        )
+                        .map_err(|error| CodecError::Malformed(error.to_string()))?,
+                    ),
                     source_object: Some(self.source_association()),
                 });
             }
@@ -777,26 +778,26 @@ impl<'a> Builder<'a> {
                         .collect()
                 })
                 .unwrap_or_default();
-            ir.model.tessellations.push(Tessellation {
-                id: crate::native::model_id(
-                    "tessellation",
-                    &self.payload.id,
-                    format!("{index}@{face_key}"),
-                ),
-                body: self.current_body.clone(),
-                faces: vec![face_id.clone()],
-                chordal_deflection: Some(triangulation.deflection * deflection_scale),
-                source_object: Some(self.source_association()),
-                vertices,
-                triangles,
-                feature_edges: Vec::new(),
-                strip_lengths: Vec::new(),
-                normals,
-                corner_normals: Vec::new(),
-                triangle_groups: Vec::new(),
-                texture_assignments: Vec::new(),
-                channels: Vec::new(),
-            });
+            ir.model.tessellations.push(
+                Tessellation::from_decoded(
+                    crate::native::model_id(
+                        "tessellation",
+                        &self.payload.id,
+                        format!("{index}@{face_key}"),
+                    ),
+                    vertices,
+                    triangles,
+                    Vec::new(),
+                    normals,
+                    Vec::new(),
+                    Vec::new(),
+                )
+                .expect("decoded triangulation is a valid tessellation")
+                .with_body(self.current_body.clone())
+                .with_faces(vec![face_id.clone()])
+                .with_chordal_deflection(Some(triangulation.deflection * deflection_scale))
+                .with_source_object(Some(self.source_association())),
+            );
         }
         let mut loops = Vec::new();
         for (loop_index, wire_use) in shape
@@ -1004,14 +1005,17 @@ impl<'a> Builder<'a> {
         let id = CurveId(format!("{}:polygon:{}", edge.0, ordinal + 1));
         ir.model.curves.push(Curve {
             id: id.clone(),
-            geometry: CurveGeometry::Polyline {
-                points: points
-                    .iter()
-                    .map(|point| carrier_transform.apply_point(*point))
-                    .collect(),
-                parameters,
-                chordal_deflection: deflection * scale,
-            },
+            geometry: CurveGeometry::Polyline(
+                PolylineCurve::new(
+                    points
+                        .iter()
+                        .map(|point| carrier_transform.apply_point(*point))
+                        .collect(),
+                    parameters,
+                    deflection * scale,
+                )
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+            ),
             source_object: Some(self.source_association()),
         });
         if representation.kind == 7 {
@@ -1020,14 +1024,17 @@ impl<'a> Builder<'a> {
                     self.indexed_polygon(secondary, representation)?;
                 ir.model.curves.push(Curve {
                     id: CurveId(format!("{}:polygon:{}:secondary", edge.0, ordinal + 1)),
-                    geometry: CurveGeometry::Polyline {
-                        points: points
-                            .iter()
-                            .map(|point| carrier_transform.apply_point(*point))
-                            .collect(),
-                        parameters,
-                        chordal_deflection: deflection * scale,
-                    },
+                    geometry: CurveGeometry::Polyline(
+                        PolylineCurve::new(
+                            points
+                                .iter()
+                                .map(|point| carrier_transform.apply_point(*point))
+                                .collect(),
+                            parameters,
+                            deflection * scale,
+                        )
+                        .map_err(|error| CodecError::Malformed(error.to_string()))?,
+                    ),
                     source_object: Some(self.source_association()),
                 });
             }

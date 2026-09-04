@@ -183,21 +183,27 @@ fn transformed_carriers_preserve_basis_parameters() {
 
 #[test]
 fn polyline_carriers_evaluate_in_both_parameter_directions() {
-    let increasing = CurveGeometry::Polyline {
-        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        parameters: Some(vec![1.0, 3.0]),
-        chordal_deflection: 0.01,
-    };
+    let increasing = CurveGeometry::Polyline(
+        crate::geometry::PolylineCurve::new(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+            Some(vec![1.0, 3.0]),
+            0.01,
+        )
+        .unwrap(),
+    );
     assert_eq!(
         crate::eval::curve_point(&increasing, 2.0),
         Some(Point3::new(1.0, 0.0, 0.0))
     );
 
-    let decreasing = CurveGeometry::Polyline {
-        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        parameters: Some(vec![3.0, 1.0]),
-        chordal_deflection: 0.01,
-    };
+    let decreasing = CurveGeometry::Polyline(
+        crate::geometry::PolylineCurve::new(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+            Some(vec![3.0, 1.0]),
+            0.01,
+        )
+        .unwrap(),
+    );
     assert_eq!(
         crate::eval::curve_point(&decreasing, 2.5),
         Some(Point3::new(0.5, 0.0, 0.0))

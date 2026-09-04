@@ -395,25 +395,25 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
                 result.report()
             );
             let mesh = &result.ir().model.tessellations[0];
-            assert_eq!(mesh.vertices.len(), 4);
-            assert_eq!(mesh.triangles, vec![[0, 1, 2], [0, 2, 3], [0, 3, 1]]);
-            assert_eq!(mesh.normals.len(), 4);
+            assert_eq!(mesh.vertices().len(), 4);
+            assert_eq!(mesh.triangles(), vec![[0, 1, 2], [0, 2, 3], [0, 3, 1]]);
+            assert_eq!(mesh.normals().len(), 4);
             assert!(mesh
-                .channels
+                .channels()
                 .iter()
-                .any(|channel| channel.kind == 0x5248_0001));
+                .any(|channel| channel.kind() == 0x5248_0001));
             assert!(mesh
-                .channels
+                .channels()
                 .iter()
-                .any(|channel| channel.kind == 0x5248_0002));
+                .any(|channel| channel.kind() == 0x5248_0002));
             if major == 3 && minor >= 3 {
                 assert!(mesh
-                    .channels
+                    .channels()
                     .iter()
-                    .any(|channel| channel.kind == 0x5248_0003));
+                    .any(|channel| channel.kind() == 0x5248_0003));
             }
             assert_eq!(
-                mesh.vertices[2],
+                mesh.vertices()[2],
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0)
             );
             assert!(cadmpeg_ir::validate::validate_neutral(
@@ -476,7 +476,7 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         "{:?}",
         result.report()
     );
-    assert!(result.ir().model.tessellations[0].normals.is_empty());
+    assert!(result.ir().model.tessellations[0].normals().is_empty());
     assert!(result
         .report()
         .losses

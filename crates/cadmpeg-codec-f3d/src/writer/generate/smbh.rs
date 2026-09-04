@@ -1235,7 +1235,7 @@ fn encode_face_topology_smbh(
                 );
                 records.extend_from_slice(&[0x0b; 5]);
             }
-            SurfaceGeometry::Polygonal { .. } => {
+            SurfaceGeometry::Polygonal(_) => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D face generation does not support polygonal surface carrier {}",
                     surface.id

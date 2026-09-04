@@ -1124,7 +1124,7 @@ pub(super) fn curve_geometry_coplanar(
         } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
         CurveGeometry::Degenerate { point } => point_valid(*point),
         CurveGeometry::Nurbs(curve) => curve.control_points().iter().copied().all(point_valid),
-        CurveGeometry::Polyline { points, .. } => points.iter().copied().all(point_valid),
+        CurveGeometry::Polyline(polyline) => polyline.points().iter().copied().all(point_valid),
         CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
             let Some(curve) = index.curves(&segment.curve.0) else {
                 return false;

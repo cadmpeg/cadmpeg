@@ -2042,22 +2042,16 @@ fn legacy_mesh(
             .map_err(malformed)?;
     }
     let triangles = crate::mesh::triangulate_faces(&faces, &vertices);
-    Ok(Tessellation {
+    Tessellation::from_decoded(
         id,
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
         vertices,
         triangles,
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
+        Vec::new(),
         normals,
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    })
+        Vec::new(),
+        Vec::new(),
+    )
+    .map_err(|err| CodecError::Malformed(err.to_string()))
 }
 
 fn evaluate_nurbs(curve: &NurbsCurve, parameter: f64) -> Result<Point3, CodecError> {

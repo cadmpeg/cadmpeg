@@ -80,7 +80,7 @@ fn mesh_points() -> [[f64; 3]; 4] {
 
 fn assert_float_mesh_and_record(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.tessellations[0].vertices[1].x, 1.0);
+    assert_eq!(result.ir().model.tessellations[0].vertices()[1].x, 1.0);
     let retained = result
         .source_fidelity()
         .retained_records
@@ -103,7 +103,7 @@ fn current_mesh_double_userdata_reaches_tessellation() {
     ));
 
     assert_eq!(
-        result.ir().model.tessellations[0].vertices[1].x,
+        result.ir().model.tessellations[0].vertices()[1].x,
         1.000_000_01
     );
     let retained = result

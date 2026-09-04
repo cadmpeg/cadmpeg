@@ -455,15 +455,18 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert!((replica.y - 20.5).abs() <= tolerance);
     assert!((replica.z - (expected + 30.0)).abs() <= tolerance);
 
-    ir.model.curves[0].geometry = CurveGeometry::Polyline {
-        points: vec![
-            Point3::new(2.0, 0.0, 3.0),
-            Point3::new(3.0, 0.5, 3.0),
-            Point3::new(3.0, 1.0, 3.0),
-        ],
-        parameters: Some(vec![0.0, 0.5, 1.0]),
-        chordal_deflection: 0.0,
-    };
+    ir.model.curves[0].geometry = CurveGeometry::Polyline(
+        crate::geometry::PolylineCurve::new(
+            vec![
+                Point3::new(2.0, 0.0, 3.0),
+                Point3::new(3.0, 0.5, 3.0),
+                Point3::new(3.0, 1.0, 3.0),
+            ],
+            Some(vec![0.0, 0.5, 1.0]),
+            0.0,
+        )
+        .unwrap(),
+    );
     let index = crate::index::ModelIndex::new(&ir);
     assert!(model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5).is_some());
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());

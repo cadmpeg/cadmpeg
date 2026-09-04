@@ -242,7 +242,7 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
                 )
             })
         }
-        CurveGeometry::Polyline { .. } | CurveGeometry::Transformed { .. } => {
+        CurveGeometry::Polyline(_) | CurveGeometry::Transformed { .. } => {
             cadmpeg_ir::eval::curve_point(geometry, parameter)
         }
         CurveGeometry::Composite { .. }

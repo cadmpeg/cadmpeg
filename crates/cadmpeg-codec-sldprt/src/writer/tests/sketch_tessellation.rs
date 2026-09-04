@@ -559,7 +559,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 2.0;
-    decoded.ir_mut().model.tessellations[0].vertices[0].z = 125.0;
+    decoded.ir_mut().model.tessellations[0].vertices_mut()[0].z = 125.0;
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
@@ -589,7 +589,10 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(binding.target, AppearanceTarget::Face(_))));
-    assert_eq!(regenerated.ir().model.tessellations[0].vertices[0].z, 125.0);
+    assert_eq!(
+        regenerated.ir().model.tessellations[0].vertices()[0].z,
+        125.0
+    );
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
         "20mm"
@@ -636,7 +639,7 @@ fn semantic_writer_preserves_display_list_geometry() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.points[0].position.z += 1.0;
-    decoded.ir_mut().model.tessellations[0].vertices[0].z = 250.0;
+    decoded.ir_mut().model.tessellations[0].vertices_mut()[0].z = 250.0;
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -651,10 +654,10 @@ fn semantic_writer_preserves_display_list_geometry() {
 
     assert_eq!(regenerated.ir().model.tessellations.len(), 1);
     let mesh = &regenerated.ir().model.tessellations[0];
-    assert_eq!(mesh.vertices[0].z, 250.0);
-    assert_eq!(mesh.triangles, vec![[0, 1, 2]]);
-    assert_eq!(mesh.strip_lengths, vec![3]);
-    assert_eq!(mesh.channels.len(), 6);
+    assert_eq!(mesh.vertices()[0].z, 250.0);
+    assert_eq!(mesh.triangles(), vec![[0, 1, 2]]);
+    assert_eq!(mesh.strip_lengths(), vec![3]);
+    assert_eq!(mesh.channels().len(), 6);
 }
 
 #[test]
@@ -666,7 +669,7 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.tessellations[0].vertices[0].x = f64::MAX;
+    decoded.ir_mut().model.tessellations[0].vertices_mut()[0].x = f64::MAX;
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -691,43 +694,36 @@ fn semantic_writer_expands_indexed_tessellation() {
         Vector3::new(0.0, -1.0, 0.0),
         Vector3::new(0.0, 0.0, -1.0),
     ];
-    let mesh = Tessellation {
-        id: "synthetic:test:indexed-tessellation".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
+    let mesh = Tessellation::from_decoded(
+        "synthetic:test:indexed-tessellation",
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
         ],
-        triangles: vec![[0, 1, 2], [0, 2, 3]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: vec![Vector3::new(0.0, 0.0, 1.0); 4],
-        corner_normals: corner_normals.clone(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: vec![TessellationChannel {
-            domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
-            item_size: 1,
-            kind: 7,
-            flags: 2,
-            count: 4,
-            data: vec![10, 11, 12, 13],
-            indices: Vec::new(),
-        }],
-    };
+        vec![[0, 1, 2], [0, 2, 3]],
+        Vec::new(),
+        Vec::new(),
+        corner_normals.clone(),
+        vec![TessellationChannel::new(
+            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+            1,
+            7,
+            2,
+            vec![10, 11, 12, 13],
+        )
+        .expect("valid channel")],
+    )
+    .expect("valid tessellation");
     let expanded = crate::writer::sequential_tessellation(&mesh).unwrap();
-    assert_eq!(expanded.strip_lengths, vec![3, 3]);
-    assert_eq!(expanded.triangles, vec![[0, 1, 2], [3, 4, 5]]);
-    assert_eq!(expanded.vertices.len(), 6);
-    assert_eq!(expanded.normals, corner_normals);
-    assert!(expanded.corner_normals.is_empty());
-    assert_eq!(expanded.channels[0].count, 6);
-    assert_eq!(expanded.channels[0].data, vec![10, 11, 12, 10, 12, 13]);
+    assert_eq!(expanded.strip_lengths(), vec![3, 3]);
+    assert_eq!(expanded.triangles(), vec![[0, 1, 2], [3, 4, 5]]);
+    assert_eq!(expanded.vertices().len(), 6);
+    assert_eq!(expanded.normals(), corner_normals);
+    assert!(expanded.corner_normals().is_empty());
+    assert_eq!(expanded.channels()[0].count(), 6);
+    assert_eq!(expanded.channels()[0].data(), vec![10, 11, 12, 10, 12, 13]);
 
     let mut attributed = mesh.clone();
     attributed
@@ -747,29 +743,4 @@ fn semantic_writer_expands_indexed_tessellation() {
         crate::writer::sequential_tessellation(&edged),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
-}
-
-#[test]
-fn semantic_writer_rejects_out_of_range_tessellation_indices() {
-    use cadmpeg_ir::math::Point3;
-    use cadmpeg_ir::tessellation::Tessellation;
-
-    let mesh = Tessellation {
-        id: "synthetic:test:invalid-tessellation".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![Point3::new(0.0, 0.0, 0.0); 3],
-        triangles: vec![[0, 1, 3]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    };
-    let error = crate::writer::sequential_tessellation(&mesh).unwrap_err();
-    assert!(error.to_string().contains("index is out of bounds"));
 }

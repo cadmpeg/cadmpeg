@@ -380,8 +380,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         other => panic!("unexpected surface {other:?}"),
     }
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.tessellations[0].vertices.len(), 3);
-    assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
+    assert_eq!(result.ir().model.tessellations[0].vertices().len(), 3);
+    assert_eq!(result.ir().model.tessellations[0].triangles(), [[0, 1, 2]]);
     assert!(result.ir().model.tessellations[0].body.is_none());
     assert!(result.ir().model.tessellations[0].faces.is_empty());
     assert_eq!(

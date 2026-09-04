@@ -98,7 +98,7 @@ pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
         }
     }
     for tessellation in &mut ir.model.tessellations {
-        for vertex in &mut tessellation.vertices {
+        for vertex in tessellation.vertices_mut() {
             scale_point3(vertex, length_scale_mm);
         }
         scale_optional(&mut tessellation.chordal_deflection, length_scale_mm);
@@ -1031,15 +1031,11 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) {
                 scale_point3(point, scale);
             }
         }
-        SurfaceGeometry::Polygonal {
-            vertices,
-            chordal_deflection,
-            ..
-        } => {
-            for point in vertices {
+        SurfaceGeometry::Polygonal(surface) => {
+            for point in surface.vertices_mut() {
                 scale_point3(point, scale);
             }
-            *chordal_deflection *= scale;
+            surface.set_chordal_deflection(surface.chordal_deflection() * scale);
         }
         SurfaceGeometry::Transformed {
             basis, transform, ..
@@ -1092,15 +1088,11 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) {
                 scale_point3(point, scale);
             }
         }
-        CurveGeometry::Polyline {
-            points,
-            chordal_deflection,
-            ..
-        } => {
-            for point in points {
+        CurveGeometry::Polyline(polyline) => {
+            for point in polyline.points_mut() {
                 scale_point3(point, scale);
             }
-            *chordal_deflection *= scale;
+            polyline.set_chordal_deflection(polyline.chordal_deflection() * scale);
         }
         CurveGeometry::Transformed {
             basis, transform, ..
@@ -1178,7 +1170,7 @@ fn curve_parameter_scale(geometry: &CurveGeometry, length_scale_mm: f64) -> Opti
         | CurveGeometry::Degenerate { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Polyline { .. }
+        | CurveGeometry::Polyline(_)
         | CurveGeometry::Unknown { .. } => None,
     }
 }
@@ -1193,7 +1185,7 @@ fn surface_parameter_scales(geometry: &SurfaceGeometry, length_scale_mm: f64) ->
         }
         SurfaceGeometry::Nurbs { .. }
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Unknown { .. } => [1.0, 1.0],
     }
 }

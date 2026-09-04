@@ -163,22 +163,17 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
         }
     }
     reader.finish("mesh payload")?;
-    Ok(Tessellation {
-        id: format!("{}:mesh", property.id),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: Some(association(property)),
+    Ok(Tessellation::from_decoded(
+        format!("{}:mesh", property.id),
         vertices,
         triangles,
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    })
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .map_err(|err| CodecError::Malformed(err.to_string()))?
+    .with_source_object(Some(association(property))))
 }
 
 fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, CodecError> {
@@ -440,7 +435,7 @@ pub(crate) mod tests {
             .expect("application geometry");
         assert_eq!(result.ir().model.tessellations.len(), 1);
         let mesh = &result.ir().model.tessellations[0];
-        assert_eq!(mesh.triangles, [[0, 1, 2]]);
+        assert_eq!(mesh.triangles(), [[0, 1, 2]]);
         assert_eq!(
             mesh.source_object
                 .as_ref()

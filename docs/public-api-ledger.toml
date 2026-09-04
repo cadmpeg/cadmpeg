@@ -3928,3 +3928,59 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::geometry::PcurveGeometry::PolarNurbs::{degree,knots,radial_control_points,axial_control_points,weights,periodic}"
 reason = "the independent polar NURBS fields admitted radial, axial, knot, and weight lengths that disagreed"
+
+[[change]]
+commit = "58f21db23637858766bfbb8d022c8877207168de"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::tessellation::Tessellation::{vertices,triangles,channels}"
+reason = "triangle indices and channel selectors are checked at construction so inconsistent tessellation meshes cannot be built in process"
+
+[[change]]
+commit = "58f21db23637858766bfbb8d022c8877207168de"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::tessellation::Tessellation::{normals,corner_normals,strip_lengths}"
+reason = "independent shading and strip arrays admitted mismatched lengths and both vertex and corner normals at once"
+
+[[change]]
+commit = "58f21db23637858766bfbb8d022c8877207168de"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::tessellation::TessellationChannel::{item_size,kind,flags,data}"
+reason = "channel payload length is derived from item_size so a stored count cannot disagree with the bytes"
+
+[[change]]
+commit = "58f21db23637858766bfbb8d022c8877207168de"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::tessellation::TessellationChannel::{domain,count,indices}"
+reason = "channel addressing and element count are derived from the payload and index table so they cannot disagree"
+
+[[change]]
+commit = "58f21db23637858766bfbb8d022c8877207168de"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::SurfaceGeometry::Polygonal"
+reason = "polygonal vertices and triangle indices move into a checked PolygonalSurface carrier so out-of-range indices cannot be built in process"
+
+[[change]]
+commit = "58f21db23637858766bfbb8d022c8877207168de"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::geometry::SurfaceGeometry::Polygonal::{vertices,triangles,chordal_deflection}"
+reason = "the independent polygonal fields admitted empty meshes and triangle indices outside the vertex range"
+
+[[change]]
+commit = "58f21db23637858766bfbb8d022c8877207168de"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::CurveGeometry::Polyline"
+reason = "polyline points and parameters move into a checked PolylineCurve carrier so parallel parameter lengths cannot disagree"
+
+[[change]]
+commit = "58f21db23637858766bfbb8d022c8877207168de"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::geometry::CurveGeometry::Polyline::{points,parameters,chordal_deflection}"
+reason = "the independent polyline fields admitted a parameter array whose length disagreed with the point count"

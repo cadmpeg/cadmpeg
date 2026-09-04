@@ -1133,10 +1133,10 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
 
     let result = crate::decode::decode_for_test(&scan);
     let mesh = &result.ir().model.tessellations[0];
-    assert_eq!(mesh.vertices[0].x, 5.0);
-    assert_eq!(mesh.vertices[1].x, 7.0);
+    assert_eq!(mesh.vertices()[0].x, 5.0);
+    assert_eq!(mesh.vertices()[1].x, 7.0);
     assert_eq!(
-        mesh.normals[0],
+        mesh.normals()[0],
         cadmpeg_ir::math::Vector3::new(0.242_535_625_036_332_97, 0.0, 0.970_142_500_145_331_9)
     );
     let subd = &result.ir().model.subds[0];

@@ -376,30 +376,26 @@ fn transfer_display_tessellations(
             "display_triangle_strip",
             Exactness::Derived,
         );
-        ir.model.tessellations.push(Tessellation {
-            id,
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: strip
-                .positions
-                .iter()
-                .map(|point| Point3::new(point[0], point[1], point[2]))
-                .collect(),
-            triangles,
-            feature_edges: Vec::new(),
-            strip_lengths: strip.strip_lengths.clone(),
-            normals: strip
-                .normals
-                .iter()
-                .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
-                .collect(),
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
+        ir.model.tessellations.push(
+            Tessellation::from_decoded(
+                id,
+                strip
+                    .positions
+                    .iter()
+                    .map(|point| Point3::new(point[0], point[1], point[2]))
+                    .collect(),
+                triangles,
+                strip.strip_lengths.clone(),
+                strip
+                    .normals
+                    .iter()
+                    .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
+                    .collect(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("decoded Creo triangle strip is a valid tessellation"),
+        );
     }
 }
 

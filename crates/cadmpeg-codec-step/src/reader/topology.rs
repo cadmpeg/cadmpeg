@@ -3845,7 +3845,7 @@ fn surface_selection_parameter_domains_from_geometry(
         | SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
@@ -3869,10 +3869,8 @@ fn curve_selection_parameter_domain_from_geometry(geometry: &CurveGeometry) -> O
             Some([0.0, std::f64::consts::TAU])
         }
         CurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve),
-        CurveGeometry::Polyline {
-            parameters: Some(parameters),
-            ..
-        } => {
+        CurveGeometry::Polyline(polyline) => {
+            let parameters = polyline.parameters()?;
             let lower = *parameters.first()?;
             let upper = *parameters.last()?;
             (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
@@ -3886,9 +3884,6 @@ fn curve_selection_parameter_domain_from_geometry(geometry: &CurveGeometry) -> O
         | CurveGeometry::Degenerate { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Procedural { .. }
-        | CurveGeometry::Polyline {
-            parameters: None, ..
-        }
         | CurveGeometry::Unknown { .. } => None,
     }
 }
