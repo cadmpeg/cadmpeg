@@ -227,7 +227,8 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     assert_eq!(topology.curve_supports[&200].range, [-10.0, 10.0]);
     assert!(matches!(
         topology.pcurves[&403],
-        crate::families::e5::graph::E5Pcurve::Jet { degree: 5, ref knots, .. } if knots == &[0.0, 1.0]
+        crate::families::e5::graph::E5Pcurve::Jet { ref sites, .. }
+            if sites.iter().map(|site| site.knot).collect::<Vec<_>>() == [0.0, 1.0]
     ));
 
     let mut missing_support = bytes.clone();

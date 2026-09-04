@@ -106,6 +106,48 @@ pub struct E5BoundEntry {
     pub code: u32,
 }
 
+/// One knot of a degree-5 E5 UV jet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct E5PcurveJetSite {
+    /// Distinct knot.
+    pub knot: f64,
+    /// Multiplicity of this distinct knot.
+    pub multiplicity: u32,
+    /// `(u, v)` position.
+    pub point: [f64; 2],
+    /// `(u, v)` first derivative.
+    pub first_derivatives: [f64; 2],
+    /// `(u, v)` second derivative.
+    pub second_derivatives: [f64; 2],
+}
+
+impl E5PcurveJetSite {
+    pub(crate) fn zip(
+        knots: Vec<f64>,
+        multiplicities: Vec<u32>,
+        points: Vec<[f64; 2]>,
+        first_derivatives: Vec<[f64; 2]>,
+        second_derivatives: Vec<[f64; 2]>,
+    ) -> Vec<Self> {
+        knots
+            .into_iter()
+            .zip(multiplicities)
+            .zip(points)
+            .zip(first_derivatives)
+            .zip(second_derivatives)
+            .map(
+                |((((knot, multiplicity), point), first_derivatives), second_derivatives)| Self {
+                    knot,
+                    multiplicity,
+                    point,
+                    first_derivatives,
+                    second_derivatives,
+                },
+            )
+            .collect()
+    }
+}
+
 /// A resolved E5 pcurve: a 2D curve in a surface's parameter space, decoded
 /// from a class-`0x96` (line), `0x97` (circle), `0xa0` (spline jet), or
 /// `0xaa` (NURBS)
@@ -146,19 +188,8 @@ pub enum E5Pcurve {
     Jet {
         /// `record_id` of the owning surface carrier.
         surface: u32,
-        /// B-spline degree; always `5` (only degree-5 jets are accepted).
-        degree: u32,
-        /// Distinct knot values, starting at `0.0`.
-        knots: Vec<f64>,
-        /// Per-knot multiplicities: `degree + 1` at each end, `3` at
-        /// interior knots (clamped-C2 policy).
-        multiplicities: Vec<u32>,
-        /// `(u, v)` jet-site positions, one per knot.
-        points: Vec<[f64; 2]>,
-        /// `(u, v)` first derivatives at each jet site.
-        first_derivatives: Vec<[f64; 2]>,
-        /// `(u, v)` second derivatives at each jet site.
-        second_derivatives: Vec<[f64; 2]>,
+        /// Knot-aligned UV jet samples.
+        sites: Vec<E5PcurveJetSite>,
         /// `[0.0, knots.last()]` parameter range, validated against the
         /// knot span.
         range: [f64; 2],
@@ -179,6 +210,10 @@ pub enum E5Pcurve {
         /// Effective parameter domain of the expanded knot vector.
         range: [f64; 2],
     },
+}
+
+impl E5Pcurve {
+    pub const JET_DEGREE: u32 = 5;
 }
 
 /// A class-`0x01` body record resolved through its class-`0x08` root record:
@@ -841,12 +876,13 @@ fn parse_jet_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5P
     }
     Some(E5Pcurve::Jet {
         surface,
-        degree,
-        knots,
-        multiplicities,
-        points: x.into_iter().zip(y).map(|(u, v)| [u, v]).collect(),
-        first_derivatives: dx.into_iter().zip(dy).map(|(u, v)| [u, v]).collect(),
-        second_derivatives: ddx.into_iter().zip(ddy).map(|(u, v)| [u, v]).collect(),
+        sites: E5PcurveJetSite::zip(
+            knots,
+            multiplicities,
+            x.into_iter().zip(y).map(|(u, v)| [u, v]).collect(),
+            dx.into_iter().zip(dy).map(|(u, v)| [u, v]).collect(),
+            ddx.into_iter().zip(ddy).map(|(u, v)| [u, v]).collect(),
+        ),
         range: [range_values[0], range_values[1]],
     })
 }
@@ -911,26 +947,17 @@ fn plane_digon_orientation_hint(
     ];
     let [E5Pcurve::Jet {
         surface: first_surface,
-        points: first_points,
-        first_derivatives,
+        sites: first_sites,
         range: first_range,
-        ..
     }, E5Pcurve::Jet {
         surface: second_surface,
-        points: second_points,
-        first_derivatives: second_derivatives,
+        sites: second_sites,
         range: second_range,
-        ..
     }] = [first_pcurve, second_pcurve]
     else {
         return None;
     };
-    if first_surface != second_surface
-        || first_points.len() < 2
-        || first_points.len() != first_derivatives.len()
-        || second_points.len() < 2
-        || second_points.len() != second_derivatives.len()
-    {
+    if first_surface != second_surface || first_sites.len() < 2 || second_sites.len() < 2 {
         return None;
     }
 
@@ -941,10 +968,10 @@ fn plane_digon_orientation_hint(
     };
     let close_point =
         |left: [f64; 2], right: [f64; 2]| close(left[0], right[0]) && close(left[1], right[1]);
-    let first_start = *first_points.first()?;
-    let first_end = *first_points.last()?;
-    let second_start = *second_points.first()?;
-    let second_end = *second_points.last()?;
+    let first_start = first_sites.first()?.point;
+    let first_end = first_sites.last()?.point;
+    let second_start = second_sites.first()?.point;
+    let second_end = second_sites.last()?.point;
     let same_endpoint_pair = (close_point(first_start, second_start)
         && close_point(first_end, second_end))
         || (close_point(first_start, second_end) && close_point(first_end, second_start));
@@ -978,9 +1005,9 @@ fn plane_digon_orientation_hint(
         return None;
     }
     let first_radius = first_start_radius;
-    for point in first_points.iter().chain(second_points) {
+    for site in first_sites.iter().chain(second_sites.iter()) {
         if !close(
-            (point[0] - center[0]).hypot(point[1] - center[1]),
+            (site.point[0] - center[0]).hypot(site.point[1] - center[1]),
             first_radius,
         ) {
             return None;
@@ -1028,9 +1055,9 @@ fn plane_digon_orientation_hint(
         signed_parameter_direction(second_edge, second_pcurve_id, *second_range)?
             * if reversed[1] { -1 } else { 1 };
     let first_winding =
-        native_arc_sign(first_start, *first_derivatives.first()?)? * first_direction;
+        native_arc_sign(first_start, first_sites.first()?.first_derivatives)? * first_direction;
     let second_winding =
-        native_arc_sign(second_start, *second_derivatives.first()?)? * second_direction;
+        native_arc_sign(second_start, second_sites.first()?.first_derivatives)? * second_direction;
     if first_winding != second_winding {
         return None;
     }
@@ -1683,14 +1710,20 @@ mod tests {
 
     #[test]
     fn plane_digon_winding_anchors_absolute_orientation() {
-        let jet = |points, first_derivatives| E5Pcurve::Jet {
+        let jet = |points: Vec<[f64; 2]>, first_derivatives: Vec<[f64; 2]>| E5Pcurve::Jet {
             surface: 500,
-            degree: 5,
-            knots: vec![0.0, 1.0],
-            multiplicities: vec![6, 6],
-            points,
-            first_derivatives,
-            second_derivatives: vec![[0.0, 0.0]; 3],
+            sites: points
+                .into_iter()
+                .zip(first_derivatives)
+                .enumerate()
+                .map(|(index, (point, first_derivatives))| E5PcurveJetSite {
+                    knot: index as f64,
+                    multiplicity: 6,
+                    point,
+                    first_derivatives,
+                    second_derivatives: [0.0, 0.0],
+                })
+                .collect(),
             range: [0.0, 1.0],
         };
         let pcurves = BTreeMap::from([
