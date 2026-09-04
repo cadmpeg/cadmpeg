@@ -431,7 +431,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
             });
         assert_eq!(chart.source_index, 0);
         assert_eq!(chart.carrier, carrier);
-        assert_eq!(chart.side_axis, side_axis);
+        assert_eq!(chart.side_axis(), side_axis);
         let B2OwnerChartBridge::SupportedSurface {
             carrier_surface,
             support_surfaces,
@@ -461,7 +461,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
         assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
         assert_eq!(construction_radius, 1.0);
         assert_eq!(
-            chart.parameter_points.map(|point| point.prefix.as_u8()),
+            chart.parameter_points().map(|point| point.prefix.as_u8()),
             [0x05, 0x09, 0x0d, 0x11]
         );
 
@@ -505,7 +505,7 @@ fn owner_chart_applies_to_width_coded_identity_dialect() {
             });
         assert_eq!(chart.carrier, carrier);
         assert_eq!(
-            chart.parameter_points.map(|point| point.prefix.as_u8()),
+            chart.parameter_points().map(|point| point.prefix.as_u8()),
             [0x05, 0x09, 0x0d, 0x11]
         );
     }

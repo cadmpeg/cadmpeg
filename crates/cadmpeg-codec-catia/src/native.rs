@@ -7884,7 +7884,7 @@ fn consolidated_owner_packets(
                             terminal_controls,
                         },
                     },
-                    side_axis: match chart.side_axis {
+                    side_axis: match chart.side_axis() {
                         crate::families::b2::records::B2OwnerChartSideAxis::FirstParameter => {
                             CatiaOwnerChartSideAxis::FirstParameter
                         }
@@ -7893,7 +7893,7 @@ fn consolidated_owner_packets(
                         }
                     },
                     parameter_point_byte_offsets: chart
-                        .parameter_points
+                        .parameter_points()
                         .map(|point| point.pos as u64),
                 },
             )
