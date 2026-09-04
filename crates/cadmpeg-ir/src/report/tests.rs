@@ -28,6 +28,72 @@ fn loss_code_serializes_as_namespaced_object() {
 }
 
 #[test]
+fn shared_loss_deserialization_rejects_a_code_that_disagrees_with_its_taxonomy() {
+    let error = serde_json::from_value::<LossKind>(serde_json::json!({
+        "namespace": "shared",
+        "code": "geometry_not_transferred",
+        "kind": "topology_not_transferred"
+    }))
+    .unwrap_err()
+    .to_string();
+
+    assert!(error.contains("LossKind.code"));
+    assert!(error.contains("topology_not_transferred"));
+}
+
+#[test]
+fn loss_taxonomy_static_names_match_the_serde_wire_names() {
+    for taxonomy in [
+        LossTaxonomy::MissingGeometryStream,
+        LossTaxonomy::TopologyNotTransferred,
+        LossTaxonomy::SourceTopologyInvalid,
+        LossTaxonomy::GeometryNotTransferred,
+        LossTaxonomy::ReferenceGraphNotClosed,
+        LossTaxonomy::TopologyGaugeSubstituted,
+        LossTaxonomy::CarrierAxisInferred,
+        LossTaxonomy::CarrierSummary,
+        LossTaxonomy::MaterialNotTransferred,
+        LossTaxonomy::MetadataNotTransferred,
+        LossTaxonomy::AttributesNotTransferred,
+        LossTaxonomy::FeatureHistoryRetained,
+        LossTaxonomy::AssemblyComponentsExternal,
+        LossTaxonomy::AssemblyPlacementsNotTransferred,
+        LossTaxonomy::RecordNotTyped,
+        LossTaxonomy::DecodeDiagnostic,
+        LossTaxonomy::IntegrityFailure,
+        LossTaxonomy::NoncanonicalSourceSyntax,
+        LossTaxonomy::SourceDialectUnverified,
+        LossTaxonomy::SourceDialectDisplaced,
+        LossTaxonomy::MeshVertexPrecision,
+        LossTaxonomy::ObjectRecordsUntransferred,
+        LossTaxonomy::UnsupportedObjectFamily,
+        LossTaxonomy::AssetNotTransferred,
+        LossTaxonomy::NoExportableSolids,
+        LossTaxonomy::HiddenBodyOmitted,
+        LossTaxonomy::BodyTransformNotApplied,
+        LossTaxonomy::AnalyticSurfaceNormalized,
+        LossTaxonomy::EllipticalConeReduced,
+        LossTaxonomy::CurvelessEdgeOmitted,
+        LossTaxonomy::UnknownSurfaceFaceOmitted,
+        LossTaxonomy::PcurveOmitted,
+        LossTaxonomy::SubdOmitted,
+        LossTaxonomy::TessellationOmitted,
+        LossTaxonomy::PmiOmitted,
+        LossTaxonomy::SourceAssociationOmitted,
+        LossTaxonomy::PassthroughRecordOmitted,
+        LossTaxonomy::ProceduralReduced,
+        LossTaxonomy::ParametricRecordOmitted,
+        LossTaxonomy::AppearanceReduced,
+        LossTaxonomy::PreservedSourceUnavailable,
+    ] {
+        assert_eq!(
+            serde_json::to_value(taxonomy).unwrap(),
+            serde_json::Value::String(taxonomy.as_str().to_owned())
+        );
+    }
+}
+
+#[test]
 fn loss_kind_strict_consequence_depends_on_severity() {
     assert_eq!(
         LossNote::new(

@@ -35,7 +35,7 @@ fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
                 .and_then(|source| source.tag.as_deref())
                 == Some(&tag)
         })
-        .map(|loss| loss.code.code.clone())
+        .map(|loss| loss.code.local_code().to_owned())
         .collect()
 }
 
@@ -65,7 +65,7 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         assert_eq!(
             charged
                 .iter()
-                .filter(|code| **code == overdeclared.code)
+                .filter(|code| **code == overdeclared.local_code())
                 .count(),
             1,
             "D{sequence} must carry the count loss once, got {charged:?}"

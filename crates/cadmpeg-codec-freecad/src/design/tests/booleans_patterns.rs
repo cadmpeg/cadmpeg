@@ -545,8 +545,8 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
             ));
             assert_eq!(result.report().losses.len(), 1);
             assert!(result.report().losses.iter().all(|loss| {
-                loss.code.namespace == "fcstd"
-                    && loss.code.code == "feature.native-kind-retained"
+                loss.code.namespace() == "fcstd"
+                    && loss.code.local_code() == "feature.native-kind-retained"
                     && loss.severity == cadmpeg_ir::Severity::Blocking
             }));
         }
@@ -790,8 +790,8 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
         );
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace == "fcstd"
-                && loss.code.code == "feature.native-kind-retained"
+            loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::Severity::Blocking
         }));
     }
@@ -1258,8 +1258,8 @@ fn rejects_ambiguous_axis_and_plane_reference_carriers() {
     ));
     assert_eq!(result.report().losses.len(), 2);
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.namespace == "fcstd"
-            && loss.code.code == "feature.native-kind-retained"
+        loss.code.namespace() == "fcstd"
+            && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::Severity::Blocking
     }));
 }

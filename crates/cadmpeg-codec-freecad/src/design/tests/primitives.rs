@@ -389,8 +389,8 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace == "fcstd"
-                && loss.code.code == "feature.native-kind-retained"
+            loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::Severity::Blocking
         }));
     };
@@ -578,8 +578,8 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         );
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace == "fcstd"
-                && loss.code.code == "feature.native-kind-retained"
+            loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::Severity::Blocking
         }));
     };
@@ -1402,8 +1402,8 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
         );
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace == "fcstd"
-                && loss.code.code == "feature.native-kind-retained"
+            loss.code.namespace() == "fcstd"
+                && loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::Severity::Blocking
         }));
     };

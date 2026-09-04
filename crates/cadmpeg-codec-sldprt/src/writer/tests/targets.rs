@@ -112,7 +112,7 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code.code != "source.preserved-image-unavailable"));
+        .all(|loss| loss.code.local_code() != "source.preserved-image-unavailable"));
     assert!(plan
         .report()
         .notes
@@ -137,7 +137,7 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code.code == "source.preserved-image-unavailable")
+        .find(|loss| loss.code.local_code() == "source.preserved-image-unavailable")
         .expect("missing sidecar charges image unavailability");
     assert!(unavailable.message.contains("regenerated from IR"));
 }
