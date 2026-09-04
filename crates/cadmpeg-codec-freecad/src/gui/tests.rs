@@ -59,7 +59,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     let presentation = &result.ir().model.presentation_documents[0];
     assert_eq!(presentation.schema_version, Some(1));
     assert_eq!(presentation.active_view, None);
-    let camera = presentation.camera.as_ref().expect("camera state");
+    let camera = presentation.camera().expect("camera state");
     assert_eq!(camera.position, Some([1.0, 2.0, 3.0]));
     assert_eq!(camera.orientation, Some([0.0, 0.0, 1.0, 0.25]));
     assert_eq!(
@@ -74,8 +74,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
 
     let mut corrupted = result.ir().clone();
     corrupted.model.presentation_documents[0]
-        .camera
-        .as_mut()
+        .camera_mut()
         .expect("camera state")
         .orientation = Some([0.0; 4]);
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
@@ -282,8 +281,7 @@ fn ignores_non_authoritative_camera_descendant_values() {
         )
         .expect("non-authoritative camera descendants");
     let camera = result.ir().model.presentation_documents[0]
-        .camera
-        .as_ref()
+        .camera()
         .expect("camera state");
     assert_eq!(camera.position, None);
     assert_eq!(camera.orientation, None);
