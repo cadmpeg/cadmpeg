@@ -28,8 +28,11 @@
 //! and a document that gained populated source metadata differs.
 
 use std::collections::BTreeMap;
+use std::fmt;
+use std::ops::Deref;
 
 use crate::compare::{floats_agree, is_local_digest_attribute, values_agree};
+use crate::document::ArenaName;
 use cadmpeg_core::dialect::DialectLayers;
 
 #[cfg(feature = "schema")]
@@ -162,6 +165,52 @@ impl SourceDiff {
     }
 }
 
+/// A non-empty list of top-level entity field names that differ.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
+pub struct NonEmptyFields(Vec<String>);
+
+impl NonEmptyFields {
+    /// Construct a field list, rejecting the empty list.
+    #[must_use]
+    pub fn new(fields: Vec<String>) -> Option<Self> {
+        (!fields.is_empty()).then_some(Self(fields))
+    }
+
+    /// Field names in discovery order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl Deref for NonEmptyFields {
+    type Target = [String];
+
+    fn deref(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl<U> PartialEq<[U]> for NonEmptyFields
+where
+    String: PartialEq<U>,
+{
+    fn eq(&self, other: &[U]) -> bool {
+        self.0.as_slice() == other
+    }
+}
+
+impl<U, const N: usize> PartialEq<[U; N]> for NonEmptyFields
+where
+    String: PartialEq<U>,
+{
+    fn eq(&self, other: &[U; N]) -> bool {
+        self.0.as_slice() == other.as_slice()
+    }
+}
+
 /// A modified entity and its differing top-level fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -170,7 +219,78 @@ pub struct ModifiedEntity {
     pub id: String,
     /// Names of the top-level entity fields whose JSON-serialized values differ
     /// between the two documents.
-    pub fields: Vec<String>,
+    pub fields: NonEmptyFields,
+}
+
+/// Compared arena: a registered model arena or a native namespace arena.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArenaKind {
+    /// A model arena declared by `arena_registry!`.
+    Model(ArenaName),
+    /// A native namespace arena, serialized as `native.{format}.{name}`.
+    Native {
+        /// Source-format namespace.
+        format: String,
+        /// Arena name inside that namespace.
+        name: String,
+    },
+}
+
+impl ArenaKind {
+    /// Native namespace arena named `native.{format}.{name}` on the wire.
+    #[must_use]
+    pub fn native(format: impl Into<String>, name: impl Into<String>) -> Self {
+        Self::Native {
+            format: format.into(),
+            name: name.into(),
+        }
+    }
+}
+
+impl fmt::Display for ArenaKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Model(name) => f.write_str(name.as_str()),
+            Self::Native { format, name } => write!(f, "native.{format}.{name}"),
+        }
+    }
+}
+
+impl PartialEq<str> for ArenaKind {
+    fn eq(&self, other: &str) -> bool {
+        match self {
+            Self::Model(name) => name.as_str() == other,
+            Self::Native { format, name } => {
+                other
+                    .strip_prefix("native.")
+                    .and_then(|rest| rest.split_once('.'))
+                    == Some((format.as_str(), name.as_str()))
+            }
+        }
+    }
+}
+
+impl PartialEq<&str> for ArenaKind {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+
+impl Serialize for ArenaKind {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for ArenaKind {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ArenaKind".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        String::json_schema(generator)
+    }
 }
 
 /// Changes within one entity arena.
@@ -178,7 +298,7 @@ pub struct ModifiedEntity {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ArenaDiff {
     /// Arena name, matching the field name in [`crate::CadIr`] (e.g. `"faces"`).
-    pub kind: String,
+    pub kind: ArenaKind,
     /// Diff keys of entities present only in the right-hand document.
     pub added: Vec<String>,
     /// Diff keys of entities present only in the left-hand document.
@@ -284,7 +404,7 @@ fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
         .collect()
 }
 
-fn arena<T, F>(kind: impl Into<String>, left: &[T], right: &[T], identity: F) -> ArenaDiff
+fn arena<T, F>(kind: ArenaKind, left: &[T], right: &[T], identity: F) -> ArenaDiff
 where
     T: PartialEq + Serialize,
     F: for<'a> Fn(&'a T) -> &'a str,
@@ -315,15 +435,15 @@ where
             if *before == *after {
                 return None;
             }
-            let fields = differing_fields(*before, *after);
-            (!fields.is_empty()).then(|| ModifiedEntity {
+            let fields = NonEmptyFields::new(differing_fields(*before, *after))?;
+            Some(ModifiedEntity {
                 id: (*id).to_owned(),
                 fields,
             })
         })
         .collect();
     ArenaDiff {
-        kind: kind.into(),
+        kind,
         added,
         removed,
         modified,
@@ -334,7 +454,7 @@ macro_rules! define_diff_arenas {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
         fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             vec![$(arena(
-                stringify!($field),
+                ArenaKind::Model(ArenaName::$field),
                 &left.model.$field,
                 &right.model.$field,
                 crate::schema::EntitySchema::identity,
@@ -363,7 +483,7 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
                 .collect::<std::collections::BTreeSet<_>>();
             arenas.into_iter().map(move |name| {
                 arena(
-                    format!("native.{namespace}.{name}"),
+                    ArenaKind::native(namespace.as_str(), name.as_str()),
                     left_ns
                         .and_then(|value| value.arenas.get(name))
                         .map(Vec::as_slice)
@@ -519,7 +639,7 @@ mod tests {
         result
             .per_arena
             .iter()
-            .find(|arena| arena.kind == kind)
+            .find(|arena| arena.kind == *kind)
             .expect("every model arena appears in every diff")
             .modified
             .iter()

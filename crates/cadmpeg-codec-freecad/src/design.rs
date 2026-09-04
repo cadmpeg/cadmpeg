@@ -1092,6 +1092,7 @@ fn cell_address(address: &str) -> Option<(u32, u32)> {
     Some((row, column))
 }
 
+#[cfg(test)]
 fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
     CellAddress::parse(address).is_some_and(|address| range.contains(address))
 }

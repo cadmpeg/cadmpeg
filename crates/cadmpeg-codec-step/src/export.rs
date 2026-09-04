@@ -4487,7 +4487,7 @@ impl<'a> Builder<'a> {
         StepWriteOutcome {
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::TargetRecords,
-                counts: self.emitter.counts(),
+                counts: cadmpeg_ir::CensusKey::count_map(self.emitter.counts()),
             },
             losses: self.losses.clone(),
             notes: self.notes.clone(),

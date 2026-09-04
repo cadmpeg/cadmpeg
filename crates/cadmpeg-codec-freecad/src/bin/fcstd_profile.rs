@@ -206,9 +206,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .insert(if has_gui { "gui" } else { "headless" }.to_owned());
         collect_native_observations(first.ir(), &mut observed);
         for (name, count) in &neutral.entity_counts {
-            *total_counts.entry(name.clone()).or_default() += count;
-            if *count > 0 && !name.starts_with("native.") {
-                observed.neutral_arenas.insert(name.clone());
+            *total_counts.entry(name.to_string()).or_default() += count;
+            if *count > 0 && !name.as_str().starts_with("native.") {
+                observed.neutral_arenas.insert(name.to_string());
             }
         }
         fixtures.push(FixtureProfile {
@@ -236,7 +236,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             semantic_round_trip,
             side_entries_preserved,
             typed_edit_round_trip,
-            entity_counts: neutral.entity_counts,
+            entity_counts: neutral
+                .entity_counts
+                .iter()
+                .map(|(name, count)| (name.to_string(), *count))
+                .collect(),
         });
     }
 

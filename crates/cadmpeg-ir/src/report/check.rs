@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{LossNote, Severity};
+use crate::document::CensusKey;
 
 /// Which invariant a validation finding concerns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -113,7 +114,7 @@ pub struct Finding {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ValidationReport {
     /// Count of entities per arena, keyed by entity kind (sorted).
-    pub entity_counts: BTreeMap<String, usize>,
+    pub entity_counts: BTreeMap<CensusKey, usize>,
     /// Findings, in discovery order.
     pub findings: Vec<Finding>,
     /// Loss notes supplied to validation.

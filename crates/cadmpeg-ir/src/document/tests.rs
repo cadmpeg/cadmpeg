@@ -67,7 +67,7 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
     let diff_kinds = diff(&ir, &ir)
         .per_arena
         .into_iter()
-        .map(|arena| arena.kind)
+        .map(|arena| arena.kind.to_string())
         .collect::<Vec<_>>();
 
     assert_eq!(

@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::document::CadIr;
+use crate::document::{CadIr, CensusKey};
 use crate::features::Feature;
 use crate::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -73,7 +73,7 @@ fn nonpositive(x: f64) -> bool {
 ///
 /// Prefer [`CadIr::census`](crate::CadIr::census); this alias remains for
 /// existing `cadmpeg_ir::entity_census` call sites.
-pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
     crate::document::entity_census(ir)
 }
 
