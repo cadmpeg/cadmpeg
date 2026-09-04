@@ -1765,15 +1765,17 @@ fn project_with_type_130_policy(
             },
             [(start_vertex, start), (end_vertex, end)],
         );
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            ProceduralCurveId(format!("iges:model:procedural-curve#{stem}")),
+        let _attached = ir.model.add_procedural_curve(
             curve_id,
-            ProceduralCurveDefinition::Compound {
-                parameters: boundaries,
-                component_parameters: child_starts,
-                components: curve_ids,
-            },
-        ));
+            ProceduralCurve::new(
+                ProceduralCurveId(format!("iges:model:procedural-curve#{stem}")),
+                ProceduralCurveDefinition::Compound {
+                    parameters: boundaries,
+                    component_parameters: child_starts,
+                    components: curve_ids,
+                },
+            ),
+        );
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }

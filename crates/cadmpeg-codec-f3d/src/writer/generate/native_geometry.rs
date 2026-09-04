@@ -115,7 +115,7 @@ fn native_record_bounds(bytes: &mut Vec<u8>, target: &CadIr, surface: &cadmpeg_i
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == *surface)
+        .find(|procedural| target.model.procedural_surface_owner(&procedural.id) == Some(surface))
         .and_then(|procedural| procedural.record_bounds);
     if let Some(bounds) = bounds {
         for bound in bounds {
@@ -134,7 +134,9 @@ fn native_procedural_surface_definition(
         .model
         .procedural_surfaces
         .iter()
-        .filter(|procedural| procedural.surface == solved_surface.id);
+        .filter(|procedural| {
+            target.model.procedural_surface_owner(&procedural.id) == Some(&solved_surface.id)
+        });
     let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
@@ -1964,7 +1966,9 @@ fn native_cacheless_procedural_surface_definition(
         .model
         .procedural_surfaces
         .iter()
-        .filter(|procedural| procedural.surface == surface.id);
+        .filter(|procedural| {
+            target.model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+        });
     let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
@@ -4702,11 +4706,10 @@ pub(crate) fn native_procedural_curve(
     curve_id: &cadmpeg_ir::ids::CurveId,
     solved_cache: &NurbsCurve,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .model
-        .procedural_curves
-        .iter()
-        .filter(|procedural| procedural.curve == *curve_id);
+    let mut definitions =
+        target.model.procedural_curves.iter().filter(|procedural| {
+            target.model.procedural_curve_owner(&procedural.id) == Some(curve_id)
+        });
     let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
@@ -5444,11 +5447,10 @@ pub(crate) fn native_cacheless_procedural_curve(
     target: &CadIr,
     curve_id: &cadmpeg_ir::ids::CurveId,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .model
-        .procedural_curves
-        .iter()
-        .filter(|procedural| procedural.curve == *curve_id);
+    let mut definitions =
+        target.model.procedural_curves.iter().filter(|procedural| {
+            target.model.procedural_curve_owner(&procedural.id) == Some(curve_id)
+        });
     let Some(procedural) = definitions.next() else {
         return Ok(false);
     };

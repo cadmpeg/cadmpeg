@@ -112,7 +112,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     }
 
     for procedural in &ir.model.procedural_surfaces {
-        surfaces.insert(&procedural.surface.0);
+        if let Some(surface) = ir.model.procedural_surface_owner(&procedural.id) {
+            surfaces.insert(surface.0.as_str());
+        }
         match procedural.definition() {
             ProceduralSurfaceDefinition::Exact { .. } => {}
             ProceduralSurfaceDefinition::Compound { components, .. } => {
@@ -560,7 +562,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         }
     }
     for procedural in &ir.model.procedural_curves {
-        curves.insert(&procedural.curve.0);
+        if let Some(curve) = ir.model.procedural_curve_owner(&procedural.id) {
+            curves.insert(curve.0.as_str());
+        }
         match procedural.definition() {
             ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
             ProceduralCurveDefinition::Law {

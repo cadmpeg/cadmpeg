@@ -1232,11 +1232,17 @@ impl CodecBackend for FcstdCodec {
             geometry_transferred =
                 !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
             ir.model.curves.extend(curve_transfer.curves);
-            ir.model.procedural_curves.extend(curve_transfer.procedural);
+            for (owner, procedural) in curve_transfer.procedural {
+                ir.model
+                    .add_procedural_curve(owner, procedural)
+                    .map_err(|error| CodecError::malformed(error.to_string()))?;
+            }
             ir.model.surfaces.extend(surface_transfer.surfaces);
-            ir.model
-                .procedural_surfaces
-                .extend(surface_transfer.procedural);
+            for (owner, procedural) in surface_transfer.procedural {
+                ir.model
+                    .add_procedural_surface(owner, procedural)
+                    .map_err(|error| CodecError::malformed(error.to_string()))?;
+            }
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
             let topology_occurrences =

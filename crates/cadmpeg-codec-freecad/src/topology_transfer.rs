@@ -1193,26 +1193,29 @@ impl<'a> Builder<'a> {
                     CodecError::malformed(format_args!("missing surface table entry {source}"))
                 })?
                 .clone();
-            let has_procedural_construction = ir
-                .model
-                .procedural_surfaces
-                .iter()
-                .any(|surface| surface.surface == base_id);
+            let has_procedural_construction =
+                ir.model.procedural_surfaces.iter().any(|surface| {
+                    ir.model.procedural_surface_owner(&surface.id) == Some(&base_id)
+                });
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: transform_surface(&base.geometry, transform)?,
                 source_object: base.source_object,
             });
             if has_procedural_construction {
-                ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                    ProceduralSurfaceId(format!("{}:construction", id.0)),
-                    id.clone(),
-                    ProceduralSurfaceDefinition::Replica {
-                        source: base_id,
-                        transform,
-                    },
-                    None,
-                ));
+                ir.model
+                    .add_procedural_surface(
+                        id.clone(),
+                        ProceduralSurface::new(
+                            ProceduralSurfaceId(format!("{}:construction", id.0)),
+                            ProceduralSurfaceDefinition::Replica {
+                                source: base_id,
+                                transform,
+                            },
+                            None,
+                        ),
+                    )
+                    .map_err(|error| CodecError::malformed(error.to_string()))?;
             }
         }
         Ok(id)

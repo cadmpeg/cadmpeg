@@ -163,11 +163,14 @@ impl IntersectionIncidenceIndex {
             .enumerate()
             .skip(starts.procedural_curves)
         {
+            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id).cloned() else {
+                continue;
+            };
             self.procedural_by_curve
-                .entry(procedural.curve.clone())
+                .entry(owner.clone())
                 .or_default()
                 .push(index);
-            affected_curves.insert(procedural.curve.clone());
+            affected_curves.insert(owner);
         }
         for coedge in ir.model.coedges.iter().skip(starts.coedges) {
             let Some(curve) = self.edge_curves.get(&coedge.edge).cloned() else {
@@ -433,6 +436,9 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut replacements = Vec::new();
         for procedural in ir.model.procedural_curves.iter().skip(procedural_start) {
+            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+                continue;
+            };
             let ProceduralCurveDefinition::TolerantIntersection {
                 supports,
                 endpoints,
@@ -442,7 +448,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             else {
                 continue;
             };
-            let Some(edge_indices) = edges_by_curve.get(&procedural.curve) else {
+            let Some(edge_indices) = edges_by_curve.get(owner) else {
                 continue;
             };
             let [edge_index] = edge_indices.as_slice() else {
@@ -475,7 +481,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             };
             let candidates = supports.each_ref().map(|support| {
                 incident
-                    .get(&(procedural.curve.clone(), support.clone()))
+                    .get(&(owner.clone(), support.clone()))
                     .map(Vec::as_slice)
             });
             let [Some([(first_id, first_use_range)]), Some([(second_id, second_use_range)])] =
@@ -533,7 +539,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let pcurves: [Option<PcurveGeometry>; 2] = std::array::from_fn(|side| {
                 orient_tolerant_intersection_pcurve_with_index_and_budget(
                     &model_index,
-                    &procedural.curve,
+                    owner,
                     &supports[side],
                     &carriers[side].geometry,
                     first_range,
@@ -1105,6 +1111,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 ));
             let replacement = (|| {
                 let procedural = ir.model.procedural_curves.get(procedural_index)?;
+                let owner = ir.model.procedural_curve_owner(&procedural.id)?;
                 let ProceduralCurveDefinition::Intersection { context, .. } =
                     procedural.definition()
                 else {
@@ -1128,7 +1135,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 let target_surface = context.sides[target].surface.as_ref()?;
                 let tolerance = procedural
                     .cache_fit_tolerance()
-                    .or_else(|| edge_tolerances.get(&procedural.curve).copied())?;
+                    .or_else(|| edge_tolerances.get(owner).copied())?;
                 let tolerance = blend_spine_cache_fit_tolerance_with_index(
                     &model_index,
                     target_surface,
@@ -1143,7 +1150,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     .copied();
                 let pcurve = transfer_intersection_pcurve_with_contact_and_budget(
                     &model_index,
-                    &procedural.curve,
+                    owner,
                     source_surface,
                     source_pcurve,
                     target_surface,
@@ -1159,7 +1166,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     target,
                     pcurve,
                     tolerance,
-                    curve_is_cache_backed_with_index(&model_index, &procedural.curve),
+                    curve_is_cache_backed_with_index(&model_index, owner),
                 ))
             })();
             let _ = geometry_budget.consume_child(&candidate_geometry_budget);
@@ -1293,7 +1300,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         .iter()
         .skip(procedural_start)
         .filter_map(|procedural| {
-            let edge_indices = edges_by_curve.get(&procedural.curve)?;
+            let owner = ir.model.procedural_curve_owner(&procedural.id)?;
+            let edge_indices = edges_by_curve.get(owner)?;
             let [edge_index] = edge_indices.as_slice() else {
                 return None;
             };
@@ -1329,14 +1337,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     parameterization: None,
                 } => {
                     let range = if edge.start == edge.end
-                        && model_index
-                            .curves(procedural.curve.0.as_str())
-                            .is_some_and(|curve| {
-                                matches!(
-                                    curve.geometry,
-                                    CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
-                                )
-                            }) {
+                        && model_index.curves(owner.0.as_str()).is_some_and(|curve| {
+                            matches!(
+                                curve.geometry,
+                                CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+                            )
+                        }) {
                         [0.0, std::f64::consts::TAU]
                     } else {
                         [0.0, 1.0]
@@ -1349,7 +1355,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             let candidates = [first_surface, second_surface].map(|surface| {
                 exact_boundary_pcurve_with_index(
                     &model_index,
-                    &procedural.curve,
+                    owner,
                     surface,
                     endpoints,
                     range,
@@ -1372,7 +1378,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                         let transferred = [
                             transfer_intersection_pcurve(
                                 &model_index,
-                                &procedural.curve,
+                                owner,
                                 first_surface,
                                 &first,
                                 second_surface,
@@ -1385,7 +1391,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                             .map(|transferred| [first.clone(), transferred]),
                             transfer_intersection_pcurve(
                                 &model_index,
-                                &procedural.curve,
+                                owner,
                                 second_surface,
                                 &second,
                                 first_surface,
@@ -1407,7 +1413,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     first.clone(),
                     transfer_intersection_pcurve(
                         &model_index,
-                        &procedural.curve,
+                        owner,
                         first_surface,
                         &first,
                         second_surface,
@@ -1421,7 +1427,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 [None, Some(second)] => [
                     transfer_intersection_pcurve(
                         &model_index,
-                        &procedural.curve,
+                        owner,
                         second_surface,
                         &second,
                         first_surface,
@@ -1439,8 +1445,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 procedural.id.clone(),
                 pcurves,
                 tolerance,
-                curve_is_cache_backed_with_index(&model_index, &procedural.curve),
-                procedural.curve.clone(),
+                curve_is_cache_backed_with_index(&model_index, owner),
+                owner.clone(),
                 range,
                 tolerant,
             ))
@@ -3310,19 +3316,22 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
             id: curve_id.clone(),
             geometry: CurveGeometry::Procedural {
                 construction: procedural_id.clone(),
+                cache: None,
             },
             source_object: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            procedural_id,
+        let _attached = ir.model.add_procedural_curve(
             curve_id,
-            ProceduralCurveDefinition::TolerantIntersection {
-                supports,
-                endpoints,
-                tolerance,
-                parameterization: None,
-            },
-        ));
+            ProceduralCurve::new(
+                procedural_id,
+                ProceduralCurveDefinition::TolerantIntersection {
+                    supports,
+                    endpoints,
+                    tolerance,
+                    parameterization: None,
+                },
+            ),
+        );
     }
 }
 
@@ -3528,8 +3537,8 @@ mod tests {
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
-        IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry, ProceduralCurve,
-        ProceduralCurveDefinition,
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry,
+        ProceduralCurve, ProceduralCurveDefinition,
     };
     use cadmpeg_ir::ids::{
         CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, ShellId, SurfaceId,
@@ -3560,29 +3569,41 @@ mod tests {
         let vertex_id = VertexId("nx:s1:vertex#0".into());
 
         let mut ir = CadIr::empty();
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            procedural_id,
-            curve,
-            ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
-                        IntcurveSupportSide {
-                            surface: Some(known_surface),
-                            pcurve: None,
-                            pcurve_parameter_range: None,
-                        },
-                        IntcurveSupportSide {
-                            surface: None,
-                            pcurve: None,
-                            pcurve_parameter_range: None,
-                        },
-                    ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
-                discontinuity_flag: false,
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Procedural {
+                construction: procedural_id.clone(),
+                cache: None,
             },
-        ));
+            source_object: None,
+        });
+        ir.model
+            .add_procedural_curve(
+                curve,
+                ProceduralCurve::new(
+                    procedural_id,
+                    ProceduralCurveDefinition::Intersection {
+                        context: IntcurveSupportContext {
+                            sides: [
+                                IntcurveSupportSide {
+                                    surface: Some(known_surface),
+                                    pcurve: None,
+                                    pcurve_parameter_range: None,
+                                },
+                                IntcurveSupportSide {
+                                    surface: None,
+                                    pcurve: None,
+                                    pcurve_parameter_range: None,
+                                },
+                            ],
+                            parameter_range: [0.0, 1.0],
+                            discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                        },
+                        discontinuity_flag: false,
+                    },
+                ),
+            )
+            .unwrap();
         ir.model.coedges.push(Coedge {
             id: coedge_id,
             owner_loop: loop_id.clone(),

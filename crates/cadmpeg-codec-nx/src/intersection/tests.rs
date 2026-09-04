@@ -39,29 +39,31 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .collect::<Vec<_>>();
     assert_eq!(incident.len(), 2);
     let curve = edge.curve.expect("cube edge curve");
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        ProceduralCurveId("nx:test:intersection#0".into()),
+    let _attached = ir.model.add_procedural_curve(
         curve,
-        ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(incident[0].clone()),
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                    IntcurveSupportSide {
-                        surface: None,
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+        ProceduralCurve::new(
+            ProceduralCurveId("nx:test:intersection#0".into()),
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(incident[0].clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: None,
+                        },
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve_parameter_range: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
             },
-            discontinuity_flag: false,
-        },
-    ));
+        ),
+    );
 
     crate::decode::complete_intersection_supports_from_edge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =

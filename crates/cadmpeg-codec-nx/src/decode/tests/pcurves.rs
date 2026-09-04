@@ -244,19 +244,21 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     }
 
     let construction = ProceduralCurveId("nx:test:closed-intersection".into());
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        construction,
+    let _attached = ir.model.add_procedural_curve(
         sphere_circle.clone(),
-        ProceduralCurveDefinition::TolerantIntersection {
-            supports: [sphere, plane],
-            endpoints: [
-                Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-                Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
-            ],
-            tolerance: 1.0e-8,
-            parameterization: None,
-        },
-    ));
+        ProceduralCurve::new(
+            construction,
+            ProceduralCurveDefinition::TolerantIntersection {
+                supports: [sphere, plane],
+                endpoints: [
+                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                    Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
+                ],
+                tolerance: 1.0e-8,
+                parameterization: None,
+            },
+        ),
+    );
     let point = PointId("nx:test:closed-point".into());
     let vertex = VertexId("nx:test:closed-vertex".into());
     ir.model.points.push(Point {
@@ -337,7 +339,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             true
         }));
     for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
-        let curve = &ir.model.procedural_curves[0].curve;
+        let curve = ir
+            .model
+            .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+            .expect("closed intersection owner");
         let point = cadmpeg_ir::eval::model_curve_point_by_id(
             &cadmpeg_ir::index::ModelIndex::new(&ir),
             curve,
@@ -936,24 +941,24 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.push(
-        ProceduralSurface::try_new(
-            ProceduralSurfaceId("nx:test:offset".into()),
-            cache.clone(),
-            ProceduralSurfaceDefinition::Offset {
-                support: support.clone(),
-                distance: 4.0,
-                u_sense: Some(0),
-                v_sense: Some(0),
-                support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
-            },
-            Some(0.0),
-            None,
-        )
-        .unwrap(),
-    );
+    let procedural = ProceduralSurface::try_new(
+        ProceduralSurfaceId("nx:test:offset".into()),
+        ProceduralSurfaceDefinition::Offset {
+            support: support.clone(),
+            distance: 4.0,
+            u_sense: Some(0),
+            v_sense: Some(0),
+            support_extension: None,
+            extension_flags: Vec::new(),
+            revision_form: None,
+        },
+        Some(0.0),
+        None,
+    )
+    .unwrap();
+    ir.model
+        .add_procedural_surface(cache.clone(), procedural)
+        .unwrap();
 
     assert_eq!(
         super::surface_offset_lineage(&ir, &cache, 0),
@@ -985,12 +990,12 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction: procedural.clone(),
+            cache: None,
         },
         source_object: None,
     });
     ir.model.procedural_curves.push(ProceduralCurve::new(
         procedural,
-        curve.clone(),
         ProceduralCurveDefinition::TolerantIntersection {
             supports: surfaces.clone(),
             endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
@@ -1093,7 +1098,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     let serialized = [0, 1]
         .map(|index| {
             (
-                ir.model.procedural_curves[0].curve.clone(),
+                ir.model
+                    .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+                    .expect("intersection owner")
+                    .clone(),
                 surfaces[index].clone(),
                 pcurves[index].clone(),
             )
@@ -1558,33 +1566,33 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         }),
         source_object: None,
     });
-    ir.model.procedural_curves.push(
-        ProceduralCurve::try_new(
-            ProceduralCurveId("nx:test:intersection#0".into()),
-            curve_id.clone(),
-            ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
-                        IntcurveSupportSide {
-                            surface: None,
-                            pcurve: None,
-                            pcurve_parameter_range: None,
-                        },
-                        IntcurveSupportSide {
-                            surface: None,
-                            pcurve: None,
-                            pcurve_parameter_range: None,
-                        },
-                    ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
-                discontinuity_flag: false,
+    let procedural = ProceduralCurve::try_new(
+        ProceduralCurveId("nx:test:intersection#0".into()),
+        ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
             },
-            Some(2.0),
-        )
-        .unwrap(),
-    );
+            discontinuity_flag: false,
+        },
+        Some(2.0),
+    )
+    .unwrap();
+    ir.model
+        .add_procedural_curve(curve_id.clone(), procedural)
+        .unwrap();
 
     let start_point = PointId("nx:test:point#0".into());
     let end_point = PointId("nx:test:point#1".into());
@@ -1640,13 +1648,13 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
+                cache: None,
             },
             source_object: None,
         },
     ]);
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction,
-        surface.clone(),
         ProceduralSurfaceDefinition::Offset {
             support,
             distance: 1.0,

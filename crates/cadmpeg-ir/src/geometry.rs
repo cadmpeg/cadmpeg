@@ -181,6 +181,10 @@ pub enum SurfaceGeometry {
     Procedural {
         /// Construction that produces this carrier.
         construction: ProceduralSurfaceId,
+        /// Solved carrier geometry retained from the source cache.
+        #[serde(skip)]
+        #[cfg_attr(feature = "schema", schemars(skip))]
+        cache: Option<SolvedSurfaceGeometry>,
     },
     /// Source-native polygonal surface with an explicit chordal error bound.
     Polygonal {
@@ -211,6 +215,73 @@ pub enum SurfaceGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// A solved surface cache that cannot recursively contain a procedural carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SolvedSurfaceGeometry(Box<SurfaceGeometry>);
+
+impl SolvedSurfaceGeometry {
+    /// Wrap a non-procedural solved surface geometry.
+    #[must_use]
+    pub fn new(geometry: SurfaceGeometry) -> Result<Self, SurfaceGeometry> {
+        if matches!(geometry, SurfaceGeometry::Procedural { .. }) {
+            Err(geometry)
+        } else {
+            Ok(Self(Box::new(geometry)))
+        }
+    }
+
+    /// Borrow the solved geometry.
+    #[must_use]
+    pub fn as_geometry(&self) -> &SurfaceGeometry {
+        &self.0
+    }
+
+    pub(crate) fn into_geometry(self) -> SurfaceGeometry {
+        *self.0
+    }
+}
+
+impl AsRef<SurfaceGeometry> for SolvedSurfaceGeometry {
+    fn as_ref(&self) -> &SurfaceGeometry {
+        self.as_geometry()
+    }
+}
+
+impl std::ops::Deref for SolvedSurfaceGeometry {
+    type Target = SurfaceGeometry;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_geometry()
+    }
+}
+
+impl SurfaceGeometry {
+    /// Construction that owns this carrier, when it is procedural.
+    #[must_use]
+    pub fn procedural_construction(&self) -> Option<&ProceduralSurfaceId> {
+        match self {
+            Self::Procedural { construction, .. } => Some(construction),
+            _ => None,
+        }
+    }
+
+    /// Geometry used to evaluate this carrier without following a construction.
+    #[must_use]
+    pub fn solved_cache(&self) -> Option<&SurfaceGeometry> {
+        match self {
+            Self::Procedural {
+                cache: Some(geometry),
+                ..
+            } => Some(geometry.as_geometry()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn wire_geometry(&self) -> &SurfaceGeometry {
+        self.solved_cache().unwrap_or(self)
+    }
 }
 
 /// An identified surface carrier.
@@ -304,6 +375,10 @@ pub enum CurveGeometry {
     Procedural {
         /// Construction that produces this carrier.
         construction: ProceduralCurveId,
+        /// Solved carrier geometry retained from the source cache.
+        #[serde(skip)]
+        #[cfg_attr(feature = "schema", schemars(skip))]
+        cache: Option<SolvedCurveGeometry>,
     },
     /// Source-native polyline with an explicit chordal error bound.
     Polyline {
@@ -328,6 +403,89 @@ pub enum CurveGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// A solved curve cache that cannot recursively contain a procedural carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SolvedCurveGeometry(Box<CurveGeometry>);
+
+impl SolvedCurveGeometry {
+    /// Wrap a non-procedural solved curve geometry.
+    #[must_use]
+    pub fn new(geometry: CurveGeometry) -> Result<Self, CurveGeometry> {
+        if matches!(geometry, CurveGeometry::Procedural { .. }) {
+            Err(geometry)
+        } else {
+            Ok(Self(Box::new(geometry)))
+        }
+    }
+
+    /// Borrow the solved geometry.
+    #[must_use]
+    pub fn as_geometry(&self) -> &CurveGeometry {
+        &self.0
+    }
+
+    pub(crate) fn into_geometry(self) -> CurveGeometry {
+        *self.0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn as_geometry_mut(&mut self) -> &mut CurveGeometry {
+        &mut self.0
+    }
+}
+
+impl AsRef<CurveGeometry> for SolvedCurveGeometry {
+    fn as_ref(&self) -> &CurveGeometry {
+        self.as_geometry()
+    }
+}
+
+impl std::ops::Deref for SolvedCurveGeometry {
+    type Target = CurveGeometry;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_geometry()
+    }
+}
+
+impl CurveGeometry {
+    /// Construction that owns this carrier, when it is procedural.
+    #[must_use]
+    pub fn procedural_construction(&self) -> Option<&ProceduralCurveId> {
+        match self {
+            Self::Procedural { construction, .. } => Some(construction),
+            _ => None,
+        }
+    }
+
+    /// Geometry used to evaluate this carrier without following a construction.
+    #[must_use]
+    pub fn solved_cache(&self) -> Option<&CurveGeometry> {
+        match self {
+            Self::Procedural {
+                cache: Some(geometry),
+                ..
+            } => Some(geometry.as_geometry()),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn solved_cache_mut(&mut self) -> Option<&mut CurveGeometry> {
+        match self {
+            Self::Procedural {
+                cache: Some(geometry),
+                ..
+            } => Some(geometry.as_geometry_mut()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn wire_geometry(&self) -> &CurveGeometry {
+        self.solved_cache().unwrap_or(self)
+    }
 }
 
 /// One directed child use in a composite curve.
@@ -406,8 +564,6 @@ pub struct Curve {
 pub struct ProceduralSurface {
     /// Stable construction identity.
     pub id: ProceduralSurfaceId,
-    /// Surface produced by this construction.
-    pub surface: SurfaceId,
     /// Neutral construction definition.
     definition: ProceduralSurfaceDefinition,
     /// Fit contract of a legacy solved cache. Revision-gated forms carry the
@@ -892,13 +1048,11 @@ impl ProceduralSurface {
     #[must_use]
     pub fn new(
         id: ProceduralSurfaceId,
-        surface: SurfaceId,
         definition: ProceduralSurfaceDefinition,
         record_bounds: Option<[Option<f64>; 4]>,
     ) -> Self {
         Self {
             id,
-            surface,
             definition,
             legacy_cache_fit_tolerance: None,
             record_bounds,
@@ -909,7 +1063,6 @@ impl ProceduralSurface {
     /// field with any revision-gated cache form in its definition.
     pub fn try_new(
         id: ProceduralSurfaceId,
-        surface: SurfaceId,
         definition: ProceduralSurfaceDefinition,
         cache_fit_tolerance: Option<f64>,
         record_bounds: Option<[Option<f64>; 4]>,
@@ -918,7 +1071,6 @@ impl ProceduralSurface {
             reconcile_surface_cache_fit_tolerance(&definition, cache_fit_tolerance)?;
         Ok(Self {
             id,
-            surface,
             definition,
             legacy_cache_fit_tolerance,
             record_bounds,
@@ -4092,8 +4244,6 @@ pub enum BlendRadiusLaw {
 pub struct ProceduralCurve {
     /// Stable construction identity.
     pub id: ProceduralCurveId,
-    /// Solved curve produced by this construction.
-    pub curve: CurveId,
     /// Neutral construction definition.
     definition: ProceduralCurveDefinition,
     /// Fit contract of a legacy solved cache. Revision-gated forms carry the
@@ -4859,14 +5009,9 @@ impl ProceduralCurveDefinition {
 impl ProceduralCurve {
     /// Build a procedural curve without a legacy top-level cache.
     #[must_use]
-    pub fn new(
-        id: ProceduralCurveId,
-        curve: CurveId,
-        definition: ProceduralCurveDefinition,
-    ) -> Self {
+    pub fn new(id: ProceduralCurveId, definition: ProceduralCurveDefinition) -> Self {
         Self {
             id,
-            curve,
             definition,
             legacy_cache_fit_tolerance: None,
         }
@@ -4876,7 +5021,6 @@ impl ProceduralCurve {
     /// field with any revision-gated cache form in its definition.
     pub fn try_new(
         id: ProceduralCurveId,
-        curve: CurveId,
         definition: ProceduralCurveDefinition,
         cache_fit_tolerance: Option<f64>,
     ) -> Result<Self, CacheFitToleranceError> {
@@ -4884,7 +5028,6 @@ impl ProceduralCurve {
             reconcile_cache_fit_tolerance(definition.revision_cache(), cache_fit_tolerance)?;
         Ok(Self {
             id,
-            curve,
             definition,
             legacy_cache_fit_tolerance,
         })
@@ -4985,7 +5128,6 @@ impl ProceduralCurve {
 #[derive(Serialize)]
 struct ProceduralSurfaceWriteWire<'a> {
     id: &'a ProceduralSurfaceId,
-    surface: &'a SurfaceId,
     definition: &'a ProceduralSurfaceDefinition,
     #[serde(skip_serializing_if = "Option::is_none")]
     cache_fit_tolerance: Option<f64>,
@@ -4994,9 +5136,10 @@ struct ProceduralSurfaceWriteWire<'a> {
 }
 
 #[derive(Deserialize)]
-struct ProceduralSurfaceReadWire {
+pub(crate) struct ProceduralSurfaceReadWire {
     id: ProceduralSurfaceId,
-    surface: SurfaceId,
+    #[serde(default)]
+    surface: Option<SurfaceId>,
     definition: serde_json::Value,
     #[serde(default)]
     cache_fit_tolerance: Option<f64>,
@@ -5020,16 +5163,16 @@ struct ProceduralSurfaceSchemaWire {
 #[derive(Serialize)]
 struct ProceduralCurveWriteWire<'a> {
     id: &'a ProceduralCurveId,
-    curve: &'a CurveId,
     definition: &'a ProceduralCurveDefinition,
     #[serde(skip_serializing_if = "Option::is_none")]
     cache_fit_tolerance: Option<f64>,
 }
 
 #[derive(Deserialize)]
-struct ProceduralCurveReadWire {
+pub(crate) struct ProceduralCurveReadWire {
     id: ProceduralCurveId,
-    curve: CurveId,
+    #[serde(default)]
+    curve: Option<CurveId>,
     definition: serde_json::Value,
     #[serde(default)]
     cache_fit_tolerance: Option<f64>,
@@ -5130,6 +5273,46 @@ fn stale_variable_blend_cache(value: &serde_json::Value) -> bool {
             == Some(0)
 }
 
+impl ProceduralSurfaceReadWire {
+    pub(crate) fn into_parts(mut self) -> Result<(Option<SurfaceId>, ProceduralSurface), String> {
+        let stale_solved = stale_variable_blend_cache(&self.definition);
+        let revision = inject_revision_cache(
+            &mut self.definition,
+            "tail_enum",
+            self.cache_fit_tolerance,
+            stale_solved,
+        )?;
+        let definition =
+            serde_json::from_value(self.definition).map_err(|error| error.to_string())?;
+        let legacy_cache_fit_tolerance = (!revision).then_some(self.cache_fit_tolerance).flatten();
+        let procedural = ProceduralSurface::try_new(
+            self.id,
+            definition,
+            legacy_cache_fit_tolerance,
+            self.record_bounds,
+        )
+        .map_err(|error| error.to_string())?;
+        Ok((self.surface, procedural))
+    }
+}
+
+impl ProceduralCurveReadWire {
+    pub(crate) fn into_parts(mut self) -> Result<(Option<CurveId>, ProceduralCurve), String> {
+        let revision = inject_revision_cache(
+            &mut self.definition,
+            "cache_enum",
+            self.cache_fit_tolerance,
+            false,
+        )?;
+        let definition =
+            serde_json::from_value(self.definition).map_err(|error| error.to_string())?;
+        let legacy_cache_fit_tolerance = (!revision).then_some(self.cache_fit_tolerance).flatten();
+        let procedural = ProceduralCurve::try_new(self.id, definition, legacy_cache_fit_tolerance)
+            .map_err(|error| error.to_string())?;
+        Ok((self.curve, procedural))
+    }
+}
+
 impl Serialize for ProceduralSurface {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -5137,7 +5320,6 @@ impl Serialize for ProceduralSurface {
     {
         ProceduralSurfaceWriteWire {
             id: &self.id,
-            surface: &self.surface,
             definition: &self.definition,
             cache_fit_tolerance: self.cache_fit_tolerance(),
             record_bounds: self.record_bounds,
@@ -5151,26 +5333,10 @@ impl<'de> Deserialize<'de> for ProceduralSurface {
     where
         D: serde::Deserializer<'de>,
     {
-        let mut wire = ProceduralSurfaceReadWire::deserialize(deserializer)?;
-        let stale_solved = stale_variable_blend_cache(&wire.definition);
-        let revision = inject_revision_cache(
-            &mut wire.definition,
-            "tail_enum",
-            wire.cache_fit_tolerance,
-            stale_solved,
-        )
-        .map_err(serde::de::Error::custom)?;
-        let definition =
-            serde_json::from_value(wire.definition).map_err(serde::de::Error::custom)?;
-        let legacy_cache_fit_tolerance = (!revision).then_some(wire.cache_fit_tolerance).flatten();
-        Self::try_new(
-            wire.id,
-            wire.surface,
-            definition,
-            legacy_cache_fit_tolerance,
-            wire.record_bounds,
-        )
-        .map_err(serde::de::Error::custom)
+        ProceduralSurfaceReadWire::deserialize(deserializer)?
+            .into_parts()
+            .map(|(_, procedural)| procedural)
+            .map_err(serde::de::Error::custom)
     }
 }
 
@@ -5181,7 +5347,6 @@ impl Serialize for ProceduralCurve {
     {
         ProceduralCurveWriteWire {
             id: &self.id,
-            curve: &self.curve,
             definition: &self.definition,
             cache_fit_tolerance: self.cache_fit_tolerance(),
         }
@@ -5194,18 +5359,9 @@ impl<'de> Deserialize<'de> for ProceduralCurve {
     where
         D: serde::Deserializer<'de>,
     {
-        let mut wire = ProceduralCurveReadWire::deserialize(deserializer)?;
-        let revision = inject_revision_cache(
-            &mut wire.definition,
-            "cache_enum",
-            wire.cache_fit_tolerance,
-            false,
-        )
-        .map_err(serde::de::Error::custom)?;
-        let definition =
-            serde_json::from_value(wire.definition).map_err(serde::de::Error::custom)?;
-        let legacy_cache_fit_tolerance = (!revision).then_some(wire.cache_fit_tolerance).flatten();
-        Self::try_new(wire.id, wire.curve, definition, legacy_cache_fit_tolerance)
+        ProceduralCurveReadWire::deserialize(deserializer)?
+            .into_parts()
+            .map(|(_, procedural)| procedural)
             .map_err(serde::de::Error::custom)
     }
 }

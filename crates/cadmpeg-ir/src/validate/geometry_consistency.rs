@@ -51,6 +51,9 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         .map(|curve| (curve.id.0.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
     for procedural in &ir.model.procedural_curves {
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
         if let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
             endpoints,
             tolerance,
@@ -60,7 +63,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         {
             let evaluated = parameterization
                 .parameter_range
-                .map(|parameter| model_curve_point_by_id(&index, &procedural.curve, parameter));
+                .map(|parameter| model_curve_point_by_id(&index, owner, parameter));
             let [Some(start), Some(end)] = evaluated else {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
@@ -93,7 +96,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             ..
         } = procedural.definition()
         {
-            let Some(solved) = curves.get(procedural.curve.0.as_str()) else {
+            let Some(solved) = curves.get(owner.0.as_str()) else {
                 continue;
             };
             let solved = context
@@ -170,7 +173,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             } => (std::borrow::Cow::Borrowed(context), Some(third)),
             _ => continue,
         };
-        let Some(curve) = curves.get(procedural.curve.0.as_str()) else {
+        let Some(curve) = curves.get(owner.0.as_str()) else {
             continue;
         };
         let solved = context
@@ -281,13 +284,13 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .model
         .procedural_curves
         .iter()
-        .map(|curve| {
-            (
-                curve.curve.0.as_str(),
+        .filter_map(|curve| {
+            Some((
+                ir.model.procedural_curve_owner(&curve.id)?.0.as_str(),
                 curve
                     .cache_fit_tolerance()
                     .filter(|value| value.is_finite()),
-            )
+            ))
         })
         .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
@@ -425,7 +428,11 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                 crate::geometry::ProceduralSurfaceDefinition::Subset { .. }
             )
         })
-        .map(|surface| surface.surface.0.as_str())
+        .filter_map(|surface| {
+            ir.model
+                .procedural_surface_owner(&surface.id)
+                .map(|owner| owner.0.as_str())
+        })
         .collect::<HashSet<_>>();
     let pcurves = ir
         .model
@@ -812,7 +819,14 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == *context.surface_id)
+        .find(|procedural| {
+            context
+                .index
+                .ir()
+                .model
+                .procedural_surface_owner(&procedural.id)
+                == Some(context.surface_id)
+        })
         .map(|procedural| procedural.definition())
     {
         let [[u_start, u_end], [v_start, v_end]] = *parameter_ranges;
@@ -838,6 +852,14 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
                 geometry: basis,
             })
         }
+        SurfaceGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => surface_parameter_domains(&SurfacePcurveContext {
+            index: context.index,
+            surface_id: context.surface_id,
+            geometry,
+        }),
         SurfaceGeometry::Plane { .. }
         | SurfaceGeometry::Cylinder { .. }
         | SurfaceGeometry::Cone { .. }

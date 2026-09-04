@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::document::CadIr;
 use crate::geometry::{
     derive_reference_direction, Curve, CurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{
     CoedgeId, CurveId, EdgeId, PointId, ProceduralSurfaceId, SubdId, SurfaceId, VertexId,
@@ -274,20 +274,26 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
             source_object: None,
         },
     ];
+    let construction = ProceduralSurfaceId("synthetic:v2:procedural-surface#sum".into());
     ir.model.surfaces.push(Surface {
         id: SurfaceId("synthetic:v2:surface#sum-cache".into()),
-        geometry: SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.clone(),
+            cache: Some(
+                SolvedSurfaceGeometry::new(SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                })
+                .unwrap(),
+            ),
         },
         source_object: None,
     });
     ir.model
         .procedural_surfaces
         .push(ProceduralSurface::try_new(
-            ProceduralSurfaceId("synthetic:v2:procedural-surface#sum".into()),
-            SurfaceId("synthetic:v2:surface#sum-cache".into()),
+            construction,
             ProceduralSurfaceDefinition::Sum {
                 first: CurveId("synthetic:v2:curve#u".into()),
                 second: CurveId("synthetic:v2:curve#v".into()),

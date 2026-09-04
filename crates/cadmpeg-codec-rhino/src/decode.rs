@@ -3007,15 +3007,10 @@ impl<'a> DecodeContext<'a> {
                     }
                 }
             };
-            candidate
-                .model
-                .procedural_surfaces
-                .push(ProceduralSurface::new(
-                    procedural_id.clone(),
-                    surface_id.clone(),
-                    ir_definition,
-                    None,
-                ));
+            let _attached = candidate.model.add_procedural_surface(
+                surface_id.clone(),
+                ProceduralSurface::new(procedural_id.clone(), ir_definition, None),
+            );
             for id in [surface_id.to_string(), procedural_id.to_string()] {
                 candidate_annotations.exactness.insert(
                     id,
@@ -3090,12 +3085,10 @@ impl<'a> DecodeContext<'a> {
                     geometry: SurfaceGeometry::Nurbs(geometry),
                     source_object: Some(association.clone()),
                 });
-                candidate
-                    .model
-                    .procedural_surfaces
-                    .push(ProceduralSurface::new(
+                let _attached = candidate.model.add_procedural_surface(
+                    surface_id.clone(),
+                    ProceduralSurface::new(
                         procedure_id.clone(),
-                        surface_id.clone(),
                         ProceduralSurfaceDefinition::Extrusion {
                             directrix: directrices[index].clone(),
                             parameter_interval: None,
@@ -3104,7 +3097,8 @@ impl<'a> DecodeContext<'a> {
                             revision_form: None,
                         },
                         None,
-                    ));
+                    ),
+                );
                 annotate_derived(candidate_annotations, &surface_id.to_string());
                 annotate_derived(candidate_annotations, &procedure_id.to_string());
                 links.push(surface_id.to_string());
@@ -4713,13 +4707,11 @@ fn stage_brep_procedural_surface(
     staged
         .draft
         .model_mut()
-        .procedural_surfaces
-        .push(ProceduralSurface::new(
-            procedural_id.clone(),
+        .add_procedural_surface(
             surface_id.clone(),
-            definition,
-            None,
-        ));
+            ProceduralSurface::new(procedural_id.clone(), definition, None),
+        )
+        .map_err(|error| crate::curves::error(0, &error.to_string()))?;
     staged
         .draft
         .exactness(surface_id.to_string(), Exactness::Derived);
@@ -4775,9 +4767,9 @@ fn stage_curve_tree(
             .exactness(procedure_id.to_string(), Exactness::Derived);
         staged_links_procedure(
             staged,
+            id.clone(),
             ProceduralCurve::new(
                 procedure_id,
-                id.clone(),
                 ProceduralCurveDefinition::Compound {
                     parameters: compound.parameters.clone(),
                     component_parameters: compound.parameters[..compound.parameters.len() - 1]
@@ -4790,9 +4782,16 @@ fn stage_curve_tree(
     id
 }
 
-fn staged_links_procedure(staged: &mut BrepDraft, procedure: ProceduralCurve) {
+fn staged_links_procedure(
+    staged: &mut BrepDraft,
+    owner: cadmpeg_ir::ids::CurveId,
+    procedure: ProceduralCurve,
+) {
     staged.links.push(procedure.id.to_string());
-    staged.draft.model_mut().procedural_curves.push(procedure);
+    let _attached = staged
+        .draft
+        .model_mut()
+        .add_procedural_curve(owner, procedure);
 }
 
 fn decode_pcurves(
@@ -5203,15 +5202,18 @@ fn commit_curve_tree(
         } else {
             format!("rhino:object:procedural-curve#{key}.{path}").into()
         };
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            procedure_id,
+        let _attached = ir.model.add_procedural_curve(
             id.clone(),
-            ProceduralCurveDefinition::Compound {
-                parameters: compound.parameters.clone(),
-                component_parameters: compound.parameters[..compound.parameters.len() - 1].to_vec(),
-                components: component_ids,
-            },
-        ));
+            ProceduralCurve::new(
+                procedure_id,
+                ProceduralCurveDefinition::Compound {
+                    parameters: compound.parameters.clone(),
+                    component_parameters: compound.parameters[..compound.parameters.len() - 1]
+                        .to_vec(),
+                    components: component_ids,
+                },
+            ),
+        );
     }
     id
 }

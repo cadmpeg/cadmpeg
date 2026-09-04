@@ -608,7 +608,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .model
         .procedural_curves
         .iter()
-        .find(|procedural| procedural.curve == curve.id)
+        .find(|procedural| ir.model.procedural_curve_owner(&procedural.id) == Some(&curve.id))
         .expect("intersection construction");
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
         supports,
@@ -904,12 +904,12 @@ fn cylinder_plane_transfer_fixture(
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction.clone(),
+            cache: None,
         },
         source_object: None,
     });
     ir.model.procedural_curves.push(ProceduralCurve::new(
         construction,
-        curve.clone(),
         ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext {
                 sides: [
@@ -994,6 +994,7 @@ fn blend_contact_transfer_fixture(
             id: target.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: ProceduralSurfaceId("synthetic:blend-contact-construction".into()),
+                cache: None,
             },
             source_object: None,
         },
@@ -1020,32 +1021,33 @@ fn blend_contact_transfer_fixture(
     } else {
         other_support.clone()
     };
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        ProceduralCurveId("synthetic:blend-contact-spine-construction".into()),
+    let _attached = ir.model.add_procedural_curve(
         spine.clone(),
-        ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(contact_surface),
-                        pcurve_parameter_range: None,
-                        pcurve: Some(contact_pcurve),
-                    },
-                    IntcurveSupportSide {
-                        surface: Some(other_support.clone()),
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+        ProceduralCurve::new(
+            ProceduralCurveId("synthetic:blend-contact-spine-construction".into()),
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(contact_surface),
+                            pcurve_parameter_range: None,
+                            pcurve: Some(contact_pcurve),
+                        },
+                        IntcurveSupportSide {
+                            surface: Some(other_support.clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
             },
-            discontinuity_flag: false,
-        },
-    ));
+        ),
+    );
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         ProceduralSurfaceId("synthetic:blend-contact-construction".into()),
-        target.clone(),
         ProceduralSurfaceDefinition::Blend {
             supports: [
                 Some(BlendSupport {
@@ -1075,33 +1077,31 @@ fn blend_contact_transfer_fixture(
             },
             source_object: None,
         });
-        ir.model.procedural_curves.push(
-            ProceduralCurve::try_new(
-                ProceduralCurveId(format!("synthetic:blend-contact-intersection-{index}")),
-                curve,
-                ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
-                        sides: [
-                            IntcurveSupportSide {
-                                surface: Some(support.clone()),
-                                pcurve_parameter_range: None,
-                                pcurve: Some(source_pcurve.clone()),
-                            },
-                            IntcurveSupportSide {
-                                surface: Some(target.clone()),
-                                pcurve_parameter_range: None,
-                                pcurve: None,
-                            },
-                        ],
-                        parameter_range: [0.0, 1.0],
-                        discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                    },
-                    discontinuity_flag: false,
+        let procedural = ProceduralCurve::try_new(
+            ProceduralCurveId(format!("synthetic:blend-contact-intersection-{index}")),
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(support.clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: Some(source_pcurve.clone()),
+                        },
+                        IntcurveSupportSide {
+                            surface: Some(target.clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
                 },
-                Some(tolerance),
-            )
-            .unwrap(),
-        );
+                discontinuity_flag: false,
+            },
+            Some(tolerance),
+        )
+        .unwrap();
+        ir.model.add_procedural_curve(curve, procedural).unwrap();
     }
     ir
 }
@@ -1142,6 +1142,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
             id: target.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: target_construction.clone(),
+                cache: None,
             },
             source_object: None,
         },
@@ -1157,7 +1158,6 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     });
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         target_construction,
-        target.clone(),
         ProceduralSurfaceDefinition::Blend {
             supports: [
                 Some(BlendSupport {
@@ -1187,32 +1187,34 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        construction,
+    let _attached = ir.model.add_procedural_curve(
         curve.clone(),
-        ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(source),
-                        pcurve_parameter_range: None,
-                        pcurve: Some(PcurveGeometry::Line {
-                            origin: Point2::new(0.0, 0.0),
-                            direction: Point2::new(1.0, 0.0),
-                        }),
-                    },
-                    IntcurveSupportSide {
-                        surface: Some(target),
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+        ProceduralCurve::new(
+            construction,
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(source),
+                            pcurve_parameter_range: None,
+                            pcurve: Some(PcurveGeometry::Line {
+                                origin: Point2::new(0.0, 0.0),
+                                direction: Point2::new(1.0, 0.0),
+                            }),
+                        },
+                        IntcurveSupportSide {
+                            surface: Some(target),
+                            pcurve_parameter_range: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
             },
-            discontinuity_flag: false,
-        },
-    ));
+        ),
+    );
     ir.model.edges.push(Edge {
         id: EdgeId("synthetic:boundary-edge".into()),
         curve: Some(curve),
@@ -1290,16 +1292,18 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        construction,
+    let _attached = ir.model.add_procedural_curve(
         curve.clone(),
-        ProceduralCurveDefinition::TolerantIntersection {
-            supports: [nurbs, plane],
-            endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-            tolerance: 1.0e-8,
-            parameterization: None,
-        },
-    ));
+        ProceduralCurve::new(
+            construction,
+            ProceduralCurveDefinition::TolerantIntersection {
+                supports: [nurbs, plane],
+                endpoints: [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                tolerance: 1.0e-8,
+                parameterization: None,
+            },
+        ),
+    );
     let point_ids = [
         PointId("synthetic:p0".into()),
         PointId("synthetic:p1".into()),
@@ -1359,19 +1363,19 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
     assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let owner = ir
+            .model
+            .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+            .expect("tolerant intersection owner");
         let evaluated = cadmpeg_ir::eval::model_curve_point_by_id(
             &cadmpeg_ir::index::ModelIndex::new(&ir),
-            &ir.model.procedural_curves[0].curve,
+            owner,
             parameter,
         )
         .expect("charted tolerant intersection evaluates");
-        let inverted = cadmpeg_ir::eval::model_curve_parameter_near_point(
-            &ir,
-            &ir.model.procedural_curves[0].curve,
-            evaluated,
-            parameter,
-        )
-        .expect("charted tolerant intersection inverts");
+        let inverted =
+            cadmpeg_ir::eval::model_curve_parameter_near_point(&ir, owner, evaluated, parameter)
+                .expect("charted tolerant intersection inverts");
         assert!((inverted - parameter).abs() < 1.0e-8);
         let points: [Point3; 2] = std::array::from_fn(|side| {
             let uv =
@@ -1477,33 +1481,31 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         param_range: None,
         tolerance: Some(1.0e-8),
     });
-    ir.model.procedural_curves.push(
-        ProceduralCurve::try_new(
-            ProceduralCurveId("nx:test:serialized-boundary".into()),
-            curve,
-            ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
-                        IntcurveSupportSide {
-                            surface: Some(first_support.clone()),
-                            pcurve: None,
-                            pcurve_parameter_range: None,
-                        },
-                        IntcurveSupportSide {
-                            surface: Some(second_support.clone()),
-                            pcurve: None,
-                            pcurve_parameter_range: None,
-                        },
-                    ],
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
-                discontinuity_flag: false,
+    let procedural = ProceduralCurve::try_new(
+        ProceduralCurveId("nx:test:serialized-boundary".into()),
+        ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(first_support.clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(second_support.clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
             },
-            Some(0.25),
-        )
-        .unwrap(),
-    );
+            discontinuity_flag: false,
+        },
+        Some(0.25),
+    )
+    .unwrap();
+    ir.model.add_procedural_curve(curve, procedural).unwrap();
 
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
         &mut ir,

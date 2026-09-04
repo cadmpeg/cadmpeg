@@ -37,7 +37,7 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    CurveGeometry, OffsetSupportExtension, Pcurve, PcurveGeometry, ProceduralCurveDefinition,
+    OffsetSupportExtension, Pcurve, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
@@ -358,6 +358,9 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
         let Some(procedural) = procedural_by_id.get(procedural_id).copied() else {
             continue;
         };
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
             continue;
@@ -382,7 +385,7 @@ pub(crate) fn validated_support_uv_endpoint_witnesses(
                 continue;
             };
             witnesses
-                .entry((procedural.curve.clone(), surface))
+                .entry((owner.clone(), surface))
                 .or_default()
                 .push((
                     pcurve,
@@ -758,6 +761,9 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
             let Some(procedural) = index.procedural_curves(procedural_id.0.as_str()) else {
                 continue;
             };
+            let Some(owner) = index.ir().model.procedural_curve_owner(&procedural.id) else {
+                continue;
+            };
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 continue;
@@ -837,7 +843,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                 } else if fully_validated {
                     if let [Some(first), Some(last)] = endpoints {
                         endpoint_witnesses
-                            .entry((procedural.curve.clone(), surface.clone()))
+                            .entry((owner.clone(), surface.clone()))
                             .or_default()
                             .push((pcurve.clone(), context.parameter_range, [first, last]));
                     }
@@ -917,6 +923,13 @@ fn complete_support_uv_wave(
             let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
                 continue;
             };
+            let Some(owner) = model_index
+                .ir()
+                .model
+                .procedural_curve_owner(&procedural.id)
+            else {
+                continue;
+            };
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 continue;
@@ -946,9 +959,8 @@ fn complete_support_uv_wave(
                 let source_chart_available =
                     source_pcurve.is_some_and(|pcurve| !pcurve_requires_completion(Some(pcurve)));
                 let linear_offset_surface = match &surface.geometry {
-                    SurfaceGeometry::Procedural { construction } => model_index
+                    SurfaceGeometry::Procedural { construction, .. } => model_index
                         .procedural_surfaces(construction.0.as_str())
-                        .filter(|procedural| &procedural.surface == surface_id)
                         .is_some_and(|procedural| {
                             matches!(
                                 procedural.definition(),
@@ -1328,7 +1340,7 @@ fn complete_support_uv_wave(
                     };
                     if let [Some(first), Some(last)] = endpoint_values {
                         endpoint_witnesses
-                            .entry((procedural.curve.clone(), surface_id.clone()))
+                            .entry((owner.clone(), surface_id.clone()))
                             .or_default()
                             .push((pcurve.clone(), parameter_range, [first, last]));
                     }
@@ -1345,12 +1357,16 @@ fn complete_support_uv_wave(
                 let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
             }
         }
-        let cache_backed_curves = ir
+        let cache_backed_constructions = ir
             .model
             .curves
             .iter()
-            .filter(|curve| !matches!(&curve.geometry, CurveGeometry::Procedural { .. }))
-            .map(|curve| curve.id.clone())
+            .filter_map(|curve| {
+                curve
+                    .geometry
+                    .solved_cache()
+                    .and_then(|_| curve.geometry.procedural_construction().cloned())
+            })
             .collect::<BTreeSet<_>>();
         for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
             let Some(procedural) = ir
@@ -1372,7 +1388,7 @@ fn complete_support_uv_wave(
                     false
                 }
             });
-            if completed && cache_backed_curves.contains(&procedural.curve) {
+            if completed && cache_backed_constructions.contains(&procedural.id) {
                 procedural.raise_cache_fit_tolerance(effective_fit_tolerance);
             }
         }
@@ -1490,6 +1506,13 @@ fn complete_coupled_support_uv(
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     for (procedural_id, points, parameters, fit_tolerance, serialized) in pending {
         let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
+            continue;
+        };
+        let Some(owner) = model_index
+            .ir()
+            .model
+            .procedural_curve_owner(&procedural.id)
+        else {
             continue;
         };
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -1636,7 +1659,7 @@ fn complete_coupled_support_uv(
                 };
                 if let Some([Some(first), Some(last)]) = endpoint_values {
                     endpoint_witnesses
-                        .entry((procedural.curve.clone(), surfaces[side].clone()))
+                        .entry((owner.clone(), surfaces[side].clone()))
                         .or_default()
                         .push((pcurve.clone(), parameter_range, [first, last]));
                 }
@@ -1982,11 +2005,14 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         else {
             continue;
         };
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
         for side in &context.sides {
             let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
                 continue;
             };
-            let key = (procedural.curve.clone(), surface.clone());
+            let key = (owner.clone(), surface.clone());
             if !required_keys.contains(&key) {
                 continue;
             }

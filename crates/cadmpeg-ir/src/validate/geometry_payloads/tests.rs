@@ -401,21 +401,26 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
 #[test]
 fn revolution_rejects_equal_intervals() {
     let mut ir = unit_cube();
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        ProceduralSurfaceId("synthetic:test:procedural-surface#equal".into()),
-        ir.model.surfaces[0].id.clone(),
-        ProceduralSurfaceDefinition::Revolution {
-            directrix: ir.model.curves[0].id.clone(),
-            axis_origin: Point3::new(0.0, 0.0, 0.0),
-            axis_direction: Vector3::new(0.0, 0.0, 1.0),
-            angular_interval: [1.0, 1.0],
-            angular_parameter_interval: None,
-            parameter_interval: Some([0.0, 1.0]),
-            transposed: false,
-            revision_form: None,
-        },
-        None,
-    ));
+    let owner = ir.model.surfaces[0].id.clone();
+    ir.model
+        .add_procedural_surface(
+            owner,
+            ProceduralSurface::new(
+                ProceduralSurfaceId("synthetic:test:procedural-surface#equal".into()),
+                ProceduralSurfaceDefinition::Revolution {
+                    directrix: ir.model.curves[0].id.clone(),
+                    axis_origin: Point3::new(0.0, 0.0, 0.0),
+                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                    angular_interval: [1.0, 1.0],
+                    angular_parameter_interval: None,
+                    parameter_interval: Some([0.0, 1.0]),
+                    transposed: false,
+                    revision_form: None,
+                },
+                None,
+            ),
+        )
+        .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()

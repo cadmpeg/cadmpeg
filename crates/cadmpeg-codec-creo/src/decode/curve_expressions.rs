@@ -532,11 +532,10 @@ pub(crate) fn transfer_curve_expression_features(
                 geometry: CurveGeometry::Unknown { record: None },
                 source_object: None,
             });
-            ir.model.procedural_curves.push(ProceduralCurve::new(
-                procedural_id,
+            let _attached = ir.model.add_procedural_curve(
                 curve_id,
-                procedural_definition,
-            ));
+                ProceduralCurve::new(procedural_id, procedural_definition),
+            );
         }
         let definition = match helix {
             Some(helix) => neutral_helix.unwrap_or_else(|| IrFeatureDefinition::HelixNativeAxis {

@@ -331,13 +331,20 @@ impl<'a> Builder<'a> {
                 .model
                 .procedural_surfaces
                 .iter()
-                .map(|surface| (surface.surface.as_str(), surface))
+                .filter_map(|surface| {
+                    Some((
+                        ir.model.procedural_surface_owner(&surface.id)?.as_str(),
+                        surface,
+                    ))
+                })
                 .collect(),
             procedural_curves: ir
                 .model
                 .procedural_curves
                 .iter()
-                .map(|curve| (curve.curve.as_str(), curve))
+                .filter_map(|curve| {
+                    Some((ir.model.procedural_curve_owner(&curve.id)?.as_str(), curve))
+                })
                 .collect(),
             edge_coedges,
             surface_refs: HashMap::new(),
@@ -3687,7 +3694,8 @@ impl<'a> Builder<'a> {
                         || *minor_radius < 0.0
                         || (minor_radius.abs() > major_radius.abs()
                             && !self.ir.model.procedural_surfaces.iter().any(|procedural| {
-                                procedural.surface == surface.id
+                                self.ir.model.procedural_surface_owner(&procedural.id)
+                                    == Some(&surface.id)
                                     && self.written_procedural_surfaces.contains(&procedural.id.0)
                                     && matches!(
                                         procedural.definition(),

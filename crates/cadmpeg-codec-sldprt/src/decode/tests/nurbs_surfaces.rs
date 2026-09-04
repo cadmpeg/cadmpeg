@@ -245,6 +245,7 @@ fn merged_sites_retain_procedural_surface_constructions() {
                     &surface.geometry,
                     cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
                         construction: candidate,
+                        ..
                     } if candidate == &construction.id
                 )
             })

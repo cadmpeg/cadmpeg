@@ -267,11 +267,9 @@ fn procedural_source_parameter_map(
     ir: &CadIr,
     support: &PcurveSupport<'_>,
 ) -> ProceduralSourceParameterMap {
-    let procedural = ir
-        .model
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| procedural.surface == *support.surface_id);
+    let procedural = ir.model.procedural_surfaces.iter().find(|procedural| {
+        ir.model.procedural_surface_owner(&procedural.id) == Some(support.surface_id)
+    });
     if let Some(procedural) = procedural.filter(|procedural| {
         matches!(
             procedural.definition(),
@@ -285,7 +283,7 @@ fn procedural_source_parameter_map(
         );
     }
     match support.geometry {
-        SurfaceGeometry::Procedural { construction } => {
+        SurfaceGeometry::Procedural { construction, .. } => {
             procedural_pcurve_parameter_map(ir, construction).map_or(
                 ProceduralSourceParameterMap::Unavailable,
                 ProceduralSourceParameterMap::Mapped,
@@ -2265,15 +2263,13 @@ pub(super) fn project(
                 geometry: support_geometry.clone(),
                 source_object: Some(source_object(entry)),
             });
-            candidate
-                .model_mut()
-                .procedural_surfaces
-                .push(ProceduralSurface::new(
+            let _attached = candidate.model_mut().add_procedural_surface(
+                derived_surface_id.clone(),
+                ProceduralSurface::new(
                     ProceduralSurfaceId(format!(
                         "iges:model:procedural-surface#D{}:implicit-outer",
                         entry.sequence
                     )),
-                    derived_surface_id.clone(),
                     ProceduralSurfaceDefinition::CurveBounded {
                         support: surface_id.clone(),
                         boundaries: implicit_boundary_curves,
@@ -2281,7 +2277,8 @@ pub(super) fn project(
                         implicit_outer: true,
                     },
                     support_parameter_bounds,
-                ));
+                ),
+            );
             derived_surface_id
         } else {
             surface_id

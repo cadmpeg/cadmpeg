@@ -176,24 +176,26 @@ pub(crate) fn append_consolidated_revolutions(
                 u32::from(revolution.profile_allocation_id),
             )),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            ProceduralSurfaceId(format!("catia:consolidated:surface-revolution#{index}")),
+        let _attached = ir.model.add_procedural_surface(
             surface,
-            ProceduralSurfaceDefinition::Revolution {
-                directrix,
-                axis_origin: origin,
-                axis_direction: axis,
-                angular_interval: [
-                    revolution.angular_range[0] / revolution.angular_scale,
-                    revolution.angular_range[1] / revolution.angular_scale,
-                ],
-                angular_parameter_interval: Some(revolution.angular_range),
-                parameter_interval: Some(revolution.profile_range),
-                transposed: false,
-                revision_form: None,
-            },
-            None,
-        ));
+            ProceduralSurface::new(
+                ProceduralSurfaceId(format!("catia:consolidated:surface-revolution#{index}")),
+                ProceduralSurfaceDefinition::Revolution {
+                    directrix,
+                    axis_origin: origin,
+                    axis_direction: axis,
+                    angular_interval: [
+                        revolution.angular_range[0] / revolution.angular_scale,
+                        revolution.angular_range[1] / revolution.angular_scale,
+                    ],
+                    angular_parameter_interval: Some(revolution.angular_range),
+                    parameter_interval: Some(revolution.profile_range),
+                    transposed: false,
+                    revision_form: None,
+                },
+                None,
+            ),
+        );
         if let Some(geometry) = torus_geometry {
             bindings.push(ConsolidatedRevolutionBinding {
                 geometry,
@@ -1161,25 +1163,27 @@ pub(crate) fn append_freeform_surface_pools(
             format!("support_ref:{:08x}", offset.support_id),
             Exactness::ByteExact,
         );
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            procedural_id,
+        let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurfaceDefinition::Offset {
-                support: carrier_ids[carrier].clone(),
-                distance: offset.distance,
-                u_sense: None,
-                v_sense: None,
-                support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
-            },
-            Some([
-                Some(offset.domain[0]),
-                Some(offset.domain[1]),
-                Some(offset.domain[2]),
-                Some(offset.domain[3]),
-            ]),
-        ));
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Offset {
+                    support: carrier_ids[carrier].clone(),
+                    distance: offset.distance,
+                    u_sense: None,
+                    v_sense: None,
+                    support_extension: None,
+                    extension_flags: Vec::new(),
+                    revision_form: None,
+                },
+                Some([
+                    Some(offset.domain[0]),
+                    Some(offset.domain[1]),
+                    Some(offset.domain[2]),
+                    Some(offset.domain[3]),
+                ]),
+            ),
+        );
     }
 
     let _ = append_consolidated_line_profiles(ir, annotations, data, records);
@@ -1299,6 +1303,7 @@ pub(crate) fn append_freeform_surface_pools(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: procedural_id.clone(),
+                cache: None,
             },
             source_object: None,
         });
@@ -1313,7 +1318,6 @@ pub(crate) fn append_freeform_surface_pools(
         );
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
-            surface_id,
             ProceduralSurfaceDefinition::RollingBallJet {
                 degree: jet.degree,
                 multiplicities,
@@ -1556,10 +1560,14 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .filter_map(|(edge_index, edge)| {
             let curve_id = edge.curve.as_ref()?;
             let curve_index = *curve_indices.get(curve_id)?;
-            if !matches!(
-                ir.model.curves[curve_index].geometry,
-                CurveGeometry::Unknown { .. }
-            ) {
+            let CurveGeometry::Procedural {
+                construction,
+                cache: Some(cache),
+            } = &ir.model.curves[curve_index].geometry
+            else {
+                return None;
+            };
+            if !matches!(cache.as_ref(), CurveGeometry::Unknown { .. }) {
                 return None;
             }
             let procedures = ir
@@ -1568,7 +1576,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 .iter()
                 .enumerate()
                 .filter_map(|(index, procedure)| {
-                    if procedure.curve != *curve_id {
+                    if procedure.id != *construction {
                         return None;
                     }
                     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -1714,20 +1722,22 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             "resolved_pcurve_support",
                             Exactness::Derived,
                         );
-                        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                            procedural_id,
+                        let _attached = ir.model.add_procedural_surface(
                             id.clone(),
-                            ProceduralSurfaceDefinition::Offset {
-                                support,
-                                distance: *offset,
-                                u_sense: None,
-                                v_sense: None,
-                                support_extension: None,
-                                extension_flags: Vec::new(),
-                                revision_form: None,
-                            },
-                            None,
-                        ));
+                            ProceduralSurface::new(
+                                procedural_id,
+                                ProceduralSurfaceDefinition::Offset {
+                                    support,
+                                    distance: *offset,
+                                    u_sense: None,
+                                    v_sense: None,
+                                    support_extension: None,
+                                    extension_flags: Vec::new(),
+                                    revision_form: None,
+                                },
+                                None,
+                            ),
+                        );
                         surface_ids.insert(key, id.clone());
                         id
                     }
@@ -2308,11 +2318,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             annotations
                 .derived(&procedural_id, "curve")
                 .derived(&procedural_id, "definition");
-            ir.model.procedural_curves.push(ProceduralCurve::new(
-                procedural_id,
-                curve_id,
-                definition,
-            ));
+            let _attached = ir
+                .model
+                .add_procedural_curve(curve_id, ProceduralCurve::new(procedural_id, definition));
         }
     }
     binding_counts.partner_supports = partner_support_blocks.len();
@@ -2662,6 +2670,7 @@ pub(crate) fn append_a8_rolling_ball_pools(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: procedural_id.clone(),
+                cache: None,
             },
             source_object: Some(cgm_source("surface", jet.object_id)),
         });
@@ -2677,12 +2686,9 @@ pub(crate) fn append_a8_rolling_ball_pools(
             ),
             Exactness::ByteExact,
         );
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            procedural_id,
-            surface_id,
-            definition,
-            None,
-        ));
+        ir.model
+            .procedural_surfaces
+            .push(ProceduralSurface::new(procedural_id, definition, None));
     }
 }
 
@@ -3076,22 +3082,24 @@ mod tests {
                 use_curve: None,
             });
         }
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            ProceduralCurveId("standard-intersection".to_string()),
+        let _attached = ir.model.add_procedural_curve(
             curve_id.clone(),
-            ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: std::array::from_fn(|side| IntcurveSupportSide {
-                        surface: Some(support_ids[side].clone()),
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    }),
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: std::array::from_fn(|_| Vec::new()),
+            ProceduralCurve::new(
+                ProceduralCurveId("standard-intersection".to_string()),
+                ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext {
+                        sides: std::array::from_fn(|side| IntcurveSupportSide {
+                            surface: Some(support_ids[side].clone()),
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        }),
+                        parameter_range: [0.0, 1.0],
+                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                    },
+                    discontinuity_flag: false,
                 },
-                discontinuity_flag: false,
-            },
-        ));
+            ),
+        );
 
         let attached = append_resolved_consolidated_surface_curves(
             &mut ir,
@@ -3308,22 +3316,24 @@ mod tests {
                 source_object: None,
             });
         }
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            ProceduralCurveId("standard-plane-intersection".to_string()),
+        let _attached = ir.model.add_procedural_curve(
             curve_id,
-            ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: std::array::from_fn(|side| IntcurveSupportSide {
-                        surface: Some(support_ids[side].clone()),
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    }),
-                    parameter_range: [0.0, 1.0],
-                    discontinuities: std::array::from_fn(|_| Vec::new()),
+            ProceduralCurve::new(
+                ProceduralCurveId("standard-plane-intersection".to_string()),
+                ProceduralCurveDefinition::Intersection {
+                    context: IntcurveSupportContext {
+                        sides: std::array::from_fn(|side| IntcurveSupportSide {
+                            surface: Some(support_ids[side].clone()),
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        }),
+                        parameter_range: [0.0, 1.0],
+                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                    },
+                    discontinuity_flag: false,
                 },
-                discontinuity_flag: false,
-            },
-        ));
+            ),
+        );
 
         let attached = append_resolved_consolidated_surface_curves(
             &mut ir,

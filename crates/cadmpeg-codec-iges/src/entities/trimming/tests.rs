@@ -623,7 +623,9 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface == face.surface)
+        .find(|surface| {
+            result.ir().model.procedural_surface_owner(&surface.id) == Some(&face.surface)
+        })
         .unwrap();
     match procedural.definition() {
         ProceduralSurfaceDefinition::CurveBounded {
@@ -1494,7 +1496,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .iter()
         .find(|surface| surface.id.0 == "iges:model:surface#D5")
         .unwrap();
-    let SurfaceGeometry::Procedural { construction } = &surface.geometry else {
+    let SurfaceGeometry::Procedural { construction, .. } = &surface.geometry else {
         panic!("expected a procedural revolution surface");
     };
     let procedural = result

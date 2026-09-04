@@ -40,7 +40,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
     SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{BodyId, FaceId};
+use cadmpeg_ir::ids::{BodyId, CurveId, FaceId, SurfaceId};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::{Deserialize, Serialize};
@@ -102,9 +102,9 @@ pub struct AsmBrep {
     /// Parameter-space curve carriers.
     pub pcurves: Vec<Pcurve>,
     /// Native procedural definitions for solved surface carriers.
-    pub procedural_surfaces: Vec<ProceduralSurface>,
+    pub procedural_surfaces: Vec<(SurfaceId, ProceduralSurface)>,
     /// Native procedural definitions for solved curve caches.
-    pub procedural_curves: Vec<ProceduralCurve>,
+    pub procedural_curves: Vec<(CurveId, ProceduralCurve)>,
     /// Kernel continuity classifications stored on solved edges.
     pub edge_continuities: Vec<EdgeContinuity>,
     /// Native owner-coedge selectors stored on solved edges.

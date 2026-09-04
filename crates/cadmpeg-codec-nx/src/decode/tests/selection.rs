@@ -83,12 +83,17 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
     };
     assert_ne!(supports[0], supports[1]);
     assert!(parameterization.is_none());
+    let owner = result
+        .ir()
+        .model
+        .procedural_curve_owner(&procedural.id)
+        .expect("intersection owner");
     let curve = result
         .ir()
         .model
         .curves
         .iter()
-        .find(|curve| curve.id == procedural.curve)
+        .find(|curve| curve.id == *owner)
         .expect("intersection carrier");
     assert!(matches!(curve.geometry, CurveGeometry::Procedural { .. }));
     assert!(result
@@ -96,7 +101,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .model
         .edges
         .iter()
-        .filter(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+        .filter(|edge| edge.curve.as_ref() == Some(owner))
         .all(|edge| edge.param_range.is_none()));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -134,7 +139,9 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+        .find(|edge| {
+            edge.curve.as_ref() == result.ir().model.procedural_curve_owner(&procedural.id)
+        })
         .expect("carrying edge");
     assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -279,7 +286,9 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
             .model
             .edges
             .iter()
-            .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+            .find(|edge| {
+                edge.curve.as_ref() == result.ir().model.procedural_curve_owner(&procedural.id)
+            })
             .expect("carrying edge");
         assert_eq!(edge.param_range, None);
         assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -302,7 +311,13 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
             .model
             .curves
             .iter()
-            .find(|curve| curve.id == result.ir().model.procedural_curves[0].curve)
+            .find(|curve| {
+                result
+                    .ir()
+                    .model
+                    .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
+                    == Some(&curve.id)
+            })
             .expect("intersection curve")
             .geometry,
         CurveGeometry::Nurbs(_)

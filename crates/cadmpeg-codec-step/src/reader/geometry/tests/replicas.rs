@@ -261,7 +261,8 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         matches!(
             curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
-                if curve.curve.as_str() == "step:data:curve#8"
+                if result.ir().model.procedural_curve_owner(&curve.id).map(CurveId::as_str)
+                    == Some("step:data:curve#8")
                     && source.as_str() == "step:data:curve#6"
         )
     }));
@@ -392,7 +393,12 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .procedural_surfaces
         .iter()
         .any(|surface| {
-            surface.surface.as_str() == "step:data:surface#10"
+            decoded
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("step:data:surface#10")
                 && matches!(
                     surface.definition(),
                     cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
@@ -418,7 +424,8 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             matches!(
                 surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
-                    if surface.surface.as_str() == "step:data:surface#8"
+                    if decoded.ir().model.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
+                        == Some("step:data:surface#8")
                         && source.as_str() == "step:data:surface#9"
             )
         }));
@@ -730,7 +737,8 @@ fn replicas_retain_bounded_parent_relations() {
         matches!(
             curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
-                if curve.curve.as_str() == "step:data:curve#9"
+                if decoded.ir().model.procedural_curve_owner(&curve.id).map(CurveId::as_str)
+                    == Some("step:data:curve#9")
                     && source.as_str() == "step:data:curve#7"
         )
     }));
@@ -743,7 +751,8 @@ fn replicas_retain_bounded_parent_relations() {
             matches!(
                 surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
-                    if surface.surface.as_str() == "step:data:surface#13"
+                    if decoded.ir().model.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
+                        == Some("step:data:surface#13")
                         && source.as_str() == "step:data:surface#12"
             )
         }));

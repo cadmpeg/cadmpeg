@@ -20,27 +20,45 @@ use crate::writer::primitives::history_change_kind;
 pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.model.procedural_surfaces {
-        if !surface_owners.insert(&procedural.surface) {
+        let owner = target
+            .model
+            .procedural_surface_owner(&procedural.id)
+            .ok_or_else(|| {
+                CodecError::InvalidInput(format!(
+                    "procedural surface {} has no unique carrier",
+                    procedural.id
+                ))
+            })?;
+        if !surface_owners.insert(owner) {
             return Err(CodecError::InvalidInput(format!(
                 "surface {} has multiple procedural constructions",
-                procedural.surface
+                owner
             )));
         }
         let surface = target
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == procedural.surface)
+            .find(|surface| surface.id == *owner)
             .ok_or_else(|| {
                 CodecError::InvalidInput(format!(
                     "procedural surface {} references missing carrier {}",
-                    procedural.id, procedural.surface
+                    procedural.id, owner
                 ))
             })?;
         match &surface.geometry {
-            SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
-            SurfaceGeometry::Procedural { construction } if *construction == procedural.id => {}
-            SurfaceGeometry::Procedural { construction } => {
+            SurfaceGeometry::Procedural {
+                cache: Some(geometry),
+                ..
+            } if matches!(
+                geometry.as_ref(),
+                SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. }
+            ) => {}
+            SurfaceGeometry::Procedural {
+                construction,
+                cache: None,
+            } if *construction == procedural.id => {}
+            SurfaceGeometry::Procedural { construction, .. } => {
                 return Err(CodecError::InvalidInput(format!(
                     "surface {} links construction {construction} but is produced by {}",
                     surface.id, procedural.id
@@ -57,29 +75,42 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
 
     let mut curve_owners = BTreeSet::new();
     for procedural in &target.model.procedural_curves {
-        if !curve_owners.insert(&procedural.curve) {
+        let owner = target
+            .model
+            .procedural_curve_owner(&procedural.id)
+            .ok_or_else(|| {
+                CodecError::InvalidInput(format!(
+                    "procedural curve {} has no unique carrier",
+                    procedural.id
+                ))
+            })?;
+        if !curve_owners.insert(owner) {
             return Err(CodecError::InvalidInput(format!(
                 "curve {} has multiple procedural constructions",
-                procedural.curve
+                owner
             )));
         }
         let curve = target
             .model
             .curves
             .iter()
-            .find(|curve| curve.id == procedural.curve)
+            .find(|curve| curve.id == *owner)
             .ok_or_else(|| {
                 CodecError::InvalidInput(format!(
                     "procedural curve {} references missing carrier {}",
-                    procedural.id, procedural.curve
+                    procedural.id, owner
                 ))
             })?;
         match &curve.geometry {
-            CurveGeometry::Nurbs(_) => {}
-            CurveGeometry::Procedural { construction }
-                if *construction == procedural.id && procedural.cache_fit_tolerance().is_none() => {
-            }
-            CurveGeometry::Procedural { construction } => {
+            CurveGeometry::Procedural {
+                cache: Some(geometry),
+                ..
+            } if matches!(geometry.as_ref(), CurveGeometry::Nurbs(_)) => {}
+            CurveGeometry::Procedural {
+                construction,
+                cache: None,
+            } if *construction == procedural.id && procedural.cache_fit_tolerance().is_none() => {}
+            CurveGeometry::Procedural { construction, .. } => {
                 return Err(CodecError::InvalidInput(format!(
                     "curve {} links construction {construction} but is produced by {} or carries a cache fit",
                     curve.id, procedural.id

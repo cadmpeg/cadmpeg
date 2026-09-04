@@ -1084,7 +1084,7 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == *surface);
+        .find(|procedural| ir.model.procedural_surface_owner(&procedural.id) == Some(surface));
     let parameters =
         procedural.map(|procedural| offset_indicator_parameters(procedural.record_bounds));
     let parameters = parameters.unwrap_or([0.0, 0.0]);
@@ -1365,20 +1365,22 @@ pub(super) fn project(
             geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+        let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurfaceDefinition::Ruled {
-                first: CurveId(format!("iges:model:curve#D{first_sequence}")),
-                second: CurveId(format!("iges:model:curve#D{second_sequence}")),
-            },
-            Some([
-                Some(first_interval[0]),
-                Some(first_interval[1]),
-                Some(second_interval[0]),
-                Some(second_interval[1]),
-            ]),
-        ));
+            ProceduralSurface::new(
+                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+                ProceduralSurfaceDefinition::Ruled {
+                    first: CurveId(format!("iges:model:curve#D{first_sequence}")),
+                    second: CurveId(format!("iges:model:curve#D{second_sequence}")),
+                },
+                Some([
+                    Some(first_interval[0]),
+                    Some(first_interval[1]),
+                    Some(second_interval[0]),
+                    Some(second_interval[1]),
+                ]),
+            ),
+        );
         losses.push(
             IgesLossCode::RuledDevelopabilityNotTransferred
                 .note("Type 118 developability is retained only in the native entity record")
@@ -1501,26 +1503,29 @@ pub(super) fn project(
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
+                    cache: None,
                 },
                 source_object: Some(source_object(entry)),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                procedural_id,
+            let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: procedural_directrix,
-                    parameter_interval: Some(source_interval),
-                    direction,
-                    native_position: Some(target),
-                    revision_form: None,
-                },
-                Some([
-                    Some(carrier_interval[0]),
-                    Some(carrier_interval[1]),
-                    None,
-                    None,
-                ]),
-            ));
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Extrusion {
+                        directrix: procedural_directrix,
+                        parameter_interval: Some(source_interval),
+                        direction,
+                        native_position: Some(target),
+                        revision_form: None,
+                    },
+                    Some([
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
+                        None,
+                        None,
+                    ]),
+                ),
+            );
             decoded.insert(entry.sequence);
             continue;
         };
@@ -1607,23 +1612,25 @@ pub(super) fn project(
             }),
             source_object: Some(source_object(entry)),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+        let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurfaceDefinition::Extrusion {
-                directrix: procedural_directrix,
-                parameter_interval: Some(source_interval),
-                direction,
-                native_position: Some(target),
-                revision_form: None,
-            },
-            Some([
-                Some(carrier_interval[0]),
-                Some(carrier_interval[1]),
-                None,
-                None,
-            ]),
-        ));
+            ProceduralSurface::new(
+                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+                ProceduralSurfaceDefinition::Extrusion {
+                    directrix: procedural_directrix,
+                    parameter_interval: Some(source_interval),
+                    direction,
+                    native_position: Some(target),
+                    revision_form: None,
+                },
+                Some([
+                    Some(carrier_interval[0]),
+                    Some(carrier_interval[1]),
+                    None,
+                    None,
+                ]),
+            ),
+        );
         decoded.insert(entry.sequence);
     }
 
@@ -1762,29 +1769,32 @@ pub(super) fn project(
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
+                    cache: None,
                 },
                 source_object: Some(source_object(entry)),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                procedural_id,
+            let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix: procedural_directrix,
-                    axis_origin: procedural_axis_origin,
-                    axis_direction: procedural_axis_direction,
-                    angular_interval: [start_angle, end_angle],
-                    angular_parameter_interval: None,
-                    parameter_interval: Some(source_interval),
-                    transposed: false,
-                    revision_form: None,
-                },
-                Some([
-                    Some(carrier_interval[0]),
-                    Some(carrier_interval[1]),
-                    None,
-                    None,
-                ]),
-            ));
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: procedural_directrix,
+                        axis_origin: procedural_axis_origin,
+                        axis_direction: procedural_axis_direction,
+                        angular_interval: [start_angle, end_angle],
+                        angular_parameter_interval: None,
+                        parameter_interval: Some(source_interval),
+                        transposed: false,
+                        revision_form: None,
+                    },
+                    Some([
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
+                        None,
+                        None,
+                    ]),
+                ),
+            );
             decoded.insert(entry.sequence);
             continue;
         };
@@ -1902,26 +1912,31 @@ pub(super) fn project(
             false
         };
         if procedural_is_exact {
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+            let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurfaceDefinition::Revolution {
-                    directrix: procedural_directrix,
-                    axis_origin: procedural_axis_origin,
-                    axis_direction: procedural_axis_direction,
-                    angular_interval: [start_angle, end_angle],
-                    angular_parameter_interval: None,
-                    parameter_interval: Some(source_interval),
-                    transposed: false,
-                    revision_form: None,
-                },
-                Some([
-                    Some(carrier_interval[0]),
-                    Some(carrier_interval[1]),
-                    None,
-                    None,
-                ]),
-            ));
+                ProceduralSurface::new(
+                    ProceduralSurfaceId(format!(
+                        "iges:model:procedural-surface#D{}",
+                        entry.sequence
+                    )),
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: procedural_directrix,
+                        axis_origin: procedural_axis_origin,
+                        axis_direction: procedural_axis_direction,
+                        angular_interval: [start_angle, end_angle],
+                        angular_parameter_interval: None,
+                        parameter_interval: Some(source_interval),
+                        transposed: false,
+                        revision_form: None,
+                    },
+                    Some([
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
+                        None,
+                        None,
+                    ]),
+                ),
+            );
         }
         decoded.insert(entry.sequence);
     }
@@ -2264,23 +2279,25 @@ pub(super) fn project(
             geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+        let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurfaceDefinition::Exact {
-                parameters: SplineSurfaceParameters::OrderedRanges {
-                    ranges: [u_range, v_range],
+            ProceduralSurface::new(
+                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+                ProceduralSurfaceDefinition::Exact {
+                    parameters: SplineSurfaceParameters::OrderedRanges {
+                        ranges: [u_range, v_range],
+                    },
+                    extension: 0,
+                    revision_form: None,
                 },
-                extension: 0,
-                revision_form: None,
-            },
-            Some([
-                Some(u_range[0]),
-                Some(u_range[1]),
-                Some(v_range[0]),
-                Some(v_range[1]),
-            ]),
-        ));
+                Some([
+                    Some(u_range[0]),
+                    Some(u_range[1]),
+                    Some(v_range[0]),
+                    Some(v_range[1]),
+                ]),
+            ),
+        );
         decoded.insert(entry.sequence);
     }
 
@@ -2392,20 +2409,22 @@ pub(super) fn project(
             geometry,
             source_object: Some(source_object(entry)),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+        let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurfaceDefinition::Offset {
-                support: support_id,
-                distance: signed_distance,
-                u_sense: Some(0),
-                v_sense: Some(0),
-                support_extension: None,
-                extension_flags: Vec::new(),
-                revision_form: None,
-            },
-            None,
-        ));
+            ProceduralSurface::new(
+                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+                ProceduralSurfaceDefinition::Offset {
+                    support: support_id,
+                    distance: signed_distance,
+                    u_sense: Some(0),
+                    v_sense: Some(0),
+                    support_extension: None,
+                    extension_flags: Vec::new(),
+                    revision_form: None,
+                },
+                None,
+            ),
+        );
         decoded.insert(entry.sequence);
     }
 

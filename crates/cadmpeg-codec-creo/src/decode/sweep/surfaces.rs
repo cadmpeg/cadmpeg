@@ -672,21 +672,23 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     instance_path: Vec::new(),
                 }),
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
-                procedural_id,
+            let _attached = ir.model.add_procedural_surface(
                 surface_id,
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix: curve_id,
-                    parameter_interval: Some([
-                        *directrix.knots.first().expect("validated spline knots"),
-                        *directrix.knots.last().expect("validated spline knots"),
-                    ]),
-                    direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
-                    native_position: None,
-                    revision_form: None,
-                },
-                None,
-            ));
+                ProceduralSurface::new(
+                    procedural_id,
+                    ProceduralSurfaceDefinition::Extrusion {
+                        directrix: curve_id,
+                        parameter_interval: Some([
+                            *directrix.knots.first().expect("validated spline knots"),
+                            *directrix.knots.last().expect("validated spline knots"),
+                        ]),
+                        direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
+                        native_position: None,
+                        revision_form: None,
+                    },
+                    None,
+                ),
+            );
             transferred += 1;
         }
     }

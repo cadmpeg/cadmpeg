@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de::DeserializeOwned, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer,
+};
 
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
 
@@ -15,7 +17,12 @@ use crate::drawings::Drawing;
 use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
 };
-use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
+use crate::geometry::{
+    Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveReadWire, ProceduralSurface,
+    ProceduralSurfaceReadWire, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
+};
+use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::native::Native;
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
@@ -80,10 +87,276 @@ macro_rules! arena_registry {
 }
 pub(crate) use arena_registry;
 
+struct SurfaceWire<'a>(&'a Surface);
+
+impl Serialize for SurfaceWire<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Surface", 3)?;
+        state.serialize_field("id", &self.0.id)?;
+        state.serialize_field("geometry", self.0.geometry.wire_geometry())?;
+        if let Some(source_object) = &self.0.source_object {
+            state.serialize_field("source_object", source_object)?;
+        }
+        state.end()
+    }
+}
+
+struct CurveWire<'a>(&'a Curve);
+
+impl Serialize for CurveWire<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Curve", 3)?;
+        state.serialize_field("id", &self.0.id)?;
+        state.serialize_field("geometry", self.0.geometry.wire_geometry())?;
+        if let Some(source_object) = &self.0.source_object {
+            state.serialize_field("source_object", source_object)?;
+        }
+        state.end()
+    }
+}
+
+struct ProceduralSurfaceWire<'a> {
+    owner: Option<&'a SurfaceId>,
+    procedural: &'a ProceduralSurface,
+}
+
+impl Serialize for ProceduralSurfaceWire<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let owner = self.owner.ok_or_else(|| {
+            <S::Error as serde::ser::Error>::custom(format_args!(
+                "procedural surface {} has no unique owning surface",
+                self.procedural.id
+            ))
+        })?;
+        let mut state = serializer.serialize_struct("ProceduralSurface", 5)?;
+        state.serialize_field("id", &self.procedural.id)?;
+        state.serialize_field("surface", owner)?;
+        state.serialize_field("definition", self.procedural.definition())?;
+        if let Some(cache_fit_tolerance) = self.procedural.cache_fit_tolerance() {
+            state.serialize_field("cache_fit_tolerance", &cache_fit_tolerance)?;
+        }
+        if let Some(record_bounds) = self.procedural.record_bounds {
+            state.serialize_field("record_bounds", &record_bounds)?;
+        }
+        state.end()
+    }
+}
+
+struct ProceduralCurveWire<'a> {
+    owner: Option<&'a CurveId>,
+    procedural: &'a ProceduralCurve,
+}
+
+impl Serialize for ProceduralCurveWire<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let owner = self.owner.ok_or_else(|| {
+            <S::Error as serde::ser::Error>::custom(format_args!(
+                "procedural curve {} has no unique owning curve",
+                self.procedural.id
+            ))
+        })?;
+        let mut state = serializer.serialize_struct("ProceduralCurve", 4)?;
+        state.serialize_field("id", &self.procedural.id)?;
+        state.serialize_field("curve", owner)?;
+        state.serialize_field("definition", self.procedural.definition())?;
+        if let Some(cache_fit_tolerance) = self.procedural.cache_fit_tolerance() {
+            state.serialize_field("cache_fit_tolerance", &cache_fit_tolerance)?;
+        }
+        state.end()
+    }
+}
+
+macro_rules! model_write_type {
+    (surfaces, $ty:ty, $l:lifetime) => { Vec<SurfaceWire<$l>> };
+    (curves, $ty:ty, $l:lifetime) => { Vec<CurveWire<$l>> };
+    (procedural_surfaces, $ty:ty, $l:lifetime) => { Vec<ProceduralSurfaceWire<$l>> };
+    (procedural_curves, $ty:ty, $l:lifetime) => { Vec<ProceduralCurveWire<$l>> };
+    ($field:ident, $ty:ty, $l:lifetime) => { &$l Vec<$ty> };
+}
+
+macro_rules! model_write_value {
+    ($model:expr, surfaces) => {
+        $model.surfaces.iter().map(SurfaceWire).collect()
+    };
+    ($model:expr, curves) => {
+        $model.curves.iter().map(CurveWire).collect()
+    };
+    ($model:expr, procedural_surfaces) => {
+        $model
+            .procedural_surfaces
+            .iter()
+            .map(|procedural| ProceduralSurfaceWire {
+                owner: $model.procedural_surface_owner(&procedural.id),
+                procedural,
+            })
+            .collect()
+    };
+    ($model:expr, procedural_curves) => {
+        $model
+            .procedural_curves
+            .iter()
+            .map(|procedural| ProceduralCurveWire {
+                owner: $model.procedural_curve_owner(&procedural.id),
+                procedural,
+            })
+            .collect()
+    };
+    ($model:expr, $field:ident) => {
+        &$model.$field
+    };
+}
+
+macro_rules! model_read_type {
+    (procedural_surfaces, $ty:ty) => { Vec<ProceduralSurfaceReadWire> };
+    (procedural_curves, $ty:ty) => { Vec<ProceduralCurveReadWire> };
+    ($field:ident, $ty:ty) => { Vec<$ty> };
+}
+
+macro_rules! model_read_value {
+    ($wire:expr, procedural_surfaces) => {
+        Vec::new()
+    };
+    ($wire:expr, procedural_curves) => {
+        Vec::new()
+    };
+    ($wire:expr, $field:ident) => {
+        std::mem::take(&mut $wire.$field)
+    };
+}
+
+#[derive(Serialize, Deserialize)]
+struct SurfaceCacheRewrite {
+    geometry: SurfaceGeometry,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CurveCacheRewrite {
+    geometry: CurveGeometry,
+}
+
+fn rewrite_surface<R: EntityRewrite>(
+    rewrite: &mut R,
+    mut surface: Surface,
+) -> Result<Surface, R::Error> {
+    let cache = match &mut surface.geometry {
+        SurfaceGeometry::Procedural { cache, .. } => cache.take(),
+        _ => None,
+    };
+    let cache = match cache {
+        Some(cache) => Some(
+            rewrite
+                .rewrite(SurfaceCacheRewrite {
+                    geometry: cache.into_geometry(),
+                })?
+                .geometry,
+        ),
+        None => None,
+    };
+    let mut surface = rewrite.rewrite(surface)?;
+    if let (Some(cache), SurfaceGeometry::Procedural { cache: slot, .. }) =
+        (cache, &mut surface.geometry)
+    {
+        *slot = SolvedSurfaceGeometry::new(cache).ok();
+    }
+    Ok(surface)
+}
+
+fn rewrite_curve<R: EntityRewrite>(rewrite: &mut R, mut curve: Curve) -> Result<Curve, R::Error> {
+    let cache = match &mut curve.geometry {
+        CurveGeometry::Procedural { cache, .. } => cache.take(),
+        _ => None,
+    };
+    let cache = match cache {
+        Some(cache) => Some(
+            rewrite
+                .rewrite(CurveCacheRewrite {
+                    geometry: cache.into_geometry(),
+                })?
+                .geometry,
+        ),
+        None => None,
+    };
+    let mut curve = rewrite.rewrite(curve)?;
+    if let (Some(cache), CurveGeometry::Procedural { cache: slot, .. }) =
+        (cache, &mut curve.geometry)
+    {
+        *slot = SolvedCurveGeometry::new(cache).ok();
+    }
+    Ok(curve)
+}
+
+macro_rules! model_rewrite_entity {
+    ($rewrite:expr, surfaces, $entity:expr) => {
+        rewrite_surface($rewrite, $entity)
+    };
+    ($rewrite:expr, curves, $entity:expr) => {
+        rewrite_curve($rewrite, $entity)
+    };
+    ($rewrite:expr, $field:ident, $entity:expr) => {
+        $rewrite.rewrite($entity)
+    };
+}
+
+macro_rules! sorted_model_type {
+    (surfaces, $ty:ty, $l:lifetime) => { Vec<SurfaceWire<$l>> };
+    (curves, $ty:ty, $l:lifetime) => { Vec<CurveWire<$l>> };
+    (procedural_surfaces, $ty:ty, $l:lifetime) => { Vec<ProceduralSurfaceWire<$l>> };
+    (procedural_curves, $ty:ty, $l:lifetime) => { Vec<ProceduralCurveWire<$l>> };
+    ($field:ident, $ty:ty, $l:lifetime) => { Vec<&$l $ty> };
+}
+
+macro_rules! sorted_model_value {
+    ($model:expr, surfaces) => {
+        sorted_refs(&$model.surfaces)
+            .into_iter()
+            .map(SurfaceWire)
+            .collect()
+    };
+    ($model:expr, curves) => {
+        sorted_refs(&$model.curves)
+            .into_iter()
+            .map(CurveWire)
+            .collect()
+    };
+    ($model:expr, procedural_surfaces) => {
+        sorted_refs(&$model.procedural_surfaces)
+            .into_iter()
+            .map(|procedural| ProceduralSurfaceWire {
+                owner: $model.procedural_surface_owner(&procedural.id),
+                procedural,
+            })
+            .collect()
+    };
+    ($model:expr, procedural_curves) => {
+        sorted_refs(&$model.procedural_curves)
+            .into_iter()
+            .map(|procedural| ProceduralCurveWire {
+                owner: $model.procedural_curve_owner(&procedural.id),
+                procedural,
+            })
+            .collect()
+    };
+    ($model:expr, $field:ident) => {
+        sorted_refs(&$model.$field)
+    };
+}
+
 macro_rules! declare_model {
     ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
         /// Format-neutral entity arenas connected by typed IDs.
-        #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Default, PartialEq)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         pub struct Model {
             $(
@@ -91,6 +364,67 @@ macro_rules! declare_model {
                 #[doc = $doc]
                 pub $field: Vec<$ty>,
             )*
+        }
+
+        #[derive(Serialize)]
+        struct ModelWriteWire<'a> {
+            $(
+                $(#[$attribute])*
+                $field: model_write_type!($field, $ty, 'a),
+            )*
+        }
+
+        #[derive(Deserialize)]
+        struct ModelReadWire {
+            $(
+                $(#[$attribute])*
+                $field: model_read_type!($field, $ty),
+            )*
+        }
+
+        impl Serialize for Model {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                ModelWriteWire {
+                    $($field: model_write_value!(self, $field),)*
+                }
+                .serialize(serializer)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for Model {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let mut wire = ModelReadWire::deserialize(deserializer)?;
+                let procedural_surfaces = std::mem::take(&mut wire.procedural_surfaces);
+                let procedural_curves = std::mem::take(&mut wire.procedural_curves);
+                let mut model = Self {
+                    $($field: model_read_value!(wire, $field),)*
+                };
+                for wire in procedural_surfaces {
+                    let (owner, procedural) = wire.into_parts().map_err(serde::de::Error::custom)?;
+                    let owner = owner.ok_or_else(|| serde::de::Error::custom(
+                        "procedural surface wire is missing surface",
+                    ))?;
+                    model
+                        .add_procedural_surface(owner, procedural)
+                        .map_err(serde::de::Error::custom)?;
+                }
+                for wire in procedural_curves {
+                    let (owner, procedural) = wire.into_parts().map_err(serde::de::Error::custom)?;
+                    let owner = owner.ok_or_else(|| serde::de::Error::custom(
+                        "procedural curve wire is missing curve",
+                    ))?;
+                    model
+                        .add_procedural_curve(owner, procedural)
+                        .map_err(serde::de::Error::custom)?;
+                }
+                Ok(model)
+            }
         }
 
         impl Model {
@@ -153,7 +487,7 @@ macro_rules! declare_model {
                 $(
                     self.$field.reserve(other.$field.len());
                     for entity in other.$field {
-                        self.$field.push(rewrite.rewrite(entity)?);
+                        self.$field.push(model_rewrite_entity!(rewrite, $field, entity)?);
                     }
                 )*
                 Ok(())
@@ -185,14 +519,14 @@ macro_rules! declare_model_view {
         /// Every model arena borrowed in canonical identity order.
         #[derive(Serialize)]
         pub(crate) struct SortedModel<'a> {
-            $($(#[$attribute])* $field: Vec<&'a $ty>,)*
+            $($(#[$attribute])* $field: sorted_model_type!($field, $ty, 'a),)*
         }
 
         impl Model {
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedModel<'_> {
                 SortedModel {
-                    $($field: sorted_refs(&self.$field),)*
+                    $($field: sorted_model_value!(self, $field),)*
                 }
             }
         }
@@ -211,6 +545,181 @@ pub const IR_VERSION: &str = "5";
 arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
+
+/// Failure to attach a procedural construction to its sole carrier.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+pub struct ProceduralCarrierError {
+    message: String,
+}
+
+impl ProceduralCarrierError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl Model {
+    /// Returns the unique surface that carries `construction`.
+    #[must_use]
+    pub fn procedural_surface_owner(
+        &self,
+        construction: &ProceduralSurfaceId,
+    ) -> Option<&SurfaceId> {
+        let mut owners = self
+            .surfaces
+            .iter()
+            .filter(|surface| surface.geometry.procedural_construction() == Some(construction));
+        let owner = &owners.next()?.id;
+        owners.next().is_none().then_some(owner)
+    }
+
+    /// Returns the unique curve that carries `construction`.
+    #[must_use]
+    pub fn procedural_curve_owner(&self, construction: &ProceduralCurveId) -> Option<&CurveId> {
+        let mut owners = self
+            .curves
+            .iter()
+            .filter(|curve| curve.geometry.procedural_construction() == Some(construction));
+        let owner = &owners.next()?.id;
+        owners.next().is_none().then_some(owner)
+    }
+
+    /// Attaches one procedural surface construction to its carrier.
+    pub fn add_procedural_surface(
+        &mut self,
+        owner: SurfaceId,
+        procedural: ProceduralSurface,
+    ) -> Result<(), ProceduralCarrierError> {
+        if self
+            .procedural_surfaces
+            .iter()
+            .any(|existing| existing.id == procedural.id)
+        {
+            return Err(ProceduralCarrierError::new(format!(
+                "procedural surface construction {} already exists",
+                procedural.id
+            )));
+        }
+        if let Some(existing_owner) = self.surfaces.iter().find(|surface| {
+            surface.id != owner
+                && surface.geometry.procedural_construction() == Some(&procedural.id)
+        }) {
+            return Err(ProceduralCarrierError::new(format!(
+                "procedural surface construction {} already owns surface {}",
+                procedural.id, existing_owner.id
+            )));
+        }
+        let surface = self
+            .surfaces
+            .iter_mut()
+            .find(|surface| surface.id == owner)
+            .ok_or_else(|| {
+                ProceduralCarrierError::new(format!(
+                    "procedural surface {} references missing surface {owner}",
+                    procedural.id
+                ))
+            })?;
+        match &surface.geometry {
+            SurfaceGeometry::Procedural {
+                construction,
+                cache: None,
+            } if *construction == procedural.id => {
+                if procedural.cache_fit_tolerance().is_some() {
+                    return Err(ProceduralCarrierError::new(format!(
+                        "direct procedural surface {owner} cannot carry a solved-cache tolerance"
+                    )));
+                }
+            }
+            SurfaceGeometry::Procedural { construction, .. } => {
+                return Err(ProceduralCarrierError::new(format!(
+                    "surface {owner} is already owned by procedural construction {construction}"
+                )));
+            }
+            geometry => {
+                let cache = SolvedSurfaceGeometry::new(geometry.clone()).map_err(|_| {
+                    ProceduralCarrierError::new(format!(
+                        "surface {owner} already has a procedural construction"
+                    ))
+                })?;
+                surface.geometry = SurfaceGeometry::Procedural {
+                    construction: procedural.id.clone(),
+                    cache: Some(cache),
+                };
+            }
+        }
+        self.procedural_surfaces.push(procedural);
+        Ok(())
+    }
+
+    /// Attaches one procedural curve construction to its carrier.
+    pub fn add_procedural_curve(
+        &mut self,
+        owner: CurveId,
+        procedural: ProceduralCurve,
+    ) -> Result<(), ProceduralCarrierError> {
+        if self
+            .procedural_curves
+            .iter()
+            .any(|existing| existing.id == procedural.id)
+        {
+            return Err(ProceduralCarrierError::new(format!(
+                "procedural curve construction {} already exists",
+                procedural.id
+            )));
+        }
+        if let Some(existing_owner) = self.curves.iter().find(|curve| {
+            curve.id != owner && curve.geometry.procedural_construction() == Some(&procedural.id)
+        }) {
+            return Err(ProceduralCarrierError::new(format!(
+                "procedural curve construction {} already owns curve {}",
+                procedural.id, existing_owner.id
+            )));
+        }
+        let curve = self
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == owner)
+            .ok_or_else(|| {
+                ProceduralCarrierError::new(format!(
+                    "procedural curve {} references missing curve {owner}",
+                    procedural.id
+                ))
+            })?;
+        match &curve.geometry {
+            CurveGeometry::Procedural {
+                construction,
+                cache: None,
+            } if *construction == procedural.id => {
+                if procedural.cache_fit_tolerance().is_some() {
+                    return Err(ProceduralCarrierError::new(format!(
+                        "direct procedural curve {owner} cannot carry a solved-cache tolerance"
+                    )));
+                }
+            }
+            CurveGeometry::Procedural { construction, .. } => {
+                return Err(ProceduralCarrierError::new(format!(
+                    "curve {owner} is already owned by procedural construction {construction}"
+                )));
+            }
+            geometry => {
+                let cache = SolvedCurveGeometry::new(geometry.clone()).map_err(|_| {
+                    ProceduralCarrierError::new(format!(
+                        "curve {owner} already has a procedural construction"
+                    ))
+                })?;
+                curve.geometry = CurveGeometry::Procedural {
+                    construction: procedural.id.clone(),
+                    cache: Some(cache),
+                };
+            }
+        }
+        self.procedural_curves.push(procedural);
+        Ok(())
+    }
+}
 
 fn deserialize_ir_version<'de, D>(deserializer: D) -> Result<(), D::Error>
 where

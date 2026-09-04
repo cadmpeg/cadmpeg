@@ -772,11 +772,11 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     assert_eq!(range, Some([0.0, 3.0]));
     assert_eq!(ir.model.curves[0].id, id);
     assert_eq!(
-        ir.model.curves[0].geometry,
-        CurveGeometry::Line {
+        ir.model.curves[0].geometry.solved_cache(),
+        Some(&CurveGeometry::Line {
             origin: Point3::new(1.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
-        }
+        })
     );
     let [procedural] = ir.model.procedural_curves.as_slice() else {
         panic!("one procedural curve");
@@ -784,7 +784,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("intersection construction");
     };
-    assert_eq!(procedural.curve, id);
+    assert_eq!(ir.model.procedural_curve_owner(&procedural.id), Some(&id));
     assert!(context.sides[0]
         .surface
         .as_ref()
@@ -1111,7 +1111,10 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("intersection construction");
     };
-    assert_eq!(procedural.curve, curve);
+    assert_eq!(
+        ir.model.procedural_curve_owner(&procedural.id),
+        Some(&curve)
+    );
     assert_eq!(context.parameter_range, [2.0, 5.0]);
     assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
 }
@@ -1404,14 +1407,17 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         panic!("one procedural surface");
     };
     assert_eq!(
-        procedural.surface.0,
-        "catia:standard:edge-support-surface#21"
+        ir.model
+            .procedural_surface_owner(&procedural.id)
+            .map(|id| id.0.as_str()),
+        Some("catia:standard:edge-support-surface#21")
     );
     assert_eq!(procedural.definition(), &rolling_ball_definition);
-    assert!(matches!(
-        ir.model.procedural_curves.as_slice(),
-        [ProceduralCurve { curve: bound, .. }] if bound == &curve
-    ));
+    assert!(ir
+        .model
+        .procedural_curves
+        .iter()
+        .any(|construction| ir.model.procedural_curve_owner(&construction.id) == Some(&curve)));
 }
 
 #[test]

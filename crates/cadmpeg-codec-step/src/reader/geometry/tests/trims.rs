@@ -43,7 +43,14 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface.as_str() == "step:data:surface#8")
+        .find(|surface| {
+            decoded
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("step:data:surface#8")
+        })
         .expect("trimmed surface construction");
     assert!(matches!(
         procedural.definition(),
@@ -132,7 +139,14 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface.as_str() == "step:data:surface#6")
+        .find(|surface| {
+            decoded
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("step:data:surface#6")
+        })
         .expect("cyclic trimmed surface construction");
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
         parameter_ranges,
@@ -208,7 +222,14 @@ fn rectangular_trimmed_surface_unwraps_both_periodic_directions_and_senses() {
             .model
             .procedural_surfaces
             .iter()
-            .find(|surface| surface.surface.as_str() == surface_id)
+            .find(|surface| {
+                decoded
+                    .ir()
+                    .model
+                    .procedural_surface_owner(&surface.id)
+                    .map(SurfaceId::as_str)
+                    == Some(surface_id)
+            })
             .expect("periodic trimmed surface construction");
         assert!(matches!(
             construction.definition(),
@@ -251,7 +272,9 @@ fn rectangular_trimmed_surface_keeps_topology_pcurves_in_local_uv_space() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface == face.surface)
+        .find(|surface| {
+            decoded.ir().model.procedural_surface_owner(&surface.id) == Some(&face.surface)
+        })
         .expect("trimmed face construction");
     assert!(matches!(
         construction.definition(),

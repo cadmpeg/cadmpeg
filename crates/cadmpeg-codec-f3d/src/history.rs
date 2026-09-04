@@ -8522,7 +8522,7 @@ pub(crate) fn historical_topology(
             })
         })
         .collect::<Vec<_>>();
-    for procedural in &brep.procedural_surfaces {
+    for (owner, procedural) in &brep.procedural_surfaces {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { radius, .. } =
             procedural.definition()
         else {
@@ -8531,7 +8531,7 @@ pub(crate) fn historical_topology(
         let cadmpeg_ir::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
             continue;
         };
-        let Some(surface) = entity_ref(&procedural.surface.0) else {
+        let Some(surface) = entity_ref(&owner.0) else {
             continue;
         };
         surface_radii.retain(|candidate| candidate.surface != surface);

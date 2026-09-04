@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
-    ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily,
+    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, Surface, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
@@ -132,18 +132,19 @@ fn append_oriented_wire_curve(
         annotations
             .derived(&construction_id, "curve")
             .derived(&construction_id, "definition");
-        if let Ok(procedural) = ProceduralCurve::try_new(
-            construction_id.clone(),
-            curve_id.clone(),
-            definition,
-            cache_fit_tolerance,
+        match (
+            ProceduralCurve::try_new(construction_id.clone(), definition, cache_fit_tolerance),
+            SolvedCurveGeometry::new(geometry),
         ) {
-            ir.model.procedural_curves.push(procedural);
-            CurveGeometry::Procedural {
-                construction: construction_id,
+            (Ok(procedural), Ok(cache)) => {
+                ir.model.procedural_curves.push(procedural);
+                CurveGeometry::Procedural {
+                    construction: construction_id,
+                    cache: Some(cache),
+                }
             }
-        } else {
-            geometry
+            (_, Err(geometry)) => geometry,
+            (Err(_), Ok(cache)) => cache.as_geometry().clone(),
         }
     } else {
         geometry
@@ -164,18 +165,14 @@ fn append_oriented_wire_curve(
     });
 }
 
-fn source_wire_procedural(
-    ir: &CadIr,
-    curve_id: &CurveId,
-    geometry: &CurveGeometry,
-) -> Option<WireSourceProcedural> {
-    let CurveGeometry::Procedural { construction } = geometry else {
+fn source_wire_procedural(ir: &CadIr, geometry: &CurveGeometry) -> Option<WireSourceProcedural> {
+    let CurveGeometry::Procedural { construction, .. } = geometry else {
         return None;
     };
     ir.model
         .procedural_curves
         .iter()
-        .find(|candidate| candidate.id == *construction && candidate.curve == *curve_id)
+        .find(|candidate| candidate.id == *construction)
         .map(|candidate| WireSourceProcedural {
             construction_id: candidate.id.clone(),
             definition: candidate.definition().clone(),
@@ -344,7 +341,7 @@ fn transfer_closed_wire_loops(
                                     .entry(curve.clone())
                                     .or_insert_with(|| {
                                         source_geometry.as_ref().and_then(|geometry| {
-                                            source_wire_procedural(ir, curve, geometry)
+                                            source_wire_procedural(ir, geometry)
                                         })
                                     })
                                     .is_some()
@@ -365,7 +362,7 @@ fn transfer_closed_wire_loops(
                     } else if let Some(geometry) = source_geometry {
                         let source_procedural = source_curve_procedurals
                             .entry(curve.clone())
-                            .or_insert_with(|| source_wire_procedural(ir, curve, &geometry))
+                            .or_insert_with(|| source_wire_procedural(ir, &geometry))
                             .clone();
                         let oriented = if reversed {
                             match source_procedural.as_ref() {
@@ -408,7 +405,6 @@ fn transfer_closed_wire_loops(
                                             .iter_mut()
                                             .find(|candidate| {
                                                 candidate.id == source_procedural.construction_id
-                                                    && candidate.curve == *curve
                                             })
                                             .map(|candidate| {
                                                 candidate.replace_definition(definition.clone());
@@ -757,14 +753,13 @@ pub(crate) fn try_decode_zero_entity(
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Procedural {
                     construction: construction_id.clone(),
+                    cache: None,
                 },
                 source_object: None,
             });
-            ir.model.procedural_curves.push(ProceduralCurve::new(
-                construction_id,
-                curve_id.clone(),
-                definition,
-            ));
+            ir.model
+                .procedural_curves
+                .push(ProceduralCurve::new(construction_id, definition));
             support_curve_ids.insert(support.record_ordinal, curve_id);
             transferred_support_curves += 1;
         }
@@ -1275,14 +1270,16 @@ mod tests {
             id: curve_id.clone(),
             geometry: CurveGeometry::Procedural {
                 construction: construction_id.clone(),
+                cache: None,
             },
             source_object: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            construction_id.clone(),
-            curve_id.clone(),
-            definition.clone(),
-        ));
+        ir.model
+            .add_procedural_curve(
+                curve_id.clone(),
+                ProceduralCurve::new(construction_id.clone(), definition.clone()),
+            )
+            .unwrap();
         let support_runs = vec![
             crate::families::zero_entity::records::ZeroEntitySupportRun {
                 carrier_pos: 0,
@@ -1352,7 +1349,7 @@ mod tests {
             .expect("derived curve")
             .geometry
         {
-            CurveGeometry::Procedural { construction } => construction.clone(),
+            CurveGeometry::Procedural { construction, .. } => construction.clone(),
             _ => panic!("derived curve remains procedural"),
         };
         assert_ne!(derived_construction, construction_id);

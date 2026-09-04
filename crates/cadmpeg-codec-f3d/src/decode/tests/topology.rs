@@ -1204,7 +1204,9 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
             .model
             .procedural_surfaces
             .iter()
-            .find(|procedural| procedural.surface == surface.id)
+            .find(|procedural| {
+                result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            })
             .unwrap_or_else(|| panic!("{family} must retain its construction identity"));
         let ProceduralSurfaceDefinition::Unknown {
             record: Some(record),

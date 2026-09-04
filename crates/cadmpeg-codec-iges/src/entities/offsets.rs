@@ -806,19 +806,21 @@ pub(super) fn project(
             param_range: Some([start, end]),
             tolerance: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve::new(
-            ProceduralCurveId(format!("iges:model:procedural-curve#D{}", entry.sequence)),
+        let _attached = ir.model.add_procedural_curve(
             curve_id,
-            ProceduralCurveDefinition::Offset {
-                source: offset_source_id,
-                distance,
-                support: None,
-                direction: None,
-                normal: Some(normal),
-                parameter_range: Some([start, end]),
-                distance_law,
-            },
-        ));
+            ProceduralCurve::new(
+                ProceduralCurveId(format!("iges:model:procedural-curve#D{}", entry.sequence)),
+                ProceduralCurveDefinition::Offset {
+                    source: offset_source_id,
+                    distance,
+                    support: None,
+                    direction: None,
+                    normal: Some(normal),
+                    parameter_range: Some([start, end]),
+                    distance_law,
+                },
+            ),
+        );
         wire_edges.push(edge_id);
         decoded.insert(entry.sequence);
     }

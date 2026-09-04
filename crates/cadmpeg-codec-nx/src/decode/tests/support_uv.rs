@@ -134,6 +134,12 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         SerializedSupportUv::default(),
     )];
     let validated_lanes = BTreeSet::from([(procedural.id.clone(), side.0)]);
+    let owner = result
+        .ir()
+        .model
+        .procedural_curve_owner(&procedural.id)
+        .expect("intersection owner")
+        .clone();
 
     let witnesses = crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
         result.ir(),
@@ -144,7 +150,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
     assert_eq!(
         crate::decode::pcurves::endpoint_witness_for_candidate(
             &witnesses,
-            &(procedural.curve.clone(), side.1.clone()),
+            &(owner.clone(), side.1.clone()),
             &pcurve,
             parameter_range,
         ),
@@ -153,7 +159,7 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
     assert_eq!(
         crate::decode::pcurves::endpoint_witness_for_candidate(
             &witnesses,
-            &(procedural.curve.clone(), side.1),
+            &(owner, side.1),
             &pcurve,
             [parameter_range[0], parameter_range[1] + 1.0],
         ),
@@ -185,7 +191,12 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
             .expect("charted support lane");
         (
             procedural.id.clone(),
-            procedural.curve.clone(),
+            result
+                .ir()
+                .model
+                .procedural_curve_owner(&procedural.id)
+                .expect("intersection owner")
+                .clone(),
             side.surface.clone().unwrap(),
             side.pcurve.clone().unwrap(),
             context.parameter_range,
@@ -284,6 +295,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             id: offset.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: offset_construction.clone(),
+                cache: None,
             },
             source_object: None,
         },
@@ -299,7 +311,6 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     ]);
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         offset_construction,
-        offset.clone(),
         ProceduralSurfaceDefinition::Offset {
             support,
             distance: 0.75,
@@ -316,29 +327,31 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         geometry: CurveGeometry::Unknown { record: None },
         source_object: None,
     });
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        procedural_id.clone(),
+    let _attached = ir.model.add_procedural_curve(
         curve,
-        ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(offset.clone()),
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    },
-                    IntcurveSupportSide {
-                        surface: Some(plane),
-                        pcurve: None,
-                        pcurve_parameter_range: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+        ProceduralCurve::new(
+            procedural_id.clone(),
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(offset.clone()),
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                        IntcurveSupportSide {
+                            surface: Some(plane),
+                            pcurve: None,
+                            pcurve_parameter_range: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
             },
-            discontinuity_flag: false,
-        },
-    ));
+        ),
+    );
 
     let offset_parameters = [Point2::new(0.2, 0.45), Point2::new(0.4, 0.45)];
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);

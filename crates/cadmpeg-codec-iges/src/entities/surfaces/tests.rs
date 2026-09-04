@@ -8,6 +8,7 @@ use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::Point3;
 
 use crate::loss::IgesLossCode;
@@ -505,7 +506,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         .iter()
         .find(|surface| surface.id.0 == "iges:model:surface#D5")
         .expect("line revolution surface");
-    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } = &surface.geometry
     else {
         panic!("expected an exact construction-backed revolution");
     };
@@ -619,7 +620,8 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .iter()
             .find(|surface| surface.id.0 == "iges:model:surface#D5")
             .expect("hyperbola revolution surface");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
+            &surface.geometry
         else {
             panic!("expected a construction-backed revolution surface");
         };
@@ -706,13 +708,18 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         .iter()
         .find(|surface| surface.id.0 == "iges:model:surface#D5")
         .expect("trimmed revolution support");
-    assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+    assert!(matches!(
+        surface.geometry.solved_cache(),
+        Some(SurfaceGeometry::Nurbs(_))
+    ));
     let procedural = result
         .ir()
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.surface == surface.id)
+        .find(|procedural| {
+            result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+        })
         .expect("trimmed revolution construction");
     assert_eq!(
         procedural.record_bounds,
@@ -842,7 +849,14 @@ fn decode_solves_a_tabulated_surface_from_a_type_142_model_carrier() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface.0 == "iges:model:surface#D9")
+        .find(|surface| {
+            result
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("iges:model:surface#D9")
+        })
         .expect("Type 122 neutral carrier");
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { directrix, .. } =
         procedural.definition()
@@ -883,7 +897,8 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .iter()
             .find(|surface| surface.id.0 == "iges:model:surface#D3")
             .expect("hyperbola tabulated surface");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
+            &surface.geometry
         else {
             panic!("expected a construction-backed tabulated surface");
         };
@@ -978,7 +993,8 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .iter()
             .find(|surface| surface.id.0 == "iges:model:surface#D5")
             .expect("placed tabulated surface");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } =
+            &surface.geometry
         else {
             panic!("expected a construction-backed placed tabulated surface");
         };
@@ -1069,15 +1085,17 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             .find(|surface| surface.id.0 == "iges:model:surface#D5")
             .expect("placed NURBS tabulated surface");
         assert!(matches!(
-            surface.geometry,
-            cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
+            surface.geometry.solved_cache(),
+            Some(cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_))
         ));
         let procedural = result
             .ir()
             .model
             .procedural_surfaces
             .iter()
-            .find(|procedural| procedural.surface == surface.id)
+            .find(|procedural| {
+                result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            })
             .expect("placed NURBS tabulated construction");
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
             directrix,
@@ -1197,7 +1215,14 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
         .model
         .procedural_surfaces
         .iter()
-        .find(|surface| surface.surface.0 == "iges:model:surface#D1")
+        .find(|surface| {
+            result
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("iges:model:surface#D1")
+        })
         .expect("Type 128 parameter-domain record");
     assert_eq!(
         procedural.record_bounds,

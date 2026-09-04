@@ -3275,11 +3275,6 @@ pub(crate) fn validate_procedural_surface_edits(
         if after == before {
             continue;
         }
-        if before.id != after.id || before.surface != after.surface {
-            return Err(CodecError::NotImplemented(format!(
-                "F3D procedural-surface edit changes immutable carrier fields: {id}"
-            )));
-        }
         let edit = match (before.definition(), after.definition()) {
             (
                 ProceduralSurfaceDefinition::Extrusion {
@@ -3438,11 +3433,6 @@ pub(crate) fn validate_procedural_curve_edits(
     let mut edits = BTreeMap::new();
     for (id, before) in baseline {
         let after = target[id];
-        if after.curve != before.curve {
-            return Err(CodecError::NotImplemented(format!(
-                "F3D procedural-curve edit changes its solved curve: {id}"
-            )));
-        }
         let definition = match (before.definition(), after.definition()) {
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix { .. },

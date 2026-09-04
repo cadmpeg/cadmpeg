@@ -1844,18 +1844,20 @@ fn geometry_signal_excludes_opaque_carriers() {
 
     assert!(!has_transferred_geometry(&ir));
 
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        ProceduralSurfaceId("procedural".to_string()),
+    let _attached = ir.model.add_procedural_surface(
         surface_id,
-        ProceduralSurfaceDefinition::Exact {
-            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
-                ranges: [[0.0, 1.0], [0.0, 1.0]],
+        ProceduralSurface::new(
+            ProceduralSurfaceId("procedural".to_string()),
+            ProceduralSurfaceDefinition::Exact {
+                parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+                    ranges: [[0.0, 1.0], [0.0, 1.0]],
+                },
+                extension: 0,
+                revision_form: None,
             },
-            extension: 0,
-            revision_form: None,
-        },
-        None,
-    ));
+            None,
+        ),
+    );
 
     assert!(has_transferred_geometry(&ir));
 }

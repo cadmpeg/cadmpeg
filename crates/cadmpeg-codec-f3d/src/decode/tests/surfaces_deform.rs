@@ -66,7 +66,11 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let surface_id = source_less.model.procedural_surfaces[0].surface.clone();
+    let surface_id = source_less
+        .model
+        .procedural_surface_owner(&source_less.model.procedural_surfaces[0].id)
+        .expect("procedural surface owner")
+        .clone();
     source_less
         .model
         .surfaces
@@ -95,7 +99,11 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let curve_id = source_less.model.procedural_curves[0].curve.clone();
+    let curve_id = source_less
+        .model
+        .procedural_curve_owner(&source_less.model.procedural_curves[0].id)
+        .expect("procedural curve owner")
+        .clone();
     source_less
         .model
         .curves

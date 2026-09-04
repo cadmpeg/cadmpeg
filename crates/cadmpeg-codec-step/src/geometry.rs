@@ -21,6 +21,10 @@ const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1.0e-12;
 
 pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
     match surface {
+        SurfaceGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => surface_is_supported(geometry),
         SurfaceGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && surface_is_supported(basis)
         }
@@ -78,6 +82,10 @@ fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
 
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
     match curve {
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => curve_is_supported(geometry),
         CurveGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && curve_is_supported(basis)
         }
@@ -391,6 +399,10 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
 /// Emit an analytic or NURBS surface carrier.
 pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
     Some(match g {
+        SurfaceGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => return surface(e, geometry),
         SurfaceGeometry::Plane {
             origin,
             normal,
@@ -468,6 +480,10 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
 /// Emit an analytic or NURBS 3D curve carrier.
 pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
     Some(match g {
+        CurveGeometry::Procedural {
+            cache: Some(geometry),
+            ..
+        } => return curve(e, geometry),
         CurveGeometry::Line {
             origin,
             direction: d,

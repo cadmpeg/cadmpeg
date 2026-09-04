@@ -265,7 +265,7 @@ pub(crate) fn surface_transfer_coverage(
     procedural_surfaces: &[ProceduralSurface],
 ) -> SurfaceTransferCoverage {
     let unique_rows = crate::surface::uniquely_identified_rows(rows);
-    let extrusion_surfaces = procedural_surfaces
+    let extrusion_constructions = procedural_surfaces
         .iter()
         .filter(|procedural| {
             matches!(
@@ -273,7 +273,17 @@ pub(crate) fn surface_transfer_coverage(
                 ProceduralSurfaceDefinition::Extrusion { .. }
             )
         })
-        .map(|procedural| &procedural.surface)
+        .map(|procedural| &procedural.id)
+        .collect::<BTreeSet<_>>();
+    let extrusion_surfaces = surfaces
+        .iter()
+        .filter(|surface| {
+            surface
+                .geometry
+                .procedural_construction()
+                .is_some_and(|id| extrusion_constructions.contains(id))
+        })
+        .map(|surface| &surface.id)
         .collect::<BTreeSet<_>>();
     let transferred = surfaces
         .iter()

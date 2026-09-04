@@ -360,18 +360,24 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 instance_path: Vec::new(),
             }),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            procedural_id,
+        let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurfaceDefinition::Extrusion {
-                directrix: curve_id,
-                parameter_interval: None,
-                direction: Vector3::new(frame.direction[0], frame.direction[1], frame.direction[2]),
-                native_position: None,
-                revision_form: None,
-            },
-            None,
-        ));
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Extrusion {
+                    directrix: curve_id,
+                    parameter_interval: None,
+                    direction: Vector3::new(
+                        frame.direction[0],
+                        frame.direction[1],
+                        frame.direction[2],
+                    ),
+                    native_position: None,
+                    revision_form: None,
+                },
+                None,
+            ),
+        );
         transferred += 1;
     }
     transferred
@@ -503,18 +509,20 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 instance_path: Vec::new(),
             }),
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            procedural_id,
+        let _attached = ir.model.add_procedural_surface(
             surface_id,
-            ProceduralSurfaceDefinition::Extrusion {
-                directrix: curve_id,
-                parameter_interval: Some([0.0, 1.0]),
-                direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
-                native_position: None,
-                revision_form: None,
-            },
-            None,
-        ));
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Extrusion {
+                    directrix: curve_id,
+                    parameter_interval: Some([0.0, 1.0]),
+                    direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
+                    native_position: None,
+                    revision_form: None,
+                },
+                None,
+            ),
+        );
         transferred += 1;
     }
     transferred

@@ -362,12 +362,12 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
             id: surfaces[side].clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: constructions[side].clone(),
+                cache: None,
             },
             source_object: None,
         });
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             constructions[side].clone(),
-            surfaces[side].clone(),
             ProceduralSurfaceDefinition::Offset {
                 support: surfaces[1 - side].clone(),
                 distance: 1.0,
@@ -771,12 +771,12 @@ fn blend_contact_matches_concentric_blend_carriers() {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
+                cache: None,
             },
             source_object: None,
         });
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             construction,
-            surface,
             ProceduralSurfaceDefinition::Blend {
                 supports: supports.map(|surface| {
                     Some(BlendSupport {
@@ -803,7 +803,9 @@ fn blend_contact_matches_concentric_blend_carriers() {
         .model
         .procedural_surfaces
         .iter_mut()
-        .find(|candidate| candidate.surface == outer)
+        .find(|candidate| {
+            candidate.id == ProceduralSurfaceId("synthetic:outer-blend:construction".into())
+        })
         .unwrap();
     outer_definition.edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
@@ -864,14 +866,15 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             id: blend.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: blend_construction.clone(),
+                cache: None,
             },
             source_object: None,
         },
     ]);
-    ir.model.procedural_surfaces.extend([
+    let _attached = ir.model.add_procedural_surface(
+        support_offset.clone(),
         ProceduralSurface::new(
             support_offset_construction.clone(),
-            support_offset.clone(),
             ProceduralSurfaceDefinition::Offset {
                 support: support.clone(),
                 distance: 1.0,
@@ -883,28 +886,27 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             },
             None,
         ),
-        ProceduralSurface::new(
-            blend_construction,
-            blend.clone(),
-            ProceduralSurfaceDefinition::Blend {
-                supports: [
-                    Some(BlendSupport {
-                        surface: support.clone(),
-                        reversed: false,
-                    }),
-                    Some(BlendSupport {
-                        surface: other.clone(),
-                        reversed: false,
-                    }),
-                ],
-                spine: Some(spine.clone()),
-                radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
-                cross_section: BlendCrossSection::Circular,
-                native: None,
-            },
-            None,
-        ),
-    ]);
+    );
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        blend_construction,
+        ProceduralSurfaceDefinition::Blend {
+            supports: [
+                Some(BlendSupport {
+                    surface: support.clone(),
+                    reversed: false,
+                }),
+                Some(BlendSupport {
+                    surface: other.clone(),
+                    reversed: false,
+                }),
+            ],
+            spine: Some(spine.clone()),
+            radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
+            cross_section: BlendCrossSection::Circular,
+            native: None,
+        },
+        None,
+    ));
     ir.model.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Line {
@@ -920,29 +922,31 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         weights: None,
         periodic: false,
     };
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        spine_procedural,
+    let _attached = ir.model.add_procedural_curve(
         spine,
-        ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(support_offset),
-                        pcurve: Some(contact_pcurve.clone()),
-                        pcurve_parameter_range: None,
-                    },
-                    IntcurveSupportSide {
-                        surface: Some(other),
-                        pcurve: Some(contact_pcurve),
-                        pcurve_parameter_range: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+        ProceduralCurve::new(
+            spine_procedural,
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(support_offset),
+                            pcurve: Some(contact_pcurve.clone()),
+                            pcurve_parameter_range: None,
+                        },
+                        IntcurveSupportSide {
+                            surface: Some(other),
+                            pcurve: Some(contact_pcurve),
+                            pcurve_parameter_range: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
             },
-            discontinuity_flag: false,
-        },
-    ));
+        ),
+    );
 
     let source_pcurve = PcurveGeometry::Nurbs {
         degree: 1,
@@ -1105,12 +1109,12 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         id: surface.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction.clone(),
+            cache: None,
         },
         source_object: None,
     });
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         construction,
-        surface.clone(),
         ProceduralSurfaceDefinition::Blend {
             supports: [
                 Some(BlendSupport {
@@ -1147,39 +1151,39 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
         0.25
     );
-    ir.model.procedural_curves.push(
-        ProceduralCurve::try_new(
-            ProceduralCurveId("synthetic:spine-construction".into()),
-            spine.clone(),
-            ProceduralCurveDefinition::Intersection {
-                context: IntcurveSupportContext {
-                    sides: [
-                        IntcurveSupportSide {
-                            surface: Some(first_spine_side),
-                            pcurve_parameter_range: None,
-                            pcurve: Some(PcurveGeometry::Line {
-                                origin: Point2::new(0.0, -2.0),
-                                direction: Point2::new(1.0, 0.0),
-                            }),
-                        },
-                        IntcurveSupportSide {
-                            surface: Some(second_spine_side),
-                            pcurve_parameter_range: None,
-                            pcurve: Some(PcurveGeometry::Line {
-                                origin: Point2::new(0.0, 2.0),
-                                direction: Point2::new(1.0, 0.0),
-                            }),
-                        },
-                    ],
-                    parameter_range: [0.0, 10.0],
-                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
-                },
-                discontinuity_flag: false,
+    let procedural = ProceduralCurve::try_new(
+        ProceduralCurveId("synthetic:spine-construction".into()),
+        ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(first_spine_side),
+                        pcurve_parameter_range: None,
+                        pcurve: Some(PcurveGeometry::Line {
+                            origin: Point2::new(0.0, -2.0),
+                            direction: Point2::new(1.0, 0.0),
+                        }),
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(second_spine_side),
+                        pcurve_parameter_range: None,
+                        pcurve: Some(PcurveGeometry::Line {
+                            origin: Point2::new(0.0, 2.0),
+                            direction: Point2::new(1.0, 0.0),
+                        }),
+                    },
+                ],
+                parameter_range: [0.0, 10.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
             },
-            Some(0.75),
-        )
-        .unwrap(),
-    );
+            discontinuity_flag: false,
+        },
+        Some(0.75),
+    )
+    .unwrap();
+    ir.model
+        .add_procedural_curve(spine.clone(), procedural)
+        .unwrap();
     assert_eq!(
         crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
         1.0
@@ -1273,7 +1277,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .model
         .procedural_curves
         .iter_mut()
-        .find(|curve| curve.curve == spine)
+        .find(|curve| curve.id == ProceduralCurveId("synthetic:spine-construction".into()))
         .unwrap()
         .edit_definition(|definition| {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
@@ -1352,32 +1356,39 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!((translated_parameters.v - expected.v).abs() < 1.0e-3);
 
     let boundary_curve = CurveId("synthetic:blend-boundary-curve".into());
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        ProceduralCurveId("synthetic:blend-boundary".into()),
+    ir.model.curves.push(Curve {
+        id: boundary_curve.clone(),
+        geometry: CurveGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    let _attached = ir.model.add_procedural_curve(
         boundary_curve.clone(),
-        ProceduralCurveDefinition::Intersection {
-            context: IntcurveSupportContext {
-                sides: [
-                    IntcurveSupportSide {
-                        surface: Some(first.clone()),
-                        pcurve_parameter_range: None,
-                        pcurve: Some(PcurveGeometry::Line {
-                            origin: Point2::new(0.0, -2.0),
-                            direction: Point2::new(1.0, 0.0),
-                        }),
-                    },
-                    IntcurveSupportSide {
-                        surface: Some(surface.clone()),
-                        pcurve_parameter_range: None,
-                        pcurve: None,
-                    },
-                ],
-                parameter_range: [0.0, 1.0],
-                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+        ProceduralCurve::new(
+            ProceduralCurveId("synthetic:blend-boundary".into()),
+            ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(first.clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: Some(PcurveGeometry::Line {
+                                origin: Point2::new(0.0, -2.0),
+                                direction: Point2::new(1.0, 0.0),
+                            }),
+                        },
+                        IntcurveSupportSide {
+                            surface: Some(surface.clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
             },
-            discontinuity_flag: false,
-        },
-    ));
+        ),
+    );
     ir.model.edges.push(Edge {
         id: EdgeId("synthetic:blend-boundary-edge".into()),
         curve: Some(boundary_curve),
@@ -1412,7 +1423,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model
         .procedural_curves
         .iter_mut()
-        .find(|procedural| procedural.curve == spine)
+        .find(|procedural| {
+            procedural.id == ProceduralCurveId("synthetic:spine-construction".into())
+        })
         .unwrap()
         .replace_definition(ProceduralCurveDefinition::Unknown {
             native_kind: None,
@@ -1497,12 +1510,12 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         id: outer.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: outer_construction.clone(),
+            cache: None,
         },
         source_object: None,
     });
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
         outer_construction,
-        outer.clone(),
         ProceduralSurfaceDefinition::Blend {
             supports: [
                 Some(BlendSupport {
@@ -1553,7 +1566,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .model
         .procedural_surfaces
         .iter_mut()
-        .find(|candidate| candidate.surface == outer)
+        .find(|candidate| {
+            candidate.id == ProceduralSurfaceId("synthetic:outer-blend-construction".into())
+        })
         .unwrap();
     outer_definition.edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Blend { supports, .. } = definition else {
