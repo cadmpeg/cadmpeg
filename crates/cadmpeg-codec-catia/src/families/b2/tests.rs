@@ -841,8 +841,8 @@ fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
     let uses = crate::families::b2::records::b2_use_metadata(&bytes);
     assert_eq!(edges[0].references, vec![0x1234, 0x5678]);
     assert_eq!(edges[0].payload, [0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0]);
-    assert_eq!(uses[0].sense, Some(B2UseSense::Sense88));
-    assert!(uses[0].references.is_none());
+    assert_eq!(uses[0].sense(), Some(B2UseSense::Sense88));
+    assert!(uses[0].references().is_none());
     assert_eq!(uses[0].payload, [1, 2, 3, 0x88]);
 }
 

@@ -544,8 +544,8 @@ fn consolidated_edge_use_run_is_independent_of_pcurve_availability() {
         panic!("one standalone edge-use run");
     };
     assert!(run.identity_chain_consistent);
-    assert_eq!(run.uses[0].sense, Some(B2UseSense::Sense88));
-    assert_eq!(run.uses[1].sense, Some(B2UseSense::Sense84));
+    assert_eq!(run.uses[0].sense(), Some(B2UseSense::Sense88));
+    assert_eq!(run.uses[1].sense(), Some(B2UseSense::Sense84));
     assert_eq!(run.node.start_vertex_ref, 139);
     assert_eq!(run.node.end_vertex_ref, 142);
 }
@@ -607,10 +607,10 @@ fn consolidated_edge_use_run_accepts_compact_successor_layout() {
         panic!("one successor-layout edge run")
     };
     assert!(run.identity_chain_consistent);
-    assert_eq!(run.uses[0].sense, Some(B2UseSense::Sense88));
-    assert_eq!(run.uses[1].sense, Some(B2UseSense::Sense84));
-    assert_eq!(run.uses[0].references.as_deref(), Some(&[1, 11][..]));
-    assert_eq!(run.uses[1].references.as_deref(), Some(&[2, 12][..]));
+    assert_eq!(run.uses[0].sense(), Some(B2UseSense::Sense88));
+    assert_eq!(run.uses[1].sense(), Some(B2UseSense::Sense84));
+    assert_eq!(run.uses[0].references(), Some(&[1, 11][..]));
+    assert_eq!(run.uses[1].references(), Some(&[2, 12][..]));
     assert_eq!(
         run.definition.as_ref().and_then(|value| value.data.clone()),
         Some(ConsolidatedEdgeDefinitionData::Compact24 { operand: 10 })
@@ -1006,10 +1006,10 @@ fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
     );
     assert_eq!(runs.len(), 1);
     assert!(runs[0].edge.co_parametric);
-    assert_eq!(runs[0].uses[0].sense, Some(B2UseSense::Sense84));
-    assert_eq!(runs[0].uses[1].sense, Some(B2UseSense::Sense88));
-    assert_eq!(runs[0].uses[0].references.as_deref(), Some(&[1, 2][..]));
-    assert_eq!(runs[0].uses[1].references.as_deref(), Some(&[2, 3][..]));
+    assert_eq!(runs[0].uses[0].sense(), Some(B2UseSense::Sense84));
+    assert_eq!(runs[0].uses[1].sense(), Some(B2UseSense::Sense88));
+    assert_eq!(runs[0].uses[0].references(), Some(&[1, 2][..]));
+    assert_eq!(runs[0].uses[1].references(), Some(&[2, 3][..]));
     assert!(!runs[0].identity_chain_consistent);
     assert_eq!(runs[0].node.start_vertex_ref, 889);
     assert_eq!(runs[0].node.end_vertex_ref, 895);
