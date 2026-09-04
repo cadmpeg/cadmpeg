@@ -9335,6 +9335,12 @@ impl CatiaNative {
                         .and_then(|ordinal| catalog?.entries.get(ordinal))
                         .map(|entry| entry.id.clone())
                 });
+                record.class_name = record.class_ref.and_then(|ordinal| {
+                    usize::try_from(ordinal)
+                        .ok()
+                        .and_then(|ordinal| catalog?.entries.get(ordinal))
+                        .map(|entry| entry.value.clone())
+                });
                 record.repeated_reference_schema_selection = repeated_reference_schema_selection(
                     record.repeated_reference_suffix.as_ref(),
                     catalog,
@@ -9813,27 +9819,27 @@ fn native_object_graph(
                 entity_record: entity
                     .map(|entity| format!("catia:outer:entity-record#{:010}", entity.pos)),
                 entity_id: entity.map(|entity| entity.entity_id),
-                ordinal: record.index as u64,
+                ordinal: ordinal as u64,
                 byte_offset: record.pos as u64,
                 byte_len: record.total_len as u64,
                 lead: record.lead,
-                head: record.head,
-                inline_body: record.inline_body,
+                head: record.head().to_vec(),
+                inline_body: record.inline_body().map(<[u8]>::to_vec),
                 owner: record.owner_ref.map(CatiaObjectOwner::Entity).or_else(|| {
                     record
                         .owner_literal
                         .map(CatiaObjectOwner::UnassignedLiteral)
                 }),
                 class_ref: record.class_ref,
-                class_name: record.class_name,
+                class_name: None,
                 class_entry: None,
                 storage_ref: record.storage_ref,
                 storage_record: None,
                 storage_design_object: None,
-                payload: record.payload,
-                repeated_reference_suffix: record.repeated_reference_suffix,
+                payload: record.payload().clone(),
+                repeated_reference_suffix: record.repeated_reference_suffix().cloned(),
                 repeated_reference_schema_selection: None,
-                subtype: record.subtype,
+                subtype: record.subtype(),
                 references: Vec::new(),
             }
         })

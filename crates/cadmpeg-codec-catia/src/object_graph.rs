@@ -28,36 +28,88 @@ pub struct ObjectGraph {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ObjectRecord {
-    /// Zero-based serialized record index.
-    pub index: usize,
     /// Record byte offset.
     pub pos: usize,
     /// Record total length, including its six-byte header.
     pub total_len: usize,
     /// First head byte.
     pub lead: u8,
-    /// Decoded head tokens.
-    pub head: Vec<HeadToken>,
-    /// Complete alternate inline body when the record has no nested `7C0A`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
-    pub inline_body: Option<Vec<u8>>,
+    /// Inline body or nested head and payload.
+    pub body: ObjectRecordBody,
     /// First head reference, identifying the owner by stored entity identity.
     pub owner_ref: Option<u32>,
     /// Literal value occupying a structurally assigned owner slot.
     pub owner_literal: Option<u8>,
     /// Second head reference, identifying the per-file class.
     pub class_ref: Option<u32>,
-    /// UTF-8 class name at `class_ref` in the associated schema catalog.
-    pub class_name: Option<String>,
     /// Third head reference, selecting the class-specific storage form.
     pub storage_ref: Option<u32>,
-    /// Decoded nested payload, empty for an inline record.
-    pub payload: ObjectPayload,
-    /// Counted reference suffix when the payload repeats its reference prefix exactly.
-    pub repeated_reference_suffix: Option<RepeatedReferenceSuffix>,
-    /// Structural payload classification.
-    pub subtype: PayloadSubtype,
+}
+
+/// Inline or nested body of one `7C09` object record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum ObjectRecordBody {
+    /// Complete alternate inline body when the record has no nested `7C0A`.
+    Inline(Vec<u8>),
+    /// Nested head tokens and `7C0A` payload.
+    Nested {
+        /// Decoded head tokens.
+        head: Vec<HeadToken>,
+        /// Decoded nested payload.
+        payload: ObjectPayload,
+        /// Counted reference suffix when the payload repeats its reference prefix exactly.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repeated_reference_suffix: Option<RepeatedReferenceSuffix>,
+        /// Structural payload classification.
+        subtype: PayloadSubtype,
+    },
+}
+
+impl ObjectRecord {
+    pub fn inline_body(&self) -> Option<&[u8]> {
+        match &self.body {
+            ObjectRecordBody::Inline(bytes) => Some(bytes),
+            ObjectRecordBody::Nested { .. } => None,
+        }
+    }
+
+    pub fn head(&self) -> &[HeadToken] {
+        match &self.body {
+            ObjectRecordBody::Inline(_) => &[],
+            ObjectRecordBody::Nested { head, .. } => head,
+        }
+    }
+
+    pub fn payload(&self) -> &ObjectPayload {
+        match &self.body {
+            ObjectRecordBody::Inline(_) => {
+                static EMPTY: std::sync::OnceLock<ObjectPayload> = std::sync::OnceLock::new();
+                EMPTY.get_or_init(|| ObjectPayload {
+                    size: 0,
+                    fields: Vec::new(),
+                })
+            }
+            ObjectRecordBody::Nested { payload, .. } => payload,
+        }
+    }
+
+    pub fn repeated_reference_suffix(&self) -> Option<&RepeatedReferenceSuffix> {
+        match &self.body {
+            ObjectRecordBody::Inline(_) => None,
+            ObjectRecordBody::Nested {
+                repeated_reference_suffix,
+                ..
+            } => repeated_reference_suffix.as_ref(),
+        }
+    }
+
+    pub fn subtype(&self) -> PayloadSubtype {
+        match &self.body {
+            ObjectRecordBody::Inline(_) => PayloadSubtype::Empty,
+            ObjectRecordBody::Nested { subtype, .. } => *subtype,
+        }
+    }
 }
 
 /// Token in a `7C09` record head.
@@ -613,12 +665,6 @@ fn bind_catalog(
         return;
     };
     graph.catalog_pos = Some(schema.pos);
-    for record in &mut graph.records {
-        record.class_name = record
-            .class_ref
-            .and_then(|ordinal| schema.entries.get(ordinal as usize))
-            .map(|entry| entry.value.clone());
-    }
 }
 
 fn parse_candidate(
@@ -657,54 +703,53 @@ fn parse_candidate(
             return None;
         }
         let body = data.get(head_start..record_end)?;
-        let (head_bytes, inline_body, payload) = match child {
-            Some((child, _)) => (
-                data.get(head_start..child)?,
-                None,
-                decode_payload(&data[child + 6..record_end])?,
-            ),
-            None if is_inline_body(body) => (
-                &[][..],
-                Some(body.to_vec()),
-                ObjectPayload {
-                    size: 0,
-                    fields: Vec::new(),
-                },
-            ),
-            None if allow_opaque_childless_records && !body.is_empty() => (
-                &[][..],
-                Some(body.to_vec()),
-                ObjectPayload {
-                    size: 0,
-                    fields: Vec::new(),
-                },
-            ),
+        let (lead, body_form, roles) = match child {
+            Some((child, _)) => {
+                let head_bytes = data.get(head_start..child)?;
+                let lead = *head_bytes.first()?;
+                let head = decode_head(head_bytes);
+                let payload = decode_payload(&data[child + 6..record_end])?;
+                let roles = head_roles(lead, &head);
+                let repeated_reference_suffix = repeated_reference_suffix(&payload);
+                let subtype = classify(&payload.fields);
+                (
+                    lead,
+                    ObjectRecordBody::Nested {
+                        head,
+                        payload,
+                        repeated_reference_suffix,
+                        subtype,
+                    },
+                    roles,
+                )
+            }
+            None if is_inline_body(body) => {
+                let lead = body[0];
+                (
+                    lead,
+                    ObjectRecordBody::Inline(body.to_vec()),
+                    head_roles(lead, &[]),
+                )
+            }
+            None if allow_opaque_childless_records && !body.is_empty() => {
+                let lead = body[0];
+                (
+                    lead,
+                    ObjectRecordBody::Inline(body.to_vec()),
+                    head_roles(lead, &[]),
+                )
+            }
             None => return None,
         };
-        let lead = if inline_body.is_some() {
-            body[0]
-        } else {
-            *head_bytes.first()?
-        };
-        let head = decode_head(head_bytes);
-        let roles = head_roles(lead, &head);
-        let repeated_reference_suffix = repeated_reference_suffix(&payload);
-        let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
-            index: records.len(),
             pos: at,
             total_len: record_len,
             lead,
-            head,
-            inline_body,
+            body: body_form,
             owner_ref: roles.owner_ref,
             owner_literal: roles.owner_literal,
             class_ref: roles.class_ref,
-            class_name: None,
             storage_ref: roles.storage_ref,
-            payload,
-            repeated_reference_suffix,
-            subtype,
         });
         at = record_end;
     }
