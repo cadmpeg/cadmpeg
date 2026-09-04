@@ -905,11 +905,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             let formula_valid = |formula: &crate::geometry::LawFormula| {
-                if formula.name == "null_law" {
-                    formula.variables.is_empty()
-                } else {
-                    formula.variables.iter().all(|value| law_valid(value, 0))
-                }
+                formula.variables().iter().all(|value| law_valid(value, 0))
             };
             let tail_valid = match &construction.tail {
                 crate::geometry::LawSurfaceTail::Full => procedural
@@ -1017,15 +1013,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     subdata.row_values_are_finite()
                 }
             };
-            let formula_valid = if construction.formula.name == "null_law" {
-                construction.formula.variables.is_empty()
-            } else {
-                construction
-                    .formula
-                    .variables
-                    .iter()
-                    .all(|variable| law_valid(variable, 0))
-            };
+            let formula_valid = construction
+                .formula
+                .variables()
+                .iter()
+                .all(|variable| law_valid(variable, 0));
             let scalars_valid = construction.parameter.is_finite()
                 && construction.trailing_parameter.is_finite()
                 && vector_finite(&construction.direction)
@@ -1096,14 +1088,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 })
             });
             let formulas_valid = construction.formulas.iter().all(|formula| {
-                if formula.name == "null_law" {
-                    formula.variables.is_empty()
-                } else {
-                    formula
-                        .variables
-                        .iter()
-                        .all(|variable| law_valid(variable, 0))
-                }
+                formula
+                    .variables()
+                    .iter()
+                    .all(|variable| law_valid(variable, 0))
             });
             let scalars_valid = construction
                 .frame_parameters
@@ -1176,14 +1164,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
             };
             let formula_valid = |formula: &crate::geometry::LawFormula| {
-                if formula.name == "null_law" {
-                    formula.variables.is_empty()
-                } else {
-                    formula
-                        .variables
-                        .iter()
-                        .all(|variable| law_valid(variable, 0))
-                }
+                formula
+                    .variables()
+                    .iter()
+                    .all(|variable| law_valid(variable, 0))
             };
             let layout_valid = match &construction.layout {
                 crate::geometry::SweepSurfaceLayout::ProfileFirst {

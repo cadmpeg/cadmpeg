@@ -1359,10 +1359,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
                         value: "VEC(1,1,1)".into(),
                     }),
                     formula_mode: 0,
-                    formula: LawFormula {
-                        name: "null_law".into(),
-                        variables: Vec::new(),
-                    },
+                    formula: LawFormula::Null,
                     trailing_flag: false,
                 },
                 discontinuities: std::array::from_fn(|_| Vec::new()),

@@ -685,7 +685,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
                 check_curve(&construction.parameter_curve, findings);
-                for variable in &construction.formula.variables {
+                for variable in construction.formula.variables() {
                     check_law_curves(variable, ids, procedural, findings);
                 }
             }
@@ -713,7 +713,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 for formula in
                     std::iter::once(&construction.primary).chain(&construction.additional)
                 {
-                    for variable in &formula.variables {
+                    for variable in formula.variables() {
                         check_law_curves(variable, ids, procedural, findings);
                     }
                 }
@@ -765,7 +765,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
                 for formula in construction.formulas.iter() {
-                    for variable in &formula.variables {
+                    for variable in formula.variables() {
                         check_law_curves(variable, ids, procedural, findings);
                     }
                 }
@@ -982,7 +982,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         }
                     };
                     for formula in formulas {
-                        for variable in &formula.variables {
+                        for variable in formula.variables() {
                             check_law_curves(variable, ids, procedural, findings);
                         }
                     }
@@ -1150,7 +1150,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
                 for formula in std::iter::once(primary).chain(additional) {
-                    for variable in &formula.variables {
+                    for variable in formula.variables() {
                         check(variable, ids, procedural, findings);
                     }
                 }

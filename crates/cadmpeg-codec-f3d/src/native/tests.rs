@@ -452,7 +452,9 @@ fn decode_frames_history_less_stream_whose_final_record_ends_at_eof() {
 
 #[test]
 fn stamped_law_intcurve_round_trips_byte_exactly() {
-    use cadmpeg_ir::geometry::{CurveGeometry, LawExpression, ProceduralCurveDefinition};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
+    };
 
     // Formula names exceed 255 bytes to exercise the u16 (`0x08`) length prefix
     // the serializer selects for long law text.
@@ -489,18 +491,18 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     assert_eq!(version.stamp, 20900);
     assert_eq!(version.post_enum, 0);
     assert_eq!(version.parameter_range, [None, None]);
-    assert_eq!(primary.name, primary_name);
+    assert_eq!(primary.name(), primary_name);
     assert!(matches!(
-        primary.variables[0],
+        primary.variables()[0],
         LawExpression::TransformVec { .. }
     ));
     assert_eq!(additional.len(), 4);
-    assert_eq!(additional[0].name, "null_law");
-    assert_eq!(additional[1].name, "null_law");
-    assert_eq!(additional[2].name, raw_name);
-    assert_eq!(additional[3].name, "TRANS(VEC(X,X2,X3),TRANS1)");
+    assert!(matches!(additional[0], LawFormula::Null));
+    assert!(matches!(additional[1], LawFormula::Null));
+    assert_eq!(additional[2].name(), raw_name);
+    assert_eq!(additional[3].name(), "TRANS(VEC(X,X2,X3),TRANS1)");
     assert!(matches!(
-        additional[3].variables[0],
+        additional[3].variables()[0],
         LawExpression::TransformVec { .. }
     ));
 

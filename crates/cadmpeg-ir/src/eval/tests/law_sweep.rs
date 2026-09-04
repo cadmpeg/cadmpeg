@@ -144,8 +144,11 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                         value: "VEC(2,1,1)".into(),
                     }),
                     formula_mode: 0,
-                    formula: LawFormula {
-                        name: "ROTATE(DOMAIN(VEC(1,0,0),0,1),TRANS1)".into(),
+                    formula: LawFormula::Named {
+                        name: crate::geometry::LawFormulaName::new(
+                            "ROTATE(DOMAIN(VEC(1,0,0),0,1),TRANS1)",
+                        )
+                        .unwrap(),
                         variables: vec![LawExpression::TransformVec {
                             vectors: [
                                 Vector3::new(0.0, 1.0, 0.0),

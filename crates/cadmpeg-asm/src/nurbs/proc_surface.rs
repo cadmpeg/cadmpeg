@@ -1056,12 +1056,37 @@ pub enum EmbeddedLawExpression {
     },
 }
 
-/// One law formula: a name and its operand list.
-pub struct EmbeddedLawFormula {
-    /// The formula name.
-    pub name: String,
-    /// The formula operands, in stream order.
-    pub variables: Vec<EmbeddedLawExpression>,
+/// One structurally valid law formula before stable IR ids are assigned.
+pub enum EmbeddedLawFormula {
+    /// The zero-payload native `null_law` form.
+    Null,
+    /// A checked non-sentinel name and its operands.
+    Named {
+        /// The formula name.
+        name: cadmpeg_ir::geometry::LawFormulaName,
+        /// The formula operands, in stream order.
+        variables: Vec<EmbeddedLawExpression>,
+    },
+}
+
+impl EmbeddedLawFormula {
+    /// Native formula name.
+    #[cfg(test)]
+    pub(crate) fn name(&self) -> &str {
+        match self {
+            Self::Null => "null_law",
+            Self::Named { name, .. } => name.as_str(),
+        }
+    }
+
+    /// Formula operands, empty for the null form.
+    #[cfg(test)]
+    pub(crate) fn variables(&self) -> &[EmbeddedLawExpression] {
+        match self {
+            Self::Null => &[],
+            Self::Named { variables, .. } => variables,
+        }
+    }
 }
 
 /// Embedded native law surface before stable IR ids are assigned.
@@ -2416,10 +2441,7 @@ fn law_formula_resolving(
 ) -> Option<EmbeddedLawFormula> {
     let name = cur.take_str()?.to_string();
     if name == "null_law" {
-        return Some(EmbeddedLawFormula {
-            name,
-            variables: Vec::new(),
-        });
+        return Some(EmbeddedLawFormula::Null);
     }
     let count = usize::try_from(cur.take_long()?).ok()?;
     if count > 100_000 {
@@ -2428,7 +2450,10 @@ fn law_formula_resolving(
     let variables = (0..count)
         .map(|_| law_expression_resolving(cur, 0, resolver))
         .collect::<Option<Vec<_>>>()?;
-    Some(EmbeddedLawFormula { name, variables })
+    Some(EmbeddedLawFormula::Named {
+        name: cadmpeg_ir::geometry::LawFormulaName::new(name)?,
+        variables,
+    })
 }
 
 fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
@@ -4389,12 +4414,12 @@ mod sweep_law_tests {
 
         let formula = law_formula_resolving(&mut cur, None).expect("rail formula");
 
-        assert_eq!(formula.name, "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
+        assert_eq!(formula.name(), "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
         let [EmbeddedLawExpression::TransformVec {
             vectors: actual_vectors,
             scale,
             flags,
-        }] = formula.variables.as_slice()
+        }] = formula.variables()
         else {
             panic!("expected one vector transform binding");
         };

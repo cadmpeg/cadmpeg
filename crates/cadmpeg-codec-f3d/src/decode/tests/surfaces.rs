@@ -872,7 +872,7 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
     assert!(construction
         .formulas
         .iter()
-        .all(|formula| formula.name == "null_law"));
+        .all(|formula| matches!(formula, cadmpeg_ir::geometry::LawFormula::Null)));
     assert_eq!(construction.discontinuities[0], [0.25]);
 
     let (mut source_less, _, _) = decoded.into_parts();
@@ -924,7 +924,9 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
     assert_eq!(directions[2].z, 1.0);
     assert_eq!(origin.z, 30.0);
     assert_eq!(*parameters, [0.1, 0.2, 0.3, 0.4]);
-    assert!(formulas.iter().all(|formula| formula.name == "null_law"));
+    assert!(formulas
+        .iter()
+        .all(|formula| matches!(formula, cadmpeg_ir::geometry::LawFormula::Null)));
     assert_eq!(native.discontinuities[0], [0.25]);
 
     let (mut source_less, _, _) = decoded.into_parts();

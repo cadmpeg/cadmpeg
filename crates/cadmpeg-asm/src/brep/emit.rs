@@ -43,6 +43,23 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
+
+fn map_law_formula(
+    formula: EmbeddedLawFormula,
+    mut map: impl FnMut(usize, EmbeddedLawExpression) -> cadmpeg_ir::geometry::LawExpression,
+) -> cadmpeg_ir::geometry::LawFormula {
+    match formula {
+        EmbeddedLawFormula::Null => cadmpeg_ir::geometry::LawFormula::Null,
+        EmbeddedLawFormula::Named { name, variables } => cadmpeg_ir::geometry::LawFormula::Named {
+            name,
+            variables: variables
+                .into_iter()
+                .enumerate()
+                .map(|(index, expression)| map(index, expression))
+                .collect(),
+        },
+    }
+}
 use std::collections::{HashMap, HashSet};
 
 use super::attributes::{
@@ -1114,17 +1131,9 @@ fn emit_law_surface(
         }
     }
     let map_formula = |out: &mut AsmBrep, path: &str, formula: EmbeddedLawFormula| {
-        cadmpeg_ir::geometry::LawFormula {
-            name: formula.name,
-            variables: formula
-                .variables
-                .into_iter()
-                .enumerate()
-                .map(|(index, expression)| {
-                    map_law_expression(out, i, &format!("{path}:{index}"), expression, format)
-                })
-                .collect(),
-        }
+        map_law_formula(formula, |index, expression| {
+            map_law_expression(out, i, &format!("{path}:{index}"), expression, format)
+        })
     };
     let embedded = *embedded;
     let primary = map_formula(&mut *out, "primary", embedded.primary);
@@ -1335,18 +1344,9 @@ fn emit_skin_surface(
         geometry: CurveGeometry::Nurbs(embedded.parameter_curve),
         source_object: None,
     });
-    let formula = cadmpeg_ir::geometry::LawFormula {
-        name: embedded.formula.name,
-        variables: embedded
-            .formula
-            .variables
-            .into_iter()
-            .enumerate()
-            .map(|(variable_index, variable)| {
-                map_law_expression(&mut *out, i, &variable_index.to_string(), variable, format)
-            })
-            .collect(),
-    };
+    let formula = map_law_formula(embedded.formula, |variable_index, variable| {
+        map_law_expression(&mut *out, i, &variable_index.to_string(), variable, format)
+    });
     ProceduralSurfaceDefinition::Skin {
         construction: Box::new(cadmpeg_ir::geometry::SkinSurfaceConstruction {
             surface_boolean: embedded.surface_boolean,
@@ -1541,25 +1541,17 @@ fn emit_net_surface(
         .formulas
         .into_iter()
         .enumerate()
-        .map(
-            |(formula_index, formula)| cadmpeg_ir::geometry::LawFormula {
-                name: formula.name,
-                variables: formula
-                    .variables
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, variable)| {
-                        map_net_law(
-                            &mut *out,
-                            i,
-                            &format!("{formula_index}:{index}"),
-                            variable,
-                            format,
-                        )
-                    })
-                    .collect(),
-            },
-        )
+        .map(|(formula_index, formula)| {
+            map_law_formula(formula, |index, variable| {
+                map_net_law(
+                    &mut *out,
+                    i,
+                    &format!("{formula_index}:{index}"),
+                    variable,
+                    format,
+                )
+            })
+        })
         .collect::<Vec<_>>()
         .try_into()
         .expect("four net formulas");
@@ -1675,25 +1667,17 @@ fn emit_sweep_surface(
             let formulas = formulas
                 .into_iter()
                 .enumerate()
-                .map(
-                    |(formula_index, formula)| cadmpeg_ir::geometry::LawFormula {
-                        name: formula.name,
-                        variables: formula
-                            .variables
-                            .into_iter()
-                            .enumerate()
-                            .map(|(index, variable)| {
-                                map_sweep_law(
-                                    &mut *out,
-                                    i,
-                                    &format!("{formula_index}:{index}"),
-                                    variable,
-                                    format,
-                                )
-                            })
-                            .collect(),
-                    },
-                )
+                .map(|(formula_index, formula)| {
+                    map_law_formula(formula, |index, variable| {
+                        map_sweep_law(
+                            &mut *out,
+                            i,
+                            &format!("{formula_index}:{index}"),
+                            variable,
+                            format,
+                        )
+                    })
+                })
                 .collect::<Vec<_>>()
                 .try_into()
                 .expect("three sweep formulas");
@@ -1724,17 +1708,9 @@ fn emit_sweep_surface(
             formula,
             trailing_flag,
         } => {
-            let formula = cadmpeg_ir::geometry::LawFormula {
-                name: formula.name,
-                variables: formula
-                    .variables
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, variable)| {
-                        map_sweep_law(&mut *out, i, &format!("explicit:{index}"), variable, format)
-                    })
-                    .collect(),
-            };
+            let formula = map_law_formula(formula, |index, variable| {
+                map_sweep_law(&mut *out, i, &format!("explicit:{index}"), variable, format)
+            });
             (
                 profile,
                 path,
@@ -1879,23 +1855,15 @@ fn emit_sweep_surface(
         } => {
             let first_law = map_sweep_law(&mut *out, i, "law:first", first_law, format);
             let second_law = map_sweep_law(&mut *out, i, "law:second", second_law, format);
-            let formula = cadmpeg_ir::geometry::LawFormula {
-                name: formula.name,
-                variables: formula
-                    .variables
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, variable)| {
-                        map_sweep_law(
-                            &mut *out,
-                            i,
-                            &format!("law:formula:{index}"),
-                            variable,
-                            format,
-                        )
-                    })
-                    .collect(),
-            };
+            let formula = map_law_formula(formula, |index, variable| {
+                map_sweep_law(
+                    &mut *out,
+                    i,
+                    &format!("law:formula:{index}"),
+                    variable,
+                    format,
+                )
+            });
             (
                 profile,
                 path,
@@ -3373,18 +3341,11 @@ fn emit_law_curve(
             periodic: pcurve.periodic,
         })
     });
-    let mut map_formula =
-        |path: &str, formula: EmbeddedLawFormula| cadmpeg_ir::geometry::LawFormula {
-            name: formula.name,
-            variables: formula
-                .variables
-                .into_iter()
-                .enumerate()
-                .map(|(index, expression)| {
-                    map_law_curve(&mut *out, i, &format!("{path}:{index}"), expression, format)
-                })
-                .collect(),
-        };
+    let mut map_formula = |path: &str, formula: EmbeddedLawFormula| {
+        map_law_formula(formula, |index, expression| {
+            map_law_curve(&mut *out, i, &format!("{path}:{index}"), expression, format)
+        })
+    };
     cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
         context: cadmpeg_ir::geometry::IntcurveSupportContext {
             sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {

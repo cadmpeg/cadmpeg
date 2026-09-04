@@ -3403,3 +3403,24 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::geometry::LawExpression::Edge"
 reason = "the edge-law curve and its optional revision endpoints are one LoftPathCurve payload"
+
+[[change]]
+commit = "f275e21e438286673b59c3154835fc332435610f"
+crate = "cadmpeg-ir"
+kind = "struct"
+item = "cadmpeg_ir::geometry::LawFormula"
+reason = "the null law sentinel and named formula payloads are distinct enum variants"
+
+[[change]]
+commit = "f275e21e438286673b59c3154835fc332435610f"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::LawFormula::{name,variables}"
+reason = "a checked LawFormulaName and variant payload prevent a null law from carrying variables"
+
+[[change]]
+commit = "f275e21e438286673b59c3154835fc332435610f"
+crate = "cadmpeg-asm"
+kind = "struct"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedLawFormula"
+reason = "the ASM parser now represents null and named law formulas as distinct variants"
