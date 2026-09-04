@@ -1987,9 +1987,33 @@ pub struct CatiaValueBlock {
     pub schema_selections: Vec<CatiaValueSchemaSelection>,
 }
 
+/// Catalog class and encoded payload of a selected value-block schema selector.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaValueSchemaSelectionValue {
+    /// Selected catalog class.
+    pub class: CatiaDesignClass,
+    /// Complete encoded value after this selector and before the next selector.
+    pub encoded_value: Vec<value_block::ValueField>,
+}
+
+/// One `0x32` selector from a value block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum CatiaValueSchemaSelectionKind {
+    /// Catalog class selected by the stored ordinal.
+    Selected(CatiaValueSchemaSelectionValue),
+    /// Terminal absent-schema sentinel.
+    Terminal,
+}
+
 /// One `0x32` selector from a value block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaValueSchemaSelectionWire",
+    into = "CatiaValueSchemaSelectionWire"
+)]
 pub struct CatiaValueSchemaSelection {
     /// Globally unique schema-selection identity.
     pub id: String,
@@ -1999,15 +2023,107 @@ pub struct CatiaValueSchemaSelection {
     pub offset: u64,
     /// Stored zero-based ordinal or terminal absent-schema sentinel.
     pub ordinal: u32,
-    /// Selected catalog entry; absent for the terminal sentinel.
+    /// Selected class or terminal sentinel.
+    pub kind: CatiaValueSchemaSelectionKind,
+}
+
+impl CatiaValueSchemaSelection {
+    #[cfg(test)]
+    pub fn entry(&self) -> Option<&str> {
+        match &self.kind {
+            CatiaValueSchemaSelectionKind::Selected(value) => Some(value.class.entry.as_str()),
+            CatiaValueSchemaSelectionKind::Terminal => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn name(&self) -> Option<&str> {
+        match &self.kind {
+            CatiaValueSchemaSelectionKind::Selected(value) => Some(value.class.name.as_str()),
+            CatiaValueSchemaSelectionKind::Terminal => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn encoded_value(&self) -> &[value_block::ValueField] {
+        match &self.kind {
+            CatiaValueSchemaSelectionKind::Selected(value) => &value.encoded_value,
+            CatiaValueSchemaSelectionKind::Terminal => &[],
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaValueSchemaSelectionWire {
+    id: String,
+    parent: String,
+    offset: u64,
+    ordinal: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entry: Option<String>,
-    /// UTF-8 source-schema name stored by the selected entry.
+    entry: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    /// Complete encoded value after this selector and before the next selector.
+    name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub encoded_value: Vec<value_block::ValueField>,
+    encoded_value: Vec<value_block::ValueField>,
+}
+
+impl From<CatiaValueSchemaSelection> for CatiaValueSchemaSelectionWire {
+    fn from(value: CatiaValueSchemaSelection) -> Self {
+        let (entry, name, encoded_value) = match value.kind {
+            CatiaValueSchemaSelectionKind::Selected(selected) => (
+                Some(selected.class.entry),
+                Some(selected.class.name),
+                selected.encoded_value,
+            ),
+            CatiaValueSchemaSelectionKind::Terminal => (None, None, Vec::new()),
+        };
+        Self {
+            id: value.id,
+            parent: value.parent,
+            offset: value.offset,
+            ordinal: value.ordinal,
+            entry,
+            name,
+            encoded_value,
+        }
+    }
+}
+
+impl TryFrom<CatiaValueSchemaSelectionWire> for CatiaValueSchemaSelection {
+    type Error = String;
+
+    fn try_from(wire: CatiaValueSchemaSelectionWire) -> Result<Self, Self::Error> {
+        let kind = match (wire.entry, wire.name) {
+            (None, None) => {
+                if !wire.encoded_value.is_empty() {
+                    return Err(
+                        "value schema terminal sentinel cannot carry an encoded value".to_owned(),
+                    );
+                }
+                CatiaValueSchemaSelectionKind::Terminal
+            }
+            (Some(entry), Some(name)) => {
+                CatiaValueSchemaSelectionKind::Selected(CatiaValueSchemaSelectionValue {
+                    class: CatiaDesignClass { entry, name },
+                    encoded_value: wire.encoded_value,
+                })
+            }
+            _ => {
+                return Err(
+                    "value schema selection entry and name must both be present or both absent"
+                        .to_owned(),
+                );
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            parent: wire.parent,
+            offset: wire.offset,
+            ordinal: wire.ordinal,
+            kind,
+        })
+    }
 }
 
 /// One exact `7C02` source-schema catalog.
@@ -9949,15 +10065,21 @@ fn value_schema_selections(
                     return None;
                 }
                 let catalog_entry = catalog.entries.get(ordinal_index);
-                let entry = catalog_entry.map(|entry| entry.id.clone());
                 let value_end = selector_indices
                     .get(selector_rank + 1)
                     .copied()
                     .unwrap_or(fields.len());
-                let encoded_value = if entry.is_some() {
-                    fields[index + 1..value_end].to_vec()
-                } else {
-                    Vec::new()
+                let kind = match catalog_entry {
+                    Some(entry) => {
+                        CatiaValueSchemaSelectionKind::Selected(CatiaValueSchemaSelectionValue {
+                            class: CatiaDesignClass {
+                                entry: entry.id.clone(),
+                                name: entry.value.clone(),
+                            },
+                            encoded_value: fields[index + 1..value_end].to_vec(),
+                        })
+                    }
+                    None => CatiaValueSchemaSelectionKind::Terminal,
                 };
                 let byte_offset = block_byte_offset
                     .checked_add(6)?
@@ -9967,9 +10089,7 @@ fn value_schema_selections(
                     parent: block_id.to_string(),
                     offset: *offset as u64,
                     ordinal: *ordinal,
-                    encoded_value,
-                    entry,
-                    name: catalog_entry.map(|entry| entry.value.clone()),
+                    kind,
                 })
             }
             _ => None,
