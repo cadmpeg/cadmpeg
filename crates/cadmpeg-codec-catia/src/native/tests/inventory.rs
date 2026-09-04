@@ -74,9 +74,9 @@ fn native_value_blocks_distinguish_the_terminal_schema_sentinel() {
     let block = &native.value_blocks[0];
     assert_eq!(block.schema_selections.len(), 1);
     assert_eq!(block.schema_selections[0].ordinal, 4);
-    assert_eq!(block.schema_selections[0].entry, None);
-    assert_eq!(block.schema_selections[0].name, None);
-    assert!(block.schema_selections[0].encoded_value.is_empty());
+    assert_eq!(block.schema_selections[0].entry(), None);
+    assert_eq!(block.schema_selections[0].name(), None);
+    assert!(block.schema_selections[0].encoded_value().is_empty());
     assert!(block.fields.iter().any(|field| matches!(
         field,
         crate::value_block::ValueField::SchemaSelector { ordinal: 5, .. }
@@ -108,7 +108,7 @@ fn native_value_blocks_frame_values_between_catalog_valid_selectors() {
     );
     assert_eq!(selections[0].ordinal, 3);
     assert!(matches!(
-        selections[0].encoded_value.as_slice(),
+        selections[0].encoded_value(),
         [
             crate::value_block::ValueField::Atom { value: 3, .. },
             crate::value_block::ValueField::SchemaSelector { ordinal: 5, .. },
@@ -116,10 +116,10 @@ fn native_value_blocks_frame_values_between_catalog_valid_selectors() {
         ]
     ));
     assert_eq!(selections[1].ordinal, 2);
-    assert!(selections[1].encoded_value.is_empty());
+    assert!(selections[1].encoded_value().is_empty());
     assert_eq!(selections[2].ordinal, 1);
     assert!(matches!(
-        selections[2].encoded_value.as_slice(),
+        selections[2].encoded_value(),
         [crate::value_block::ValueField::Atom { value: 2, .. }]
     ));
 }
@@ -480,15 +480,15 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
     assert_eq!(native.value_blocks[0].schema_selections.len(), 1);
     assert_eq!(native.value_blocks[0].schema_selections[0].ordinal, 4);
     assert_eq!(
-        native.value_blocks[0].schema_selections[0].entry.as_deref(),
+        native.value_blocks[0].schema_selections[0].entry(),
         Some(native.catalogs[0].entries[4].id.as_str())
     );
     assert_eq!(
-        native.value_blocks[0].schema_selections[0].name.as_deref(),
+        native.value_blocks[0].schema_selections[0].name(),
         Some("VPGlobal")
     );
     assert_eq!(
-        native.value_blocks[0].schema_selections[0].encoded_value,
+        native.value_blocks[0].schema_selections[0].encoded_value(),
         [
             crate::value_block::ValueField::Atom {
                 value: 3,
