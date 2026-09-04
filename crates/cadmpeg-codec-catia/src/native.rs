@@ -1502,9 +1502,9 @@ pub struct CatiaConsolidatedClass5b5cRecord {
     /// Complete framed-record byte length.
     pub byte_len: u64,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: crate::wire::records::ConsolidatedFrameWidth,
     /// Independent frame flag.
-    pub flag: u8,
+    pub flag: crate::wire::records::ConsolidatedFrameFlag,
     /// Record class.
     pub class: CatiaClass5b5c,
     /// Width-coded frame header token.
@@ -1840,9 +1840,9 @@ pub struct CatiaConsolidatedAnalyticCircleDescriptor {
     /// Record byte offset.
     pub byte_offset: u64,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: crate::wire::records::ConsolidatedFrameWidth,
     /// Independent framing flag.
-    pub flag: u8,
+    pub flag: crate::wire::records::ConsolidatedFrameFlag,
     /// Width-coded header token.
     pub header_token: u32,
     /// Complete class-specific payload.
@@ -1856,9 +1856,9 @@ pub struct CatiaConsolidatedEdgeDefinition {
     /// Record byte offset.
     pub byte_offset: u64,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: crate::wire::records::ConsolidatedFrameWidth,
     /// Independent framing flag.
-    pub flag: u8,
+    pub flag: crate::wire::records::ConsolidatedFrameFlag,
     /// Edge-definition class in `0x23..=0x25`.
     pub class: u8,
     /// Width-coded header token.

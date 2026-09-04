@@ -1519,13 +1519,7 @@ pub(crate) fn b2_class5b5c_records_from_records(
             let payload = data.get(record.payload.clone())?;
             let byte_len = record.range.end.checked_sub(record.range.start)?;
             Some(B2Class5b5cRecord {
-                frame: ConsolidatedRawFrame {
-                    pos: record.range.start,
-                    width: record.width,
-                    flag: record.flag,
-                    header_token: record.header_token,
-                    payload: payload.to_vec(),
-                },
+                frame: ConsolidatedRawFrame::from_record(record, payload.to_vec())?,
                 source_index: record.source_index,
                 source_offset: record.source_range.start,
                 byte_len,

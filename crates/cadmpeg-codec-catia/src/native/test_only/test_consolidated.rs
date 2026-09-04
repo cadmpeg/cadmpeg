@@ -35,7 +35,7 @@ pub(super) fn validate_consolidated_class5b5c_records(
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, record) in records.iter().enumerate() {
         let expected_len = 4u64
-            .checked_add(u64::from(record.width))
+            .checked_add(u64::from(u8::from(record.width)))
             .and_then(|len| len.checked_add(u64::try_from(record.payload.len()).ok()?));
         let source_order_valid = index == 0
             || (
@@ -43,8 +43,6 @@ pub(super) fn validate_consolidated_class5b5c_records(
                 records[index - 1].source_offset,
             ) < (record.source_index, record.source_offset);
         if record.id != format!("catia:consolidated:class5b5c-record#{index}")
-            || !matches!(record.width, 1..=3)
-            || !matches!(record.flag, 0x03 | 0x13 | 0x83)
             || expected_len != Some(record.byte_len)
             || !source_order_valid
         {

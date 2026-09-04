@@ -1543,15 +1543,13 @@ pub(super) fn validate_consolidated_edge_runs(
                 && node.parameter_selectors == [2, 1]
         });
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
-            let token_limit = 1u32.checked_shl(u32::from(definition.width) * 8);
+            let token_limit = 1u32.checked_shl(u32::from(u8::from(definition.width)) * 8);
             let expected_data =
                 crate::families::consolidated::records::consolidated_edge_definition_data(
                     definition.class,
                     &definition.payload,
                 );
             node.uses.is_some()
-                && matches!(definition.width, 1..=3)
-                && matches!(definition.flag, 0x03 | 0x13 | 0x83)
                 && matches!(definition.class, 0x23..=0x25)
                 && token_limit.is_some_and(|limit| definition.header_token < limit)
                 && !definition.payload.is_empty()
@@ -1576,10 +1574,8 @@ pub(super) fn validate_consolidated_edge_runs(
                                 && circle.byte_offset < definition.byte_offset
                         })
                 })
-                && matches!(binding.descriptor.width, 1..=3)
-                && matches!(binding.descriptor.flag, 0x03 | 0x13 | 0x83)
                 && 1u32
-                    .checked_shl(u32::from(binding.descriptor.width) * 8)
+                    .checked_shl(u32::from(u8::from(binding.descriptor.width)) * 8)
                     .is_some_and(|limit| binding.descriptor.header_token < limit)
                 && !binding.descriptor.payload.is_empty()
         });
