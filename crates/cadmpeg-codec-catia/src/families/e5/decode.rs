@@ -366,7 +366,7 @@ pub(crate) fn append_e5_planes(
                         consistent = false;
                         continue;
                     };
-                    for pcurve_ref in &support.pcurves {
+                    for pcurve_ref in support.pcurves() {
                         let Some(crate::families::e5::graph::E5Pcurve::Line {
                             surface,
                             direction,
@@ -1198,7 +1198,7 @@ fn plan_e5_boundary(
                 } else {
                     None
                 };
-                if support.intersection {
+                if support.is_intersection() {
                     let side = E5OccurrenceIntersectionSide {
                         surface: surface_for_ref[&face.surface].0.clone(),
                         pcurve: oriented_pcurve.clone(),
@@ -1215,7 +1215,7 @@ fn plan_e5_boundary(
                     }
                 }
                 if let Some((curve, curve_range)) = lifted_curve {
-                    if !support.intersection {
+                    if !support.is_intersection() {
                         if let Some(existing) = edge_curve_plan.get(&edge_ref) {
                             if existing != &(curve, curve_range) {
                                 return None;
@@ -1224,7 +1224,7 @@ fn plan_e5_boundary(
                             edge_curve_plan.insert(edge_ref, (curve, curve_range));
                         }
                     }
-                } else if !support.intersection {
+                } else if !support.is_intersection() {
                     surface_curve_plan.entry(edge_ref).or_insert_with(|| {
                         (
                             surface_for_ref[&face.surface].0.clone(),
@@ -1248,7 +1248,7 @@ fn plan_e5_boundary(
         let Some(support) = topology.curve_supports.get(&edge.support) else {
             return None;
         };
-        if !support.intersection {
+        if !support.is_intersection() {
             continue;
         }
         let (Some(start), Some(end)) = (
@@ -1257,7 +1257,7 @@ fn plan_e5_boundary(
         ) else {
             return None;
         };
-        for pcurve_ref in &support.pcurves {
+        for pcurve_ref in support.pcurves() {
             let Some(pcurve) = topology.pcurves.get(pcurve_ref) else {
                 continue;
             };
@@ -1335,7 +1335,7 @@ fn plan_e5_boundary(
         let Some(support) = topology.curve_supports.get(&edge.support) else {
             return None;
         };
-        let [left_ref, right_ref] = support.pcurves.as_slice() else {
+        let [left_ref, right_ref] = support.pcurves() else {
             continue;
         };
         let (Some(left), Some(right)) = (sides.get(left_ref), sides.get(right_ref)) else {
@@ -2809,8 +2809,8 @@ mod route_tests {
     };
 
     use crate::families::e5::graph::{
-        E5BoundEntry, E5Bounds, E5CurveSupport, E5Edge, E5Face, E5Loop, E5OrientedMember, E5Pcurve,
-        E5PcurveJetSite, E5Topology,
+        E5BoundEntry, E5Bounds, E5CurveSupport, E5CurveSupportKind, E5Edge, E5Face, E5Loop,
+        E5OrientedMember, E5Pcurve, E5PcurveJetSite, E5Topology,
     };
     use crate::families::e5::records::E5Surface;
 
@@ -3263,8 +3263,7 @@ mod route_tests {
                 300,
                 E5CurveSupport {
                     record_id: 300,
-                    intersection: false,
-                    pcurves: vec![20],
+                    kind: E5CurveSupportKind::Boundary(20),
                     mode: 0,
                     range: [0.0, 1.0],
                     tail: Vec::new(),
@@ -3326,8 +3325,7 @@ mod route_tests {
                 300,
                 E5CurveSupport {
                     record_id: 300,
-                    intersection: true,
-                    pcurves: vec![20, 21],
+                    kind: E5CurveSupportKind::Intersection([20, 21]),
                     mode: 0,
                     range: [0.0, 1.0],
                     tail: Vec::new(),
@@ -3445,8 +3443,7 @@ mod route_tests {
                 300,
                 E5CurveSupport {
                     record_id: 300,
-                    intersection: true,
-                    pcurves: vec![20, 21],
+                    kind: E5CurveSupportKind::Intersection([20, 21]),
                     mode: 0,
                     range: [0.0, 1.0],
                     tail: Vec::new(),
@@ -3521,8 +3518,7 @@ mod route_tests {
                 40,
                 E5CurveSupport {
                     record_id: 40,
-                    intersection: false,
-                    pcurves: vec![30],
+                    kind: E5CurveSupportKind::Boundary(30),
                     mode: 0,
                     range: [0.0, 1.0],
                     tail: Vec::new(),
