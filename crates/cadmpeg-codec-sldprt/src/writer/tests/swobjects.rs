@@ -95,7 +95,7 @@ fn encoder_writes_source_less_ir() {
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     // No retained source content reached the writer, so it authored every byte.
-    assert_eq!(report.write_path, cadmpeg_ir::WritePath::Synthesized);
+    assert_eq!(report.write_path(), cadmpeg_ir::WritePath::Synthesized);
     let scan = container::scan_bytes(&encoded);
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.directory.len(), 1);

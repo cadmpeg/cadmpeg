@@ -19,10 +19,8 @@ pub struct ExportReport {
     identity: ExportIdentity,
     /// Entity counts and the semantic basis on which they were measured.
     pub census: EntityCensus,
-    /// How decode-time source fidelity was handled.
-    pub fidelity: FidelityResolution,
-    /// Which write path produced the exported bytes.
-    pub write_path: WritePath,
+    fidelity: FidelityResolution,
+    write_path: WritePath,
     /// Omitted, normalized, or reduced content.
     pub losses: Vec<LossNote>,
     /// Informational details about the export path.
@@ -90,11 +88,13 @@ impl<'de> Deserialize<'de> for ExportReport {
                 )))
             }
         };
+        let (write_path, fidelity) =
+            admit_export_path(wire.write_path, wire.fidelity).map_err(serde::de::Error::custom)?;
         Ok(Self {
             identity,
             census: wire.census,
-            fidelity: wire.fidelity,
-            write_path: wire.write_path,
+            fidelity,
+            write_path,
             losses: wire.losses,
             notes: wire.notes,
         })
@@ -213,7 +213,35 @@ impl EntityCensus {
     }
 }
 
+fn admit_export_path(
+    write_path: WritePath,
+    fidelity: FidelityResolution,
+) -> Result<(WritePath, FidelityResolution), String> {
+    match (write_path, &fidelity) {
+        (
+            WritePath::VerbatimReplay,
+            FidelityResolution::NotConsumed | FidelityResolution::Degraded { .. },
+        ) => Err("verbatim_replay cannot pair with not_consumed or degraded fidelity".into()),
+        (WritePath::Synthesized, FidelityResolution::Replayed) => {
+            Err("synthesized cannot pair with replayed fidelity".into())
+        }
+        _ => Ok((write_path, fidelity)),
+    }
+}
+
 impl ExportReport {
+    /// How decode-time source fidelity was handled.
+    #[must_use]
+    pub fn fidelity(&self) -> FidelityResolution {
+        self.fidelity.clone()
+    }
+
+    /// Which write path produced the exported bytes.
+    #[must_use]
+    pub fn write_path(&self) -> WritePath {
+        self.write_path
+    }
+
     /// Returns the native format namespace, or `"cadir"` for neutral CADIR.
     #[must_use]
     pub fn format(&self) -> &str {
@@ -244,6 +272,8 @@ impl ExportReport {
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
+        let (write_path, fidelity) = admit_export_path(write_path, fidelity)
+            .expect("export constructors admit only consistent write-path/fidelity pairs");
         Self {
             identity: ExportIdentity::Cadir,
             census,
@@ -265,6 +295,8 @@ impl ExportReport {
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
+        let (write_path, fidelity) = admit_export_path(write_path, fidelity)
+            .expect("export constructors admit only consistent write-path/fidelity pairs");
         Self {
             identity: ExportIdentity::Native(target),
             census,

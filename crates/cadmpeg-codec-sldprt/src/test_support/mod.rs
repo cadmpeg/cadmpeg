@@ -18,7 +18,7 @@ pub(crate) fn plan_inherited_write(
     writer: &mut dyn Write,
 ) -> Result<WritePath, CodecError> {
     let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
-    Ok(plan.write_to(writer)?.write_path)
+    Ok(plan.write_to(writer)?.write_path())
 }
 
 mod appearance;

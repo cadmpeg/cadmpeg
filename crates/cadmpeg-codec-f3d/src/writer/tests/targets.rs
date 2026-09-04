@@ -38,7 +38,7 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     )
     .expect("explicit transcode plans");
 
-    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotConsumed);
+    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
     let displacement = plan
         .report()
         .losses
@@ -64,7 +64,7 @@ fn cross_format_write_has_no_dialect_displacement() {
         TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
     )
     .expect("cross-format synthesis plans");
-    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotConsumed);
+    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
     assert!(plan.report().losses.iter().all(|loss| loss.code
         != F3dLossCode::SourceDialectDisplaced.kind()
         && loss.code != F3dLossCode::SourcePreservedImageUnavailable.kind()));
@@ -82,7 +82,7 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
 
     // No fidelity was offered, so the sealed wrapper owns this state and
     // stamps `NotProvided`; the missing-image fact survives as the typed loss.
-    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotProvided);
+    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotProvided);
     assert!(plan
         .report()
         .losses

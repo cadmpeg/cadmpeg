@@ -177,8 +177,8 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
             TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
-    assert_eq!(plan.report().write_path, WritePath::Synthesized);
-    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotConsumed);
+    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
+    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
     let displacement = plan
         .report()
         .losses
@@ -209,13 +209,13 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
         )
         .unwrap();
 
-    assert_eq!(plan.report().write_path, WritePath::VerbatimReplay);
+    assert_eq!(plan.report().write_path(), WritePath::VerbatimReplay);
     assert_eq!(
         plan.report().target().map(ToString::to_string),
         Some("iges:5.3-compressed-ascii".to_owned())
     );
     assert!(matches!(
-        &plan.report().fidelity,
+        &plan.report().fidelity(),
         FidelityResolution::Replayed
     ));
     let mut written = Vec::new();

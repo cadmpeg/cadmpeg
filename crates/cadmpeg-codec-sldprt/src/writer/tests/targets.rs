@@ -96,8 +96,11 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     )
     .expect("explicit transcode plans");
 
-    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotConsumed);
-    assert_eq!(plan.report().write_path, cadmpeg_ir::WritePath::Synthesized);
+    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
+    assert_eq!(
+        plan.report().write_path(),
+        cadmpeg_ir::WritePath::Synthesized
+    );
     let displacement = plan
         .report()
         .losses
@@ -132,7 +135,7 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
 
     // No fidelity was provided, so the sealed wrapper resolves the report to
     // `NotProvided`; the image-missing reason survives as the typed loss below.
-    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotProvided);
+    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotProvided);
     let unavailable = plan
         .report()
         .losses
