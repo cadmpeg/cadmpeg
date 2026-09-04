@@ -169,13 +169,13 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut NurbsPcurve)
     match chart {
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
-            for point in &mut pcurve.control_points {
+            for point in pcurve.control_points_mut() {
                 point.u *= LEN_TO_MM;
                 point.v *= -LEN_TO_MM;
             }
         }
         NativeSupportChart::Cone { axial_scale } => {
-            for point in &mut pcurve.control_points {
+            for point in pcurve.control_points_mut() {
                 let native = *point;
                 point.u = native.v;
                 point.v = native.u * axial_scale;
@@ -1442,13 +1442,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
                 (origin[1] + direction[1]) * LEN_TO_MM,
                 (origin[2] + direction[2]) * LEN_TO_MM,
             );
-            Some(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![start, end],
-                weights: None,
-                periodic: false,
-            })
+            NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None, false).ok()
         }
         "ellipse" => {
             let center = cur.take_position()?;
@@ -1464,13 +1458,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
                 point[1] * LEN_TO_MM,
                 point[2] * LEN_TO_MM,
             );
-            Some(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![at, at],
-                weights: None,
-                periodic: false,
-            })
+            NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], vec![at, at], None, false).ok()
         }
         "intcurve" => {
             cur.take_bool()?;
@@ -1872,13 +1860,13 @@ fn surface_isoline_along(
     pcurve: &NurbsPcurve,
 ) -> Option<NurbsCurve> {
     use cadmpeg_ir::eval::IsolineDirection;
-    (pcurve.degree == 1 && pcurve.control_points.len() == 2 && pcurve.weights.is_none())
+    (pcurve.degree() == 1 && pcurve.control_points().len() == 2 && pcurve.weights().is_none())
         .then_some(())?;
-    let start = *pcurve.control_points.first()?;
-    let end = *pcurve.control_points.last()?;
-    let domain = [*pcurve.knots.first()?, *pcurve.knots.last()?];
-    let u_domain = [*support.u_knots.first()?, *support.u_knots.last()?];
-    let v_domain = [*support.v_knots.first()?, *support.v_knots.last()?];
+    let start = *pcurve.control_points().first()?;
+    let end = *pcurve.control_points().last()?;
+    let domain = [*pcurve.knots().first()?, *pcurve.knots().last()?];
+    let u_domain = [*support.u_knots().first()?, *support.u_knots().last()?];
+    let v_domain = [*support.v_knots().first()?, *support.v_knots().last()?];
     let (direction, at, free_domain, travel) = if agree(start.u, end.u, width(u_domain)) {
         (
             IsolineDirection::ConstantU,
@@ -3278,10 +3266,10 @@ pub fn record_trailing_surface_bounds(toks: &[Token]) -> Option<[Option<f64>; 4]
 }
 
 fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
-    let degree = usize::try_from(curve.degree).ok()?;
+    let degree = usize::try_from(curve.degree()).ok()?;
     Some([
-        *curve.knots.get(degree)?,
-        *curve.knots.get(curve.control_points.len())?,
+        *curve.knots().get(degree)?,
+        *curve.knots().get(curve.control_points().len())?,
     ])
 }
 
@@ -3291,13 +3279,7 @@ mod cache_form_tests {
     use cadmpeg_ir::math::Point2;
 
     fn linear_pcurve(points: [Point2; 2]) -> NurbsPcurve {
-        NurbsPcurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: points.into(),
-            weights: None,
-            periodic: false,
-        }
+        NurbsPcurve::new(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()
     }
 
     #[test]
@@ -3305,14 +3287,14 @@ mod cache_form_tests {
         let mut plane = linear_pcurve([Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)]);
         normalize_support_pcurve(NativeSupportChart::PlaneLengths, &mut plane);
         assert_eq!(
-            plane.control_points,
+            plane.control_points(),
             [Point2::new(10.0, -20.0), Point2::new(30.0, -40.0)]
         );
 
         let mut cone = linear_pcurve([Point2::new(2.0, 0.5), Point2::new(-3.0, -0.25)]);
         normalize_support_pcurve(NativeSupportChart::Cone { axial_scale: 15.0 }, &mut cone);
         assert_eq!(
-            cone.control_points,
+            cone.control_points(),
             [Point2::new(0.5, 30.0), Point2::new(-0.25, -45.0)]
         );
     }
@@ -3348,7 +3330,7 @@ mod cache_form_tests {
         let mut pcurve = linear_pcurve([Point2::new(-0.5, 1.25), Point2::new(0.75, -2.0)]);
         normalize_pcurve_for_surface_record("cone", &surface, &mut pcurve);
         assert_eq!(
-            pcurve.control_points,
+            pcurve.control_points(),
             [Point2::new(1.25, -10.0), Point2::new(-2.0, 15.0)]
         );
     }
@@ -3386,13 +3368,14 @@ mod cache_form_tests {
 
     /// A degree-one solved curve whose parameter domain is `[0, 1]`.
     fn solved_curve() -> NurbsCurve {
-        NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }
+        NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .unwrap()
     }
 
     /// Cache form `2` stores no `bs3_curve` and no fit tolerance: the leading

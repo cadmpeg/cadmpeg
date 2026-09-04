@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
@@ -646,14 +646,15 @@ fn legacy_spline(
             control_points.push(Point3::new(x * scale, y * scale, z * scale));
         }
     }
-    Ok(NurbsCurve {
-        degree: u32::try_from(order - 1)
+    NurbsCurve::new(
+        u32::try_from(order - 1)
             .map_err(|_| CodecError::Malformed("V1 spline degree overflow".to_string()))?,
         knots,
         control_points,
         weights,
-        periodic: closed == 2,
-    })
+        closed == 2,
+    )
+    .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 fn legacy_curve_segments(
@@ -1309,23 +1310,24 @@ fn legacy_surface(
             weights.push(weight);
         }
     }
-    Ok(NurbsSurface {
-        u_degree: u32::try_from(orders[0] - 1)
+    NurbsSurface::new(
+        u32::try_from(orders[0] - 1)
             .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
-        v_degree: u32::try_from(orders[1] - 1)
+        u32::try_from(orders[1] - 1)
             .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
         u_knots,
         v_knots,
-        u_count: u32::try_from(counts[0])
+        u32::try_from(counts[0])
             .map_err(|_| CodecError::Malformed("V1 surface pole count overflow".to_string()))?,
-        v_count: u32::try_from(counts[1])
+        u32::try_from(counts[1])
             .map_err(|_| CodecError::Malformed("V1 surface pole count overflow".to_string()))?,
         control_points,
         weights,
-        normal_reversed: false,
-        u_periodic: closed[0] == 2,
-        v_periodic: closed[1] == 2,
-    })
+        false,
+        closed[0] == 2,
+        closed[1] == 2,
+    )
+    .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 #[derive(Clone)]
@@ -1357,14 +1359,14 @@ struct LegacyBrep {
 }
 
 fn curve_domain(curve: &NurbsCurve) -> Result<[f64; 2], CodecError> {
-    let degree = usize::try_from(curve.degree)
+    let degree = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("V1 curve degree overflow".to_string()))?;
     let end = curve
-        .knots
+        .knots()
         .len()
         .checked_sub(degree + 1)
         .ok_or_else(|| CodecError::Malformed("invalid V1 curve knot vector".to_string()))?;
-    Ok([curve.knots[degree], curve.knots[end]])
+    Ok([curve.knots()[degree], curve.knots()[end]])
 }
 
 fn find_root(parents: &mut [usize], mut index: usize) -> usize {
@@ -1676,16 +1678,18 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry: PcurveGeometry::Nurbs {
-                        degree: trim.pcurve.degree,
-                        knots: trim.pcurve.knots,
-                        control_points: trim
-                            .pcurve
-                            .control_points
-                            .into_iter()
-                            .map(|point| Point2::new(point.x, point.y))
-                            .collect(),
-                        weights: trim.pcurve.weights,
-                        periodic: trim.pcurve.periodic,
+                        nurbs: PcurveNurbs::new(
+                            trim.pcurve.degree(),
+                            trim.pcurve.knots().to_vec(),
+                            trim.pcurve
+                                .control_points()
+                                .into_iter()
+                                .map(|point| Point2::new(point.x, point.y))
+                                .collect(),
+                            trim.pcurve.weights().map(<[f64]>::to_vec),
+                            trim.pcurve.periodic(),
+                        )
+                        .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     },
                     metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                         None,
@@ -2057,18 +2061,20 @@ fn legacy_mesh(
 }
 
 fn evaluate_nurbs(curve: &NurbsCurve, parameter: f64) -> Result<Point3, CodecError> {
-    let degree = usize::try_from(curve.degree)
+    let degree = usize::try_from(curve.degree())
         .map_err(|_| CodecError::Malformed("V1 curve degree overflow".to_string()))?;
     let last = curve
-        .control_points
+        .control_points()
         .len()
         .checked_sub(1)
         .ok_or_else(|| CodecError::Malformed("V1 curve has no control points".to_string()))?;
-    let span = if parameter >= curve.knots[last + 1] {
+    let span = if parameter >= curve.knots()[last + 1] {
         last
     } else {
         (degree..=last)
-            .find(|index| parameter >= curve.knots[*index] && parameter < curve.knots[*index + 1])
+            .find(|index| {
+                parameter >= curve.knots()[*index] && parameter < curve.knots()[*index + 1]
+            })
             .ok_or_else(|| {
                 CodecError::Malformed("V1 curve parameter is outside knot domain".to_string())
             })?
@@ -2076,19 +2082,19 @@ fn evaluate_nurbs(curve: &NurbsCurve, parameter: f64) -> Result<Point3, CodecErr
     let mut values = (0..=degree)
         .map(|j| {
             let index = span - degree + j;
-            let point = curve.control_points[index];
-            let weight = curve.weights.as_ref().map_or(1.0, |weights| weights[index]);
+            let point = curve.control_points()[index];
+            let weight = curve.weights().map_or(1.0, |weights| weights[index]);
             [point.x * weight, point.y * weight, point.z * weight, weight]
         })
         .collect::<Vec<_>>();
     for level in 1..=degree {
         for j in (level..=degree).rev() {
             let index = span - degree + j;
-            let denominator = curve.knots[index + degree + 1 - level] - curve.knots[index];
+            let denominator = curve.knots()[index + degree + 1 - level] - curve.knots()[index];
             let alpha = if denominator == 0.0 {
                 0.0
             } else {
-                (parameter - curve.knots[index]) / denominator
+                (parameter - curve.knots()[index]) / denominator
             };
             let previous = values[j - 1];
             for (coordinate, value) in values[j].iter_mut().enumerate() {
@@ -2298,12 +2304,12 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                             format!("rhino:object:point#{suffix}.start").into();
                         let end_point: cadmpeg_ir::ids::PointId =
                             format!("rhino:object:point#{suffix}.end").into();
-                        let degree = usize::try_from(segment.degree).map_err(|_| {
+                        let degree = usize::try_from(segment.degree()).map_err(|_| {
                             CodecError::Malformed("V1 curve degree is negative".to_string())
                         })?;
                         let parameter_range = [
-                            segment.knots[degree],
-                            segment.knots[segment.knots.len() - degree - 1],
+                            segment.knots()[degree],
+                            segment.knots()[segment.knots().len() - degree - 1],
                         ];
                         let start = evaluate_nurbs(&segment, parameter_range[0])?;
                         let end = evaluate_nurbs(&segment, parameter_range[1])?;

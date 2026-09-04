@@ -1667,24 +1667,27 @@ mod tests {
 
     #[test]
     fn nurbs_carrier_offset_preserves_tiny_nonzero_distance() {
-        let surface = SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-            ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        });
+        let surface = SurfaceGeometry::Nurbs(
+            NurbsSurface::new(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                2,
+                2,
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                None,
+                false,
+                false,
+                false,
+            )
+            .expect("valid unit-square surface"),
+        );
         let tiny = 1e-200;
         let offset = nurbs_carrier_offset(
             &surface,

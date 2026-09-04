@@ -345,7 +345,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
             Some(DecodedRollingBallCurve {
                 geometry: CurveGeometry::Nurbs(curve),
                 parameter_range: [None, None],
-            }) if curve.degree == 1
+        }) if curve.degree() == 1
         ));
         assert_eq!(position, intcurve.len());
 
@@ -378,7 +378,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
             Some(DecodedRollingBallCurve {
                 geometry: CurveGeometry::Nurbs(curve),
                 parameter_range: [None, None],
-            }) if curve.degree == 1
+        }) if curve.degree() == 1
         ));
         assert_eq!(position, intcurve.len());
     }
@@ -405,7 +405,7 @@ fn rolling_ball_surfaces_decode_framed_spline_supports() {
                 SurfaceGeometry::Nurbs(surface),
                 [[Some(-1.0), Some(2.0)], [Some(-3.0), Some(4.0)]],
             ))
-                if surface.u_degree == 1 && surface.v_degree == 1
+        if surface.u_degree() == 1 && surface.v_degree() == 1
         ));
         assert_eq!(position, bytes.len());
     }

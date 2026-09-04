@@ -190,9 +190,9 @@ pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
         );
         weights.push(if index % 2 == 0 { 1.0 } else { half_sqrt2 });
     }
-    Some(NurbsCurve {
-        degree: 2,
-        knots: vec![
+    NurbsCurve::new(
+        2,
+        vec![
             0.0,
             0.0,
             0.0,
@@ -207,9 +207,10 @@ pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
             2.0 * std::f64::consts::PI,
         ],
         control_points,
-        weights: Some(weights),
-        periodic: false,
-    })
+        Some(weights),
+        false,
+    )
+    .ok()
 }
 
 /// Build the ruled NURBS patch of a swept surface over `v` in
@@ -223,47 +224,55 @@ pub(crate) fn swept_nurbs(
     if !(v_start.is_finite() && v_end.is_finite()) || v_end <= v_start {
         return None;
     }
-    let n = profile.control_points.len();
+    let n = profile.control_points().len();
     let mut control = Vec::with_capacity(n * 2);
-    let mut weights = profile.weights.is_some().then(|| Vec::with_capacity(n * 2));
-    for (i, pole) in profile.control_points.iter().enumerate() {
+    let mut weights = profile
+        .weights()
+        .is_some()
+        .then(|| Vec::with_capacity(n * 2));
+    for (i, pole) in profile.control_points().iter().enumerate() {
         for v in [v_start, v_end] {
             control.push(Point3::new(
                 pole.x + v * direction.x,
                 pole.y + v * direction.y,
                 pole.z + v * direction.z,
             ));
-            if let (Some(out), Some(w)) = (&mut weights, &profile.weights) {
+            if let (Some(out), Some(w)) = (&mut weights, profile.weights()) {
                 out.push(w[i]);
             }
         }
     }
-    Some(NurbsSurface {
-        u_degree: profile.degree,
-        v_degree: 1,
-        u_knots: profile.knots.clone(),
-        v_knots: vec![v_start, v_start, v_end, v_end],
-        u_count: n as u32,
-        v_count: 2,
-        control_points: control,
+    NurbsSurface::new(
+        profile.degree(),
+        1,
+        profile.knots().to_vec(),
+        vec![v_start, v_start, v_end, v_end],
+        u32::try_from(n).ok()?,
+        2,
+        control,
         weights,
-        normal_reversed: false,
-        u_periodic: profile.periodic,
-        v_periodic: false,
-    })
+        false,
+        profile.periodic(),
+        false,
+    )
+    .ok()
 }
 
 /// Build the exact rational NURBS of a full surface of revolution: the
 /// profile revolved `2π` about the axis through `base`, with the angular
 /// parameter (`v`, radians) following `A × (C - Z)`.
-pub(crate) fn spun_nurbs(profile: &NurbsCurve, base: Point3, axis: Vector3) -> NurbsSurface {
+pub(crate) fn spun_nurbs(
+    profile: &NurbsCurve,
+    base: Point3,
+    axis: Vector3,
+) -> Option<NurbsSurface> {
     use std::f64::consts::{FRAC_PI_2, PI};
-    let n = profile.control_points.len();
+    let n = profile.control_points().len();
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let mut control = Vec::with_capacity(n * 9);
     let mut weights = Vec::with_capacity(n * 9);
-    for (i, pole) in profile.control_points.iter().enumerate() {
-        let pole_weight = profile.weights.as_ref().map_or(1.0, |w| w[i]);
+    for (i, pole) in profile.control_points().iter().enumerate() {
+        let pole_weight = profile.weights().map_or(1.0, |w| w[i]);
         let offset = [pole.x - base.x, pole.y - base.y, pole.z - base.z];
         let along = offset[0] * axis.x + offset[1] * axis.y + offset[2] * axis.z;
         let center = Point3::new(
@@ -321,19 +330,20 @@ pub(crate) fn spun_nurbs(profile: &NurbsCurve, base: Point3, axis: Vector3) -> N
         2.0 * PI,
         2.0 * PI,
     ];
-    NurbsSurface {
-        u_degree: profile.degree,
-        v_degree: 2,
-        u_knots: profile.knots.clone(),
+    NurbsSurface::new(
+        profile.degree(),
+        2,
+        profile.knots().to_vec(),
         v_knots,
-        u_count: n as u32,
-        v_count: 9,
-        control_points: control,
-        weights: Some(weights),
-        normal_reversed: false,
-        u_periodic: profile.periodic,
-        v_periodic: true,
-    }
+        u32::try_from(n).ok()?,
+        9,
+        control,
+        Some(weights),
+        false,
+        profile.periodic(),
+        true,
+    )
+    .ok()
 }
 
 #[cfg(test)]
@@ -426,10 +436,10 @@ mod tests {
 
     fn eval_curve(curve: &NurbsCurve, parameter: f64) -> Point3 {
         nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         )
         .expect("evaluable curve")
@@ -446,9 +456,9 @@ mod tests {
         };
         let curve = profile_nurbs(&geometry).expect("ellipse NURBS");
 
-        assert_eq!(curve.degree, 2);
-        assert_eq!(curve.control_points.len(), 9);
-        assert!(!curve.periodic, "the representation is endpoint-clamped");
+        assert_eq!(curve.degree(), 2);
+        assert_eq!(curve.control_points().len(), 9);
+        assert!(!curve.periodic(), "the representation is endpoint-clamped");
         for parameter in [0.0, 0.3, FRAC_PI_2, 2.4, std::f64::consts::PI, 5.7] {
             let point = eval_curve(&curve, parameter);
             let center_y = -2.0;
@@ -538,25 +548,26 @@ mod tests {
             out
         }
         let u_basis = basis(
-            &surface.u_knots,
-            surface.u_degree as usize,
-            surface.u_count as usize,
+            surface.u_knots(),
+            surface.u_degree() as usize,
+            surface.u_count() as usize,
             u_parameter,
         );
         let v_basis = basis(
-            &surface.v_knots,
-            surface.v_degree as usize,
-            surface.v_count as usize,
+            surface.v_knots(),
+            surface.v_degree() as usize,
+            surface.v_count() as usize,
             v_parameter,
         );
         let mut acc = [0.0f64; 4];
-        for u_index in 0..surface.u_count as usize {
-            for v_index in 0..surface.v_count as usize {
-                let weight = surface.weights.as_ref().map_or(1.0, |weights| {
-                    weights[u_index * surface.v_count as usize + v_index]
+        for u_index in 0..surface.u_count() as usize {
+            for v_index in 0..surface.v_count() as usize {
+                let weight = surface.weights().map_or(1.0, |weights| {
+                    weights[u_index * surface.v_count() as usize + v_index]
                 });
                 let basis_weight = u_basis[u_index] * v_basis[v_index] * weight;
-                let point = &surface.control_points[u_index * surface.v_count as usize + v_index];
+                let point =
+                    &surface.control_points()[u_index * surface.v_count() as usize + v_index];
                 acc[0] += basis_weight * point.x;
                 acc[1] += basis_weight * point.y;
                 acc[2] += basis_weight * point.z;
@@ -569,18 +580,20 @@ mod tests {
     #[test]
     fn spun_line_reproduces_cylinder() {
         // Profile: vertical line x=2, from z=0 to z=1 (degree 1).
-        let profile = NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
-            weights: None,
-            periodic: false,
-        };
+        let profile = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+            None,
+            false,
+        )
+        .expect("valid line profile");
         let surface = spun_nurbs(
             &profile,
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
-        );
+        )
+        .expect("valid spun surface");
         // The revolution is the standard rational quadratic NURBS circle: four
         // 90-degree Bézier segments with corner weights √2/2 and breakpoint
         // knots at 0, π/2, π, 3π/2, 2π. Within a segment the parameter `v` is
@@ -612,13 +625,14 @@ mod tests {
 
     #[test]
     fn swept_line_reproduces_ruled_plane() {
-        let profile = NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        };
+        let profile = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid line profile");
         let surface =
             swept_nurbs(&profile, Vector3::new(0.0, 1.0, 0.0), -2.0, 3.0).expect("swept surface");
         let p = eval_surface(&surface, 0.5, 1.5);

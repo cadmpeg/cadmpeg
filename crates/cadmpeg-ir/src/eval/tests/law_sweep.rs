@@ -74,24 +74,30 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     ir.model.curves = vec![
         Curve {
             id: profile_id.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Curve {
             id: spine_id.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
     ];

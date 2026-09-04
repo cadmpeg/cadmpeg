@@ -726,11 +726,14 @@ pub(crate) fn rational_pcurve_arc(
         return None;
     }
     Some(PcurveGeometry::Nurbs {
-        degree: 2,
-        knots,
-        control_points,
-        weights: Some(weights),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            knots,
+            control_points,
+            Some(weights),
+            false,
+        )
+        .ok()?,
     })
 }
 
@@ -744,14 +747,17 @@ pub(crate) fn quintic_jet_pcurve(
     let (full_knots, controls) =
         crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)?;
     Some(PcurveGeometry::Nurbs {
-        degree,
-        knots: full_knots,
-        control_points: controls
-            .into_iter()
-            .map(|point| Point2::new(point[0], point[1]))
-            .collect(),
-        weights: None,
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            degree,
+            full_knots,
+            controls
+                .into_iter()
+                .map(|point| Point2::new(point[0], point[1]))
+                .collect(),
+            None,
+            false,
+        )
+        .ok()?,
     })
 }
 
@@ -780,19 +786,13 @@ mod route_tests {
     fn rational_pcurve_arc_preserves_tiny_nonzero_sweep() {
         let range = [0.0, 1e-200];
         let pcurve = rational_pcurve_arc([0.0, 0.0], 2.0, range).expect("tiny circular arc");
-        let PcurveGeometry::Nurbs {
-            knots,
-            control_points,
-            weights,
-            ..
-        } = pcurve
-        else {
+        let PcurveGeometry::Nurbs { nurbs } = pcurve else {
             panic!("rational arc must produce NURBS");
         };
-        assert_eq!(knots.first(), Some(&range[0]));
-        assert_eq!(knots.last(), Some(&range[1]));
-        assert_eq!(control_points.len(), 3);
-        assert_eq!(weights, Some(vec![1.0, 1.0, 1.0]));
+        assert_eq!(nurbs.knots().first(), Some(&range[0]));
+        assert_eq!(nurbs.knots().last(), Some(&range[1]));
+        assert_eq!(nurbs.control_points().len(), 3);
+        assert_eq!(nurbs.weights(), Some(&[1.0, 1.0, 1.0][..]));
     }
 
     #[test]

@@ -50,45 +50,35 @@ pub(crate) fn native_nurbs_surface(
     bytes: &mut Vec<u8>,
     surface: &NurbsSurface,
 ) -> Result<(), CodecError> {
-    let u_count = usize::try_from(surface.u_count)
+    let u_count = usize::try_from(surface.u_count())
         .map_err(|_| CodecError::NotImplemented("F3D NURBS u count exceeds usize".into()))?;
-    let v_count = usize::try_from(surface.v_count)
+    let v_count = usize::try_from(surface.v_count())
         .map_err(|_| CodecError::NotImplemented("F3D NURBS v count exceeds usize".into()))?;
-    if surface.control_points.len() != u_count.saturating_mul(v_count)
-        || surface
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != surface.control_points.len())
-    {
-        return Err(CodecError::Malformed(
-            "source-less F3D NURBS surface has inconsistent control-grid cardinality".into(),
-        ));
-    }
     native_ident(
         bytes,
-        if surface.weights.is_some() {
+        if surface.weights().is_some() {
             "nurbs"
         } else {
             "nubs"
         },
     )?;
-    native_i64(bytes, i64::from(surface.u_degree));
-    native_i64(bytes, i64::from(surface.v_degree));
-    native_enum(bytes, if surface.u_periodic { 2 } else { 0 });
-    native_enum(bytes, if surface.v_periodic { 2 } else { 0 });
+    native_i64(bytes, i64::from(surface.u_degree()));
+    native_i64(bytes, i64::from(surface.v_degree()));
+    native_enum(bytes, if surface.u_periodic() { 2 } else { 0 });
+    native_enum(bytes, if surface.v_periodic() { 2 } else { 0 });
     native_enum(bytes, 0);
     native_enum(bytes, 0);
-    native_nurbs_knot_counts(bytes, [&surface.u_knots, &surface.v_knots])?;
-    native_nurbs_knots(bytes, &surface.u_knots)?;
-    native_nurbs_knots(bytes, &surface.v_knots)?;
+    native_nurbs_knot_counts(bytes, [surface.u_knots(), surface.v_knots()])?;
+    native_nurbs_knots(bytes, surface.u_knots())?;
+    native_nurbs_knots(bytes, surface.v_knots())?;
     for v in 0..v_count {
         for u in 0..u_count {
             let index = u * v_count + v;
-            let point = surface.control_points[index];
+            let point = surface.control_points()[index];
             native_f64(bytes, point.x / LEN_TO_MM);
             native_f64(bytes, point.y / LEN_TO_MM);
             native_f64(bytes, point.z / LEN_TO_MM);
-            if let Some(weights) = surface.weights.as_ref() {
+            if let Some(weights) = surface.weights() {
                 native_f64(bytes, weights[index]);
             }
         }
@@ -826,10 +816,10 @@ fn native_procedural_surface_definition(
             bytes.push(0x0f);
             native_ident(bytes, "rule_sur")?;
             let profile_range = [
-                solved_cache.u_knots.first().copied().ok_or_else(|| {
+                solved_cache.u_knots().first().copied().ok_or_else(|| {
                     CodecError::Malformed("ruled solved surface has no U knot domain".into())
                 })?,
-                solved_cache.u_knots.last().copied().ok_or_else(|| {
+                solved_cache.u_knots().last().copied().ok_or_else(|| {
                     CodecError::Malformed("ruled solved surface has no U knot domain".into())
                 })?,
             ];
@@ -904,7 +894,7 @@ fn native_procedural_surface_definition(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "sum_spl_sur")?;
-            let ranges = [&solved_cache.u_knots, &solved_cache.v_knots]
+            let ranges = [solved_cache.u_knots(), solved_cache.v_knots()]
                 .into_iter()
                 .map(|knots| {
                     Ok::<_, CodecError>([
@@ -1014,12 +1004,12 @@ fn native_procedural_surface_definition(
                 })?;
             let directrix = native_interval_curve(&directrix.geometry, parameter_interval)?;
             let native_parameter_interval = [
-                directrix.knots.first().copied().unwrap_or(0.0),
-                directrix.knots.last().copied().unwrap_or(0.0),
+                directrix.knots().first().copied().unwrap_or(0.0),
+                directrix.knots().last().copied().unwrap_or(0.0),
             ];
             let native_angular_interval = [
-                solved_cache.v_knots.first().copied().unwrap_or(0.0),
-                solved_cache.v_knots.last().copied().unwrap_or(0.0),
+                solved_cache.v_knots().first().copied().unwrap_or(0.0),
+                solved_cache.v_knots().last().copied().unwrap_or(0.0),
             ];
             if *transposed
                 || parameter_interval != native_parameter_interval
@@ -3320,27 +3310,24 @@ fn native_radius_function_pcurve_block(
     bytes: &mut Vec<u8>,
     function: &PcurveGeometry,
 ) -> Result<(), CodecError> {
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = function
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = function else {
         return Err(CodecError::NotImplemented(
             "variable-blend radius function must be a NURBS pcurve".into(),
         ));
     };
     let native = PcurveGeometry::Nurbs {
-        degree: *degree,
-        knots: knots.clone(),
-        control_points: control_points
-            .iter()
-            .map(|point| cadmpeg_ir::math::Point2::new(point.u / LEN_TO_MM, point.v))
-            .collect(),
-        weights: weights.clone(),
-        periodic: *periodic,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            nurbs.degree(),
+            nurbs.knots().to_vec(),
+            nurbs
+                .control_points()
+                .iter()
+                .map(|point| cadmpeg_ir::math::Point2::new(point.u / LEN_TO_MM, point.v))
+                .collect(),
+            nurbs.weights().map(<[f64]>::to_vec),
+            nurbs.periodic(),
+        )
+        .map_err(|error| CodecError::Malformed(error.to_string()))?,
     };
     native_nurbs_pcurve_block(bytes, &native)
 }
@@ -4294,10 +4281,10 @@ fn encode_native_rolling_ball(
             CodecError::malformed(format_args!("blend references missing spine {spine}"))
         })?;
     let spine_range = [
-        solved_cache.u_knots.first().copied().ok_or_else(|| {
+        solved_cache.u_knots().first().copied().ok_or_else(|| {
             CodecError::Malformed("rolling-ball solved surface has no U knot domain".into())
         })?,
-        solved_cache.u_knots.last().copied().ok_or_else(|| {
+        solved_cache.u_knots().last().copied().ok_or_else(|| {
             CodecError::Malformed("rolling-ball solved surface has no U knot domain".into())
         })?,
     ];
@@ -4327,39 +4314,29 @@ pub(crate) fn native_nurbs_curve(
     bytes: &mut Vec<u8>,
     curve: &NurbsCurve,
 ) -> Result<(), CodecError> {
-    let degree = usize::try_from(curve.degree)
+    let _degree = usize::try_from(curve.degree())
         .map_err(|_| CodecError::NotImplemented("F3D NURBS curve degree exceeds usize".into()))?;
-    if curve.knots.len() != curve.control_points.len() + degree + 1
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != curve.control_points.len())
-    {
-        return Err(CodecError::Malformed(
-            "source-less F3D NURBS curve has inconsistent cardinality".into(),
-        ));
-    }
     native_ident(
         bytes,
-        if curve.weights.is_some() {
+        if curve.weights().is_some() {
             "nurbs"
         } else {
             "nubs"
         },
     )?;
-    native_i64(bytes, i64::from(curve.degree));
-    native_enum(bytes, if curve.periodic { 2 } else { 0 });
+    native_i64(bytes, i64::from(curve.degree()));
+    native_enum(bytes, if curve.periodic() { 2 } else { 0 });
     native_i64(
         bytes,
-        i64::try_from(unique_knot_count(&curve.knots))
+        i64::try_from(unique_knot_count(curve.knots()))
             .map_err(|_| CodecError::NotImplemented("F3D unique-knot count exceeds i64".into()))?,
     );
-    native_nurbs_knots(bytes, &curve.knots)?;
-    for (index, point) in curve.control_points.iter().enumerate() {
+    native_nurbs_knots(bytes, curve.knots())?;
+    for (index, point) in curve.control_points().iter().enumerate() {
         native_f64(bytes, point.x / LEN_TO_MM);
         native_f64(bytes, point.y / LEN_TO_MM);
         native_f64(bytes, point.z / LEN_TO_MM);
-        if let Some(weights) = curve.weights.as_ref() {
+        if let Some(weights) = curve.weights() {
             native_f64(bytes, weights[index]);
         }
     }
@@ -4385,14 +4362,16 @@ fn native_spline_field_curve(
 fn native_pcurve_knot_domain(
     pcurve: Option<&PcurveGeometry>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
-    let Some(PcurveGeometry::Nurbs { knots, .. }) = pcurve else {
+    let Some(PcurveGeometry::Nurbs { nurbs }) = pcurve else {
         return Ok(None);
     };
     Ok(Some([
-        *knots
+        *nurbs
+            .knots()
             .first()
             .ok_or_else(|| CodecError::Malformed("pcurve has no knot domain".into()))?,
-        *knots
+        *nurbs
+            .knots()
             .last()
             .ok_or_else(|| CodecError::Malformed("pcurve has no knot domain".into()))?,
     ]))
@@ -4423,18 +4402,19 @@ fn native_interval_curve(
                     origin.z + parameter * direction.z,
                 )
             };
-            Ok(NurbsCurve {
-                degree: 1,
-                knots: vec![
+            NurbsCurve::new(
+                1,
+                vec![
                     parameter_range[0],
                     parameter_range[0],
                     parameter_range[1],
                     parameter_range[1],
                 ],
-                control_points: vec![point(parameter_range[0]), point(parameter_range[1])],
-                weights: None,
-                periodic: false,
-            })
+                vec![point(parameter_range[0]), point(parameter_range[1])],
+                None,
+                false,
+            )
+            .map_err(|error| CodecError::Malformed(error.to_string()))
         }
         CurveGeometry::Circle {
             center,
@@ -4543,18 +4523,15 @@ fn native_conic_interval_curve(
             knots.extend([end, end, end]);
         }
     }
-    Ok(NurbsCurve {
-        degree: 2,
-        knots,
-        control_points,
-        weights: Some(weights),
-        periodic: false,
-    })
+    NurbsCurve::new(2, knots, control_points, Some(weights), false)
+        .map_err(|error| CodecError::Malformed(error.to_string()))
 }
 
 #[cfg(test)]
 mod native_interval_curve_tests {
     use super::*;
+
+    const EPS_GENERATED_CURVE: f64 = 1.0e-12;
 
     #[test]
     fn generated_circle_interval_lowers_to_exact_rational_nurbs() {
@@ -4569,16 +4546,16 @@ mod native_interval_curve_tests {
         )
         .expect("generated circle interval");
         let midpoint = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             std::f64::consts::FRAC_PI_2,
         )
         .expect("evaluate generated circle interval");
-        assert!((midpoint.x - 2.0).abs() < 1.0e-12);
-        assert!((midpoint.y - 8.0).abs() < 1.0e-12);
-        assert!((midpoint.z - 4.0).abs() < 1.0e-12);
+        assert!((midpoint.x - 2.0).abs() < EPS_GENERATED_CURVE);
+        assert!((midpoint.y - 8.0).abs() < EPS_GENERATED_CURVE);
+        assert!((midpoint.z - 4.0).abs() < EPS_GENERATED_CURVE);
     }
 
     #[test]
@@ -4594,12 +4571,12 @@ mod native_interval_curve_tests {
             [0.0, std::f64::consts::FRAC_PI_2],
         )
         .expect("generated ellipse interval");
-        assert_eq!(curve.control_points[0], Point3::new(5.0, 2.0, 0.5));
-        assert!((curve.control_points[2].x + 1.0).abs() < 1.0e-12);
-        assert_eq!(curve.control_points[2].y, 4.0);
-        assert_eq!(curve.control_points[2].z, 0.5);
+        assert_eq!(curve.control_points()[0], Point3::new(5.0, 2.0, 0.5));
+        assert!((curve.control_points()[2].x + 1.0).abs() < EPS_GENERATED_CURVE);
+        assert_eq!(curve.control_points()[2].y, 4.0);
+        assert_eq!(curve.control_points()[2].z, 0.5);
         assert_eq!(
-            curve.knots,
+            curve.knots(),
             vec![
                 0.0,
                 0.0,
@@ -4621,10 +4598,10 @@ mod native_interval_curve_tests {
         };
         let curve = native_spline_field_curve(&geometry, None)
             .expect("generated domainless circle spline field");
-        assert_eq!(curve.knots.first().copied(), Some(0.0));
-        assert_eq!(curve.knots.last().copied(), Some(std::f64::consts::TAU));
-        assert_eq!(curve.control_points.len(), 9);
-        assert_eq!(curve.weights.as_ref().map(Vec::len), Some(9));
+        assert_eq!(curve.knots().first().copied(), Some(0.0));
+        assert_eq!(curve.knots().last().copied(), Some(std::f64::consts::TAU));
+        assert_eq!(curve.control_points().len(), 9);
+        assert_eq!(curve.weights().map(<[f64]>::len), Some(9));
     }
 
     #[test]
@@ -5656,11 +5633,14 @@ fn native_support_pcurve_for_range(
         _ => {}
     }
     Ok(PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        )
+        .map_err(|error| CodecError::Malformed(error.to_string()))?,
     })
 }
 
@@ -5681,23 +5661,26 @@ mod pcurve_chart_tests {
                 half_angle,
             };
             let pcurve = PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)],
-                weights: None,
-                periodic: false,
+                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)],
+                    None,
+                    false,
+                )
+                .expect("valid test pcurve"),
             };
-            let PcurveGeometry::Nurbs { control_points, .. } =
+            let PcurveGeometry::Nurbs { nurbs } =
                 native_support_pcurve(&support, &pcurve).expect("native cone chart")
             else {
                 panic!("native chart conversion returns a NURBS pcurve")
             };
             let direction = if half_angle < 0.0 { -1.0 } else { 1.0 };
             let axial_scale = direction * 12.0 * half_angle.cos();
-            assert_eq!(control_points[0].u, 15.0 / axial_scale);
-            assert_eq!(control_points[0].v, 1.25);
-            assert_eq!(control_points[1].u, -3.0 / axial_scale);
-            assert_eq!(control_points[1].v, 2.5);
+            assert_eq!(nurbs.control_points()[0].u, 15.0 / axial_scale);
+            assert_eq!(nurbs.control_points()[0].v, 1.25);
+            assert_eq!(nurbs.control_points()[1].u, -3.0 / axial_scale);
+            assert_eq!(nurbs.control_points()[1].v, 2.5);
         }
     }
 }
@@ -6501,17 +6484,18 @@ pub(crate) fn native_ref_pcurve_companion(
     })?;
     let native_geometry = native_support_pcurve_for_range(support, &pcurve.geometry, range)?;
     let native = native_pcurve_geometry(&native_geometry, range)?;
-    let lifted = NurbsCurve {
-        degree: native.degree,
-        knots: native.knots,
-        control_points: native
+    let lifted = NurbsCurve::new(
+        native.degree,
+        native.knots,
+        native
             .control_points
             .into_iter()
             .map(|point| Point3::new(point.u * 10.0, point.v * 10.0, 0.0))
             .collect(),
-        weights: native.weights,
-        periodic: native.periodic,
-    };
+        native.weights,
+        native.periodic,
+    )
+    .map_err(|error| CodecError::Malformed(error.to_string()))?;
     native_curve_base(bytes, "intcurve")?;
     native_nurbs_curve(bytes, &lifted)?;
     native_nurbs_pcurve_block(bytes, &native_geometry)?;
@@ -6563,18 +6547,12 @@ fn native_pcurve_geometry(
         | PcurveGeometry::SphericalGreatCircle { .. } => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),
         )),
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => Ok(NativePcurveGeometry {
-            degree: *degree,
-            knots: knots.clone(),
-            control_points: control_points.clone(),
-            weights: weights.clone(),
-            periodic: *periodic,
+        PcurveGeometry::Nurbs { nurbs } => Ok(NativePcurveGeometry {
+            degree: nurbs.degree(),
+            knots: nurbs.knots().to_vec(),
+            control_points: nurbs.control_points().to_vec(),
+            weights: nurbs.weights().map(<[f64]>::to_vec),
+            periodic: nurbs.periodic(),
         }),
         PcurveGeometry::Trimmed {
             parameter_range,

@@ -688,19 +688,16 @@ pub(crate) fn try_decode_zero_entity(
                     else {
                         continue;
                     };
-                    let PcurveGeometry::Nurbs {
-                        degree,
-                        knots,
-                        control_points,
-                        ..
-                    } = &pcurve
-                    else {
+                    let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
                         continue;
                     };
-                    let Some(parameter_range) = usize::try_from(*degree)
+                    let Some(parameter_range) = usize::try_from(nurbs.degree())
                         .ok()
                         .and_then(|degree| {
-                            Some([*knots.get(degree)?, *knots.get(control_points.len())?])
+                            Some([
+                                *nurbs.knots().get(degree)?,
+                                *nurbs.knots().get(nurbs.control_points().len())?,
+                            ])
                         })
                         .filter(|range| {
                             range.iter().all(|value| value.is_finite()) && range[0] < range[1]
@@ -954,13 +951,16 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: CurveId("catia:test:nurbs#0".to_string()),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![first, corner],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![first, corner],
+                    None,
+                    false,
+                )
+                .expect("valid linear NURBS"),
+            ),
             source_object: None,
         });
         ir.model.curves.push(Curve {

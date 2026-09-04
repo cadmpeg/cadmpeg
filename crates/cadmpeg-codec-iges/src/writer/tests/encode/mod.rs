@@ -7,7 +7,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
@@ -584,24 +584,27 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         },
         Surface {
             id: SurfaceId("surface#nurbs".into()),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 1.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(1.0, 1.0, 0.0),
-                ],
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 1.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .expect("valid test NURBS surface"),
+            ),
             source_object: None,
         },
     ]);
@@ -895,11 +898,14 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         ir.model.pcurves.push(Pcurve {
             id: pcurve_ids[index].clone(),
             geometry: PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point2::new(start.x, start.y), pcurve_end],
-                weights: None,
-                periodic: false,
+                nurbs: PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(start.x, start.y), pcurve_end],
+                    None,
+                    false,
+                )
+                .expect("valid sheet pcurve"),
             },
             metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 1.0]), None),
         });
@@ -914,11 +920,14 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             ir.model.pcurves.push(Pcurve {
                 id: split_pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs {
-                    degree: 1,
-                    knots: vec![0.0, 0.0, 1.0, 1.0],
-                    control_points: vec![midpoint, Point2::new(end_position.x, end_position.y)],
-                    weights: None,
-                    periodic: false,
+                    nurbs: PcurveNurbs::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![midpoint, Point2::new(end_position.x, end_position.y)],
+                        None,
+                        false,
+                    )
+                    .expect("valid split sheet pcurve"),
                 },
                 metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                     None,
@@ -1197,10 +1206,10 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
     {
         let mut ir = decoded.ir_mut();
         let pcurve = ir.model.pcurves.first_mut().unwrap();
-        let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+        let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
             panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
         };
-        control_points[0].u += 0.25;
+        nurbs.control_points_mut()[0].u += 0.25;
     }
 
     let Err(error) = plan_at(IgesVersion::V5_3, decoded.ir(), None) else {
@@ -1280,10 +1289,10 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
                 .iter_mut()
                 .find(|pcurve| pcurve.id == pcurve_id)
                 .unwrap();
-            let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+            let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
                 panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
             };
-            control_points.reverse();
+            nurbs.control_points_mut().reverse();
         }
     }
 
@@ -1453,11 +1462,14 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
     decoded.ir_mut().model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![start_uv, end_uv],
-            weights: None,
-            periodic: false,
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![start_uv, end_uv],
+                None,
+                false,
+            )
+            .expect("valid source-less pcurve"),
         },
         metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some([0.0, 1.0]), None),
     });

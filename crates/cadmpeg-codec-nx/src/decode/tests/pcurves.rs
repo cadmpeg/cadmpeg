@@ -363,17 +363,20 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
     let surface = SurfaceId("nx:test:boundary-plane".into());
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(5.0, 5.0, 0.0),
-                Point3::new(10.0, 0.0, 0.0),
-            ],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(5.0, 5.0, 0.0),
+                    Point3::new(10.0, 0.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -447,98 +450,110 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
 }
 
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, z),
-            Point3::new(0.0, 2.0, z),
-            Point3::new(3.0, 0.0, z),
-            Point3::new(3.0, 2.0, z),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+    SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
+                Point3::new(0.0, 0.0, z),
+                Point3::new(0.0, 2.0, z),
+                Point3::new(3.0, 0.0, z),
+                Point3::new(3.0, 2.0, z),
+            ],
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    )
 }
 
 fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
-        control_points: [0.0, 1.0, 3.0]
-            .into_iter()
-            .flat_map(|x| {
-                [0.0, 2.0, 5.0]
-                    .into_iter()
-                    .map(move |y| Point3::new(x, y, z))
-            })
-            .collect(),
-        weights: Some(vec![2.0; 9]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+    SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            3,
+            3,
+            [0.0, 1.0, 3.0]
+                .into_iter()
+                .flat_map(|x| {
+                    [0.0, 2.0, 5.0]
+                        .into_iter()
+                        .map(move |y| Point3::new(x, y, z))
+                })
+                .collect(),
+            Some(vec![2.0; 9]),
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    )
 }
 
 fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
-    SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
-        control_points: [0.0, 1.5, 3.0]
-            .into_iter()
-            .flat_map(|x| {
-                [0.0, 1.0, 2.0]
-                    .into_iter()
-                    .map(move |y| Point3::new(x, y, z))
-            })
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+    SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            3,
+            3,
+            [0.0, 1.5, 3.0]
+                .into_iter()
+                .flat_map(|x| {
+                    [0.0, 1.0, 2.0]
+                        .into_iter()
+                        .map(move |y| Point3::new(x, y, z))
+                })
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    )
 }
 
 fn quadratic_paraboloid_surface() -> SurfaceGeometry {
     let coordinates = [0.0, 0.5, 1.0];
     let square_controls = [0.0, 0.0, 1.0];
-    SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
-        control_points: (0..3)
-            .flat_map(|u| {
-                (0..3).map(move |v| {
-                    Point3::new(
-                        coordinates[u],
-                        coordinates[v],
-                        square_controls[u] + square_controls[v],
-                    )
+    SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            3,
+            3,
+            (0..3)
+                .flat_map(|u| {
+                    (0..3).map(move |v| {
+                        Point3::new(
+                            coordinates[u],
+                            coordinates[v],
+                            square_controls[u] + square_controls[v],
+                        )
+                    })
                 })
-            })
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    )
 }
 
 #[test]
@@ -548,7 +563,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     let SurfaceGeometry::Nurbs(candidate) = &mut candidate else {
         unreachable!();
     };
-    candidate.control_points[3].z += 0.000_5;
+    candidate.control_points_mut()[3].z += 0.000_5;
 
     let fit = super::certified_offset_cache_fit(
         &support,
@@ -690,8 +705,8 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
     let SurfaceGeometry::Nurbs(candidate_surface) = &mut candidate else {
         unreachable!();
     };
-    support_surface.u_periodic = true;
-    candidate_surface.u_periodic = true;
+    support_surface.set_u_periodic(true);
+    candidate_surface.set_u_periodic(true);
 
     assert_eq!(
         super::certified_offset_cache_fit(&support, &candidate, 0.0, 0.0),
@@ -727,21 +742,24 @@ fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
 fn offset_cache_fit_decouples_distant_knot_span_scale() {
     let x = [0.0, 0.25, 0.5, 1.0e9 + 0.5];
     let z = [0.0, 0.0, 0.1, 0.2];
-    let support = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 4,
-        v_count: 2,
-        control_points: (0..4)
-            .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let support = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            4,
+            2,
+            (0..4)
+                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    );
 
     let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("each regular knot span certifies independently");
@@ -752,21 +770,24 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
 fn offset_cache_fit_certifies_regular_c0_knot_spans() {
     let x = [0.0, 0.25, 0.5, 1.0, 1.5];
     let z = [0.0, 0.0, 0.1, 0.1, 0.2];
-    let support = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 2,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 5,
-        v_count: 2,
-        control_points: (0..5)
-            .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let support = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            5,
+            2,
+            (0..5)
+                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    );
 
     let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("regular spans certify across the C0 knot break");
@@ -780,7 +801,7 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
         unreachable!();
     };
     for v in 0..3 {
-        surface.control_points[2 * 3 + v] = surface.control_points[3 + v];
+        surface.control_points_mut()[2 * 3 + v] = surface.control_points()[3 + v];
     }
     assert!(super::certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
 }
@@ -792,7 +813,7 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
         unreachable!();
     };
     for v in 0..3 {
-        surface.control_points[2 * 3 + v].x = 0.0;
+        surface.control_points_mut()[2 * 3 + v].x = 0.0;
     }
     assert_eq!(
         super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
@@ -805,21 +826,24 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
     let epsilon = 2.0_f64.powi(-100);
     let x = [0.0, epsilon / 3.0, 2.0 * epsilon / 3.0, 1.0 + epsilon];
     let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
-    let support = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 3,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 4,
-        v_count: 2,
-        control_points: (0..4)
-            .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let support = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            3,
+            1,
+            vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            4,
+            2,
+            (0..4)
+                .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    );
     let SurfaceGeometry::Nurbs(surface) = &support else {
         unreachable!();
     };
@@ -854,11 +878,13 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
         unreachable!();
     };
     let axis_weights = [1.0, 1.01, 1.02];
-    surface.weights = Some(
-        (0..3)
-            .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
-            .collect(),
-    );
+    surface
+        .set_weights(Some(
+            (0..3)
+                .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
+                .collect(),
+        ))
+        .unwrap();
 
     assert_eq!(
         super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
@@ -873,17 +899,19 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     let SurfaceGeometry::Nurbs(surface) = &mut support else {
         unreachable!();
     };
-    for point in &mut surface.control_points {
+    for point in surface.control_points_mut() {
         point.x += 1.0e12;
         point.y -= 2.0e12;
         point.z += 3.0e12;
     }
     let axis_weights = [1.0, 1.01, 1.02];
-    surface.weights = Some(
-        (0..3)
-            .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
-            .collect(),
-    );
+    surface
+        .set_weights(Some(
+            (0..3)
+                .flat_map(|u| (0..3).map(move |v| axis_weights[u] * axis_weights[v]))
+                .collect(),
+        ))
+        .unwrap();
 
     let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("absolute placement does not widen rational derivative bounds");
@@ -1288,15 +1316,18 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
 #[test]
 fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
-        control_points: vec![
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 2.0),
-            Point2::new(3.0, 1.0),
-        ],
-        weights: Some(vec![1.0, 2.0, 1.5]),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 2.0),
+                Point2::new(3.0, 1.0),
+            ],
+            Some(vec![1.0, 2.0, 1.5]),
+            false,
+        )
+        .unwrap(),
     };
     let range = [0.25, 1.75];
     let reversed =
@@ -1411,12 +1442,8 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
         .expect("a finite parabola interval has an exact quadratic reflection");
     assert!(matches!(
         &reversed,
-        PcurveGeometry::Nurbs {
-            degree: 2,
-            weights: None,
-            periodic: false,
-            ..
-        }
+        PcurveGeometry::Nurbs { nurbs }
+            if nurbs.degree() == 2 && nurbs.weights().is_none() && !nurbs.periodic()
     ));
     for parameter in [0.25, 0.5, 1.0, 1.75, 2.5, 2.75] {
         let expected =
@@ -1565,13 +1592,16 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     let curve_id = CurveId("nx:test:curve#0".into());
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     let procedural = ProceduralCurve::try_new(
@@ -1676,11 +1706,14 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         None,
     ));
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-        weights: None,
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .unwrap(),
     };
 
     assert!(super::orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
@@ -1709,25 +1742,28 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         SurfaceId("nx:test:surface#0".into()),
         SurfaceId("nx:test:surface#1".into()),
     ];
-    let surface = || NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0],
-        u_count: 2,
-        v_count: 4,
-        control_points: [0.0, 1.0]
-            .into_iter()
-            .flat_map(|y| {
-                [0.0, 0.1, 0.2, 10.0]
-                    .into_iter()
-                    .map(move |x| Point3::new(x, y, 0.0))
-            })
-            .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
+    let surface = || {
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.01, 0.02, 1.0, 1.0],
+            2,
+            4,
+            [0.0, 1.0]
+                .into_iter()
+                .flat_map(|y| {
+                    [0.0, 0.1, 0.2, 10.0]
+                        .into_iter()
+                        .map(move |x| Point3::new(x, y, 0.0))
+                })
+                .collect(),
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap()
     };
     ir.model.surfaces.extend([
         Surface {
@@ -1756,7 +1792,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
     let SurfaceGeometry::Nurbs(second) = &mut ir.model.surfaces[1].geometry else {
         unreachable!()
     };
-    second.control_points[1].z = 1.0;
+    second.control_points_mut()[1].z = 1.0;
     assert!(!super::coincident_pcurve_pair(
         &ir,
         [&surfaces[0], &surfaces[1]],
@@ -1781,11 +1817,14 @@ fn rational_pcurve_incidence_isolates_close_branches() {
     .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
     .collect::<Vec<_>>();
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 4,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        control_points: controls,
-        weights: Some(weights.to_vec()),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            4,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            controls,
+            Some(weights.to_vec()),
+            false,
+        )
+        .unwrap(),
     };
     let roots = super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(0.11))
         .expect("complete homogeneous root isolation");
@@ -1811,11 +1850,14 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
     .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
     .collect();
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 4,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        control_points,
-        weights: Some(weights.to_vec()),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            4,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            control_points,
+            Some(weights.to_vec()),
+            false,
+        )
+        .unwrap(),
     };
     let parameters =
         super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
@@ -1841,13 +1883,14 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
     .zip(weights)
     .map(|(numerator, weight)| Point3::new(numerator / weight, 0.0, 0.0))
     .collect();
-    let curve = NurbsCurve {
-        degree: 4,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    let curve = NurbsCurve::new(
+        4,
+        vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         control_points,
-        weights: Some(weights.to_vec()),
-        periodic: false,
-    };
+        Some(weights.to_vec()),
+        false,
+    )
+    .unwrap();
     let point = Point3::new(0.0, 1.0e-4, 0.0);
 
     let first = super::closest_nurbs_curve_parameter(&curve, point, Some(0.099))
@@ -1866,27 +1909,31 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
 fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: knots.clone(),
-        control_points: vec![
-            Point2::new(0.0, 0.0),
-            Point2::new(1.0, 0.0),
-            Point2::new(0.0, 0.0),
-        ],
-        weights: None,
-        periodic: true,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            1,
+            knots.clone(),
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 0.0),
+            ],
+            None,
+            true,
+        )
+        .unwrap(),
     };
-    let curve = NurbsCurve {
-        degree: 1,
+    let curve = NurbsCurve::new(
+        1,
         knots,
-        control_points: vec![
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: true,
-    };
+        None,
+        true,
+    )
+    .unwrap();
 
     assert_eq!(
         super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(4.1))
@@ -1914,11 +1961,14 @@ fn polynomial_root_isolation_retains_repeated_real_roots() {
 #[test]
 fn coincident_pcurve_interval_retains_seed_and_boundaries() {
     let pcurve = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![Point2::new(2.0, -3.0); 3],
-        weights: None,
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![Point2::new(2.0, -3.0); 3],
+            None,
+            false,
+        )
+        .unwrap(),
     };
     let roots = super::closest_pcurve_parameters(&pcurve, Point2::new(2.0, -3.0), Some(0.3))
         .expect("coincident interval");

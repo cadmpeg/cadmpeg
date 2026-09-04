@@ -2971,14 +2971,13 @@ pub(crate) fn validate_curve_edits(
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":directrix") || id.ends_with(":spine"))))
                     && valid_edited_curve_structure(before, after)
-                    && before.weights.is_some() == after.weights.is_some()
-                    && before.control_points.len() == after.control_points.len()
-                    && after.control_points.iter().copied().all(finite_point)
-                    && after.weights.as_ref().is_none_or(|weights| {
-                        weights.len() == after.control_points.len()
-                            && weights
-                                .iter()
-                                .all(|weight| weight.is_finite() && *weight > 0.0)
+                    && before.weights().is_some() == after.weights().is_some()
+                    && before.control_points().len() == after.control_points().len()
+                    && after.control_points().iter().copied().all(finite_point)
+                    && after.weights().is_none_or(|weights| {
+                        weights
+                            .iter()
+                            .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
             }
             _ => {
@@ -3031,19 +3030,9 @@ pub(crate) fn validate_pcurve_edits(
         }
         let (
             PcurveGeometry::Nurbs {
-                degree: _,
-                knots: before_knots,
-                control_points: before_points,
-                weights: before_weights,
-                periodic: before_periodic,
+                nurbs: before_nurbs,
             },
-            PcurveGeometry::Nurbs {
-                degree: after_degree,
-                knots: after_knots,
-                control_points: after_points,
-                weights: after_weights,
-                periodic: after_periodic,
-            },
+            PcurveGeometry::Nurbs { nurbs: after_nurbs },
         ) = (&before.geometry, &after.geometry)
         else {
             return Err(CodecError::NotImplemented(format!(
@@ -3052,20 +3041,20 @@ pub(crate) fn validate_pcurve_edits(
         };
         let valid = id.starts_with("f3d:brep:entity#")
             && valid_edited_nurbs_direction(
-                before_knots,
-                *after_degree,
-                after_knots,
-                after_points.len(),
+                before_nurbs.knots(),
+                after_nurbs.degree(),
+                after_nurbs.knots(),
+                after_nurbs.control_points().len(),
             )
-            && before_points.len() == after_points.len()
-            && before_weights.is_some() == after_weights.is_some()
-            && before_weights.as_ref().map(Vec::len) == after_weights.as_ref().map(Vec::len)
-            && after_weights.as_ref().is_none_or(|weights| {
+            && before_nurbs.control_points().len() == after_nurbs.control_points().len()
+            && before_nurbs.weights().is_some() == after_nurbs.weights().is_some()
+            && after_nurbs.weights().is_none_or(|weights| {
                 weights
                     .iter()
                     .all(|weight| weight.is_finite() && *weight > 0.0)
             })
-            && after_points
+            && after_nurbs
+                .control_points()
                 .iter()
                 .all(|point| point.u.is_finite() && point.v.is_finite());
         let contract_valid = before.wrapper_reversed().is_some()
@@ -3088,7 +3077,8 @@ pub(crate) fn validate_pcurve_edits(
             id.to_owned(),
             NurbsPcurveEdit {
                 native_geometry: after_native,
-                periodic: (before_periodic != after_periodic).then_some(*after_periodic),
+                periodic: (before_nurbs.periodic() != after_nurbs.periodic())
+                    .then_some(after_nurbs.periodic()),
                 wrapper_reversed: (before.wrapper_reversed() != after.wrapper_reversed())
                     .then_some(after.wrapper_reversed())
                     .flatten(),
@@ -3202,35 +3192,25 @@ pub(crate) fn validate_surface_edits(
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
                     && valid_edited_nurbs_direction(
-                        &before.u_knots,
-                        after.u_degree,
-                        &after.u_knots,
-                        usize::try_from(after.u_count).unwrap_or(usize::MAX),
+                        before.u_knots(),
+                        after.u_degree(),
+                        after.u_knots(),
+                        usize::try_from(after.u_count()).unwrap_or(usize::MAX),
                     )
                     && valid_edited_nurbs_direction(
-                        &before.v_knots,
-                        after.v_degree,
-                        &after.v_knots,
-                        usize::try_from(after.v_count).unwrap_or(usize::MAX),
+                        before.v_knots(),
+                        after.v_degree(),
+                        after.v_knots(),
+                        usize::try_from(after.v_count()).unwrap_or(usize::MAX),
                     )
-                    && before.u_count == after.u_count
-                    && before.v_count == after.v_count
-                    && before.weights.is_some() == after.weights.is_some()
-                    && after.control_points.len()
-                        == usize::try_from(after.u_count)
-                            .ok()
-                            .and_then(|u| {
-                                usize::try_from(after.v_count)
-                                    .ok()
-                                    .and_then(|v| u.checked_mul(v))
-                            })
-                            .unwrap_or(usize::MAX)
-                    && after.control_points.iter().copied().all(finite_point)
-                    && after.weights.as_ref().is_none_or(|weights| {
-                        weights.len() == after.control_points.len()
-                            && weights
-                                .iter()
-                                .all(|weight| weight.is_finite() && *weight > 0.0)
+                    && before.u_count() == after.u_count()
+                    && before.v_count() == after.v_count()
+                    && before.weights().is_some() == after.weights().is_some()
+                    && after.control_points().iter().copied().all(finite_point)
+                    && after.weights().is_none_or(|weights| {
+                        weights
+                            .iter()
+                            .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
             }
             _ => {

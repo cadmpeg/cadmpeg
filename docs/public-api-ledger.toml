@@ -3886,3 +3886,45 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset::roles"
 reason = "named source and offset code fields preserve the fixed native role order by construction"
+
+[[change]]
+commit = "e8d86e3a5e4d7632ed995bca0221bfc50a42bbf2"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::geometry::NurbsSurface::{u_degree,v_degree,u_knots,v_knots,u_count,v_count,control_points,weights,normal_reversed,u_periodic,v_periodic}"
+reason = "knot, pole, and weight cardinalities are checked at construction so inconsistent NURBS surfaces cannot be built in process"
+
+[[change]]
+commit = "e8d86e3a5e4d7632ed995bca0221bfc50a42bbf2"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::geometry::NurbsCurve::{degree,knots,control_points,weights,periodic}"
+reason = "knot, pole, and weight cardinalities are checked at construction so inconsistent NURBS curves cannot be built in process"
+
+[[change]]
+commit = "e8d86e3a5e4d7632ed995bca0221bfc50a42bbf2"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::PcurveGeometry::Nurbs"
+reason = "parameter-space NURBS fields move into a checked PcurveNurbs carrier so degree, knots, poles, and weights cannot disagree"
+
+[[change]]
+commit = "e8d86e3a5e4d7632ed995bca0221bfc50a42bbf2"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::geometry::PcurveGeometry::Nurbs::{degree,knots,control_points,weights,periodic}"
+reason = "the independent NURBS fields admitted knot and weight lengths that disagreed with the pole count"
+
+[[change]]
+commit = "e8d86e3a5e4d7632ed995bca0221bfc50a42bbf2"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::PcurveGeometry::PolarNurbs"
+reason = "polar NURBS radial and axial poles share one checked carrier so independent lengths cannot disagree"
+
+[[change]]
+commit = "e8d86e3a5e4d7632ed995bca0221bfc50a42bbf2"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::geometry::PcurveGeometry::PolarNurbs::{degree,knots,radial_control_points,axial_control_points,weights,periodic}"
+reason = "the independent polar NURBS fields admitted radial, axial, knot, and weight lengths that disagreed"

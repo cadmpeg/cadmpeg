@@ -331,20 +331,18 @@ fn solved_curve(
         return None;
     };
     let knots = degree_one_knots(&parameters);
-    Some((
-        CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots,
-            control_points: points
-                .iter()
-                .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM))
-                .collect(),
-            weights: None,
-            periodic: false,
-        }),
-        parameters,
-        reversed,
-    ))
+    let nurbs = NurbsCurve::new(
+        1,
+        knots,
+        points
+            .iter()
+            .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM))
+            .collect(),
+        None,
+        false,
+    )
+    .ok()?;
+    Some((CurveGeometry::Nurbs(nurbs), parameters, reversed))
 }
 
 fn solved_support_uv(
@@ -600,12 +598,12 @@ mod tests {
         let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carrier.carrier.geometry else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.degree, 1);
-        assert_eq!(curve.control_points.len(), 3);
-        assert_eq!(curve.control_points[1], Point3::new(10.0, 0.0, 0.0));
-        assert_eq!(curve.knots.len(), 5);
-        assert!((curve.knots[2] - 0.01).abs() < 1.0e-12);
-        assert!((curve.knots[3] - 0.02).abs() < 1.0e-12);
+        assert_eq!(curve.degree(), 1);
+        assert_eq!(curve.control_points().len(), 3);
+        assert_eq!(curve.control_points()[1], Point3::new(10.0, 0.0, 0.0));
+        assert_eq!(curve.knots().len(), 5);
+        assert!((curve.knots()[2] - 0.01).abs() < 1.0e-12);
+        assert!((curve.knots()[3] - 0.02).abs() < 1.0e-12);
         let support_data = &carrier.support_data;
         assert_eq!(support_data.supports, [2, 3]);
         let support_uv = support_data
@@ -638,7 +636,7 @@ mod tests {
         let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = carrier.carrier.geometry else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.control_points.len(), POINTS.len());
+        assert_eq!(curve.control_points().len(), POINTS.len());
     }
 
     #[test]
@@ -656,9 +654,9 @@ mod tests {
         let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &carrier.carrier.geometry else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.knots, [-0.02, -0.02, -0.01, 0.0, 0.0]);
+        assert_eq!(curve.knots(), [-0.02, -0.02, -0.01, 0.0, 0.0]);
         assert_eq!(
-            curve.control_points,
+            curve.control_points(),
             [
                 Point3::new(10.0, 10.0, 0.0),
                 Point3::new(10.0, 0.0, 0.0),
@@ -669,7 +667,7 @@ mod tests {
         let control_points = &support_data.support_uv.as_ref().expect("UV cache")[0];
         assert_eq!(control_points[0], Point2::new(8.0, 9.0));
         assert_eq!(control_points[2], Point2::new(0.0, 1.0));
-        assert_eq!(curve.knots, [-0.02, -0.02, -0.01, 0.0, 0.0]);
+        assert_eq!(curve.knots(), [-0.02, -0.02, -0.01, 0.0, 0.0]);
     }
 
     #[test]
@@ -702,7 +700,7 @@ mod tests {
             panic!("expected a NURBS polyline");
         };
         assert_eq!(
-            *curve.control_points.last().expect("points"),
+            *curve.control_points().last().expect("points"),
             Point3::new(end[0] * LEN_TO_MM, end[1] * LEN_TO_MM, end[2] * LEN_TO_MM),
         );
     }
@@ -747,8 +745,8 @@ mod tests {
         else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.control_points.len(), 4);
-        assert_eq!(curve.control_points[0], curve.control_points[3]);
+        assert_eq!(curve.control_points().len(), 4);
+        assert_eq!(curve.control_points()[0], curve.control_points()[3]);
     }
 
     #[test]
@@ -784,9 +782,9 @@ mod tests {
         else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.control_points.len(), POINTS.len());
+        assert_eq!(curve.control_points().len(), POINTS.len());
         assert_eq!(
-            *curve.control_points.last().expect("points"),
+            *curve.control_points().last().expect("points"),
             Point3::new(
                 POINTS[2][0] * LEN_TO_MM,
                 POINTS[2][1] * LEN_TO_MM,

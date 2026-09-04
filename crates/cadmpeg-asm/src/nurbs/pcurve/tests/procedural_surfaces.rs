@@ -265,7 +265,7 @@ fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
                 panic!("expected legacy taper surface");
             };
 
-            assert!((reference.control_points[1].x - 40.0).abs() < f64::EPSILON);
+            assert!((reference.control_points()[1].x - 40.0).abs() < f64::EPSILON);
             assert!(pcurve.is_none());
             assert!((parameter - 0.25).abs() < f64::EPSILON);
             assert!((fit_tolerance - 0.01).abs() < f64::EPSILON * 10.0);
@@ -590,8 +590,8 @@ fn ruled_surface_uses_two_direct_profiles_then_cache() {
             panic!("expected ruled surface");
         };
 
-        assert!((first.control_points[1].x - 10.0).abs() < f64::EPSILON);
-        assert!((second.control_points[1].x - 40.0).abs() < f64::EPSILON);
+        assert!((first.control_points()[1].x - 10.0).abs() < f64::EPSILON);
+        assert!((second.control_points()[1].x - 40.0).abs() < f64::EPSILON);
         assert!(
             (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
                 < f64::EPSILON * 10.0
@@ -661,8 +661,8 @@ fn sum_surface_uses_two_direct_curves_origin_then_cache() {
             panic!("expected second NURBS curve");
         };
 
-        assert!((first.control_points[1].x - 10.0).abs() < f64::EPSILON);
-        assert!((second.control_points[1].x - 40.0).abs() < f64::EPSILON);
+        assert!((first.control_points()[1].x - 10.0).abs() < f64::EPSILON);
+        assert!((second.control_points()[1].x - 40.0).abs() < f64::EPSILON);
         assert!((basepoint.x - 5.0).abs() < f64::EPSILON);
         assert!((basepoint.y - 10.0).abs() < f64::EPSILON);
         assert!((basepoint.z - 15.0).abs() < f64::EPSILON);
@@ -732,7 +732,7 @@ fn revolution_surface_uses_direct_profile_axis_then_cache() {
             panic!("expected NURBS profile");
         };
 
-        assert!((directrix.control_points[1].x - 40.0).abs() < f64::EPSILON);
+        assert!((directrix.control_points()[1].x - 40.0).abs() < f64::EPSILON);
         assert!((axis_origin.x - 5.0).abs() < f64::EPSILON);
         assert!((axis_origin.y - 10.0).abs() < f64::EPSILON);
         assert!((axis_origin.z - 15.0).abs() < f64::EPSILON);
@@ -834,7 +834,7 @@ fn surface_cache_resolves_width4_subtype_ref() {
         &crate::nurbs::toks::test_table(&active, 4),
     )
     .expect("resolved width-4 ref");
-    assert_eq!((surface.u_count, surface.v_count), (2, 2));
+    assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
 }
 
 #[test]
@@ -852,7 +852,7 @@ fn surface_cache_resolves_compact_subtype_refs_at_both_widths() {
             &crate::nurbs::toks::test_table(&active, int_width),
         )
         .unwrap_or_else(|| panic!("compact subtype ref at width {int_width}"));
-        assert_eq!((surface.u_count, surface.v_count), (2, 2));
+        assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
     }
 }
 

@@ -496,8 +496,8 @@ pub(crate) fn try_decode_freeform_surfaces(
     for curve in b2_nurbs_curves {
         let id = CurveId(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()));
         let parameter_range = [
-            *curve.geometry.knots.first().expect("parsed knot vector"),
-            *curve.geometry.knots.last().expect("parsed knot vector"),
+            *curve.geometry.knots().first().expect("parsed knot vector"),
+            *curve.geometry.knots().last().expect("parsed knot vector"),
         ];
         annotate(
             &mut annotations,
@@ -520,8 +520,8 @@ pub(crate) fn try_decode_freeform_surfaces(
     for curve in a5_nurbs_curves {
         let id = CurveId(format!("catia:a5:nurbs-curve#{}", ir.model.curves.len()));
         let parameter_range = [
-            *curve.geometry.knots.first().expect("parsed knot vector"),
-            *curve.geometry.knots.last().expect("parsed knot vector"),
+            *curve.geometry.knots().first().expect("parsed knot vector"),
+            *curve.geometry.knots().last().expect("parsed knot vector"),
         ];
         annotate(
             &mut annotations,
@@ -1214,6 +1214,18 @@ pub(crate) fn append_freeform_surface_pools(
         ) else {
             continue;
         };
+        let Ok(geometry) = NurbsCurve::new(
+            guide.degree,
+            knots,
+            control_points
+                .into_iter()
+                .map(|point| Point3::new(point[0], point[1], point[2]))
+                .collect(),
+            None,
+            false,
+        ) else {
+            continue;
+        };
         let id = CurveId(format!("catia:guide:curve#{}", ir.model.curves.len()));
         annotate(
             annotations,
@@ -1225,16 +1237,7 @@ pub(crate) fn append_freeform_surface_pools(
         );
         ir.model.curves.push(Curve {
             id,
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: guide.degree,
-                knots,
-                control_points: control_points
-                    .into_iter()
-                    .map(|point| Point3::new(point[0], point[1], point[2]))
-                    .collect(),
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(geometry),
             source_object: None,
         });
     }
@@ -2624,22 +2627,13 @@ fn rechart_equivalent_surface_pcurve(
             origin: Point2::new(origin.u, origin.v + v_shift),
             direction: *direction,
         }),
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => Some(PcurveGeometry::Nurbs {
-            degree: *degree,
-            knots: knots.clone(),
-            control_points: control_points
-                .iter()
-                .map(|point| Point2::new(point.u, point.v + v_shift))
-                .collect(),
-            weights: weights.clone(),
-            periodic: *periodic,
-        }),
+        PcurveGeometry::Nurbs { nurbs } => {
+            let mut shifted = nurbs.clone();
+            for point in shifted.control_points_mut() {
+                point.v += v_shift;
+            }
+            Some(PcurveGeometry::Nurbs { nurbs: shifted })
+        }
         _ => None,
     }
 }
@@ -2772,13 +2766,16 @@ mod tests {
         let curve_id = CurveId("catia:test:curve#0".to_string());
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(2.0, 3.0, 5.0), Point3::new(7.0, 11.0, 13.0)],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(2.0, 3.0, 5.0), Point3::new(7.0, 11.0, 13.0)],
+                    None,
+                    false,
+                )
+                .expect("valid linear NURBS"),
+            ),
             source_object: None,
         });
         assert!(attach_standalone_wires(
@@ -2853,10 +2850,10 @@ mod tests {
             }, Curve {
                 geometry: CurveGeometry::Nurbs(second),
                 ..
-            }] if first.degree == 5
-                && second.degree == 5
-                && first.control_points.first() == Some(&Point3::new(1.0, 0.0, 0.0))
-                && second.control_points.first() == Some(&Point3::new(0.0, 1.0, 0.0))
+            }] if first.degree() == 5
+                && second.degree() == 5
+                && first.control_points().first() == Some(&Point3::new(1.0, 0.0, 0.0))
+                && second.control_points().first() == Some(&Point3::new(0.0, 1.0, 0.0))
         ));
     }
 
@@ -3480,14 +3477,17 @@ mod tests {
         let endpoints = [*loci.first().expect("sites"), *loci.last().expect("sites")];
         let range = [0.0, 1.0];
         let line_through = |first: [f64; 2], last: [f64; 2]| PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![range[0], range[0], range[1], range[1]],
-            control_points: vec![
-                Point2::new(first[0], first[1]),
-                Point2::new(last[0], last[1]),
-            ],
-            weights: None,
-            periodic: false,
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                1,
+                vec![range[0], range[0], range[1], range[1]],
+                vec![
+                    Point2::new(first[0], first[1]),
+                    Point2::new(last[0], last[1]),
+                ],
+                None,
+                false,
+            )
+            .expect("valid endpoint witness pcurve"),
         };
         let chart = solve_planar_chart_rechart(&stored, &loci, &target).expect("isometry");
         let first = *stored.first().expect("sites");

@@ -1838,10 +1838,10 @@ fn conical_trim(
                 }
             }
             CurveGeometry::Nurbs(nurbs) => {
-                if nurbs.degree != 1
-                    || nurbs.periodic
-                    || nurbs.control_points.len() != 2
-                    || nurbs.control_points.iter().any(|point| {
+                if nurbs.degree() != 1
+                    || nurbs.periodic()
+                    || nurbs.control_points().len() != 2
+                    || nurbs.control_points().iter().any(|point| {
                         analytic_surface_residual(surface, *point)
                             .is_none_or(|residual| residual > tolerance)
                     })

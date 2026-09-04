@@ -115,27 +115,21 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             center.u + cosine.u * parameter.cosh() + sine.u * parameter.sinh(),
             center.v + cosine.v * parameter.cosh() + sine.v * parameter.sinh(),
         )),
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            ..
-        } => {
+        PcurveGeometry::Nurbs { nurbs } => {
             let values = basis(
-                knots,
-                usize::try_from(*degree).ok()?,
-                control_points.len(),
+                nurbs.knots(),
+                usize::try_from(nurbs.degree()).ok()?,
+                nurbs.control_points().len(),
                 parameter,
             )?;
             let mut u = 0.0;
             let mut v = 0.0;
             let mut denominator = 0.0;
             for (index, value) in values.into_iter().enumerate() {
-                let weight = weights.as_ref().map_or(1.0, |weights| weights[index]);
+                let weight = nurbs.weights().map_or(1.0, |weights| weights[index]);
                 let coefficient = value * weight;
-                u += coefficient * control_points[index].u;
-                v += coefficient * control_points[index].v;
+                u += coefficient * nurbs.control_points()[index].u;
+                v += coefficient * nurbs.control_points()[index].v;
                 denominator += coefficient;
             }
             (denominator != 0.0).then(|| Point2::new(u / denominator, v / denominator))
@@ -225,19 +219,19 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
         CurveGeometry::Degenerate { point } => Some(*point),
         CurveGeometry::Nurbs(nurbs) => {
             let values = basis(
-                &nurbs.knots,
-                usize::try_from(nurbs.degree).ok()?,
-                nurbs.control_points.len(),
+                nurbs.knots(),
+                usize::try_from(nurbs.degree()).ok()?,
+                nurbs.control_points().len(),
                 parameter,
             )?;
             let mut point = Point3::new(0.0, 0.0, 0.0);
             let mut denominator = 0.0;
             for (index, value) in values.into_iter().enumerate() {
-                let weight = nurbs.weights.as_ref().map_or(1.0, |weights| weights[index]);
+                let weight = nurbs.weights().map_or(1.0, |weights| weights[index]);
                 let coefficient = value * weight;
-                point.x += coefficient * nurbs.control_points[index].x;
-                point.y += coefficient * nurbs.control_points[index].y;
-                point.z += coefficient * nurbs.control_points[index].z;
+                point.x += coefficient * nurbs.control_points()[index].x;
+                point.y += coefficient * nurbs.control_points()[index].y;
+                point.z += coefficient * nurbs.control_points()[index].z;
                 denominator += coefficient;
             }
             (denominator != 0.0).then(|| {

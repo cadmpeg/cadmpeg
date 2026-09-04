@@ -291,13 +291,6 @@ pub(in super::super) fn revolved_nurbs_surface(
     directrix: &NurbsCurve,
     axis: &RevolutionAxis,
 ) -> Option<NurbsSurface> {
-    if directrix
-        .weights
-        .as_ref()
-        .is_some_and(|weights| weights.len() != directrix.control_points.len())
-    {
-        return None;
-    }
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let angular_poles = [
@@ -323,9 +316,9 @@ pub(in super::super) fn revolved_nurbs_surface(
         diagonal_weight,
         1.0,
     ];
-    let mut control_points = Vec::with_capacity(directrix.control_points.len() * 9);
-    let mut weights = Vec::with_capacity(directrix.control_points.len() * 9);
-    for (index, point) in directrix.control_points.iter().enumerate() {
+    let mut control_points = Vec::with_capacity(directrix.control_points().len() * 9);
+    let mut weights = Vec::with_capacity(directrix.control_points().len() * 9);
+    for (index, point) in directrix.control_points().iter().enumerate() {
         let relative = [
             point.x - axis_origin[0],
             point.y - axis_origin[1],
@@ -342,8 +335,7 @@ pub(in super::super) fn revolved_nurbs_surface(
         ];
         let tangent = cross(axis_direction, radial);
         let directrix_weight = directrix
-            .weights
-            .as_ref()
+            .weights()
             .map_or(1.0, |curve_weights| curve_weights[index]);
         for ([radial_scale, tangent_scale], angular_weight) in
             angular_poles.into_iter().zip(angular_weights)
@@ -356,11 +348,11 @@ pub(in super::super) fn revolved_nurbs_surface(
             weights.push(directrix_weight * angular_weight);
         }
     }
-    Some(NurbsSurface {
-        u_degree: directrix.degree,
-        v_degree: 2,
-        u_knots: directrix.knots.clone(),
-        v_knots: vec![
+    NurbsSurface::new(
+        directrix.degree(),
+        2,
+        directrix.knots().to_vec(),
+        vec![
             0.0,
             0.0,
             0.0,
@@ -374,14 +366,15 @@ pub(in super::super) fn revolved_nurbs_surface(
             std::f64::consts::TAU,
             std::f64::consts::TAU,
         ],
-        u_count: u32::try_from(directrix.control_points.len()).ok()?,
-        v_count: 9,
+        u32::try_from(directrix.control_points().len()).ok()?,
+        9,
         control_points,
-        weights: Some(weights),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+        Some(weights),
+        false,
+        false,
+        false,
+    )
+    .ok()
 }
 
 pub(in super::super) fn revolved_section_circle(
@@ -679,8 +672,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ProceduralSurfaceDefinition::Extrusion {
                         directrix: curve_id,
                         parameter_interval: Some([
-                            *directrix.knots.first().expect("validated spline knots"),
-                            *directrix.knots.last().expect("validated spline knots"),
+                            *directrix.knots().first().expect("validated spline knots"),
+                            *directrix.knots().last().expect("validated spline knots"),
                         ]),
                         direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
                         native_position: None,

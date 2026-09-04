@@ -5,8 +5,8 @@ use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
-    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, Surface,
-    SurfaceCurveFamily, SurfaceGeometry,
+    PcurveGeometry, PcurveNurbs, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -1959,36 +1959,22 @@ pub(crate) fn e5_pcurve_on_surface(
                 return None;
             }
             let geometry = rational_pcurve_arc(*center, *radius, angular_range)?;
-            let PcurveGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                periodic,
-            } = geometry
-            else {
+            let PcurveGeometry::Nurbs { mut nurbs } = geometry else {
                 return None;
             };
             let scale = decoded_surface.uv_scale;
-            let control_points = control_points
-                .into_iter()
-                .map(|point| Point2::new(point.u * scale[0], point.v * scale[1]))
-                .collect::<Vec<_>>();
-            if !control_points.iter().copied().all(finite_point2)
-                || !knots.iter().copied().all(f64::is_finite)
-                || weights
-                    .as_ref()
+            for point in nurbs.control_points_mut() {
+                *point = Point2::new(point.u * scale[0], point.v * scale[1]);
+            }
+            if !nurbs.control_points().iter().copied().all(finite_point2)
+                || !nurbs.knots().iter().copied().all(f64::is_finite)
+                || nurbs
+                    .weights()
                     .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
             {
                 return None;
             }
-            let geometry = PcurveGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                periodic,
-            };
+            let geometry = PcurveGeometry::Nurbs { nurbs };
             let endpoints = angular_range.map(|angle| {
                 cadmpeg_ir::eval::surface_point(
                     surface,
@@ -2048,19 +2034,13 @@ pub(crate) fn e5_pcurve_on_surface(
                 &first_derivatives,
                 &second_derivatives,
             )?;
-            let PcurveGeometry::Nurbs {
-                knots,
-                control_points,
-                weights,
-                ..
-            } = &geometry
-            else {
+            let PcurveGeometry::Nurbs { nurbs } = &geometry else {
                 return None;
             };
-            if !knots.iter().copied().all(f64::is_finite)
-                || !control_points.iter().copied().all(finite_point2)
-                || weights
-                    .as_ref()
+            if !nurbs.knots().iter().copied().all(f64::is_finite)
+                || !nurbs.control_points().iter().copied().all(finite_point2)
+                || nurbs
+                    .weights()
                     .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
             {
                 return None;
@@ -2098,11 +2078,7 @@ pub(crate) fn e5_pcurve_on_surface(
                 return None;
             }
             let geometry = PcurveGeometry::Nurbs {
-                degree: *degree,
-                knots,
-                control_points,
-                weights: None,
-                periodic: false,
+                nurbs: PcurveNurbs::new(*degree, knots, control_points, None, false).ok()?,
             };
             let uv = range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(&geometry, parameter));
             let uv = uv[0].zip(uv[1])?;
@@ -2180,17 +2156,12 @@ pub(crate) fn e5_boundary_curve(
             u_axis,
         },
         crate::families::e5::graph::E5Pcurve::Jet { .. },
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        },
+        PcurveGeometry::Nurbs { nurbs },
     ) = (surface, native_pcurve, pcurve)
     {
         let v_axis = (*normal).cross(*u_axis);
-        let control_points = control_points
+        let control_points = nurbs
+            .control_points()
             .iter()
             .map(|point| {
                 (*origin)
@@ -2203,22 +2174,25 @@ pub(crate) fn e5_boundary_curve(
             || !finite_vector(*u_axis)
             || !finite_vector(v_axis)
             || !range.into_iter().all(f64::is_finite)
-            || !knots.iter().copied().all(f64::is_finite)
+            || !nurbs.knots().iter().copied().all(f64::is_finite)
             || !control_points.iter().copied().all(finite_point)
-            || weights
-                .as_ref()
+            || nurbs
+                .weights()
                 .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
         {
             return None;
         }
         return Some((
-            CurveGeometry::Nurbs(NurbsCurve {
-                degree: *degree,
-                knots: knots.clone(),
-                control_points,
-                weights: weights.clone(),
-                periodic: *periodic,
-            }),
+            CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    nurbs.degree(),
+                    nurbs.knots().to_vec(),
+                    control_points,
+                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.periodic(),
+                )
+                .ok()?,
+            ),
             range,
         ));
     }
@@ -2229,17 +2203,12 @@ pub(crate) fn e5_boundary_curve(
             u_axis,
         },
         crate::families::e5::graph::E5Pcurve::Nurbs { .. },
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        },
+        PcurveGeometry::Nurbs { nurbs },
     ) = (surface, native_pcurve, pcurve)
     {
         let v_axis = (*normal).cross(*u_axis);
-        let control_points = control_points
+        let control_points = nurbs
+            .control_points()
             .iter()
             .map(|point| {
                 (*origin)
@@ -2252,22 +2221,25 @@ pub(crate) fn e5_boundary_curve(
             || !finite_vector(*u_axis)
             || !finite_vector(v_axis)
             || !range.into_iter().all(f64::is_finite)
-            || !knots.iter().copied().all(f64::is_finite)
+            || !nurbs.knots().iter().copied().all(f64::is_finite)
             || !control_points.iter().copied().all(finite_point)
-            || weights
-                .as_ref()
+            || nurbs
+                .weights()
                 .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
         {
             return None;
         }
         return Some((
-            CurveGeometry::Nurbs(NurbsCurve {
-                degree: *degree,
-                knots: knots.clone(),
-                control_points,
-                weights: weights.clone(),
-                periodic: *periodic,
-            }),
+            CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    nurbs.degree(),
+                    nurbs.knots().to_vec(),
+                    control_points,
+                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.periodic(),
+                )
+                .ok()?,
+            ),
             range,
         ));
     }
@@ -2803,7 +2775,7 @@ mod route_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -3963,11 +3935,11 @@ mod route_tests {
             panic!("expected NURBS curve");
         };
         assert_eq!(
-            nurbs.control_points.first(),
+            nurbs.control_points().first(),
             Some(&Point3::new(1.0, 2.0, 3.0))
         );
         assert_eq!(
-            nurbs.control_points.last(),
+            nurbs.control_points().last(),
             Some(&Point3::new(2.0, 4.0, 3.0))
         );
     }
@@ -3990,11 +3962,14 @@ mod route_tests {
             range: [0.0, 1.0],
         };
         let pcurve = PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 1.0],
-            control_points: vec![Point2::new(f64::MAX, 0.0), Point2::new(f64::MAX, 1.0)],
-            weights: None,
-            periodic: false,
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(f64::MAX, 0.0), Point2::new(f64::MAX, 1.0)],
+                None,
+                false,
+            )
+            .expect("valid nonfinite pcurve carrier"),
         };
         assert!(e5_boundary_curve(
             &surface,
@@ -4101,9 +4076,10 @@ mod route_tests {
         let (geometry, range, endpoints) =
             e5_pcurve_on_surface(&pcurve, &surface).expect("normalized cylinder jet");
         assert_eq!(range, [0.0, 1.0]);
-        let PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected NURBS pcurve");
         };
+        let control_points = nurbs.control_points();
         assert_eq!(
             control_points.first(),
             Some(&cadmpeg_ir::math::Point2::new(0.0, 3.0))
@@ -4124,24 +4100,27 @@ mod route_tests {
         let surface = E5Surface {
             pos: 0,
             record_id: 7,
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 1.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(1.0, 1.0, 0.0),
-                ],
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 1.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                    ],
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .expect("valid planar NURBS surface"),
+            ),
             uv_scale: [1.0, 1.0],
         };
         let pcurve = E5Pcurve::Nurbs {
@@ -4158,14 +4137,13 @@ mod route_tests {
         assert_eq!(range, [0.0, 1.0]);
         assert!(matches!(
             geometry,
-            PcurveGeometry::Nurbs {
-                degree: 1,
-                knots,
-                control_points,
-                weights: None,
-                periodic: false,
-            } if knots == [0.0, 0.0, 1.0, 1.0]
-                && control_points == [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)]
+            PcurveGeometry::Nurbs { nurbs }
+                if nurbs.degree() == 1
+                    && nurbs.knots() == [0.0, 0.0, 1.0, 1.0]
+                    && nurbs.control_points()
+                        == [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)]
+                    && nurbs.weights().is_none()
+                    && !nurbs.periodic()
         ));
         assert_eq!(
             endpoints,
@@ -4203,9 +4181,10 @@ mod route_tests {
         let (geometry, range, endpoints) =
             e5_pcurve_on_surface(&pcurve, &surface).expect("normalized cone jet");
         assert_eq!(range, [0.0, 1.0]);
-        let PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected NURBS pcurve");
         };
+        let control_points = nurbs.control_points();
         assert_eq!(
             control_points.first(),
             Some(&Point2::new(0.0, half_angle.cos()))
@@ -4366,9 +4345,10 @@ mod route_tests {
         let (geometry, range, endpoints) =
             e5_pcurve_on_surface(&pcurve, &surface).expect("normalized torus circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
-        let PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected rational NURBS pcurve");
         };
+        let control_points = nurbs.control_points();
         let first = control_points.first().expect("first control");
         let last = control_points.last().expect("last control");
         assert!(
@@ -4490,13 +4470,16 @@ mod route_tests {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
         };
-        let nurbs = CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        });
+        let nurbs = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("valid linear NURBS"),
+        );
         let mut sides = vec![
             E5OccurrenceIntersectionSide {
                 surface: SurfaceId("left".to_string()),
@@ -4714,22 +4697,25 @@ mod route_tests {
     #[test]
     fn reversing_nurbs_preserves_tiny_knot_domain() {
         let tiny = 1e-200;
-        let curve = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![tiny, tiny, 2.0 * tiny, 2.0 * tiny],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        });
+        let curve = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![tiny, tiny, 2.0 * tiny, 2.0 * tiny],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("valid tiny-domain NURBS"),
+        );
         let (reversed, range) = crate::nurbs::reverse_curve_geometry(&curve, [tiny, 2.0 * tiny])
             .expect("reversed NURBS");
         let CurveGeometry::Nurbs(reversed) = reversed else {
             panic!("expected NURBS");
         };
         assert_eq!(range, [tiny, 2.0 * tiny]);
-        assert_eq!(reversed.knots, [tiny, tiny, 2.0 * tiny, 2.0 * tiny]);
+        assert_eq!(reversed.knots(), [tiny, tiny, 2.0 * tiny, 2.0 * tiny]);
         assert_eq!(
-            reversed.control_points,
+            reversed.control_points(),
             [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
         );
     }

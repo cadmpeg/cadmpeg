@@ -1174,10 +1174,10 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
         assert!(matches!(
             evidence.surface_geometries.get(&tag),
             Some(SurfaceGeometry::Nurbs(surface))
-                if surface.u_degree == 2
-                    && surface.v_degree == 2
-                    && surface.u_count == 3
-                    && surface.v_count == 3
+                if surface.u_degree() == 2
+                    && surface.v_degree() == 2
+                    && surface.u_count() == 3
+                    && surface.v_count() == 3
         ));
     }
 }

@@ -427,13 +427,11 @@ pub(super) fn project(
         }
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots,
-                control_points: points,
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(1, knots, points, None, false).map_err(|error| {
+                    CodecError::malformed(format_args!("copious-data curve: {error}"))
+                })?,
+            ),
             source_object: Some(source_object(entry)),
         });
         ir.model.edges.push(Edge {

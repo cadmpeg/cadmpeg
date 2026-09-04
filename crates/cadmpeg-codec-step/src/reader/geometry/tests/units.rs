@@ -196,9 +196,9 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Nurbs(nurbs)
-            if nurbs.degree == 2
-                && nurbs.knots == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-                && nurbs.weights.as_deref() == Some(&[1.0, 0.5, 1.0][..])
+        if nurbs.degree() == 2
+            && nurbs.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+            && nurbs.weights() == Some(&[1.0, 0.5, 1.0][..])
     )));
     assert_eq!(result.ir().model.surfaces.len(), 10);
     assert!(result
@@ -261,8 +261,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         &curve.geometry,
         CurveGeometry::Nurbs(nurbs)
             if curve.id.as_str() == "step:data:curve#48"
-                && nurbs.degree == 1
-                && nurbs.knots == [0.0, 0.0, 1.0, 2.0, 2.0]
+            && nurbs.degree() == 1
+            && nurbs.knots() == [0.0, 0.0, 1.0, 2.0, 2.0]
     )));
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
@@ -272,13 +272,13 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
         SurfaceGeometry::Nurbs(nurbs)
-            if nurbs.u_degree == 1
-                && nurbs.v_degree == 1
-                && nurbs.u_count == 2
-                && nurbs.v_count == 2
-                && nurbs.u_knots == [0.0, 0.0, 1.0, 1.0]
-                && nurbs.v_knots == [0.0, 0.0, 1.0, 1.0]
-                && nurbs.weights.as_deref() == Some(&[1.0, 1.0, 1.0, 0.75][..])
+        if nurbs.u_degree() == 1
+            && nurbs.v_degree() == 1
+            && nurbs.u_count() == 2
+            && nurbs.v_count() == 2
+            && nurbs.u_knots() == [0.0, 0.0, 1.0, 1.0]
+            && nurbs.v_knots() == [0.0, 0.0, 1.0, 1.0]
+            && nurbs.weights() == Some(&[1.0, 1.0, 1.0, 0.75][..])
     )));
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         surface.geometry,

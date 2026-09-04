@@ -1490,13 +1490,15 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     let SurfaceGeometry::Nurbs(surface) = &mut carriers[0].geometry else {
         panic!("NURBS fixture");
     };
-    for knots in [&mut surface.u_knots, &mut surface.v_knots] {
+    let scale_knots = |knots: &mut [f64]| {
         let lower = knots[0];
         let span = knots.last().copied().expect("nonempty knots") - lower;
         for knot in knots {
             *knot = (*knot - lower) / span * tiny;
         }
-    }
+    };
+    scale_knots(surface.u_knots_mut());
+    scale_knots(surface.v_knots_mut());
     let exact = crate::families::b2::records::B2OffsetSupport {
         pos: 0,
         support_id: 1,
@@ -1900,15 +1902,12 @@ fn b2_nurbs_curve_parser_preserves_asymmetric_weights_in_source_order() {
     let [curve] = curves.as_slice() else {
         panic!("one rational curve");
     };
-    assert_eq!(curve.geometry.degree, 3);
-    assert_eq!(curve.geometry.control_points.len(), 4);
-    assert_eq!(
-        curve.geometry.weights.as_deref(),
-        Some(&[1.0, 0.72, 1.31, 0.93][..])
-    );
-    assert_eq!(curve.geometry.knots.len(), 8);
-    assert_eq!(curve.geometry.knots[..4], [0.0; 4]);
-    assert_eq!(curve.geometry.knots[4..], [41.693_759_535_8; 4]);
+    assert_eq!(curve.geometry.degree(), 3);
+    assert_eq!(curve.geometry.control_points().len(), 4);
+    assert_eq!(curve.geometry.weights(), Some(&[1.0, 0.72, 1.31, 0.93][..]));
+    assert_eq!(curve.geometry.knots().len(), 8);
+    assert_eq!(curve.geometry.knots()[..4], [0.0; 4]);
+    assert_eq!(curve.geometry.knots()[4..], [41.693_759_535_8; 4]);
 }
 
 #[test]

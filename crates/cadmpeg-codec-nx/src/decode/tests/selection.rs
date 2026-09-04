@@ -49,13 +49,12 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
         panic!("typed intersection");
     };
     assert!(context.sides[0].pcurve.is_some());
-    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[1].pcurve.as_ref()
-    else {
+    let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[1].pcurve.as_ref() else {
         panic!("completed second support pcurve");
     };
-    assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
-    assert_eq!(control_points.last(), Some(&Point2::new(0.0, 10.0)));
-    assert!(control_points.iter().all(|point| point.u == 0.0));
+    assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));
+    assert_eq!(nurbs.control_points().last(), Some(&Point2::new(0.0, 10.0)));
+    assert!(nurbs.control_points().iter().all(|point| point.u == 0.0));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -415,9 +414,9 @@ fn decode_transfers_bspline_surface_and_curve() {
             _ => None,
         })
         .expect("B-spline surface");
-    assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points.len(), 4);
-    assert!((surface.control_points[1].y - 20.0).abs() < 1.0e-9);
+    assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.control_points().len(), 4);
+    assert!((surface.control_points()[1].y - 20.0).abs() < 1.0e-9);
     let curve = result
         .ir()
         .model
@@ -428,9 +427,9 @@ fn decode_transfers_bspline_surface_and_curve() {
             _ => None,
         })
         .expect("B-spline curve");
-    assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(curve.control_points.len(), 2);
-    assert!((curve.control_points[1].x - 20.0).abs() < 1.0e-9);
+    assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(curve.control_points().len(), 2);
+    assert!((curve.control_points()[1].x - 20.0).abs() < 1.0e-9);
 }
 
 #[test]
@@ -444,7 +443,7 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
         SurfaceGeometry::Nurbs(nurbs)
-            if nurbs.control_points.iter().any(|point| point.y == 30.0)
+            if nurbs.control_points().iter().any(|point| point.y == 30.0)
     )));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -460,7 +459,7 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Nurbs(nurbs)
-            if nurbs.control_points.iter().any(|point| point.y == 10.0)
+            if nurbs.control_points().iter().any(|point| point.y == 10.0)
     )));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

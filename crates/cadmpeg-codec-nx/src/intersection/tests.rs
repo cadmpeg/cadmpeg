@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition};
 use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
 
@@ -496,11 +496,14 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
         })
         .expect("bottom support surface");
     let pcurve = |end| PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.0, 0.0), end],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), end],
+            None,
+            false,
+        )
+        .expect("valid intersection pcurve"),
     };
 
     assert!(crate::decode::pcurve_matches_edge(

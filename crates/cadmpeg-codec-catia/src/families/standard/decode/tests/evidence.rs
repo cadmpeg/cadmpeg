@@ -213,7 +213,7 @@ fn targeted_surface_evidence_retains_revolution_construction() {
     assert!(matches!(evidence.geometry, Some(SurfaceGeometry::Nurbs(_))));
     assert_eq!(revolution.angular_interval, angular_range);
     assert_eq!(revolution.parameter_interval, [-1.0, 1.0]);
-    assert_eq!(revolution.directrix.control_points.len(), 2);
+    assert_eq!(revolution.directrix.control_points().len(), 2);
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn object_evidence_exports_revolution_cache_and_construction() {
     };
     assert_eq!(revolution.angular_interval, [0.0, std::f64::consts::PI]);
     assert_eq!(revolution.parameter_interval, [-1.0, 1.0]);
-    assert_eq!(revolution.directrix.control_points.len(), 2);
+    assert_eq!(revolution.directrix.control_points().len(), 2);
 }
 
 #[test]
@@ -517,32 +517,35 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
         } else {
             [Point3::new(offset, 0.0, 0.0), Point3::new(offset, 1.0, 0.0)]
         };
-        SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
-                shared[0],
-                shared[1],
-                Point3::new(
-                    offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
-                    shared[0].y,
-                    0.0,
-                ),
-                Point3::new(
-                    offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
-                    shared[1].y,
-                    0.0,
-                ),
-            ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        })
+        SurfaceGeometry::Nurbs(
+            NurbsSurface::new(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                2,
+                2,
+                vec![
+                    shared[0],
+                    shared[1],
+                    Point3::new(
+                        offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
+                        shared[0].y,
+                        0.0,
+                    ),
+                    Point3::new(
+                        offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
+                        shared[1].y,
+                        0.0,
+                    ),
+                ],
+                None,
+                false,
+                false,
+                false,
+            )
+            .expect("valid bilinear NURBS"),
+        )
     };
     let left = surface(false, 0.0);
     let right = surface(true, 0.0);
@@ -1216,13 +1219,14 @@ fn limit_curve_point_binding_rejects_separated_occurrences_with_unequal_residual
             .map(|index| Point3::new(-1.0 + 0.4 * f64::from(index) + offset, 0.0, 0.0))
             .collect::<Vec<_>>()
     };
-    let curve = NurbsCurve {
-        degree: 5,
-        knots: [vec![0.0; 6], vec![0.5; 6], vec![1.0; 6]].concat(),
-        control_points: [line_span(0.0), line_span(1e-3)].concat(),
-        weights: None,
-        periodic: false,
-    };
+    let curve = NurbsCurve::new(
+        5,
+        [vec![0.0; 6], vec![0.5; 6], vec![1.0; 6]].concat(),
+        [line_span(0.0), line_span(1e-3)].concat(),
+        None,
+        false,
+    )
+    .expect("valid degree-5 NURBS");
 
     assert_eq!(
         standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.0, 0.0), 2e-3),
@@ -1259,15 +1263,16 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         faces: [0, 0],
         geometry: StandardCurveGeometry::Bspline,
     };
-    let limit_curve = NurbsCurve {
-        degree: 5,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        control_points: (0..6)
+    let limit_curve = NurbsCurve::new(
+        5,
+        vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        (0..6)
             .map(|index| Point3::new(-1.0 + 0.8 * f64::from(index), 0.0, 0.0))
             .collect(),
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .expect("valid degree-5 NURBS");
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
 

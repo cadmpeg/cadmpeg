@@ -317,7 +317,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
             use_.parameter_range == [-2.0, 3.0]
                 && decoded.ir().model.curves.iter().any(|curve| {
                     curve.id == use_.curve
-                        && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs) if nurbs.degree == 2)
+                        && matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs) if nurbs.degree() == 2)
                 })
         })
     }));
@@ -338,14 +338,17 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         panic!("embedded use curve must be NURBS")
     };
     assert_eq!(
-        first_use_curve.control_points[0],
+        first_use_curve.control_points()[0],
         cadmpeg_ir::math::Point3::new(20.0, 0.0, 0.0)
     );
     assert_eq!(
-        first_use_curve.control_points[2],
+        first_use_curve.control_points()[2],
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
-    assert_eq!(first_use_curve.knots, [-1.0, -1.0, -1.0, -0.0, -0.0, -0.0]);
+    assert_eq!(
+        first_use_curve.knots(),
+        [-1.0, -1.0, -1.0, -0.0, -0.0, -0.0]
+    );
 
     let mut edited = decoded.ir().clone();
     let use_curve = edited.model.coedges[0]
@@ -362,7 +365,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
         panic!("embedded use curve must be NURBS")
     };
-    nurbs.control_points[0].x += 1.0;
+    nurbs.control_points_mut()[0].x += 1.0;
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut preserved)

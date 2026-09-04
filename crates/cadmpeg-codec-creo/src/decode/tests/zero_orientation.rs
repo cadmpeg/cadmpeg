@@ -800,15 +800,15 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
     };
     let nurbs = saved_spline_nurbs(&spline).expect("clamped interpolation spline");
     for (parameter, expected) in [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)] {
-        let point = nurbs.control_points.iter().enumerate().fold(
+        let point = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut point, (index, control)| {
                 let basis = bspline_basis(
                     index,
-                    nurbs.degree as usize,
+                    nurbs.degree() as usize,
                     parameter,
-                    &nurbs.knots,
-                    nurbs.control_points.len(),
+                    nurbs.knots(),
+                    nurbs.control_points().len(),
                 );
                 point[0] += basis * control.x;
                 point[1] += basis * control.y;
@@ -820,15 +820,15 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         assert!(point[1].abs() < 1.0e-12 && point[2].abs() < 1.0e-12);
     }
     for parameter in [0.0, 2.0] {
-        let derivative = nurbs.control_points.iter().enumerate().fold(
+        let derivative = nurbs.control_points().iter().enumerate().fold(
             [0.0; 3],
             |mut derivative, (index, control)| {
                 let basis = bspline_basis_derivative(
                     index,
-                    nurbs.degree as usize,
+                    nurbs.degree() as usize,
                     parameter,
-                    &nurbs.knots,
-                    nurbs.control_points.len(),
+                    nurbs.knots(),
+                    nurbs.control_points().len(),
                 );
                 derivative[0] += basis * control.x;
                 derivative[1] += basis * control.y;
@@ -972,12 +972,12 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     )
     .expect("bicubic tensor-product surface");
 
-    assert_eq!((nurbs.u_count, nurbs.v_count), (4, 4));
-    assert_eq!(nurbs.u_knots, [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
-    assert_eq!(nurbs.v_knots, nurbs.u_knots);
+    assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
+    assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.v_knots(), nurbs.u_knots());
     for u in 0..4 {
         for v in 0..4 {
-            let point = &nurbs.control_points[u * 4 + v];
+            let point = &nurbs.control_points()[u * 4 + v];
             let expected_u = u as f64 / 3.0;
             let expected_v = v as f64 / 3.0;
             assert!((point.x - expected_u).abs() < 1.0e-12);
@@ -998,18 +998,19 @@ fn nonplanar_saved_spline_places_as_model_curve() {
         normal: [0.0, -1.0, 0.0],
         offset: 5,
     };
-    let local = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        weights: None,
-        periodic: false,
-    };
+    let local = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+        false,
+    )
+    .expect("valid local NURBS");
 
     let placed = placed_section_nurbs(&transform, &local);
 
-    assert_eq!(placed.control_points[0], Point3::new(11.0, 17.0, 32.0));
-    assert_eq!(placed.control_points[1], Point3::new(14.0, 14.0, 35.0));
+    assert_eq!(placed.control_points()[0], Point3::new(11.0, 17.0, 32.0));
+    assert_eq!(placed.control_points()[1], Point3::new(14.0, 14.0, 35.0));
 }
 
 #[test]
@@ -1027,13 +1028,14 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
 
 #[test]
 fn full_revolution_uses_exact_quadratic_circle_poles() {
-    let directrix = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
-        weights: None,
-        periodic: false,
-    };
+    let directrix = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("valid revolution directrix");
     let surface = revolved_nurbs_surface(
         &directrix,
         &RevolutionAxis {
@@ -1044,13 +1046,13 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
     )
     .expect("revolution surface");
 
-    assert_eq!((surface.u_count, surface.v_count), (2, 9));
-    assert_eq!(surface.control_points[0], Point3::new(2.0, 0.0, 0.0));
-    assert_eq!(surface.control_points[1], Point3::new(2.0, 2.0, 0.0));
-    assert_eq!(surface.control_points[2], Point3::new(0.0, 2.0, 0.0));
-    assert_eq!(surface.control_points[8], surface.control_points[0]);
+    assert_eq!((surface.u_count(), surface.v_count()), (2, 9));
+    assert_eq!(surface.control_points()[0], Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(surface.control_points()[1], Point3::new(2.0, 2.0, 0.0));
+    assert_eq!(surface.control_points()[2], Point3::new(0.0, 2.0, 0.0));
+    assert_eq!(surface.control_points()[8], surface.control_points()[0]);
     assert_eq!(
-        surface.weights.as_ref().expect("rational weights")[1],
+        surface.weights().expect("rational weights")[1],
         std::f64::consts::FRAC_1_SQRT_2
     );
 }
@@ -1090,14 +1092,14 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         panic!("spline revolution must retain a NURBS surface");
     };
 
-    assert_eq!((surface.u_degree, surface.v_degree), (2, 2));
-    assert_eq!((surface.u_count, surface.v_count), (4, 9));
-    assert_eq!(surface.u_knots, [2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0]);
-    assert_eq!(surface.control_points[0], Point3::new(2.0, 0.0, 0.0));
-    assert_eq!(surface.control_points[1], Point3::new(2.0, 0.0, -2.0));
-    assert_eq!(surface.control_points[9], Point3::new(3.0, 0.75, 0.0));
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 2));
+    assert_eq!((surface.u_count(), surface.v_count()), (4, 9));
+    assert_eq!(surface.u_knots(), [2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0]);
+    assert_eq!(surface.control_points()[0], Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(surface.control_points()[1], Point3::new(2.0, 0.0, -2.0));
+    assert_eq!(surface.control_points()[9], Point3::new(3.0, 0.75, 0.0));
     assert_eq!(
-        surface.weights.as_ref().expect("rational surface weights")[10],
+        surface.weights().expect("rational surface weights")[10],
         0.75 * std::f64::consts::FRAC_1_SQRT_2
     );
 
@@ -1153,8 +1155,8 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     let SurfaceGeometry::Nurbs(reversed) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");
     };
-    assert_eq!(reversed.u_knots, [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]);
-    assert_eq!(reversed.control_points[0], Point3::new(2.0, 2.0, 0.0));
+    assert_eq!(reversed.u_knots(), [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]);
+    assert_eq!(reversed.control_points()[0], Point3::new(2.0, 2.0, 0.0));
 }
 
 #[test]
@@ -1291,14 +1293,14 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
 
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
-    let surface = NurbsSurface {
-        u_degree: 3,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 4,
-        v_count: 2,
-        control_points: (0..4)
+    let surface = NurbsSurface::new(
+        3,
+        1,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        4,
+        2,
+        (0..4)
             .flat_map(|u| {
                 [
                     Point3::new(f64::from(u), 0.0, f64::from(u * u)),
@@ -1306,11 +1308,12 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
                 ]
             })
             .collect(),
-        weights: Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        false,
+        false,
+        false,
+    )
+    .expect("valid extrusion surface");
     let boundary = nurbs_plane_boundary_curve(
         &surface,
         PlaneEquation {
@@ -1322,18 +1325,18 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let CurveGeometry::Nurbs(boundary) = boundary else {
         panic!("extrusion boundary must retain its NURBS parameterization");
     };
-    assert_eq!(boundary.degree, 3);
-    assert_eq!(boundary.knots, surface.u_knots);
+    assert_eq!(boundary.degree(), 3);
+    assert_eq!(boundary.knots(), surface.u_knots());
     assert_eq!(
-        boundary.control_points,
-        vec![
+        boundary.control_points(),
+        [
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 1.0, 1.0),
             Point3::new(2.0, 1.0, 4.0),
             Point3::new(3.0, 1.0, 9.0),
         ]
     );
-    assert_eq!(boundary.weights, Some(vec![1.0, 2.0, 3.0, 4.0]));
+    assert_eq!(boundary.weights(), Some(&[1.0, 2.0, 3.0, 4.0][..]));
 
     let generator = nurbs_plane_boundary_curve(
         &surface,
@@ -1346,13 +1349,13 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let CurveGeometry::Nurbs(generator) = generator else {
         panic!("extrusion generator must retain its NURBS parameterization");
     };
-    assert_eq!(generator.degree, 1);
-    assert_eq!(generator.knots, surface.v_knots);
+    assert_eq!(generator.degree(), 1);
+    assert_eq!(generator.knots(), surface.v_knots());
     assert_eq!(
-        generator.control_points,
-        vec![Point3::new(3.0, 0.0, 9.0), Point3::new(3.0, 1.0, 9.0)]
+        generator.control_points(),
+        [Point3::new(3.0, 0.0, 9.0), Point3::new(3.0, 1.0, 9.0)]
     );
-    assert_eq!(generator.weights, Some(vec![4.0, 4.0]));
+    assert_eq!(generator.weights(), Some(&[4.0, 4.0][..]));
 
     assert!(nurbs_plane_boundary_curve(
         &surface,
@@ -1363,7 +1366,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     )
     .is_none());
     let mut coplanar = surface.clone();
-    for point in &mut coplanar.control_points {
+    for point in coplanar.control_points_mut() {
         point.z = 0.0;
     }
     assert!(nurbs_plane_boundary_curve(
@@ -1374,8 +1377,10 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         },
     )
     .is_none());
-    coplanar.control_points = surface.control_points;
-    coplanar.weights.as_mut().expect("weights")[0] = 0.0;
+    coplanar
+        .control_points_mut()
+        .copy_from_slice(surface.control_points());
+    coplanar.weights_mut().expect("weights")[0] = 0.0;
     assert!(nurbs_plane_boundary_curve(
         &coplanar,
         PlaneEquation {
@@ -1388,94 +1393,97 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
 
 #[test]
 fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets() {
-    let first = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let first = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(-1.0, 0.0, 0.0),
             Point3::new(-1.0, 0.0, 1.0),
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 1.0),
         ],
-        weights: Some(vec![2.0, 2.0, 3.0, 4.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
-    let second = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![4.0, 4.0, 8.0, 8.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+        Some(vec![2.0, 2.0, 3.0, 4.0]),
+        false,
+        false,
+        false,
+    )
+    .expect("valid first extrusion surface");
+    let second = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![4.0, 4.0, 8.0, 8.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 1.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(0.0, 1.0, 1.0),
         ],
-        weights: Some(vec![6.0, 8.0, 8.0, 8.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![6.0, 8.0, 8.0, 8.0]),
+        false,
+        false,
+        false,
+    )
+    .expect("valid second extrusion surface");
     let shared =
         shared_extrusion_generator_curve(&first, &second).expect("shared generator boundary");
     let CurveGeometry::Nurbs(shared) = shared else {
         panic!("shared extrusion generator must retain its NURBS representation");
     };
-    assert_eq!(shared.degree, 1);
-    assert_eq!(shared.knots, first.v_knots);
+    assert_eq!(shared.degree(), 1);
+    assert_eq!(shared.knots(), first.v_knots());
     assert_eq!(
-        shared.control_points,
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)]
+        shared.control_points(),
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)]
     );
-    assert_eq!(shared.weights, Some(vec![3.0, 4.0]));
+    assert_eq!(shared.weights(), Some(&[3.0, 4.0][..]));
 
     let mut reversed = second.clone();
-    reversed.control_points.swap(0, 1);
-    reversed.control_points.swap(2, 3);
-    reversed.weights.as_mut().expect("weights").swap(0, 1);
-    reversed.weights.as_mut().expect("weights").swap(2, 3);
+    reversed.control_points_mut().swap(0, 1);
+    reversed.control_points_mut().swap(2, 3);
+    reversed.weights_mut().expect("weights").swap(0, 1);
+    reversed.weights_mut().expect("weights").swap(2, 3);
     assert!(shared_extrusion_generator_curve(&first, &reversed).is_some());
 
     let mut same_side = second.clone();
-    same_side.control_points[2] = Point3::new(-2.0, 0.0, 0.0);
-    same_side.control_points[3] = Point3::new(-2.0, 0.0, 1.0);
+    same_side.control_points_mut()[2] = Point3::new(-2.0, 0.0, 0.0);
+    same_side.control_points_mut()[3] = Point3::new(-2.0, 0.0, 1.0);
     assert!(shared_extrusion_generator_curve(&first, &same_side).is_none());
 
     let mut periodic_transverse = second.clone();
-    periodic_transverse.u_periodic = true;
+    periodic_transverse.set_u_periodic(true);
     assert!(shared_extrusion_generator_curve(&first, &periodic_transverse).is_none());
 
     let mut different_boundary = second;
-    different_boundary.control_points[1].x = 0.1;
+    different_boundary.control_points_mut()[1].x = 0.1;
     assert!(shared_extrusion_generator_curve(&first, &different_boundary).is_none());
 }
 
 #[test]
 fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
-    let surface = NurbsSurface {
-        u_degree: 3,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 4,
-        v_count: 2,
-        control_points: [-1.0, -0.5, 0.5, 1.0]
+    let surface = NurbsSurface::new(
+        3,
+        1,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        4,
+        2,
+        [-1.0, -0.5, 0.5, 1.0]
             .into_iter()
             .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
             .collect(),
-        weights: Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        false,
+        false,
+        false,
+    )
+    .expect("valid cubic extrusion surface");
     let generator = with_decode_ctx(|ctx| {
         cubic_extrusion_plane_generator_curve(
             ctx,
@@ -1491,16 +1499,16 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     let CurveGeometry::Nurbs(generator) = generator else {
         panic!("plane section generator must retain its NURBS representation");
     };
-    assert_eq!(generator.degree, 1);
-    assert_eq!(generator.knots, surface.v_knots);
-    assert_eq!(generator.control_points.len(), 2);
+    assert_eq!(generator.degree(), 1);
+    assert_eq!(generator.knots(), surface.v_knots());
+    assert_eq!(generator.control_points().len(), 2);
     assert!(generator
-        .control_points
+        .control_points()
         .iter()
         .all(|point| point.x.abs() <= 1.0e-8));
-    assert_eq!(generator.control_points[0].z, 0.0);
-    assert_eq!(generator.control_points[1].z, 2.0);
-    let weights = generator.weights.expect("rational generator");
+    assert_eq!(generator.control_points()[0].z, 0.0);
+    assert_eq!(generator.control_points()[1].z, 2.0);
+    let weights = generator.weights().expect("rational generator");
     assert_eq!(weights.len(), 2);
     assert!((weights[0] - weights[1]).abs() <= 1.0e-12);
 

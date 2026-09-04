@@ -404,7 +404,7 @@ pub(crate) fn missing_support_parameter(value: f64) -> bool {
 pub(crate) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> bool {
     match pcurve {
         None => true,
-        Some(PcurveGeometry::Nurbs { control_points, .. }) => control_points.iter().any(|point| {
+        Some(PcurveGeometry::Nurbs { nurbs }) => nurbs.control_points().iter().any(|point| {
             !point.u.is_finite()
                 || !point.v.is_finite()
                 || missing_support_parameter(point.u)
@@ -421,10 +421,10 @@ pub(crate) fn pcurve_control_point_seed(
     pcurve: Option<&PcurveGeometry>,
     index: usize,
 ) -> Option<Point2> {
-    let PcurveGeometry::Nurbs { control_points, .. } = pcurve? else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve? else {
         return None;
     };
-    control_points.get(index).copied().filter(|point| {
+    nurbs.control_points().get(index).copied().filter(|point| {
         point.u.is_finite()
             && point.v.is_finite()
             && !missing_support_parameter(point.u)
@@ -608,11 +608,14 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
                 .map(|uv| surface_parameters(surface_geometry, *uv))
                 .collect::<Option<Vec<_>>>()?;
             Some(PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: linear_knots(parameters),
-                control_points,
-                weights: None,
-                periodic: false,
+                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                    1,
+                    linear_knots(parameters),
+                    control_points,
+                    None,
+                    false,
+                )
+                .ok()?,
             })
         });
         for (side, replacement) in side_replacements.into_iter().enumerate() {
@@ -1331,13 +1334,16 @@ fn complete_support_uv_wave(
                         parameters[0],
                         *parameters.last().expect("non-empty chart parameters"),
                     ];
-                    let pcurve = PcurveGeometry::Nurbs {
-                        degree: 1,
-                        knots: linear_knots(parameters),
-                        control_points: uv,
-                        weights: None,
-                        periodic: false,
+                    let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::new(
+                        1,
+                        linear_knots(parameters),
+                        uv,
+                        None,
+                        false,
+                    ) else {
+                        continue;
                     };
+                    let pcurve = PcurveGeometry::Nurbs { nurbs };
                     if let [Some(first), Some(last)] = endpoint_values {
                         endpoint_witnesses
                             .entry((owner.clone(), surface_id.clone()))
@@ -1650,13 +1656,16 @@ fn complete_coupled_support_uv(
                     parameters[0],
                     *parameters.last().expect("non-empty chart parameters"),
                 ];
-                let pcurve = PcurveGeometry::Nurbs {
-                    degree: 1,
-                    knots: linear_knots(parameters),
-                    control_points: lanes[side].clone(),
-                    weights: None,
-                    periodic: false,
+                let Ok(nurbs) = cadmpeg_ir::geometry::PcurveNurbs::new(
+                    1,
+                    linear_knots(parameters),
+                    lanes[side].clone(),
+                    None,
+                    false,
+                ) else {
+                    continue;
                 };
+                let pcurve = PcurveGeometry::Nurbs { nurbs };
                 if let Some([Some(first), Some(last)]) = endpoint_values {
                     endpoint_witnesses
                         .entry((owner.clone(), surfaces[side].clone()))
@@ -2304,24 +2313,25 @@ mod tests {
         const GEOMETRY_WORK: usize = 1_024;
 
         let surface_id = SurfaceId("synthetic:coarse-nurbs-support".into());
-        let nurbs = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let nurbs = cadmpeg_ir::geometry::NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid test surface");
         let geometry = SurfaceGeometry::Nurbs(nurbs.clone());
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {

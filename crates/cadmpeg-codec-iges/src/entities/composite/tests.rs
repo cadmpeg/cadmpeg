@@ -22,6 +22,15 @@ use crate::IgesCodec;
 
 use super::*;
 
+fn test_nurbs(
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<Point3>,
+    weights: Option<Vec<f64>>,
+) -> NurbsCurve {
+    NurbsCurve::new(degree, knots, control_points, weights, false).expect("valid test NURBS")
+}
+
 #[test]
 fn composite_child_types_follow_the_declared_dialect() {
     assert!(composite_child_type_allowed(116, 0, GlobalTable::V4_0));
@@ -854,13 +863,12 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: base_id.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(test_nurbs(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+        )),
         source_object: None,
     });
     ir.model.points.extend([
@@ -1005,8 +1013,8 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     let (carrier, range) = bounded_nurbs_for_curve(&ir, &CurveId("line".into()), None, None)
         .expect("the curve-valid edge occurrence");
     assert_eq!(range, [0.0, 1.0]);
-    assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));
-    assert_eq!(carrier.control_points[1], Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(carrier.control_points()[1], Point3::new(2.0, 0.0, 0.0));
 }
 
 #[test]
@@ -1118,13 +1126,13 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         let indexed = bounded_nurbs_for_curve(&ir, &curve_id, None, Some(&index));
         assert_eq!(
             scanned.as_ref().map(|(carrier, range)| (
-                carrier.degree,
-                carrier.control_points.clone(),
+                carrier.degree(),
+                carrier.control_points().to_vec(),
                 *range
             )),
             indexed.as_ref().map(|(carrier, range)| (
-                carrier.degree,
-                carrier.control_points.clone(),
+                carrier.degree(),
+                carrier.control_points().to_vec(),
                 *range
             )),
         );
@@ -1139,74 +1147,72 @@ fn composite_index_lookups_match_the_unindexed_scan() {
 
 #[test]
 fn rational_linear_degree_elevation_preserves_the_curve() {
-    let mut curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        weights: Some(vec![1.0, 3.0]),
-        periodic: false,
-    };
+    let mut curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        Some(vec![1.0, 3.0]),
+    );
     let before = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         0.25,
     )
     .expect("valid rational linear NURBS evaluates before degree elevation");
     assert!(elevate_nurbs_to_degree(&mut curve, [0.0, 1.0], 2, None));
     let after = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         0.25,
     )
     .expect("valid rational quadratic NURBS evaluates after degree elevation");
     assert!(before.distance(after) <= 1.0e-12);
-    assert_eq!(curve.control_points[1], Point3::new(1.5, 0.0, 0.0));
-    assert_eq!(curve.weights, Some(vec![1.0, 2.0, 3.0]));
+    assert_eq!(curve.control_points()[1], Point3::new(1.5, 0.0, 0.0));
+    assert_eq!(curve.weights(), Some(&[1.0, 2.0, 3.0][..]));
 }
 
 #[test]
 fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
     const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
-    let curve = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-        control_points: vec![
+    let curve = test_nurbs(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, -1.0, 0.0),
             Point3::new(4.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 2.0, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 2.0, 1.0]),
+    );
     let interval = [0.25, 1.5];
     let trimmed = trim_nurbs_to_interval(&curve, interval)
         .expect("a bounded active interval has an exact NURBS subrange");
 
-    assert_eq!(trimmed.knots.first(), Some(&interval[0]));
-    assert_eq!(trimmed.knots.last(), Some(&interval[1]));
+    assert_eq!(trimmed.knots().first(), Some(&interval[0]));
+    assert_eq!(trimmed.knots().last(), Some(&interval[1]));
     assert_eq!(
-        trimmed.weights.as_ref().map(Vec::len),
-        Some(trimmed.control_points.len())
+        trimmed.weights().map(<[f64]>::len),
+        Some(trimmed.control_points().len())
     );
     for parameter in [0.25, 0.5, 1.0, 1.5] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         )
         .expect("source NURBS evaluates");
         let after = cadmpeg_ir::eval::nurbs_curve_point(
-            trimmed.degree,
-            &trimmed.knots,
-            &trimmed.control_points,
-            trimmed.weights.as_deref(),
+            trimmed.degree(),
+            trimmed.knots(),
+            trimmed.control_points(),
+            trimmed.weights(),
             parameter,
         )
         .expect("trimmed NURBS evaluates");
@@ -1217,18 +1223,17 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
 #[test]
 fn concatenation_accepts_exact_active_nurbs_subranges() {
     const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
-    let curve = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-        control_points: vec![
+    let curve = test_nurbs(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, -1.0, 0.0),
             Point3::new(4.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 2.0, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 2.0, 1.0]),
+    );
     let first =
         trim_nurbs_to_interval(&curve, [0.0, 1.0]).expect("first active NURBS interval is exact");
     let second =
@@ -1238,18 +1243,18 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
 
     for parameter in [0.25, 0.75, 1.25, 1.75] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         )
         .expect("source NURBS evaluates");
         let after = cadmpeg_ir::eval::nurbs_curve_point(
-            concatenated.nurbs.degree,
-            &concatenated.nurbs.knots,
-            &concatenated.nurbs.control_points,
-            concatenated.nurbs.weights.as_deref(),
+            concatenated.nurbs.degree(),
+            concatenated.nurbs.knots(),
+            concatenated.nurbs.control_points(),
+            concatenated.nurbs.weights(),
             parameter,
         )
         .expect("concatenated NURBS evaluates");
@@ -1260,25 +1265,23 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
 #[test]
 fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
     const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
-    let piecewise_constant = NurbsCurve {
-        degree: 0,
-        knots: vec![0.0, 1.0, 2.0],
-        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        weights: None,
-        periodic: false,
-    };
-    let nonclamped = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0],
-        control_points: vec![
+    let piecewise_constant = test_nurbs(
+        0,
+        vec![0.0, 1.0, 2.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+    );
+    let nonclamped = test_nurbs(
+        2,
+        vec![0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, -1.0, 0.0),
             Point3::new(4.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
 
     for (curve, interval, parameters) in [
         (piecewise_constant, [0.5, 1.5], vec![0.75, 1.25]),
@@ -1288,18 +1291,18 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
             .expect("a valid active interval has an exact NURBS subrange");
         for parameter in parameters {
             let before = cadmpeg_ir::eval::nurbs_curve_point(
-                curve.degree,
-                &curve.knots,
-                &curve.control_points,
-                curve.weights.as_deref(),
+                curve.degree(),
+                curve.knots(),
+                curve.control_points(),
+                curve.weights(),
                 parameter,
             )
             .expect("source NURBS evaluates");
             let after = cadmpeg_ir::eval::nurbs_curve_point(
-                trimmed.degree,
-                &trimmed.knots,
-                &trimmed.control_points,
-                trimmed.weights.as_deref(),
+                trimmed.degree(),
+                trimmed.knots(),
+                trimmed.control_points(),
+                trimmed.weights(),
                 parameter,
             )
             .expect("trimmed NURBS evaluates");
@@ -1312,38 +1315,26 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
 fn concatenation_preserves_degree_zero_spans() {
     let point = Point3::new(1.0, 2.0, 3.0);
     let first = (
-        NurbsCurve {
-            degree: 0,
-            knots: vec![0.0, 1.0, 2.0],
-            control_points: vec![point, point],
-            weights: None,
-            periodic: false,
-        },
+        test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point, point], None),
         [0.0, 2.0],
     );
-    let second = (
-        NurbsCurve {
-            degree: 0,
-            knots: vec![0.0, 1.0],
-            control_points: vec![point],
-            weights: None,
-            periodic: false,
-        },
-        [0.0, 1.0],
-    );
+    let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [0.0, 1.0]);
     let concatenated = concatenate_nurbs(vec![first, second], None)
         .expect("degree-zero spans with an exact join concatenate");
 
-    assert_eq!(concatenated.nurbs.degree, 0);
-    assert_eq!(concatenated.nurbs.knots, vec![0.0, 1.0, 2.0, 3.0]);
-    assert_eq!(concatenated.nurbs.control_points, vec![point, point, point]);
+    assert_eq!(concatenated.nurbs.degree(), 0);
+    assert_eq!(concatenated.nurbs.knots(), vec![0.0, 1.0, 2.0, 3.0]);
+    assert_eq!(
+        concatenated.nurbs.control_points(),
+        vec![point, point, point]
+    );
     for parameter in [0.5, 1.5, 2.5] {
         assert_eq!(
             cadmpeg_ir::eval::nurbs_curve_point(
-                concatenated.nurbs.degree,
-                &concatenated.nurbs.knots,
-                &concatenated.nurbs.control_points,
-                concatenated.nurbs.weights.as_deref(),
+                concatenated.nurbs.degree(),
+                concatenated.nurbs.knots(),
+                concatenated.nurbs.control_points(),
+                concatenated.nurbs.weights(),
                 parameter,
             ),
             Some(point)
@@ -1353,65 +1344,58 @@ fn concatenation_preserves_degree_zero_spans() {
 
 #[test]
 fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
-    let mut curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.5, 0.5, 1.5, 2.5, 2.5],
-        control_points: vec![
+    let mut curve = test_nurbs(
+        1,
+        vec![0.5, 0.5, 1.5, 2.5, 2.5],
+        vec![
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(1.0, 2.0, 3.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
     let before = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         2.0,
     )
     .expect("valid multi-span linear NURBS evaluates before degree elevation");
     assert!(elevate_nurbs_to_degree(&mut curve, [0.5, 2.5], 3, None));
     let after = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         2.0,
     )
     .expect("valid multi-span linear NURBS evaluates after degree elevation");
-    assert_eq!(curve.degree, 3);
+    assert_eq!(curve.degree(), 3);
     assert!(before.distance(after) <= 1.0e-12);
 }
 
 #[test]
 fn multi_span_degree_zero_elevation_preserves_the_curve() {
     let point = Point3::new(1.0, 2.0, 3.0);
-    let source = NurbsCurve {
-        degree: 0,
-        knots: vec![0.0, 1.0, 2.0],
-        control_points: vec![point; 2],
-        weights: None,
-        periodic: false,
-    };
+    let source = test_nurbs(0, vec![0.0, 1.0, 2.0], vec![point; 2], None);
     let mut elevated = source.clone();
     assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 2.0], 2, None));
-    assert_eq!(elevated.degree, 2);
+    assert_eq!(elevated.degree(), 2);
     for parameter in [0.25, 0.75, 1.25, 1.75] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
-            source.degree,
-            &source.knots,
-            &source.control_points,
-            source.weights.as_deref(),
+            source.degree(),
+            source.knots(),
+            source.control_points(),
+            source.weights(),
             parameter,
         )
         .unwrap();
         let after = cadmpeg_ir::eval::nurbs_curve_point(
-            elevated.degree,
-            &elevated.knots,
-            &elevated.control_points,
-            elevated.weights.as_deref(),
+            elevated.degree(),
+            elevated.knots(),
+            elevated.control_points(),
+            elevated.weights(),
             parameter,
         )
         .unwrap();
@@ -1422,36 +1406,35 @@ fn multi_span_degree_zero_elevation_preserves_the_curve() {
 #[test]
 fn multi_span_rational_degree_elevation_preserves_the_curve() {
     const EPS_DEGREE_ELEVATION: f64 = 1.0e-9;
-    let source = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let source = test_nurbs(
+        2,
+        vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, -1.0, 0.0),
             Point3::new(3.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 2.0, 1.0, 3.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 2.0, 1.0, 3.0]),
+    );
     let mut elevated = source.clone();
     assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 1.0], 3, None));
-    assert_eq!(elevated.degree, 3);
-    assert_eq!(elevated.weights.as_ref().map(Vec::len), Some(7));
+    assert_eq!(elevated.degree(), 3);
+    assert_eq!(elevated.weights().map(<[f64]>::len), Some(7));
     for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
-            source.degree,
-            &source.knots,
-            &source.control_points,
-            source.weights.as_deref(),
+            source.degree(),
+            source.knots(),
+            source.control_points(),
+            source.weights(),
             parameter,
         )
         .unwrap();
         let after = cadmpeg_ir::eval::nurbs_curve_point(
-            elevated.degree,
-            &elevated.knots,
-            &elevated.control_points,
-            elevated.weights.as_deref(),
+            elevated.degree(),
+            elevated.knots(),
+            elevated.control_points(),
+            elevated.weights(),
             parameter,
         )
         .unwrap();
@@ -1462,32 +1445,19 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
 #[test]
 fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
     let point = |x, y| Point3::new(x, y, 0.0);
-    let line = |start, end| NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![start, end],
-        weights: None,
-        periodic: false,
-    };
-    let constant = |position| NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-        control_points: vec![position; 3],
-        weights: None,
-        periodic: false,
-    };
-    let cubic = NurbsCurve {
-        degree: 3,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
-        control_points: vec![
+    let line = |start, end| test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None);
+    let constant = |position| test_nurbs(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], vec![position; 3], None);
+    let cubic = test_nurbs(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
+        vec![
             point(1.0, 1.0),
             point(1.666_666_666_666_666_7, 0.666_666_666_666_666_6),
             point(2.333_333_333_333_333_5, 0.333_333_333_333_333_3),
             point(3.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
     let mut children = vec![
         (line(point(3.0, 0.0), point(2.0, 0.0)), [0.0, 1.0]),
         (constant(point(2.0, 0.0)), [0.0, 2.0]),
@@ -1497,7 +1467,7 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
         (line(point(3.0, 0.0), point(3.0, 0.0)), [0.0, 1.0]),
     ];
     for (index, (curve, interval)) in children.iter_mut().enumerate() {
-        if curve.degree < 3 {
+        if curve.degree() < 3 {
             assert!(
                 elevate_nurbs_to_degree(curve, *interval, 3, None),
                 "child {index} should elevate"
@@ -1506,7 +1476,7 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
     }
     let concatenated = concatenate_nurbs(children, None)
         .expect("mixed-degree composite should have an exact NURBS carrier");
-    assert_eq!(concatenated.nurbs.degree, 3);
+    assert_eq!(concatenated.nurbs.degree(), 3);
     assert_eq!(
         concatenated.boundaries,
         vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
@@ -1517,13 +1487,12 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
 fn concatenated_range_is_exactly_the_canonical_knot_domain() {
     let line = |start: f64, end: f64, x: f64| {
         (
-            NurbsCurve {
-                degree: 1,
-                knots: vec![start, start, end, end],
-                control_points: vec![Point3::new(x, 0.0, 0.0), Point3::new(x + 1.0, 0.0, 0.0)],
-                weights: None,
-                periodic: false,
-            },
+            test_nurbs(
+                1,
+                vec![start, start, end, end],
+                vec![Point3::new(x, 0.0, 0.0), Point3::new(x + 1.0, 0.0, 0.0)],
+                None,
+            ),
             [start, end],
         )
     };
@@ -1535,7 +1504,7 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
 
     assert_eq!(
         concatenated.boundaries.last(),
-        concatenated.nurbs.knots.last()
+        concatenated.nurbs.knots().last()
     );
 }
 
@@ -1549,24 +1518,22 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
     ir.model.curves.extend([
         Curve {
             id: first_id.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(0.0, 0.0, 0.0), first_end],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(test_nurbs(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), first_end],
+                None,
+            )),
             source_object: None,
         },
         Curve {
             id: second_id.clone(),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(test_nurbs(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                None,
+            )),
             source_object: None,
         },
         Curve {
@@ -1604,37 +1571,36 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001), None, None)
             .expect("carrier join within the global resolution should project");
     assert_eq!(range, [0.0, 2.0]);
-    assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
 }
 
 #[test]
 fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
-    let curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 10.0, 10.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-        weights: None,
-        periodic: false,
-    };
+    let curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 10.0, 10.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+        None,
+    );
     let (reversed, range) = reverse_nurbs(curve, [2.0, 5.0])
         .expect("a bounded subrange should have an exact reversed carrier");
     assert_eq!(range, [5.0, 8.0]);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            reversed.degree,
-            &reversed.knots,
-            &reversed.control_points,
-            reversed.weights.as_deref(),
+            reversed.degree(),
+            reversed.knots(),
+            reversed.control_points(),
+            reversed.weights(),
             range[0],
         ),
         Some(Point3::new(5.0, 0.0, 0.0))
     );
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            reversed.degree,
-            &reversed.knots,
-            &reversed.control_points,
-            reversed.weights.as_deref(),
+            reversed.degree(),
+            reversed.knots(),
+            reversed.control_points(),
+            reversed.weights(),
             range[1],
         ),
         Some(Point3::new(2.0, 0.0, 0.0))
@@ -1643,13 +1609,12 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
 
 #[test]
 fn reversing_a_range_outside_the_active_nurbs_domain_is_rejected() {
-    let curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 10.0, 10.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-        weights: None,
-        periodic: false,
-    };
+    let curve = test_nurbs(
+        1,
+        vec![0.0, 0.0, 10.0, 10.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+        None,
+    );
     assert!(reverse_nurbs(curve, [-1.0, 5.0]).is_none());
 }
 
@@ -1673,10 +1638,10 @@ fn decode_concatenates_ordered_composite_curve_children() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
         panic!("expected a concatenated NURBS cache");
     };
-    assert_eq!(nurbs.knots, vec![0.0, 0.0, 1.0, 2.0, 2.0]);
-    assert_eq!(nurbs.control_points.len(), 3);
+    assert_eq!(nurbs.knots(), [0.0, 0.0, 1.0, 2.0, 2.0]);
+    assert_eq!(nurbs.control_points().len(), 3);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(1, &nurbs.knots, &nurbs.control_points, None, 1.5),
+        cadmpeg_ir::eval::nurbs_curve_point(1, nurbs.knots(), nurbs.control_points(), None, 1.5),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
     );
     assert!(result.report().losses.is_empty());
@@ -1806,12 +1771,9 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
         panic!("expected an exact quadratic composite cache");
     };
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.control_points.len(), 5);
-    assert_eq!(
-        nurbs.weights.as_ref().unwrap()[1],
-        std::f64::consts::FRAC_1_SQRT_2
-    );
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.control_points().len(), 5);
+    assert_eq!(nurbs.weights().unwrap()[1], std::f64::consts::FRAC_1_SQRT_2);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1836,8 +1798,8 @@ fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() 
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
         panic!("expected an exact heterogeneous composite carrier");
     };
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.control_points.len(), 5);
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.control_points().len(), 5);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1866,7 +1828,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
         panic!("expected an elevated cubic composite cache");
     };
-    assert_eq!(nurbs.degree, 3);
+    assert_eq!(nurbs.degree(), 3);
     assert_eq!(
         result
             .ir()
@@ -1889,10 +1851,12 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(face.loops.len(), 1);
     assert_eq!(result.ir().model.pcurves.len(), 1);
-    assert!(matches!(
-        result.ir().model.pcurves[0].geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree: 3, .. }
-    ));
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } =
+        &result.ir().model.pcurves[0].geometry
+    else {
+        panic!("expected an elevated cubic composite pcurve");
+    };
+    assert_eq!(nurbs.degree(), 3);
     assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), None);
     assert!(
         result.report().losses.is_empty(),

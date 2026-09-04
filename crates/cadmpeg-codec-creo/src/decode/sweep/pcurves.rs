@@ -29,17 +29,13 @@ pub(in super::super) fn add_extrusion_pcurve(
     geometry: PcurveGeometry,
 ) -> PcurveId {
     let parameter_range = match &geometry {
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            ..
-        } => usize::try_from(*degree)
+        PcurveGeometry::Nurbs { nurbs } => usize::try_from(nurbs.degree())
             .ok()
             .and_then(|degree| {
-                (control_points.len() > degree && knots.len() == control_points.len() + degree + 1)
-                    .then_some(())?;
-                Some([*knots.get(degree)?, *knots.get(control_points.len())?])
+                Some([
+                    *nurbs.knots().get(degree)?,
+                    *nurbs.knots().get(nurbs.control_points().len())?,
+                ])
             })
             .filter(|range| range[0] < range[1])
             .unwrap_or([0.0, 1.0]),

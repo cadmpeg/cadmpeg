@@ -68,13 +68,13 @@ fn nurbs_curve_block_decodes_to_carrier() {
     }
 
     let c = decode_curve_cache(&b).expect("curve block decodes");
-    assert_eq!(c.degree, 2);
-    assert_eq!(c.control_points.len(), 3);
+    assert_eq!(c.degree(), 2);
+    assert_eq!(c.control_points().len(), 3);
     // Clamped knots: [0,0,0,1,1,1] (endpoint mult 2 + 1 = 3 each).
-    assert_eq!(c.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(c.control_points[1].x, 10.0);
-    assert_eq!(c.control_points[1].y, 20.0);
-    assert!(c.weights.is_none());
+    assert_eq!(c.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(c.control_points()[1].x, 10.0);
+    assert_eq!(c.control_points()[1].y, 20.0);
+    assert!(c.weights().is_none());
 }
 
 #[test]
@@ -169,8 +169,8 @@ fn decode_retains_generated_helix_construction() {
     else {
         panic!("expected helix NURBS cache")
     };
-    edited_cache.control_points[1].x = 17.0;
-    edited_cache.control_points[1].z = -2.0;
+    edited_cache.control_points_mut()[1].x = 17.0;
+    edited_cache.control_points_mut()[1].z = -2.0;
     *solved_cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(
         cadmpeg_ir::geometry::CurveGeometry::Nurbs(edited_cache),
     )
@@ -479,9 +479,9 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
             .find(|curve| curve.id == *source)
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-            if curve.degree == 1
-                && curve.knots == [-2.0, -2.0, 5.0, 5.0]
-                && curve.control_points == [
+            if curve.degree() == 1
+                && curve.knots() == [-2.0, -2.0, 5.0, 5.0]
+                && curve.control_points() == [
                     cadmpeg_ir::math::Point3::new(-9.0, 2.0, 3.0),
                     cadmpeg_ir::math::Point3::new(5.0, 9.0, -0.5),
                 ]
@@ -593,16 +593,19 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .expect("round-trip subset source");
     assert_eq!(
         source_curve.geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![-1.5, -1.5, 3.5, 3.5],
-            control_points: vec![
-                cadmpeg_ir::math::Point3::new(8.5, 23.0, 29.25),
-                cadmpeg_ir::math::Point3::new(13.5, 13.0, 31.75),
-            ],
-            weights: None,
-            periodic: false,
-        })
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![-1.5, -1.5, 3.5, 3.5],
+                vec![
+                    cadmpeg_ir::math::Point3::new(8.5, 23.0, 29.25),
+                    cadmpeg_ir::math::Point3::new(13.5, 13.0, 31.75),
+                ],
+                None,
+                false,
+            )
+            .expect("valid subset source curve")
+        )
     );
 }
 
@@ -974,9 +977,9 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &curve.geometry else {
             panic!("compound line component was not lowered to NURBS")
         };
-        assert_eq!(curve.degree, 1);
+        assert_eq!(curve.degree(), 1);
         let range = [ordinal as f64 * 0.5, (ordinal + 1) as f64 * 0.5];
-        assert_eq!(curve.knots, [range[0], range[0], range[1], range[1]]);
+        assert_eq!(curve.knots(), [range[0], range[0], range[1], range[1]]);
     }
 }
 
@@ -1084,10 +1087,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     }
     assert!(matches!(
         context.sides[1].pcurve,
-        Some(PcurveGeometry::Nurbs {
-            weights: Some(_),
-            ..
-        })
+        Some(PcurveGeometry::Nurbs { ref nurbs }) if nurbs.weights().is_some()
     ));
 
     let mut retained = result.ir().clone();
@@ -1230,14 +1230,17 @@ fn generated_mixed_offset_supports_write_source_less() {
     assert_eq!(
         context.sides[0].pcurve,
         Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![
-                cadmpeg_ir::math::Point2::new(1.0, 2.0),
-                cadmpeg_ir::math::Point2::new(4.0, 1.0),
-            ],
-            weights: None,
-            periodic: false,
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                    cadmpeg_ir::math::Point2::new(4.0, 1.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
         })
     );
     let actual_surface = round_trip

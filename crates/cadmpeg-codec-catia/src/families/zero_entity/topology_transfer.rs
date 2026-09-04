@@ -760,17 +760,14 @@ pub(crate) fn transfer_closed_face_topology(
 }
 
 fn pcurve_parameter_range(pcurve: &PcurveGeometry) -> Option<[f64; 2]> {
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        ..
-    } = pcurve
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
     };
-    let degree = usize::try_from(*degree).ok()?;
-    let range = [*knots.get(degree)?, *knots.get(control_points.len())?];
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let range = [
+        *nurbs.knots().get(degree)?,
+        *nurbs.knots().get(nurbs.control_points().len())?,
+    ];
     (range.iter().copied().all(f64::is_finite) && range[0] < range[1]).then_some(range)
 }
 

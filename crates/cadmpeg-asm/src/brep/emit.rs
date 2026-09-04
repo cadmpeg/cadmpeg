@@ -32,11 +32,10 @@ use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LoftPathCurve,
-    NurbsCurve, Pcurve, PcurveGeometry, PcurveInlineForm, PcurveMetadata, ProceduralCurve,
-    ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
-    RollingBallRadiusSelector, RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry,
-    VariableBlendConstruction, VertexBlendBoundary, VertexBlendBoundaryGeometry,
-    VertexBlendConstruction,
+    NurbsCurve, Pcurve, PcurveInlineForm, PcurveMetadata, ProceduralCurve, ProceduralSurface,
+    ProceduralSurfaceDefinition, RollingBallConstruction, RollingBallRadiusSelector,
+    RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry, VariableBlendConstruction,
+    VertexBlendBoundary, VertexBlendBoundaryGeometry, VertexBlendConstruction,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -187,13 +186,7 @@ fn emit_carrier_surface(
                     geometry: CurveGeometry::Nurbs(reference),
                     source_object: None,
                 });
-                let pcurve = pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                    degree: pcurve.degree,
-                    knots: pcurve.knots,
-                    control_points: pcurve.control_points,
-                    weights: pcurve.weights,
-                    periodic: pcurve.periodic,
-                });
+                let pcurve = pcurve.map(NurbsPcurve::into_geometry);
                 ProceduralSurfaceDefinition::Taper {
                     support: support_id,
                     reference: reference_id,
@@ -1934,15 +1927,9 @@ fn emit_g2_blend_surface(
             geometry: CurveGeometry::Nurbs(side.curve),
             source_object: None,
         });
-        let pcurves = side.pcurves.map(|pcurve| {
-            pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                degree: pcurve.degree,
-                knots: pcurve.knots,
-                control_points: pcurve.control_points,
-                weights: pcurve.weights,
-                periodic: pcurve.periodic,
-            })
-        });
+        let pcurves = side
+            .pcurves
+            .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
         cadmpeg_ir::geometry::G2BlendSide {
             label: side.label,
             surface,
@@ -1980,13 +1967,7 @@ fn emit_g2_blend_surface(
             coefficients,
             tolerance,
             extension,
-            pcurve: pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                degree: pcurve.degree,
-                knots: pcurve.knots,
-                control_points: pcurve.control_points,
-                weights: pcurve.weights,
-                periodic: pcurve.periodic,
-            }),
+            pcurve: pcurve.map(NurbsPcurve::into_geometry),
         },
     };
     let second_exact_surface = SurfaceId(format!(
@@ -2651,15 +2632,9 @@ fn emit_carrier_curve(
                 .collect::<Vec<_>>()
                 .try_into()
                 .expect("two fixed support sides");
-            let pcurves = embedded.pcurves.map(|pcurve| {
-                pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                    degree: pcurve.degree,
-                    knots: pcurve.knots,
-                    control_points: pcurve.control_points,
-                    weights: pcurve.weights,
-                    periodic: pcurve.periodic,
-                })
-            });
+            let pcurves = embedded
+                .pcurves
+                .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
             cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset {
                 context: cadmpeg_ir::geometry::IntcurveSupportContext {
                     sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
@@ -2691,15 +2666,9 @@ fn emit_carrier_curve(
                 .collect::<Vec<_>>()
                 .try_into()
                 .expect("two fixed support sides");
-            let pcurves = embedded.pcurves.map(|pcurve| {
-                pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                    degree: pcurve.degree,
-                    knots: pcurve.knots,
-                    control_points: pcurve.control_points,
-                    weights: pcurve.weights,
-                    periodic: pcurve.periodic,
-                })
-            });
+            let pcurves = embedded
+                .pcurves
+                .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
                 context: cadmpeg_ir::geometry::IntcurveSupportContext {
                     sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
@@ -2729,13 +2698,7 @@ fn emit_carrier_curve(
                 .collect::<Vec<_>>()
                 .try_into()
                 .expect("three fixed support sides");
-            let pcurves = embedded.pcurves.map(|pcurve| PcurveGeometry::Nurbs {
-                degree: pcurve.degree,
-                knots: pcurve.knots,
-                control_points: pcurve.control_points,
-                weights: pcurve.weights,
-                periodic: pcurve.periodic,
-            });
+            let pcurves = embedded.pcurves.map(NurbsPcurve::into_geometry);
             cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection {
                 context: cadmpeg_ir::geometry::IntcurveSupportContext {
                     sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
@@ -2784,15 +2747,9 @@ fn emit_carrier_curve(
                 .collect::<Vec<_>>()
                 .try_into()
                 .expect("two fixed support sides");
-            let pcurves = embedded.pcurves.map(|pcurve| {
-                pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                    degree: pcurve.degree,
-                    knots: pcurve.knots,
-                    control_points: pcurve.control_points,
-                    weights: pcurve.weights,
-                    periodic: pcurve.periodic,
-                })
-            });
+            let pcurves = embedded
+                .pcurves
+                .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
             let source = match embedded.source {
                 crate::nurbs::proc_curve::EmbeddedDeformableSource::Curve(geometry) => {
                     let curve = CurveId(format!(
@@ -2935,15 +2892,9 @@ fn emit_surface_curve_family(
             .collect::<Vec<_>>()
             .try_into()
             .expect("two fixed support sides");
-        let pcurves = embedded.pcurves.map(|pcurve| {
-            pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-                degree: pcurve.degree,
-                knots: pcurve.knots,
-                control_points: pcurve.control_points,
-                weights: pcurve.weights,
-                periodic: pcurve.periodic,
-            })
-        });
+        let pcurves = embedded
+            .pcurves
+            .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
         cadmpeg_ir::geometry::IntcurveSupportContext {
             sides: std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                 surface: surfaces[side].clone(),
@@ -3006,15 +2957,10 @@ fn emit_silhouette_curve(
         .collect::<Vec<_>>()
         .try_into()
         .expect("two fixed support sides");
-    let pcurves = embedded.context.pcurves.map(|pcurve| {
-        pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-            degree: pcurve.degree,
-            knots: pcurve.knots,
-            control_points: pcurve.control_points,
-            weights: pcurve.weights,
-            periodic: pcurve.periodic,
-        })
-    });
+    let pcurves = embedded
+        .context
+        .pcurves
+        .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
     let cast_surface = SurfaceId(format!("{format}:brep:procedural_curve#{i}:cast_surface"));
     out.surfaces.push(Surface {
         id: cast_surface.clone(),
@@ -3061,15 +3007,10 @@ fn emit_surface_offset_curve(
         .collect::<Vec<_>>()
         .try_into()
         .expect("two fixed support sides");
-    let pcurves = embedded.context.pcurves.map(|pcurve| {
-        pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-            degree: pcurve.degree,
-            knots: pcurve.knots,
-            control_points: pcurve.control_points,
-            weights: pcurve.weights,
-            periodic: pcurve.periodic,
-        })
-    });
+    let pcurves = embedded
+        .context
+        .pcurves
+        .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
     let base = CurveId(format!("{format}:brep:procedural_curve#{i}:base"));
     out.curves.push(Curve {
         id: base.clone(),
@@ -3138,13 +3079,7 @@ fn emit_spring_curve(
     embedded: EmbeddedSpring,
     format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
-    let emit_pcurve = |pcurve: NurbsPcurve| PcurveGeometry::Nurbs {
-        degree: pcurve.degree,
-        knots: pcurve.knots,
-        control_points: pcurve.control_points,
-        weights: pcurve.weights,
-        periodic: pcurve.periodic,
-    };
+    let emit_pcurve = NurbsPcurve::into_geometry;
     let layout = match embedded.layout {
         EmbeddedSpringLayout::ContextFirst {
             supports: [first_support, second_support],
@@ -3225,15 +3160,7 @@ fn emit_projection_curve(
         .collect::<Vec<_>>()
         .try_into()
         .expect("two fixed support sides");
-    let pcurves = embedded.pcurves.map(|pcurve| {
-        Some(PcurveGeometry::Nurbs {
-            degree: pcurve.degree,
-            knots: pcurve.knots,
-            control_points: pcurve.control_points,
-            weights: pcurve.weights,
-            periodic: pcurve.periodic,
-        })
-    });
+    let pcurves = embedded.pcurves.map(|pcurve| Some(pcurve.into_geometry()));
     let source = CurveId(format!("{format}:brep:procedural_curve#{i}:source"));
     out.curves.push(Curve {
         id: source.clone(),
@@ -3357,15 +3284,10 @@ fn emit_law_curve(
         .collect::<Vec<_>>()
         .try_into()
         .expect("two fixed support sides");
-    let pcurves = embedded.context.pcurves.map(|pcurve| {
-        pcurve.map(|pcurve| PcurveGeometry::Nurbs {
-            degree: pcurve.degree,
-            knots: pcurve.knots,
-            control_points: pcurve.control_points,
-            weights: pcurve.weights,
-            periodic: pcurve.periodic,
-        })
-    });
+    let pcurves = embedded
+        .context
+        .pcurves
+        .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
     let mut map_formula = |path: &str, formula: EmbeddedLawFormula| {
         map_law_formula(formula, |index, expression| {
             map_law_curve(&mut *out, i, &format!("{path}:{index}"), expression, format)

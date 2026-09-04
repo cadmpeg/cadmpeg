@@ -1218,19 +1218,22 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
 #[test]
 fn offset_surface_accepts_an_identity_checked_class_31_cache() {
     assert!(is_referenced_geometry_class(0xb5, 0x31));
-    let source = B5Surface::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let source = B5Surface::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid bilinear NURBS"),
+    );
     let surfaces = BTreeMap::from([(3, source.clone()), (4, source)]);
     let mut cache_payload = vec![0x81, 0x84];
     for value in [-0.5f64, -2.0, -4.0, 3.0, 5.0] {

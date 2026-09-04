@@ -10,26 +10,61 @@ use cadmpeg_ir::math::{Point2, Vector3};
 
 use crate::decode::point_distance;
 
+fn test_surface(
+    u_knots: Vec<f64>,
+    u_count: u32,
+    control_points: Vec<cadmpeg_ir::math::Point3>,
+    weights: Option<Vec<f64>>,
+    u_periodic: bool,
+) -> cadmpeg_ir::geometry::NurbsSurface {
+    cadmpeg_ir::geometry::NurbsSurface::new(
+        1,
+        1,
+        u_knots,
+        vec![0.0, 0.0, 1.0, 1.0],
+        u_count,
+        2,
+        control_points,
+        weights,
+        false,
+        u_periodic,
+        false,
+    )
+    .unwrap()
+}
+
+fn test_pcurve(
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<Point2>,
+    weights: Option<Vec<f64>>,
+) -> PcurveGeometry {
+    PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            degree,
+            knots,
+            control_points,
+            weights,
+            false,
+        )
+        .unwrap(),
+    }
+}
+
 #[test]
 fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
-    let surface = cadmpeg_ir::geometry::NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let surface = test_surface(
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        vec![
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(0.0, 10.0, 0.0),
             cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
         ],
-        weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 2.0, 3.0, 4.0]),
+        false,
+    );
     let expected = Point2::new(0.37, 0.61);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
@@ -229,22 +264,16 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
 
     let periodic_nurbs = SurfaceId("synthetic:periodic-nurbs-prism".into());
     let nurbs_section = SurfaceId("synthetic:periodic-nurbs-section".into());
-    let periodic_geometry = cadmpeg_ir::geometry::NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 5,
-        v_count: 2,
-        control_points: [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0), (1.0, 0.0)]
+    let periodic_geometry = test_surface(
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
+        5,
+        [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0), (1.0, 0.0)]
             .into_iter()
             .flat_map(|(x, y)| [Point3::new(x, y, 0.0), Point3::new(x, y, 1.0)])
             .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: true,
-        v_periodic: false,
-    };
+        None,
+        true,
+    );
     ir.model.surfaces.extend([
         Surface {
             id: periodic_nurbs.clone(),
@@ -404,19 +433,13 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
             cadmpeg_ir::math::Point3::new(x, 10.0, z),
         ]);
     }
-    let surface = cadmpeg_ir::geometry::NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 5,
-        v_count: 2,
+    let surface = test_surface(
+        vec![0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0],
+        5,
         control_points,
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        None,
+        false,
+    );
     let expected = Point2::new(0.125, 0.3);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
@@ -440,19 +463,13 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
             cadmpeg_ir::math::Point3::new(x, 10.0, z),
         ]);
     }
-    let surface = cadmpeg_ir::geometry::NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.4999, 0.5, 0.5001, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 5,
-        v_count: 2,
+    let surface = test_surface(
+        vec![0.0, 0.0, 0.4999, 0.5, 0.5001, 1.0, 1.0],
+        5,
         control_points,
-        weights: Some(vec![1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2]),
+        false,
+    );
     let expected = Point2::new(0.5001, 0.3);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
@@ -476,17 +493,20 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
     let curve = CurveId("synthetic:piecewise-spine".into());
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            control_points: vec![
-                cadmpeg_ir::math::Point3::new(-10.0, 0.0, 0.0),
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
-            ],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 0.5, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point3::new(-10.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
 
@@ -503,17 +523,16 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
 
 #[test]
 fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
-    let pcurve = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![2.0, 2.0, 5.0, 9.0, 9.0],
-        control_points: vec![
+    let pcurve = test_pcurve(
+        1,
+        vec![2.0, 2.0, 5.0, 9.0, 9.0],
+        vec![
             Point2::new(-1.0, 3.0),
             Point2::new(2.0, 6.0),
             Point2::new(6.0, 4.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
 
     let first =
         crate::decode::closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None).unwrap()[0];
@@ -523,45 +542,42 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     assert!((first - 3.5).abs() < 1.0e-12);
     assert!((second - 8.0).abs() < 1.0e-12);
 
-    let rational = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-        weights: Some(vec![1.0, 2.0]),
-        periodic: false,
-    };
+    let rational = test_pcurve(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        Some(vec![1.0, 2.0]),
+    );
     let rational_parameter =
         crate::decode::closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None).unwrap()
             [0];
     assert!((rational_parameter - 1.0 / 3.0).abs() < 1.0e-10);
 
-    let quadratic = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let quadratic = test_pcurve(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point2::new(0.0, 0.0),
             Point2::new(1.0, 1.0),
             Point2::new(2.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
     let quadratic_parameter =
         crate::decode::closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None).unwrap()
             [0];
     assert!((quadratic_parameter - 0.5).abs() < 1.0e-10);
 
-    let folded = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-        control_points: vec![
+    let folded = test_pcurve(
+        1,
+        vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        vec![
             Point2::new(0.0, 0.0),
             Point2::new(1.0, 0.0),
             Point2::new(0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
     let first_fold =
         crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
             .unwrap()[0];
@@ -582,10 +598,17 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     );
 
     let mut rational_folded = folded.clone();
-    let PcurveGeometry::Nurbs { weights, .. } = &mut rational_folded else {
+    let PcurveGeometry::Nurbs { nurbs } = &mut rational_folded else {
         unreachable!("folded test pcurve is NURBS");
     };
-    *weights = Some(vec![1.0; 3]);
+    *nurbs = cadmpeg_ir::geometry::PcurveNurbs::new(
+        nurbs.degree(),
+        nurbs.knots().to_vec(),
+        nurbs.control_points().to_vec(),
+        Some(vec![1.0; 3]),
+        nurbs.periodic(),
+    )
+    .unwrap();
     assert_eq!(
         crate::decode::closest_pcurve_parameters(
             &rational_folded,
@@ -605,17 +628,16 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         [2.0, 0.0]
     );
 
-    let quadratic_folded = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let quadratic_folded = test_pcurve(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point2::new(0.0, 0.0),
             Point2::new(1.0, 0.0),
             Point2::new(0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+    );
     assert_eq!(
         crate::decode::closest_pcurve_parameters(
             &quadratic_folded,
@@ -917,13 +939,12 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         },
         source_object: None,
     });
-    let contact_pcurve = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-        weights: None,
-        periodic: false,
-    };
+    let contact_pcurve = test_pcurve(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+    );
     let _attached = ir.model.add_procedural_curve(
         spine,
         ProceduralCurve::new(
@@ -950,13 +971,12 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         ),
     );
 
-    let source_pcurve = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: [Point2::new(0.0, 1.0), Point2::new(1.0, 1.0)].to_vec(),
-        weights: None,
-        periodic: false,
-    };
+    let source_pcurve = test_pcurve(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        [Point2::new(0.0, 1.0), Point2::new(1.0, 1.0)].to_vec(),
+        None,
+    );
     let parameter = 0.35;
     let expected = Point2::new(parameter, 0.0);
     let point = Point3::new(0.0, 0.0, parameter);
@@ -1405,12 +1425,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     else {
         unreachable!()
     };
-    let PcurveGeometry::Nurbs { control_points, .. } = context.sides[1].pcurve.as_ref().unwrap()
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = context.sides[1].pcurve.as_ref().unwrap() else {
         unreachable!()
     };
-    assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
-    assert_eq!(control_points.last(), Some(&Point2::new(1.0, 0.0)));
+    assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));
+    assert_eq!(nurbs.control_points().last(), Some(&Point2::new(1.0, 0.0)));
     assert_eq!(
         crate::decode::blend_boundary_parameter_from_support_spine(
             &ir,
@@ -1450,16 +1469,19 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .iter_mut()
         .find(|curve| curve.id == spine)
         .unwrap()
-        .geometry = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 10.0, 10.0],
-        control_points: vec![
-            cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
-            cadmpeg_ir::math::Point3::new(2.0, 2.0, 10.0),
-        ],
-        weights: None,
-        periodic: false,
-    });
+        .geometry = CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 10.0, 10.0],
+            vec![
+                cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
+                cadmpeg_ir::math::Point3::new(2.0, 2.0, 10.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    );
     let coarse = crate::decode::coarse_blend_surface_parameters(&ir, &surface, point, 0).unwrap();
     let coarse_point =
         crate::decode::blend_surface_point(&ir, &surface, coarse.u, coarse.v).unwrap();

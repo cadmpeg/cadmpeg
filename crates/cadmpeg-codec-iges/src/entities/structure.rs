@@ -1415,33 +1415,32 @@ fn linear_nurbs_boundary_points(
     parameter_range: [f64; 2],
 ) -> Option<Vec<Point3>> {
     if nurbs
-        .control_points
+        .control_points()
         .iter()
         .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
-        || nurbs.knots.iter().any(|knot| !knot.is_finite())
-        || nurbs.weights.as_ref().is_some_and(|weights| {
-            weights.len() != nurbs.control_points.len()
-                || weights
-                    .iter()
-                    .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        || nurbs.knots().iter().any(|knot| !knot.is_finite())
+        || nurbs.weights().is_some_and(|weights| {
+            weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
         })
     {
         return None;
     }
     linear_nurbs_parameters(
-        nurbs.degree,
-        &nurbs.knots,
-        nurbs.control_points.len(),
-        nurbs.periodic,
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points().len(),
+        nurbs.periodic(),
         parameter_range,
     )?
     .into_iter()
     .map(|parameter| {
         cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             parameter,
         )
         .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())

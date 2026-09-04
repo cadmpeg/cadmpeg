@@ -15,7 +15,7 @@ use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralSurface,
+    CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
@@ -368,33 +368,37 @@ pub(super) fn pcurve_geometry(
         }
     };
     let (u_factor, u_offset, v_factor, v_offset) = pcurve_parameter_map(ir, support)?;
+    let parameter_curve = PcurveNurbs::new(
+        nurbs.degree(),
+        nurbs.knots().to_vec(),
+        nurbs
+            .control_points()
+            .iter()
+            .map(|point| {
+                source_parameter_map.map_or_else(
+                    || {
+                        Point2::new(
+                            point.x.mul_add(u_factor, u_offset),
+                            point.y.mul_add(v_factor, v_offset),
+                        )
+                    },
+                    |(u_factor, u_offset, v_factor, v_offset)| {
+                        source_parameter_point_to_neutral(
+                            Point2::new(point.x, point.y),
+                            (u_factor, u_offset, v_factor, v_offset),
+                            support.factor,
+                        )
+                    },
+                )
+            })
+            .collect(),
+        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.periodic(),
+    )
+    .ok()?;
     Some((
         PcurveGeometry::Nurbs {
-            degree: nurbs.degree,
-            knots: nurbs.knots,
-            control_points: nurbs
-                .control_points
-                .iter()
-                .map(|point| {
-                    source_parameter_map.map_or_else(
-                        || {
-                            Point2::new(
-                                point.x.mul_add(u_factor, u_offset),
-                                point.y.mul_add(v_factor, v_offset),
-                            )
-                        },
-                        |(u_factor, u_offset, v_factor, v_offset)| {
-                            source_parameter_point_to_neutral(
-                                Point2::new(point.x, point.y),
-                                (u_factor, u_offset, v_factor, v_offset),
-                                support.factor,
-                            )
-                        },
-                    )
-                })
-                .collect(),
-            weights: nurbs.weights,
-            periodic: nurbs.periodic,
+            nurbs: parameter_curve,
         },
         range,
     ))
@@ -613,17 +617,16 @@ fn source_curve_control_intervals(
                 (!controls.is_empty()).then_some(controls)
             }
             CurveGeometry::Nurbs(nurbs) => {
-                if nurbs.weights.as_ref().is_some_and(|weights| {
-                    weights.len() != nurbs.control_points.len()
-                        || weights
-                            .iter()
-                            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+                if nurbs.weights().is_some_and(|weights| {
+                    weights
+                        .iter()
+                        .any(|weight| !weight.is_finite() || *weight <= 0.0)
                 }) {
                     return None;
                 }
                 let exact = || {
                     nurbs
-                        .control_points
+                        .control_points()
                         .iter()
                         .map(|point| {
                             [point.x, point.y, point.z]
@@ -647,7 +650,7 @@ fn source_curve_control_intervals(
                 let record = records.get(&sequence).copied()?;
                 let raw_controls =
                     super::geometry::type126_declared_control_points(record, precision)?;
-                if raw_controls.len() != nurbs.control_points.len() {
+                if raw_controls.len() != nurbs.control_points().len() {
                     return None;
                 }
                 Some(
@@ -732,24 +735,25 @@ fn source_curve_control_polygon_within_bounds(
 }
 
 fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<Point3>> {
-    if nurbs.weights.as_ref().is_some_and(|weights| {
-        weights.len() != nurbs.control_points.len() || weights.iter().any(|weight| *weight != 1.0)
-    }) {
+    if nurbs
+        .weights()
+        .is_some_and(|weights| weights.iter().any(|weight| *weight != 1.0))
+    {
         return None;
     }
     linear_nurbs_parameters(
-        nurbs.degree,
-        &nurbs.knots,
-        nurbs.control_points.len(),
-        nurbs.periodic,
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points().len(),
+        nurbs.periodic(),
         range,
     )?
     .into_iter()
     .map(|parameter| {
         cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
             None,
             parameter,
         )
@@ -759,29 +763,29 @@ fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<
 }
 
 fn linear_pcurve_points(geometry: &PcurveGeometry, range: [f64; 2]) -> Option<Vec<[f64; 2]>> {
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = geometry
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = geometry else {
         return None;
     };
-    if weights.as_ref().is_some_and(|weights| {
-        weights.len() != control_points.len() || weights.iter().any(|weight| *weight != 1.0)
-    }) {
+    if nurbs
+        .weights()
+        .is_some_and(|weights| weights.iter().any(|weight| *weight != 1.0))
+    {
         return None;
     }
-    linear_nurbs_parameters(*degree, knots, control_points.len(), *periodic, range)?
-        .into_iter()
-        .map(|parameter| {
-            evaluation::pcurve(geometry, parameter)
-                .map(|point| [point.u, point.v])
-                .filter(|point| point.iter().all(|coordinate| coordinate.is_finite()))
-        })
-        .collect()
+    linear_nurbs_parameters(
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points().len(),
+        nurbs.periodic(),
+        range,
+    )?
+    .into_iter()
+    .map(|parameter| {
+        evaluation::pcurve(geometry, parameter)
+            .map(|point| [point.u, point.v])
+            .filter(|point| point.iter().all(|coordinate| coordinate.is_finite()))
+    })
+    .collect()
 }
 
 fn append_path<T: Copy + PartialEq>(target: &mut Vec<T>, path: Vec<T>) -> Option<()> {
@@ -1220,34 +1224,22 @@ fn pcurve_within_declared_intervals(
     let Some(bounds) = bounds else {
         return true;
     };
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        ..
-    } = geometry
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = geometry else {
         return false;
     };
-    let Some(degree) = usize::try_from(*degree).ok() else {
+    let Some(degree) = usize::try_from(nurbs.degree()).ok() else {
         return false;
     };
     if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
         return false;
     }
-    if weights
-        .as_ref()
-        .is_some_and(|weights| weights.len() != control_points.len())
-    {
-        return false;
-    }
-    let Some(controls) = control_points
+    let Some(controls) = nurbs
+        .control_points()
         .iter()
         .enumerate()
         .map(|(index, point)| {
-            let weight = weights
-                .as_ref()
+            let weight = nurbs
+                .weights()
                 .map_or(Some(1.0), |weights| weights.get(index).copied())?;
             (weight.is_finite() && weight > 0.0).then_some([
                 weight,
@@ -1260,7 +1252,7 @@ fn pcurve_within_declared_intervals(
     else {
         return false;
     };
-    let Some(spans) = homogeneous_pcurve_spans(degree, knots, controls) else {
+    let Some(spans) = homogeneous_pcurve_spans(degree, nurbs.knots(), controls) else {
         return false;
     };
     let Some(first_span) = spans.first() else {
@@ -1330,7 +1322,7 @@ fn pcurve_within_declared_intervals(
 
 fn periodic_surface_parameters(surface: &SurfaceGeometry) -> [bool; 2] {
     match surface {
-        SurfaceGeometry::Nurbs(surface) => [surface.u_periodic, surface.v_periodic],
+        SurfaceGeometry::Nurbs(surface) => [surface.u_periodic(), surface.v_periodic()],
         _ => [false, false],
     }
 }

@@ -8,10 +8,10 @@ fn curve_cache_decodes_in_both_integer_widths() {
         let block = curve_block(int_width);
         let curve = decode_curve_cache(&block)
             .unwrap_or_else(|| panic!("curve cache at width {int_width}"));
-        assert_eq!(curve.degree, 1);
-        assert_eq!(curve.control_points.len(), 2);
-        assert_eq!(curve.control_points[1].x, 10.0); // cm→mm ×10
-        assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(curve.degree(), 1);
+        assert_eq!(curve.control_points().len(), 2);
+        assert_eq!(curve.control_points()[1].x, 10.0); // cm→mm ×10
+        assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
         assert!(first_curve_patch_layout(&block, int_width).is_some());
         assert!(final_curve_patch_layout(&block, int_width).is_some());
         let other_width = if int_width == 4 { 8 } else { 4 };
@@ -189,8 +189,8 @@ fn surface_cache_decodes_in_both_integer_widths() {
         let block = surface_block(int_width);
         let surface = decode_surface_cache(&block)
             .unwrap_or_else(|| panic!("surface cache at width {int_width}"));
-        assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
-        assert_eq!((surface.u_count, surface.v_count), (2, 2));
+        assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
+        assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
         assert!(final_surface_patch_layout(&block, int_width).is_some());
         let other_width = if int_width == 4 { 8 } else { 4 };
         assert!(final_surface_patch_layout(&block, other_width).is_none());
@@ -213,7 +213,7 @@ fn token_curve_cache_ignores_nested_support_scope() {
         let curve = curve_cache(&tokens)
             .unwrap_or_else(|| panic!("owned curve cache at width {int_width}"));
 
-        assert!((curve.control_points[1].x - 70.0).abs() < f64::EPSILON);
+        assert!((curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
     }
 }
 
@@ -233,7 +233,7 @@ fn procedural_curve_cache_ignores_nested_support_scope() {
         let decoded = procedural_curve_resolving_refs(&tokens, &test_table(&bytes, int_width))
             .unwrap_or_else(|| panic!("procedural curve at width {int_width}"));
 
-        assert!((decoded.curve.control_points[1].x - 70.0).abs() < f64::EPSILON);
+        assert!((decoded.curve.control_points()[1].x - 70.0).abs() < f64::EPSILON);
     }
 }
 
@@ -270,6 +270,6 @@ fn token_surface_cache_ignores_later_nested_support_scope() {
         let surface = surface_cache(&tokens)
             .unwrap_or_else(|| panic!("owned surface cache at width {int_width}"));
 
-        assert!((surface.control_points[0].x - 50.0).abs() < f64::EPSILON);
+        assert!((surface.control_points()[0].x - 50.0).abs() < f64::EPSILON);
     }
 }

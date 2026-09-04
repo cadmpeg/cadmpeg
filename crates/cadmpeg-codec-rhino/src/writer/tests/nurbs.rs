@@ -17,18 +17,20 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     let mut ir = adjacent_quad_sheet();
     let edge = &mut ir.model.edges[1];
     edge.param_range = Some([2.0, 5.0]);
-    ir.model.curves[1].geometry =
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-            control_points: vec![
+    ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            2,
+            vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+            vec![
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(1.25, 0.5, 0.0),
                 Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: Some(vec![1.0, 0.75, 1.0]),
-            periodic: false,
-        });
+            Some(vec![1.0, 0.75, 1.0]),
+            false,
+        )
+        .expect("valid shared edge"),
+    );
     let expected = ir.model.curves[1].geometry.clone();
     for version in [
         RhinoArchiveVersion::V5,
@@ -92,18 +94,20 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
 fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     let mut ir = adjacent_quad_sheet();
     ir.model.edges[1].param_range = Some([2.0, 5.0]);
-    ir.model.curves[1].geometry =
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-            control_points: vec![
+    ir.model.curves[1].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            2,
+            vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+            vec![
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(1.25, 0.5, 0.0),
                 Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: Some(vec![1.0, 0.75, 1.0]),
-            periodic: false,
-        });
+            Some(vec![1.0, 0.75, 1.0]),
+            false,
+        )
+        .expect("valid explicit edge"),
+    );
     for (coedge, reversed) in [(1_usize, false), (7, true)] {
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#explicit.{coedge}").into();
         let mut control_points = vec![
@@ -117,11 +121,14 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
             id: id.clone(),
             geometry: cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                degree: 2,
-                knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
-                control_points,
-                weights: Some(vec![1.0, 0.75, 1.0]),
-                periodic: false,
+                nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                    2,
+                    vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+                    control_points,
+                    Some(vec![1.0, 0.75, 1.0]),
+                    false,
+                )
+                .expect("valid explicit pcurve"),
             },
             metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                 Some(false),
@@ -306,10 +313,10 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
             .find(|pcurve| pcurve.fit_tolerance() == Some(0.002))
             .expect("explicit line C2");
         assert_eq!(pcurve.parameter_range(), Some([0.0, 2.0]));
-        assert!(matches!(
-            pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree: 1, .. }
-        ));
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
+            panic!("line C2 must decode as NURBS");
+        };
+        assert_eq!(nurbs.degree(), 1);
     }
 }
 
@@ -469,27 +476,32 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         Point3::new(2.0, 0.25, 0.0),
         Point3::new(3.5, 0.75, 0.0),
     ];
-    ir.model.curves[0].geometry =
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![
+    ir.model.curves[0].geometry = cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            2,
+            vec![
                 domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
             ],
-            control_points: poles.to_vec(),
-            weights: Some(vec![1.0, 0.8, 1.0]),
-            periodic: false,
-        });
+            poles.to_vec(),
+            Some(vec![1.0, 0.8, 1.0]),
+            false,
+        )
+        .expect("valid trimmed edge"),
+    );
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![
-            domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
-        ],
-        control_points: poles
-            .iter()
-            .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
-            .collect(),
-        weights: Some(vec![1.0, 0.8, 1.0]),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            2,
+            vec![
+                domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
+            ],
+            poles
+                .iter()
+                .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
+                .collect(),
+            Some(vec![1.0, 0.8, 1.0]),
+            false,
+        )
+        .expect("valid trimmed pcurve"),
     };
     let expected_surface = ir.model.surfaces[0].geometry.clone();
     let expected_curve = ir.model.curves[0].geometry.clone();

@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition,
+    CurveGeometry, NurbsCurve, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
@@ -391,15 +391,18 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
             let surface = graph.surfaces.get(&loop_.surface)?;
             let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
             let geometry = PcurveGeometry::Nurbs {
-                degree: pcurve.degree,
-                knots,
-                control_points: pcurve
-                    .control_points
-                    .iter()
-                    .map(|point| neutral_pcurve_point(*point, surface))
-                    .collect(),
-                weights: pcurve.weights.clone(),
-                periodic: false,
+                nurbs: PcurveNurbs::new(
+                    pcurve.degree,
+                    knots,
+                    pcurve
+                        .control_points
+                        .iter()
+                        .map(|point| neutral_pcurve_point(*point, surface))
+                        .collect(),
+                    pcurve.weights.clone(),
+                    false,
+                )
+                .ok()?,
             };
             pcurve_plan.entry(pcurve_id).or_insert((
                 geometry,
@@ -729,14 +732,17 @@ pub(crate) fn resolved_object_stream_pcurve(
         surface_object_id: pcurve.support_id,
         carrier,
         geometry: PcurveGeometry::Nurbs {
-            degree: pcurve.degree,
-            knots,
-            control_points: control_points
-                .into_iter()
-                .map(|point| pcurves::neutral_pcurve_point(point, surface))
-                .collect(),
-            weights: None,
-            periodic: false,
+            nurbs: PcurveNurbs::new(
+                pcurve.degree,
+                knots,
+                control_points
+                    .into_iter()
+                    .map(|point| pcurves::neutral_pcurve_point(point, surface))
+                    .collect(),
+                None,
+                false,
+            )
+            .ok()?,
         },
         parameter_range: pcurve.range,
     })
@@ -872,15 +878,18 @@ pub(crate) fn resolved_extrusion_surface(
             let domain = pcurve_parameter_domain(pcurve)?;
             bounded_occurrence_range(pcurve_parameter_range, domain)?;
             let pcurve_geometry = PcurveGeometry::Nurbs {
-                degree: pcurve.degree,
-                knots,
-                control_points: pcurve
-                    .control_points
-                    .iter()
-                    .map(|point| neutral_pcurve_point(*point, source_surface))
-                    .collect(),
-                weights: pcurve.weights.clone(),
-                periodic: false,
+                nurbs: PcurveNurbs::new(
+                    pcurve.degree,
+                    knots,
+                    pcurve
+                        .control_points
+                        .iter()
+                        .map(|point| neutral_pcurve_point(*point, source_surface))
+                        .collect(),
+                    pcurve.weights.clone(),
+                    false,
+                )
+                .ok()?,
             };
             let curve = lifted_curve_geometry(pcurve, source_surface);
             Some(ResolvedExtrusionSupport {
@@ -978,7 +987,7 @@ fn curve_on_parameter_range(
     let source_per_target = source_span / target_span;
     match curve {
         CurveGeometry::Nurbs(mut curve) => {
-            for knot in &mut curve.knots {
+            for knot in curve.knots_mut() {
                 *knot = target[0] + (*knot - source[0]) * target_per_source;
             }
             Some(CurveGeometry::Nurbs(curve))

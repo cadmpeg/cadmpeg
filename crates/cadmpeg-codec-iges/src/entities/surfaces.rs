@@ -145,23 +145,22 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
                 && major_radius == minor_radius
         }
         CurveGeometry::Nurbs(curve) => {
-            curve.degree == 1
-                && curve.weights.is_none()
-                && curve.control_points.len() == 2
+            curve.degree() == 1
+                && curve.weights().is_none()
+                && curve.control_points().len() == 2
                 && curve
-                    .control_points
+                    .control_points()
                     .iter()
                     .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
-                && curve.control_points[0]
-                    .distance(curve.control_points[1])
+                && curve.control_points()[0]
+                    .distance(curve.control_points()[1])
                     .is_finite()
-                && curve.control_points[0].distance(curve.control_points[1]) > 0.0
-                && curve.knots.len() == 4
-                && curve.knots[0] == curve.knots[1]
-                && curve.knots[2] == curve.knots[3]
-                && curve.knots[1].is_finite()
-                && curve.knots[1] < curve.knots[2]
-                && curve.knots[2].is_finite()
+                && curve.control_points()[0].distance(curve.control_points()[1]) > 0.0
+                && curve.knots()[0] == curve.knots()[1]
+                && curve.knots()[2] == curve.knots()[3]
+                && curve.knots()[1].is_finite()
+                && curve.knots()[1] < curve.knots()[2]
+                && curve.knots()[2].is_finite()
         }
         _ => false,
     }
@@ -175,44 +174,43 @@ fn interval_certified_linear_bezier(
     if record.integer(0) != Some(126) {
         return false;
     }
-    let Ok(degree) = usize::try_from(geometry.degree) else {
+    let Ok(degree) = usize::try_from(geometry.degree()) else {
         return false;
     };
     let Some(control_count) = degree.checked_add(1) else {
         return false;
     };
     if degree < 2
-        || geometry.weights.is_some()
-        || geometry.periodic
-        || geometry.control_points.len() != control_count
-        || geometry.knots.len() != control_count * 2
+        || geometry.weights().is_some()
+        || geometry.periodic()
+        || geometry.control_points().len() != control_count
     {
         return false;
     }
-    let Some(lower) = geometry.knots.first().copied() else {
+    let Some(lower) = geometry.knots().first().copied() else {
         return false;
     };
-    let Some(upper) = geometry.knots.last().copied() else {
+    let Some(upper) = geometry.knots().last().copied() else {
         return false;
     };
     if !lower.is_finite()
         || !upper.is_finite()
         || lower >= upper
-        || geometry.knots[..control_count]
+        || geometry.knots()[..control_count]
             .iter()
             .any(|knot| *knot != lower)
-        || geometry.knots[control_count..]
+        || geometry.knots()[control_count..]
             .iter()
             .any(|knot| *knot != upper)
-        || geometry.control_points.iter().any(|point| {
+        || geometry.control_points().iter().any(|point| {
             [point.x, point.y, point.z]
                 .into_iter()
                 .any(|value| !value.is_finite())
         })
         || geometry
-            .control_points
+            .control_points()
             .first()
-            .zip(geometry.control_points.last())
+            .zip(geometry.control_points().last())
             .is_none_or(|(first, last)| {
                 let distance = first.distance(*last);
                 !distance.is_finite() || distance <= 0.0
@@ -424,32 +422,27 @@ fn insert_homogeneous_curve_knot(
 }
 
 fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierSpan>> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let count = curve.control_points.len();
-    if count <= degree
-        || curve.knots.len() != count.checked_add(degree)?.checked_add(1)?
-        || !knots_nondecreasing(&curve.knots)
-    {
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let count = curve.control_points().len();
+    if !knots_nondecreasing(curve.knots()) {
         return None;
     }
-    let weights = curve.weights.as_deref().map_or_else(
+    let weights = curve.weights().map_or_else(
         || cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights").ok(),
         |weights| Some(weights.to_owned()),
     )?;
-    if weights.len() != count
-        || curve.control_points.iter().any(|point| {
-            [point.x, point.y, point.z]
-                .into_iter()
-                .any(|value| !value.is_finite())
-        })
-        || weights
-            .iter()
-            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+    if curve.control_points().iter().any(|point| {
+        [point.x, point.y, point.z]
+            .into_iter()
+            .any(|value| !value.is_finite())
+    }) || weights
+        .iter()
+        .any(|weight| !weight.is_finite() || *weight <= 0.0)
     {
         return None;
     }
     let mut controls = curve
-        .control_points
+        .control_points()
         .iter()
         .zip(weights)
         .map(|(point, weight)| [weight * point.x, weight * point.y, weight * point.z, weight])
@@ -460,7 +453,7 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
 
     if degree == 0 {
         let mut spans = Vec::new();
-        for (index, window) in curve.knots.windows(2).enumerate() {
+        for (index, window) in curve.knots().windows(2).enumerate() {
             if window[0] < window[1] {
                 spans.push(HomogeneousBezierSpan {
                     domain: [window[0], window[1]],
@@ -471,7 +464,7 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
         return (!spans.is_empty()).then_some(spans);
     }
 
-    let mut knots = curve.knots.clone();
+    let mut knots = curve.knots().to_vec();
     let domain = [*knots.get(degree)?, *knots.get(count)?];
     let mut internal = knots[degree + 1..count]
         .iter()
@@ -681,8 +674,8 @@ fn aligned_homogeneous_spans(
 }
 
 fn curve_weights(curve: &NurbsCurve) -> Option<Vec<f64>> {
-    let count = curve.control_points.len();
-    let weights = curve.weights.as_deref().map_or_else(
+    let count = curve.control_points().len();
+    let weights = curve.weights().map_or_else(
         || std::iter::repeat_n(1.0, count).collect(),
         <[f64]>::to_vec,
     );
@@ -717,7 +710,7 @@ fn same_basis_ruled_surface(
     second: &NurbsCurve,
     weights: &[f64],
 ) -> Option<NurbsSurface> {
-    let u_count = u32::try_from(first.control_points.len()).ok()?;
+    let u_count = u32::try_from(first.control_points().len()).ok()?;
     let surface_weights = weights
         .iter()
         .copied()
@@ -728,25 +721,26 @@ fn same_basis_ruled_surface(
     } else {
         Some(surface_weights)
     };
-    Some(NurbsSurface {
-        u_degree: first.degree,
-        v_degree: 1,
-        u_knots: first.knots.clone(),
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+    NurbsSurface::new(
+        first.degree(),
+        1,
+        first.knots().to_vec(),
+        vec![0.0, 0.0, 1.0, 1.0],
         u_count,
-        v_count: 2,
-        control_points: first
-            .control_points
+        2,
+        first
+            .control_points()
             .iter()
             .copied()
-            .zip(second.control_points.iter().copied())
+            .zip(second.control_points().iter().copied())
             .flat_map(|(first, second)| [first, second])
             .collect(),
         weights,
-        normal_reversed: false,
-        u_periodic: first.periodic && second.periodic,
-        v_periodic: false,
-    })
+        false,
+        first.periodic() && second.periodic(),
+        false,
+    )
+    .ok()
 }
 
 fn admit_surface_pole_count(ctx: Option<&DecodeContext<'_>>, pole_count: usize) -> Option<()> {
@@ -769,19 +763,19 @@ fn ruled_surface_carrier(
     second: &NurbsCurve,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Option<NurbsSurface> {
-    if first.degree == second.degree
-        && first.knots == second.knots
-        && first.control_points.len() == second.control_points.len()
+    if first.degree() == second.degree()
+        && first.knots() == second.knots()
+        && first.control_points().len() == second.control_points().len()
     {
         if let Some(weights) = projectively_shared_weights(first, second) {
-            admit_surface_pole_count(ctx, first.control_points.len().checked_mul(2)?)?;
+            admit_surface_pole_count(ctx, first.control_points().len().checked_mul(2)?)?;
             return same_basis_ruled_surface(first, second, &weights);
         }
     }
 
-    let degree = usize::try_from(first.degree)
+    let degree = usize::try_from(first.degree())
         .ok()?
-        .checked_add(usize::try_from(second.degree).ok()?)?;
+        .checked_add(usize::try_from(second.degree()).ok()?)?;
     if degree == 0 {
         return None;
     }
@@ -792,8 +786,9 @@ fn ruled_surface_carrier(
     let mut homogeneous = Vec::with_capacity(pole_count);
     let mut u_knots = Vec::with_capacity(u_count.checked_add(degree)?.checked_add(1)?);
     for (span_index, (first_span, second_span)) in spans.iter().enumerate() {
-        if first_span.controls.len() != usize::try_from(first.degree).ok()?.checked_add(1)?
-            || second_span.controls.len() != usize::try_from(second.degree).ok()?.checked_add(1)?
+        if first_span.controls.len() != usize::try_from(first.degree()).ok()?.checked_add(1)?
+            || second_span.controls.len()
+                != usize::try_from(second.degree()).ok()?.checked_add(1)?
         {
             return None;
         }
@@ -846,19 +841,20 @@ fn ruled_surface_carrier(
     } else {
         Some(weights)
     };
-    Some(NurbsSurface {
-        u_degree: u32::try_from(degree).ok()?,
-        v_degree: 1,
+    NurbsSurface::new(
+        u32::try_from(degree).ok()?,
+        1,
         u_knots,
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: u32::try_from(u_count).ok()?,
-        v_count: 2,
+        vec![0.0, 0.0, 1.0, 1.0],
+        u32::try_from(u_count).ok()?,
+        2,
         control_points,
         weights,
-        normal_reversed: false,
-        u_periodic: first.periodic && second.periodic,
-        v_periodic: false,
-    })
+        false,
+        first.periodic() && second.periodic(),
+        false,
+    )
+    .ok()
 }
 
 fn homogeneous_curve_boundary_matches(
@@ -877,13 +873,13 @@ fn homogeneous_curve_boundary_matches(
     }
     let first_spans = homogeneous_bezier_spans(first)?;
     let second_spans = homogeneous_bezier_spans(second)?;
-    if first.degree != second.degree
-        || first.knots != second.knots
+    if first.degree() != second.degree()
+        || first.knots() != second.knots()
         || first_spans.len() != second_spans.len()
     {
         return None;
     }
-    let degree = usize::try_from(first.degree).ok()?;
+    let degree = usize::try_from(first.degree()).ok()?;
     let product_degree = degree.checked_mul(2)?;
     let binomial = |n: usize, k: usize| {
         let k = k.min(n - k);
@@ -1342,13 +1338,13 @@ pub(super) fn project(
             continue;
         }
         if direction_flag == 1 {
-            second.control_points.reverse();
-            let Some(knots) = reverse_knots(&second.knots) else {
+            second.control_points_mut().reverse();
+            let Some(knots) = reverse_knots(second.knots()) else {
                 losses.push(entity_loss(entry, "second rail knot vector is empty"));
                 continue;
             };
-            second.knots = knots;
-            if let Some(weights) = &mut second.weights {
+            second.knots_mut().copy_from_slice(&knots);
+            if let Some(weights) = second.weights_mut() {
                 weights.reverse();
             }
         }
@@ -1542,15 +1538,15 @@ pub(super) fn project(
             });
         let mut placed_directrix = directrix;
         if entry.transform != 0 {
-            for point in &mut placed_directrix.control_points {
+            for point in placed_directrix.control_points_mut() {
                 *point = transform.point(*point);
             }
         }
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
-            placed_directrix.degree,
-            &placed_directrix.knots,
-            &placed_directrix.control_points,
-            placed_directrix.weights.as_deref(),
+            placed_directrix.degree(),
+            placed_directrix.knots(),
+            placed_directrix.control_points(),
+            placed_directrix.weights(),
             cached_interval[0],
         ) else {
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
@@ -1566,15 +1562,15 @@ pub(super) fn project(
             continue;
         }
         let control_points = placed_directrix
-            .control_points
+            .control_points()
             .iter()
             .flat_map(|point| [*point, point.translated(direction, 1.0)])
             .collect::<Vec<_>>();
-        let Ok(u_count) = u32::try_from(placed_directrix.control_points.len()) else {
+        let Ok(u_count) = u32::try_from(placed_directrix.control_points().len()) else {
             losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
             continue;
         };
-        let weights = placed_directrix.weights.as_ref().map(|weights| {
+        let weights = placed_directrix.weights().map(|weights| {
             weights
                 .iter()
                 .flat_map(|weight| [*weight, *weight])
@@ -1595,21 +1591,28 @@ pub(super) fn project(
             placed_id
         };
         let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let Ok(surface) = NurbsSurface::new(
+            placed_directrix.degree(),
+            1,
+            placed_directrix.knots().to_vec(),
+            vec![0.0, 0.0, 1.0, 1.0],
+            u_count,
+            2,
+            control_points,
+            weights,
+            false,
+            placed_directrix.periodic(),
+            false,
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "tabulated-cylinder carrier cardinalities are inconsistent",
+            ));
+            continue;
+        };
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: placed_directrix.degree,
-                v_degree: 1,
-                u_knots: placed_directrix.knots,
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count,
-                v_count: 2,
-                control_points,
-                weights,
-                normal_reversed: false,
-                u_periodic: placed_directrix.periodic,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
         let _attached = ir.model.add_procedural_surface(
@@ -1809,7 +1812,7 @@ pub(super) fn project(
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
             });
-        let Ok(u_count) = u32::try_from(generatrix.control_points.len()) else {
+        let Ok(u_count) = u32::try_from(generatrix.control_points().len()) else {
             losses.push(entity_loss(entry, "generatrix pole count exceeds u32"));
             continue;
         };
@@ -1818,7 +1821,7 @@ pub(super) fn project(
             continue;
         };
         let Some(surface_pole_count) = generatrix
-            .control_points
+            .control_points()
             .len()
             .checked_mul(angular_controls.len())
         else {
@@ -1839,13 +1842,12 @@ pub(super) fn project(
         }
         let mut control_points = Vec::with_capacity(surface_pole_count);
         let mut weights = Vec::with_capacity(control_points.capacity());
-        for (u_index, point) in generatrix.control_points.iter().enumerate() {
+        for (u_index, point) in generatrix.control_points().iter().enumerate() {
             let delta = point.vector_from(axis_origin);
             let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
             let radial = point.vector_from(axis_point);
             let u_weight = generatrix
-                .weights
-                .as_ref()
+                .weights()
                 .and_then(|values| values.get(u_index))
                 .copied()
                 .unwrap_or(1.0);
@@ -1858,24 +1860,31 @@ pub(super) fn project(
         }
         let placed_generatrix = (entry.transform != 0).then(|| generatrix.clone());
         let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        let Ok(surface) = NurbsSurface::new(
+            generatrix.degree(),
+            2,
+            generatrix.knots().to_vec(),
+            v_knots,
+            u_count,
+            v_count,
+            control_points,
+            Some(weights),
+            false,
+            generatrix.periodic(),
+            super::curve_conversion::angularly_equal(
+                end_angle - start_angle,
+                std::f64::consts::TAU,
+            ),
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "surface-of-revolution carrier cardinalities are inconsistent",
+            ));
+            continue;
+        };
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: generatrix.degree,
-                v_degree: 2,
-                u_knots: generatrix.knots,
-                v_knots,
-                u_count,
-                v_count,
-                control_points,
-                weights: Some(weights),
-                normal_reversed: false,
-                u_periodic: generatrix.periodic,
-                v_periodic: super::curve_conversion::angularly_equal(
-                    end_angle - start_angle,
-                    std::f64::consts::TAU,
-                ),
-            }),
+            geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
         let mut procedural_directrix = CurveId(format!("iges:model:curve#D{generatrix_sequence}"));
@@ -1886,7 +1895,7 @@ pub(super) fn project(
         } else if let Some(orientation) = similarity_orientation(transform) {
             let mut placed_generatrix = placed_generatrix
                 .expect("a transformed revolution retains its generatrix until placement");
-            for point in &mut placed_generatrix.control_points {
+            for point in placed_generatrix.control_points_mut() {
                 *point = transform.point(*point);
             }
             procedural_directrix = CurveId(format!(
@@ -2223,18 +2232,24 @@ pub(super) fn project(
                 }
             }
         }
-        let surface = NurbsSurface {
+        let Ok(surface) = NurbsSurface::new(
             u_degree,
             v_degree,
             u_knots,
             v_knots,
-            u_count: u_count_u32,
-            v_count: v_count_u32,
+            u_count_u32,
+            v_count_u32,
             control_points,
             weights,
-            normal_reversed: false,
-            u_periodic: flags[3] == Some(1),
-            v_periodic: flags[4] == Some(1),
+            false,
+            flags[3] == Some(1),
+            flags[4] == Some(1),
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "spline surface cardinalities are inconsistent",
+            ));
+            continue;
         };
         for (declared, fixed_axis, fixed_range, varying_range, direction) in [
             (

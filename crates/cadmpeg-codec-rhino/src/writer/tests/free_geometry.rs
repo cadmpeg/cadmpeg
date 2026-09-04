@@ -180,17 +180,20 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId("curve:nurbs".into()),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 2.0, 0.0),
-                Point3::new(3.0, 0.0, 0.0),
-            ],
-            weights: Some(vec![1.0, 0.5, 1.0]),
-            periodic: false,
-        }),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 2.0, 0.0),
+                    Point3::new(3.0, 0.0, 0.0),
+                ],
+                Some(vec![1.0, 0.5, 1.0]),
+                false,
+            )
+            .expect("valid rational curve"),
+        ),
         source_object: None,
     });
     let mut bytes = Vec::new();
@@ -212,23 +215,24 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
 
 #[test]
 fn reversed_unclamped_nurbs_knots_are_native_canonical() {
-    let mut curve = cadmpeg_ir::geometry::NurbsCurve {
-        degree: 2,
-        knots: vec![-3.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 14.0],
-        control_points: (0..6)
+    let mut curve = cadmpeg_ir::geometry::NurbsCurve::new(
+        2,
+        vec![-3.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 14.0],
+        (0..6)
             .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
             .collect(),
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .expect("valid unclamped curve");
     super::canonicalize_native_curve_knots(&mut curve, "reversed")
         .expect("reflected stored knots reconstruct");
 
     assert_eq!(
-        curve.knots,
+        curve.knots(),
         [-1.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 12.0]
     );
-    super::check_knot_roundtrip("reversed", "curve", &curve.knots, 3, 6, curve.periodic)
+    super::check_knot_roundtrip("reversed", "curve", curve.knots(), 3, 6, curve.periodic())
         .expect("canonicalized knots serialize without another change");
 }
 
@@ -247,24 +251,25 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId("surface:nurbs".into()),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![2.0, 2.0, 5.0, 5.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
+            cadmpeg_ir::geometry::NurbsSurface::new(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![2.0, 2.0, 5.0, 5.0],
+                2,
+                2,
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(0.0, 2.0, 0.0),
                     Point3::new(3.0, 0.0, 1.0),
                     Point3::new(3.0, 2.0, 1.0),
                 ],
-                weights: Some(vec![1.0, 0.75, 0.5, 1.0]),
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            },
+                Some(vec![1.0, 0.75, 0.5, 1.0]),
+                false,
+                false,
+                false,
+            )
+            .expect("valid rational surface"),
         ),
         source_object: None,
     });
@@ -711,17 +716,20 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: cadmpeg_ir::ids::CurveId("cadir:model:curve#periodic".into()),
-        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 1.0, 0.0),
-                Point3::new(2.0, 0.0, 0.0),
-            ],
-            weights: None,
-            periodic: true,
-        }),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                ],
+                None,
+                true,
+            )
+            .expect("valid periodic fixture"),
+        ),
         source_object: None,
     });
     let mut output = vec![0xaa];

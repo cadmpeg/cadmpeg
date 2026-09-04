@@ -333,8 +333,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         angular_interval: [0.0, std::f64::consts::TAU],
                         angular_parameter_interval: None,
                         parameter_interval: [
-                            *directrix.knots.first().expect("validated spline knots"),
-                            *directrix.knots.last().expect("validated spline knots"),
+                            *directrix.knots().first().expect("validated spline knots"),
+                            *directrix.knots().last().expect("validated spline knots"),
                         ]
                         .into(),
                         transposed: false,

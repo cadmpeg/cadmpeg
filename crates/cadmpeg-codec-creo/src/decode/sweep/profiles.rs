@@ -200,13 +200,9 @@ pub(in super::super) fn circular_pcurve(
         knots.extend([boundary as f64 / segment_count as f64; 2]);
     }
     knots.extend([1.0; 3]);
-    PcurveGeometry::Nurbs {
-        degree: 2,
-        knots,
-        control_points,
-        weights: Some(weights),
-        periodic: false,
-    }
+    cadmpeg_ir::geometry::PcurveNurbs::new(2, knots, control_points, Some(weights), false)
+        .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
+        .unwrap_or_else(|_| line_pcurve(center, center))
 }
 
 pub(in super::super) fn extrusion_cap_pcurve(
@@ -674,7 +670,7 @@ pub(in super::super) fn nurbs_profile_polyline(
     let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
     let first = [first.x, first.y];
     let mut points = vec![first];
-    for pair in nurbs.knots.windows(2) {
+    for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
         let end = pair[1].min(upper);
         if start >= end {
@@ -719,7 +715,7 @@ pub(in super::super) fn nurbs_profile_signed_area_twice(
     let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
     let carrier = CurveGeometry::Nurbs(nurbs.clone());
     let mut area_twice = 0.0;
-    for pair in nurbs.knots.windows(2) {
+    for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
         let end = pair[1].min(upper);
         if start >= end {

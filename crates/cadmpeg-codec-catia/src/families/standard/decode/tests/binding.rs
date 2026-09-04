@@ -2,24 +2,25 @@ use super::*;
 use std::collections::BTreeMap;
 
 fn unit_square_surface() -> NurbsSurface {
-    NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    }
+        None,
+        false,
+        false,
+        false,
+    )
+    .expect("valid unit-square surface")
 }
 
 fn owner_tail(lower: [f64; 2], upper: [f64; 2], bounds: [[f32; 2]; 3]) -> B2OwnerNumericTail {
@@ -419,10 +420,10 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
 fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     let range = ordered_range([0.0, -std::f64::consts::PI]);
     let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range).expect("reverse semicircle");
-    let PcurveGeometry::Nurbs { knots, .. } = &arc else {
+    let PcurveGeometry::Nurbs { nurbs } = &arc else {
         panic!("expected rational NURBS arc");
     };
-    assert!(knots.windows(2).all(|pair| pair[0] <= pair[1]));
+    assert!(nurbs.knots().windows(2).all(|pair| pair[0] <= pair[1]));
     assert_eq!(range, [-std::f64::consts::PI, 0.0]);
     let start = pcurve_uv(&arc, range[0]).expect("start evaluation");
     let end = pcurve_uv(&arc, range[1]).expect("end evaluation");
@@ -519,24 +520,7 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
         &SurfaceGeometry::Unknown { record: None },
         None,
     ));
-    let nurbs = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let nurbs = SurfaceGeometry::Nurbs(unit_square_surface());
     assert!(point_on_standard_face(
         Point3::new(0.5, 0.5, 0.0),
         &nurbs,
@@ -545,15 +529,6 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     assert!(!point_on_standard_face(
         Point3::new(0.5, 0.5, 0.1),
         &nurbs,
-        None,
-    ));
-    let mut unresolved = nurbs.clone();
-    if let SurfaceGeometry::Nurbs(surface) = &mut unresolved {
-        surface.weights = Some(vec![1.0]);
-    }
-    assert!(point_on_standard_face(
-        Point3::new(0.5, 0.5, 0.1),
-        &unresolved,
         None,
     ));
     assert!(!point_on_standard_face(
@@ -918,20 +893,13 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
         standard_pcurve_geometry(&surface, &support, start, start, None, Some(&carrier))
             .expect("closed contained plane circle pcurve");
     assert_eq!(range, [0.0, std::f64::consts::TAU]);
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        ..
-    } = &geometry
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = &geometry else {
         panic!("closed plane circle must use a rational arc");
     };
-    assert_eq!(*degree, 2);
-    assert_eq!(knots.len(), 12);
-    assert_eq!(control_points.len(), 9);
-    assert_eq!(weights.as_ref().map(Vec::len), Some(9));
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.knots().len(), 12);
+    assert_eq!(nurbs.control_points().len(), 9);
+    assert_eq!(nurbs.weights().map(<[f64]>::len), Some(9));
     for parameter in [range[0], range[1]] {
         let uv = pcurve_uv(&geometry, parameter).expect("closed pcurve endpoint");
         let point = surface_point(&surface, uv.u, uv.v).expect("closed surface endpoint");

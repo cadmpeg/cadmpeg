@@ -55,35 +55,36 @@ mod variable_blend;
 const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
 fn bilinear_surface() -> NurbsSurface {
-    NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    }
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap()
 }
 
 #[test]
 fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
     let mut surface = bilinear_surface();
-    surface.u_periodic = true;
+    surface.set_u_periodic(true);
     let expected = nurbs_surface_point(&surface, 0.25, 0.75).expect("in-domain surface point");
     assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
     assert_eq!(nurbs_surface_point(&surface, -0.75, 0.75), Some(expected));
 
-    surface.u_periodic = false;
+    surface.set_u_periodic(false);
     assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
 }
 
@@ -310,13 +311,16 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -367,14 +371,14 @@ fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
 
 #[test]
 fn nurbs_surface_inverse_handles_rational_internal_spans() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        3,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(0.5, 0.0, 0.2),
@@ -382,11 +386,12 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let point = nurbs_surface_point(&surface, 0.75, 0.4).expect("surface point");
     let parameters = nurbs_surface_parameter_within_tolerance(&surface, point, None, 1.0e-10)
         .expect("rational multi-span inverse");
@@ -397,7 +402,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
 #[test]
 fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     let mut surface = bilinear_surface();
-    surface.control_points[3].z = 1.0;
+    surface.control_points_mut()[3].z = 1.0;
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
     let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, chord)
@@ -425,19 +430,20 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
 
 #[test]
 fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
-    let surface = NurbsSurface {
-        u_degree: 0,
-        v_degree: 0,
-        u_knots: vec![0.0, 1.0],
-        v_knots: vec![0.0, 1.0],
-        u_count: 1,
-        v_count: 1,
-        control_points: vec![Point3::new(1.0, 2.0, 3.0)],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+    let surface = NurbsSurface::new(
+        0,
+        0,
+        vec![0.0, 1.0],
+        vec![0.0, 1.0],
+        1,
+        1,
+        vec![Point3::new(1.0, 2.0, 3.0)],
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let point = Point3::new(1.0, 2.0, 3.0);
     assert_eq!(nurbs_surface_point(&surface, 0.25, 0.75), Some(point));
     let bound = nurbs_surface_parameter_segment_chord_bound(
@@ -451,19 +457,20 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
 
 #[test]
 fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
-    let surface = NurbsSurface {
-        u_degree: 0,
-        v_degree: 0,
-        u_knots: vec![0.0, 1.0, 2.0],
-        v_knots: vec![0.0, 1.0],
-        u_count: 2,
-        v_count: 1,
-        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+    let surface = NurbsSurface::new(
+        0,
+        0,
+        vec![0.0, 1.0, 2.0],
+        vec![0.0, 1.0],
+        2,
+        1,
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
     for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
         let bound = nurbs_surface_parameter_segment_chord_bound(
@@ -478,14 +485,14 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
 
 #[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        3,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(0.5, 0.0, 0.25),
@@ -493,11 +500,12 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let parameters = [Point2::new(0.1, 0.2), Point2::new(0.9, 0.8)];
     let endpoints = parameters
         .map(|point| nurbs_surface_point(&surface, point.u, point.v).expect("surface endpoint"));
@@ -737,14 +745,14 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
 fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
     // Rational, quadratic in u and linear in v, so the blend across the
     // fixed direction has to carry weights to stay exact.
-    let surface = NurbsSurface {
-        u_degree: 2,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![-2.0, -2.0, 3.0, 3.0],
-        u_count: 3,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        2,
+        1,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![-2.0, -2.0, 3.0, 3.0],
+        3,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 4.0),
             Point3::new(1.0, 2.0, 0.5),
@@ -752,11 +760,12 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             Point3::new(3.0, -1.0, 1.0),
             Point3::new(3.0, -1.0, 5.0),
         ],
-        weights: Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
 
     for (direction, at, samples) in [
         (IsolineDirection::ConstantU, 0.4, [-2.0, 0.75, 3.0]),
@@ -770,10 +779,10 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             };
             let expected = nurbs_surface_point(&surface, u, v).expect("surface point");
             let actual = nurbs_curve_point(
-                curve.degree,
-                &curve.knots,
-                &curve.control_points,
-                curve.weights.as_deref(),
+                curve.degree(),
+                curve.knots(),
+                curve.control_points(),
+                curve.weights(),
                 sample,
             )
             .expect("curve point");
@@ -790,24 +799,25 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
 
 #[test]
 fn bilinear_surface_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 3.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(2.0, 3.0, 0.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let partials = nurbs_surface_partials(&surface, 0.25, 0.75).expect("partials");
     assert_eq!(partials.point, Point3::new(0.5, 2.25, 0.0));
     assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
@@ -816,14 +826,14 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
 
 #[test]
 fn quadratic_surface_second_partials_follow_stored_parameterization() {
-    let surface = NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
-        control_points: (0..3)
+    let surface = NurbsSurface::new(
+        2,
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        3,
+        3,
+        (0..3)
             .flat_map(|i| {
                 (0..3).map(move |j| {
                     Point3::new(
@@ -834,11 +844,12 @@ fn quadratic_surface_second_partials_follow_stored_parameterization() {
                 })
             })
             .collect(),
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let partials = nurbs_surface_second_partials(&surface, 0.25, 0.75).expect("second partials");
     assert_eq!(partials.point, Point3::new(0.25, 0.75, 0.625));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.5));
@@ -945,26 +956,29 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
     ir.model.surfaces = vec![
         Surface {
             id: support_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 2,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 3,
-                control_points: [0.0, 1.0]
-                    .into_iter()
-                    .flat_map(|u| {
-                        [(0.0, 0.0), (0.5, 0.0), (1.0, 1.0)]
-                            .into_iter()
-                            .map(move |(v, z)| Point3::new(u, v, z))
-                    })
-                    .collect(),
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    2,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    2,
+                    3,
+                    [0.0, 1.0]
+                        .into_iter()
+                        .flat_map(|u| {
+                            [(0.0, 0.0), (0.5, 0.0), (1.0, 1.0)]
+                                .into_iter()
+                                .map(move |(v, z)| Point3::new(u, v, z))
+                        })
+                        .collect(),
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         },
         Surface {
@@ -1006,7 +1020,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     let offset_id = SurfaceId("offset".into());
     let construction = ProceduralSurfaceId("offset-construction".into());
     let mut support = bilinear_surface();
-    support.normal_reversed = true;
+    support.set_normal_reversed(true);
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
@@ -1232,13 +1246,16 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 2.0, 2.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 2.0, 2.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -1675,17 +1692,20 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
     );
     assert_eq!(curve_tangent(&circle, f64::NAN), None);
 
-    let arc = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
-        periodic: false,
-    });
+    let arc = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+            false,
+        )
+        .unwrap(),
+    );
     for parameter in [0.0, 0.5, 1.0] {
         let point = curve_point(&arc, parameter).expect("rational arc point");
         let tangent = curve_tangent(&arc, parameter).expect("rational arc tangent");
@@ -1714,24 +1734,25 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
 
 #[test]
 fn rational_surface_partials_apply_the_weight_quotient_rule() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 3.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(2.0, 3.0, 0.0),
         ],
-        weights: Some(vec![1.0, 1.0, 2.0, 2.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 1.0, 2.0, 2.0]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let partials = nurbs_surface_partials(&surface, 0.5, 0.25).expect("partials");
     assert!((partials.point.x - 4.0 / 3.0).abs() < 1.0e-12);
     assert!((partials.point.y - 0.75).abs() < 1.0e-12);
@@ -1747,24 +1768,25 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
 
 #[test]
 fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
-    let surface = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let surface = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 3.0, 0.0),
             Point3::new(2.0, 0.0, 1.0),
             Point3::new(2.0, 3.0, 1.0),
         ],
-        weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        Some(vec![1.0, 2.0, 3.0, 4.0]),
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     for (axis, fixed) in [
         (SurfaceParameterAxis::U, 0.25),
         (SurfaceParameterAxis::V, 0.75),
@@ -1790,17 +1812,18 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
 
 #[test]
 fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
-    let curve = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        control_points: vec![
+    let curve = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .unwrap();
     let point = Point3::new(0.5, 0.0, 0.0);
     assert_eq!(
         nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1),
@@ -1875,16 +1898,19 @@ fn analytic_pcurves_preserve_angular_parameterization() {
         axial_sin: 0.0,
     };
     let polar_nurbs = PcurveGeometry::PolarNurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        radial_control_points: vec![
-            Point2::new(2.0, 0.0),
-            Point2::new(2.0, 2.0),
-            Point2::new(0.0, 2.0),
-        ],
-        axial_control_points: vec![3.0, 4.0, 5.0],
-        weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
-        periodic: false,
+        nurbs: crate::geometry::PolarPcurveNurbs::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point2::new(2.0, 0.0),
+                Point2::new(2.0, 2.0),
+                Point2::new(0.0, 2.0),
+            ],
+            vec![3.0, 4.0, 5.0],
+            Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+            false,
+        )
+        .unwrap(),
     };
 
     let circle_tangent =
@@ -1994,15 +2020,18 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
     let rational_arc = PcurveGeometry::Offset {
         distance: 0.25,
         basis: Box::new(PcurveGeometry::Nurbs {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
-                Point2::new(1.0, 0.0),
-                Point2::new(1.0, 1.0),
-                Point2::new(0.0, 1.0),
-            ],
-            weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
-            periodic: false,
+            nurbs: crate::geometry::PcurveNurbs::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point2::new(1.0, 0.0),
+                    Point2::new(1.0, 1.0),
+                    Point2::new(0.0, 1.0),
+                ],
+                Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+                false,
+            )
+            .unwrap(),
         }),
     };
     for parameter in [0.0, 0.5, 1.0] {

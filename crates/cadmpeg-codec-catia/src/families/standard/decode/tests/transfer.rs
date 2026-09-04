@@ -679,10 +679,10 @@ fn decode_standard_transfers_exact_offset_construction() {
         panic!("NURBS fixture");
     };
     let domain = [
-        surface.u_knots[0],
-        surface.v_knots[0],
-        *surface.u_knots.last().unwrap(),
-        *surface.v_knots.last().unwrap(),
+        surface.u_knots()[0],
+        surface.v_knots()[0],
+        *surface.u_knots().last().unwrap(),
+        *surface.v_knots().last().unwrap(),
     ];
     let mut payload = surface_bytes;
     payload.extend_from_slice(&b2_offset_support_stream_for(domain));
@@ -741,10 +741,10 @@ fn decode_standard_transfers_construction_use_offset() {
         panic!("NURBS fixture");
     };
     let domain = [
-        surface.u_knots[0],
-        surface.v_knots[0],
-        *surface.u_knots.last().unwrap(),
-        *surface.v_knots.last().unwrap(),
+        surface.u_knots()[0],
+        surface.v_knots()[0],
+        *surface.u_knots().last().unwrap(),
+        *surface.v_knots().last().unwrap(),
     ];
     let mut payload = surface_bytes;
     payload.extend_from_slice(&b2_construction_use_stream_for(domain));
@@ -843,7 +843,7 @@ fn standard_decode_transfers_consolidated_guide_curve() {
     let CurveGeometry::Nurbs(nurbs) = &guide.geometry else {
         panic!("guide curve must be NURBS");
     };
-    assert_eq!(nurbs.degree, 5);
-    assert_eq!(nurbs.control_points.first().unwrap().x, 0.0);
-    assert_eq!(nurbs.control_points.last().unwrap().z, 4.0);
+    assert_eq!(nurbs.degree(), 5);
+    assert_eq!(nurbs.control_points().first().unwrap().x, 0.0);
+    assert_eq!(nurbs.control_points().last().unwrap().z, 4.0);
 }

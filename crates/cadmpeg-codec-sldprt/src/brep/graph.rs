@@ -17,8 +17,8 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry,
-    Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry, SurfaceParameterAxis,
+    Pcurve, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
@@ -446,7 +446,7 @@ fn resolve_sweep_surface(
     let profile_derived = carriers.curve_is_derived(construction.profile_attr);
     match &construction.kind {
         SweepKind::Spun { base, axis } => Some((
-            SurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis)),
+            SurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis)?),
             construction.offset,
             "00_44",
             profile_derived,
@@ -487,7 +487,7 @@ fn resolve_sweep_surface(
             if point_lo > point_hi {
                 return None;
             }
-            let pole_travel: Vec<f64> = curve.control_points.iter().map(project).collect();
+            let pole_travel: Vec<f64> = curve.control_points().iter().map(project).collect();
             let pole_lo = pole_travel.iter().copied().fold(f64::INFINITY, f64::min);
             let pole_hi = pole_travel
                 .iter()
@@ -2623,7 +2623,7 @@ fn derive_cylindrical_pcurves(
             }
             CurveGeometry::Nurbs(nurbs) => {
                 let radial_control_points = nurbs
-                    .control_points
+                    .control_points()
                     .iter()
                     .map(|point| {
                         let relative = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
@@ -2635,8 +2635,8 @@ fn derive_cylindrical_pcurves(
                     .collect::<Vec<_>>();
                 if !quadratic_nurbs_has_constant_radius(
                     &radial_control_points,
-                    nurbs.weights.as_deref(),
-                    &nurbs.knots,
+                    nurbs.weights(),
+                    nurbs.knots(),
                     radius.abs(),
                 ) {
                     continue;
@@ -2663,7 +2663,7 @@ fn derive_cylindrical_pcurves(
                     }
                 };
                 let axial_control_points = nurbs
-                    .control_points
+                    .control_points()
                     .iter()
                     .map(|point| {
                         dot(
@@ -2672,14 +2672,17 @@ fn derive_cylindrical_pcurves(
                         )
                     })
                     .collect();
-                PcurveGeometry::PolarNurbs {
-                    degree: nurbs.degree,
-                    knots: nurbs.knots.clone(),
+                let Ok(polar) = PolarPcurveNurbs::new(
+                    nurbs.degree(),
+                    nurbs.knots().to_vec(),
                     radial_control_points,
                     axial_control_points,
-                    weights: nurbs.weights.clone(),
-                    periodic: nurbs.periodic,
-                }
+                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.periodic(),
+                ) else {
+                    continue;
+                };
+                PcurveGeometry::PolarNurbs { nurbs: polar }
             }
             _ => continue,
         };
@@ -2855,10 +2858,10 @@ fn nurbs_parameter_at_point(
 ) -> InverseResolution<f64> {
     let squared_distance = |parameter: f64| {
         let point = nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             parameter,
         )?;
         Some(
@@ -2870,14 +2873,14 @@ fn nurbs_parameter_at_point(
     let Some(domain) = nurbs_curve_parameter_domain(nurbs) else {
         return InverseResolution::NoMatch;
     };
-    let Some(candidates) = sampled_parameter_minima(&nurbs.knots, domain, squared_distance) else {
+    let Some(candidates) = sampled_parameter_minima(nurbs.knots(), domain, squared_distance) else {
         return InverseResolution::NoMatch;
     };
     unique_inverse_parameter(
         candidates,
         inverse_coordinate_tolerance(
             nurbs
-                .control_points
+                .control_points()
                 .iter()
                 .copied()
                 .chain(std::iter::once(target)),
@@ -3494,13 +3497,11 @@ fn intersection_support_pcurve(
     surface: &SurfaceGeometry,
     edge_endpoints: [cadmpeg_ir::math::Point3; 2],
 ) -> Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)> {
-    if chart.degree != 1
-        || chart.weights.is_some()
-        || chart.periodic
-        || chart.control_points.len() < 2
-        || chart.knots.len() != chart.control_points.len() + 2
-        || chart.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&chart.knots)
+    if chart.degree() != 1
+        || chart.weights().is_some()
+        || chart.periodic()
+        || chart.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(chart.knots())
         || !support_data.fit_tolerance_mm.is_finite()
         || support_data.fit_tolerance_mm <= 0.0
     {
@@ -3516,8 +3517,8 @@ fn intersection_support_pcurve(
         (left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)
     };
     let model_endpoints = [
-        *chart.control_points.first()?,
-        *chart.control_points.last()?,
+        *chart.control_points().first()?,
+        *chart.control_points().last()?,
     ];
     let direct_error = squared_distance(model_endpoints[0], edge_endpoints[0])
         + squared_distance(model_endpoints[1], edge_endpoints[1]);
@@ -3551,8 +3552,8 @@ fn intersection_support_pcurve(
     } else {
         match surface {
             SurfaceGeometry::Nurbs(surface) => {
-                let mut control_points = Vec::with_capacity(chart.control_points.len());
-                for point in &chart.control_points {
+                let mut control_points = Vec::with_capacity(chart.control_points().len());
+                for point in chart.control_points() {
                     let parameters = nurbs_surface_parameter_within_tolerance(
                         surface,
                         *point,
@@ -3565,7 +3566,7 @@ fn intersection_support_pcurve(
             }
             _ => {
                 let mut control_points = chart
-                    .control_points
+                    .control_points()
                     .iter()
                     .copied()
                     .map(|point| analytic_surface_parameters(surface, point))
@@ -3596,7 +3597,7 @@ fn intersection_support_pcurve(
             }
         }
     };
-    if control_points.len() != chart.control_points.len() {
+    if control_points.len() != chart.control_points().len() {
         return None;
     }
     if let SurfaceGeometry::Nurbs(surface) = surface {
@@ -3652,7 +3653,7 @@ fn intersection_support_pcurve(
         .collect::<Option<Vec<_>>>()?;
     let control_errors = mapped_points
         .iter()
-        .zip(&chart.control_points)
+        .zip(chart.control_points())
         .map(|(point, target)| squared_distance(*point, *target).sqrt())
         .collect::<Vec<_>>();
     if control_errors
@@ -3663,7 +3664,7 @@ fn intersection_support_pcurve(
     }
     if control_points
         .windows(2)
-        .zip(chart.control_points.windows(2))
+        .zip(chart.control_points().windows(2))
         .zip(control_errors.windows(2))
         .any(|((parameters, chord), endpoint_errors)| match surface {
             SurfaceGeometry::Nurbs(surface) => nurbs_surface_parameter_segment_chord_bound(
@@ -3682,17 +3683,8 @@ fn intersection_support_pcurve(
     {
         return None;
     }
-    Some((
-        PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: chart.knots.clone(),
-            control_points,
-            weights: None,
-            periodic: false,
-        },
-        parameter_range,
-        source,
-    ))
+    let nurbs = PcurveNurbs::new(1, chart.knots().to_vec(), control_points, None, false).ok()?;
+    Some((PcurveGeometry::Nurbs { nurbs }, parameter_range, source))
 }
 
 fn resolve_axis_candidates<T, const N: usize>(
@@ -3717,19 +3709,19 @@ fn nurbs_boundary_pcurve(
 ) -> InverseResolution<PcurveGeometry> {
     let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
         SurfaceParameterAxis::U => (
-            surface.u_degree as usize,
-            surface.u_count as usize,
-            &surface.u_knots,
+            surface.u_degree() as usize,
+            surface.u_count() as usize,
+            surface.u_knots(),
         ),
         SurfaceParameterAxis::V => (
-            surface.v_degree as usize,
-            surface.v_count as usize,
-            &surface.v_knots,
+            surface.v_degree() as usize,
+            surface.v_count() as usize,
+            surface.v_knots(),
         ),
     };
     let (varying_degree, varying_knots) = match fixed_axis {
-        SurfaceParameterAxis::U => (surface.v_degree as usize, &surface.v_knots),
-        SurfaceParameterAxis::V => (surface.u_degree as usize, &surface.u_knots),
+        SurfaceParameterAxis::U => (surface.v_degree() as usize, surface.v_knots()),
+        SurfaceParameterAxis::V => (surface.u_degree() as usize, surface.u_knots()),
     };
     let (Some(&fixed_min), Some(&fixed_max), Some(&varying_min)) = (
         fixed_knots.get(fixed_degree),
@@ -3747,27 +3739,27 @@ fn nurbs_boundary_pcurve(
     }
     let tolerance = inverse_coordinate_tolerance(
         surface
-            .control_points
+            .control_points()
             .iter()
             .copied()
-            .chain(curve.control_points.iter().copied()),
+            .chain(curve.control_points().iter().copied()),
     );
     let same_curve = |candidate: &cadmpeg_ir::geometry::NurbsCurve| {
-        candidate.degree == curve.degree
-            && candidate.knots == curve.knots
-            && candidate.periodic == curve.periodic
-            && candidate.control_points.len() == curve.control_points.len()
+        candidate.degree() == curve.degree()
+            && candidate.knots() == curve.knots()
+            && candidate.periodic() == curve.periodic()
+            && candidate.control_points().len() == curve.control_points().len()
             && candidate
-                .control_points
+                .control_points()
                 .iter()
-                .zip(&curve.control_points)
+                .zip(curve.control_points())
                 .all(|(candidate, actual)| {
                     (candidate.x - actual.x).powi(2)
                         + (candidate.y - actual.y).powi(2)
                         + (candidate.z - actual.z).powi(2)
                         <= tolerance * tolerance
                 })
-            && match (candidate.weights.as_deref(), curve.weights.as_deref()) {
+            && match (candidate.weights(), curve.weights()) {
                 (None, None) => true,
                 (Some(candidate), Some(actual)) => {
                     candidate.len() == actual.len()
@@ -3808,27 +3800,39 @@ fn nurbs_strict_isocurve_pcurve(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
 ) -> InverseResolution<PcurveGeometry> {
     let axis_candidate = |fixed_axis| {
-        let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
-        if surface.control_points.len() != uc.saturating_mul(vc)
-            || surface
-                .weights
-                .as_ref()
-                .is_some_and(|weights| weights.len() != surface.control_points.len())
-        {
-            return InverseResolution::NoMatch;
-        }
+        let (uc, vc) = (surface.u_count() as usize, surface.v_count() as usize);
         let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
-            SurfaceParameterAxis::U => (surface.u_degree, uc, &surface.u_knots, surface.u_periodic),
-            SurfaceParameterAxis::V => (surface.v_degree, vc, &surface.v_knots, surface.v_periodic),
+            SurfaceParameterAxis::U => (
+                surface.u_degree(),
+                uc,
+                surface.u_knots(),
+                surface.u_periodic(),
+            ),
+            SurfaceParameterAxis::V => (
+                surface.v_degree(),
+                vc,
+                surface.v_knots(),
+                surface.v_periodic(),
+            ),
         };
         let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
-            SurfaceParameterAxis::U => (surface.v_degree, vc, &surface.v_knots, surface.v_periodic),
-            SurfaceParameterAxis::V => (surface.u_degree, uc, &surface.u_knots, surface.u_periodic),
+            SurfaceParameterAxis::U => (
+                surface.v_degree(),
+                vc,
+                surface.v_knots(),
+                surface.v_periodic(),
+            ),
+            SurfaceParameterAxis::V => (
+                surface.u_degree(),
+                uc,
+                surface.u_knots(),
+                surface.u_periodic(),
+            ),
         };
-        if curve.degree != varying_degree
-            || curve.knots != *varying_knots
-            || curve.periodic != varying_periodic
-            || curve.control_points.len() != varying_count
+        if curve.degree() != varying_degree
+            || curve.knots() != varying_knots
+            || curve.periodic() != varying_periodic
+            || curve.control_points().len() != varying_count
         {
             return InverseResolution::NoMatch;
         }
@@ -3838,7 +3842,7 @@ fn nurbs_strict_isocurve_pcurve(
         if fixed_degree != 1
             || fixed_count != 2
             || fixed_periodic
-            || fixed_knots.as_slice() != [fixed_min, fixed_min, fixed_max, fixed_max]
+            || fixed_knots != [fixed_min, fixed_min, fixed_max, fixed_max]
             || !fixed_min.is_finite()
             || !fixed_max.is_finite()
             || fixed_min >= fixed_max
@@ -3849,17 +3853,17 @@ fn nurbs_strict_isocurve_pcurve(
             SurfaceParameterAxis::U => (varying, vc + varying),
             SurfaceParameterAxis::V => (varying * vc, varying * vc + 1),
         };
-        let expected_weights = surface.weights.as_ref().map(|weights| {
+        let expected_weights = surface.weights().map(|weights| {
             (0..varying_count)
                 .map(|varying| weights[pole_indices(varying).0])
                 .collect::<Vec<_>>()
         });
-        if surface.weights.as_ref().is_some_and(|weights| {
+        if surface.weights().is_some_and(|weights| {
             (0..varying_count).any(|varying| {
                 let (a, b) = pole_indices(varying);
                 (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
             })
-        }) || match (curve.weights.as_deref(), expected_weights.as_deref()) {
+        }) || match (curve.weights(), expected_weights.as_deref()) {
             (None, None) => false,
             (Some(actual), Some(expected)) => {
                 actual.len() != expected.len()
@@ -3874,10 +3878,10 @@ fn nurbs_strict_isocurve_pcurve(
         }
         let mut delta_squared = 0.0;
         let mut relative_dot_delta = 0.0;
-        for (varying, point) in curve.control_points.iter().enumerate() {
+        for (varying, point) in curve.control_points().iter().enumerate() {
             let (a_index, b_index) = pole_indices(varying);
-            let a = surface.control_points[a_index];
-            let b = surface.control_points[b_index];
+            let a = surface.control_points()[a_index];
+            let b = surface.control_points()[b_index];
             let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
             let relative = [point.x - a.x, point.y - a.y, point.z - a.z];
             delta_squared += delta.iter().map(|value| value * value).sum::<f64>();
@@ -3889,15 +3893,15 @@ fn nurbs_strict_isocurve_pcurve(
         }
         let tolerance = inverse_coordinate_tolerance(
             surface
-                .control_points
+                .control_points()
                 .iter()
                 .copied()
-                .chain(curve.control_points.iter().copied()),
+                .chain(curve.control_points().iter().copied()),
         );
         if delta_squared <= f64::EPSILON {
             let all_equal = (0..varying_count).all(|varying| {
-                let a = surface.control_points[pole_indices(varying).0];
-                let point = curve.control_points[varying];
+                let a = surface.control_points()[pole_indices(varying).0];
+                let point = curve.control_points()[varying];
                 (point.x - a.x).powi(2) + (point.y - a.y).powi(2) + (point.z - a.z).powi(2)
                     <= tolerance * tolerance
             });
@@ -3911,9 +3915,9 @@ fn nurbs_strict_isocurve_pcurve(
         let residual_squared = (0..varying_count)
             .map(|varying| {
                 let (a_index, b_index) = pole_indices(varying);
-                let a = surface.control_points[a_index];
-                let b = surface.control_points[b_index];
-                let point = curve.control_points[varying];
+                let a = surface.control_points()[a_index];
+                let b = surface.control_points()[b_index];
+                let point = curve.control_points()[varying];
                 (point.x - (a.x + factor * (b.x - a.x))).powi(2)
                     + (point.y - (a.y + factor * (b.y - a.y))).powi(2)
                     + (point.z - (a.z + factor * (b.z - a.z))).powi(2)
@@ -3983,46 +3987,50 @@ fn nurbs_representation_matches(
     expected: &cadmpeg_ir::geometry::NurbsCurve,
     actual: &cadmpeg_ir::geometry::NurbsCurve,
 ) -> bool {
-    if expected.degree != actual.degree
-        || expected.periodic != actual.periodic
-        || expected.knots.len() != actual.knots.len()
-        || expected.control_points.len() != actual.control_points.len()
+    if expected.degree() != actual.degree()
+        || expected.periodic() != actual.periodic()
+        || expected.knots().len() != actual.knots().len()
+        || expected.control_points().len() != actual.control_points().len()
     {
         return false;
     }
     let scale = expected
-        .control_points
+        .control_points()
         .iter()
-        .chain(&actual.control_points)
+        .chain(actual.control_points())
         .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
         .chain(
             expected
-                .weights
-                .iter()
-                .flat_map(|weights| weights.iter().copied().map(f64::abs)),
+                .weights()
+                .into_iter()
+                .flatten()
+                .copied()
+                .map(f64::abs),
         )
         .chain(
             actual
-                .weights
-                .iter()
-                .flat_map(|weights| weights.iter().copied().map(f64::abs)),
+                .weights()
+                .into_iter()
+                .flatten()
+                .copied()
+                .map(f64::abs),
         )
         .fold(1.0_f64, f64::max);
     expected
-        .knots
+        .knots()
         .iter()
-        .zip(&actual.knots)
+        .zip(actual.knots())
         .all(|(left, right)| nurbs_roundoff_equal(*left, *right, scale))
         && expected
-            .control_points
+            .control_points()
             .iter()
-            .zip(&actual.control_points)
+            .zip(actual.control_points())
             .all(|(left, right)| {
                 nurbs_roundoff_equal(left.x, right.x, scale)
                     && nurbs_roundoff_equal(left.y, right.y, scale)
                     && nurbs_roundoff_equal(left.z, right.z, scale)
             })
-        && match (expected.weights.as_deref(), actual.weights.as_deref()) {
+        && match (expected.weights(), actual.weights()) {
             (None, None) => true,
             (Some(expected), Some(actual)) => {
                 expected.len() == actual.len()
@@ -4036,28 +4044,15 @@ fn nurbs_representation_matches(
 }
 
 fn nurbs_homogeneous_controls(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<Vec<[f64; 4]>> {
-    if curve.control_points.is_empty()
-        || curve.knots.len()
-            != curve
-                .control_points
-                .len()
-                .checked_add(usize::try_from(curve.degree).ok()?)?
-                .checked_add(1)?
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != curve.control_points.len())
-    {
+    if curve.knots().iter().any(|knot| !knot.is_finite()) || !knots_nondecreasing(curve.knots()) {
         return None;
     }
     curve
-        .control_points
+        .control_points()
         .iter()
         .enumerate()
         .map(|(index, point)| {
-            let weight = curve.weights.as_ref().map_or(1.0, |weights| weights[index]);
+            let weight = curve.weights().map_or(1.0, |weights| weights[index]);
             (point.x.is_finite()
                 && point.y.is_finite()
                 && point.z.is_finite()
@@ -4128,16 +4123,19 @@ fn clamp_nurbs_curve_to_domain(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     domain: [f64; 2],
 ) -> Option<cadmpeg_ir::geometry::NurbsCurve> {
-    if curve.periodic || !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1]
+    if curve.periodic()
+        || !domain[0].is_finite()
+        || !domain[1].is_finite()
+        || domain[0] >= domain[1]
     {
         return None;
     }
-    let degree = usize::try_from(curve.degree).ok()?;
+    let degree = usize::try_from(curve.degree()).ok()?;
     let original_domain = nurbs_curve_parameter_domain(curve)?;
     if domain[0] < original_domain[0] || domain[1] > original_domain[1] {
         return None;
     }
-    let mut knots = curve.knots.clone();
+    let mut knots = curve.knots().to_vec();
     let mut controls = nurbs_homogeneous_controls(curve)?;
     let full_multiplicity = degree.checked_add(1)?;
     for value in domain {
@@ -4160,7 +4158,7 @@ fn clamp_nurbs_curve_to_domain(
     if segment_knots.len() != segment_controls.len().checked_add(degree)?.checked_add(1)? {
         return None;
     }
-    let rational = curve.weights.is_some();
+    let rational = curve.weights().is_some();
     let mut control_points = Vec::with_capacity(segment_controls.len());
     let mut weights = rational.then(Vec::new);
     for [x, y, z, weight] in segment_controls {
@@ -4176,13 +4174,14 @@ fn clamp_nurbs_curve_to_domain(
             weights.push(weight);
         }
     }
-    Some(cadmpeg_ir::geometry::NurbsCurve {
-        degree: curve.degree,
-        knots: segment_knots,
+    cadmpeg_ir::geometry::NurbsCurve::new(
+        curve.degree(),
+        segment_knots,
         control_points,
         weights,
-        periodic: false,
-    })
+        false,
+    )
+    .ok()
 }
 
 fn extended_nurbs_isocurve_axis_candidate(
@@ -4192,45 +4191,33 @@ fn extended_nurbs_isocurve_axis_candidate(
 ) -> InverseResolution<PcurveGeometry> {
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
-            surface.u_degree,
-            surface.u_count,
-            &surface.u_knots,
-            surface.u_periodic,
+            surface.u_degree(),
+            surface.u_count(),
+            surface.u_knots(),
+            surface.u_periodic(),
         ),
         SurfaceParameterAxis::V => (
-            surface.v_degree,
-            surface.v_count,
-            &surface.v_knots,
-            surface.v_periodic,
+            surface.v_degree(),
+            surface.v_count(),
+            surface.v_knots(),
+            surface.v_periodic(),
         ),
     };
     let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
-            surface.v_degree,
-            surface.v_count,
-            &surface.v_knots,
-            surface.v_periodic,
+            surface.v_degree(),
+            surface.v_count(),
+            surface.v_knots(),
+            surface.v_periodic(),
         ),
         SurfaceParameterAxis::V => (
-            surface.u_degree,
-            surface.u_count,
-            &surface.u_knots,
-            surface.u_periodic,
+            surface.u_degree(),
+            surface.u_count(),
+            surface.u_knots(),
+            surface.u_periodic(),
         ),
     };
-    let Some(expected_control_count) = usize::try_from(surface.u_count).ok().and_then(|u| {
-        usize::try_from(surface.v_count)
-            .ok()
-            .and_then(|v| u.checked_mul(v))
-    }) else {
-        return InverseResolution::NoMatch;
-    };
-    if fixed_periodic
-        || varying_periodic
-        || curve.periodic
-        || curve.degree != varying_degree
-        || surface.control_points.len() != expected_control_count
-    {
+    if fixed_periodic || varying_periodic || curve.periodic() || curve.degree() != varying_degree {
         return InverseResolution::NoMatch;
     }
     let Some(fixed_domain) = nurbs_active_domain(fixed_knots, fixed_degree, fixed_count) else {
@@ -4255,15 +4242,15 @@ fn extended_nurbs_isocurve_axis_candidate(
     if overlap[0] < overlap[1] {
         let parameter = (overlap[0] + overlap[1]) * 0.5;
         if let Some(point) = nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         ) {
             let tolerance = inverse_coordinate_tolerance(
                 surface
-                    .control_points
+                    .control_points()
                     .iter()
                     .copied()
                     .chain(std::iter::once(point)),
@@ -4365,7 +4352,7 @@ fn nurbs_curve_sample_parameters(
         return None;
     }
     let mut parameters = vec![range[0], range[1]];
-    for span in curve.knots.windows(2) {
+    for span in curve.knots().windows(2) {
         let start = span[0].max(range[0]);
         let end = span[1].min(range[1]);
         if !span[0].is_finite() || !span[1].is_finite() || start >= end {
@@ -4397,19 +4384,24 @@ fn nurbs_edge_endpoint_parameters(
 ) -> Option<[cadmpeg_ir::math::Point2; 2]> {
     let curve_points = range.map(|parameter| {
         nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         )
     });
     let [Some(first), Some(last)] = curve_points else {
         return None;
     };
-    let tolerance =
-        inverse_coordinate_tolerance(surface.control_points.iter().copied().chain([first, last]))
-            .max(NURBS_ENDPOINT_TOLERANCE_MM);
+    let tolerance = inverse_coordinate_tolerance(
+        surface
+            .control_points()
+            .iter()
+            .copied()
+            .chain([first, last]),
+    )
+    .max(NURBS_ENDPOINT_TOLERANCE_MM);
     let project = |point| {
         let parameters = nurbs_seeded_surface_projection(surface, point, None)?;
         let mapped = nurbs_surface_point(surface, parameters.u, parameters.v)?;
@@ -4436,10 +4428,10 @@ fn nurbs_curve_surface_deviation(
     let mut maximum = 0.0_f64;
     for parameter in parameters {
         let point = nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
-            curve.weights.as_deref(),
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
+            curve.weights(),
             parameter,
         )?;
         let parameters = seed
@@ -4457,18 +4449,16 @@ fn nurbs_degree_one_cache_pcurve(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     range: [f64; 2],
 ) -> Option<(PcurveGeometry, f64)> {
-    if curve.degree != 1
-        || curve.weights.is_some()
-        || curve.periodic
-        || curve.control_points.len() < 2
-        || curve.knots.len() != curve.control_points.len() + 2
-        || !knots_nondecreasing(&curve.knots)
+    if curve.degree() != 1
+        || curve.weights().is_some()
+        || curve.periodic()
+        || !knots_nondecreasing(curve.knots())
     {
         return None;
     }
-    let mut control_points = Vec::with_capacity(curve.control_points.len());
+    let mut control_points = Vec::with_capacity(curve.control_points().len());
     let mut seed = None;
-    for point in &curve.control_points {
+    for point in curve.control_points() {
         let parameters = seed
             .and_then(|seed| nurbs_seeded_surface_projection(surface, *point, Some(seed)))
             .or_else(|| nurbs_seeded_surface_projection(surface, *point, None))?;
@@ -4486,29 +4476,21 @@ fn nurbs_degree_one_cache_pcurve(
     let mut fit_tolerance = 0.0_f64;
     for parameter in parameters {
         let model_point = nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
             None,
             parameter,
         )?;
-        let uv = nurbs_curve_point(1, &curve.knots, &uv_control_points, None, parameter)?;
+        let uv = nurbs_curve_point(1, curve.knots(), &uv_control_points, None, parameter)?;
         let mapped_point = nurbs_surface_point(surface, uv.x, uv.y)?;
         fit_tolerance = fit_tolerance.max(point_distance(model_point, mapped_point));
     }
     if !fit_tolerance.is_finite() {
         return None;
     }
-    Some((
-        PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: curve.knots.clone(),
-            control_points,
-            weights: None,
-            periodic: false,
-        },
-        fit_tolerance,
-    ))
+    let nurbs = PcurveNurbs::new(1, curve.knots().to_vec(), control_points, None, false).ok()?;
+    Some((PcurveGeometry::Nurbs { nurbs }, fit_tolerance))
 }
 
 fn nurbs_edge_parameter_range(
@@ -4571,22 +4553,24 @@ fn ruled_surface_line_pcurve(
     line_origin: cadmpeg_ir::math::Point3,
     line_direction: cadmpeg_ir::math::Vector3,
 ) -> InverseResolution<PcurveGeometry> {
-    let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
-    if surface.control_points.len() != uc.saturating_mul(vc)
-        || surface
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != surface.control_points.len())
-    {
-        return InverseResolution::NoMatch;
-    }
+    let (uc, vc) = (surface.u_count() as usize, surface.v_count() as usize);
     let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
-        SurfaceParameterAxis::U => (surface.v_degree, vc, &surface.v_knots, surface.v_periodic),
-        SurfaceParameterAxis::V => (surface.u_degree, uc, &surface.u_knots, surface.u_periodic),
+        SurfaceParameterAxis::U => (
+            surface.v_degree(),
+            vc,
+            surface.v_knots(),
+            surface.v_periodic(),
+        ),
+        SurfaceParameterAxis::V => (
+            surface.u_degree(),
+            uc,
+            surface.u_knots(),
+            surface.u_periodic(),
+        ),
     };
     let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
-        SurfaceParameterAxis::U => (surface.u_degree, uc, &surface.u_knots),
-        SurfaceParameterAxis::V => (surface.v_degree, vc, &surface.v_knots),
+        SurfaceParameterAxis::U => (surface.u_degree(), uc, surface.u_knots()),
+        SurfaceParameterAxis::V => (surface.v_degree(), vc, surface.v_knots()),
     };
     let (Some(&varying_min), Some(&varying_max)) = (varying_knots.get(1), varying_knots.get(2))
     else {
@@ -4595,11 +4579,11 @@ fn ruled_surface_line_pcurve(
     if varying_degree != 1
         || varying_count != 2
         || varying_periodic
-        || varying_knots.as_slice() != [varying_min, varying_min, varying_max, varying_max]
+        || varying_knots != [varying_min, varying_min, varying_max, varying_max]
         || !varying_min.is_finite()
         || !varying_max.is_finite()
         || varying_min >= varying_max
-        || surface.weights.as_ref().is_some_and(|weights| {
+        || surface.weights().is_some_and(|weights| {
             (0..fixed_count).any(|fixed| {
                 let (a, b) = match fixed_axis {
                     SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
@@ -4666,7 +4650,7 @@ fn ruled_surface_line_pcurve(
         candidates,
         inverse_coordinate_tolerance(
             surface
-                .control_points
+                .control_points()
                 .iter()
                 .copied()
                 .chain(std::iter::once(line_origin)),
@@ -5271,6 +5255,42 @@ mod tests {
     use crate::brep::topology::{Record, Tables};
     use cadmpeg_ir::topology::Color;
 
+    fn test_nurbs_curve(
+        degree: u32,
+        knots: Vec<f64>,
+        control_points: Vec<cadmpeg_ir::math::Point3>,
+        weights: Option<Vec<f64>>,
+    ) -> cadmpeg_ir::geometry::NurbsCurve {
+        cadmpeg_ir::geometry::NurbsCurve::new(degree, knots, control_points, weights, false)
+            .expect("valid test NURBS curve")
+    }
+
+    fn test_nurbs_surface(
+        u_degree: u32,
+        v_degree: u32,
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        u_count: u32,
+        v_count: u32,
+        control_points: Vec<cadmpeg_ir::math::Point3>,
+        weights: Option<Vec<f64>>,
+    ) -> cadmpeg_ir::geometry::NurbsSurface {
+        cadmpeg_ir::geometry::NurbsSurface::new(
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            u_count,
+            v_count,
+            control_points,
+            weights,
+            false,
+            false,
+            false,
+        )
+        .expect("valid test NURBS surface")
+    }
+
     #[test]
     fn line_edge_parameters_convert_from_metres_to_millimetres() {
         let carrier = crate::brep::Carrier {
@@ -5450,13 +5470,7 @@ mod tests {
             cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0).expect("cylinder start"),
             cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0).expect("cylinder end"),
         ];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: endpoints.to_vec(),
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm: 0.2,
@@ -5474,11 +5488,17 @@ mod tests {
         let (geometry, range, source) =
             super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
                 .expect("support parameterization");
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
-        assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(0.0, 3.0));
-        assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(0.5, 2.0));
+        assert_eq!(
+            nurbs.control_points()[0],
+            cadmpeg_ir::math::Point2::new(0.0, 3.0)
+        );
+        assert_eq!(
+            nurbs.control_points()[1],
+            cadmpeg_ir::math::Point2::new(0.5, 2.0)
+        );
         assert_eq!(range, [0.0, 1.0]);
         assert_eq!(source, super::IntersectionPcurveSource::StoredCache);
 
@@ -5513,13 +5533,7 @@ mod tests {
             .map(|(u, v)| cadmpeg_ir::eval::surface_point(&surface, u, v).expect("cylinder point"))
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            control_points: model_points,
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm: 0.011,
@@ -5529,12 +5543,14 @@ mod tests {
         let (geometry, _, source) =
             super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
                 .expect("analytic support inversion");
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
-        for (point, expected) in control_points
-            .iter()
-            .zip([(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)])
+        for (point, expected) in
+            nurbs
+                .control_points()
+                .iter()
+                .zip([(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)])
         {
             assert!((point.u - expected.0).abs() < 1.0e-12);
             assert!((point.v - expected.1).abs() < 1.0e-12);
@@ -5569,13 +5585,7 @@ mod tests {
             .map(|(u, v)| cadmpeg_ir::eval::surface_point(&surface, u, v).expect("torus point"))
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            control_points: model_points,
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm: 0.08,
@@ -5585,10 +5595,10 @@ mod tests {
         let (geometry, _, _) =
             super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
                 .expect("torus support inversion");
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
-        for (point, expected) in control_points.iter().zip(expected) {
+        for (point, expected) in nurbs.control_points().iter().zip(expected) {
             assert!((point.u - expected.0).abs() < 1.0e-12);
             assert!((point.v - expected.1).abs() < 1.0e-12);
         }
@@ -5596,24 +5606,21 @@ mod tests {
 
     #[test]
     fn nurbs_intersection_chart_inverts_with_continuation_seeds() {
-        let nurbs = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let nurbs = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         let surface = cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone());
         let expected = [(0.2, 0.1), (0.5, 0.4), (0.8, 0.7)];
         let model_points = expected
@@ -5622,13 +5629,7 @@ mod tests {
             })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            control_points: model_points,
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm: 1.0e-9,
@@ -5638,10 +5639,10 @@ mod tests {
         let (geometry, _, source) =
             super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
                 .expect("NURBS support inversion");
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
         };
-        for (point, expected) in control_points.iter().zip(expected) {
+        for (point, expected) in nurbs.control_points().iter().zip(expected) {
             assert!((point.u - expected.0).abs() < 1.0e-10);
             assert!((point.v - expected.1).abs() < 1.0e-10);
         }
@@ -5650,36 +5651,27 @@ mod tests {
 
     #[test]
     fn nurbs_intersection_chart_requires_a_complete_chord_certificate() {
-        let nurbs = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let nurbs = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 1.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         let surface = cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs);
         let endpoints = [
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(1.0, 1.0, 1.0),
         ];
-        let chart = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: endpoints.to_vec(),
-            weights: None,
-            periodic: false,
-        };
+        let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = |fit_tolerance_mm| super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
             fit_tolerance_mm,
@@ -6031,24 +6023,21 @@ mod tests {
 
     #[test]
     fn interior_ruled_surface_line_has_affine_isoparametric_inverse() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(2.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         let geometry = match super::ruled_surface_line_pcurve(
             &surface,
             cadmpeg_ir::geometry::SurfaceParameterAxis::V,
@@ -6070,14 +6059,14 @@ mod tests {
 
     #[test]
     fn interior_linear_axis_rational_nurbs_isocurve_has_exact_pcurve() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 2,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            v_knots: vec![-0.1, -0.1, 0.9, 0.9],
-            u_count: 3,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![-0.1, -0.1, 0.9, 0.9],
+            3,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, -1.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 3.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, -1.0),
@@ -6085,22 +6074,18 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(2.0, 0.0, -1.0),
                 cadmpeg_ir::math::Point3::new(2.0, 0.0, 3.0),
             ],
-            weights: Some(vec![1.0, 1.0, 2.0, 2.0, 1.0, 1.0]),
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: surface.u_knots.clone(),
-            control_points: vec![
+            Some(vec![1.0, 1.0, 2.0, 2.0, 1.0, 1.0]),
+        );
+        let curve = test_nurbs_curve(
+            2,
+            surface.u_knots().to_vec(),
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
             ],
-            weights: Some(vec![1.0, 2.0, 1.0]),
-            periodic: false,
-        };
+            Some(vec![1.0, 2.0, 1.0]),
+        );
         let geometry = match super::nurbs_isocurve_pcurve(&surface, &curve) {
             super::InverseResolution::Unique(geometry) => geometry,
             super::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
@@ -6117,34 +6102,30 @@ mod tests {
 
     #[test]
     fn extended_nurbs_isocurve_clamps_the_carrier_before_matching() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![-1.0, -1.0, 2.0, 2.0],
-            control_points: vec![
+            None,
+        );
+        let curve = test_nurbs_curve(
+            1,
+            vec![-1.0, -1.0, 2.0, 2.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.5, -1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 2.0, 0.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8]);
         let super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::PcurveGeometry::Line {
             origin,
@@ -6170,14 +6151,14 @@ mod tests {
 
     #[test]
     fn extended_quadratic_isocurve_preserves_the_inserted_homogeneous_segment() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 2,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 3,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            2,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            2,
+            3,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.5, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
@@ -6185,22 +6166,18 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
-            control_points: vec![
+            None,
+        );
+        let curve = test_nurbs_curve(
+            2,
+            vec![-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.5, -1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 0.5, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 2.0, 0.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.1, 0.9]);
         assert!(matches!(
             resolution,
@@ -6224,34 +6201,30 @@ mod tests {
 
     #[test]
     fn extended_rational_isocurve_compares_weights_after_homogeneous_clamping() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: Some(vec![1.0, 1.2, 1.0, 1.2]),
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![-1.0, -1.0, 2.0, 2.0],
-            control_points: vec![
+            Some(vec![1.0, 1.2, 1.0, 1.2]),
+        );
+        let curve = test_nurbs_curve(
+            1,
+            vec![-1.0, -1.0, 2.0, 2.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.5, -1.5, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 2.4 / 1.4, 0.0),
             ],
-            weights: Some(vec![0.8, 1.4]),
-            periodic: false,
-        };
+            Some(vec![0.8, 1.4]),
+        );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8]);
         assert!(matches!(
             resolution,
@@ -6275,14 +6248,14 @@ mod tests {
 
     #[test]
     fn degree_one_nurbs_cache_pcurve_keeps_measured_chordal_error() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 2,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 3,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            3,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0),
@@ -6290,75 +6263,60 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![
+            None,
+        );
+        let curve = test_nurbs_curve(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0]);
         let super::NurbsPcurveResolution::Cache {
-            geometry:
-                cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                    degree,
-                    knots,
-                    control_points,
-                    weights,
-                    periodic,
-                },
+            geometry: cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs },
             fit_tolerance,
         } = resolution
         else {
             panic!("degree-one cache was not accepted");
         };
-        assert_eq!(degree, 1);
-        assert_eq!(knots, curve.knots);
-        assert_eq!(control_points.len(), 2);
-        assert!(weights.is_none());
-        assert!(!periodic);
+        assert_eq!(nurbs.degree(), 1);
+        assert_eq!(nurbs.knots(), curve.knots());
+        assert_eq!(nurbs.control_points().len(), 2);
+        assert!(nurbs.weights().is_none());
+        assert!(!nurbs.periodic());
         assert!(fit_tolerance > 0.4);
         assert!(fit_tolerance < 0.6);
     }
 
     #[test]
     fn off_surface_nurbs_edge_is_classified_before_cache_inversion() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![
+            None,
+        );
+        let curve = test_nurbs_curve(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 10.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 10.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         assert!(matches!(
             super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0]),
             super::NurbsPcurveResolution::OffSurface
@@ -6367,14 +6325,14 @@ mod tests {
 
     #[test]
     fn v_linear_surface_line_has_axis_symmetric_inverse() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 2,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 3,
-            v_count: 2,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            3,
+            2,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
@@ -6382,11 +6340,8 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         let geometry = match super::ruled_surface_line_pcurve(
             &surface,
             cadmpeg_ir::geometry::SurfaceParameterAxis::U,
@@ -6408,14 +6363,14 @@ mod tests {
 
     #[test]
     fn repeated_ruled_surface_line_candidates_are_ambiguous() {
-        let surface = cadmpeg_ir::geometry::NurbsSurface {
-            u_degree: 1,
-            v_degree: 2,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 3,
-            control_points: vec![
+        let surface = test_nurbs_surface(
+            1,
+            2,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            2,
+            3,
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -6423,11 +6378,8 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
             ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            None,
+        );
         assert!(matches!(
             super::ruled_surface_line_pcurve(
                 &surface,
@@ -6441,17 +6393,16 @@ mod tests {
 
     #[test]
     fn repeated_nurbs_endpoint_candidates_are_ambiguous() {
-        let curve = cadmpeg_ir::geometry::NurbsCurve {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            control_points: vec![
+        let curve = test_nurbs_curve(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             ],
-            weights: None,
-            periodic: false,
-        };
+            None,
+        );
         assert!(matches!(
             super::nurbs_parameter_at_point(&curve, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),),
             super::InverseResolution::Ambiguous
@@ -6461,7 +6412,7 @@ mod tests {
     #[test]
     fn ambiguous_cylindrical_endpoint_withholds_the_derived_pcurve() {
         use cadmpeg_ir::annotations::AnnotationBuilder;
-        use cadmpeg_ir::geometry::{Curve, NurbsCurve, Surface};
+        use cadmpeg_ir::geometry::{Curve, Surface};
         use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PointId, SurfaceId, VertexId};
         use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 
@@ -6487,17 +6438,16 @@ mod tests {
             }],
             curves: vec![Curve {
                 id: curve_id.clone(),
-                geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(NurbsCurve {
-                    degree: 2,
-                    knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                    control_points: vec![
+                geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(test_nurbs_curve(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    vec![
                         cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
                         cadmpeg_ir::math::Point3::new(1000.0, 0.0, 1000.0),
                         cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
                     ],
-                    weights: None,
-                    periodic: false,
-                }),
+                    None,
+                )),
                 source_object: None,
             }],
             faces: vec![Face {

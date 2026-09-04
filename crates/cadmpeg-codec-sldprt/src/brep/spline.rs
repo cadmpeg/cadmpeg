@@ -562,15 +562,15 @@ pub(crate) fn patch_nurbs_curve(
     new: &NurbsCurve,
     scale: f64,
 ) -> Option<()> {
-    if old.degree != new.degree
-        || old.control_points.len() != new.control_points.len()
-        || old.weights.is_some() != new.weights.is_some()
-        || old.periodic != new.periodic
+    if old.degree() != new.degree()
+        || old.control_points().len() != new.control_points().len()
+        || old.weights().is_some() != new.weights().is_some()
+        || old.periodic() != new.periodic()
     {
         return None;
     }
-    let (old_unique, old_mult) = unique_knots(&old.knots);
-    let (new_unique, new_mult) = unique_knots(&new.knots);
+    let (old_unique, old_mult) = unique_knots(old.knots());
+    let (new_unique, new_mult) = unique_knots(new.knots());
     if old_mult != new_mult || old_unique.len() != new_unique.len() {
         return None;
     }
@@ -580,13 +580,13 @@ pub(crate) fn patch_nurbs_curve(
     }
     let descriptors = scan_curve_descriptors(bytes);
     let descriptor = curve_descriptor(bytes, p, &descriptors)?;
-    if descriptor.degree != old.degree
-        || descriptor.control_count != old.control_points.len()
-        || descriptor.dimension != if old.weights.is_some() { 4 } else { 3 }
+    if descriptor.degree != old.degree()
+        || descriptor.control_count != old.control_points().len()
+        || descriptor.dimension != if old.weights().is_some() { 4 } else { 3 }
     {
         return None;
     }
-    let poles = homogeneous_poles(&new.control_points, new.weights.as_deref(), scale)?;
+    let poles = homogeneous_poles(new.control_points(), new.weights(), scale)?;
     patch_f64_array(bytes, 0x2d, descriptor.control_attr, &poles)?;
     patch_f64_array(bytes, 0x80, descriptor.knot_attr, &new_unique)
 }
@@ -599,21 +599,21 @@ pub(crate) fn patch_nurbs_surface(
     new: &NurbsSurface,
     scale: f64,
 ) -> Option<()> {
-    if old.u_degree != new.u_degree
-        || old.v_degree != new.v_degree
-        || old.u_count != new.u_count
-        || old.v_count != new.v_count
-        || old.control_points.len() != new.control_points.len()
-        || old.weights.is_some() != new.weights.is_some()
-        || old.u_periodic != new.u_periodic
-        || old.v_periodic != new.v_periodic
+    if old.u_degree() != new.u_degree()
+        || old.v_degree() != new.v_degree()
+        || old.u_count() != new.u_count()
+        || old.v_count() != new.v_count()
+        || old.control_points().len() != new.control_points().len()
+        || old.weights().is_some() != new.weights().is_some()
+        || old.u_periodic() != new.u_periodic()
+        || old.v_periodic() != new.v_periodic()
     {
         return None;
     }
-    let (old_u, old_u_mult) = unique_knots(&old.u_knots);
-    let (new_u, new_u_mult) = unique_knots(&new.u_knots);
-    let (old_v, old_v_mult) = unique_knots(&old.v_knots);
-    let (new_v, new_v_mult) = unique_knots(&new.v_knots);
+    let (old_u, old_u_mult) = unique_knots(old.u_knots());
+    let (new_u, new_u_mult) = unique_knots(new.u_knots());
+    let (old_v, old_v_mult) = unique_knots(old.v_knots());
+    let (new_v, new_v_mult) = unique_knots(new.v_knots());
     if old_u_mult != new_u_mult
         || old_v_mult != new_v_mult
         || old_u.len() != new_u.len()
@@ -634,19 +634,19 @@ pub(crate) fn patch_nurbs_surface(
     let descriptor_attr = View::u16_be_at(bytes, p + 17)?;
     let descriptor = descriptors.get(&descriptor_attr)?;
     let [control_attr, _, _, u_knot_attr, v_knot_attr] = descriptor.refs;
-    let dimension = if old.weights.is_some() { 4 } else { 3 };
-    if descriptor.u_degree != old.u_degree
-        || descriptor.v_degree != old.v_degree
-        || descriptor.u_count != old.u_count as usize
-        || descriptor.v_count != old.v_count as usize
+    let dimension = if old.weights().is_some() { 4 } else { 3 };
+    if descriptor.u_degree != old.u_degree()
+        || descriptor.v_degree != old.v_degree()
+        || descriptor.u_count != old.u_count() as usize
+        || descriptor.v_count != old.v_count() as usize
         || descriptor.dimension != dimension
-        || descriptor.u_periodic != old.u_periodic
-        || descriptor.v_periodic != old.v_periodic
+        || descriptor.u_periodic != old.u_periodic()
+        || descriptor.v_periodic != old.v_periodic()
     {
         return None;
     }
-    let old_poles = homogeneous_poles(&old.control_points, old.weights.as_deref(), scale)?;
-    let poles = homogeneous_poles(&new.control_points, new.weights.as_deref(), scale)?;
+    let old_poles = homogeneous_poles(old.control_points(), old.weights(), scale)?;
+    let poles = homogeneous_poles(new.control_points(), new.weights(), scale)?;
     let control_span = unique_control_span(bytes, &arrays, control_attr, &old_poles)?;
     let u_knot_span = unique_surface_knot_span(
         bytes,
@@ -745,17 +745,14 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         if knots.len() != expected {
             continue;
         }
+        let Ok(nurbs) = NurbsCurve::new(descriptor.degree, knots, points, weights, false) else {
+            continue;
+        };
         out.entry(attr).or_insert(Carrier {
             attr,
             offset: off,
             end: off + 2,
-            geometry: CarrierGeometry::Curve(CurveGeometry::Nurbs(NurbsCurve {
-                degree: descriptor.degree,
-                knots,
-                control_points: points,
-                weights,
-                periodic: false,
-            })),
+            geometry: CarrierGeometry::Curve(CurveGeometry::Nurbs(nurbs)),
             frame: None,
             parameter_range: None,
             orientation_reversed: false,
@@ -952,23 +949,26 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         if u_knots.len() != u_expected || v_knots.len() != v_expected {
             continue;
         }
+        let Ok(nurbs) = NurbsSurface::new(
+            descriptor.u_degree,
+            descriptor.v_degree,
+            u_knots,
+            v_knots,
+            descriptor.u_count as u32,
+            descriptor.v_count as u32,
+            points,
+            weights,
+            false,
+            descriptor.u_periodic,
+            descriptor.v_periodic,
+        ) else {
+            continue;
+        };
         out.entry(attr).or_insert(Carrier {
             attr,
             offset: off,
             end: off + 2,
-            geometry: CarrierGeometry::Surface(SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: descriptor.u_degree,
-                v_degree: descriptor.v_degree,
-                u_knots,
-                v_knots,
-                u_count: descriptor.u_count as u32,
-                v_count: descriptor.v_count as u32,
-                control_points: points,
-                weights,
-                normal_reversed: false,
-                u_periodic: descriptor.u_periodic,
-                v_periodic: descriptor.v_periodic,
-            })),
+            geometry: CarrierGeometry::Surface(SurfaceGeometry::Nurbs(nurbs)),
             frame: None,
             parameter_range: None,
             orientation_reversed: false,

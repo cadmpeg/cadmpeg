@@ -3,17 +3,18 @@ use super::*;
 
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
-    let nurbs = crate::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-        control_points: vec![
+    let nurbs = crate::geometry::NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: true,
-    };
+        None,
+        true,
+    )
+    .unwrap();
     let geometry = CurveGeometry::Nurbs(nurbs.clone());
     assert_eq!(
         crate::eval::curve_point(&geometry, 0.5),
@@ -50,7 +51,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     else {
         unreachable!()
     };
-    nurbs.periodic = false;
+    nurbs.set_periodic(false);
     ir.model.edges[0].param_range = Some([0.5, 2.5]);
     assert!(validate_neutral(&ir, Vec::new())
         .findings

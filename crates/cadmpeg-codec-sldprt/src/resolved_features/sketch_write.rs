@@ -425,14 +425,16 @@ fn generated_sketch_curve(
             }
             let start = control_points[0];
             let end = control_points[control_points.len() - 1];
+            let nurbs = NurbsCurve::new(
+                *degree,
+                knots.clone(),
+                control_points.iter().copied().map(lift).collect(),
+                weights.clone(),
+                false,
+            )
+            .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_string()))?;
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Nurbs(NurbsCurve {
-                    degree: *degree,
-                    knots: knots.clone(),
-                    control_points: control_points.iter().copied().map(lift).collect(),
-                    weights: weights.clone(),
-                    periodic: false,
-                }),
+                curve: CurveGeometry::Nurbs(nurbs),
                 start,
                 end,
                 param_range: knots
@@ -879,16 +881,17 @@ fn patch_direct_nurbs(
     else {
         unreachable!();
     };
-    let curve = cadmpeg_ir::geometry::NurbsCurve {
+    let curve = cadmpeg_ir::geometry::NurbsCurve::new(
         degree,
-        knots: knots.clone(),
-        control_points: control_points
+        knots.clone(),
+        control_points
             .iter()
             .map(|point| lift_point(*point, request.origin, request.u_axis, request.v_axis))
             .collect(),
-        weights: weights.clone(),
+        weights.clone(),
         periodic,
-    };
+    )
+    .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_string()))?;
     if !crate::brep::patch_nurbs_by_attr(body, request.carrier_attr, &curve) {
         return Err(cadmpeg_core::CodecError::NotImplemented(
             "SLDPRT sketch NURBS edit changes native storage shape".into(),

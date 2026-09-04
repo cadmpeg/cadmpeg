@@ -8,7 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::geometry::{
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+    NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralCurve, ProceduralCurveDefinition,
     ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
@@ -144,7 +144,7 @@ pub(super) fn infer_edge_parameter_ranges(
 
 fn curve_endpoint_seed(geometry: &CurveGeometry, upper: bool, fallback: f64) -> f64 {
     match geometry {
-        CurveGeometry::Nurbs(nurbs) if !nurbs.periodic => {
+        CurveGeometry::Nurbs(nurbs) if !nurbs.periodic() => {
             nurbs_curve_parameter_domain(nurbs).map_or(fallback, |[lower, upper_bound]| {
                 if upper {
                     upper_bound
@@ -166,7 +166,7 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
             Some([0.0, std::f64::consts::TAU])
         }
-        CurveGeometry::Nurbs(nurbs) if nurbs.periodic => nurbs_curve_parameter_domain(nurbs),
+        CurveGeometry::Nurbs(nurbs) if nurbs.periodic() => nurbs_curve_parameter_domain(nurbs),
         CurveGeometry::Transformed { basis, .. } => {
             return edge_parameter_range(basis, start, end);
         }
@@ -3502,7 +3502,7 @@ fn trimmed_curve_parameter_range(
 fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
     let period = match geometry {
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => std::f64::consts::TAU,
-        CurveGeometry::Nurbs(curve) if curve.periodic => {
+        CurveGeometry::Nurbs(curve) if curve.periodic() => {
             let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
             upper - lower
         }
@@ -4186,13 +4186,14 @@ fn nurbs_curve(
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    Some(NurbsCurve {
-        degree: definition.degree,
-        knots: definition.knots,
+    NurbsCurve::new(
+        definition.degree,
+        definition.knots,
         control_points,
-        weights: definition.weights,
-        periodic: definition.periodic,
-    })
+        definition.weights,
+        definition.periodic,
+    )
+    .ok()
 }
 
 fn nurbs_pcurve(
@@ -4207,11 +4208,14 @@ fn nurbs_pcurve(
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
     Some(PcurveGeometry::Nurbs {
-        degree: definition.degree,
-        knots: definition.knots,
-        control_points,
-        weights: definition.weights,
-        periodic: definition.periodic,
+        nurbs: PcurveNurbs::new(
+            definition.degree,
+            definition.knots,
+            control_points,
+            definition.weights,
+            definition.periodic,
+        )
+        .ok()?,
     })
 }
 
@@ -4484,20 +4488,14 @@ fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
         PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }
         | PcurveGeometry::Harmonic { .. } => std::f64::consts::TAU,
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            periodic: true,
-            ..
-        } => pcurve_nurbs_parameter_period(*degree, knots, control_points.len())?,
-        PcurveGeometry::PolarNurbs {
-            degree,
-            knots,
-            radial_control_points,
-            periodic: true,
-            ..
-        } => pcurve_nurbs_parameter_period(*degree, knots, radial_control_points.len())?,
+        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_period(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points().len(),
+        )?,
+        PcurveGeometry::PolarNurbs { nurbs } if nurbs.periodic() => {
+            pcurve_nurbs_parameter_period(nurbs.degree(), nurbs.knots(), nurbs.poles().len())?
+        }
         PcurveGeometry::Offset { basis, .. } => pcurve_parameter_period(basis)?,
         PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_period(basis)?,
         _ => return None,
@@ -4817,22 +4815,22 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
         SurfaceGeometry::Torus { .. } => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
         SurfaceGeometry::Nurbs(surface) => [
             surface
-                .u_periodic
+                .u_periodic()
                 .then(|| {
                     nurbs_surface_parameter_period(
-                        surface.u_degree,
-                        &surface.u_knots,
-                        surface.u_count,
+                        surface.u_degree(),
+                        surface.u_knots(),
+                        surface.u_count(),
                     )
                 })
                 .flatten(),
             surface
-                .v_periodic
+                .v_periodic()
                 .then(|| {
                     nurbs_surface_parameter_period(
-                        surface.v_degree,
-                        &surface.v_knots,
-                        surface.v_count,
+                        surface.v_degree(),
+                        surface.v_knots(),
+                        surface.v_count(),
                     )
                 })
                 .flatten(),
@@ -4966,8 +4964,8 @@ pub(super) fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64;
             *cosine = scale_point(*cosine);
             *sine = scale_point(*sine);
         }
-        PcurveGeometry::Nurbs { control_points, .. } => {
-            for control_point in control_points {
+        PcurveGeometry::Nurbs { nurbs } => {
+            for control_point in nurbs.control_points_mut() {
                 *control_point = scale_point(*control_point);
             }
         }
@@ -5026,11 +5024,7 @@ fn polyline_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option
     knots.extend((0..control_points.len()).map(|index| index as f64));
     knots.push(last);
     Some(PcurveGeometry::Nurbs {
-        degree: 1,
-        knots,
-        control_points,
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(1, knots, control_points, None, false).ok()?,
     })
 }
 
@@ -5049,13 +5043,7 @@ fn polyline(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsC
     knots.push(0.0);
     knots.extend((0..control_points.len()).map(|index| index as f64));
     knots.push(last);
-    Some(NurbsCurve {
-        degree: 1,
-        knots,
-        control_points,
-        weights: None,
-        periodic: false,
-    })
+    NurbsCurve::new(1, knots, control_points, None, false).ok()
 }
 
 fn nurbs_surface(
@@ -5178,7 +5166,7 @@ fn nurbs_surface(
     } else {
         None
     };
-    Some(NurbsSurface {
+    NurbsSurface::new(
         u_degree,
         v_degree,
         u_knots,
@@ -5187,10 +5175,11 @@ fn nurbs_surface(
         v_count,
         control_points,
         weights,
-        normal_reversed: false,
+        false,
         u_periodic,
         v_periodic,
-    })
+    )
+    .ok()
 }
 
 fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<Vec<f64>> {

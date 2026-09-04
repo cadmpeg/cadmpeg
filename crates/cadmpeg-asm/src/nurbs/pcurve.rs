@@ -9,21 +9,62 @@ use crate::nurbs::reader::{
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::math::Point2;
 
 /// The decoded payload of a 2D `nubs` or `nurbs` pcurve block.
 #[derive(Clone)]
-pub struct NurbsPcurve {
-    /// Curve degree.
-    pub degree: u32,
-    /// Full clamped knot vector.
-    pub knots: Vec<f64>,
-    /// UV control points in surface-parameter space, without length scaling.
-    pub control_points: Vec<Point2>,
-    /// Per-pole homogeneous weights; absent for a `nubs` block.
-    pub weights: Option<Vec<f64>>,
-    /// Whether the parameter curve is periodic.
-    pub periodic: bool,
+pub struct NurbsPcurve(PcurveNurbs);
+
+impl NurbsPcurve {
+    pub(crate) fn new(
+        degree: u32,
+        knots: Vec<f64>,
+        control_points: Vec<Point2>,
+        weights: Option<Vec<f64>>,
+        periodic: bool,
+    ) -> Option<Self> {
+        PcurveNurbs::new(degree, knots, control_points, weights, periodic)
+            .ok()
+            .map(Self)
+    }
+
+    /// Polynomial degree.
+    pub fn degree(&self) -> u32 {
+        self.0.degree()
+    }
+
+    /// Expanded knot vector.
+    pub fn knots(&self) -> &[f64] {
+        self.0.knots()
+    }
+
+    pub(crate) fn knots_mut(&mut self) -> &mut [f64] {
+        self.0.knots_mut()
+    }
+
+    /// Parameter-space control points.
+    pub fn control_points(&self) -> &[Point2] {
+        self.0.control_points()
+    }
+
+    pub(crate) fn control_points_mut(&mut self) -> &mut [Point2] {
+        self.0.control_points_mut()
+    }
+
+    /// Optional rational weights.
+    pub fn weights(&self) -> Option<&[f64]> {
+        self.0.weights()
+    }
+
+    pub(crate) fn weights_mut(&mut self) -> Option<&mut [f64]> {
+        self.0.weights_mut()
+    }
+
+    /// Convert the parsed cache to its cardinality-checked IR form.
+    pub(crate) fn into_geometry(self) -> PcurveGeometry {
+        PcurveGeometry::Nurbs { nurbs: self.0 }
+    }
 }
 
 /// Writable value offsets for one 2D pcurve cache.
@@ -145,13 +186,13 @@ pub(crate) fn decode_pcurve_block_with_end(
         }
     }
     Some((
-        NurbsPcurve {
-            degree: degree as u32,
+        NurbsPcurve::new(
+            degree as u32,
             knots,
             control_points,
             weights,
-            periodic: is_periodic(closure),
-        },
+            is_periodic(closure),
+        )?,
         pos,
     ))
 }
@@ -205,13 +246,13 @@ pub(crate) fn pcurve_block_with_end(
         }
     }
     Some((
-        NurbsPcurve {
-            degree: degree as u32,
+        NurbsPcurve::new(
+            degree as u32,
             knots,
             control_points,
             weights,
-            periodic: is_periodic(closure),
-        },
+            is_periodic(closure),
+        )?,
         cur.pos(),
     ))
 }

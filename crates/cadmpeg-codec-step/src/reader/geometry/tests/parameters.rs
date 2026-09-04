@@ -30,10 +30,10 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
 
 #[test]
 fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
-    let nurbs = NurbsCurve {
-        degree: 3,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let nurbs = NurbsCurve::new(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
@@ -42,15 +42,27 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
             Point3::new(5.0, 0.0, 0.0),
             Point3::new(3.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .unwrap();
     let geometry = CurveGeometry::Nurbs(nurbs.clone());
-    let start_point =
-        nurbs_curve_point(nurbs.degree, &nurbs.knots, &nurbs.control_points, None, 0.0)
-            .expect("start point");
-    let end_point = nurbs_curve_point(nurbs.degree, &nurbs.knots, &nurbs.control_points, None, 1.0)
-        .expect("end point");
+    let start_point = nurbs_curve_point(
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        None,
+        0.0,
+    )
+    .expect("start point");
+    let end_point = nurbs_curve_point(
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        None,
+        1.0,
+    )
+    .expect("end point");
     let start_seed = curve_endpoint_seed(&geometry, false, 0.0);
     let start = nurbs_curve_parameter_near_point(&nurbs, start_point, 1.0e-6, start_seed)
         .expect("start witness");

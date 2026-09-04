@@ -7,7 +7,7 @@
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs,
     ProceduralCurveDefinition,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -37,60 +37,26 @@ fn finite_vector3(vector: Vector3) -> bool {
 }
 
 fn valid_nurbs_curve(nurbs: &NurbsCurve) -> bool {
-    let Some(degree) = usize::try_from(nurbs.degree).ok() else {
-        return false;
-    };
-    let Some(expected_knot_count) = nurbs
-        .control_points
-        .len()
-        .checked_add(degree)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return false;
-    };
-    degree > 0
-        && nurbs.control_points.len() > degree
-        && nurbs.knots.len() == expected_knot_count
-        && nurbs.knots.iter().copied().all(f64::is_finite)
-        && knots_nondecreasing(&nurbs.knots)
-        && nurbs.control_points.iter().copied().all(finite_point3)
-        && nurbs.weights.as_ref().is_none_or(|weights| {
-            weights.len() == nurbs.control_points.len()
-                && weights
-                    .iter()
-                    .copied()
-                    .all(|weight| weight.is_finite() && weight != 0.0)
+    nurbs.knots().iter().copied().all(f64::is_finite)
+        && knots_nondecreasing(nurbs.knots())
+        && nurbs.control_points().iter().copied().all(finite_point3)
+        && nurbs.weights().is_none_or(|weights| {
+            weights
+                .iter()
+                .copied()
+                .all(|weight| weight.is_finite() && weight != 0.0)
         })
 }
 
-fn valid_pcurve_nurbs(
-    degree: u32,
-    knots: &[f64],
-    control_points: &[Point2],
-    weights: Option<&[f64]>,
-) -> bool {
-    let Some(degree) = usize::try_from(degree).ok() else {
-        return false;
-    };
-    let Some(expected_knot_count) = control_points
-        .len()
-        .checked_add(degree)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return false;
-    };
-    degree > 0
-        && control_points.len() > degree
-        && knots.len() == expected_knot_count
-        && knots.iter().copied().all(f64::is_finite)
-        && knots_nondecreasing(knots)
-        && control_points.iter().copied().all(finite_point2)
-        && weights.is_none_or(|weights| {
-            weights.len() == control_points.len()
-                && weights
-                    .iter()
-                    .copied()
-                    .all(|weight| weight.is_finite() && weight > 0.0)
+fn valid_pcurve_nurbs(nurbs: &PcurveNurbs) -> bool {
+    nurbs.knots().iter().copied().all(f64::is_finite)
+        && knots_nondecreasing(nurbs.knots())
+        && nurbs.control_points().iter().copied().all(finite_point2)
+        && nurbs.weights().is_none_or(|weights| {
+            weights
+                .iter()
+                .copied()
+                .all(|weight| weight.is_finite() && weight > 0.0)
         })
 }
 
@@ -120,21 +86,16 @@ pub(crate) fn reverse_pcurve_geometry(
                 direction: Point2::new(-direction.u, -direction.v),
             })
         }
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => {
-            if !valid_pcurve_nurbs(*degree, knots, control_points, weights.as_deref()) {
+        PcurveGeometry::Nurbs { nurbs } => {
+            if !valid_pcurve_nurbs(nurbs) {
                 return None;
             }
             let sum = range[0] + range[1];
             if !sum.is_finite() {
                 return None;
             }
-            let mut reversed_knots = knots
+            let mut reversed_knots = nurbs
+                .knots()
                 .iter()
                 .rev()
                 .map(|knot| sum - knot)
@@ -148,13 +109,16 @@ pub(crate) fn reverse_pcurve_geometry(
                 return None;
             }
             Some(PcurveGeometry::Nurbs {
-                degree: *degree,
-                knots: reversed_knots,
-                control_points: control_points.iter().rev().copied().collect(),
-                weights: weights
-                    .as_ref()
-                    .map(|weights| weights.iter().rev().copied().collect()),
-                periodic: *periodic,
+                nurbs: PcurveNurbs::new(
+                    nurbs.degree(),
+                    reversed_knots,
+                    nurbs.control_points().iter().rev().copied().collect(),
+                    nurbs
+                        .weights()
+                        .map(|weights| weights.iter().rev().copied().collect()),
+                    nurbs.periodic(),
+                )
+                .ok()?,
             })
         }
         _ => None,
@@ -243,7 +207,7 @@ pub(crate) fn reverse_curve_geometry(
                 return None;
             }
             let knots = nurbs
-                .knots
+                .knots()
                 .iter()
                 .rev()
                 .map(|knot| sum - knot)
@@ -252,16 +216,18 @@ pub(crate) fn reverse_curve_geometry(
                 return None;
             }
             Some((
-                CurveGeometry::Nurbs(NurbsCurve {
-                    degree: nurbs.degree,
-                    knots,
-                    control_points: nurbs.control_points.iter().rev().copied().collect(),
-                    weights: nurbs
-                        .weights
-                        .as_ref()
-                        .map(|weights| weights.iter().rev().copied().collect()),
-                    periodic: nurbs.periodic,
-                }),
+                CurveGeometry::Nurbs(
+                    NurbsCurve::new(
+                        nurbs.degree(),
+                        knots,
+                        nurbs.control_points().iter().rev().copied().collect(),
+                        nurbs
+                            .weights()
+                            .map(|weights| weights.iter().rev().copied().collect()),
+                        nurbs.periodic(),
+                    )
+                    .ok()?,
+                ),
                 range,
             ))
         }
@@ -284,7 +250,7 @@ pub(crate) fn canonical_model_curve_range(
         CurveGeometry::Nurbs(nurbs) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
             let tolerance = 1.0e-9_f64.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
-            if nurbs.periodic {
+            if nurbs.periodic() {
                 (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
             } else if range[0] >= lower && range[1] <= upper {
                 Some(range)
@@ -512,16 +478,17 @@ pub(crate) fn circular_helix_cache(
     knots.push(angle_range[0]);
     knots.extend(samples.iter().map(|(parameter, _)| *parameter));
     knots.push(angle_range[1]);
-    let curve = NurbsCurve {
-        degree: 1,
+    let curve = NurbsCurve::new(
+        1,
         knots,
-        control_points: samples.into_iter().map(|(_, point)| point).collect(),
-        weights: None,
-        periodic: false,
-    };
+        samples.into_iter().map(|(_, point)| point).collect(),
+        None,
+        false,
+    )
+    .ok()?;
     if !fit_tolerance.is_finite()
         || !valid_nurbs_curve(&curve)
-        || !knots_nondecreasing(&curve.knots)
+        || !knots_nondecreasing(curve.knots())
     {
         return None;
     }
@@ -646,47 +613,38 @@ pub(crate) fn nurbs_surface_isocurve(
     fix_u: bool,
 ) -> Option<NurbsCurve> {
     if !parameter.is_finite()
-        || !surface.u_knots.iter().copied().all(f64::is_finite)
-        || !surface.v_knots.iter().copied().all(f64::is_finite)
-        || !surface.control_points.iter().copied().all(finite_point3)
-        || surface.weights.as_ref().is_some_and(|weights| {
-            weights.len() != surface.control_points.len()
-                || weights
-                    .iter()
-                    .copied()
-                    .any(|weight| !weight.is_finite() || weight == 0.0)
+        || !surface.u_knots().iter().copied().all(f64::is_finite)
+        || !surface.v_knots().iter().copied().all(f64::is_finite)
+        || !surface.control_points().iter().copied().all(finite_point3)
+        || surface.weights().is_some_and(|weights| {
+            weights
+                .iter()
+                .copied()
+                .any(|weight| !weight.is_finite() || weight == 0.0)
         })
     {
         return None;
     }
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    let expected_control_count = u_count.checked_mul(v_count)?;
-    if surface.control_points.len() != expected_control_count {
-        return None;
-    }
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    if surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
-        || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
-        || !knots_nondecreasing(&surface.u_knots)
-        || !knots_nondecreasing(&surface.v_knots)
-    {
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    if !knots_nondecreasing(surface.u_knots()) || !knots_nondecreasing(surface.v_knots()) {
         return None;
     }
     let (fixed_basis, varying_count, degree, knots) = if fix_u {
         (
-            nurbs_basis_values(&surface.u_knots, u_degree, parameter, u_count)?,
+            nurbs_basis_values(surface.u_knots(), u_degree, parameter, u_count)?,
             v_count,
-            surface.v_degree,
-            surface.v_knots.clone(),
+            surface.v_degree(),
+            surface.v_knots().to_vec(),
         )
     } else {
         (
-            nurbs_basis_values(&surface.v_knots, v_degree, parameter, v_count)?,
+            nurbs_basis_values(surface.v_knots(), v_degree, parameter, v_count)?,
             u_count,
-            surface.u_degree,
-            surface.u_knots.clone(),
+            surface.u_degree(),
+            surface.u_knots().to_vec(),
         )
     };
     let mut control_points = Vec::with_capacity(varying_count);
@@ -700,8 +658,8 @@ pub(crate) fn nurbs_surface_isocurve(
             } else {
                 varying.checked_mul(v_count)?.checked_add(fixed)?
             };
-            let point = surface.control_points.get(index)?;
-            let weight = match surface.weights.as_ref() {
+            let point = surface.control_points().get(index)?;
+            let weight = match surface.weights() {
                 Some(values) => *values.get(index)?,
                 None => 1.0,
             };
@@ -734,17 +692,18 @@ pub(crate) fn nurbs_surface_isocurve(
     {
         return None;
     }
-    Some(NurbsCurve {
+    NurbsCurve::new(
         degree,
         knots,
         control_points,
-        weights: surface.weights.is_some().then_some(weights),
-        periodic: if fix_u {
-            surface.v_periodic
+        surface.weights().is_some().then_some(weights),
+        if fix_u {
+            surface.v_periodic()
         } else {
-            surface.u_periodic
+            surface.u_periodic()
         },
-    })
+    )
+    .ok()
 }
 
 fn nurbs_basis_values(
@@ -821,13 +780,16 @@ mod tests {
 
     #[test]
     fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
-        let geometry = CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        });
+        let geometry = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        );
 
         assert_eq!(
             canonical_model_curve_range(&geometry, [-1.0e-12, 1.0 + 1.0e-12]),
@@ -879,13 +841,16 @@ mod tests {
 
     #[test]
     fn reversed_nurbs_preserves_active_subrange() {
-        let geometry = CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: None,
-            periodic: false,
-        });
+        let geometry = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        );
         let range = [0.2, 0.8];
         let (reversed, reversed_range) =
             reverse_curve_geometry(&geometry, range).expect("reversible NURBS");
@@ -943,54 +908,52 @@ mod tests {
     #[test]
     fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
         let tiny = 1e-200;
-        let surface = NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, tiny, tiny],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
+        let surface = NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, tiny, tiny],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
                 Point3::new(2.0, 0.0, 0.0),
                 Point3::new(2.0, 1.0, 0.0),
             ],
-            weights: Some(vec![tiny; 4]),
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+            Some(vec![tiny; 4]),
+            false,
+            false,
+            false,
+        )
+        .unwrap();
         let curve = nurbs_surface_isocurve(&surface, tiny * 0.5, true)
             .expect("tiny rational surface isocurve");
         assert_eq!(
-            curve.control_points,
+            curve.control_points(),
             [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
         );
-        assert_eq!(curve.weights, Some(vec![tiny, tiny]));
+        assert_eq!(curve.weights(), Some([tiny, tiny].as_slice()));
     }
 
     #[test]
     fn surface_isocurve_rejects_invalid_weight_shape_and_output() {
-        let surface = |control_points, weights| NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points,
-            weights,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
+        let surface = |control_points, weights| {
+            NurbsSurface::new(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                2,
+                2,
+                control_points,
+                weights,
+                false,
+                false,
+                false,
+            )
+            .unwrap()
         };
-        assert!(nurbs_surface_isocurve(
-            &surface(vec![Point3::new(0.0, 0.0, 0.0); 4], Some(vec![1.0; 3]),),
-            0.5,
-            true,
-        )
-        .is_none());
         assert!(nurbs_surface_isocurve(
             &surface(
                 vec![Point3::new(f64::MAX, 0.0, 0.0); 4],
@@ -1022,12 +985,12 @@ mod tests {
         };
 
         let cache = circular_helix_cache(&definition, 1.0e-4).expect("valid helix");
-        assert_eq!(cache.curve.knots[1], range[0]);
-        assert_eq!(cache.curve.knots[cache.curve.knots.len() - 2], range[1]);
+        assert_eq!(cache.curve.knots()[1], range[0]);
+        assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
         assert!(cache.fit_tolerance.is_finite());
         assert!(cache
             .curve
-            .control_points
+            .control_points()
             .iter()
             .copied()
             .all(super::finite_point3));
@@ -1122,11 +1085,14 @@ mod tests {
         assert!(reverse_curve_geometry(&model_line, [0.0, f64::MAX]).is_none());
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![-f64::MAX, 0.0, 1.0, 1.0],
-            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-            weights: None,
-            periodic: false,
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                1,
+                vec![-f64::MAX, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
         };
         assert!(reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX]).is_none());
 
@@ -1136,22 +1102,16 @@ mod tests {
         };
         assert!(reverse_pcurve_geometry(&nonfinite_line, [0.0, 1.0]).is_none());
 
-        let malformed_pcurve = PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-            weights: Some(vec![1.0]),
-            periodic: false,
-        };
-        assert!(reverse_pcurve_geometry(&malformed_pcurve, [0.0, 1.0]).is_none());
-
-        let zero_weight_curve = CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            weights: Some(vec![1.0, 0.0]),
-            periodic: false,
-        });
+        let zero_weight_curve = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                Some(vec![1.0, 0.0]),
+                false,
+            )
+            .unwrap(),
+        );
         assert!(reverse_curve_geometry(&zero_weight_curve, [0.0, 1.0]).is_none());
     }
 }

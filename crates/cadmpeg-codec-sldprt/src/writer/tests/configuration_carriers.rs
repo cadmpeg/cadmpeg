@@ -1267,12 +1267,12 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         let CurveGeometry::Nurbs(curve) = &mut ir_edit.model.curves[0].geometry else {
             panic!("expected NURBS curve");
         };
-        curve.control_points[1].y += 250.0;
+        curve.control_points_mut()[1].y += 250.0;
         let expected_curve = curve.clone();
         let SurfaceGeometry::Nurbs(surface) = &mut ir_edit.model.surfaces[0].geometry else {
             panic!("expected NURBS surface");
         };
-        surface.control_points[3].z += 500.0;
+        surface.control_points_mut()[3].z += 500.0;
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)
     };

@@ -672,13 +672,16 @@ pub(crate) fn try_decode_geometry(
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: if let Some(charted) = charted {
-                    CurveGeometry::Nurbs(NurbsCurve {
-                        degree: 1,
-                        knots: linear_knots(&charted.parameters),
-                        control_points: charted.points.clone(),
-                        weights: None,
-                        periodic: false,
-                    })
+                    CurveGeometry::Nurbs(
+                        NurbsCurve::new(
+                            1,
+                            linear_knots(&charted.parameters),
+                            charted.points.clone(),
+                            None,
+                            false,
+                        )
+                        .map_err(|error| CodecError::Malformed(error.to_string()))?,
+                    )
                 } else if uncharted.is_some() {
                     CurveGeometry::Procedural {
                         construction: procedural_id.clone(),

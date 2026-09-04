@@ -574,9 +574,9 @@ ${}
     let SurfaceGeometry::Nurbs(surface) = &surface.geometry else {
         panic!("legacy spline geometry: {:?}", surface.geometry);
     };
-    assert_eq!(surface.control_points.len(), 16);
-    assert_eq!(surface.u_count, 4);
-    assert_eq!(surface.v_count, 4);
+    assert_eq!(surface.control_points().len(), 16);
+    assert_eq!(surface.u_count(), 4);
+    assert_eq!(surface.v_count(), 4);
     assert_eq!(
         result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
         1

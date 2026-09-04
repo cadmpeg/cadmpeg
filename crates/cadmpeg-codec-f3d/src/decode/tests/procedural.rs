@@ -205,7 +205,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
             .find(|curve| curve.id == *member_curve)
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-            if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
     ));
 }
 
@@ -313,8 +313,8 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
                         .find(|candidate| candidate.id == *curve)
                         .map(|curve| &curve.geometry),
                     Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                        if curve.degree == 1
-                            && curve.knots
+                        if curve.degree() == 1
+                            && curve.knots()
                                 == [
                                     parameter_range[0],
                                     parameter_range[0],
@@ -929,8 +929,8 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
             .find(|candidate| candidate.id == curve.id)
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-            if curve.degree == 1
-                && curve.knots == [-0.25, -0.25, 1.25, 1.25]
+            if curve.degree() == 1
+                && curve.knots() == [-0.25, -0.25, 1.25, 1.25]
     ));
 }
 
@@ -1003,7 +1003,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
             .find(|curve| curve.id == profiles[0].curve)
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-            if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
     ));
 }
 

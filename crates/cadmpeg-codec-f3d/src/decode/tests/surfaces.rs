@@ -123,16 +123,16 @@ fn nurbs_surface_block_decodes_to_carrier() {
     }
 
     let s = decode_surface_cache(&b).expect("surface block decodes");
-    assert_eq!((s.u_degree, s.v_degree), (1, 1));
-    assert_eq!((s.u_count, s.v_count), (2, 2));
-    assert_eq!(s.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(s.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(s.control_points.len(), 4);
-    assert!(s.weights.is_none());
+    assert_eq!((s.u_degree(), s.v_degree()), (1, 1));
+    assert_eq!((s.u_count(), s.v_count()), (2, 2));
+    assert_eq!(s.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(s.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(s.control_points().len(), 4);
+    assert!(s.weights().is_none());
     // Transposed to u-major: index u*v_count+v. Pole (u1,v0) sits at index 2,
     // and coordinates are cm→mm scaled (×10).
-    assert_eq!(s.control_points[2].x, 10.0);
-    assert_eq!(s.control_points[2].y, 0.0);
+    assert_eq!(s.control_points()[2].x, 10.0);
+    assert_eq!(s.control_points()[2].y, 0.0);
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                     .find(|curve| curve.id == *profile)
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
     }
@@ -476,9 +476,9 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
                 .find(|curve| curve.id == *directrix)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [0.0, 0.0, 1.0, 1.0]
-                    && curve.control_points == [
+            if curve.degree() == 1
+                && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
                         cadmpeg_ir::math::Point3::new(7.0, 1.0, 5.0),
                     ]
@@ -583,7 +583,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
     let Some(SurfaceGeometry::Nurbs(solved)) = solved.geometry.solved_cache() else {
         panic!("expected solved NURBS surface")
     };
-    assert!(solved.weights.is_none());
+    assert!(solved.weights().is_none());
     let rational_component = result
         .ir()
         .model
@@ -593,7 +593,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .expect("compound rational component");
     assert!(matches!(
         rational_component.geometry,
-        SurfaceGeometry::Nurbs(ref surface) if surface.weights.is_some()
+                SurfaceGeometry::Nurbs(ref surface) if surface.weights().is_some()
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -709,9 +709,9 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
                 .find(|curve| curve.id == *reference)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [0.0, 0.0, 1.0, 1.0]
-                    && curve.control_points == [
+            if curve.degree() == 1
+                && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                         cadmpeg_ir::math::Point3::new(5.0, 1.0, 5.0),
                     ]
@@ -840,9 +840,9 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 .find(|curve| curve.id == profile.id)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [-1.0, -1.0, 2.0, 2.0]
-                    && curve.control_points == [
+            if curve.degree() == 1
+                && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
+                && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(2.0, -4.0, 3.0),
                         cadmpeg_ir::math::Point3::new(8.0, 5.0, 0.0),
                     ]

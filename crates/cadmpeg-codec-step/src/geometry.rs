@@ -41,43 +41,16 @@ pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
 }
 
 fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
-    let Some(u_count) = usize::try_from(n.u_count).ok() else {
-        return false;
-    };
-    let Some(v_count) = usize::try_from(n.v_count).ok() else {
-        return false;
-    };
-    let Some(pole_count) = u_count.checked_mul(v_count) else {
-        return false;
-    };
-    let Some(u_knot_count) = u_count
-        .checked_add(n.u_degree as usize)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return false;
-    };
-    let Some(v_knot_count) = v_count
-        .checked_add(n.v_degree as usize)
-        .and_then(|count| count.checked_add(1))
-    else {
-        return false;
-    };
-    n.u_count > n.u_degree
-        && n.v_count > n.v_degree
-        && n.control_points.len() == pole_count
-        && n.control_points
-            .iter()
-            .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
-        && n.weights.as_deref().is_none_or(|weights| {
-            weights.len() == pole_count
-                && weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0)
+    n.control_points()
+        .iter()
+        .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        && n.weights().is_none_or(|weights| {
+            weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight > 0.0)
         })
-        && n.u_knots.len() == u_knot_count
-        && n.v_knots.len() == v_knot_count
-        && knots_nondecreasing(&n.u_knots)
-        && knots_nondecreasing(&n.v_knots)
+        && knots_nondecreasing(n.u_knots())
+        && knots_nondecreasing(n.v_knots())
 }
 
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
@@ -261,29 +234,25 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
                 ),
             )
         }
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => {
-            let points = control_points
+        PcurveGeometry::Nurbs { nurbs } => {
+            let points = nurbs
+                .control_points()
                 .iter()
                 .map(|point| point2(e, *point))
                 .collect::<Vec<_>>();
-            let (knots, multiplicities) = compress_knots(knots);
+            let (knots, multiplicities) = compress_knots(nurbs.knots());
             let base = format!(
-                "{degree},{},.UNSPECIFIED.,{},.U.",
+                "{},{},.UNSPECIFIED.,{},.U.",
+                nurbs.degree(),
                 refs(&points),
-                closed_flag(*periodic)
+                closed_flag(nurbs.periodic())
             );
             let with_knots = format!(
                 "{},{},.UNSPECIFIED.",
                 int_list(&multiplicities),
                 real_list(&knots)
             );
-            if let Some(weights) = weights {
+            if let Some(weights) = nurbs.weights() {
                 e.emit_raw(
                     "B_SPLINE_CURVE_WITH_KNOTS",
                     &format!(
@@ -615,16 +584,16 @@ fn closed_flag(periodic: bool) -> &'static str {
 }
 
 fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
-    let pts: Vec<Ref> = n.control_points.iter().map(|p| point(e, *p)).collect();
-    let (knots, mults) = compress_knots(&n.knots);
+    let pts: Vec<Ref> = n.control_points().iter().map(|p| point(e, *p)).collect();
+    let (knots, mults) = compress_knots(n.knots());
     let ctrl = refs(&pts);
     let base = format!(
         "{},{ctrl},.UNSPECIFIED.,{},.U.",
-        n.degree,
-        closed_flag(n.periodic)
+        n.degree(),
+        closed_flag(n.periodic())
     );
     let with_knots = format!("{},{},.UNSPECIFIED.", int_list(&mults), real_list(&knots));
-    match &n.weights {
+    match n.weights() {
         None => e.emit(
             "B_SPLINE_CURVE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),
@@ -649,28 +618,28 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     }
     // IR control points are u-major: index i*v_count + j is pole (i, j). STEP's
     // control_points_list is LIST(u) OF LIST(v), so the outer list runs over u.
-    let u_count = n.u_count as usize;
-    let v_count = n.v_count as usize;
+    let u_count = n.u_count() as usize;
+    let v_count = n.v_count() as usize;
     let mut rows: Vec<String> = Vec::with_capacity(u_count);
     for i in 0..u_count {
         let mut row: Vec<Ref> = Vec::with_capacity(v_count);
         for j in 0..v_count {
             let idx = i * v_count + j;
-            let p = n.control_points[idx];
+            let p = n.control_points()[idx];
             row.push(point(e, p));
         }
         rows.push(refs(&row));
     }
     let grid = format!("({})", rows.join(","));
 
-    let (u_knots, u_mults) = compress_knots(&n.u_knots);
-    let (v_knots, v_mults) = compress_knots(&n.v_knots);
+    let (u_knots, u_mults) = compress_knots(n.u_knots());
+    let (v_knots, v_mults) = compress_knots(n.v_knots());
     let base = format!(
         "{},{},{grid},.UNSPECIFIED.,{},{},.U.",
-        n.u_degree,
-        n.v_degree,
-        closed_flag(n.u_periodic),
-        closed_flag(n.v_periodic)
+        n.u_degree(),
+        n.v_degree(),
+        closed_flag(n.u_periodic()),
+        closed_flag(n.v_periodic())
     );
     let with_knots = format!(
         "{},{},{},{},.UNSPECIFIED.",
@@ -679,7 +648,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
         real_list(&u_knots),
         real_list(&v_knots)
     );
-    Some(match &n.weights {
+    Some(match n.weights() {
         None => e.emit(
             "B_SPLINE_SURFACE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),

@@ -86,7 +86,7 @@ pub fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [b
 }
 
 pub fn nurbs_control_extent(nurbs: &NurbsCurve) -> Option<f64> {
-    let bounds = nurbs.control_points.iter().try_fold(
+    let bounds = nurbs.control_points().iter().try_fold(
         [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
         |mut bounds, point| {
             for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
@@ -105,21 +105,14 @@ pub fn nurbs_control_extent(nurbs: &NurbsCurve) -> Option<f64> {
 }
 
 pub fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
-    let degree = usize::try_from(nurbs.degree).ok()?;
-    (degree > 0
-        && nurbs.control_points.len() > degree
-        && nurbs.knots.len() == nurbs.control_points.len().checked_add(degree + 1)?
-        && nurbs_control_extent(nurbs).is_some()
-        && nurbs.knots.iter().all(|knot| knot.is_finite())
-        && nurbs.knots.windows(2).all(|pair| pair[0] <= pair[1])
-        && nurbs
-            .weights
-            .as_ref()
-            .is_none_or(|weights| weights.len() == nurbs.control_points.len()))
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    (nurbs_control_extent(nurbs).is_some()
+        && nurbs.knots().iter().all(|knot| knot.is_finite())
+        && nurbs.knots().windows(2).all(|pair| pair[0] <= pair[1]))
     .then_some(())?;
     let range = [
-        *nurbs.knots.get(degree)?,
-        *nurbs.knots.get(nurbs.control_points.len())?,
+        *nurbs.knots().get(degree)?,
+        *nurbs.knots().get(nurbs.control_points().len())?,
     ];
     (range[0] < range[1]).then_some(range)
 }
@@ -128,7 +121,7 @@ pub fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Option<[[f
     let CurveGeometry::Nurbs(nurbs) = geometry else {
         return None;
     };
-    (!nurbs.periodic).then_some(())?;
+    (!nurbs.periodic()).then_some(())?;
     valid_positive_nurbs_curve(nurbs)?;
     let range = nurbs_intrinsic_parameter_range(nurbs)?;
     let points = range.map(|parameter| {
@@ -151,16 +144,15 @@ pub fn nonperiodic_nurbs_edge_parameter_range(
     let CurveGeometry::Nurbs(nurbs) = geometry else {
         return None;
     };
-    if nurbs.periodic {
+    if nurbs.periodic() {
         return None;
     }
-    let degree = usize::try_from(nurbs.degree).ok()?;
+    let degree = usize::try_from(nurbs.degree()).ok()?;
     let range = nurbs_intrinsic_parameter_range(nurbs)?;
 
     if degree == 1 {
         nurbs
-            .weights
-            .as_ref()
+            .weights()
             .is_none_or(|weights| {
                 weights
                     .iter()
@@ -206,7 +198,7 @@ pub fn orient_nonperiodic_nurbs_edge_carrier(
     let CurveGeometry::Nurbs(nurbs) = &*geometry else {
         return None;
     };
-    let degree = usize::try_from(nurbs.degree).ok()?;
+    let degree = usize::try_from(nurbs.degree()).ok()?;
     let intrinsic_range = nurbs_intrinsic_parameter_range(nurbs)?;
     if degree == 1 {
         let (first, second) = {
@@ -263,11 +255,17 @@ pub fn orient_nonperiodic_nurbs_edge_carrier(
 
 fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) {
     let sum = range[0] + range[1];
-    nurbs.control_points.reverse();
-    if let Some(weights) = &mut nurbs.weights {
+    nurbs.control_points_mut().reverse();
+    if let Some(weights) = nurbs.weights_mut() {
         weights.reverse();
     }
-    nurbs.knots = nurbs.knots.iter().rev().map(|knot| sum - knot).collect();
+    let knots = nurbs
+        .knots()
+        .iter()
+        .rev()
+        .map(|knot| sum - knot)
+        .collect::<Vec<_>>();
+    nurbs.knots_mut().copy_from_slice(&knots);
 }
 
 pub fn full_periodic_nurbs_edge_parameter_range(
@@ -277,10 +275,9 @@ pub fn full_periodic_nurbs_edge_parameter_range(
     let CurveGeometry::Nurbs(nurbs) = geometry else {
         return None;
     };
-    nurbs.periodic.then_some(())?;
+    nurbs.periodic().then_some(())?;
     nurbs
-        .weights
-        .as_ref()
+        .weights()
         .is_none_or(|weights| {
             weights
                 .iter()
@@ -313,14 +310,14 @@ pub fn degree_one_nurbs_point_parameter(
 ) -> Option<f64> {
     let parameter_tolerance = EPS_AGREE * (range[1] - range[0]).max(1.0);
     let mut candidates = Vec::<f64>::new();
-    for span in 1..nurbs.control_points.len() {
-        let lower = nurbs.knots[span];
-        let upper = nurbs.knots[span + 1];
+    for span in 1..nurbs.control_points().len() {
+        let lower = nurbs.knots()[span];
+        let upper = nurbs.knots()[span + 1];
         if !lower.is_finite() || !upper.is_finite() || upper <= lower {
             continue;
         }
-        let first = nurbs.control_points[span - 1];
-        let second = nurbs.control_points[span];
+        let first = nurbs.control_points()[span - 1];
+        let second = nurbs.control_points()[span];
         let delta = [second.x - first.x, second.y - first.y, second.z - first.z];
         let denominator = dot(delta, delta);
         if !denominator.is_finite() {
@@ -347,11 +344,8 @@ pub fn degree_one_nurbs_point_parameter(
         if dot(mismatch, mismatch).sqrt() > tolerance {
             continue;
         }
-        let first_weight = nurbs
-            .weights
-            .as_ref()
-            .map_or(1.0, |weights| weights[span - 1]);
-        let second_weight = nurbs.weights.as_ref().map_or(1.0, |weights| weights[span]);
+        let first_weight = nurbs.weights().map_or(1.0, |weights| weights[span - 1]);
+        let second_weight = nurbs.weights().map_or(1.0, |weights| weights[span]);
         let rational_denominator = second_weight * (1.0 - fraction) + fraction * first_weight;
         if rational_denominator <= 0.0 || !rational_denominator.is_finite() {
             continue;

@@ -1576,13 +1576,13 @@ fn patch_nurbs_surface_record(
                 record.index
             ))
         })?;
-    let u_count = usize::try_from(surface.u_count)
+    let u_count = usize::try_from(surface.u_count())
         .map_err(|_| CodecError::Malformed("NURBS u pole count exceeds address space".into()))?;
-    let v_count = usize::try_from(surface.v_count)
+    let v_count = usize::try_from(surface.v_count())
         .map_err(|_| CodecError::Malformed("NURBS v pole count exceeds address space".into()))?;
     if layout.u_count != u_count
         || layout.v_count != v_count
-        || layout.rational != surface.weights.is_some()
+        || layout.rational != surface.weights().is_some()
     {
         return Err(CodecError::NotImplemented(format!(
             "spline record {} changed NURBS cache structure",
@@ -1593,20 +1593,20 @@ fn patch_nurbs_surface_record(
         bytes,
         record.offset,
         &layout.u_knots,
-        &surface.u_knots,
+        surface.u_knots(),
         layout.int_width,
     )?;
     AsmEditSet::patch_knot_structure(
         bytes,
         record.offset,
         &layout.v_knots,
-        &surface.v_knots,
+        surface.v_knots(),
         layout.int_width,
     )?;
     for (offset, degree) in layout
         .degree_value_offsets
         .into_iter()
-        .zip([surface.u_degree, surface.v_degree])
+        .zip([surface.u_degree(), surface.v_degree()])
     {
         let at = record.offset + offset;
         AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, i64::from(degree))?;
@@ -1625,12 +1625,12 @@ fn patch_nurbs_surface_record(
             record.index
         )));
     }
-    let weights = surface.weights.as_deref();
+    let weights = surface.weights();
     let mut ordinal = 0usize;
     for v in 0..v_count {
         for u in 0..u_count {
             let ir_index = u * v_count + v;
-            let point = surface.control_points[ir_index];
+            let point = surface.control_points()[ir_index];
             let values = [
                 point.x / LEN_TO_MM,
                 point.y / LEN_TO_MM,
@@ -1667,8 +1667,8 @@ fn patch_nurbs_curve_record(
             record.index
         ))
     })?;
-    if layout.control_count != curve.control_points.len()
-        || layout.rational != curve.weights.is_some()
+    if layout.control_count != curve.control_points().len()
+        || layout.rational != curve.weights().is_some()
     {
         return Err(CodecError::NotImplemented(format!(
             "spline record {} changed NURBS curve structure",
@@ -1679,26 +1679,31 @@ fn patch_nurbs_curve_record(
         bytes,
         record.offset,
         &layout.knots,
-        &curve.knots,
+        curve.knots(),
         layout.int_width,
     )?;
     let degree_at = record.offset + layout.degree_value_offset;
-    AsmEditSet::patch_layout_integer(bytes, degree_at, layout.int_width, i64::from(curve.degree))?;
+    AsmEditSet::patch_layout_integer(
+        bytes,
+        degree_at,
+        layout.int_width,
+        i64::from(curve.degree()),
+    )?;
     if let Some(periodic) = edit.periodic {
         let periodic = if periodic { 2i64 } else { 0i64 };
         let periodic_at = record.offset + layout.periodic_value_offset;
         AsmEditSet::patch_layout_integer(bytes, periodic_at, layout.int_width, periodic)?;
     }
     let components = if layout.rational { 4 } else { 3 };
-    if layout.control_value_offsets.len() != curve.control_points.len() * components {
+    if layout.control_value_offsets.len() != curve.control_points().len() * components {
         return Err(CodecError::malformed(format_args!(
             "spline record {} has an inconsistent NURBS curve layout",
             record.index
         )));
     }
-    let weights = curve.weights.as_deref();
+    let weights = curve.weights();
     let mut ordinal = 0usize;
-    for (index, point) in curve.control_points.iter().enumerate() {
+    for (index, point) in curve.control_points().iter().enumerate() {
         let values = [
             point.x / LEN_TO_MM,
             point.y / LEN_TO_MM,
@@ -1720,13 +1725,7 @@ fn patch_nurbs_pcurve_record(
     edit: &NurbsPcurveEdit<'_>,
 ) -> Result<(), CodecError> {
     let geometry = edit.native_geometry;
-    let PcurveGeometry::Nurbs {
-        degree,
-        control_points,
-        weights,
-        ..
-    } = geometry
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = geometry else {
         return Err(CodecError::NotImplemented(format!(
             "pcurve record {} is not a writable NURBS cache",
             record.index
@@ -1762,21 +1761,24 @@ fn patch_nurbs_pcurve_record(
             record.index
         ))
     })?;
-    if layout.control_count != control_points.len()
-        || layout.control_value_offsets.len() != control_points.len() * 2
-        || layout.weight_value_offsets.len() != weights.as_ref().map_or(0, Vec::len)
+    if layout.control_count != nurbs.control_points().len()
+        || layout.control_value_offsets.len() != nurbs.control_points().len() * 2
+        || layout.weight_value_offsets.len() != nurbs.weights().map_or(0, <[f64]>::len)
     {
         return Err(CodecError::NotImplemented(format!(
             "pcurve record {} changed UV cache structure",
             record.index
         )));
     }
-    let PcurveGeometry::Nurbs { knots, .. } = geometry else {
-        unreachable!()
-    };
-    AsmEditSet::patch_knot_structure(bytes, scope.start, &layout.knots, knots, layout.int_width)?;
+    AsmEditSet::patch_knot_structure(
+        bytes,
+        scope.start,
+        &layout.knots,
+        nurbs.knots(),
+        layout.int_width,
+    )?;
     let at = scope.start + layout.degree_value_offset;
-    AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, i64::from(*degree))?;
+    AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, i64::from(nurbs.degree()))?;
     if let Some(periodic) = edit.periodic {
         let value = if periodic { 2i64 } else { 0i64 };
         let at = scope.start + layout.periodic_value_offset;
@@ -1864,7 +1866,8 @@ fn patch_nurbs_pcurve_record(
         let at = scope.start + layout.control_end + 1;
         AsmEditSet::patch_f64_payload(bytes, at, tolerance)?;
     }
-    for (point, offsets) in control_points
+    for (point, offsets) in nurbs
+        .control_points()
         .iter()
         .zip(layout.control_value_offsets.chunks_exact(2))
     {
@@ -1873,7 +1876,7 @@ fn patch_nurbs_pcurve_record(
             AsmEditSet::patch_f64_payload(bytes, at, value)?;
         }
     }
-    if let Some(weights) = weights {
+    if let Some(weights) = nurbs.weights() {
         for (weight, offset) in weights.iter().zip(&layout.weight_value_offsets) {
             let at = scope.start + offset;
             AsmEditSet::patch_f64_payload(bytes, at, *weight)?;

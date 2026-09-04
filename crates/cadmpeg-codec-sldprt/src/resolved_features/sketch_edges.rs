@@ -196,15 +196,15 @@ pub(super) fn project_edge(
             })
         }
         Some(CurveGeometry::Nurbs(nurbs)) => Some(SketchGeometry::Nurbs {
-            degree: nurbs.degree,
-            knots: nurbs.knots.clone(),
+            degree: nurbs.degree(),
+            knots: nurbs.knots().to_vec(),
             control_points: nurbs
-                .control_points
+                .control_points()
                 .iter()
                 .map(|point| project_point(*point, origin, u_axis, v_axis))
                 .collect(),
-            weights: nurbs.weights.clone(),
-            periodic: nurbs.periodic,
+            weights: nurbs.weights().map(<[f64]>::to_vec),
+            periodic: nurbs.periodic(),
         }),
         None if edge.start == edge.end => Some(SketchGeometry::Point { position: start }),
         Some(CurveGeometry::Line { .. }) | None => line(),

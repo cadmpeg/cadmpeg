@@ -7,7 +7,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, PcurveGeometry,
+    BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, PcurveGeometry, PcurveNurbs,
     ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -180,28 +180,31 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: support.clone(),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree: 3,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 4,
-            v_count: 2,
-            control_points: vec![
-                Point3::new(-3.0, 0.0, 0.0),
-                Point3::new(-3.0, 0.0, 1.0),
-                Point3::new(3.0, 2.0, 0.0),
-                Point3::new(3.0, 2.0, 1.0),
-                Point3::new(-3.0, 4.0, 0.0),
-                Point3::new(-3.0, 4.0, 1.0),
-                Point3::new(3.0, 6.0, 0.0),
-                Point3::new(3.0, 6.0, 1.0),
-            ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }),
+        geometry: SurfaceGeometry::Nurbs(
+            NurbsSurface::new(
+                3,
+                1,
+                vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                4,
+                2,
+                vec![
+                    Point3::new(-3.0, 0.0, 0.0),
+                    Point3::new(-3.0, 0.0, 1.0),
+                    Point3::new(3.0, 2.0, 0.0),
+                    Point3::new(3.0, 2.0, 1.0),
+                    Point3::new(-3.0, 4.0, 0.0),
+                    Point3::new(-3.0, 4.0, 1.0),
+                    Point3::new(3.0, 6.0, 0.0),
+                    Point3::new(3.0, 6.0, 1.0),
+                ],
+                None,
+                false,
+                false,
+                false,
+            )
+            .expect("valid wavy support"),
+        ),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -977,8 +980,8 @@ fn decode_emits_ext11_deltas_intersection_chart() {
     let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
         panic!("NURBS chart cache");
     };
-    assert_eq!(nurbs.control_points[1].x, 10.0);
-    assert_eq!(nurbs.knots, vec![2.0, 2.0, 5.0, 5.0]);
+    assert_eq!(nurbs.control_points()[1].x, 10.0);
+    assert_eq!(nurbs.knots(), [2.0, 2.0, 5.0, 5.0]);
 }
 
 #[test]
@@ -994,18 +997,19 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
     else {
         panic!("typed intersection");
     };
-    let [Some(PcurveGeometry::Nurbs {
-        control_points: first,
-        ..
-    }), Some(PcurveGeometry::Nurbs {
-        control_points: second,
-        ..
-    })] = context.sides.clone().map(|side| side.pcurve)
+    let [Some(PcurveGeometry::Nurbs { nurbs: first }), Some(PcurveGeometry::Nurbs { nurbs: second })] =
+        context.sides.clone().map(|side| side.pcurve)
     else {
         panic!("two ext11 pcurves");
     };
-    assert_eq!(first, [Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]);
-    assert_eq!(second, [Point2::new(0.0, 0.0), Point2::new(0.0, 10.0)]);
+    assert_eq!(
+        first.control_points(),
+        [Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]
+    );
+    assert_eq!(
+        second.control_points(),
+        [Point2::new(0.0, 0.0), Point2::new(0.0, 10.0)]
+    );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -1132,11 +1136,14 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
                             surface: Some(surface),
                             pcurve_parameter_range: None,
                             pcurve: Some(PcurveGeometry::Nurbs {
-                                degree: 1,
-                                knots: vec![0.0, 0.0, 1.0, 1.0],
-                                control_points: vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
-                                weights: None,
-                                periodic: false,
+                                nurbs: PcurveNurbs::new(
+                                    1,
+                                    vec![0.0, 0.0, 1.0, 1.0],
+                                    vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
+                                    None,
+                                    false,
+                                )
+                                .expect("valid support pcurve"),
                             }),
                         },
                         cadmpeg_ir::geometry::IntcurveSupportSide {
@@ -1209,13 +1216,16 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: curve_id.clone(),
-        geometry: CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![first, last],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![first, last],
+                None,
+                false,
+            )
+            .expect("valid clamped witness curve"),
+        ),
         source_object: None,
     });
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
@@ -1225,13 +1235,16 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
         Some([first, last])
     );
 
-    ir.model.curves[0].geometry = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.5, 1.0, 1.0],
-        control_points: vec![first, last],
-        weights: None,
-        periodic: false,
-    });
+    ir.model.curves[0].geometry = CurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::NurbsCurve::new(
+            1,
+            vec![0.0, 0.5, 1.0, 1.0],
+            vec![first, last],
+            None,
+            false,
+        )
+        .expect("cardinality-valid unclamped witness curve"),
+    );
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     assert!(
         crate::decode::pcurves::linear_nurbs_curve_endpoint_witness_with_index(&index, &curve_id)
@@ -1344,24 +1357,27 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            u_count: 2,
-            v_count: 2,
-            control_points: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(0.0, 10.0, 0.0),
-                Point3::new(10.0, 0.0, 0.0),
-                Point3::new(10.0, 10.0, 0.0),
-            ],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }),
+        geometry: SurfaceGeometry::Nurbs(
+            NurbsSurface::new(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                2,
+                2,
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(0.0, 10.0, 0.0),
+                    Point3::new(10.0, 0.0, 0.0),
+                    Point3::new(10.0, 10.0, 0.0),
+                ],
+                None,
+                false,
+                false,
+                false,
+            )
+            .expect("valid serialized-seed surface"),
+        ),
         source_object: None,
     });
     ir.model.curves.push(Curve {
@@ -1444,11 +1460,10 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     else {
         panic!("intersection");
     };
-    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_ref()
-    else {
+    let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_ref() else {
         panic!("serialized seed completed the NURBS lane");
     };
-    assert_eq!(control_points, &parameters);
+    assert_eq!(nurbs.control_points(), parameters);
 }
 
 #[test]
@@ -1854,12 +1869,10 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 panic!("typed intersection");
             };
-            let Some(PcurveGeometry::Nurbs { control_points, .. }) =
-                context.sides[0].pcurve.as_mut()
-            else {
+            let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_mut() else {
                 panic!("NURBS support lane");
             };
-            control_points[1] = Point2::new(
+            nurbs.control_points_mut()[1] = Point2::new(
                 crate::decode::MISSING_TOLERANCE,
                 crate::decode::MISSING_TOLERANCE,
             );
@@ -1883,11 +1896,10 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     else {
         panic!("typed intersection");
     };
-    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[0].pcurve.as_ref()
-    else {
+    let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_ref() else {
         panic!("NURBS support lane");
     };
-    assert!(control_points.iter().all(|point| {
+    assert!(nurbs.control_points().iter().all(|point| {
         point.u.to_bits() != crate::decode::MISSING_TOLERANCE.to_bits()
             && point.v.to_bits() != crate::decode::MISSING_TOLERANCE.to_bits()
     }));
@@ -1909,12 +1921,10 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 panic!("typed intersection");
             };
-            let Some(PcurveGeometry::Nurbs { control_points, .. }) =
-                context.sides[0].pcurve.as_mut()
-            else {
+            let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_mut() else {
                 panic!("NURBS support lane");
             };
-            for point in control_points {
+            for point in nurbs.control_points_mut() {
                 point.u += 100.0;
             }
         });

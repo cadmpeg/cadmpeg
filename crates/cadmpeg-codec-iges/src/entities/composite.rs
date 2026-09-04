@@ -359,24 +359,16 @@ fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
 }
 
 fn homogeneous_control_points(curve: &NurbsCurve) -> Option<Vec<[f64; 4]>> {
-    let control_count = curve.control_points.len();
-    if curve
-        .weights
-        .as_ref()
-        .is_some_and(|weights| weights.len() != control_count)
-    {
-        return None;
-    }
+    let control_count = curve.control_points().len();
     let mut homogeneous = alloc_filled(
         control_count,
         [0.0; 4],
         "iges composite homogeneous control points",
     )
     .ok()?;
-    for (index, point) in curve.control_points.iter().enumerate() {
+    for (index, point) in curve.control_points().iter().enumerate() {
         let weight = curve
-            .weights
-            .as_ref()
+            .weights()
             .map_or(Some(1.0), |weights| weights.get(index).copied())?;
         let homogeneous_point = [weight, weight * point.x, weight * point.y, weight * point.z];
         if !homogeneous_point_is_valid(&homogeneous_point) {
@@ -459,27 +451,17 @@ struct ConcatenatedNurbs {
 }
 
 fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [f64; 2])> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let control_count = curve.control_points.len();
-    let expected_knot_count = control_count.checked_add(degree)?.checked_add(1)?;
-    if control_count == 0
-        || degree >= control_count
-        || curve.knots.len() != expected_knot_count
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != control_count)
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
-    {
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let control_count = curve.control_points().len();
+    if curve.knots().iter().any(|knot| !knot.is_finite()) || !knots_nondecreasing(curve.knots()) {
         return None;
     }
     let [start, end] = interval;
     if !start.is_finite() || !end.is_finite() || start > end {
         return None;
     }
-    let domain_start = curve.knots[degree];
-    let domain_end = curve.knots[control_count];
+    let domain_start = curve.knots()[degree];
+    let domain_end = curve.knots()[control_count];
     if !domain_start.is_finite()
         || !domain_end.is_finite()
         || domain_start >= domain_end
@@ -498,7 +480,7 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
         return None;
     }
     let knots = curve
-        .knots
+        .knots()
         .iter()
         .rev()
         .map(|knot| sum - knot)
@@ -506,18 +488,17 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
     if knots.iter().any(|knot| !knot.is_finite()) {
         return None;
     }
-    Some((
-        NurbsCurve {
-            degree: curve.degree,
-            knots,
-            control_points: curve.control_points.into_iter().rev().collect(),
-            weights: curve
-                .weights
-                .map(|weights| weights.into_iter().rev().collect()),
-            periodic: curve.periodic,
-        },
-        reversed_range,
-    ))
+    let reversed = NurbsCurve::new(
+        curve.degree(),
+        knots,
+        curve.control_points().iter().rev().copied().collect(),
+        curve
+            .weights()
+            .map(|weights| weights.iter().rev().copied().collect()),
+        curve.periodic(),
+    )
+    .ok()?;
+    Some((reversed, reversed_range))
 }
 
 fn insert_homogeneous_knot(
@@ -592,18 +573,11 @@ fn insert_homogeneous_knot(
 }
 
 fn trim_nurbs_to_interval(curve: &NurbsCurve, interval: [f64; 2]) -> Option<NurbsCurve> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let control_count = curve.control_points.len();
-    let expected_knot_count = control_count.checked_add(degree)?.checked_add(1)?;
-    if curve.periodic
-        || control_count == 0
-        || curve.knots.len() != expected_knot_count
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != control_count)
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let control_count = curve.control_points().len();
+    if curve.periodic()
+        || curve.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(curve.knots())
     {
         return None;
     }
@@ -611,8 +585,8 @@ fn trim_nurbs_to_interval(curve: &NurbsCurve, interval: [f64; 2]) -> Option<Nurb
     if !start.is_finite() || !end.is_finite() || start >= end {
         return None;
     }
-    let domain_start = *curve.knots.get(degree)?;
-    let domain_end = *curve.knots.get(control_count)?;
+    let domain_start = *curve.knots().get(degree)?;
+    let domain_end = *curve.knots().get(control_count)?;
     if !domain_start.is_finite()
         || !domain_end.is_finite()
         || domain_start >= domain_end
@@ -622,7 +596,7 @@ fn trim_nurbs_to_interval(curve: &NurbsCurve, interval: [f64; 2]) -> Option<Nurb
         return None;
     }
     let mut homogeneous = homogeneous_control_points(curve)?;
-    let mut knots = curve.knots.clone();
+    let mut knots = curve.knots().to_vec();
     for value in [start, end] {
         let target_multiplicity = degree.checked_add(1)?;
         while knots.iter().filter(|knot| **knot == value).count() < target_multiplicity {
@@ -649,14 +623,15 @@ fn trim_nurbs_to_interval(curve: &NurbsCurve, interval: [f64; 2]) -> Option<Nurb
         return None;
     }
     let (control_points, weights) =
-        euclidean_control_points(trimmed_homogeneous, curve.weights.is_some())?;
-    Some(NurbsCurve {
-        degree: curve.degree,
-        knots: trimmed_knots,
+        euclidean_control_points(trimmed_homogeneous, curve.weights().is_some())?;
+    NurbsCurve::new(
+        curve.degree(),
+        trimmed_knots,
         control_points,
         weights,
-        periodic: false,
-    })
+        false,
+    )
+    .ok()
 }
 
 fn elevate_nurbs_to_degree(
@@ -665,7 +640,7 @@ fn elevate_nurbs_to_degree(
     target_degree: u32,
     join_tolerance: Option<f64>,
 ) -> bool {
-    let Ok(source_degree) = usize::try_from(curve.degree) else {
+    let Ok(source_degree) = usize::try_from(curve.degree()) else {
         return false;
     };
     let target_degree = match usize::try_from(target_degree) {
@@ -678,32 +653,19 @@ fn elevate_nurbs_to_degree(
     if target_degree == source_degree {
         return true;
     }
-    let control_count = curve.control_points.len();
-    let Some(expected_knot_count) = control_count
-        .checked_add(source_degree)
-        .and_then(|value| value.checked_add(1))
-    else {
-        return false;
-    };
-    if curve.periodic
-        || control_count <= source_degree
-        || curve.knots.len() != expected_knot_count
-        || curve.knots.first() != Some(&interval[0])
-        || curve.knots.last() != Some(&interval[1])
+    if curve.periodic()
+        || curve.knots().first() != Some(&interval[0])
+        || curve.knots().last() != Some(&interval[1])
         || !interval[0].is_finite()
         || !interval[1].is_finite()
         || interval[0] >= interval[1]
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != control_count)
+        || curve.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(curve.knots())
     {
         return false;
     }
     let boundary_multiplicity =
-        |value: f64| curve.knots.iter().filter(|knot| **knot == value).count();
+        |value: f64| curve.knots().iter().filter(|knot| **knot == value).count();
     if boundary_multiplicity(interval[0]) != source_degree + 1
         || boundary_multiplicity(interval[1]) != source_degree + 1
     {
@@ -715,7 +677,7 @@ fn elevate_nurbs_to_degree(
             .all(homogeneous_point_is_valid)
             .then_some(points)
     });
-    let mut knots = curve.knots.clone();
+    let mut knots = curve.knots().to_vec();
     let mut internal_values = Vec::new();
     for &knot in &knots {
         if knot > interval[0] && knot < interval[1] && internal_values.last().copied() != Some(knot)
@@ -759,7 +721,7 @@ fn elevate_nurbs_to_degree(
     {
         return false;
     }
-    let rational = curve.weights.is_some();
+    let rational = curve.weights().is_some();
     let mut pieces = Vec::new();
     for span in source_degree..=refined_count {
         let start = knots[span];
@@ -791,23 +753,25 @@ fn elevate_nurbs_to_degree(
             return false;
         };
         piece_knots.extend(end_knots);
-        let piece = NurbsCurve {
-            degree: target_degree as u32,
-            knots: piece_knots,
+        let Ok(piece) = NurbsCurve::new(
+            target_degree as u32,
+            piece_knots,
             control_points,
             weights,
-            periodic: false,
+            false,
+        ) else {
+            return false;
         };
         pieces.push((piece, [start, end]));
     }
     let Some(concatenated) = concatenate_nurbs(pieces, join_tolerance) else {
         return false;
     };
-    curve.degree = concatenated.nurbs.degree;
+    let elevated_degree = concatenated.nurbs.degree();
     let mut elevated_knots: Vec<f64> = concatenated
         .nurbs
-        .knots
-        .into_iter()
+        .knots()
+        .iter()
         .map(|knot| knot + interval[0])
         .collect();
     if let Some(first) = elevated_knots.first_mut() {
@@ -816,10 +780,16 @@ fn elevate_nurbs_to_degree(
     if let Some(last) = elevated_knots.last_mut() {
         *last = interval[1];
     }
-    curve.knots = elevated_knots;
-    curve.control_points = concatenated.nurbs.control_points;
-    curve.weights = concatenated.nurbs.weights;
-    curve.periodic = false;
+    let Ok(elevated) = NurbsCurve::new(
+        elevated_degree,
+        elevated_knots,
+        concatenated.nurbs.control_points().to_vec(),
+        concatenated.nurbs.weights().map(<[f64]>::to_vec),
+        false,
+    ) else {
+        return false;
+    };
+    *curve = elevated;
     true
 }
 
@@ -832,32 +802,24 @@ fn concatenate_nurbs(
     }
     let degree = children
         .iter()
-        .map(|(curve, _)| curve.degree)
+        .map(|(curve, _)| curve.degree())
         .max()
         .unwrap_or_default();
     for (curve, interval) in &mut children {
-        if curve.degree < degree
+        if curve.degree() < degree
             && !elevate_nurbs_to_degree(curve, *interval, degree, join_tolerance)
         {
             return None;
         }
     }
     if children.iter().any(|(curve, interval)| {
-        let Some(first) = curve.knots.first() else {
+        let Some(first) = curve.knots().first() else {
             return true;
         };
-        let Some(last) = curve.knots.last() else {
+        let Some(last) = curve.knots().last() else {
             return true;
         };
-        curve.degree != degree
-            || interval != &[*first, *last]
-            || interval[0] >= interval[1]
-            || curve.control_points.is_empty()
-            || curve.knots.len() != curve.control_points.len() + degree as usize + 1
-            || curve
-                .weights
-                .as_ref()
-                .is_some_and(|weights| weights.len() != curve.control_points.len())
+        curve.degree() != degree || interval != &[*first, *last] || interval[0] >= interval[1]
     }) {
         return None;
     }
@@ -872,14 +834,15 @@ fn concatenate_nurbs(
         let child_start = interval[0];
         let child_end = interval[1];
         let shifted_knots = curve
-            .knots
+            .knots()
             .iter()
             .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
-        let mut child_weights = match curve.weights {
-            Some(weights) => weights,
+        let child_control_points = curve.control_points().to_vec();
+        let mut child_weights = match curve.weights() {
+            Some(weights) => weights.to_vec(),
             None => alloc_filled(
-                curve.control_points.len(),
+                child_control_points.len(),
                 1.0,
                 "iges composite child weights",
             )
@@ -893,12 +856,12 @@ fn concatenate_nurbs(
         }
         if child_index == 0 {
             knots = shifted_knots;
-            control_points = curve.control_points;
+            control_points = child_control_points;
             weights = child_weights;
         } else {
             if !close_with_tolerance(
                 control_points[control_points.len() - 1],
-                curve.control_points[0],
+                child_control_points[0],
                 join_tolerance,
             ) {
                 return None;
@@ -912,12 +875,12 @@ fn concatenate_nurbs(
             }
             if degree_usize == 0 {
                 knots.extend_from_slice(&shifted_knots[1..]);
-                control_points.extend_from_slice(&curve.control_points);
+                control_points.extend_from_slice(&child_control_points);
                 weights.extend_from_slice(&child_weights);
             } else {
                 knots.pop();
                 knots.extend_from_slice(&shifted_knots[degree_usize + 1..]);
-                control_points.extend_from_slice(&curve.control_points[1..]);
+                control_points.extend_from_slice(&child_control_points[1..]);
                 weights.extend_from_slice(&child_weights[1..]);
             }
         }
@@ -928,31 +891,29 @@ fn concatenate_nurbs(
         }
         boundaries.push(cursor);
     }
-    if knots.len() != control_points.len() + degree_usize + 1 {
-        return None;
-    }
     let rational = weights
         .first()
         .is_some_and(|first| weights.iter().any(|weight| weight != first));
-    let nurbs = NurbsCurve {
+    let nurbs = NurbsCurve::new(
         degree,
         knots,
         control_points,
-        weights: rational.then_some(weights),
-        periodic: false,
-    };
+        rational.then_some(weights),
+        false,
+    )
+    .ok()?;
     cadmpeg_ir::eval::nurbs_curve_point(
         degree,
-        &nurbs.knots,
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
         0.0,
     )?;
     cadmpeg_ir::eval::nurbs_curve_point(
         degree,
-        &nurbs.knots,
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
         cursor,
     )?;
     Some(ConcatenatedNurbs {
@@ -1056,16 +1017,17 @@ fn bounded_nurbs_for_id(
     match &curve.geometry {
         CurveGeometry::Nurbs(nurbs) => Some((trim_nurbs_to_interval(nurbs, interval)?, interval)),
         CurveGeometry::Line { .. } => Some((
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
                     point_for_vertex(ir, &edge.start, index)?,
                     point_for_vertex(ir, &edge.end, index)?,
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .ok()?,
             [0.0, 1.0],
         )),
         CurveGeometry::Circle {
@@ -1237,17 +1199,17 @@ fn anchor_analytic_nurbs_endpoint_poles(
     let start = point_for_vertex(ir, &edge.start, index)?;
     let end = point_for_vertex(ir, &edge.end, index)?;
     let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree,
-        &nurbs.knots,
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
         interval[0],
     )?;
     let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree,
-        &nurbs.knots,
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
         interval[1],
     )?;
     if !close_with_tolerance(evaluated_start, start, Some(tolerance))
@@ -1255,8 +1217,8 @@ fn anchor_analytic_nurbs_endpoint_poles(
     {
         return None;
     }
-    *nurbs.control_points.first_mut()? = start;
-    *nurbs.control_points.last_mut()? = end;
+    *nurbs.control_points_mut().first_mut()? = start;
+    *nurbs.control_points_mut().last_mut()? = end;
     Some(())
 }
 
@@ -1650,7 +1612,7 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let degree = nurbs.degree;
+        let degree = nurbs.degree();
         let Some(cursor) = boundaries.last().copied() else {
             if let Some(edge) = project_degraded_composite(
                 ir,
@@ -1669,9 +1631,9 @@ fn project_with_type_130_policy(
         };
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             0.0,
         ) else {
             if let Some(edge) = project_degraded_composite(
@@ -1691,9 +1653,9 @@ fn project_with_type_130_policy(
         };
         let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
             degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             cursor,
         ) else {
             if let Some(edge) = project_degraded_composite(

@@ -1826,35 +1826,28 @@ fn curve_matches_pcurve(curve: &CurveGeometry, range: [f64; 2], pcurve: &Pcurve)
     let CurveGeometry::Nurbs(curve) = curve else {
         return false;
     };
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = &pcurve.geometry
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         return false;
     };
-    curve.degree == *degree
-        && curve.periodic == *periodic
-        && curve.knots.len() == knots.len()
+    curve.degree() == nurbs.degree()
+        && curve.periodic() == nurbs.periodic()
+        && curve.knots().len() == nurbs.knots().len()
         && curve
-            .knots
+            .knots()
             .iter()
-            .zip(knots)
+            .zip(nurbs.knots())
             .all(|(left, right)| same_float(*left, *right))
-        && curve.control_points.len() == control_points.len()
+        && curve.control_points().len() == nurbs.control_points().len()
         && curve
-            .control_points
+            .control_points()
             .iter()
-            .zip(control_points)
+            .zip(nurbs.control_points())
             .all(|(left, right)| {
                 same_float(left.x, right.u)
                     && same_float(left.y, right.v)
                     && same_float(left.z, 0.0)
             })
-        && match (&curve.weights, weights) {
+        && match (curve.weights(), nurbs.weights()) {
             (None, None) => true,
             (Some(left), Some(right)) if left.len() == right.len() => left
                 .iter()
@@ -3096,13 +3089,8 @@ fn oriented_curve_entity(
             points, parameters, ..
         } => {
             let values = polyline_parameters(points.len(), parameters.as_deref())?;
-            let original = NurbsCurve {
-                degree: 1,
-                knots: polyline_knots(&values),
-                control_points: points.clone(),
-                weights: None,
-                periodic: false,
-            };
+            let original = NurbsCurve::new(1, polyline_knots(&values), points.clone(), None, false)
+                .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             let (reversed, range) = reverse_nurbs(&original, span.range)?;
             let reversed_span = CurveSpan {
                 range,
@@ -3323,10 +3311,10 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
         return Ok(pcurve.clone());
     };
     let mut pcurve = pcurve.clone();
-    let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+    let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         return Ok(pcurve);
     };
-    for point in control_points {
+    for point in nurbs.control_points_mut() {
         point.u = point.u.mul_add(u_factor, u_offset);
         point.v = point.v.mul_add(v_factor, v_offset);
     }
@@ -3341,29 +3329,24 @@ fn oriented_pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecEr
             pcurve.id
         ))
     })?;
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = &pcurve.geometry
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         return Err(CodecError::NotImplemented(format!(
             "IGES semantic writer only encodes NURBS pcurves ({})",
             pcurve.id
         )));
     };
-    let nurbs = NurbsCurve {
-        degree: *degree,
-        knots: knots.clone(),
-        control_points: control_points
+    let nurbs = NurbsCurve::new(
+        nurbs.degree(),
+        nurbs.knots().to_vec(),
+        nurbs
+            .control_points()
             .iter()
             .map(|point| Point3::new(point.u, point.v, 0.0))
             .collect(),
-        weights: weights.clone(),
-        periodic: *periodic,
-    };
+        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.periodic(),
+    )
+    .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
     let (reversed, range) = reverse_nurbs(&nurbs, range)?;
     encode_nurbs(&reversed, range, "PCURVE")
 }
@@ -3379,8 +3362,8 @@ fn reverse_nurbs(
         || range[0] > range[1]
         || range[0] < domain[0]
         || range[1] > domain[1]
-        || nurbs.knots.iter().any(|value| !value.is_finite())
-        || !knots_nondecreasing(&nurbs.knots)
+        || nurbs.knots().iter().any(|value| !value.is_finite())
+        || !knots_nondecreasing(nurbs.knots())
     {
         return Err(CodecError::Malformed(
             "IGES reversed NURBS domain or parameter range is invalid".into(),
@@ -3393,7 +3376,7 @@ fn reverse_nurbs(
         ));
     }
     let knots = nurbs
-        .knots
+        .knots()
         .iter()
         .rev()
         .map(|knot| sum - knot)
@@ -3406,19 +3389,17 @@ fn reverse_nurbs(
             "IGES reversed NURBS knot vector or parameter range is non-finite".into(),
         ));
     }
-    Ok((
-        NurbsCurve {
-            degree: nurbs.degree,
-            knots,
-            control_points: nurbs.control_points.iter().rev().copied().collect(),
-            weights: nurbs
-                .weights
-                .as_ref()
-                .map(|weights| weights.iter().rev().copied().collect()),
-            periodic: nurbs.periodic,
-        },
-        reversed_range,
-    ))
+    let reversed = NurbsCurve::new(
+        nurbs.degree(),
+        knots,
+        nurbs.control_points().iter().rev().copied().collect(),
+        nurbs
+            .weights()
+            .map(|weights| weights.iter().rev().copied().collect()),
+        nurbs.periodic(),
+    )
+    .map_err(|error| CodecError::malformed(format_args!("reversed NURBS: {error}")))?;
+    Ok((reversed, reversed_range))
 }
 
 fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
@@ -3429,34 +3410,26 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
             pcurve.id
         ))
     })?;
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = &pcurve.geometry
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         return Err(CodecError::NotImplemented(format!(
             "IGES semantic writer only encodes NURBS pcurves ({})",
             pcurve.id
         )));
     };
-    let control_points = control_points
+    let control_points = nurbs
+        .control_points()
         .iter()
         .map(|point| Point3::new(point.u, point.v, 0.0))
         .collect();
-    encode_nurbs(
-        &NurbsCurve {
-            degree: *degree,
-            knots: knots.clone(),
-            control_points,
-            weights: weights.clone(),
-            periodic: *periodic,
-        },
-        range,
-        "PCURVE",
+    let curve = NurbsCurve::new(
+        nurbs.degree(),
+        nurbs.knots().to_vec(),
+        control_points,
+        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.periodic(),
     )
+    .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
+    encode_nurbs(&curve, range, "PCURVE")
 }
 
 fn reference_marker(index: usize) -> String {
@@ -4889,37 +4862,22 @@ fn surface_entities(
 }
 
 fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
-    let u_count = usize::try_from(nurbs.u_count)
+    let u_count = usize::try_from(nurbs.u_count())
         .map_err(|_| CodecError::Malformed("IGES surface u count overflows usize".into()))?;
-    let v_count = usize::try_from(nurbs.v_count)
+    let v_count = usize::try_from(nurbs.v_count())
         .map_err(|_| CodecError::Malformed("IGES surface v count overflows usize".into()))?;
-    let u_degree = usize::try_from(nurbs.u_degree)
+    let u_degree = usize::try_from(nurbs.u_degree())
         .map_err(|_| CodecError::Malformed("IGES surface u degree overflows usize".into()))?;
-    let v_degree = usize::try_from(nurbs.v_degree)
+    let v_degree = usize::try_from(nurbs.v_degree())
         .map_err(|_| CodecError::Malformed("IGES surface v degree overflows usize".into()))?;
     let pole_count = u_count.checked_mul(v_count).ok_or_else(|| {
         CodecError::Malformed("IGES surface control-point count overflows".into())
     })?;
-    let u_knot_count = u_count
-        .checked_add(u_degree)
-        .and_then(|count| count.checked_add(1))
-        .ok_or_else(|| CodecError::Malformed("IGES surface u knot count overflows".into()))?;
-    let v_knot_count = v_count
-        .checked_add(v_degree)
-        .and_then(|count| count.checked_add(1))
-        .ok_or_else(|| CodecError::Malformed("IGES surface v knot count overflows".into()))?;
-    if u_count == 0
-        || v_count == 0
-        || u_degree >= u_count
-        || v_degree >= v_count
-        || nurbs.control_points.len() != pole_count
-        || nurbs.u_knots.len() != u_knot_count
-        || nurbs.v_knots.len() != v_knot_count
-        || nurbs.u_knots.iter().any(|value| !value.is_finite())
-        || nurbs.v_knots.iter().any(|value| !value.is_finite())
-        || !knots_nondecreasing(&nurbs.u_knots)
-        || !knots_nondecreasing(&nurbs.v_knots)
-        || nurbs.control_points.iter().any(|point| {
+    if nurbs.u_knots().iter().any(|value| !value.is_finite())
+        || nurbs.v_knots().iter().any(|value| !value.is_finite())
+        || !knots_nondecreasing(nurbs.u_knots())
+        || !knots_nondecreasing(nurbs.v_knots())
+        || nurbs.control_points().iter().any(|point| {
             [point.x, point.y, point.z]
                 .iter()
                 .any(|value| !value.is_finite())
@@ -4929,8 +4887,8 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
             "IGES NURBS surface dimensions, knots, or poles are invalid".into(),
         ));
     }
-    let weights = match &nurbs.weights {
-        Some(weights) if weights.len() == pole_count => {
+    let weights = match nurbs.weights() {
+        Some(weights) => {
             if weights
                 .iter()
                 .any(|weight| !weight.is_finite() || *weight <= 0.0)
@@ -4939,41 +4897,36 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
                     "IGES NURBS surface weights must be finite and positive".into(),
                 ));
             }
-            weights.clone()
-        }
-        Some(_) => {
-            return Err(CodecError::Malformed(
-                "IGES NURBS surface weight count does not match poles".into(),
-            ));
+            weights.to_vec()
         }
         None => alloc_filled(pole_count, 1.0, "iges NURBS surface weights")?,
     };
-    let u_range = [nurbs.u_knots[u_degree], nurbs.u_knots[u_count]];
-    let v_range = [nurbs.v_knots[v_degree], nurbs.v_knots[v_count]];
+    let u_range = [nurbs.u_knots()[u_degree], nurbs.u_knots()[u_count]];
+    let v_range = [nurbs.v_knots()[v_degree], nurbs.v_knots()[v_count]];
     if u_range[0] >= u_range[1] || v_range[0] >= v_range[1] {
         return Err(CodecError::Malformed(
             "IGES NURBS surface has an empty parameter domain".into(),
         ));
     }
-    let closed_u = nurbs.u_periodic || nurbs_surface_closed_u(nurbs, u_range, v_range);
-    let closed_v = nurbs.v_periodic || nurbs_surface_closed_v(nurbs, u_range, v_range);
+    let closed_u = nurbs.u_periodic() || nurbs_surface_closed_u(nurbs, u_range, v_range);
+    let closed_v = nurbs.v_periodic() || nurbs_surface_closed_v(nurbs, u_range, v_range);
     let mut parameters = format!(
         "128,{},{},{},{},{},{},{},{},{}",
         u_count - 1,
         v_count - 1,
-        nurbs.u_degree,
-        nurbs.v_degree,
+        nurbs.u_degree(),
+        nurbs.v_degree(),
         i32::from(closed_u),
         i32::from(closed_v),
-        i32::from(nurbs.weights.is_none()),
-        i32::from(nurbs.u_periodic),
-        i32::from(nurbs.v_periodic)
+        i32::from(nurbs.weights().is_none()),
+        i32::from(nurbs.u_periodic()),
+        i32::from(nurbs.v_periodic())
     );
-    for value in &nurbs.u_knots {
+    for value in nurbs.u_knots() {
         parameters.push(',');
         parameters.push_str(&number(*value));
     }
-    for value in &nurbs.v_knots {
+    for value in nurbs.v_knots() {
         parameters.push(',');
         parameters.push_str(&number(*value));
     }
@@ -4985,7 +4938,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     }
     for v in 0..v_count {
         for u in 0..u_count {
-            let point = nurbs.control_points[u * v_count + v];
+            let point = nurbs.control_points()[u * v_count + v];
             for value in [point.x, point.y, point.z] {
                 parameters.push(',');
                 parameters.push_str(&number(value));
@@ -5773,13 +5726,8 @@ fn curve_entity(
             points, parameters, ..
         } => {
             let values = polyline_parameters(points.len(), parameters.as_deref())?;
-            let nurbs = NurbsCurve {
-                degree: 1,
-                knots: polyline_knots(&values),
-                control_points: points.clone(),
-                weights: None,
-                periodic: false,
-            };
+            let nurbs = NurbsCurve::new(1, polyline_knots(&values), points.clone(), None, false)
+                .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             encode_nurbs(&nurbs, range, "POLYLINE")
         }
         CurveGeometry::Degenerate { .. }
@@ -5797,29 +5745,26 @@ fn encode_nurbs(
     range: [f64; 2],
     label: &'static str,
 ) -> Result<Entity, CodecError> {
-    let control_count = nurbs.control_points.len();
-    let degree = usize::try_from(nurbs.degree)
+    let control_count = nurbs.control_points().len();
+    let degree = usize::try_from(nurbs.degree())
         .map_err(|_| CodecError::Malformed("IGES NURBS degree overflows usize".into()))?;
-    if control_count == 0
-        || degree >= control_count
-        || nurbs.knots.len() != control_count + degree + 1
-        || range[0] > range[1]
+    if range[0] > range[1]
         || range.iter().any(|value| !value.is_finite())
-        || nurbs.knots.iter().any(|value| !value.is_finite())
-        || !knots_nondecreasing(&nurbs.knots)
+        || nurbs.knots().iter().any(|value| !value.is_finite())
+        || !knots_nondecreasing(nurbs.knots())
     {
         return Err(CodecError::Malformed(
             "IGES NURBS degree, knot vector, or parameter range is invalid".into(),
         ));
     }
-    let domain = [nurbs.knots[degree], nurbs.knots[control_count]];
+    let domain = [nurbs.knots()[degree], nurbs.knots()[control_count]];
     if range[0] < domain[0] || range[1] > domain[1] {
         return Err(CodecError::Malformed(
             "IGES NURBS parameter range lies outside its knot domain".into(),
         ));
     }
     if nurbs
-        .control_points
+        .control_points()
         .iter()
         .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
     {
@@ -5827,8 +5772,8 @@ fn encode_nurbs(
             "IGES NURBS control point is non-finite".into(),
         ));
     }
-    let weights = match &nurbs.weights {
-        Some(weights) if weights.len() == control_count => {
+    let weights = match nurbs.weights() {
+        Some(weights) => {
             if weights
                 .iter()
                 .any(|weight| !weight.is_finite() || *weight <= 0.0)
@@ -5837,31 +5782,26 @@ fn encode_nurbs(
                     "IGES NURBS weights must be finite and positive".into(),
                 ));
             }
-            weights.clone()
-        }
-        Some(_) => {
-            return Err(CodecError::Malformed(
-                "IGES NURBS weight count does not match control points".into(),
-            ));
+            weights.to_vec()
         }
         None => alloc_filled(control_count, 1.0, "iges NURBS weights")?,
     };
     let polynomial = weights
         .first()
         .is_some_and(|first| weights.iter().all(|weight| weight == first));
-    let plane_normal = nurbs_plane_normal(&nurbs.control_points);
+    let plane_normal = nurbs_plane_normal(nurbs.control_points());
     let planar = plane_normal.is_some();
     let closed = nurbs_is_closed(nurbs, &weights, domain);
     let k = control_count - 1;
     let mut parameters = format!(
         "126,{k},{},{},{},{},{}",
-        nurbs.degree,
+        nurbs.degree(),
         i32::from(planar),
         i32::from(closed),
         i32::from(polynomial),
-        i32::from(nurbs.periodic)
+        i32::from(nurbs.periodic())
     );
-    for value in &nurbs.knots {
+    for value in nurbs.knots() {
         parameters.push(',');
         parameters.push_str(&number(*value));
     }
@@ -5869,7 +5809,7 @@ fn encode_nurbs(
         parameters.push(',');
         parameters.push_str(&number(weight));
     }
-    for point in &nurbs.control_points {
+    for point in nurbs.control_points() {
         for value in [point.x, point.y, point.z] {
             parameters.push(',');
             parameters.push_str(&number(value));
@@ -5951,25 +5891,25 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
 
 fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> bool {
     let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree,
-        &nurbs.knots,
-        &nurbs.control_points,
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
         Some(weights),
         domain[0],
     ) else {
         return false;
     };
     let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree,
-        &nurbs.knots,
-        &nurbs.control_points,
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
         Some(weights),
         domain[1],
     ) else {
         return false;
     };
     let scale = nurbs
-        .control_points
+        .control_points()
         .iter()
         .map(|point| point.distance(start))
         .filter(|distance| distance.is_finite())
@@ -6059,7 +5999,9 @@ fn apply_rigid_transform(
             point: point(value),
         },
         CurveGeometry::Nurbs(mut nurbs) => {
-            nurbs.control_points = nurbs.control_points.into_iter().map(point).collect();
+            for control_point in nurbs.control_points_mut() {
+                *control_point = point(*control_point);
+            }
             CurveGeometry::Nurbs(nurbs)
         }
         CurveGeometry::Polyline {
@@ -6174,15 +6116,10 @@ fn hyperbola_point(
 }
 
 fn nurbs_domain(nurbs: &NurbsCurve) -> Result<[f64; 2], CodecError> {
-    let degree = usize::try_from(nurbs.degree)
+    let degree = usize::try_from(nurbs.degree())
         .map_err(|_| CodecError::Malformed("IGES NURBS degree overflows usize".into()))?;
-    let end = nurbs.control_points.len();
-    if nurbs.knots.len() <= end || degree >= nurbs.knots.len() {
-        return Err(CodecError::Malformed(
-            "IGES NURBS knot vector cannot provide a domain".into(),
-        ));
-    }
-    Ok([nurbs.knots[degree], nurbs.knots[end]])
+    let end = nurbs.control_points().len();
+    Ok([nurbs.knots()[degree], nurbs.knots()[end]])
 }
 
 fn polyline_parameters(count: usize, parameters: Option<&[f64]>) -> Result<Vec<f64>, CodecError> {

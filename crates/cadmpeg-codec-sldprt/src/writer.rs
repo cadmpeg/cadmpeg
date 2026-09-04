@@ -3170,7 +3170,7 @@ fn write_nurbs_curve(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.periodic {
+    if nurbs.periodic() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writer does not support periodic NURBS curves".into(),
         ));
@@ -3179,13 +3179,13 @@ fn write_nurbs_curve(
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
     let knots = take_attr(next)?;
-    let degree = u16::try_from(nurbs.degree).map_err(|_| {
+    let degree = u16::try_from(nurbs.degree()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS curve {entity} degree {} exceeds the native u16 field",
-            nurbs.degree
+            nurbs.degree()
         ))
     })?;
-    let control_count = u32::try_from(nurbs.control_points.len()).map_err(|_| {
+    let control_count = u32::try_from(nurbs.control_points().len()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
         ))
@@ -3198,20 +3198,16 @@ fn write_nurbs_curve(
     be16(out, descriptor);
     be16(out, degree);
     be32(out, control_count);
-    be16(out, if nurbs.weights.is_some() { 4 } else { 3 });
+    be16(out, if nurbs.weights().is_some() { 4 } else { 3 });
     be32(out, 2);
     out.push(0);
     be32(out, 0);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
-    let poles = homogeneous_poles(
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
-        length_scale,
-    )?;
+    let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
     f64_array(out, 0x2d, control, &poles, entity)?;
-    let (unique, mult) = unique_knots(&nurbs.knots, entity)?;
+    let (unique, mult) = unique_knots(nurbs.knots(), entity)?;
     u16_array(out, multiplicity, &mult, entity)?;
     f64_array(out, 0x80, knots, &unique, entity)?;
     Ok(())
@@ -3225,17 +3221,17 @@ fn write_nurbs_surface(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.u_periodic || nurbs.v_periodic {
+    if nurbs.u_periodic() || nurbs.v_periodic() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
         ));
     }
-    let u_degree = u16::try_from(nurbs.u_degree).map_err(|_| {
+    let u_degree = u16::try_from(nurbs.u_degree()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} u degree exceeds the native u16 field"
         ))
     })?;
-    let v_degree = u16::try_from(nurbs.v_degree).map_err(|_| {
+    let v_degree = u16::try_from(nurbs.v_degree()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} v degree exceeds the native u16 field"
         ))
@@ -3245,64 +3241,22 @@ fn write_nurbs_surface(
             "NURBS surface degree must be positive".into(),
         ));
     }
-    let u_count = usize::try_from(nurbs.u_count).map_err(|_| {
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} u pole count exceeds the host address space"
-        ))
-    })?;
-    let v_count = usize::try_from(nurbs.v_count).map_err(|_| {
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} v pole count exceeds the host address space"
-        ))
-    })?;
-    let expected_poles = u_count.checked_mul(v_count).ok_or_else(|| {
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} pole grid exceeds the host address space"
-        ))
-    })?;
-    if nurbs.control_points.len() != expected_poles {
-        return Err(CodecError::Malformed(
-            "invalid NURBS surface pole count".into(),
-        ));
-    }
-    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots, entity)?;
-    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots, entity)?;
-    if u_count <= usize::from(u_degree) || v_count <= usize::from(v_degree) {
-        return Err(CodecError::Malformed(
-            "NURBS surface pole count must exceed its degree".into(),
-        ));
-    }
-    let expected_u_knots = u_count
-        .checked_add(usize::from(u_degree))
-        .and_then(|value| value.checked_add(1))
-        .ok_or_else(|| CodecError::Malformed("NURBS surface u knot count overflow".into()))?;
-    let expected_v_knots = v_count
-        .checked_add(usize::from(v_degree))
-        .and_then(|value| value.checked_add(1))
-        .ok_or_else(|| CodecError::Malformed("NURBS surface v knot count overflow".into()))?;
-    if nurbs.u_knots.len() != expected_u_knots || nurbs.v_knots.len() != expected_v_knots {
-        return Err(CodecError::Malformed(
-            "NURBS surface knot vector length does not match its stored shape".into(),
-        ));
-    }
+    let (u_unique, u_mult) = unique_knots(nurbs.u_knots(), entity)?;
+    let (v_unique, v_mult) = unique_knots(nurbs.v_knots(), entity)?;
     if !nurbs
-        .u_knots
+        .u_knots()
         .iter()
-        .chain(&nurbs.v_knots)
+        .chain(nurbs.v_knots())
         .all(|value| value.is_finite())
-        || !knots_nondecreasing(&nurbs.u_knots)
-        || !knots_nondecreasing(&nurbs.v_knots)
+        || !knots_nondecreasing(nurbs.u_knots())
+        || !knots_nondecreasing(nurbs.v_knots())
     {
         return Err(CodecError::Malformed(
             "NURBS surface knot vectors must be finite and nondecreasing".into(),
         ));
     }
-    let poles = homogeneous_poles(
-        &nurbs.control_points,
-        nurbs.weights.as_deref(),
-        length_scale,
-    )?;
-    let dimension = if nurbs.weights.is_some() { 4 } else { 3 };
+    let poles = homogeneous_poles(nurbs.control_points(), nurbs.weights(), length_scale)?;
+    let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} u distinct knot count exceeds the native u32 field"
@@ -3331,12 +3285,12 @@ fn write_nurbs_surface(
     out.extend_from_slice(&[0, 0]);
     be16(out, u_degree);
     be16(out, v_degree);
-    be32(out, nurbs.u_count);
-    be32(out, nurbs.v_count);
+    be32(out, nurbs.u_count());
+    be32(out, nurbs.v_count());
     out.extend_from_slice(&[1, 1]);
     be32(out, u_knot_count);
     be32(out, v_knot_count);
-    out.push(u8::from(nurbs.weights.is_some()));
+    out.push(u8::from(nurbs.weights().is_some()));
     out.extend_from_slice(&[0, 0]);
     out.push(0x0c);
     be16(out, dimension);
@@ -3704,19 +3658,20 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {
-        let surface = NurbsSurface {
-            u_degree: 9,
-            v_degree: 1,
-            u_knots: vec![0.0; 20],
-            v_knots: vec![0.0; 4],
-            u_count: 10,
-            v_count: 2,
-            control_points: vec![Point3::new(0.0, 0.0, 0.0); 20],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+        let surface = NurbsSurface::new(
+            9,
+            1,
+            vec![0.0; 20],
+            vec![0.0; 4],
+            10,
+            2,
+            vec![Point3::new(0.0, 0.0, 0.0); 20],
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid high-degree surface");
 
         let mut bytes = Vec::new();
         write_nurbs_surface(
@@ -3736,25 +3691,26 @@ mod nurbs_write_tests {
         else {
             panic!("expected NURBS surface");
         };
-        assert_eq!((decoded.u_degree, decoded.v_degree), (9, 1));
-        assert_eq!((decoded.u_count, decoded.v_count), (10, 2));
+        assert_eq!((decoded.u_degree(), decoded.v_degree()), (9, 1));
+        assert_eq!((decoded.u_count(), decoded.v_count()), (10, 2));
     }
 
     #[test]
     fn writes_surface_shape_from_stored_counts() {
-        let surface = NurbsSurface {
-            u_degree: 2,
-            v_degree: 1,
-            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
-            u_count: 3,
-            v_count: 4,
-            control_points: vec![Point3::new(0.0, 0.0, 0.0); 12],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        };
+        let surface = NurbsSurface::new(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
+            3,
+            4,
+            vec![Point3::new(0.0, 0.0, 0.0); 12],
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid asymmetric surface");
 
         let mut bytes = Vec::new();
         write_nurbs_surface(
@@ -3776,10 +3732,10 @@ mod nurbs_write_tests {
         };
         assert_eq!(
             (
-                decoded.u_count,
-                decoded.v_count,
-                decoded.u_degree,
-                decoded.v_degree
+                decoded.u_count(),
+                decoded.v_count(),
+                decoded.u_degree(),
+                decoded.v_degree()
             ),
             (3, 4, 2, 1)
         );
@@ -3806,35 +3762,13 @@ mod nurbs_write_tests {
     }
 
     #[test]
-    fn rejects_curve_degree_and_knot_multiplicity_overflow() {
-        let curve = NurbsCurve {
-            degree: u32::from(u16::MAX) + 1,
-            knots: Vec::new(),
-            control_points: Vec::new(),
-            weights: None,
-            periodic: false,
-        };
-        let degree_error = write_nurbs_curve(
-            &mut Vec::new(),
-            2,
-            &curve,
-            &mut 3,
-            0.001,
-            "test:curve#high-degree",
-        )
-        .expect_err("expected error");
+    fn rejects_knot_multiplicity_overflow() {
         let multiplicity_error = unique_knots(
             &vec![0.0; usize::from(u16::MAX) + 1],
             "test:curve#high-multiplicity",
         )
         .expect_err("expected error");
 
-        assert!(matches!(
-            degree_error,
-            CodecError::NotImplemented(message)
-                if message.contains("test:curve#high-degree")
-                    && message.contains("native u16 field")
-        ));
         assert!(matches!(
             multiplicity_error,
             CodecError::NotImplemented(message)

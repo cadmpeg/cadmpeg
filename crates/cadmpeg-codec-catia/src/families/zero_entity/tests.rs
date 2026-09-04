@@ -231,14 +231,14 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
     assert_eq!(result.ir().model.surfaces.len(), 1);
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!((surface.u_degree, surface.v_degree), (3, 3));
-            assert_eq!((surface.u_count, surface.v_count), (7, 7));
+            assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
+            assert_eq!((surface.u_count(), surface.v_count()), (7, 7));
             assert_eq!(
-                surface.u_knots,
-                vec![0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]
+                surface.u_knots(),
+                [0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]
             );
-            assert_eq!(surface.control_points.len(), 49);
-            assert_eq!(surface.control_points[48].x, 48.0);
+            assert_eq!(surface.control_points().len(), 49);
+            assert_eq!(surface.control_points()[48].x, 48.0);
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }
@@ -283,25 +283,19 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
     assert!(matches!(
         support.pcurve,
-        Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            degree: 1,
-            ref control_points,
-            weights: None,
-            periodic: false,
-            ..
-        }) if control_points.len() == 2
+        Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { ref nurbs })
+            if nurbs.degree() == 1
+                && nurbs.control_points().len() == 2
+                && nurbs.weights().is_none()
+                && !nurbs.periodic()
     ));
     assert!(matches!(
         support.model_curve,
-        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve {
-                degree: 1,
-                ref control_points,
-                weights: None,
-                periodic: false,
-                ..
-            }
-        )) if control_points.len() == 2
+        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(ref nurbs))
+            if nurbs.degree() == 1
+                && nurbs.control_points().len() == 2
+                && nurbs.weights().is_none()
+                && !nurbs.periodic()
     ));
     assert!(support.model_curve_construction.is_none());
     assert_eq!(support.model_parameters, Some([0.0, 1.0]));
@@ -448,21 +442,6 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity loop support binding");
     assert!(crate::native::CatiaNative::load(&invalid_binding_namespace).is_err());
 
-    let mut invalid_pcurve = native.clone();
-    let Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree, .. }) =
-        invalid_pcurve.zero_entity_support_runs[0].supports[0]
-            .pcurve
-            .as_mut()
-    else {
-        panic!("NURBS support pcurve")
-    };
-    *degree = 2;
-    let mut invalid_pcurve_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_pcurve
-        .store(&mut invalid_pcurve_namespace)
-        .expect("store invalid CATIA zero-entity support pcurve");
-    assert!(crate::native::CatiaNative::load(&invalid_pcurve_namespace).is_err());
-
     let mut invalid_model_curve = native.clone();
     let Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(model_curve)) =
         invalid_model_curve.zero_entity_support_runs[0].supports[0]
@@ -471,7 +450,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     else {
         panic!("NURBS support model curve")
     };
-    model_curve.periodic = true;
+    model_curve.set_periodic(true);
     let mut invalid_model_curve_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_curve
         .store(&mut invalid_model_curve_namespace)

@@ -840,11 +840,11 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
     }
     match context.geometry {
         SurfaceGeometry::Nurbs(surface) => {
-            let u_count = usize::try_from(surface.u_count).ok()?;
-            let v_count = usize::try_from(surface.v_count).ok()?;
+            let u_count = usize::try_from(surface.u_count()).ok()?;
+            let v_count = usize::try_from(surface.v_count()).ok()?;
             Some([
-                nurbs_parameter_domain(surface.u_degree, &surface.u_knots, u_count)?,
-                nurbs_parameter_domain(surface.v_degree, &surface.v_knots, v_count)?,
+                nurbs_parameter_domain(surface.u_degree(), surface.u_knots(), u_count)?,
+                nurbs_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)?,
             ])
         }
         SurfaceGeometry::Transformed { basis, .. } => {
@@ -905,18 +905,12 @@ fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
 
 fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            ..
-        } => nurbs_parameter_domain(*degree, knots, control_points.len()),
-        PcurveGeometry::PolarNurbs {
-            degree,
-            knots,
-            radial_control_points,
-            ..
-        } => nurbs_parameter_domain(*degree, knots, radial_control_points.len()),
+        PcurveGeometry::Nurbs { nurbs } => {
+            nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.control_points().len())
+        }
+        PcurveGeometry::PolarNurbs { nurbs } => {
+            nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
+        }
         PcurveGeometry::Trimmed {
             parameter_range,
             basis,
