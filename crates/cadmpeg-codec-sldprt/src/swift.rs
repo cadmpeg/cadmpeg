@@ -2480,7 +2480,7 @@ mod tests {
         let seed = FeatureId("sldprt:model:feature#seed".into());
         let pattern_definition = FeatureDefinition::Pattern {
             seeds: vec![PatternSeed::Feature(seed.clone())],
-            pattern: PatternKind::Unresolved { form: None },
+            pattern: PatternKind::Unresolved,
         };
         let features = vec![
             neutral_feature(

@@ -162,7 +162,10 @@ pub(crate) fn hole_auxiliary_semantics_are_incomplete(
 
 pub(crate) fn chamfer_spec_is_incomplete(spec: &ChamferSpec) -> bool {
     match spec {
-        ChamferSpec::Unresolved { .. } => true,
+        ChamferSpec::Unresolved
+        | ChamferSpec::UnresolvedDistance
+        | ChamferSpec::UnresolvedTwoDistances
+        | ChamferSpec::UnresolvedDistanceAngle => true,
         ChamferSpec::Distance { distance } => !positive_feature_length(*distance),
         ChamferSpec::TwoDistances { first, second } => {
             !positive_feature_length(*first) || !positive_feature_length(*second)
@@ -373,7 +376,13 @@ pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) ->
 
 pub(crate) fn pattern_is_incomplete(pattern: &PatternKind) -> bool {
     match pattern {
-        PatternKind::Unresolved { .. } => true,
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite => true,
         PatternKind::Linear {
             direction,
             spacing,
@@ -487,7 +496,11 @@ pub(crate) fn pattern_feature_is_incomplete(
 
 pub(crate) fn radius_spec_is_incomplete(radius: &RadiusSpec) -> bool {
     match radius {
-        RadiusSpec::Unresolved { .. } => true,
+        RadiusSpec::Unresolved
+        | RadiusSpec::UnresolvedConstant
+        | RadiusSpec::UnresolvedChordal
+        | RadiusSpec::UnresolvedAsymmetric
+        | RadiusSpec::UnresolvedVariable => true,
         RadiusSpec::Constant { radius } => !positive_feature_length(*radius),
         RadiusSpec::Chordal { chord_length } => !positive_feature_length(*chord_length),
         RadiusSpec::Asymmetric {
@@ -583,7 +596,13 @@ pub(crate) fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
                     }
                 })?
         }
-        PatternKind::Unresolved { .. } => None,
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite => None,
     }
 }
 

@@ -44,7 +44,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, HolePlacement,
-    Length, LinearTermination, ProfileRef, RadiusForm, RadiusSpec, RevolutionConstruction,
+    Length, LinearTermination, ProfileRef, RadiusSpec, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{FaceId, SurfaceId};
@@ -410,8 +410,12 @@ pub(in super::super) fn schema_feature_definition(
         let mut observed_radii = round_observed_radii(scan, feature_id);
         observed_radii.extend(round_placed_cylinder_radii(scan, ir, feature_id));
         let radius = round_constant_radius(scan, ir, feature_id).map_or_else(
-            || RadiusSpec::Unresolved {
-                form: differing_positive_lengths(&observed_radii).then_some(RadiusForm::Variable),
+            || {
+                if differing_positive_lengths(&observed_radii) {
+                    RadiusSpec::UnresolvedVariable
+                } else {
+                    RadiusSpec::Unresolved
+                }
             },
             |radius| RadiusSpec::Constant {
                 radius: Length(radius),
@@ -432,7 +436,7 @@ pub(in super::super) fn schema_feature_definition(
                 edges: feature_edge_selection(scan, ir, feature_id)
                     .unwrap_or(EdgeSelection::Unresolved),
                 spec: chamfer_constant_distance(scan, ir, feature_id).map_or_else(
-                    || ChamferSpec::Unresolved { form: None },
+                    || ChamferSpec::Unresolved,
                     |distance| ChamferSpec::Distance {
                         distance: Length(distance),
                     },

@@ -59,9 +59,7 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Variable)
-            }, ..
+            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedVariable, ..
         }])
     ));
 
@@ -81,7 +79,7 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None }, ..
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved, ..
         }])
     ));
 }

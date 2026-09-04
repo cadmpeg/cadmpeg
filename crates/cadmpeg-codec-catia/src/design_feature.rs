@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, ParameterId, PatternForm, PatternKind, PrincipalPlane,
+    Feature, FeatureDefinition, FeatureId, ParameterId, PatternKind, PrincipalPlane,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
@@ -832,9 +832,7 @@ fn native_operation_definition(
         "Revol_ThickThin1" => FeatureDefinition::RevolveUnresolved,
         "CircPattern_RadialNumber" => FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Circular),
-            },
+            pattern: PatternKind::UnresolvedCircular,
         },
         "Sweep_ThickThin1" => FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(Some(native_ref.to_string())),

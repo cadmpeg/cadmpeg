@@ -16,8 +16,8 @@ use cadmpeg_ir::features::{
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
     FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
     HolePlacement, Length, LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind,
-    ProfileRef, RadiusForm, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, SweepMode,
-    ThickenSide, TrimRegion,
+    ProfileRef, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, SweepMode, ThickenSide,
+    TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -5142,19 +5142,19 @@ fn blend_feature_definition(
                 .all(|radius| radius.to_bits() == radii[0].to_bits())
         })
         .map_or_else(
-            || RadiusSpec::Unresolved {
-                form: if constant_radii.is_some() {
-                    Some(RadiusForm::Constant)
+            || {
+                if constant_radii.is_some() {
+                    RadiusSpec::UnresolvedConstant
                 } else if laws.iter().all(|law| {
                     matches!(
                         law,
                         BlendRadiusLaw::Linear { .. } | BlendRadiusLaw::Law { .. }
                     )
                 }) {
-                    Some(RadiusForm::Variable)
+                    RadiusSpec::UnresolvedVariable
                 } else {
-                    None
-                },
+                    RadiusSpec::Unresolved
+                }
             },
             |radii| RadiusSpec::Constant {
                 radius: Length(radii[0]),
@@ -5854,14 +5854,14 @@ fn body_writing_unresolved_feature_definition(
         "BLEND" => Some(FeatureDefinition::Fillet {
             groups: vec![cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved { form: None },
+                radius: RadiusSpec::Unresolved,
                 tangency_weight: None,
             }],
         }),
         "FACE_BLEND" => Some(FeatureDefinition::FaceBlend {
             first_faces: FaceSelection::Unresolved,
             second_faces: FaceSelection::Unresolved,
-            radius: RadiusSpec::Unresolved { form: None },
+            radius: RadiusSpec::Unresolved,
         }),
         "DELETE FACE" => Some(FeatureDefinition::DeleteFaceUnresolved),
         "MIRROR_FACE" => Some(FeatureDefinition::MirrorFaceUnresolved),
@@ -6182,21 +6182,21 @@ fn non_boolean_feature_definition_with_parameters(
         "CHAMFER" => FeatureDefinition::Chamfer {
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: EdgeSelection::Unresolved,
-                spec: ChamferSpec::Unresolved { form: None },
+                spec: ChamferSpec::Unresolved,
             }],
             flip_direction: false,
         },
         "BLEND" => FeatureDefinition::Fillet {
             groups: vec![cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved { form: None },
+                radius: RadiusSpec::Unresolved,
                 tangency_weight: None,
             }],
         },
         "FACE_BLEND" => FeatureDefinition::FaceBlend {
             first_faces: FaceSelection::Unresolved,
             second_faces: FaceSelection::Unresolved,
-            radius: RadiusSpec::Unresolved { form: None },
+            radius: RadiusSpec::Unresolved,
         },
         "SEW" => FeatureDefinition::SewBodies {
             bodies: BodySelection::Unresolved,
@@ -6224,7 +6224,7 @@ fn non_boolean_feature_definition_with_parameters(
         | "IDENTICAL INSTANCE OUTPUT"
         | "Instance Feature" => FeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved { form: None },
+            pattern: PatternKind::Unresolved,
         },
         "ASSOCIATIVE_INTERSECTION" | "Intersection Curve" => FeatureDefinition::SectionShape {
             first: BodySelection::Unresolved,

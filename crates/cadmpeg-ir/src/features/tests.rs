@@ -1136,6 +1136,74 @@ fn sweep_mode_preserves_the_solid_new_body_wire_form() {
 }
 
 #[test]
+fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
+    use crate::features::{ChamferSpec, PatternKind, RadiusSpec};
+
+    for (wire, expected) in [
+        (
+            serde_json::json!({"kind": "unresolved"}),
+            RadiusSpec::Unresolved,
+        ),
+        (
+            serde_json::json!({"kind": "unresolved", "form": "constant"}),
+            RadiusSpec::UnresolvedConstant,
+        ),
+        (
+            serde_json::json!({"kind": "unresolved", "form": "variable"}),
+            RadiusSpec::UnresolvedVariable,
+        ),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<RadiusSpec>(wire.clone()).unwrap(),
+            expected
+        );
+        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+    }
+
+    for (wire, expected) in [
+        (
+            serde_json::json!({"kind": "unresolved"}),
+            ChamferSpec::Unresolved,
+        ),
+        (
+            serde_json::json!({"kind": "unresolved", "form": "distance"}),
+            ChamferSpec::UnresolvedDistance,
+        ),
+        (
+            serde_json::json!({"kind": "unresolved", "form": "distance_angle"}),
+            ChamferSpec::UnresolvedDistanceAngle,
+        ),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<ChamferSpec>(wire.clone()).unwrap(),
+            expected
+        );
+        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+    }
+
+    for (wire, expected) in [
+        (
+            serde_json::json!({"kind": "unresolved"}),
+            PatternKind::Unresolved,
+        ),
+        (
+            serde_json::json!({"kind": "unresolved", "form": "linear"}),
+            PatternKind::UnresolvedLinear,
+        ),
+        (
+            serde_json::json!({"kind": "unresolved", "form": "mirror"}),
+            PatternKind::UnresolvedMirror,
+        ),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<PatternKind>(wire.clone()).unwrap(),
+            expected
+        );
+        assert_eq!(serde_json::to_value(expected).unwrap(), wire);
+    }
+}
+
+#[test]
 fn draft_anchor_round_trips_through_the_flat_wire_shape() {
     use crate::features::{DraftAnchor, FeatureDefinition};
 

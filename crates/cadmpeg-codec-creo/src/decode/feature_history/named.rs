@@ -17,8 +17,8 @@ use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, LinearTermination, PatternForm,
-    PatternKind, ProfileRef, RevolutionConstruction,
+    FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, LinearTermination, PatternKind,
+    ProfileRef, RevolutionConstruction,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
@@ -92,9 +92,7 @@ pub(in super::super) fn named_feature_definition(
     if kind == "Mirror" {
         return Some(IrFeatureDefinition::Pattern {
             seeds: Vec::new(),
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Mirror),
-            },
+            pattern: PatternKind::UnresolvedMirror,
         });
     }
     if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {

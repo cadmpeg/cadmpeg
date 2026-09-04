@@ -104,7 +104,13 @@ pub(in super::super) fn surface_boundary_has_unresolved_operands(
 
 pub(in super::super) fn pattern_kind_has_unresolved_operands(pattern: &PatternKind) -> bool {
     match pattern {
-        PatternKind::Unresolved { .. } => true,
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite => true,
         PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
             direction.is_none()
         }

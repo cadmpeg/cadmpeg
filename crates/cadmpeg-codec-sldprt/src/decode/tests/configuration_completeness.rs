@@ -285,7 +285,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
                     outputs: Vec::new(),
                     definition: FeatureDefinition::Pattern {
                         seeds: vec![seed],
-                        pattern: PatternKind::Unresolved { form: None },
+                        pattern: PatternKind::Unresolved,
                     },
                 },
             ),

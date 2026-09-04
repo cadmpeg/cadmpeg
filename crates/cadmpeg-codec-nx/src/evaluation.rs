@@ -2720,7 +2720,7 @@ mod tests {
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: Vec::new(),
-                pattern: PatternKind::Unresolved { form: None },
+                pattern: PatternKind::Unresolved,
             },
             native_ref: None,
         });

@@ -3,9 +3,9 @@
 
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, ChamferForm, ChamferSpec, EdgeSelection,
-    FaceMotion, FaceSelection, FeatureDefinition, FlexForm, FlexMode, Length, RadiusForm,
-    RadiusSpec, ScaleCenter, ScaleFactors, VariableRadius,
+    Angle, AxisAngle, BodyRetentionMode, BodySelection, ChamferSpec, EdgeSelection, FaceMotion,
+    FaceSelection, FeatureDefinition, FlexForm, FlexMode, Length, RadiusSpec, ScaleCenter,
+    ScaleFactors, VariableRadius,
 };
 use cadmpeg_ir::math::Vector3;
 
@@ -70,19 +70,22 @@ pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                 .then_some(points)
             })
             .map_or_else(
-                || RadiusSpec::Unresolved {
-                    form: feature
+                || {
+                    if feature
                         .parameters
                         .keys()
                         .any(|name| indexed_name(name, "Radius"))
-                        .then_some(RadiusForm::Variable)
-                        .or_else(|| {
-                            feature
-                                .parameters
-                                .keys()
-                                .any(|name| matches!(name.as_str(), "Radius" | "D1"))
-                                .then_some(RadiusForm::Constant)
-                        }),
+                    {
+                        RadiusSpec::UnresolvedVariable
+                    } else if feature
+                        .parameters
+                        .keys()
+                        .any(|name| matches!(name.as_str(), "Radius" | "D1"))
+                    {
+                        RadiusSpec::UnresolvedConstant
+                    } else {
+                        RadiusSpec::Unresolved
+                    }
                 },
                 |points| RadiusSpec::Variable {
                     points: points.into_iter().map(|(_, point)| point).collect(),
@@ -574,20 +577,20 @@ pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         )
     })()
     .or_else(ordered_spec)
-    .unwrap_or_else(|| ChamferSpec::Unresolved {
-        form: if feature.parameters.contains_key("Angle") {
-            Some(ChamferForm::DistanceAngle)
+    .unwrap_or_else(|| {
+        if feature.parameters.contains_key("Angle") {
+            ChamferSpec::UnresolvedDistanceAngle
         } else if feature.parameters.contains_key("Distance1")
             || feature.parameters.contains_key("Distance2")
         {
-            Some(ChamferForm::TwoDistances)
+            ChamferSpec::UnresolvedTwoDistances
         } else if feature.parameters.contains_key("Distance")
             || (feature.parameters.contains_key("D1") && !feature.parameters.contains_key("D2"))
         {
-            Some(ChamferForm::Distance)
+            ChamferSpec::UnresolvedDistance
         } else {
-            None
-        },
+            ChamferSpec::Unresolved
+        }
     });
     FeatureDefinition::Chamfer {
         groups: vec![cadmpeg_ir::features::ChamferGroup {

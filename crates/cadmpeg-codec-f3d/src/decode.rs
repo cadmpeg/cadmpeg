@@ -532,7 +532,7 @@ fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
 }
 
 fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternKind};
+    use cadmpeg_ir::features::FeatureDefinition;
 
     match definition {
         FeatureDefinition::Native { kind, .. } => !matches!(kind.as_str(), "Canvas" | "Decal"),
@@ -889,16 +889,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 })
         }
         FeatureDefinition::Pattern { seeds, pattern } => {
-            seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })
+            seeds.is_empty() || pattern.is_unresolved()
         }
         FeatureDefinition::Chamfer { groups, .. } => {
             groups.is_empty()
                 || groups.iter().any(|group| {
-                    !edge_selection_is_resolved(&group.edges)
-                        || matches!(
-                            group.spec,
-                            cadmpeg_ir::features::ChamferSpec::Unresolved { .. }
-                        )
+                    !edge_selection_is_resolved(&group.edges) || group.spec.is_unresolved()
                 })
         }
         FeatureDefinition::Fillet { groups } => {

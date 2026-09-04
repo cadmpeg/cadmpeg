@@ -1477,7 +1477,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         IrFeatureDefinition::Chamfer {
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: EdgeSelection::Unresolved,
-                spec: ChamferSpec::Unresolved { form: None },
+                spec: ChamferSpec::Unresolved,
             }],
             flip_direction: false,
         },

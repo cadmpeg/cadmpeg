@@ -2085,7 +2085,10 @@ pub(crate) fn valid_chamfer_spec(spec: &cadmpeg_ir::features::ChamferSpec) -> bo
         ChamferSpec::DistanceAngle { distance, angle } => {
             distance.0 > 0.0 && angle.0 > 0.0 && angle.0 < std::f64::consts::PI
         }
-        ChamferSpec::Unresolved { .. } => false,
+        ChamferSpec::Unresolved
+        | ChamferSpec::UnresolvedDistance
+        | ChamferSpec::UnresolvedTwoDistances
+        | ChamferSpec::UnresolvedDistanceAngle => false,
     }
 }
 

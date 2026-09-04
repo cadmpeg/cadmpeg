@@ -3,9 +3,8 @@
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, HoleKind, ProfileRef, RadiusForm, RadiusSpec,
-    RevolveExtent,
+    BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
+    FeatureDefinition as IrFeatureDefinition, HoleKind, ProfileRef, RadiusSpec, RevolveExtent,
 };
 
 use crate::container::ContainerScan;
@@ -266,18 +265,11 @@ pub(in super::super) fn collect_feature_coverage(
                 let native_edges = groups
                     .iter()
                     .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
-                let unresolved_radius = groups.is_empty()
-                    || groups
-                        .iter()
-                        .any(|group| matches!(&group.radius, RadiusSpec::Unresolved { .. }));
-                let variable_radius = groups.iter().any(|group| {
-                    matches!(
-                        &group.radius,
-                        RadiusSpec::Unresolved {
-                            form: Some(RadiusForm::Variable)
-                        }
-                    )
-                });
+                let unresolved_radius =
+                    groups.is_empty() || groups.iter().any(|group| group.radius.is_unresolved());
+                let variable_radius = groups
+                    .iter()
+                    .any(|group| matches!(&group.radius, RadiusSpec::UnresolvedVariable));
                 let has_generated_surface = feature
                     .id
                     .as_str()
@@ -312,10 +304,8 @@ pub(in super::super) fn collect_feature_coverage(
                 let native_edges = groups
                     .iter()
                     .any(|group| matches!(&group.edges, EdgeSelection::Native(_)));
-                let unresolved_spec = groups.is_empty()
-                    || groups
-                        .iter()
-                        .any(|group| matches!(&group.spec, ChamferSpec::Unresolved { .. }));
+                let unresolved_spec =
+                    groups.is_empty() || groups.iter().any(|group| group.spec.is_unresolved());
                 unresolved_chamfer_edge_selection_feature_count += usize::from(unresolved_edges);
                 native_chamfer_edge_selection_feature_count += usize::from(native_edges);
                 unresolved_chamfer_spec_feature_count += usize::from(unresolved_spec);

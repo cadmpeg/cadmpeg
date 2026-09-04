@@ -4,7 +4,7 @@
 use crate::classification::NativeClassKind;
 use crate::records::Feature;
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, Length, PathRef, PatternForm, PatternKind, PatternSeed,
+    Angle, FeatureDefinition, FeatureId, Length, PathRef, PatternKind, PatternSeed,
 };
 use std::collections::HashMap;
 
@@ -14,28 +14,38 @@ use crate::history::literals::{
     parse_valid_direction,
 };
 
-pub(crate) fn pattern_form(feature: &Feature) -> Option<PatternForm> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativePatternClass {
+    Linear,
+    Circular,
+    CurveDriven,
+    Mirror,
+}
+
+pub(crate) fn pattern_form(feature: &Feature) -> Option<NativePatternClass> {
     let parse = |form: &str| match form.to_ascii_lowercase().as_str() {
-        "linear" | "linearpattern" | "lpattern" => Some(PatternForm::Linear),
-        "circular" | "circularpattern" | "cirpattern" => Some(PatternForm::Circular),
-        "crvpattern" | "curvepattern" | "curvedrivenpattern" => Some(PatternForm::CurveDriven),
-        "mirror" => Some(PatternForm::Mirror),
+        "linear" | "linearpattern" | "lpattern" => Some(NativePatternClass::Linear),
+        "circular" | "circularpattern" | "cirpattern" => Some(NativePatternClass::Circular),
+        "crvpattern" | "curvepattern" | "curvedrivenpattern" => {
+            Some(NativePatternClass::CurveDriven)
+        }
+        "mirror" => Some(NativePatternClass::Mirror),
         _ => None,
     };
     if feature_input_class(feature, NativeClassKind::LinearPattern) {
-        return Some(PatternForm::Linear);
+        return Some(NativePatternClass::Linear);
     }
     if feature_input_class(feature, NativeClassKind::CircularPattern) {
-        return Some(PatternForm::Circular);
+        return Some(NativePatternClass::Circular);
     }
     if feature_input_class(feature, NativeClassKind::CurvePattern) {
-        return Some(PatternForm::CurveDriven);
+        return Some(NativePatternClass::CurveDriven);
     }
     if let Some(form) = parse(&feature.kind) {
         return Some(form);
     }
     if feature.xml_tag.eq_ignore_ascii_case("Mirror") {
-        return Some(PatternForm::Mirror);
+        return Some(NativePatternClass::Mirror);
     }
     feature
         .xml_tag
@@ -62,7 +72,7 @@ pub(crate) fn project_pattern(
     };
     let resolved = form.and_then(|form| {
         Some(match form {
-            PatternForm::Linear => PatternKind::Linear {
+            NativePatternClass::Linear => PatternKind::Linear {
                 direction: match feature.properties.get("Direction") {
                     Some(value) => Some(parse_valid_direction(value)?),
                     None => None,
@@ -94,7 +104,7 @@ pub(crate) fn project_pattern(
                     _ => None,
                 },
             },
-            PatternForm::Circular => PatternKind::Circular {
+            NativePatternClass::Circular => PatternKind::Circular {
                 axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
                 axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
                 angle: Angle(
@@ -105,7 +115,7 @@ pub(crate) fn project_pattern(
                 ),
                 count: parse_count(feature.parameters.get("Count")?)?,
             },
-            PatternForm::CurveDriven => PatternKind::CurveDriven {
+            NativePatternClass::CurveDriven => PatternKind::CurveDriven {
                 path: feature.properties.get("Path").map(|source| {
                     PathRef::Native(
                         native_by_source
@@ -126,17 +136,25 @@ pub(crate) fn project_pattern(
                         .or_else(|| feature.parameters.get("D1"))?,
                 )?,
             },
-            PatternForm::Mirror => PatternKind::Mirror {
+            NativePatternClass::Mirror => PatternKind::Mirror {
                 plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
                 plane_normal: parse_valid_direction(feature.properties.get("PlaneNormal")?)?,
             },
-            PatternForm::Scale | PatternForm::Composite => return None,
         })
     });
-    let seeds_required = !matches!(form, Some(PatternForm::Linear | PatternForm::CurveDriven));
+    let seeds_required = !matches!(
+        form,
+        Some(NativePatternClass::Linear | NativePatternClass::CurveDriven)
+    );
     let pattern = resolved
         .filter(|_| !seeds_required || !seeds.is_empty())
-        .unwrap_or(PatternKind::Unresolved { form });
+        .unwrap_or_else(|| match form {
+            None => PatternKind::Unresolved,
+            Some(NativePatternClass::Linear) => PatternKind::UnresolvedLinear,
+            Some(NativePatternClass::Circular) => PatternKind::UnresolvedCircular,
+            Some(NativePatternClass::CurveDriven) => PatternKind::UnresolvedCurveDriven,
+            Some(NativePatternClass::Mirror) => PatternKind::UnresolvedMirror,
+        });
     FeatureDefinition::Pattern { seeds, pattern }
 }
 

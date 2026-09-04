@@ -928,7 +928,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
 
 #[test]
 fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, RadiusForm, RadiusSpec};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, RadiusSpec};
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, BlendSupport, ProceduralSurface,
         ProceduralSurfaceDefinition,
@@ -1107,7 +1107,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         FeatureDefinition::Fillet {
             groups
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: RadiusSpec::Unresolved { form: Some(RadiusForm::Constant) },
+        radius: RadiusSpec::UnresolvedConstant,
             ..
         }])
     ));

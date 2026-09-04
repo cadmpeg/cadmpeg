@@ -586,7 +586,7 @@ pub fn project_parameter_design_with_edge_identities(
 > {
     use cadmpeg_ir::features::{
         Angle, DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
-        Length, ParameterId, ParameterValue, PatternForm, PatternKind, PrimitiveSolid,
+        Length, ParameterId, ParameterValue, PatternKind, PrimitiveSolid,
     };
     use std::collections::BTreeMap;
 
@@ -938,27 +938,21 @@ pub fn project_parameter_design_with_edge_identities(
                     project_circular_pattern(scope, construction_groups, face_operands)
                         .unwrap_or_else(|| FeatureDefinition::Pattern {
                             seeds: Vec::new(),
-                            pattern: PatternKind::Unresolved {
-                                form: Some(PatternForm::Circular),
-                            },
+                            pattern: PatternKind::UnresolvedCircular,
                         })
                 }
                 Some(DesignFeatureFamily::RectangularPattern) => {
                     project_rectangular_pattern_scalars(scope, construction_groups, face_operands)
                         .unwrap_or_else(|| FeatureDefinition::Pattern {
                             seeds: Vec::new(),
-                            pattern: PatternKind::Unresolved {
-                                form: Some(PatternForm::Linear),
-                            },
+                            pattern: PatternKind::UnresolvedLinear,
                         })
                 }
                 Some(DesignFeatureFamily::Mirror) => {
                     project_mirror(scope, construction_groups, face_operands, scopes)
                         .unwrap_or_else(|| FeatureDefinition::Pattern {
                             seeds: Vec::new(),
-                            pattern: PatternKind::Unresolved {
-                                form: Some(PatternForm::Mirror),
-                            },
+                            pattern: PatternKind::UnresolvedMirror,
                         })
                 }
                 Some(DesignFeatureFamily::OffsetFaces) => {

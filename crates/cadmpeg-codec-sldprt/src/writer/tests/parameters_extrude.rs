@@ -1195,9 +1195,7 @@ fn semantic_writer_round_trips_extrusion_to_face() {
 
 #[test]
 fn semantic_writer_retains_unresolved_native_edge_treatments() {
-    use cadmpeg_ir::features::{
-        ChamferForm, ChamferSpec, FeatureDefinition, RadiusForm, RadiusSpec,
-    };
+    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, RadiusSpec};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1223,9 +1221,7 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         FeatureDefinition::Fillet {
             groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: RadiusSpec::Unresolved {
-                form: Some(RadiusForm::Constant),
-            },
+            radius: RadiusSpec::UnresolvedConstant,
             ..
         }])
     ));
@@ -1235,9 +1231,7 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
             groups,
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: ChamferSpec::Unresolved {
-                form: Some(ChamferForm::Distance),
-            },
+            spec: ChamferSpec::UnresolvedDistance,
             ..
         }])
     ));
