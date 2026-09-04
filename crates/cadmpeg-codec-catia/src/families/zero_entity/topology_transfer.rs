@@ -339,7 +339,7 @@ pub(crate) fn transfer_closed_face_topology(
                 support_runs.len()
             )
         },
-        |root| root.body_record_ordinal.to_string(),
+        |root| root.body_record_ordinal().to_string(),
     );
     let body_id = BodyId::mint(format!("catia:zero-entity:topology-body#{topology_scope}"))
         .expect("identity grammar");
@@ -349,7 +349,7 @@ pub(crate) fn transfer_closed_face_topology(
     .expect("identity grammar");
     let shell_scope = ownership_root.map_or_else(
         || topology_scope.clone(),
-        |root| root.shell_record_ordinal.to_string(),
+        |root| root.shell_record_ordinal().to_string(),
     );
     let shell_id = ShellId::mint(format!("catia:zero-entity:topology-shell#{shell_scope}"))
         .expect("identity grammar");
@@ -1009,9 +1009,7 @@ mod tests {
             face_roster_record_ordinal: 20,
             face_slots: vec![2, 1],
             shell_pos: 2,
-            shell_record_ordinal: 21,
             body_pos: 3,
-            body_record_ordinal: 22,
         };
         let counts = transfer_closed_face_topology(
             &mut ir,
