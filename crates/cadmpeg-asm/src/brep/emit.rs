@@ -2608,9 +2608,7 @@ fn emit_carrier_curve(
         source_object: None,
     });
     if let Some(procedural) = procedural_curve_defs.remove(&i) {
-        let definition = if let Some((source, parameter_range, offset, labels, codes)) =
-            procedural.2
-        {
+        let definition = if let Some((source, parameter_range, offset, roles)) = procedural.2 {
             let source_id = CurveId(format!("{format}:brep:procedural_curve#{i}:source"));
             out.curves.push(Curve {
                 id: source_id.clone(),
@@ -2621,8 +2619,7 @@ fn emit_carrier_curve(
                 source: source_id,
                 parameter_range,
                 offset,
-                labels,
-                codes,
+                roles,
             }
         } else if let Some((source, parameter_range)) = procedural.3 {
             let source_id = CurveId(format!("{format}:brep:procedural_curve#{i}:source"));

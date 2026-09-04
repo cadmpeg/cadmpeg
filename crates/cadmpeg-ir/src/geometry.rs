@@ -5354,9 +5354,54 @@ pub enum ProjectionTail {
         flag: bool,
         /// Native parameter interval on the projected source curve.
         parameter_range: [f64; 2],
-        /// Projection role, such as `surf1` or `surf2`.
-        role: String,
+        /// Projection support role.
+        role: ProjectionRole,
     },
+}
+
+/// Support selected by a ranged projection tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum ProjectionRole {
+    /// First support surface.
+    #[serde(rename = "surf1")]
+    Surf1,
+    /// Second support surface.
+    #[serde(rename = "surf2")]
+    Surf2,
+}
+
+impl ProjectionRole {
+    /// Parse the native ASM identifier.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "surf1" => Some(Self::Surf1),
+            "surf2" => Some(Self::Surf2),
+            _ => None,
+        }
+    }
+
+    /// Native ASM identifier.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Surf1 => "surf1",
+            Self::Surf2 => "surf2",
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ProjectionRole {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "invalid projection role field value `{value}`; expected `surf1` or `surf2`"
+            ))
+        })
+    }
 }
 
 /// Native surface-curve family with its support context and optional
@@ -6029,10 +6074,10 @@ pub enum ProceduralCurveDefinition {
         parameter_range: [f64; 2],
         /// Model-space offset vector.
         offset: Vector3,
-        /// Native role labels following the offset vector.
-        labels: [String; 2],
-        /// Native integer role codes paired with `labels`.
-        codes: [i64; 2],
+        /// Integer codes attached to the fixed `source` and `offset` roles.
+        #[serde(flatten, with = "vector_offset_roles_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "VectorOffsetRolesWire"))]
+        roles: VectorOffsetRoles,
     },
     /// A parameter sub-range of a parent curve.
     Subset {
@@ -6067,6 +6112,54 @@ pub enum ProceduralCurveDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// Codes attached to the fixed native vector-offset role labels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VectorOffsetRoles {
+    /// Code following the `source` label.
+    pub source_code: i64,
+    /// Code following the `offset` label.
+    pub offset_code: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct VectorOffsetRolesWire {
+    labels: [String; 2],
+    codes: [i64; 2],
+}
+
+mod vector_offset_roles_wire {
+    use super::{VectorOffsetRoles, VectorOffsetRolesWire};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(roles: &VectorOffsetRoles, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        VectorOffsetRolesWire {
+            labels: ["source".into(), "offset".into()],
+            codes: [roles.source_code, roles.offset_code],
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<VectorOffsetRoles, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = VectorOffsetRolesWire::deserialize(deserializer)?;
+        if wire.labels != ["source", "offset"] {
+            return Err(serde::de::Error::custom(
+                "vector-offset labels must be [\"source\", \"offset\"]",
+            ));
+        }
+        Ok(VectorOffsetRoles {
+            source_code: wire.codes[0],
+            offset_code: wire.codes[1],
+        })
+    }
 }
 
 impl ProceduralCurveDefinition {

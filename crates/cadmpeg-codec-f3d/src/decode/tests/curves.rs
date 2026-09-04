@@ -351,7 +351,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
 
 #[test]
 fn generated_vector_offset_curve_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, VectorOffsetRoles};
 
     let result = F3dCodec
         .decode(
@@ -366,16 +366,20 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         source,
         parameter_range,
         offset,
-        labels,
-        codes,
+        roles,
     } = procedural.definition()
     else {
         panic!("expected vector offset construction")
     };
     assert_eq!(*parameter_range, [-2.0, 5.0]);
     assert_eq!(*offset, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 20.0));
-    assert_eq!(labels, &["source".to_string(), "offset".to_string()]);
-    assert_eq!(*codes, [7, 9]);
+    assert_eq!(
+        *roles,
+        VectorOffsetRoles {
+            source_code: 7,
+            offset_code: 9,
+        }
+    );
     assert!(result
         .ir()
         .model
@@ -385,8 +389,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.008));
     let expected_range = *parameter_range;
     let expected_offset = *offset;
-    let expected_labels = labels.clone();
-    let expected_codes = *codes;
+    let expected_roles = *roles;
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].edit_definition(|definition| {
@@ -449,16 +452,14 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         source,
         parameter_range,
         offset,
-        labels,
-        codes,
+        roles,
     } = &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip vector offset")
     };
     assert_eq!(*parameter_range, expected_range);
     assert_eq!(*offset, expected_offset);
-    assert_eq!(*labels, expected_labels);
-    assert_eq!(*codes, expected_codes);
+    assert_eq!(*roles, expected_roles);
     assert!(round_trip
         .ir()
         .model
@@ -1429,7 +1430,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_projection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionTail};
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionRole, ProjectionTail};
 
     let result = F3dCodec
         .decode(
@@ -1459,7 +1460,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         &ProjectionTail::Ranged {
             flag: true,
             parameter_range: [-2.0, 3.0],
-            role: "surf2".into(),
+            role: ProjectionRole::Surf2,
         }
     );
 
@@ -1486,7 +1487,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         };
         *flag = false;
         *parameter_range = [-4.0, 5.0];
-        *role = "surf1".into();
+        *role = ProjectionRole::Surf1;
     });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)
@@ -1505,7 +1506,7 @@ fn generated_projection_decodes_and_writes_source_less() {
                 ref role,
             },
             ..
-        } if context.parameter_range == [-1.0, 2.0] && role == "surf1"
+        } if context.parameter_range == [-1.0, 2.0] && *role == ProjectionRole::Surf1
     ));
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1533,7 +1534,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         &ProjectionTail::Ranged {
             flag: true,
             parameter_range: [-2.0, 3.0],
-            role: "surf2".into(),
+            role: ProjectionRole::Surf2,
         }
     );
 }

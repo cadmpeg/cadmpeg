@@ -1290,11 +1290,6 @@ fn patch_projection_definition(
                     "projection tail range must be finite".into(),
                 ));
             }
-            if !role.is_ascii() || role.len() != role_range.len() {
-                return Err(CodecError::NotImplemented(
-                    "projection role edit must retain its encoded ASCII length".into(),
-                ));
-            }
             bytes[record.offset + flag_offset] = native_bool(*flag);
             apply_f64_patches(
                 bytes,
@@ -1305,7 +1300,7 @@ fn patch_projection_definition(
                     .map(|(offset, value)| (*offset, *value)),
             );
             let role_target = record.offset + role_range.start..record.offset + role_range.end;
-            bytes[role_target].copy_from_slice(role.as_bytes());
+            bytes[role_target].copy_from_slice(role.as_str().as_bytes());
         }
         _ => {
             return Err(CodecError::NotImplemented(

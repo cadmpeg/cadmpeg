@@ -3442,19 +3442,16 @@ pub(crate) fn validate_procedural_curve_edits(
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
                     source: before_source,
-                    labels: before_labels,
-                    codes: before_codes,
+                    roles: before_roles,
                     ..
                 },
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset {
                     source: after_source,
-                    labels: after_labels,
-                    codes: after_codes,
+                    roles: after_roles,
                     ..
                 },
             ) if before_source == after_source
-                && before_labels == after_labels
-                && before_codes == after_codes
+                && before_roles == after_roles
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())
@@ -3552,16 +3549,9 @@ pub(crate) fn validate_procedural_curve_edits(
                         cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
                     ) => true,
                     (
-                        cadmpeg_ir::geometry::ProjectionTail::Ranged {
-                            role: before_role, ..
-                        },
-                        cadmpeg_ir::geometry::ProjectionTail::Ranged {
-                            role: after_role, ..
-                        },
-                    ) => {
-                        before_role.len() == after_role.len()
-                            && matches!(after_role.as_str(), "surf1" | "surf2")
-                    }
+                        cadmpeg_ir::geometry::ProjectionTail::Ranged { .. },
+                        cadmpeg_ir::geometry::ProjectionTail::Ranged { .. },
+                    ) => true,
                     _ => false,
                 }
                 && before.definition() != after.definition() =>
