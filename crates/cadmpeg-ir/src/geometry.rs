@@ -12,7 +12,7 @@ use crate::provenance::SourceObjectAssociation;
 use crate::transform::{Transform, Transform2};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::num::NonZeroI64;
 
 fn default_true() -> bool {
@@ -2245,18 +2245,185 @@ pub struct LoftSubdataRow {
     pub extra: Option<[f64; 2]>,
 }
 
-/// Native loft constraint table.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct LoftSubdata {
+/// Native loft constraint table with structurally consistent dimensions.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoftSubdata {
+    /// Type 211 stores exactly one leading pair and no column pairs.
+    Type211 {
+        /// The sole leading scalar pair.
+        row: [f64; 2],
+    },
+    /// All other table types store rows of one shared column width.
+    Table(LoftSubdataTable),
+}
+
+/// Checked non-211 loft table payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoftSubdataTable {
+    type_code: i64,
+    rows: Vec<LoftSubdataRow>,
+}
+
+impl LoftSubdata {
+    /// Construct the fixed type-211 form.
+    #[must_use]
+    pub fn type_211(row: [f64; 2]) -> Self {
+        Self::Type211 { row }
+    }
+
+    /// Construct a non-211 table whose rows have one shared column width.
+    #[must_use]
+    pub fn table(type_code: i64, rows: Vec<LoftSubdataRow>) -> Option<Self> {
+        if type_code == 211
+            || rows.len() > i64::MAX as usize
+            || rows
+                .first()
+                .is_some_and(|row| row.columns.len() > i64::MAX as usize)
+        {
+            return None;
+        }
+        let column_count = rows.first().map_or(0, |row| row.columns.len());
+        rows.iter()
+            .all(|row| row.columns.len() == column_count)
+            .then_some(Self::Table(LoftSubdataTable { type_code, rows }))
+    }
+
     /// Native table type discriminator.
-    pub type_code: i64,
-    /// Serialized row count.
-    pub row_count: i64,
-    /// Serialized per-row column count.
-    pub column_count: i64,
-    /// Ordered decoded rows.
-    pub rows: Vec<LoftSubdataRow>,
+    #[must_use]
+    pub fn type_code(&self) -> i64 {
+        match self {
+            Self::Type211 { .. } => 211,
+            Self::Table(table) => table.type_code,
+        }
+    }
+
+    /// Number of serialized rows.
+    #[must_use]
+    pub fn row_count(&self) -> i64 {
+        match self {
+            Self::Type211 { .. } => 1,
+            Self::Table(table) => table.rows.len() as i64,
+        }
+    }
+
+    /// Shared number of column pairs in each serialized row.
+    #[must_use]
+    pub fn column_count(&self) -> i64 {
+        match self {
+            Self::Type211 { .. } => 0,
+            Self::Table(table) => table.rows.first().map_or(0, |row| row.columns.len() as i64),
+        }
+    }
+
+    /// Visit the leading and column pairs in each row.
+    pub fn visit_rows(&self, mut visit: impl FnMut(&[f64; 2], &[[f64; 2]], Option<&[f64; 2]>)) {
+        match self {
+            Self::Type211 { row } => visit(row, &[], None),
+            Self::Table(table) => {
+                for row in &table.rows {
+                    visit(&row.parameters, &row.columns, row.extra.as_ref());
+                }
+            }
+        }
+    }
+
+    /// Whether every leading and per-column scalar is finite.
+    #[must_use]
+    pub(crate) fn row_values_are_finite(&self) -> bool {
+        let mut valid = true;
+        self.visit_rows(|parameters, columns, _extra| {
+            valid &= parameters.iter().all(|value| value.is_finite())
+                && columns.iter().flatten().all(|value| value.is_finite());
+        });
+        valid
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct LoftSubdataWire {
+    type_code: i64,
+    row_count: i64,
+    column_count: i64,
+    rows: Vec<LoftSubdataRow>,
+}
+
+impl Serialize for LoftSubdata {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("LoftSubdata", 4)?;
+        state.serialize_field("type_code", &self.type_code())?;
+        state.serialize_field("row_count", &self.row_count())?;
+        state.serialize_field("column_count", &self.column_count())?;
+        match self {
+            Self::Type211 { row } => {
+                let row = LoftSubdataRow {
+                    parameters: *row,
+                    columns: Vec::new(),
+                    extra: None,
+                };
+                state.serialize_field("rows", std::slice::from_ref(&row))?;
+            }
+            Self::Table(table) => state.serialize_field("rows", &table.rows)?,
+        }
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for LoftSubdata {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = LoftSubdataWire::deserialize(deserializer)?;
+        let row_count = usize::try_from(wire.row_count)
+            .map_err(|_| serde::de::Error::custom("loft subdata row_count is negative"))?;
+        let column_count = usize::try_from(wire.column_count)
+            .map_err(|_| serde::de::Error::custom("loft subdata column_count is negative"))?;
+        if wire.rows.len() != row_count {
+            return Err(serde::de::Error::custom(
+                "loft subdata row_count does not match rows",
+            ));
+        }
+        if wire.type_code == 211 {
+            let [row] = wire.rows.as_slice() else {
+                return Err(serde::de::Error::custom(
+                    "loft subdata type 211 requires exactly one row",
+                ));
+            };
+            if column_count != 0 || !row.columns.is_empty() || row.extra.is_some() {
+                return Err(serde::de::Error::custom(
+                    "loft subdata type 211 forbids columns and a trailing pair",
+                ));
+            }
+            return Ok(Self::type_211(row.parameters));
+        }
+        if wire
+            .rows
+            .iter()
+            .any(|row| row.columns.len() != column_count)
+        {
+            return Err(serde::de::Error::custom(
+                "loft subdata column_count does not match every row",
+            ));
+        }
+        Self::table(wire.type_code, wire.rows).ok_or_else(|| {
+            serde::de::Error::custom("loft subdata dimensions exceed the wire representation")
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for LoftSubdata {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "LoftSubdata".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        LoftSubdataWire::json_schema(generator)
+    }
 }
 
 /// Surface-side constraint attached to one loft profile curve.

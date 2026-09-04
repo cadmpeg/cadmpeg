@@ -762,7 +762,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         );
         assert!(sections.iter().all(|section| section.entries.len() == 1));
         assert_eq!(
-            sections[0].entries[0].profile[0].form.subdata().type_code,
+            sections[0].entries[0].profile[0].form.subdata().type_code(),
             211
         );
         assert_eq!(

@@ -208,16 +208,91 @@ fn variable_blend_shape_rejects_inconsistent_wire_fields() {
 }
 
 fn empty_loft_subdata() -> crate::geometry::LoftSubdata {
-    crate::geometry::LoftSubdata {
-        type_code: 211,
-        row_count: 1,
-        column_count: 0,
-        rows: vec![crate::geometry::LoftSubdataRow {
-            parameters: [0.0, 1.0],
-            columns: Vec::new(),
-            extra: None,
-        }],
-    }
+    crate::geometry::LoftSubdata::type_211([0.0, 1.0])
+}
+
+#[test]
+fn loft_subdata_derives_counts_and_rejects_inconsistent_wire_counts() {
+    let table = crate::geometry::LoftSubdata::table(
+        7,
+        vec![
+            crate::geometry::LoftSubdataRow {
+                parameters: [0.0, 1.0],
+                columns: vec![[2.0, 3.0]],
+                extra: None,
+            },
+            crate::geometry::LoftSubdataRow {
+                parameters: [4.0, 5.0],
+                columns: vec![[6.0, 7.0]],
+                extra: Some([8.0, 9.0]),
+            },
+        ],
+    )
+    .unwrap();
+    let wire = serde_json::to_value(&table).unwrap();
+    assert_eq!(wire["type_code"], 7);
+    assert_eq!(wire["row_count"], 2);
+    assert_eq!(wire["column_count"], 1);
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::LoftSubdata>(wire.clone()).unwrap(),
+        table
+    );
+
+    let mut wrong_rows = wire.clone();
+    wrong_rows["row_count"] = serde_json::json!(3);
+    let error = serde_json::from_value::<crate::geometry::LoftSubdata>(wrong_rows).unwrap_err();
+    assert!(error.to_string().contains("row_count does not match rows"));
+
+    let mut wrong_columns = wire;
+    wrong_columns["rows"][1]["columns"] = serde_json::json!([]);
+    let error = serde_json::from_value::<crate::geometry::LoftSubdata>(wrong_columns).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("column_count does not match every row"));
+
+    assert!(crate::geometry::LoftSubdata::table(
+        9,
+        vec![
+            crate::geometry::LoftSubdataRow {
+                parameters: [0.0, 1.0],
+                columns: Vec::new(),
+                extra: None,
+            },
+            crate::geometry::LoftSubdataRow {
+                parameters: [2.0, 3.0],
+                columns: vec![[4.0, 5.0]],
+                extra: None,
+            },
+        ],
+    )
+    .is_none());
+}
+
+#[test]
+fn loft_subdata_type_211_has_one_row_and_no_columns() {
+    let table = crate::geometry::LoftSubdata::type_211([2.0, 3.0]);
+    let wire = serde_json::to_value(&table).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::json!({
+            "type_code": 211,
+            "row_count": 1,
+            "column_count": 0,
+            "rows": [{ "parameters": [2.0, 3.0], "columns": [] }]
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::LoftSubdata>(wire.clone()).unwrap(),
+        table
+    );
+
+    let mut invalid = wire;
+    invalid["column_count"] = serde_json::json!(1);
+    invalid["rows"][0]["columns"] = serde_json::json!([[4.0, 5.0]]);
+    let error = serde_json::from_value::<crate::geometry::LoftSubdata>(invalid).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("type 211 forbids columns and a trailing pair"));
 }
 
 #[test]
