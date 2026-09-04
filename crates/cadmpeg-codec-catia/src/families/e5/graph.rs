@@ -64,16 +64,42 @@ impl E5Topology {
 /// A class-`0xc0`/`0xc1` curve-support record: the pcurve(s) an edge curve
 /// evaluates against and the surface parameter range they span ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
+pub enum E5CurveSupportKind {
+    /// Class-`0xc0` one-pcurve boundary support.
+    Boundary(u32),
+    /// Class-`0xc1` two-pcurve intersection support.
+    Intersection([u32; 2]),
+}
+
+impl E5CurveSupportKind {
+    fn from_parts(intersection: bool, pcurves: Vec<u32>) -> Option<Self> {
+        match (intersection, pcurves.as_slice()) {
+            (false, &[pcurve]) => Some(Self::Boundary(pcurve)),
+            (true, &[left, right]) => Some(Self::Intersection([left, right])),
+            _ => None,
+        }
+    }
+
+    pub fn pcurves(&self) -> &[u32] {
+        match self {
+            Self::Boundary(pcurve) => std::slice::from_ref(pcurve),
+            Self::Intersection(pcurves) => pcurves,
+        }
+    }
+
+    pub fn is_intersection(&self) -> bool {
+        matches!(self, Self::Intersection(_))
+    }
+}
+
+/// A class-`0xc0`/`0xc1` curve-support record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
+#[derive(Debug, Clone, PartialEq)]
 pub struct E5CurveSupport {
     /// This record's stream-assigned `record_id`, used to resolve
     /// `E5Edge::support` references.
     pub record_id: u32,
-    /// `true` for a class-`0xc1` two-pcurve intersection support, `false`
-    /// for a class-`0xc0` one-pcurve boundary support.
-    pub intersection: bool,
-    /// Referenced pcurve `record_id`s: one entry for `0xc0`, two for
-    /// `0xc1`.
-    pub pcurves: Vec<u32>,
+    /// Boundary or intersection pcurve layout.
+    pub kind: E5CurveSupportKind,
     /// Raw mode byte following the pcurve reference lane; meaning not
     /// decoded further.
     pub mode: u8,
@@ -81,6 +107,16 @@ pub struct E5CurveSupport {
     pub range: [f64; 2],
     /// Unparsed bytes after the fixed header; not interpreted.
     pub tail: Vec<u8>,
+}
+
+impl E5CurveSupport {
+    pub fn pcurves(&self) -> &[u32] {
+        self.kind.pcurves()
+    }
+
+    pub fn is_intersection(&self) -> bool {
+        self.kind.is_intersection()
+    }
 }
 
 /// A class-`0x0e` parameter-bound record: a list of representation
@@ -465,7 +501,7 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                     return None;
                 }
                 let support = curve_supports.get(&edge.support)?;
-                if support.pcurves.iter().any(|reference| {
+                if support.pcurves().iter().any(|reference| {
                     !curve_support_reference_closes(*reference, &pcurves, &curve_supports)
                 }) {
                     return None;
@@ -574,7 +610,7 @@ fn curve_support_reference_closes(
         }
         let Some(support) = supports
             .get(&reference)
-            .filter(|support| support.intersection)
+            .filter(|support| support.is_intersection())
         else {
             return false;
         };
@@ -586,13 +622,13 @@ fn curve_support_reference_closes(
             return false;
         }
         stack.push((reference, true));
-        for child in support.pcurves.iter().rev() {
+        for child in support.pcurves().iter().rev() {
             if pcurves.contains_key(child) {
                 continue;
             }
             if !supports
                 .get(child)
-                .is_some_and(|support| support.intersection)
+                .is_some_and(|support| support.is_intersection())
                 || visiting.contains(child)
             {
                 return false;
@@ -639,8 +675,7 @@ fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
     position = view.position();
     Some(E5CurveSupport {
         record_id: record.id,
-        intersection: record.class == 0xc1,
-        pcurves,
+        kind: E5CurveSupportKind::from_parts(record.class == 0xc1, pcurves)?,
         mode,
         range,
         tail: record.payload[position..].to_vec(),
@@ -1064,10 +1099,10 @@ fn plane_digon_orientation_hint(
 
     let first_support = curve_supports.get(&first_edge.support)?;
     let second_support = curve_supports.get(&second_edge.support)?;
-    if !first_support.intersection
-        || !second_support.intersection
-        || !first_support.pcurves.contains(&first_pcurve_id)
-        || !second_support.pcurves.contains(&second_pcurve_id)
+    if !first_support.is_intersection()
+        || !second_support.is_intersection()
+        || !first_support.pcurves().contains(&first_pcurve_id)
+        || !second_support.pcurves().contains(&second_pcurve_id)
     {
         return None;
     }
@@ -1559,15 +1594,14 @@ mod tests {
                 range: [0.0, 1.0],
             },
         )]);
-        let support = |record_id, pcurves| E5CurveSupport {
+        let support = |record_id, pcurves: [u32; 2]| E5CurveSupport {
             record_id,
-            intersection: true,
-            pcurves,
+            kind: E5CurveSupportKind::Intersection(pcurves),
             mode: 0,
             range: [0.0, 1.0],
             tail: Vec::new(),
         };
-        let supports = BTreeMap::from([(1, support(1, vec![2, 3])), (2, support(2, vec![1, 3]))]);
+        let supports = BTreeMap::from([(1, support(1, [2, 3])), (2, support(2, [1, 3]))]);
         assert!(!curve_support_reference_closes(1, &pcurves, &supports));
     }
 
@@ -1773,8 +1807,7 @@ mod tests {
                 100,
                 E5CurveSupport {
                     record_id: 100,
-                    intersection: true,
-                    pcurves: vec![10, 12],
+                    kind: E5CurveSupportKind::Intersection([10, 12]),
                     mode: 0,
                     range: [0.0, 1.0],
                     tail: Vec::new(),
@@ -1784,8 +1817,7 @@ mod tests {
                 101,
                 E5CurveSupport {
                     record_id: 101,
-                    intersection: true,
-                    pcurves: vec![11, 13],
+                    kind: E5CurveSupportKind::Intersection([11, 13]),
                     mode: 0,
                     range: [1.0, 2.0],
                     tail: Vec::new(),

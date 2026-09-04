@@ -223,7 +223,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     ));
     assert_eq!(topology.bounds[&900].entries[0].parameter, 0.25);
     assert_eq!(topology.bounds[&900].entries[1].representation, 200);
-    assert_eq!(topology.curve_supports[&200].pcurves, vec![400, 410]);
+    assert_eq!(topology.curve_supports[&200].pcurves(), &[400, 410]);
     assert_eq!(topology.curve_supports[&200].range, [-10.0, 10.0]);
     assert!(matches!(
         topology.pcurves[&403],
