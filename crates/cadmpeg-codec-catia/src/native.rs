@@ -8495,15 +8495,19 @@ fn zero_entity_ownership_roots(
     crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(bytes, range)
         .into_iter()
         .enumerate()
-        .map(|(index, root)| CatiaZeroEntityOwnershipRoot {
-            id: format!("catia:zero-entity:ownership-root#{index}"),
-            face_roster_byte_offset: root.face_roster_pos as u64,
-            face_roster_record_ordinal: root.face_roster_record_ordinal,
-            face_slots: root.face_slots,
-            shell_byte_offset: root.shell_pos as u64,
-            shell_record_ordinal: root.shell_record_ordinal,
-            body_byte_offset: root.body_pos as u64,
-            body_record_ordinal: root.body_record_ordinal,
+        .map(|(index, root)| {
+            let shell_record_ordinal = root.shell_record_ordinal();
+            let body_record_ordinal = root.body_record_ordinal();
+            CatiaZeroEntityOwnershipRoot {
+                id: format!("catia:zero-entity:ownership-root#{index}"),
+                face_roster_byte_offset: root.face_roster_pos as u64,
+                face_roster_record_ordinal: root.face_roster_record_ordinal,
+                face_slots: root.face_slots,
+                shell_byte_offset: root.shell_pos as u64,
+                shell_record_ordinal,
+                body_byte_offset: root.body_pos as u64,
+                body_record_ordinal,
+            }
         })
         .collect()
 }

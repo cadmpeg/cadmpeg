@@ -537,7 +537,7 @@ fn transfer_closed_wire_loops(
         let Some(root) = ownership_root else {
             return counts;
         };
-        let identity = root.body_record_ordinal;
+        let identity = root.body_record_ordinal();
         let body_id = BodyId::mint(format!("catia:zero-entity:owned-wire-body#{identity}"))
             .expect("identity grammar");
         let region_id = RegionId::mint(format!("catia:zero-entity:owned-wire-region#{identity}"))
@@ -1141,9 +1141,7 @@ mod tests {
             face_roster_record_ordinal: 6,
             face_slots: vec![1],
             shell_pos: 60,
-            shell_record_ordinal: 7,
             body_pos: 70,
-            body_record_ordinal: 8,
         };
         let mut annotations = AnnotationBuilder::new();
 

@@ -219,12 +219,20 @@ pub struct ZeroEntityOwnershipRoot {
     pub face_slots: Vec<u32>,
     /// Offset of the immediately following `6006` shell root.
     pub shell_pos: usize,
-    /// One-based global record ordinal of the shell root.
-    pub shell_record_ordinal: u32,
     /// Offset of the immediately following `6508` body root.
     pub body_pos: usize,
-    /// One-based global record ordinal of the body root.
-    pub body_record_ordinal: u32,
+}
+
+impl ZeroEntityOwnershipRoot {
+    /// One-based ordinal of the immediately following `6006` shell root.
+    pub fn shell_record_ordinal(&self) -> u32 {
+        self.face_roster_record_ordinal.saturating_add(1)
+    }
+
+    /// One-based ordinal of the immediately following `6508` body root.
+    pub fn body_record_ordinal(&self) -> u32 {
+        self.face_roster_record_ordinal.saturating_add(2)
+    }
 }
 
 /// One framed record in the zero-entity global identity namespace.
@@ -586,9 +594,7 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
                 face_roster_record_ordinal: face_roster.ordinal,
                 face_slots,
                 shell_pos: shell.pos,
-                shell_record_ordinal: shell.ordinal,
                 body_pos: body.pos,
-                body_record_ordinal: body.ordinal,
             })
         })
         .collect()
@@ -2621,8 +2627,8 @@ mod tests {
         let root = zero_entity_ownership_root(&stream).expect("complete ownership root");
         assert_eq!(root.face_roster_record_ordinal, 1);
         assert_eq!(root.face_slots, (1..=62).rev().collect::<Vec<_>>());
-        assert_eq!(root.shell_record_ordinal, 2);
-        assert_eq!(root.body_record_ordinal, 3);
+        assert_eq!(root.shell_record_ordinal(), 2);
+        assert_eq!(root.body_record_ordinal(), 3);
     }
 
     #[test]
