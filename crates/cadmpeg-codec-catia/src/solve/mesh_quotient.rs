@@ -3685,12 +3685,46 @@ type MeshFaceDirectionOptions = Vec<Vec<Vec<bool>>>;
 pub(crate) type MeshEndpointPair = (usize, [usize; 2]);
 pub(crate) type MeshEndpointSolutionFilter<'a> = &'a dyn Fn(&[MeshEndpointPair]) -> bool;
 type MeshPartialEndpointSolutionFilter<'a> = &'a dyn Fn(&[Option<[usize; 2]>]) -> bool;
+
+/// Evaluation-order constraints on mesh endpoint assignment.
+///
+/// At least one of `predecessors` or `dependencies` is present.
+#[derive(Clone, Copy)]
+pub(crate) struct AssignmentOrder<'a> {
+    predecessors: Option<&'a [Option<usize>]>,
+    dependencies: Option<&'a [Vec<usize>]>,
+}
+
+impl<'a> AssignmentOrder<'a> {
+    /// Build an assignment order from independently optional predecessor and
+    /// dependency tables. Both absent is `None`.
+    pub(crate) fn new(
+        predecessors: Option<&'a [Option<usize>]>,
+        dependencies: Option<&'a [Vec<usize>]>,
+    ) -> Option<Self> {
+        match (predecessors, dependencies) {
+            (None, None) => None,
+            (predecessors, dependencies) => Some(Self {
+                predecessors,
+                dependencies,
+            }),
+        }
+    }
+
+    pub(crate) fn predecessors(self) -> Option<&'a [Option<usize>]> {
+        self.predecessors
+    }
+
+    pub(crate) fn dependencies(self) -> Option<&'a [Vec<usize>]> {
+        self.dependencies
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct MeshPartialEndpointConstraint<'a> {
     pub(crate) active_edges: &'a [bool],
     pub(crate) coupled_edges: &'a [bool],
-    pub(crate) assignment_predecessors: Option<&'a [Option<usize>]>,
-    pub(crate) assignment_dependencies: Option<&'a [Vec<usize>]>,
+    pub(crate) assignment_order: Option<AssignmentOrder<'a>>,
     pub(crate) valid: MeshPartialEndpointSolutionFilter<'a>,
 }
 type MeshFaceEndpointConfiguration = Vec<MeshEndpointPair>;
@@ -8569,8 +8603,10 @@ where
         Some(MeshPartialEndpointConstraint {
             active_edges: &constraint_edges,
             coupled_edges: partial_constraint_edges,
-            assignment_predecessors: Some(&assignment_predecessors),
-            assignment_dependencies,
+            assignment_order: AssignmentOrder::new(
+                Some(&assignment_predecessors),
+                assignment_dependencies,
+            ),
             valid: &constrained_partial_solution_valid,
         }),
         Some(&endpoint_budget),

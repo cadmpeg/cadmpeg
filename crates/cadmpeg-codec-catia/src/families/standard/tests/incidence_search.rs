@@ -649,8 +649,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
-            assignment_predecessors: None,
-            assignment_dependencies: Some(&assignment_dependencies),
+            assignment_order: AssignmentOrder::new(None, Some(&assignment_dependencies)),
             valid: &valid,
         }),
         dead_states: HashSet::new(),
@@ -703,8 +702,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         partial_solution_filter: Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
-            assignment_predecessors: Some(&assignment_predecessors),
-            assignment_dependencies: None,
+            assignment_order: AssignmentOrder::new(Some(&assignment_predecessors), None),
             valid: &valid,
         }),
         dead_states: HashSet::new(),
