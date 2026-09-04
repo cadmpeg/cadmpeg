@@ -262,12 +262,11 @@ pub(crate) struct SegmentBulk<'a> {
     pub(crate) form: BulkForm,
     pub(crate) compressed: View<'a>,
     pub(crate) expanded: View<'a>,
-    pub(crate) records: RecordFrameState<'a>,
+    pub(crate) records: Option<RecordFrameState<'a>>,
 }
 
 #[derive(Debug)]
 pub(crate) enum RecordFrameState<'a> {
-    NotExpanded,
     Framed(RseRecordTable<'a>),
     Unavailable(String),
 }
@@ -573,7 +572,7 @@ fn parse_bulk_stream<'a>(
         form,
         compressed,
         expanded,
-        records: RecordFrameState::NotExpanded,
+        records: None,
     })
 }
 
@@ -597,10 +596,10 @@ fn frame_segment_records<'a>(
                 "RSe record framing requires parsed segment metadata".into(),
             )),
         };
-        bulk.records = match result {
+        bulk.records = Some(match result {
             Ok(records) => RecordFrameState::Framed(records),
             Err(error) => RecordFrameState::Unavailable(crate::issue_detail(error)?),
-        };
+        });
     }
     Ok(())
 }

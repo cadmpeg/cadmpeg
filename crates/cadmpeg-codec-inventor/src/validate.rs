@@ -1659,7 +1659,6 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
                     Some(bulk.id.clone()),
                 ));
             }
-            crate::native::SegmentBulkFrame::NotExpanded => {}
         }
     }
     let expanded_lengths = data

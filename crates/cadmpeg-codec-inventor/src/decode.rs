@@ -729,7 +729,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             let SegmentBulkState::Framed(bulk) = &segment.bulk else {
                 return Vec::new();
             };
-            let RecordFrameState::Framed(table) = &bulk.records else {
+            let Some(RecordFrameState::Framed(table)) = &bulk.records else {
                 return Vec::new();
             };
             table
@@ -765,17 +765,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 return None;
             };
             let records = match &bulk.records {
-                RecordFrameState::NotExpanded => crate::native::SegmentBulkFrame::NotExpanded,
-                RecordFrameState::Framed(table) => crate::native::SegmentBulkFrame::Framed {
+                Some(RecordFrameState::Framed(table)) => crate::native::SegmentBulkFrame::Framed {
                     record_count: table.records.len() as u64,
                     stream_trailer_len: table.stream_trailer.window().len() as u64,
                     stream_trailer_sha256: sha256_hex(table.stream_trailer.window()),
                 },
-                RecordFrameState::Unavailable(detail) => {
+                Some(RecordFrameState::Unavailable(detail)) => {
                     crate::native::SegmentBulkFrame::Unavailable {
                         detail: detail.clone(),
                     }
                 }
+                None => crate::native::SegmentBulkFrame::Unavailable {
+                    detail: "records are not framed".into(),
+                },
             };
             Some(SegmentBulkRecord {
                 id: format!("inventor:rse:segment-bulk#{}", segment.pair.token.as_str()),
@@ -831,9 +833,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .collect::<Vec<_>>();
     let active_carrier = match &container.rse.active_carrier {
         ActiveCarrierState::NotApplicable => ActiveCarrierRecord::NotApplicable {
-            id: "inventor:kernel:active-carrier#root".into(),
-        },
-        ActiveCarrierState::NotExpanded => ActiveCarrierRecord::NotExpanded {
             id: "inventor:kernel:active-carrier#root".into(),
         },
         ActiveCarrierState::Unavailable(detail) => ActiveCarrierRecord::Unavailable {
@@ -1316,7 +1315,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             ActiveCarrierState::Unavailable(detail) => {
                 format!("The active Inventor kernel carrier is unavailable: {detail}")
             }
-            ActiveCarrierState::NotApplicable | ActiveCarrierState::NotExpanded => {
+            ActiveCarrierState::NotApplicable => {
                 "Inventor geometry is not available for this document kind.".into()
             }
         });

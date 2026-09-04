@@ -817,7 +817,6 @@ pub(crate) enum SegmentBulkFrame {
     Unavailable {
         detail: String,
     },
-    NotExpanded,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -855,7 +854,6 @@ impl From<SegmentBulkRecord> for SegmentBulkRecordWire {
                 SegmentBulkFrame::Unavailable { detail } => {
                     ("unavailable".into(), 0, None, None, Some(detail))
                 }
-                SegmentBulkFrame::NotExpanded => ("not_expanded".into(), 0, None, None, None),
             };
         Self {
             id: value.id,
@@ -891,12 +889,9 @@ impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
                     .stream_trailer_sha256
                     .ok_or_else(|| "framed bulk requires stream_trailer_sha256".to_owned())?,
             },
-            "unavailable" => SegmentBulkFrame::Unavailable {
-                detail: wire
-                    .record_detail
-                    .ok_or_else(|| "unavailable bulk requires record_detail".to_owned())?,
+            "unavailable" | "not_expanded" => SegmentBulkFrame::Unavailable {
+                detail: wire.record_detail.unwrap_or_else(|| "not_expanded".into()),
             },
-            "not_expanded" => SegmentBulkFrame::NotExpanded,
             other => return Err(format!("unknown bulk record_state {other}")),
         };
         Ok(Self {
@@ -933,9 +928,6 @@ pub(crate) struct RseRecordRecord {
 #[serde(try_from = "ActiveCarrierRecordWire", into = "ActiveCarrierRecordWire")]
 pub(crate) enum ActiveCarrierRecord {
     NotApplicable {
-        id: String,
-    },
-    NotExpanded {
         id: String,
     },
     Unavailable {
@@ -988,9 +980,10 @@ struct ActiveCarrierRecordWire {
 #[serde(rename_all = "snake_case")]
 enum ActiveCarrierRecordState {
     NotApplicable,
-    NotExpanded,
     Selected,
     Unavailable,
+    #[serde(other)]
+    NotExpanded,
 }
 
 impl From<ActiveCarrierRecord> for ActiveCarrierRecordWire {
@@ -999,26 +992,6 @@ impl From<ActiveCarrierRecord> for ActiveCarrierRecordWire {
             ActiveCarrierRecord::NotApplicable { id } => Self {
                 id,
                 state: ActiveCarrierRecordState::NotApplicable,
-                segment_token: None,
-                record_ordinal: None,
-                segment_version_major: None,
-                family: None,
-                header_state: None,
-                header_kind: None,
-                header_value: None,
-                schema: None,
-                carrier_len: None,
-                carrier_offset: None,
-                carrier_sha256: None,
-                selected_key: None,
-                enabled: None,
-                delta_state: None,
-                history_reference: None,
-                detail: None,
-            },
-            ActiveCarrierRecord::NotExpanded { id } => Self {
-                id,
-                state: ActiveCarrierRecordState::NotExpanded,
                 segment_token: None,
                 record_ordinal: None,
                 segment_version_major: None,
@@ -1103,7 +1076,10 @@ impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
     fn try_from(wire: ActiveCarrierRecordWire) -> Result<Self, Self::Error> {
         match wire.state {
             ActiveCarrierRecordState::NotApplicable => Ok(Self::NotApplicable { id: wire.id }),
-            ActiveCarrierRecordState::NotExpanded => Ok(Self::NotExpanded { id: wire.id }),
+            ActiveCarrierRecordState::NotExpanded => Ok(Self::Unavailable {
+                id: wire.id,
+                detail: "not_expanded".into(),
+            }),
             ActiveCarrierRecordState::Unavailable => {
                 let detail = wire
                     .detail
@@ -1178,7 +1154,6 @@ impl ActiveCarrierRecord {
     pub(crate) fn id(&self) -> &str {
         match self {
             Self::NotApplicable { id }
-            | Self::NotExpanded { id }
             | Self::Unavailable { id, .. }
             | Self::Selected { id, .. } => id,
         }
