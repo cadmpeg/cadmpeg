@@ -31,18 +31,42 @@ const GRAPHICS_PRIMARY_COLOR_STYLE_TYPE: [u8; 16] = [
 
 #[derive(Debug)]
 pub(crate) struct PresentationInventory<'a> {
-    pub(crate) default_styles: Vec<PmAppDefaultStyle<'a>>,
-    pub(crate) rendering_styles: Vec<PmAppRenderingStyle<'a>>,
-    pub(crate) graphics_faces: Vec<PmGraphicsFace>,
-    pub(crate) graphics_style_collections: Vec<PmGraphicsStyleCollection>,
-    pub(crate) graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyle>,
+    pub(crate) default_styles: Vec<Located<PmAppDefaultStyle<'a>>>,
+    pub(crate) rendering_styles: Vec<Located<PmAppRenderingStyle<'a>>>,
+    pub(crate) graphics_faces: Vec<Located<PmGraphicsFace>>,
+    pub(crate) graphics_style_collections: Vec<Located<PmGraphicsStyleCollection>>,
+    pub(crate) graphics_primary_color_styles: Vec<Located<PmGraphicsPrimaryColorStyle>>,
     pub(crate) issues: Vec<PresentationRecordIssue>,
+}
+
+/// A parsed presentation record with the inventory location stamped once.
+#[derive(Debug)]
+pub(crate) struct Located<T> {
+    pub(crate) segment_token: String,
+    pub(crate) record_ordinal: u32,
+    pub(crate) value: T,
+}
+
+impl<T> Located<T> {
+    fn at(segment_token: impl Into<String>, record_ordinal: u32, value: T) -> Self {
+        Self {
+            segment_token: segment_token.into(),
+            record_ordinal,
+            value,
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Located<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.value
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct PmGraphicsPrimaryColorStyle {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) controls: [u16; 7],
@@ -56,8 +80,6 @@ pub(crate) struct PmGraphicsPrimaryColorStyle {
 
 #[derive(Debug)]
 pub(crate) struct PmGraphicsStyleCollection {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) style_references: Vec<PmDcReference>,
     pub(crate) list_metadata: Option<[u32; 2]>,
@@ -65,8 +87,6 @@ pub(crate) struct PmGraphicsStyleCollection {
 
 #[derive(Debug)]
 pub(crate) struct PmGraphicsFace {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
@@ -88,8 +108,6 @@ pub(crate) struct PmGraphicsFace {
 
 #[derive(Debug)]
 pub(crate) struct PmAppDefaultStyle<'a> {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
@@ -103,8 +121,6 @@ pub(crate) struct PmAppDefaultStyle<'a> {
 
 #[derive(Debug)]
 pub(crate) struct PmAppRenderingStyle<'a> {
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
@@ -417,42 +433,25 @@ pub(crate) fn inventory<'a>(
             continue;
         };
         for record in &table.records {
+            let token = segment.pair.token.as_str();
+            let ordinal = record.ordinal;
             let parsed = match record.type_id {
-                DEFAULT_STYLE_TYPE => {
-                    parse_default_style(ctx, record.payload, version).map(|mut value| {
-                        value.segment_token = segment.pair.token.as_str().into();
-                        value.record_ordinal = record.ordinal;
-                        default_styles.push(value);
-                    })
-                }
-                RENDERING_STYLE_TYPE => {
-                    parse_rendering_style(ctx, record.payload, version).map(|mut value| {
-                        value.segment_token = segment.pair.token.as_str().into();
-                        value.record_ordinal = record.ordinal;
-                        rendering_styles.push(value);
-                    })
-                }
+                DEFAULT_STYLE_TYPE => parse_default_style(ctx, record.payload, version)
+                    .map(|value| default_styles.push(Located::at(token, ordinal, value))),
+                RENDERING_STYLE_TYPE => parse_rendering_style(ctx, record.payload, version)
+                    .map(|value| rendering_styles.push(Located::at(token, ordinal, value))),
                 GRAPHICS_FACE_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_face(ctx, record.payload, version).map(|mut value| {
-                        value.segment_token = segment.pair.token.as_str().into();
-                        value.record_ordinal = record.ordinal;
-                        graphics_faces.push(value);
-                    })
+                    parse_graphics_face(ctx, record.payload, version)
+                        .map(|value| graphics_faces.push(Located::at(token, ordinal, value)))
                 }
                 GRAPHICS_STYLE_COLLECTION_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_style_collection(ctx, record.payload, version).map(
-                        |mut value| {
-                            value.segment_token = segment.pair.token.as_str().into();
-                            value.record_ordinal = record.ordinal;
-                            graphics_style_collections.push(value);
-                        },
-                    )
+                    parse_graphics_style_collection(ctx, record.payload, version).map(|value| {
+                        graphics_style_collections.push(Located::at(token, ordinal, value))
+                    })
                 }
                 GRAPHICS_PRIMARY_COLOR_STYLE_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_primary_color_style(record.payload, version).map(|mut value| {
-                        value.segment_token = segment.pair.token.as_str().into();
-                        value.record_ordinal = record.ordinal;
-                        graphics_primary_color_styles.push(value);
+                    parse_graphics_primary_color_style(record.payload, version).map(|value| {
+                        graphics_primary_color_styles.push(Located::at(token, ordinal, value))
                     })
                 }
                 _ => continue,
@@ -549,8 +548,6 @@ fn parse_graphics_primary_color_style(
         )));
     }
     Ok(PmGraphicsPrimaryColorStyle {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         header_value,
         controls,
@@ -585,8 +582,6 @@ fn parse_graphics_style_collection(
         )));
     }
     Ok(PmGraphicsStyleCollection {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         style_references,
         list_metadata,
@@ -647,8 +642,6 @@ fn parse_graphics_face(
         )));
     }
     Ok(PmGraphicsFace {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         header_value,
         header_id,
@@ -707,8 +700,6 @@ fn parse_default_style<'a>(
         )));
     }
     Ok(PmAppDefaultStyle {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         header_value,
         header_id,
@@ -783,8 +774,6 @@ fn parse_rendering_style<'a>(
     };
     let suffix = cursor.remainder()?;
     Ok(PmAppRenderingStyle {
-        segment_token: String::new(),
-        record_ordinal: 0,
         segment_version_major: version,
         header_value,
         header_id,
@@ -1051,14 +1040,19 @@ mod tests {
         let (_, style_root) =
             DecodeContext::from_root_bytes(&style_bytes, &arena, &DecodePolicy::default())
                 .expect("synthetic rendering style fits policy");
-        let mut default = parse_default_style(&ctx, default_root, 26).expect("default parses");
-        default.segment_token = "segment".into();
-        let mut style = parse_rendering_style(&ctx, style_root, 26).expect("style parses");
-        style.segment_token = "segment".into();
-        style.record_ordinal = 8;
+        let default = parse_default_style(&ctx, default_root, 26).expect("default parses");
+        let style = parse_rendering_style(&ctx, style_root, 26).expect("style parses");
         let inventory = PresentationInventory {
-            default_styles: vec![default],
-            rendering_styles: vec![style],
+            default_styles: vec![Located {
+                segment_token: "segment".into(),
+                record_ordinal: 0,
+                value: default,
+            }],
+            rendering_styles: vec![Located {
+                segment_token: "segment".into(),
+                record_ordinal: 8,
+                value: style,
+            }],
             graphics_faces: Vec::new(),
             graphics_style_collections: Vec::new(),
             graphics_primary_color_styles: Vec::new(),
@@ -1221,49 +1215,55 @@ mod tests {
 
     #[test]
     fn projects_face_override_through_native_key_and_style_graph() {
-        let face = PmGraphicsFace {
+        let face = Located {
             segment_token: "graphics".into(),
             record_ordinal: 2,
-            segment_version_major: 26,
-            header_value: 0,
-            header_id: 0,
-            flags: 0,
-            styles_reference: 5,
-            styles_reference_qualified: true,
-            surface_reference: 0,
-            surface_reference_qualified: false,
-            parent_reference: 0,
-            parent_reference_qualified: false,
-            state: 0,
-            edge_references: Vec::new(),
-            edge_list_metadata: None,
-            visibility_state: 0,
-            bounds: [0.0; 6],
-            key: 42,
-            values: [0; 2],
+            value: PmGraphicsFace {
+                segment_version_major: 26,
+                header_value: 0,
+                header_id: 0,
+                flags: 0,
+                styles_reference: 5,
+                styles_reference_qualified: true,
+                surface_reference: 0,
+                surface_reference_qualified: false,
+                parent_reference: 0,
+                parent_reference_qualified: false,
+                state: 0,
+                edge_references: Vec::new(),
+                edge_list_metadata: None,
+                visibility_state: 0,
+                bounds: [0.0; 6],
+                key: 42,
+                values: [0; 2],
+            },
         };
-        let collection = PmGraphicsStyleCollection {
+        let collection = Located {
             segment_token: "graphics".into(),
             record_ordinal: 4,
-            segment_version_major: 26,
-            style_references: vec![PmDcReference {
-                index: 7,
-                qualified: true,
-            }],
-            list_metadata: Some([1, 2]),
+            value: PmGraphicsStyleCollection {
+                segment_version_major: 26,
+                style_references: vec![PmDcReference {
+                    index: 7,
+                    qualified: true,
+                }],
+                list_metadata: Some([1, 2]),
+            },
         };
-        let style = PmGraphicsPrimaryColorStyle {
+        let style = Located {
             segment_token: "graphics".into(),
             record_ordinal: 6,
-            segment_version_major: 26,
-            header_value: 0,
-            controls: [0; 7],
-            color_header: [0; 2],
-            colors: [[0.0; 4], [0.2, 0.4, 0.6, 0.8], [0.0; 4], [0.0; 4]],
-            color_tail: [0; 2],
-            state: 0,
-            values: [0; 2],
-            terminal_state: 0,
+            value: PmGraphicsPrimaryColorStyle {
+                segment_version_major: 26,
+                header_value: 0,
+                controls: [0; 7],
+                color_header: [0; 2],
+                colors: [[0.0; 4], [0.2, 0.4, 0.6, 0.8], [0.0; 4], [0.0; 4]],
+                color_tail: [0; 2],
+                state: 0,
+                values: [0; 2],
+                terminal_state: 0,
+            },
         };
         let inventory = PresentationInventory {
             default_styles: Vec::new(),
