@@ -216,8 +216,22 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     assert_eq!(graph.faces[0].surface, 100);
     assert_eq!(graph.faces[0].loops, vec![400]);
     assert_eq!(graph.faces[0].terminal_control, Some(0x05));
-    assert_eq!(graph.loops[&400].pcurves, vec![200, 201, 202]);
-    assert_eq!(graph.loops[&400].edges, vec![300, 301, 0x01_0100]);
+    assert_eq!(
+        graph.loops[&400]
+            .members
+            .iter()
+            .map(|member| member.pcurve)
+            .collect::<Vec<_>>(),
+        vec![200, 201, 202]
+    );
+    assert_eq!(
+        graph.loops[&400]
+            .members
+            .iter()
+            .map(|member| member.edge)
+            .collect::<Vec<_>>(),
+        vec![300, 301, 0x01_0100]
+    );
     assert_eq!(graph.pcurves[&200].degree, 1);
     assert_eq!(
         graph.pcurves[&200].control_points,

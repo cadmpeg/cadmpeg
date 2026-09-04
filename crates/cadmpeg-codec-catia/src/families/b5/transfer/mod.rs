@@ -144,23 +144,18 @@ pub(crate) fn transfer(
 ) -> bool {
     if !graph.complete {
         graph.loops.retain(|_, loop_| {
-            loop_
-                .pcurves
-                .iter()
-                .zip(&loop_.edges)
-                .all(|(pcurve, edge)| {
-                    (graph
-                        .pcurves
-                        .get(pcurve)
+            loop_.members.iter().all(|member| {
+                (graph
+                    .pcurves
+                    .get(&member.pcurve)
+                    .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                    || graph
+                        .opaque_pcurves
+                        .get(&member.pcurve)
                         .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                        || graph
-                            .opaque_pcurves
-                            .get(pcurve)
-                            .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                        || graph.implicit_pcurves.get(pcurve) == Some(&loop_.surface))
-                        && graph.edge_vertices.contains_key(edge)
-                })
-                && loop_chain_closes(loop_, &graph.edge_vertices)
+                    || graph.implicit_pcurves.get(&member.pcurve) == Some(&loop_.surface))
+                    && graph.edge_vertices.contains_key(&member.edge)
+            }) && loop_chain_closes(loop_, &graph.edge_vertices)
         });
         graph.faces.retain(|face| {
             graph.surfaces.contains_key(&face.surface)
@@ -300,7 +295,7 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
     let mut loop_senses = BTreeMap::new();
     let mut edge_ids = BTreeSet::new();
     for loop_ in graph.loops.values() {
-        if loop_.pcurves.len() != loop_.edges.len() || loop_.pcurves.is_empty() {
+        if loop_.members.is_empty() {
             return None;
         }
         let owner = ownership.loop_owners.get(&loop_.object_id).copied()?;
@@ -311,7 +306,9 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
             return None;
         }
         loop_senses.insert(loop_.object_id, loop_.edge_senses());
-        for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
+        for member in &loop_.members {
+            let pcurve_id = member.pcurve;
+            let edge_id = member.edge;
             let Some(pcurve) = graph.pcurves.get(&pcurve_id) else {
                 if let Some(opaque) = graph
                     .opaque_pcurves

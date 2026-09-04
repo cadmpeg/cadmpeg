@@ -52,13 +52,14 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     let mut edge_uses = HashMap::<u32, usize>::new();
     for (loop_id, loop_) in &graph.loops {
         let face = loop_owners[loop_id];
-        for edge in &loop_.edges {
-            let endpoints = graph.edge_vertices.get(edge)?;
+        for member in &loop_.members {
+            let edge = member.edge;
+            let endpoints = graph.edge_vertices.get(&edge)?;
             if endpoints.iter().any(|endpoint| *endpoint >= vertex_count) {
                 return None;
             }
-            *edge_uses.entry(*edge).or_default() += 1;
-            if let Some(other_face) = first_face_by_edge.insert(*edge, face) {
+            *edge_uses.entry(edge).or_default() += 1;
+            if let Some(other_face) = first_face_by_edge.insert(edge, face) {
                 parents.union(face, other_face);
             }
         }
@@ -129,7 +130,7 @@ pub(super) fn orient_loop_members(
         || loop_ids.iter().any(|loop_id| {
             reversed
                 .get(loop_id)
-                .is_none_or(|senses| senses.len() != graph.loops[loop_id].edges.len())
+                .is_none_or(|senses| senses.len() != graph.loops[loop_id].members.len())
         })
     {
         return None;
@@ -138,8 +139,8 @@ pub(super) fn orient_loop_members(
     let mut uses = HashMap::<u32, Vec<(usize, bool)>>::new();
     for loop_id in &loop_ids {
         let node = node_by_loop[loop_id];
-        for (&edge, &sense) in graph.loops[loop_id].edges.iter().zip(&reversed[loop_id]) {
-            uses.entry(edge).or_default().push((node, sense));
+        for (member, &sense) in graph.loops[loop_id].members.iter().zip(&reversed[loop_id]) {
+            uses.entry(member.edge).or_default().push((node, sense));
         }
     }
     let mut constraints = alloc_filled(
@@ -193,13 +194,10 @@ pub(super) fn orient_loop_members(
 
     let mut oriented = BTreeMap::new();
     for (node, loop_id) in loop_ids.into_iter().enumerate() {
-        let member_count = graph.loops[&loop_id].edges.len();
+        let member_count = graph.loops[&loop_id].members.len();
         let flip = flips[node]?;
         let mut member_order: Vec<usize> = (0..member_count).collect();
         let mut pcurve_reversed = graph.loops[&loop_id].pcurve_senses();
-        if pcurve_reversed.len() != member_count {
-            return None;
-        }
         if flip {
             member_order.reverse();
             for sense in reversed.get_mut(&loop_id)? {
@@ -262,9 +260,9 @@ fn b5_planar_loop_points(
     }
     let v_axis = normal.cross(u_axis).unit()?;
     let loop_ = graph.loops.get(&loop_id)?;
-    let mut points = Vec::with_capacity(loop_.edges.len());
+    let mut points = Vec::with_capacity(loop_.members.len());
     for &member in &loop_orientation.member_order {
-        let edge = loop_.edges[member];
+        let edge = loop_.members[member].edge;
         let endpoints = graph.edge_vertices.get(&edge)?;
         let endpoint_indices = if loop_orientation.reversed[member] {
             [endpoints[1], endpoints[0]]
@@ -500,7 +498,7 @@ pub(super) fn emit_faces(
             let member_order = &orientation.member_order;
             let loop_id =
                 LoopId::mint(format!("catia:b5:loop#{loop_id_value}")).expect("identity grammar");
-            let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edges.len())
+            let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.members.len())
                 .map(|index| {
                     CoedgeId::mint(format!("catia:b5:coedge#{loop_id_value}-{index}"))
                         .expect("identity grammar")
@@ -513,7 +511,7 @@ pub(super) fn emit_faces(
             let vertex_uses: Vec<AnchoredVertexUse> = member_order
                 .iter()
                 .map(|&member| {
-                    let edge = loop_.edges[member];
+                    let edge = loop_.members[member].edge;
                     let endpoints = graph.edge_vertices[&edge];
                     let endpoint = endpoints[1 - usize::from(senses[member])];
                     AnchoredVertexUse {
@@ -551,7 +549,7 @@ pub(super) fn emit_faces(
                 },
             });
             for &member in member_order {
-                let edge = loop_.edges[member];
+                let edge = loop_.members[member].edge;
                 let reversed = senses[member];
                 let id = coedge_ids_by_member[member].clone();
                 annotate(
@@ -626,7 +624,7 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::LoopBoundaryRole;
 
-    use super::super::super::graph::{B5Face, B5Graph, B5Loop, B5LoopMetadata};
+    use super::super::super::graph::{B5Face, B5Graph, B5Loop, B5LoopMember, B5LoopMetadata};
     use super::{b5_boundary_roles, OrientedLoop};
 
     #[test]
@@ -692,11 +690,17 @@ mod tests {
                 loop_id,
                 B5Loop {
                     object_id: loop_id,
-                    pcurves: loop_pcurves,
-                    edges: loop_edges,
+                    members: loop_pcurves
+                        .into_iter()
+                        .zip(loop_edges)
+                        .map(|(pcurve, edge)| B5LoopMember {
+                            pcurve,
+                            edge,
+                            controls: [0, 0, 0],
+                        })
+                        .collect(),
                     metadata: B5LoopMetadata {
                         framing_controls: [0, 0],
-                        edge_controls: vec![[0, 0, 0]; 4],
                         extension: None,
                     },
                     surface: 10,
