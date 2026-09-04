@@ -1277,9 +1277,8 @@ impl<'a> DecodeContext<'a> {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
-                kind: "hatch".to_string(),
+                kind: "hatch".into(),
                 parameters,
-                properties: BTreeMap::new(),
             },
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
@@ -1364,15 +1363,14 @@ impl<'a> DecodeContext<'a> {
             name,
             suppressed: Some(false),
             dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
+            source_properties: BTreeMap::from([("construction".to_string(), construction)]),
             source_tag: Some("RhinoPolyEdgeReference".to_string()),
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
-                kind: "polyedge_reference".to_string(),
+                kind: "polyedge_reference".into(),
                 parameters,
-                properties: BTreeMap::from([("construction".to_string(), construction)]),
             },
             native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
         };
@@ -1438,23 +1436,22 @@ impl<'a> DecodeContext<'a> {
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
+            source_properties: BTreeMap::from([
+                ("view_bytes".to_string(), view.len().to_string()),
+                ("view_sha256".to_string(), sha256_hex(view)),
+            ]),
             source_tag: Some("RhinoDetailView".to_string()),
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
-                kind: "detail_view".to_string(),
+                kind: "detail_view".into(),
                 parameters: BTreeMap::from([
                     ("boundary".to_string(), curve_id.clone()),
                     (
                         "page_per_model_ratio".to_string(),
                         detail.page_per_model_ratio.to_string(),
                     ),
-                ]),
-                properties: BTreeMap::from([
-                    ("view_bytes".to_string(), view.len().to_string()),
-                    ("view_sha256".to_string(), sha256_hex(view)),
                 ]),
             },
             native_ref: Some(self.unknowns[source_order].id().to_string()),
@@ -1572,13 +1569,13 @@ impl<'a> DecodeContext<'a> {
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
+            source_properties: properties,
             source_tag: Some("RhinoNurbsCage".to_string()),
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
-                kind: "nurbs_cage".to_string(),
+                kind: "nurbs_cage".into(),
                 parameters: BTreeMap::from([
                     ("dimension".to_string(), cage.dimension.to_string()),
                     ("rational".to_string(), cage.rational.to_string()),
@@ -1591,7 +1588,6 @@ impl<'a> DecodeContext<'a> {
                         format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
                     ),
                 ]),
-                properties,
             },
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };
@@ -1739,21 +1735,20 @@ impl<'a> DecodeContext<'a> {
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
             dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
+            source_properties: model_id
+                .as_ref()
+                .map(|id| BTreeMap::from([("model_curve".to_string(), id.clone())]))
+                .unwrap_or_default(),
             source_tag: Some("RhinoCurveOnSurface".to_string()),
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
-                kind: "curve_on_surface".to_string(),
+                kind: "curve_on_surface".into(),
                 parameters: BTreeMap::from([
                     ("parameter_curve".to_string(), parameter_id.clone()),
                     ("support_surface".to_string(), surface_id.to_string()),
                 ]),
-                properties: model_id
-                    .as_ref()
-                    .map(|id| BTreeMap::from([("model_curve".to_string(), id.clone())]))
-                    .unwrap_or_default(),
             },
             native_ref: Some(self.unknowns[source_order].id().to_string()),
         };

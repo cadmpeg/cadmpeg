@@ -1383,7 +1383,7 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     ));
     assert!(matches!(
         &decoded.ir().model.features[4].definition,
-        FeatureDefinition::Native { kind, .. } if kind == "Ebene"
+        FeatureDefinition::Native { kind, .. } if kind.as_str() == "Ebene"
     ));
 
     let mut encoded = Vec::new();

@@ -531,10 +531,12 @@ fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
 }
 
 fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, NativeFeatureKind};
 
     match definition {
-        FeatureDefinition::Native { kind, .. } => !matches!(kind.as_str(), "Canvas" | "Decal"),
+        FeatureDefinition::Native { kind, .. } => {
+            !matches!(kind, NativeFeatureKind::Canvas | NativeFeatureKind::Decal)
+        }
         FeatureDefinition::ReferenceImage { .. }
         | FeatureDefinition::DatumPrincipalPlane { .. } => false,
         FeatureDefinition::MeshImport { tessellations } => tessellations.is_empty(),
@@ -1058,7 +1060,7 @@ fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, u
             if let cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } =
                 &feature.definition
             {
-                kind
+                kind.as_str()
             } else {
                 "<missing source tag>"
             }
@@ -1072,7 +1074,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination,
     };
-    use cadmpeg_ir::features::{FeatureDefinition, PathRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, NativeFeatureKind, PathRef, ProfileRef};
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
     use std::collections::{HashMap, HashSet};
 
@@ -1516,11 +1518,17 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             usize::from(feature_definition_is_incomplete(&feature.definition));
         gaps.native_reference_images += usize::from(matches!(
             &feature.definition,
-            FeatureDefinition::Native { kind, .. } if kind == "Canvas"
+            FeatureDefinition::Native {
+                kind: NativeFeatureKind::Canvas,
+                ..
+            }
         ));
         gaps.native_decals += usize::from(matches!(
             &feature.definition,
-            FeatureDefinition::Native { kind, .. } if kind == "Decal"
+            FeatureDefinition::Native {
+                kind: NativeFeatureKind::Decal,
+                ..
+            }
         ));
         match &feature.definition {
             FeatureDefinition::BaseFeature { bodies }

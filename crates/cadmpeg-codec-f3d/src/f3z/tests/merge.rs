@@ -20,7 +20,6 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         definition: FeatureDefinition::Native {
             kind: "test".into(),
             parameters: std::collections::BTreeMap::new(),
-            properties: std::collections::BTreeMap::new(),
         },
         native_ref: None,
     }

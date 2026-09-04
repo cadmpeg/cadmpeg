@@ -196,9 +196,8 @@ pub(super) fn emit_model_features(
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
                         kind: current_operation
                             .map_or("Native Feature", |operation| operation.kind.as_str())
-                            .to_string(),
+                            .into(),
                         parameters: parameters.clone(),
-                        properties: BTreeMap::new(),
                     })
             },
             |schema_class| {
@@ -367,9 +366,8 @@ pub(super) fn emit_model_features(
                 named_feature_definition(scan, ir, feature_id, kind)
                     .or_else(|| unbounded_feature_plane_definition(scan, ir, feature_id))
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
-                        kind: kind.to_string(),
+                        kind: kind.into(),
                         parameters: parameters.clone(),
-                        properties: BTreeMap::new(),
                     })
             },
             |schema_class| schema_feature_definition(scan, ir, feature_id, schema_class, kind),

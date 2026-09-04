@@ -145,7 +145,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
         assert!(
             matches!(
                 actual,
-                FeatureDefinition::Native { kind: value, .. } if value == kind
+                FeatureDefinition::Native { kind: value, .. } if value.as_str() == kind
             ),
             "{name} expected native {kind}, got {actual:?}"
         );

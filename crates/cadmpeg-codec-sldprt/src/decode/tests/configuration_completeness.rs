@@ -112,7 +112,6 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             FeatureDefinition::Native {
                 kind: "Unprojected".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
         ),
         (
@@ -194,7 +193,6 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
         definition: FeatureDefinition::Native {
             kind: "Localized tree item".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         },
         native_ref: None,
     });

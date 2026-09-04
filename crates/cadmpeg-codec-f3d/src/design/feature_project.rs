@@ -668,14 +668,13 @@ pub fn project_parameter_design_with_edge_identities(
                     })
                     .map_or_else(
                         || FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
                                     (parameter.name.clone(), parameter.expression.clone())
                                 })
                                 .collect(),
-                            properties: native_scope_properties(scope, native_scope),
                         },
                         |_| FeatureDefinition::AssemblyJoint {
                             joint: crate::ids::neutral_assembly_joint_id(scope),
@@ -690,14 +689,13 @@ pub fn project_parameter_design_with_edge_identities(
                     body_recipe_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
+                    kind: scope.kind.clone().into(),
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
                             (parameter.name.clone(), parameter.expression.clone())
                         })
                         .collect(),
-                    properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::Fillet) => {
                     project_fillet_arm(inputs, scope, parameters.as_slice(), native_scope)
@@ -727,20 +725,18 @@ pub fn project_parameter_design_with_edge_identities(
                         )
                     })
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
+                        kind: scope.kind.clone().into(),
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
                                 (parameter.name.clone(), parameter.expression.clone())
                             })
                             .collect(),
-                        properties: native_scope_properties(scope, native_scope),
                     }),
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
+                        kind: scope.kind.clone().into(),
                         parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
                     }),
                 Some(DesignFeatureFamily::Draft) => project_draft(
                     scope,
@@ -751,9 +747,8 @@ pub fn project_parameter_design_with_edge_identities(
                     histories,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
+                    kind: scope.kind.clone().into(),
                     parameters: BTreeMap::new(),
-                    properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
                     scope,
@@ -762,14 +757,13 @@ pub fn project_parameter_design_with_edge_identities(
                     body_recipe_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
+                    kind: scope.kind.clone().into(),
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
                             (parameter.name.clone(), parameter.expression.clone())
                         })
                         .collect(),
-                    properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
                     scope,
@@ -781,9 +775,8 @@ pub fn project_parameter_design_with_edge_identities(
                     curve_identities,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
+                    kind: scope.kind.clone().into(),
                     parameters: BTreeMap::new(),
-                    properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(
                     scope,
@@ -794,9 +787,8 @@ pub fn project_parameter_design_with_edge_identities(
                     face_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
+                    kind: scope.kind.clone().into(),
                     parameters: BTreeMap::new(),
-                    properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::Sweep) => project_fixed_sweep(
                     scope,
@@ -807,9 +799,8 @@ pub fn project_parameter_design_with_edge_identities(
                     face_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
+                    kind: scope.kind.clone().into(),
                     parameters: BTreeMap::new(),
-                    properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::Pipe) => project_fixed_pipe(
                     scope,
@@ -819,14 +810,13 @@ pub fn project_parameter_design_with_edge_identities(
                     edge_identity_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
+                    kind: scope.kind.clone().into(),
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
                             (parameter.name.clone(), parameter.expression.clone())
                         })
                         .collect(),
-                    properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::SurfacePatch) => project_surface_patch(
                     scope,
@@ -835,16 +825,14 @@ pub fn project_parameter_design_with_edge_identities(
                     edge_identity_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
+                    kind: scope.kind.clone().into(),
                     parameters: BTreeMap::new(),
-                    properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::SurfaceExtend) => {
                     scope.surface_extend_operation.as_ref().map_or_else(
                         || FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
                         },
                         |operation| {
                             use crate::records::DesignSurfaceExtendMethod;
@@ -875,9 +863,8 @@ pub fn project_parameter_design_with_edge_identities(
                         project_surface_offset(scope, operation, construction_groups, face_operands)
                     })
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
+                        kind: scope.kind.clone().into(),
                         parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
                     }),
                 Some(DesignFeatureFamily::SurfaceRuled) => project_ruled_surface(
                     scope,
@@ -888,49 +875,44 @@ pub fn project_parameter_design_with_edge_identities(
                     edge_identity_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
+                    kind: scope.kind.clone().into(),
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
                             (parameter.name.clone(), parameter.expression.clone())
                         })
                         .collect(),
-                    properties: native_scope_properties(scope, native_scope),
                 }),
                 Some(DesignFeatureFamily::SurfaceTrim) => {
                     project_surface_trim(scope, construction_groups, body_recipe_operands)
                         .unwrap_or_else(|| FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
                         })
                 }
                 Some(DesignFeatureFamily::BoundaryFill) => {
                     project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
                         }
                     })
                 }
                 Some(DesignFeatureFamily::Hole) => project_hole(scope, &parameters, face_operands)
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
+                        kind: scope.kind.clone().into(),
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
                                 (parameter.name.clone(), parameter.expression.clone())
                             })
                             .collect(),
-                        properties: native_scope_properties(scope, native_scope),
                     }),
                 Some(DesignFeatureFamily::Split) => {
                     project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
                         }
                     })
                 }
@@ -958,74 +940,68 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::OffsetFaces) => {
                     project_offset_faces(scope, &parameters, face_operands, construction_groups)
                         .unwrap_or_else(|| FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
                                     (parameter.name.clone(), parameter.expression.clone())
                                 })
                                 .collect(),
-                            properties: native_scope_properties(scope, native_scope),
                         })
                 }
                 Some(DesignFeatureFamily::Move) => project_move(scope, construction_groups)
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
+                        kind: scope.kind.clone().into(),
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
                                 (parameter.name.clone(), parameter.expression.clone())
                             })
                             .collect(),
-                        properties: native_scope_properties(scope, native_scope),
                     }),
                 Some(DesignFeatureFamily::Shell) => {
                     project_shell(scope, face_operands, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
                                     (parameter.name.clone(), parameter.expression.clone())
                                 })
                                 .collect(),
-                            properties: native_scope_properties(scope, native_scope),
                         }
                     })
                 }
                 Some(DesignFeatureFamily::Thicken) => {
                     project_thicken(scope, face_operands, construction_groups).unwrap_or_else(
                         || FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
                                     (parameter.name.clone(), parameter.expression.clone())
                                 })
                                 .collect(),
-                            properties: native_scope_properties(scope, native_scope),
                         },
                     )
                 }
                 Some(DesignFeatureFamily::Coil) => {
                     project_coil(scope, &parameters, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
                                     (parameter.name.clone(), parameter.expression.clone())
                                 })
                                 .collect(),
-                            properties: native_scope_properties(scope, native_scope),
                         }
                     })
                 }
                 Some(DesignFeatureFamily::Scale) => scope.scale_operation.as_ref().map_or_else(
                     || FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
+                        kind: scope.kind.clone().into(),
                         parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
                     },
                     |operation| {
                         let body_group = construction_groups.iter().find(|group| {
@@ -1064,14 +1040,13 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Thread) => {
                     scope.thread_construction.as_ref().map_or_else(
                         || FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
                                     (parameter.name.clone(), parameter.expression.clone())
                                 })
                                 .collect(),
-                            properties: native_scope_properties(scope, native_scope),
                         },
                         |construction| {
                             let face = project_thread_face_selection(
@@ -1141,27 +1116,25 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
                     project_edge_flange(scope, inputs).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
                                     (parameter.name.clone(), parameter.expression.clone())
                                 })
                                 .collect(),
-                            properties: native_scope_properties(scope, native_scope),
                         }
                     })
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs)
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
+                        kind: scope.kind.clone().into(),
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
                                 (parameter.name.clone(), parameter.expression.clone())
                             })
                             .collect(),
-                        properties: native_scope_properties(scope, native_scope),
                     }),
                 None => {
                     if let Some(primitive) = scope.solid_primitive.as_ref() {
@@ -1250,14 +1223,13 @@ pub fn project_parameter_design_with_edge_identities(
                     } else if scope.kind == "JointOrigin" {
                         scope.joint_origin_transform.map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: parameters
                                     .iter()
                                     .map(|(_, parameter)| {
                                         (parameter.name.clone(), parameter.expression.clone())
                                     })
                                     .collect(),
-                                properties: native_scope_properties(scope, native_scope),
                             },
                             |transform| FeatureDefinition::DatumCoordinateSystem {
                                 origin: Point3::new(
@@ -1285,14 +1257,13 @@ pub fn project_parameter_design_with_edge_identities(
                     } else if scope.kind == "WorkPlane" {
                         scope.work_plane_transform.map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: parameters
                                     .iter()
                                     .map(|(_, parameter)| {
                                         (parameter.name.clone(), parameter.expression.clone())
                                     })
                                     .collect(),
-                                properties: native_scope_properties(scope, native_scope),
                             },
                             |transform| project_work_plane(scope, transform),
                         )
@@ -1310,14 +1281,13 @@ pub fn project_parameter_design_with_edge_identities(
                             })
                             .map_or_else(
                                 || FeatureDefinition::Native {
-                                    kind: scope.kind.clone(),
+                                    kind: scope.kind.clone().into(),
                                     parameters: parameters
                                         .iter()
                                         .map(|(_, parameter)| {
                                             (parameter.name.clone(), parameter.expression.clone())
                                         })
                                         .collect(),
-                                    properties: native_scope_properties(scope, native_scope),
                                 },
                                 |(construction, direction)| FeatureDefinition::DatumAxis {
                                     origin: Point3::new(
@@ -1331,14 +1301,13 @@ pub fn project_parameter_design_with_edge_identities(
                     } else if scope.kind == "WorkPoint" {
                         scope.work_point_construction.as_ref().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: parameters
                                     .iter()
                                     .map(|(_, parameter)| {
                                         (parameter.name.clone(), parameter.expression.clone())
                                     })
                                     .collect(),
-                                properties: native_scope_properties(scope, native_scope),
                             },
                             |construction| FeatureDefinition::DatumPoint {
                                 position: Point3::new(
@@ -1359,25 +1328,22 @@ pub fn project_parameter_design_with_edge_identities(
                     } else if scope.kind == "BaseFlange" {
                         project_base_flange(scope, construction_groups, placements).unwrap_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: BTreeMap::new(),
-                                properties: native_scope_properties(scope, native_scope),
                             },
                         )
                     } else if scope.kind == "RemoveBody" {
                         project_remove_body(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: BTreeMap::new(),
-                                properties: native_scope_properties(scope, native_scope),
                             }
                         })
                     } else if scope.kind == "SurfaceStitch" {
                         project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: BTreeMap::new(),
-                                properties: native_scope_properties(scope, native_scope),
                             }
                         })
                     } else if scope.kind == "SplitFace" {
@@ -1390,23 +1356,20 @@ pub fn project_parameter_design_with_edge_identities(
                             histories,
                         )
                         .unwrap_or_else(|| FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: BTreeMap::new(),
-                            properties: native_scope_properties(scope, native_scope),
                         })
                     } else if matches!(scope.kind.as_str(), "DeleteFace" | "SurfaceDeleteFace") {
                         project_delete_face(scope, construction_groups, face_operands)
                             .unwrap_or_else(|| FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: BTreeMap::new(),
-                                properties: native_scope_properties(scope, native_scope),
                             })
                     } else if scope.kind == "CopyPasteBodies" {
                         scope.copy_paste_bodies_operation.as_ref().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: BTreeMap::new(),
-                                properties: native_scope_properties(scope, native_scope),
                             },
                             |operation| FeatureDefinition::InsertBodies {
                                 bodies: design_body_selection(
@@ -1419,9 +1382,8 @@ pub fn project_parameter_design_with_edge_identities(
                     } else if scope.kind == "CopyPaste" {
                         scope.copy_paste_component_operation.as_ref().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: BTreeMap::new(),
-                                properties: native_scope_properties(scope, native_scope),
                             },
                             |operation| FeatureDefinition::InsertComponent {
                                 occurrence: crate::ids::neutral_component_occurrence_id(
@@ -1432,9 +1394,8 @@ pub fn project_parameter_design_with_edge_identities(
                     } else if scope.kind == "Base Feature" {
                         scope.base_feature_construction.as_ref().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.clone(),
+                                kind: scope.kind.clone().into(),
                                 parameters: BTreeMap::new(),
-                                properties: native_scope_properties(scope, native_scope),
                             },
                             |construction| FeatureDefinition::BaseFeature {
                                 bodies: design_body_selection(
@@ -1446,14 +1407,13 @@ pub fn project_parameter_design_with_edge_identities(
                         )
                     } else {
                         FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
+                            kind: scope.kind.clone().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
                                     (parameter.name.clone(), parameter.expression.clone())
                                 })
                                 .collect(),
-                            properties: native_scope_properties(scope, native_scope),
                         }
                     }
                 }
@@ -1480,7 +1440,11 @@ pub fn project_parameter_design_with_edge_identities(
                         && scope.previous_history_state_id.is_none(),
                 ),
                 dependencies: Vec::new(),
-                source_properties: BTreeMap::new(),
+                source_properties: if matches!(&definition, FeatureDefinition::Native { .. }) {
+                    native_scope_properties(scope, native_scope)
+                } else {
+                    BTreeMap::new()
+                },
                 source_tag: Some(scope.kind.clone()),
                 source_text: None,
                 source_content: Vec::new(),
@@ -2109,7 +2073,6 @@ fn project_fillet_arm(
         edge_identity_operands,
         edge_treatment_vertex_operands,
         histories,
-        placements,
         ..
     } = inputs;
 
@@ -2193,12 +2156,11 @@ fn project_fillet_arm(
         };
         if incomplete_assignment {
             FeatureDefinition::Native {
-                kind: scope.kind.clone(),
+                kind: scope.kind.clone().into(),
                 parameters: parameters
                     .iter()
                     .map(|(_, parameter)| (parameter.name.clone(), parameter.expression.clone()))
                     .collect(),
-                properties: scope_properties(scope, native_scope, placements),
             }
         } else {
             let groups = assignments

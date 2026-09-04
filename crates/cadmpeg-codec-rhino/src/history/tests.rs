@@ -95,17 +95,17 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
         ir.model.features[1].dependencies,
         vec![ir.model.features[0].id.clone()]
     );
-    let cadmpeg_ir::features::FeatureDefinition::Native {
-        kind,
-        parameters,
-        properties,
-    } = &ir.model.features[1].definition
+    let cadmpeg_ir::features::FeatureDefinition::Native { kind, parameters } =
+        &ir.model.features[1].definition
     else {
         panic!("native history operation");
     };
-    assert_eq!(kind, "00000000-0000-0000-0000-00000000000c");
+    assert_eq!(kind.as_str(), "00000000-0000-0000-0000-00000000000c");
     assert_eq!(parameters["value_7"], "2.5");
-    assert_eq!(properties["antecedent_objects"], id(40).to_string());
+    assert_eq!(
+        ir.model.features[1].source_properties["antecedent_objects"],
+        id(40).to_string()
+    );
     assert_eq!(
         ir.model.features[1].native_ref.as_deref(),
         Some("rhino:history:record#00000000-0000-0000-0000-000000000002")

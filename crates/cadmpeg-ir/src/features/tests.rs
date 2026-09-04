@@ -8,6 +8,23 @@ use crate::validate::validate_neutral;
 use crate::CadIr;
 
 #[test]
+fn native_feature_kind_preserves_the_source_spelling() {
+    use crate::features::NativeFeatureKind;
+
+    for (wire, expected) in [
+        ("\"Canvas\"", NativeFeatureKind::Canvas),
+        (
+            "\"PartDesign::FeatureBase\"",
+            NativeFeatureKind::Other("PartDesign::FeatureBase".into()),
+        ),
+    ] {
+        let kind: NativeFeatureKind = serde_json::from_str(wire).unwrap();
+        assert_eq!(kind, expected);
+        assert_eq!(serde_json::to_string(&kind).unwrap(), wire);
+    }
+}
+
+#[test]
 fn configuration_body_membership_round_trips_and_validates() {
     use crate::features::{
         Angle, ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter,

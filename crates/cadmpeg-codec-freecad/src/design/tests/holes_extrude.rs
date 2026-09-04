@@ -247,7 +247,7 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
             let result = decode(&hole_document(target, type_name, value));
             assert!(matches!(
                 definition(&result, "Hole"),
-                FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Hole"
+                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Hole"
             ));
             assert_eq!(result.report().losses.len(), 1);
             assert!(result.report().losses.iter().all(|loss| {
@@ -483,7 +483,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult| {
         assert!(matches!(
             definition(result),
-            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Hole"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Hole"
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
@@ -1198,7 +1198,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
             .expect("malformed direction mode");
         assert!(matches!(
             extrusion_definition(&result),
-            FeatureDefinition::Native { kind, .. } if kind == "Part::Extrusion"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "Part::Extrusion"
         ));
         assert_valid_document(result.ir());
     }
@@ -1525,7 +1525,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
                 .expect("malformed extrusion selector");
             assert!(matches!(
                 pad_definition(&result),
-                FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Pad"
+                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Pad"
             ));
             assert_valid_document(result.ir());
         }
@@ -1776,7 +1776,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
             for name in ["Pad", "Pocket"] {
                 assert!(matches!(
                     feature_definition(&result, name),
-                    FeatureDefinition::Native { kind, .. } if kind == &format!("PartDesign::{name}")
+                    FeatureDefinition::Native { kind, .. } if kind.as_str() == format!("PartDesign::{name}")
                 ));
             }
             assert_eq!(result.report().losses.len(), 2);

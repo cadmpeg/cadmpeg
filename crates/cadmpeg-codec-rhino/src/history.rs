@@ -1406,15 +1406,14 @@ pub(crate) fn project(
             name: None,
             suppressed: Some(false),
             dependencies,
-            source_properties: BTreeMap::new(),
+            source_properties: properties,
             source_tag: Some("HistoryRecord".to_string()),
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
-                kind: record.command_id.to_string(),
+                kind: record.command_id.to_string().into(),
                 parameters,
-                properties,
             },
             native_ref: Some(native_ids[index].clone()),
         });

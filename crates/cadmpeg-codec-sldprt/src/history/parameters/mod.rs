@@ -181,7 +181,7 @@ pub(crate) fn global_parameter_owners(
         .iter()
         .filter(|feature| match &feature.definition {
             FeatureDefinition::Native { kind, .. } => {
-                kind.eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
+                kind.as_str().eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
             }
             FeatureDefinition::TreeNode { role, .. } => *role == FeatureTreeNodeRole::Equations,
             _ => false,

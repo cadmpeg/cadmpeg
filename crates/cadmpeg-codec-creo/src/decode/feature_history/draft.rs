@@ -49,7 +49,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{FaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-12;
 
@@ -697,9 +697,8 @@ pub(in super::super) fn schema_feature_definition(
         }
     }
     IrFeatureDefinition::Native {
-        kind: kind.to_string(),
+        kind: kind.into(),
         parameters: feature_parameters(scan, feature_id),
-        properties: BTreeMap::new(),
     }
 }
 

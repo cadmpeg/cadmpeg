@@ -925,7 +925,6 @@ fn encoder_writes_source_less_native_features() {
         definition: FeatureDefinition::Native {
             kind: "BossExtrude".into(),
             parameters: BTreeMap::from([("Depth".into(), "25mm".into())]),
-            properties: BTreeMap::new(),
         },
         native_ref: None,
     });

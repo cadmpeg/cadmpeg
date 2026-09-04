@@ -179,7 +179,7 @@ fn retains_native_for_malformed_post_process_controls() {
     ] {
         assert!(matches!(
             definition(name),
-            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::AdditiveBox"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::AdditiveBox"
         ));
     }
     assert_eq!(result.report().losses.len(), 5);
@@ -554,7 +554,7 @@ fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
             .expect("malformed Part scale flag");
         assert!(matches!(
             definition(&result, "Scale"),
-            FeatureDefinition::Native { kind, .. } if kind == "Part::Scale"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "Part::Scale"
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert_valid_document(result.ir());
@@ -1246,7 +1246,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     ] {
         assert!(matches!(
             definition(&result, name),
-            FeatureDefinition::Native { kind: actual, .. } if actual == kind
+            FeatureDefinition::Native { kind: actual, .. } if actual.as_str() == kind
         ));
     }
     assert_eq!(result.report().losses.len(), 7);
@@ -1439,7 +1439,7 @@ fn rejects_noncanonical_subshape_binder_context_carrier() {
             .expect("subshape binder feature");
         assert!(matches!(
             &definition.definition,
-            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::SubShapeBinder"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::SubShapeBinder"
         ));
     }
     assert_eq!(result.report().losses.len(), 2);
@@ -1619,7 +1619,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
     fn assert_native(result: &cadmpeg_ir::codec::DecodeResult, kind: &str) {
         assert!(matches!(
             feature_definition(result, "Target"),
-            FeatureDefinition::Native { kind: actual, .. } if actual == kind
+            FeatureDefinition::Native { kind: actual, .. } if actual.as_str() == kind
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
@@ -1795,7 +1795,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
         let result = decode_surface(&surface_document(&mode));
         assert!(matches!(
             feature_definition(&result, "Target"),
-            FeatureDefinition::Native { kind, .. } if kind == "Part::ProjectOnSurface"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "Part::ProjectOnSurface"
         ));
         assert_eq!(result.report().losses.len(), 1);
     }

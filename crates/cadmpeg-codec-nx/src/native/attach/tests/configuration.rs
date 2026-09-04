@@ -939,12 +939,11 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             parameters,
         ),
         cadmpeg_ir::features::FeatureDefinition::Native {
-            kind: "UNKNOWN OPERATION".to_string(),
+            kind: "UNKNOWN OPERATION".into(),
             parameters: std::collections::BTreeMap::from([
                 ("p1_length".to_string(), "p2_length * 2".to_string()),
                 ("p2_length".to_string(), "12.5".to_string()),
             ]),
-            properties: std::collections::BTreeMap::new(),
         }
     );
     assert!(matches!(
@@ -956,7 +955,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             super::HoleProjection::default(),
             std::collections::BTreeMap::default(),
         ),
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "DELETE"
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind.as_str() == "DELETE"
     ));
     assert!(matches!(
         super::non_boolean_feature_definition_with_parameters(

@@ -452,7 +452,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert!(matches!(
         &result.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
-            if kind == "Native Feature"
+            if kind.as_str() == "Native Feature"
     ));
     assert_annotation(
         &result.source_fidelity().annotations,

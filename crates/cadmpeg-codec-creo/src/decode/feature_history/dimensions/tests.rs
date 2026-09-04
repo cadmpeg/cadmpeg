@@ -68,9 +68,8 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
             "creo:model:feature#40".into(),
             ordinal,
             IrFeatureDefinition::Native {
-                kind: "test".to_string(),
+                kind: "test".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
         ));
     }

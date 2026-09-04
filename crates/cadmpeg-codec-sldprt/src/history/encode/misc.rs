@@ -124,17 +124,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     pub(super) fn encode_native(
         &self,
-        kind: &String,
+        kind: &cadmpeg_ir::features::NativeFeatureKind,
         parameters: &BTreeMap<String, String>,
-        properties: &BTreeMap<String, String>,
     ) -> NeutralFeatureEncoding {
         let feature = self.feature;
-        let mut merged = feature.source_properties.clone();
-        merged.extend(properties.clone());
         NeutralFeatureEncoding {
-            kind: kind.clone(),
+            kind: kind.to_string(),
             parameters: parameters.clone(),
-            properties: merged,
+            properties: feature.source_properties.clone(),
         }
     }
 
