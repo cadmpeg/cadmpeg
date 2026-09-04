@@ -690,9 +690,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
 fn decode_standard_transfers_exact_offset_construction() {
     let surface_bytes = a5_surface_stream();
     let carriers = crate::families::a5a8::records::a5_surfaces(&surface_bytes);
-    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
-        panic!("NURBS fixture");
-    };
+    let surface = &carriers[0].geometry;
     let domain = [
         surface.u_knots()[0],
         surface.v_knots()[0],
@@ -752,9 +750,7 @@ fn decode_standard_transfers_exact_offset_construction() {
 fn decode_standard_transfers_construction_use_offset() {
     let surface_bytes = a5_surface_stream();
     let carriers = crate::families::a5a8::records::a5_surfaces(&surface_bytes);
-    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
-        panic!("NURBS fixture");
-    };
+    let surface = &carriers[0].geometry;
     let domain = [
         surface.u_knots()[0],
         surface.v_knots()[0],

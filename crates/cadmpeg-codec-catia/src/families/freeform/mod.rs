@@ -982,7 +982,7 @@ fn freeform_surface_carriers(
             let (source_object, source_tag) = freeform_surface_source(&surface);
             FreeformSurfaceCarrier {
                 pos: surface.pos,
-                geometry: surface.geometry,
+                geometry: SurfaceGeometry::Nurbs(surface.geometry),
                 source_object,
                 source_tag: format!("freeform:{source_tag}"),
             }
@@ -1045,13 +1045,13 @@ fn freeform_surface_source(
     surface: &crate::families::a5a8::records::FreeformSurface,
 ) -> (cadmpeg_ir::SourceObjectAssociation, String) {
     match surface.identity {
-        crate::families::a5a8::records::FreeformSurfaceIdentity::Object(object_id) => (
+        Some(object_id) => (
             cgm_source("surface", object_id),
             format!("object_id:{object_id:08x}"),
         ),
-        crate::families::a5a8::records::FreeformSurfaceIdentity::FrameOffset(offset) => (
-            cgm_source_key("a5-surface-frame", format!("{offset:010}")),
-            format!("frame_offset:{offset:010}"),
+        None => (
+            cgm_source_key("a5-surface-frame", format!("{:010}", surface.pos)),
+            format!("frame_offset:{:010}", surface.pos),
         ),
     }
 }
@@ -1168,7 +1168,7 @@ pub(crate) fn append_freeform_surface_pools(
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: surface.geometry.clone(),
+            geometry: SurfaceGeometry::Nurbs(surface.geometry.clone()),
             source_object: Some(source_object),
         });
     }
@@ -1999,15 +1999,19 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 &resolved.block.pcurves[partner],
                 &ConsolidatedCarrierChart::Identity,
             )?;
+            let candidates: Vec<_> = freeform_surfaces
+                .iter()
+                .enumerate()
+                .map(|(index, surface)| (index, SurfaceGeometry::Nurbs(surface.geometry.clone())))
+                .collect();
             let carrier = unique_paired_surface_lift_match(
                 sides[*resolved_side].pcurve.as_ref()?,
                 resolved_geometry,
                 &partner_pcurve,
                 resolved.block.parameters.range,
-                freeform_surfaces
+                candidates
                     .iter()
-                    .enumerate()
-                    .map(|(index, surface)| (index, &surface.geometry)),
+                    .map(|(index, geometry)| (*index, geometry)),
             );
             if let Some(carrier) = carrier {
                 sides[partner] = IntcurveSupportSide {
@@ -2107,7 +2111,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             .find(|surface| &surface.id == standard_partner)?
                             .geometry;
                         if !matches!(standard_partner_geometry, SurfaceGeometry::Unknown { .. })
-                            && standard_partner_geometry != &freeform_surfaces[carrier].geometry
+                            && *standard_partner_geometry
+                                != SurfaceGeometry::Nurbs(
+                                    freeform_surfaces[carrier].geometry.clone(),
+                                )
                         {
                             return Some((identity, None));
                         }
@@ -2267,7 +2274,8 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     .find(|surface| &surface.id == surface_id)
                 {
                     if matches!(surface.geometry, SurfaceGeometry::Unknown { .. }) {
-                        surface.geometry = freeform_surfaces[carrier].geometry.clone();
+                        surface.geometry =
+                            SurfaceGeometry::Nurbs(freeform_surfaces[carrier].geometry.clone());
                         annotations.derived(&surface.id, "geometry");
                         binding_counts.standard_face_surfaces += 1;
                         bound_new_standard_surface = true;

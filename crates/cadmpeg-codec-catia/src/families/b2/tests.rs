@@ -1475,9 +1475,7 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
 fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     let tiny = 1e-200_f64;
     let mut carriers = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
-    let SurfaceGeometry::Nurbs(surface) = &mut carriers[0].geometry else {
-        panic!("NURBS fixture");
-    };
+    let surface = &mut carriers[0].geometry;
     let scale_knots = |knots: &mut [f64]| {
         let lower = knots[0];
         let span = knots.last().copied().expect("nonempty knots") - lower;

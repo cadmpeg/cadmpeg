@@ -1219,11 +1219,17 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                 let winners: Vec<_> = surfaces
                     .iter()
                     .filter_map(|surface| {
-                        nurbs_carrier_offset(&surface.geometry, &partner_points, &anchor_points)
-                            .map(|offset| ConsolidatedSupportBinding::NurbsCarrier {
+                        nurbs_carrier_offset(
+                            &SurfaceGeometry::Nurbs(surface.geometry.clone()),
+                            &partner_points,
+                            &anchor_points,
+                        )
+                        .map(|offset| {
+                            ConsolidatedSupportBinding::NurbsCarrier {
                                 pos: surface.pos,
                                 offset,
-                            })
+                            }
+                        })
                     })
                     .collect();
                 if let [winner] = winners.as_slice() {
@@ -1370,14 +1376,11 @@ fn support_points(
                 .collect()
         }
         ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
-            let SurfaceGeometry::Nurbs(surface) = &carriers
+            let surface = &carriers
                 .nurbs_surfaces
                 .iter()
                 .find(|surface| surface.pos == *pos)?
-                .geometry
-            else {
-                return None;
-            };
+                .geometry;
             pcurve
                 .sites
                 .iter()
