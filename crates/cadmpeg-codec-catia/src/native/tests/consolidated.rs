@@ -137,7 +137,7 @@ fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() 
     assert_eq!(
         records
             .iter()
-            .map(|record| record.class)
+            .map(|record| u8::from(record.class))
             .collect::<Vec<_>>(),
         [0x5b, 0x5c, 0x5b]
     );
@@ -154,14 +154,6 @@ fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() 
         crate::native::CatiaNative::load(&namespace).expect("load CATIA class-0x5b/0x5c records"),
         native
     );
-
-    let mut invalid = native;
-    invalid.consolidated_class5b5c_records[0].class = 0x5a;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    invalid
-        .store(&mut invalid_namespace)
-        .expect("store invalid CATIA class-0x5b/0x5c record");
-    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
 #[test]

@@ -608,7 +608,7 @@ fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
     assert_eq!(
         records
             .iter()
-            .map(|record| record.class)
+            .map(|record| u8::from(record.class))
             .collect::<Vec<_>>(),
         [0x5b, 0x5c, 0x5b]
     );
@@ -637,7 +637,7 @@ fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
     assert_eq!(
         crate::families::b2::records::b2_class5b5c_records(&invalid_flag)
             .iter()
-            .map(|record| record.class)
+            .map(|record| u8::from(record.class))
             .collect::<Vec<_>>(),
         [0x5c, 0x5b]
     );

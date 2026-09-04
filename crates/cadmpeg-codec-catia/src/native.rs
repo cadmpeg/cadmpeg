@@ -1452,6 +1452,38 @@ pub struct CatiaConsolidatedClass61Record {
     pub payload: CatiaConsolidatedClass61Payload,
 }
 
+/// Record class of a consolidated B-family class-`0x5b` or class-`0x5c` frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CatiaClass5b5c {
+    /// Class `0x5b`.
+    Class5b,
+    /// Class `0x5c`.
+    Class5c,
+}
+
+impl From<CatiaClass5b5c> for u8 {
+    fn from(value: CatiaClass5b5c) -> Self {
+        match value {
+            CatiaClass5b5c::Class5b => 0x5b,
+            CatiaClass5b5c::Class5c => 0x5c,
+        }
+    }
+}
+
+impl TryFrom<u8> for CatiaClass5b5c {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x5b => Ok(Self::Class5b),
+            0x5c => Ok(Self::Class5c),
+            other => Err(format!("class {other:#x} is not 0x5b or 0x5c")),
+        }
+    }
+}
+
 /// One complete consolidated B-family class-`0x5b` or class-`0x5c` record.
 ///
 /// These records retain their source-local control lane. The payload has no
@@ -1473,8 +1505,8 @@ pub struct CatiaConsolidatedClass5b5cRecord {
     pub width: u8,
     /// Independent frame flag.
     pub flag: u8,
-    /// Record class (`0x5b` or `0x5c`).
-    pub class: u8,
+    /// Record class.
+    pub class: CatiaClass5b5c,
     /// Width-coded frame header token.
     pub header_token: u32,
     /// Complete opaque payload in source order.
