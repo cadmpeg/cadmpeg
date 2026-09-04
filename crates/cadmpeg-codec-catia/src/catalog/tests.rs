@@ -112,7 +112,7 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
     let catalogs = crate::catalog::parse(&catalog_stream(&entries));
 
     assert_eq!(catalogs.len(), 1);
-    assert_eq!(catalogs[0].declared_count, 7);
+    assert_eq!(catalogs[0].declared_count(), 7);
     assert_eq!(catalogs[0].entries.len(), entries.len());
     assert_eq!(catalogs[0].entries[4].ordinal, 4);
     assert_eq!(catalogs[0].entries[4].value, "Sketch");
