@@ -983,7 +983,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             && (*draft - 2_f64.to_radians()).abs() < 1.0e-12
             && (*reverse_draft - 4_f64.to_radians()).abs() < 1.0e-12
             && reference.ends_with(":DirLink")
-            && face_maker.class == "Part::FaceMakerUnified" && face_maker.mode == Some(4)
+            && *face_maker == cadmpeg_ir::features::FaceMaker::Unified
     ));
     assert!(matches!(
         definition("NegativeProfileNormal"),

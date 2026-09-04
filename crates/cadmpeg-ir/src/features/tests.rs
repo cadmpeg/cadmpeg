@@ -1204,6 +1204,51 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
 }
 
 #[test]
+fn face_maker_preserves_the_legacy_wire_and_rejects_split_discriminants() {
+    use crate::features::FaceMaker;
+
+    #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+    struct ExtrusionCarrier {
+        #[serde(default, with = "super::optional_extrusion_face_maker")]
+        maker: Option<FaceMaker>,
+    }
+
+    assert_eq!(
+        serde_json::from_value::<FaceMaker>(serde_json::json!("Part::FaceMakerUnified")).unwrap(),
+        FaceMaker::Unified,
+    );
+    assert_eq!(
+        serde_json::to_value(FaceMaker::Bullseye).unwrap(),
+        serde_json::json!("Part::FaceMakerBullseye"),
+    );
+    assert!(serde_json::from_value::<FaceMaker>(serde_json::json!("")).is_err());
+
+    let wire = serde_json::json!({
+        "maker": {
+            "class": "Part::FaceMakerBullseye",
+            "mode": 3
+        }
+    });
+    let carrier = serde_json::from_value::<ExtrusionCarrier>(wire.clone()).unwrap();
+    assert_eq!(
+        carrier,
+        ExtrusionCarrier {
+            maker: Some(FaceMaker::Bullseye),
+        }
+    );
+    assert_eq!(serde_json::to_value(carrier).unwrap(), wire);
+
+    let mismatch = serde_json::from_value::<ExtrusionCarrier>(serde_json::json!({
+        "maker": {
+            "class": "Part::FaceMakerBullseye",
+            "mode": 4
+        }
+    }))
+    .unwrap_err();
+    assert!(mismatch.to_string().contains("face_maker.mode"));
+}
+
+#[test]
 fn draft_anchor_round_trips_through_the_flat_wire_shape() {
     use crate::features::{DraftAnchor, FeatureDefinition};
 

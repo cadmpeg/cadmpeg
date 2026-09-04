@@ -35,7 +35,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             if construction.axis_reference.is_some()
                 || construction.solid == Some(false)
-                || construction.face_maker_class.is_some()
+                || construction.face_maker.is_some()
                 || construction.fuse_order.is_some()
                 || construction.allow_multi_profile_faces.is_some()
             {

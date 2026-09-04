@@ -333,7 +333,7 @@ pub(crate) fn project_revolve(
             extent,
             axis_reference: None,
             solid: Some(true),
-            face_maker_class: None,
+            face_maker: None,
             fuse_order: None,
             allow_multi_profile_faces: None,
         },

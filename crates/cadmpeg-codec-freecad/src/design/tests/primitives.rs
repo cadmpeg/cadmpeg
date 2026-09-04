@@ -899,9 +899,9 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("Standalone"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), solid: Some(true), face_maker_class: Some(face_maker), .. }, op: BooleanOp::NewBody }
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), solid: Some(true), face_maker: Some(face_maker), .. }, op: BooleanOp::NewBody }
             if axis.direction.z == 1.0 && reference.ends_with(":AxisLink")
-                && face_maker == "Part::FaceMakerUnified"
+                && *face_maker == cadmpeg_ir::features::FaceMaker::Unified
     ));
 }
 

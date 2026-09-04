@@ -1151,10 +1151,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             | FeatureDefinition::PlanarPatch { .. } => false,
             FeatureDefinition::Polyline { points, .. } => points.len() < 2,
             FeatureDefinition::RegularPolygonCurve { sides, .. } => *sides < 3,
-            FeatureDefinition::FaceFromShapes {
-                sources,
-                face_maker_class,
-            } => incomplete_body_selection(sources) || face_maker_class.trim().is_empty(),
+            FeatureDefinition::FaceFromShapes { sources, .. } => incomplete_body_selection(sources),
             FeatureDefinition::Block {
                 dimensions,
                 placement,

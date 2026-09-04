@@ -2783,7 +2783,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 start,
                 extent,
                 direction_source,
-                face_maker,
                 ..
             } => {
                 let sides = match extent {
@@ -2812,9 +2811,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 if sides
                     .iter()
                     .any(|side| side.offset.is_some_and(|offset| !offset.0.is_finite()))
-                    || face_maker
-                        .as_ref()
-                        .is_some_and(|maker| maker.class.is_empty())
                 {
                     feature_geometry_error(findings, feature, "extrusion construction is invalid");
                 }
@@ -4189,14 +4185,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "planar patch is invalid");
                 }
             }
-            FeatureDefinition::FaceFromShapes {
-                sources,
-                face_maker_class,
-            } => {
+            FeatureDefinition::FaceFromShapes { sources, .. } => {
                 body_selections.push(sources);
-                if face_maker_class.is_empty() {
-                    feature_geometry_error(findings, feature, "face construction is invalid");
-                }
             }
             FeatureDefinition::TreeNode {
                 children,

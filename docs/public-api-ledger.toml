@@ -3578,3 +3578,31 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::features::PatternKind::{UnresolvedLinear,UnresolvedCircular,UnresolvedCurveDriven,UnresolvedMirror,UnresolvedScale,UnresolvedComposite,is_unresolved}"
 reason = "known pattern forms without operands are represented directly by the pattern enum"
+
+[[change]]
+commit = "8439be785085e49515ef735474e9975a9433842b"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::features::ExtrusionFaceMaker"
+reason = "the face-maker class now determines its persisted mode and cannot disagree with it"
+
+[[change]]
+commit = "8439be785085e49515ef735474e9975a9433842b"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::features::FaceMaker"
+reason = "known FreeCAD face-maker classes are typed and extension class names are non-empty by construction"
+
+[[change]]
+commit = "8439be785085e49515ef735474e9975a9433842b"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::FeatureDefinition::{Extrude::face_maker,FaceFromShapes::face_maker}"
+reason = "face-making algorithms use the typed class and derive the legacy extrusion mode"
+
+[[change]]
+commit = "8439be785085e49515ef735474e9975a9433842b"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::RevolutionConstruction::face_maker"
+reason = "standalone revolutions use the typed non-empty face-maker class"

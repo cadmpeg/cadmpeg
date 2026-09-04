@@ -5692,7 +5692,7 @@ pub(crate) fn project_fixed_revolve_with_entities(
             }),
             axis_reference: None,
             solid: None,
-            face_maker_class: None,
+            face_maker: None,
             fuse_order: None,
             allow_multi_profile_faces: None,
         },
