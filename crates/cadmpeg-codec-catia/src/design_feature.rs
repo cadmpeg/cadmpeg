@@ -1225,7 +1225,9 @@ fn insert_selected_value_properties(
         crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
             properties.insert(format!("{prefix}_kind"), "separator_37".to_string());
         }
-        crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector { offset, ordinal } => {
+        crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector {
+            offset, ordinal, ..
+        } => {
             properties.insert(format!("{prefix}_kind"), "schema_selector".to_string());
             properties.insert(format!("{prefix}_offset"), offset.to_string());
             properties.insert(format!("{prefix}_ordinal"), ordinal.to_string());
@@ -1276,17 +1278,14 @@ fn insert_schema_selected_value_properties(
         crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector {
             offset,
             ordinal,
-            entry,
-            name,
+            resolution,
         } => {
             properties.insert(format!("{prefix}_kind"), "schema_selector".to_string());
             properties.insert(format!("{prefix}_offset"), offset.to_string());
             properties.insert(format!("{prefix}_ordinal"), ordinal.to_string());
-            if let Some(entry) = entry {
-                properties.insert(format!("{prefix}_entry"), entry.clone());
-            }
-            if let Some(name) = name {
-                properties.insert(format!("{prefix}_name"), name.clone());
+            if let Some(class) = resolution {
+                properties.insert(format!("{prefix}_entry"), class.entry.clone());
+                properties.insert(format!("{prefix}_name"), class.name.clone());
             }
         }
     }
