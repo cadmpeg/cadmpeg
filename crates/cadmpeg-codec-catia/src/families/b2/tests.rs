@@ -1340,25 +1340,6 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
 
     let bytes = b2_construction_use_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let construction_signature = |record: &crate::families::b2::records::B2ConstructionUse| {
-        (
-            record.pos,
-            record.support_id,
-            record.distance,
-            record.kind,
-            record.domain,
-        )
-    };
-    assert_eq!(
-        crate::families::b2::records::b2_construction_uses(&bytes)
-            .iter()
-            .map(construction_signature)
-            .collect::<Vec<_>>(),
-        crate::families::b2::records::b2_construction_uses_from_records(&bytes, &records)
-            .iter()
-            .map(construction_signature)
-            .collect::<Vec<_>>()
-    );
     let offset_signature = |record: &crate::families::b2::records::B2OffsetSupport| {
         (
             record.pos,
@@ -1817,12 +1798,6 @@ fn b2_cone_parser_rejects_a_left_handed_or_nonfinite_payload() {
 
 #[test]
 fn b2_construction_use_parser_reorders_offset_domain() {
-    let uses = crate::families::b2::records::b2_construction_uses(&b2_construction_use_stream());
-    assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].support_id, 0x1234);
-    assert_eq!(uses[0].distance, -2.0);
-    assert_eq!(uses[0].kind, 0x01);
-    assert_eq!(uses[0].domain, Some([0.0, -1.0, 4.0, 3.0]));
     let offsets = crate::families::b2::records::b2_offset_supports(&b2_construction_use_stream());
     assert_eq!(offsets.len(), 1);
     assert_eq!(offsets[0].support_id, 0x1234);
@@ -1838,12 +1813,6 @@ fn b2_offset_support_parser_rejects_nonincreasing_domains() {
 
     let mut construction = b2_construction_use_stream();
     construction[26..34].copy_from_slice(&(-1.0f64).to_le_bytes());
-    let uses = crate::families::b2::records::b2_construction_uses(&construction);
-    let [use_record] = uses.as_slice() else {
-        panic!("one construction-use record");
-    };
-    assert_eq!(use_record.kind, 0x01);
-    assert_eq!(use_record.domain, None);
     assert!(crate::families::b2::records::b2_offset_supports(&construction).is_empty());
 }
 
@@ -1872,9 +1841,6 @@ fn b2_offset_support_parser_ignores_other_construction_kinds() {
     let mut record = b2_construction_use_stream();
     record[17] = 0x19;
 
-    let uses = crate::families::b2::records::b2_construction_uses(&record);
-    assert_eq!(uses.len(), 1);
-    assert_eq!(uses[0].kind, 0x19);
     assert!(crate::families::b2::records::b2_offset_supports(&record).is_empty());
 }
 
