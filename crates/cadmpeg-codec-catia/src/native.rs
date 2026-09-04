@@ -6713,8 +6713,7 @@ pub struct CatiaLegacyRoleSelector {
     /// Stored literal or unresolved role name.
     pub name: CatiaLegacyRoleName,
     /// Selector framing production.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub encoding: Option<CatiaLegacyRoleSelectorEncoding>,
+    pub encoding: CatiaLegacyRoleSelectorEncoding,
     /// Stored selector following the role name.
     pub selector: u32,
     /// Field code when an `E8 <field-code:u16le> 01` opener follows immediately.
@@ -6724,7 +6723,7 @@ pub struct CatiaLegacyRoleSelector {
 
 impl CatiaLegacyRoleSelector {
     pub(crate) fn end_offset(&self) -> Option<u64> {
-        let selector_len = match self.encoding? {
+        let selector_len = match self.encoding {
             CatiaLegacyRoleSelectorEncoding::FixedU32 => 5,
             CatiaLegacyRoleSelectorEncoding::Paged => 2,
         };
@@ -7669,14 +7668,14 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         byte_offset: role.offset as u64,
                         entity_id: role.entity_id,
                         name: role.name.into(),
-                        encoding: Some(match role.encoding {
+                        encoding: match role.encoding {
                             legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
                                 CatiaLegacyRoleSelectorEncoding::FixedU32
                             }
                             legacy_entity::LegacyRoleSelectorEncoding::Paged => {
                                 CatiaLegacyRoleSelectorEncoding::Paged
                             }
-                        }),
+                        },
                         selector: role.selector,
                         field_code: role.field_code,
                     })
@@ -7702,14 +7701,14 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                             byte_offset: role.offset as u64,
                             entity_id: role.entity_id,
                             name: role.name.into(),
-                            encoding: Some(match role.encoding {
+                            encoding: match role.encoding {
                                 legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
                                     CatiaLegacyRoleSelectorEncoding::FixedU32
                                 }
                                 legacy_entity::LegacyRoleSelectorEncoding::Paged => {
                                     CatiaLegacyRoleSelectorEncoding::Paged
                                 }
-                            }),
+                            },
                             selector: role.selector,
                             field_code: role.field_code,
                         }),

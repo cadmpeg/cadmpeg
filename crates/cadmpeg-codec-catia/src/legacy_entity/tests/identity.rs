@@ -119,37 +119,37 @@ fn native_round_trips_legacy_entity_identity_runs() {
             (
                 4,
                 "body",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32),
+                crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32,
                 4,
             ),
             (
                 4,
                 "param",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                crate::native::CatiaLegacyRoleSelectorEncoding::Paged,
                 9,
             ),
             (
                 9,
                 "paramin",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32),
+                crate::native::CatiaLegacyRoleSelectorEncoding::FixedU32,
                 4134,
             ),
             (
                 9,
                 "name",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                crate::native::CatiaLegacyRoleSelectorEncoding::Paged,
                 10,
             ),
             (
                 12,
                 "name",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                crate::native::CatiaLegacyRoleSelectorEncoding::Paged,
                 12,
             ),
             (
                 13,
                 "name",
-                Some(crate::native::CatiaLegacyRoleSelectorEncoding::Paged),
+                crate::native::CatiaLegacyRoleSelectorEncoding::Paged,
                 13,
             ),
         ]
