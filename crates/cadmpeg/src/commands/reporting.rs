@@ -21,11 +21,11 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
         let after = change.after().unwrap_or("");
         println!("  source format: {before} → {after}");
     }
-    if let Some((before, after)) = &source.dialects_change {
+    if let Some(change) = &source.dialects_change {
         println!(
             "  source dialect layers: {} → {}",
-            render_dialect_layers(before.as_ref()),
-            render_dialect_layers(after.as_ref())
+            render_dialect_layers(change.before()),
+            render_dialect_layers(change.after())
         );
     }
     for change in &source.attributes {
