@@ -792,12 +792,10 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
             profile: None,
             profile_filter: None,
             face: None,
-            position: None,
-            direction: None,
-            placements: vec![HolePlacement::Axis {
+            placements: Some(vec![HolePlacement::Axis {
                 origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            }],
+            }]),
             kind: HoleKind::Counterbore {
                 diameter: Length(8.0),
                 depth: Length(4.0),
@@ -819,9 +817,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         profile: None,
         profile_filter: None,
         face: None,
-        position: None,
-        direction: None,
-        placements: Vec::new(),
+        placements: None,
         kind: HoleKind::Simple,
         exit_kind: None,
         diameter: None,
@@ -851,12 +847,10 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         profile: None,
         profile_filter: None,
         face: None,
-        position: None,
-        direction: None,
-        placements: vec![HolePlacement::Axis {
+        placements: Some(vec![HolePlacement::Axis {
             origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        }],
+        }]),
         kind: HoleKind::Counterbore {
             diameter: Length(8.0),
             depth: Length(4.0),
@@ -875,9 +869,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         profile: None,
         profile_filter: None,
         face: None,
-        position: None,
-        direction: None,
-        placements: vec![placement.clone()],
+        placements: Some(vec![placement.clone()]),
         kind: HoleKind::Simple,
         exit_kind: None,
         diameter: None,
@@ -900,7 +892,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
     else {
         panic!("hole definition changed variant");
     };
-    assert_eq!(placements, [placement]);
+    assert_eq!(placements, Some(vec![placement]));
     assert_eq!(
         kind,
         HoleKind::Counterbore {
@@ -929,12 +921,10 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         profile: None,
         profile_filter: None,
         face: None,
-        position: None,
-        direction: None,
-        placements: vec![cadmpeg_ir::features::HolePlacement::Axis {
+        placements: Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
             origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        }],
+        }]),
         kind: HoleKind::Counterbore {
             diameter: Length(8.0),
             depth: Length(4.0),
@@ -953,9 +943,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         profile: None,
         profile_filter: None,
         face: None,
-        position: None,
-        direction: None,
-        placements: Vec::new(),
+        placements: None,
         kind: HoleKind::Simple,
         exit_kind: None,
         diameter: None,
@@ -1010,7 +998,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
             diameter: None,
             extent: None,
             ..
-        } if placements.is_empty()
+        } if placements.is_none()
     ));
 }
 

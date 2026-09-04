@@ -1619,15 +1619,15 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 kind,
                 exit_kind,
                 diameter,
-            extent,
-            ..
+                extent,
+                ..
             } => {
                 let exit_kind_is_unresolved = exit_kind
                     .as_ref()
                     .is_some_and(cadmpeg_ir::features::HoleKind::is_unresolved);
                 profile.as_ref().is_some_and(incomplete_profile)
                     || face.as_ref().is_some_and(incomplete_face_selection)
-                    || placements.is_empty()
+                    || placements.is_none()
                     || kind.is_unresolved()
                     || exit_kind_is_unresolved
                     || diameter.is_none()
@@ -3968,7 +3968,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         else {
             continue;
         };
-        if placements.is_empty() && !resolved_placements.is_empty() {
+        if placements.is_none() && resolved_placements.is_some() {
             *placements = resolved_placements;
         }
         let incomplete = diameter.is_none()

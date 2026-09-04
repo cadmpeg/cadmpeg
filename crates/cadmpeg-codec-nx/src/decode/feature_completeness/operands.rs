@@ -21,13 +21,11 @@ const EPS_NONZERO_HOLE_DIRECTION: f64 = 1.0e-12;
 pub(crate) fn hole_feature_is_incomplete(
     profile: Option<&ProfileRef>,
     face: Option<&FaceSelection>,
-    authored_axis: (Option<Point3>, Option<Vector3>),
-    placements: &[cadmpeg_ir::features::HolePlacement],
+    placements: Option<&[cadmpeg_ir::features::HolePlacement]>,
     treatments: (&HoleKind, Option<&HoleKind>),
     diameter: Option<Length>,
     extent: Option<&LinearTermination>,
 ) -> bool {
-    let (position, direction) = authored_axis;
     let (kind, exit_kind) = treatments;
     let profile_incomplete = profile.is_some_and(profile_ref_is_incomplete);
     let face_incomplete = face.is_some_and(face_selection_is_incomplete);
@@ -41,31 +39,28 @@ pub(crate) fn hole_feature_is_incomplete(
     };
     let axis_is_direction_invariant = matches!(extent, Some(LinearTermination::ThroughAll))
         && exit_kind.is_none_or(|exit| exit == kind);
-    let placements_complete = !placements.is_empty()
-        && !placements
-            .iter()
-            .enumerate()
-            .any(|(index, placement)| placements[index + 1..].contains(placement))
-        && placements.iter().all(|placement| match placement {
-            cadmpeg_ir::features::HolePlacement::Directed {
-                position,
-                direction,
-            } => finite_point(*position) && finite_direction(*direction),
-            cadmpeg_ir::features::HolePlacement::Axis { origin, axis } => {
-                axis_is_direction_invariant && finite_point(*origin) && finite_direction(*axis)
-            }
-        });
-    let placements_incomplete = !placements.is_empty() && !placements_complete;
-    let authored_axis_incomplete = position.is_some_and(|point| !finite_point(point))
-        || direction.is_some_and(|vector| !finite_direction(vector));
-    let location_unresolved =
-        !placements_complete && position.is_none() && profile.is_none_or(profile_ref_is_incomplete);
-    let orientation_unresolved = !placements_complete
-        && direction.is_none()
-        && face.is_none_or(face_selection_is_incomplete);
+    let placements_complete = placements.is_some_and(|placements| {
+        !placements.is_empty()
+            && !placements
+                .iter()
+                .enumerate()
+                .any(|(index, placement)| placements[index + 1..].contains(placement))
+            && placements.iter().all(|placement| match placement {
+                cadmpeg_ir::features::HolePlacement::Directed {
+                    position,
+                    direction,
+                } => finite_point(*position) && finite_direction(*direction),
+                cadmpeg_ir::features::HolePlacement::Axis { origin, axis } => {
+                    axis_is_direction_invariant && finite_point(*origin) && finite_direction(*axis)
+                }
+            })
+    });
+    let placements_incomplete = placements.is_some() && !placements_complete;
+    let location_unresolved = !placements_complete && profile.is_none_or(profile_ref_is_incomplete);
+    let orientation_unresolved =
+        !placements_complete && face.is_none_or(face_selection_is_incomplete);
     profile_incomplete
         || face_incomplete
-        || authored_axis_incomplete
         || placements_incomplete
         || location_unresolved
         || orientation_unresolved

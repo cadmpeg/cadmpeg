@@ -254,12 +254,10 @@ fn active_configuration_inherits_late_feature_resolutions() {
             profile: None,
             profile_filter: None,
             face: None,
-            position: None,
-            direction: None,
-            placements: vec![HolePlacement::Axis {
+            placements: Some(vec![HolePlacement::Axis {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
-            }],
+            }]),
             kind: HoleKind::Simple,
             exit_kind: None,
             diameter: Some(Length(4.0)),
@@ -307,9 +305,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
                         profile: None,
                         profile_filter: None,
                         face: None,
-                        position: None,
-                        direction: None,
-                        placements: Vec::new(),
+                        placements: None,
                         kind: HoleKind::Simple,
                         exit_kind: None,
                         diameter: None,
@@ -344,7 +340,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
             }),
             bottom: Some(HoleBottom::Flat),
             ..
-        } if placements.len() == 1
+        } if placements.as_ref().is_some_and(|placements| placements.len() == 1)
     ));
 
     let FeatureDefinition::Hole {
@@ -361,7 +357,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     else {
         unreachable!();
     };
-    placements.clear();
+    *placements = None;
     *diameter = Some(Length(8.0));
     *extent = Some(LinearTermination::ThroughAll);
     *bottom = None;
@@ -374,7 +370,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
             extent: Some(LinearTermination::ThroughAll),
             bottom: None,
             ..
-        } if placements.len() == 1
+        } if placements.as_ref().is_some_and(|placements| placements.len() == 1)
     ));
 }
 

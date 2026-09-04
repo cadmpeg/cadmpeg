@@ -1343,7 +1343,7 @@ pub(crate) fn project_hole_position_sketches(
         let FeatureDefinition::Hole { placements, .. } = &mut feature.definition else {
             continue;
         };
-        if !placements.is_empty() {
+        if placements.is_some() {
             continue;
         }
         let Some(native) = feature
@@ -1523,7 +1523,7 @@ pub(crate) fn project_hole_position_sketches(
             });
         }
         if resolved.len() == authored_markers.len() {
-            *placements = resolved;
+            *placements = Some(resolved);
             if !feature.dependencies.contains(position_dependency) {
                 feature.dependencies.push(position_dependency.clone());
             }
@@ -1651,7 +1651,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
         else {
             continue;
         };
-        if !placements.is_empty() || !diameter.is_finite() || *diameter <= 0.0 {
+        if placements.is_some() || !diameter.is_finite() || *diameter <= 0.0 {
             continue;
         }
         let Some(native) = feature
@@ -1769,7 +1769,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
         });
         resolved.dedup();
         if !ambiguous && !resolved.is_empty() {
-            *placements = resolved;
+            *placements = Some(resolved);
         }
     }
 }
@@ -1887,7 +1887,7 @@ pub(crate) fn project_generated_hole_axes(
         else {
             continue;
         };
-        if !placements.is_empty() || !diameter.is_finite() || *diameter <= 0.0 {
+        if placements.is_some() || !diameter.is_finite() || *diameter <= 0.0 {
             continue;
         }
         let Some(source) = feature
@@ -1985,7 +1985,7 @@ pub(crate) fn project_generated_hole_axes(
         });
         lane_solutions.dedup();
         if let [solution] = lane_solutions.as_slice() {
-            placements.clone_from(solution);
+            *placements = Some(solution.clone());
         }
     }
 }
@@ -2023,7 +2023,7 @@ pub(crate) fn project_hole_topology_axes(
                 placements,
                 diameter: Some(Length(diameter)),
                 ..
-            } if placements.is_empty() && diameter.is_finite() && *diameter > 0.0 => Some(index),
+            } if placements.is_none() && diameter.is_finite() && *diameter > 0.0 => Some(index),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -2047,7 +2047,7 @@ pub(crate) fn project_hole_topology_axes(
             else {
                 unreachable!("unresolved hole selection requires a hole feature");
             };
-            *placements = candidates;
+            *placements = Some(candidates);
             continue;
         }
 
@@ -2068,7 +2068,7 @@ pub(crate) fn project_hole_topology_axes(
                     else {
                         unreachable!("hole construction matching returned a non-hole feature");
                     };
-                    placements.is_empty()
+                    placements.is_none()
                 })
                 .count()
                 != 1
@@ -2095,10 +2095,10 @@ pub(crate) fn project_hole_topology_axes(
             else {
                 unreachable!("hole construction matching returned a non-hole feature");
             };
-            if placements.is_empty() {
+            let Some(placements) = placements.as_deref() else {
                 complete = false;
                 break;
-            }
+            };
             for placement in placements {
                 let Some(key) = hole_axis_key(placement) else {
                     complete = false;
@@ -2128,7 +2128,7 @@ pub(crate) fn project_hole_topology_axes(
         else {
             unreachable!("unresolved hole selection requires a hole feature");
         };
-        *placements = residual;
+        *placements = Some(residual);
     }
 
     let cylinders = cylindrical_bore_face_spans(topology);
@@ -2155,7 +2155,7 @@ fn project_flat_blind_topology_axes(
                     }),
                 bottom: Some(HoleBottom::Flat),
                 ..
-            } if hole_placements.is_empty()
+            } if hole_placements.is_none()
                 && diameter.is_finite()
                 && diameter > 0.0
                 && length.is_finite()
@@ -2190,7 +2190,7 @@ fn project_flat_blind_topology_axes(
         else {
             unreachable!("flat blind topology selection requires a hole feature");
         };
-        *hole_placements = placements;
+        *hole_placements = Some(placements);
     }
 }
 
@@ -2222,7 +2222,7 @@ fn project_drilled_hole_topology_axes(
                         depth_to_tip: false,
                     }),
                 ..
-            } if hole_placements.is_empty()
+            } if hole_placements.is_none()
                 && diameter.is_finite()
                 && diameter > 0.0
                 && length.is_finite()
@@ -2257,7 +2257,7 @@ fn project_drilled_hole_topology_axes(
         else {
             unreachable!("drilled topology selection requires a hole feature");
         };
-        *hole_placements = placements;
+        *hole_placements = Some(placements);
     }
 }
 
@@ -2338,6 +2338,9 @@ fn expand_seeded_drilled_hole_topology_axes(
         else {
             continue;
         };
+        let Some(placements) = placements.as_deref() else {
+            continue;
+        };
         if placements.is_empty()
             || !diameter.is_finite()
             || *diameter <= 0.0
@@ -2363,7 +2366,7 @@ fn expand_seeded_drilled_hole_topology_axes(
             || siblings.iter().any(|&sibling| {
                 matches!(
                     &features[sibling].definition,
-                    FeatureDefinition::Hole { placements, .. } if placements.is_empty()
+                    FeatureDefinition::Hole { placements, .. } if placements.is_none()
                 )
             })
         {
@@ -2419,14 +2422,14 @@ fn unclaimed_seeded_hole_candidates(
         .collect::<Vec<_>>();
     if same_diameter
         .iter()
-        .any(|(index, placements)| !sibling_set.contains(index) && placements.is_empty())
+        .any(|(index, placements)| !sibling_set.contains(index) && placements.is_none())
     {
         return None;
     }
     let claimed = same_diameter
         .iter()
         .filter(|(index, _)| !sibling_set.contains(index))
-        .flat_map(|(_, placements)| placements.iter())
+        .flat_map(|(_, placements)| placements.iter().flatten())
         .map(hole_axis_key)
         .collect::<Option<HashSet<_>>>()?;
     let candidates = candidates
@@ -2450,7 +2453,11 @@ fn partition_seeded_hole_axes(
     }
     let mut seed_directions: Vec<Vector3> = Vec::with_capacity(siblings.len());
     for &sibling in siblings {
-        let FeatureDefinition::Hole { placements, .. } = &features[sibling].definition else {
+        let FeatureDefinition::Hole {
+            placements: Some(placements),
+            ..
+        } = &features[sibling].definition
+        else {
             return;
         };
         let mut axes = placements.iter().filter_map(|placement| match placement {
@@ -2503,7 +2510,7 @@ fn partition_seeded_hole_axes(
         let FeatureDefinition::Hole { placements, .. } = &mut features[sibling].definition else {
             unreachable!("seed partition requires hole features");
         };
-        *placements = partition;
+        *placements = Some(partition);
     }
 }
 
@@ -2847,7 +2854,7 @@ pub(crate) fn project_hole_axes(
         else {
             continue;
         };
-        if !placements.is_empty() || !diameter.is_finite() || *diameter <= 0.0 {
+        if placements.is_some() || !diameter.is_finite() || *diameter <= 0.0 {
             continue;
         }
         let radius = *diameter / 2.0;
@@ -2883,13 +2890,13 @@ pub(crate) fn project_hole_axes(
                     if let Some(bore_placements) =
                         plane_owned_bore_placements(frame.0, frame.1, radius, topology)
                     {
-                        *placements = bore_placements;
+                        *placements = Some(bore_placements);
                         continue;
                     }
                 }
             }
             if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
-                *placements = bore_placements;
+                *placements = Some(bore_placements);
                 continue;
             }
         }
@@ -2946,7 +2953,7 @@ pub(crate) fn project_hole_axes(
         });
         solutions.dedup();
         if let [solution] = solutions.as_slice() {
-            placements.clone_from(solution);
+            *placements = Some(solution.clone());
         }
     }
 }
@@ -3201,6 +3208,9 @@ pub(crate) fn project_topological_hole_constructions(
         else {
             continue;
         };
+        let Some(placements) = placements.as_deref() else {
+            continue;
+        };
         if placements.is_empty()
             || (diameter.is_some()
                 && extent
@@ -3294,7 +3304,11 @@ pub(crate) fn project_bore_backed_position_sketches(
         .collect::<HashMap<_, _>>();
     let mut projections = Vec::new();
     for hole in features.iter() {
-        let FeatureDefinition::Hole { placements, .. } = &hole.definition else {
+        let FeatureDefinition::Hole {
+            placements: Some(placements),
+            ..
+        } = &hole.definition
+        else {
             continue;
         };
         let axes = placements

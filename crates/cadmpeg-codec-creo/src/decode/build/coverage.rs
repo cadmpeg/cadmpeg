@@ -200,8 +200,6 @@ pub(in super::super) fn collect_feature_coverage(
             IrFeatureDefinition::Hole {
                 profile,
                 face,
-                position,
-                direction,
                 placements,
                 kind,
                 exit_kind,
@@ -210,8 +208,7 @@ pub(in super::super) fn collect_feature_coverage(
                 ..
             } => {
                 hole_feature_count += 1;
-                let unresolved_location =
-                    profile.is_none() && position.is_none() && placements.is_empty();
+                let unresolved_location = profile.is_none() && placements.is_none();
                 let unresolved_profile = matches!(profile, Some(ProfileRef::Unresolved(_)));
                 let native_profile = matches!(profile, Some(ProfileRef::Native(_)));
                 let unresolved_face = matches!(
@@ -219,13 +216,14 @@ pub(in super::super) fn collect_feature_coverage(
                     Some(FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. })
                 );
                 let native_face = matches!(face, Some(FaceSelection::Native(_)));
-                let unresolved_direction = direction.is_none()
-                    && !placements.iter().any(|placement| {
+                let unresolved_direction = placements.as_ref().is_none_or(|placements| {
+                    !placements.iter().any(|placement| {
                         matches!(
                             placement,
                             cadmpeg_ir::features::HolePlacement::Directed { .. }
                         )
-                    });
+                    })
+                });
                 let unresolved_kind =
                     kind.is_unresolved() || exit_kind.as_ref().is_some_and(HoleKind::is_unresolved);
                 let unresolved_diameter = diameter.is_none();

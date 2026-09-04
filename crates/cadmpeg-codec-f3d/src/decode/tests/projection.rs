@@ -300,8 +300,11 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
         serde_json::from_value(serde_json::json!({
             "definition": "hole",
             "face": {"kind": "faces", "value": ["face:support"]},
-            "position": {"x": 1.0, "y": 2.0, "z": 3.0},
-            "direction": {"x": 0.0, "y": 0.0, "z": -1.0},
+            "placements": [{
+                "kind": "directed",
+                "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "direction": {"x": 0.0, "y": 0.0, "z": -1.0}
+            }],
             "kind": {"kind": "simple_drilled", "drill_point_angle": 2.0},
             "diameter": 5.0,
             "extent": {"kind": "blind", "length": 10.0}
@@ -310,16 +313,11 @@ fn hole_completeness_requires_support_placement_size_and_extent() {
     assert!(!feature_definition_is_incomplete(&complete));
 
     let mut missing_placement = complete.clone();
-    let cadmpeg_ir::features::FeatureDefinition::Hole {
-        position,
-        direction,
-        ..
-    } = &mut missing_placement
+    let cadmpeg_ir::features::FeatureDefinition::Hole { placements, .. } = &mut missing_placement
     else {
         panic!("Hole definition");
     };
-    *position = None;
-    *direction = None;
+    *placements = None;
     assert!(feature_definition_is_incomplete(&missing_placement));
 
     let mut native_support = complete.clone();

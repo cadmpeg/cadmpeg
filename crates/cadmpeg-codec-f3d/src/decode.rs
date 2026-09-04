@@ -719,8 +719,6 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Hole {
             profile,
             face,
-            position,
-            direction,
             placements,
             kind,
             diameter,
@@ -731,18 +729,16 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
 
             let support_is_resolved = profile.as_ref().is_some_and(profile_ref_is_resolved)
                 || face.as_ref().is_some_and(face_selection_is_resolved);
-            let shared_placement_is_resolved = position.is_some()
-                && direction
-                    .as_ref()
-                    .is_some_and(|direction| direction.unit().is_some());
-            let placements_are_resolved = !placements.is_empty()
-                && placements.iter().all(|placement| match placement {
-                    HolePlacement::Directed { direction, .. } => direction.unit().is_some(),
-                    HolePlacement::Axis { axis, .. } => axis.unit().is_some(),
-                });
+            let placements_are_resolved = placements.as_ref().is_some_and(|placements| {
+                !placements.is_empty()
+                    && placements.iter().all(|placement| match placement {
+                        HolePlacement::Directed { direction, .. } => direction.unit().is_some(),
+                        HolePlacement::Axis { axis, .. } => axis.unit().is_some(),
+                    })
+            });
 
             !support_is_resolved
-                || (!shared_placement_is_resolved && !placements_are_resolved)
+                || !placements_are_resolved
                 || kind.is_unresolved()
                 || diameter.is_none()
                 || extent

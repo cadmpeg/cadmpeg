@@ -43,8 +43,8 @@ use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, Length,
-    LinearTermination, ProfileRef, RadiusForm, RadiusSpec, RevolutionConstruction,
+    FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, HolePlacement,
+    Length, LinearTermination, ProfileRef, RadiusForm, RadiusSpec, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{FaceId, SurfaceId};
@@ -348,13 +348,21 @@ pub(in super::super) fn schema_feature_definition(
                 simple_drilled_hole_axis_placement(scan, recipe.table, diameter)
             })
             .flatten();
+        let placements = position
+            .zip(direction)
+            .map(|(position, direction)| HolePlacement::Directed {
+                position,
+                direction,
+            })
+            .into_iter()
+            .chain(stepped_axis)
+            .chain(drilled_axis)
+            .collect::<Vec<_>>();
         return IrFeatureDefinition::Hole {
             profile: None,
             profile_filter: None,
             face,
-            position,
-            direction,
-            placements: stepped_axis.into_iter().chain(drilled_axis).collect(),
+            placements: (!placements.is_empty()).then_some(placements),
             kind: match (
                 drilled_dimensions,
                 simple_form,

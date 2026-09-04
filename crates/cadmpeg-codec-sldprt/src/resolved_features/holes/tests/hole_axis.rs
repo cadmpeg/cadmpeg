@@ -223,9 +223,9 @@ fn generated_face_identities_resolve_primary_bore_axes() {
     let FeatureDefinition::Hole { placements, .. } = &mut hole.definition else {
         unreachable!();
     };
-    assert_eq!(placements.len(), 2);
+    assert_eq!(placements.as_deref().map(<[_]>::len), Some(2));
 
-    placements.clear();
+    *placements = None;
     let mut conflicting_lane = lane();
     for identity in &mut conflicting_lane.generated_surface_identities {
         identity.local_identity = 3;
@@ -241,7 +241,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
     let FeatureDefinition::Hole { placements, .. } = &hole.definition else {
         unreachable!();
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 }
 
 #[test]
@@ -295,10 +295,12 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         diameter: Length(6.0),
         depth: Length(1.0),
     };
-    placements.push(HolePlacement::Axis {
-        origin: Point3::new(-5.0, 0.0, 100.0),
-        axis: Vector3::new(0.0, 0.0, -1.0),
-    });
+    placements
+        .get_or_insert_default()
+        .push(HolePlacement::Axis {
+            origin: Point3::new(-5.0, 0.0, 100.0),
+            axis: Vector3::new(0.0, 0.0, -1.0),
+        });
     let mut unplaced = model_hole();
     unplaced.id = FeatureId("unplaced".into());
     let FeatureDefinition::Hole { kind, .. } = &mut unplaced.definition else {
@@ -314,7 +316,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     let FeatureDefinition::Hole { placements, .. } = &unique[0].definition else {
         unreachable!();
     };
-    assert_eq!(placements.len(), 3);
+    assert_eq!(placements.as_deref().map(<[_]>::len), Some(3));
 
     let mut features = [placed.clone(), unplaced.clone()];
     project_hole_topology_axes(&mut features, &topology);
@@ -322,17 +324,19 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         unreachable!();
     };
     assert_eq!(
-        placements,
-        &[
-            HolePlacement::Axis {
-                origin: Point3::new(5.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-            },
-            HolePlacement::Axis {
-                origin: Point3::new(20.0, 0.0, 0.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-            },
-        ]
+        placements.as_deref(),
+        Some(
+            &[
+                HolePlacement::Axis {
+                    origin: Point3::new(5.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                HolePlacement::Axis {
+                    origin: Point3::new(20.0, 0.0, 0.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+            ][..]
+        )
     );
 
     let mut ambiguous = [placed.clone(), unplaced.clone(), unplaced.clone()];
@@ -341,7 +345,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     let FeatureDefinition::Hole { placements, .. } = &ambiguous[1].definition else {
         unreachable!();
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 
     let mut unmatched_surfaces = surfaces.clone();
     let SurfaceGeometry::Cylinder { radius, .. } = &mut unmatched_surfaces[5].geometry else {
@@ -362,12 +366,12 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     let FeatureDefinition::Hole { placements, .. } = &unmatched_signature[1].definition else {
         unreachable!();
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 
     let FeatureDefinition::Hole { placements, .. } = &mut placed.definition else {
         unreachable!();
     };
-    placements[0] = HolePlacement::Axis {
+    placements.as_mut().expect("seeded placement")[0] = HolePlacement::Axis {
         origin: Point3::new(-50.0, 0.0, 0.0),
         axis: Vector3::new(0.0, 0.0, 1.0),
     };
@@ -376,7 +380,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     let FeatureDefinition::Hole { placements, .. } = &incomplete_topology[1].definition else {
         unreachable!();
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 }
 
 #[test]
@@ -496,7 +500,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let FeatureDefinition::Hole { placements, .. } = &exact[0].definition else {
         unreachable!();
     };
-    assert_eq!(placements.len(), 1);
+    assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
     let mut ambiguous = [unplaced.clone(), unplaced.clone()];
     ambiguous[1].id = FeatureId("second-hole".into());
@@ -504,7 +508,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let FeatureDefinition::Hole { placements, .. } = &ambiguous[0].definition else {
         unreachable!();
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 
     let FeatureDefinition::Hole { extent, .. } = &mut unplaced.definition else {
         unreachable!();
@@ -516,7 +520,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let FeatureDefinition::Hole { placements, .. } = &unplaced.definition else {
         unreachable!();
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 
     let mut drilled = model_hole();
     let FeatureDefinition::Hole {
@@ -542,7 +546,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let FeatureDefinition::Hole { placements, .. } = &drilled.definition else {
         unreachable!();
     };
-    assert_eq!(placements.len(), 1);
+    assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
     let mut wrong_surfaces = surfaces.clone();
     let SurfaceGeometry::Cone { half_angle, .. } = &mut wrong_surfaces[1].geometry else {
@@ -561,12 +565,12 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let FeatureDefinition::Hole { placements, .. } = &mut drilled.definition else {
         unreachable!();
     };
-    placements.clear();
+    *placements = None;
     project_hole_topology_axes(std::slice::from_mut(&mut drilled), &wrong_topology);
     let FeatureDefinition::Hole { placements, .. } = &drilled.definition else {
         unreachable!();
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 
     let mut hole = model_hole();
     let FeatureDefinition::Hole {
@@ -577,10 +581,12 @@ fn hole_topology_uses_exact_cylinder_spans() {
     else {
         unreachable!();
     };
-    placements.push(HolePlacement::Axis {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-    });
+    placements
+        .get_or_insert_default()
+        .push(HolePlacement::Axis {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        });
     *diameter = None;
     project_topological_hole_constructions(std::slice::from_mut(&mut hole), &topology);
     let FeatureDefinition::Hole {
@@ -628,13 +634,15 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
         included_angle: Angle(2.0),
         depth_to_tip: false,
     });
-    placements.push(placement(0.0, 30.0, x_axis));
+    placements
+        .get_or_insert_default()
+        .push(placement(0.0, 30.0, x_axis));
     let mut vertical = horizontal.clone();
     vertical.id = FeatureId("vertical".into());
     let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
         unreachable!();
     };
-    *placements = vec![placement(-20.0, 0.0, y_axis)];
+    *placements = Some(vec![placement(-20.0, 0.0, y_axis)]);
     let candidates = vec![
         placement(0.0, -10.0, x_axis),
         placement(0.0, 30.0, x_axis),
@@ -660,8 +668,8 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     else {
         unreachable!();
     };
-    assert_eq!(horizontal_placements.len(), 3);
-    assert_eq!(vertical_placements.len(), 2);
+    assert_eq!(horizontal_placements.as_deref().map(<[_]>::len), Some(3));
+    assert_eq!(vertical_placements.as_deref().map(<[_]>::len), Some(2));
 
     let mut incomplete = [horizontal.clone(), vertical.clone()];
     let mut candidates_with_unowned_direction = candidates;
@@ -670,18 +678,18 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     let FeatureDefinition::Hole { placements, .. } = &incomplete[0].definition else {
         unreachable!();
     };
-    assert_eq!(placements.len(), 1);
+    assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 
     let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
         unreachable!();
     };
-    *placements = vec![placement(20.0, 0.0, x_axis)];
+    *placements = Some(vec![placement(20.0, 0.0, x_axis)]);
     let mut ambiguous = [horizontal, vertical];
     partition_seeded_hole_axes(&mut ambiguous, &[0, 1], &candidates_with_unowned_direction);
     let FeatureDefinition::Hole { placements, .. } = &ambiguous[0].definition else {
         unreachable!();
     };
-    assert_eq!(placements.len(), 1);
+    assert_eq!(placements.as_deref().map(<[_]>::len), Some(1));
 }
 
 #[test]
@@ -739,19 +747,25 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
     let FeatureDefinition::Hole { placements, .. } = &mut horizontal.definition else {
         unreachable!();
     };
-    placements.push(placement(axes[0].0, axes[0].1));
+    placements
+        .get_or_insert_default()
+        .push(placement(axes[0].0, axes[0].1));
     let mut vertical = model_hole();
     vertical.id = FeatureId("vertical".into());
     let FeatureDefinition::Hole { placements, .. } = &mut vertical.definition else {
         unreachable!();
     };
-    placements.push(placement(axes[2].0, axes[2].1));
+    placements
+        .get_or_insert_default()
+        .push(placement(axes[2].0, axes[2].1));
     let mut other = model_hole();
     other.id = FeatureId("other".into());
     let FeatureDefinition::Hole { placements, .. } = &mut other.definition else {
         unreachable!();
     };
-    placements.push(placement(axes[3].0, axes[3].1));
+    placements
+        .get_or_insert_default()
+        .push(placement(axes[3].0, axes[3].1));
     let mut features = [horizontal, vertical, other];
 
     let candidates = seeded_drilled_bore_candidates(&features, &[0, 1], 4.0, &topology)
@@ -766,6 +780,6 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
     let FeatureDefinition::Hole { placements, .. } = &mut features[2].definition else {
         unreachable!();
     };
-    placements.clear();
+    *placements = None;
     assert!(seeded_drilled_bore_candidates(&features, &[0, 1], 4.0, &topology).is_none());
 }

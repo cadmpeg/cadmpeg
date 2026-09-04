@@ -305,8 +305,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &features[0].definition,
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
-            position: Some(Point3 { x: 12.5, y: -25.0, z: 37.5 }),
-            direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            placements: Some(placements),
             kind: cadmpeg_ir::features::HoleKind::Simple,
             diameter: Some(Length(4.0)),
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind { length: Length(10.0) }),
@@ -314,6 +313,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             ..
         } if faces == &vec![FaceId(crate::ids::brep_entity_id(282))]
             && native == &scopes[2].id
+            && placements == &vec![cadmpeg_ir::features::HolePlacement::Directed {
+                position: Point3 { x: 12.5, y: -25.0, z: 37.5 },
+                direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+            }]
     ));
 
     hole_parameters[2].evaluated_value = 118.0_f64.to_radians();

@@ -7196,31 +7196,25 @@ fn project_hole(
     };
     let face = resolved_direct_face_selection(scope, face_operands)
         .unwrap_or_else(|| FaceSelection::Native(scope.id.clone()));
-    let (position, direction) = scope
-        .hole_construction
-        .as_ref()
-        .map(|construction| {
-            (
-                Point3::new(
-                    construction.position[0] * 10.0,
-                    construction.position[1] * 10.0,
-                    construction.position[2] * 10.0,
-                ),
-                Vector3::new(
-                    construction.direction[0],
-                    construction.direction[1],
-                    construction.direction[2],
-                ),
-            )
-        })
-        .unzip();
+    let placements = scope.hole_construction.as_ref().map(|construction| {
+        vec![cadmpeg_ir::features::HolePlacement::Directed {
+            position: Point3::new(
+                construction.position[0] * 10.0,
+                construction.position[1] * 10.0,
+                construction.position[2] * 10.0,
+            ),
+            direction: Vector3::new(
+                construction.direction[0],
+                construction.direction[1],
+                construction.direction[2],
+            ),
+        }]
+    });
     Some(FeatureDefinition::Hole {
         profile: None,
         profile_filter: None,
         face: Some(face),
-        position,
-        direction,
-        placements: Vec::new(),
+        placements,
         kind,
         exit_kind: None,
         diameter: Some(diameter),

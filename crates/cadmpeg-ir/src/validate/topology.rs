@@ -3535,8 +3535,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 kind,
                 exit_kind,
                 diameter,
-                direction,
-                position,
                 bottom,
                 taper_angle,
                 specification,
@@ -3623,10 +3621,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             && angle.0 < std::f64::consts::PI
                     }
                 };
-                let position_valid = position.is_none_or(|point| {
-                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
-                });
-                let placements_valid = placements.iter().all(|placement| {
+                let placements_valid = placements.iter().flatten().all(|placement| {
                     let (point, direction) = match placement {
                         crate::features::HolePlacement::Directed {
                             position,
@@ -3669,13 +3664,11 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 if diameter.is_some_and(|value| !positive_feature_length(value))
                     || !kind_valid(kind)
                     || exit_kind.as_ref().is_some_and(|kind| !kind_valid(kind))
-                    || !position_valid
                     || !placements_valid
                     || !filter_valid
                     || !bottom_valid
                     || !taper_valid
                     || !specification_valid
-                    || direction.is_some_and(|value| !valid_feature_direction(value))
                 {
                     feature_geometry_error(findings, feature, "hole geometry is invalid");
                 }

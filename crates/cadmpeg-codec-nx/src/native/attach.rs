@@ -6107,9 +6107,7 @@ fn non_boolean_feature_definition_with_parameters(
                 profile: None,
                 profile_filter: None,
                 face: None,
-                position: None,
-                direction: None,
-                placements: hole.placements,
+                placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
                 kind: match (measured_chamfer, hole_template) {
                     (
                         Some(chamfer),
@@ -6148,9 +6146,7 @@ fn non_boolean_feature_definition_with_parameters(
             profile: None,
             profile_filter: None,
             face: None,
-            position: None,
-            direction: None,
-            placements: hole.placements,
+            placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
             kind: if hole.grouped_simple_through {
                 hole.chamfer.unwrap_or(HoleKind::Simple)
             } else {

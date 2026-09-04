@@ -761,8 +761,6 @@ pub(crate) fn inherit_configuration_hole_semantics(
         profile,
         profile_filter,
         face,
-        position,
-        direction,
         placements,
         kind,
         exit_kind,
@@ -780,8 +778,6 @@ pub(crate) fn inherit_configuration_hole_semantics(
         profile: base_profile,
         profile_filter: base_profile_filter,
         face: base_face,
-        position: base_position,
-        direction: base_direction,
         placements: base_placements,
         kind: base_kind,
         exit_kind: base_exit_kind,
@@ -808,13 +804,7 @@ pub(crate) fn inherit_configuration_hole_semantics(
     if profile_filter.is_none() {
         profile_filter.clone_from(base_profile_filter);
     }
-    if position.is_none() {
-        position.clone_from(base_position);
-    }
-    if direction.is_none() {
-        direction.clone_from(base_direction);
-    }
-    if inherit_placements && placements.is_empty() {
+    if inherit_placements && placements.is_none() {
         placements.clone_from(base_placements);
     }
     if missing_construction || kind.is_unresolved() {
