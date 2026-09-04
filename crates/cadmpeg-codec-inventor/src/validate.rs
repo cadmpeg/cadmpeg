@@ -28,7 +28,7 @@ use crate::native::{
     ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
     RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
     SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState,
+    StructuralIssueRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord,
     UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::pmdc::PmDcReferenceList;
@@ -1994,83 +1994,11 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
         "external reference id",
     );
     let record = &data.ufrx[0];
-    let valid = match record.state {
-        UfrxRecordState::Absent => {
-            record.directory_id.is_none()
-                && record.schema.is_none()
-                && record.representation.is_none()
-                && record.model_state_count == 0
-                && record.reference_count == 0
-                && record.embedded_reference_count == 0
-                && record.occurrence_count == 0
-                && record.detail.is_none()
-                && data.ufrx_model_states.is_empty()
-                && data.ufrx_occurrences.is_empty()
-                && data.embedded_references.is_empty()
-                && data.external_references.is_empty()
-        }
-        UfrxRecordState::ParsedPrefix => {
-            record.directory_id.is_some()
-                && record.schema.is_some()
-                && record.section_versions.len() >= 5
-                && record.original_file_name.is_some()
-                && record.caption.is_some()
-                && record.model_state_count == data.ufrx_model_states.len() as u64
-                && (record.schema == Some(15)) == record.representation.is_some()
-                && record.reference_count == data.external_references.len() as u64
-                && record.embedded_reference_count == data.embedded_references.len() as u64
-                && record.occurrence_count == data.ufrx_occurrences.len() as u64
-                && record.tail_sha256.is_some()
-                && record.detail.is_none()
-        }
-        UfrxRecordState::Unsupported => {
-            record.directory_id.is_some()
-                && record.schema.is_some()
-                && !record.section_versions.is_empty()
-                && record.original_file_name.is_none()
-                && record.caption.is_none()
-                && record.representation.is_none()
-                && record.model_state_count == 0
-                && record.reference_count == 0
-                && record.embedded_reference_count == 0
-                && record.occurrence_count == 0
-                && record.tail_sha256.is_some()
-                && record.detail.is_some()
-                && data.ufrx_model_states.is_empty()
-                && data.ufrx_occurrences.is_empty()
-                && data.embedded_references.is_empty()
-                && data.external_references.is_empty()
-        }
-        UfrxRecordState::Malformed => {
-            record.directory_id.is_some()
-                && record.schema.is_none()
-                && record.representation.is_none()
-                && record.model_state_count == 0
-                && record.reference_count == 0
-                && record.embedded_reference_count == 0
-                && record.occurrence_count == 0
-                && record.detail.is_some()
-                && data.ufrx_model_states.is_empty()
-                && data.ufrx_occurrences.is_empty()
-                && data.embedded_references.is_empty()
-                && data.external_references.is_empty()
-        }
-    };
-    if !valid {
+    if let UfrxRecord::Malformed { id, detail, .. } = record {
         findings.push(finding(
             Check::NativeLinks,
-            "Inventor UFRxDoc state fields are inconsistent".into(),
-            Some(record.id.clone()),
-        ));
-    }
-    if record.state == UfrxRecordState::Malformed {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor UFRxDoc stream is malformed: {}",
-                record.detail.as_deref().unwrap_or("no detail")
-            ),
-            Some(record.id.clone()),
+            format!("Inventor UFRxDoc stream is malformed: {detail}"),
+            Some(id.clone()),
         ));
     }
     let model_state_ordinals = data
@@ -2096,7 +2024,12 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             None,
         ));
     }
-    if let Some(representation) = &record.representation {
+    if let UfrxRecord::ParsedPrefix {
+        id,
+        representation: Some(representation),
+        ..
+    } = record
+    {
         let representation_pair_present = match (
             &representation.active_representation,
             &representation.active_representation_kind,
@@ -2117,7 +2050,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor UFRxDoc representation state is inconsistent".into(),
-                Some(record.id.clone()),
+                Some(id.clone()),
             ));
         }
     }
