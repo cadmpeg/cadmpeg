@@ -181,9 +181,20 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     let topology = crate::families::e5::graph::parse_topology(&bytes).expect("E5 graph");
     assert_eq!(topology.faces.len(), 2);
     assert_eq!(topology.faces[0].surface, 500);
-    assert_eq!(topology.faces[0].loops[0].edge_uses, vec![100, 101, 102]);
     assert_eq!(
-        topology.faces[0].loops[0].reversed,
+        topology.faces[0].loops[0]
+            .members
+            .iter()
+            .map(|member| member.edge_use)
+            .collect::<Vec<_>>(),
+        vec![100, 101, 102]
+    );
+    assert_eq!(
+        topology.faces[0].loops[0]
+            .members
+            .iter()
+            .map(|member| member.reversed)
+            .collect::<Vec<_>>(),
         vec![false, false, false]
     );
     assert_eq!(topology.faces[0].loops[0].outer, Some(true));

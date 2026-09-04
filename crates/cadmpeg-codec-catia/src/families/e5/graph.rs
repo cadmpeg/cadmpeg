@@ -285,6 +285,19 @@ pub struct E5Face {
     pub loops: Vec<E5Loop>,
 }
 
+/// One pcurve/edge-use occurrence of a class-`0x09` loop, with its unique
+/// head-to-tail traversal sense.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct E5LoopMember {
+    /// `record_id` of the member pcurve.
+    pub pcurve: u32,
+    /// `record_id` of the member edge-use.
+    pub edge_use: u32,
+    /// Traversal sense from [`solve_loop_chain`]; `true` means the edge is
+    /// traversed end-to-start.
+    pub reversed: bool,
+}
+
 /// A resolved class-`0x09` loop record: its member pcurve/edge-use pairs and
 /// derived orientation ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,15 +307,9 @@ pub struct E5Loop {
     /// `record_id` of the loop's surface, matched against the owning
     /// face's surface during resolution.
     pub surface: u32,
-    /// `record_id`s of the loop's member pcurves, in serialized order.
-    pub pcurves: Vec<u32>,
-    /// `record_id`s of the loop's member edge-uses, in serialized order,
-    /// index-aligned with `pcurves`.
-    pub edge_uses: Vec<u32>,
-    /// Per-edge-use traversal sense from the unique head-to-tail chain
-    /// solved by [`solve_loop_chain`]; `true` means the edge is traversed
-    /// end-to-start.
-    pub reversed: Vec<bool>,
+    /// Pcurve/edge-use occurrences in serialized order, each with its
+    /// unique head-to-tail traversal sense.
+    pub members: Vec<E5LoopMember>,
     /// Shell-consistent member order and traversal senses after folding in
     /// the loop's global orientation sign. `None` when the radial parity
     /// system is frustrated or ambiguous.
@@ -468,7 +475,13 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
             if raw.outer.is_some_and(|outer| outer != (loop_position == 0)) {
                 return None;
             }
+            if raw.pcurves.len() != raw.edges.len() {
+                return None;
+            }
             let reversed = solve_loop_chain(&raw.edges, &edges)?;
+            if reversed.len() != raw.edges.len() {
+                return None;
+            }
             for pcurve_id in &raw.pcurves {
                 let pcurve = pcurves.get(pcurve_id)?;
                 let surface = match pcurve {
@@ -523,9 +536,17 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
             resolved_loops.push(E5Loop {
                 record_id: raw.id,
                 surface: raw.surface,
-                pcurves: raw.pcurves.clone(),
-                edge_uses: raw.edges.clone(),
-                reversed,
+                members: raw
+                    .pcurves
+                    .iter()
+                    .zip(&raw.edges)
+                    .zip(&reversed)
+                    .map(|((&pcurve, &edge_use), &reversed)| E5LoopMember {
+                        pcurve,
+                        edge_use,
+                        reversed,
+                    })
+                    .collect(),
                 oriented_members: None,
                 outer: raw.outer,
                 orientation_signs: raw.orientation_signs.clone(),
@@ -1133,7 +1154,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
     let mut locations = Vec::new();
     for (face_index, face) in faces.iter().enumerate() {
         for (loop_index, loop_) in face.loops.iter().enumerate() {
-            if !loop_.edge_uses.is_empty() {
+            if !loop_.members.is_empty() {
                 locations.push((face_index, loop_index));
             }
         }
@@ -1141,11 +1162,11 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
     let mut occurrences = HashMap::<u32, Vec<(usize, i8)>>::new();
     for (node, &(face_index, loop_index)) in locations.iter().enumerate() {
         let loop_ = &faces[face_index].loops[loop_index];
-        for (&edge, &reversed) in loop_.edge_uses.iter().zip(&loop_.reversed) {
+        for member in &loop_.members {
             occurrences
-                .entry(edge)
+                .entry(member.edge_use)
                 .or_default()
-                .push((node, if reversed { -1 } else { 1 }));
+                .push((node, if member.reversed { -1 } else { 1 }));
         }
     }
     let Ok(mut adjacency) = alloc_filled(
@@ -1245,7 +1266,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
         };
         let loop_ = &mut faces[face_index].loops[loop_index];
         let flip = g < 0;
-        let mut indices: Vec<usize> = (0..loop_.reversed.len()).collect();
+        let mut indices: Vec<usize> = (0..loop_.members.len()).collect();
         if flip {
             indices.reverse();
         }
@@ -1254,7 +1275,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
                 .into_iter()
                 .map(|serialized_index| E5OrientedMember {
                     serialized_index,
-                    reversed: loop_.reversed[serialized_index] ^ flip,
+                    reversed: loop_.members[serialized_index].reversed ^ flip,
                 })
                 .collect(),
         );
@@ -1509,6 +1530,19 @@ mod tests {
     use super::*;
     use std::collections::BTreeMap;
 
+    fn e5_loop_members(pcurves: &[u32], edges: &[u32], reversed: &[bool]) -> Vec<E5LoopMember> {
+        pcurves
+            .iter()
+            .zip(edges)
+            .zip(reversed)
+            .map(|((&pcurve, &edge_use), &reversed)| E5LoopMember {
+                pcurve,
+                edge_use,
+                reversed,
+            })
+            .collect()
+    }
+
     fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
         bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, class, 0]);
         bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
@@ -1579,7 +1613,14 @@ mod tests {
 
         let topology = parse_topology(&bytes).expect("closed E5 topology");
         assert_eq!(topology.faces[0].surface, 258);
-        assert_eq!(topology.faces[0].loops[0].edge_uses, [110, 111, 112]);
+        assert_eq!(
+            topology.faces[0].loops[0]
+                .members
+                .iter()
+                .map(|member| member.edge_use)
+                .collect::<Vec<_>>(),
+            [110, 111, 112]
+        );
         assert_eq!(topology.faces[0].loops[0].outer, Some(true));
     }
 
@@ -1891,9 +1932,7 @@ mod tests {
             loops: vec![E5Loop {
                 record_id: 2,
                 surface: 500,
-                pcurves: vec![10, 11],
-                edge_uses: vec![1, 2],
-                reversed: vec![false, false],
+                members: e5_loop_members(&[10, 11], &[1, 2], &[false, false]),
                 oriented_members: None,
                 outer: Some(true),
                 orientation_signs: Vec::new(),
@@ -1967,12 +2006,17 @@ mod tests {
 
     #[test]
     fn radial_parity_rejects_frustration_and_reverses_negative_gauge() {
-        let loop_ = |record_id, edge_uses| E5Loop {
+        let loop_ = |record_id, edge_uses: Vec<u32>| E5Loop {
             record_id,
             surface: record_id + 100,
-            pcurves: vec![record_id + 200; 2],
-            edge_uses,
-            reversed: vec![false, false],
+            members: edge_uses
+                .into_iter()
+                .map(|edge_use| E5LoopMember {
+                    pcurve: record_id + 200,
+                    edge_use,
+                    reversed: false,
+                })
+                .collect(),
             oriented_members: None,
             outer: Some(true),
             orientation_signs: Vec::new(),
