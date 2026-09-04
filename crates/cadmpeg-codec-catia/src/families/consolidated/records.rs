@@ -540,13 +540,10 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             }
             Some(ConsolidatedAnalyticCircleEdgeRun {
                 descriptor: ConsolidatedAnalyticCircleDescriptor {
-                    frame: ConsolidatedRawFrame {
-                        pos: parameter.range.start,
-                        width: parameter.width,
-                        flag: parameter.flag,
-                        header_token: parameter.header_token,
-                        payload: data[parameter.payload.clone()].to_vec(),
-                    },
+                    frame: ConsolidatedRawFrame::from_record(
+                        parameter,
+                        data[parameter.payload.clone()].to_vec(),
+                    )?,
                 },
                 circle: circles.get(&circle.range.start)?.clone(),
                 #[cfg(test)]
@@ -683,15 +680,14 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         && record.family == ConsolidatedFamily::B
                         && matches!(record.class, 0x23..=0x25)
                 })
-                .map(|record| ConsolidatedEdgeDefinition {
-                    frame: ConsolidatedRawFrame {
-                        pos: record.range.start,
-                        width: record.width,
-                        flag: record.flag,
-                        header_token: record.header_token,
-                        payload: data[record.payload.clone()].to_vec(),
-                    },
-                    class: record.class,
+                .and_then(|record| {
+                    Some(ConsolidatedEdgeDefinition {
+                        frame: ConsolidatedRawFrame::from_record(
+                            record,
+                            data[record.payload.clone()].to_vec(),
+                        )?,
+                        class: record.class,
+                    })
                 });
             identity_chain_consistent.then(|| ConsolidatedEdgeUseRun {
                 definition,
@@ -738,15 +734,15 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             }
             _ => false,
         };
-        identity_chain_consistent.then(|| ConsolidatedEdgeUseRun {
+        if !identity_chain_consistent {
+            return None;
+        }
+        Some(ConsolidatedEdgeUseRun {
             definition: Some(ConsolidatedEdgeDefinition {
-                frame: ConsolidatedRawFrame {
-                    pos: definition_record.range.start,
-                    width: definition_record.width,
-                    flag: definition_record.flag,
-                    header_token: definition_record.header_token,
-                    payload: data[definition_record.payload.clone()].to_vec(),
-                },
+                frame: ConsolidatedRawFrame::from_record(
+                    definition_record,
+                    data[definition_record.payload.clone()].to_vec(),
+                )?,
                 class: definition_record.class,
             }),
             uses,

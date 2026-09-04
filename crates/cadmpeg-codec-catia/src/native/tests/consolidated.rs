@@ -143,7 +143,10 @@ fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() 
     );
     assert_eq!(records[0].source_index, 0);
     assert_eq!(records[0].source_offset, records[0].byte_offset);
-    assert_eq!(records[1].width, 2);
+    assert_eq!(
+        records[1].width,
+        crate::wire::records::ConsolidatedFrameWidth::Two
+    );
     assert!(records.iter().all(|record| !record.payload.is_empty()));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);

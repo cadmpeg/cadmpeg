@@ -15,6 +15,7 @@ use std::{collections::HashSet, ops::Range};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::knots_strictly_increasing;
 use cadmpeg_ir::math::Point3;
+use serde::{Deserialize, Serialize};
 
 use crate::layout::a_family_frame as a_frame;
 use crate::layout::b_family_frame as b_frame;
@@ -181,19 +182,103 @@ pub(crate) fn parse_consolidated_pcurve(
     })
 }
 
+/// Header-token width of a length-closed A/B-family frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub enum ConsolidatedFrameWidth {
+    /// One-byte header token.
+    One,
+    /// Two-byte header token.
+    Two,
+    /// Three-byte header token.
+    Three,
+}
+
+impl From<ConsolidatedFrameWidth> for u8 {
+    fn from(value: ConsolidatedFrameWidth) -> Self {
+        match value {
+            ConsolidatedFrameWidth::One => 1,
+            ConsolidatedFrameWidth::Two => 2,
+            ConsolidatedFrameWidth::Three => 3,
+        }
+    }
+}
+
+impl TryFrom<u8> for ConsolidatedFrameWidth {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::One),
+            2 => Ok(Self::Two),
+            3 => Ok(Self::Three),
+            other => Err(format!("width {other} is not 1..=3")),
+        }
+    }
+}
+
+/// Independent framing flag of a length-closed A/B-family frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub enum ConsolidatedFrameFlag {
+    /// Flag `0x03`.
+    Flag03,
+    /// Flag `0x13`.
+    Flag13,
+    /// Flag `0x83`.
+    Flag83,
+}
+
+impl From<ConsolidatedFrameFlag> for u8 {
+    fn from(value: ConsolidatedFrameFlag) -> Self {
+        match value {
+            ConsolidatedFrameFlag::Flag03 => 0x03,
+            ConsolidatedFrameFlag::Flag13 => 0x13,
+            ConsolidatedFrameFlag::Flag83 => 0x83,
+        }
+    }
+}
+
+impl TryFrom<u8> for ConsolidatedFrameFlag {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x03 => Ok(Self::Flag03),
+            0x13 => Ok(Self::Flag13),
+            0x83 => Ok(Self::Flag83),
+            other => Err(format!("flag {other:#x} is not 0x03, 0x13, or 0x83")),
+        }
+    }
+}
+
 /// Length-closed A/B-family frame shared by edge-definition and descriptor records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConsolidatedRawFrame {
     /// Record byte offset.
     pub pos: usize,
     /// Header-token width in bytes.
-    pub width: u8,
+    pub width: ConsolidatedFrameWidth,
     /// Independent framing flag.
-    pub flag: u8,
+    pub flag: ConsolidatedFrameFlag,
     /// Width-coded header token.
     pub header_token: u32,
     /// Complete class-specific payload.
     pub payload: Vec<u8>,
+}
+
+impl ConsolidatedRawFrame {
+    pub(crate) fn from_record(record: &ConsolidatedRecord, payload: Vec<u8>) -> Option<Self> {
+        Some(Self {
+            pos: record.range.start,
+            width: ConsolidatedFrameWidth::try_from(record.width).ok()?,
+            flag: ConsolidatedFrameFlag::try_from(record.flag).ok()?,
+            header_token: record.header_token,
+            payload,
+        })
+    }
 }
 
 #[derive(Clone, Copy)]
