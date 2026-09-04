@@ -92,7 +92,7 @@ fn body(
         bytes,
         census: EntityCensus {
             basis: CensusBasis::TargetRecords,
-            counts,
+            counts: cadmpeg_ir::CensusKey::count_map(counts),
         },
         write_path,
         losses,

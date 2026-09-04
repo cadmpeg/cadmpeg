@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned document structure and canonical arena ordering.
 
+use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::fmt;
+use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -600,12 +604,214 @@ fn sorted_refs<T: crate::schema::EntitySchema>(entities: &[T]) -> Vec<&T> {
     refs
 }
 
+macro_rules! declare_arena_name {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        /// Name of a registered model arena.
+        ///
+        /// Variant identifiers match the `arena_registry!` field names so a
+        /// new arena cannot be counted or diffed under a string the registry
+        /// does not declare.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[allow(non_camel_case_types)]
+        pub enum ArenaName {
+            $(
+                #[doc = $doc]
+                $field,
+            )*
+        }
+
+        impl ArenaName {
+            /// Every registered arena, in registry order.
+            pub const ALL: &'static [Self] = &[$(Self::$field),*];
+
+            /// Registry field name, which is also the CADIR JSON object key.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$field => stringify!($field),)*
+                }
+            }
+
+            /// Parse a registry field name.
+            #[must_use]
+            pub fn from_str(name: &str) -> Option<Self> {
+                match name {
+                    $(stringify!($field) => Some(Self::$field),)*
+                    _ => None,
+                }
+            }
+        }
+
+        impl fmt::Display for ArenaName {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl AsRef<str> for ArenaName {
+            fn as_ref(&self) -> &str {
+                self.as_str()
+            }
+        }
+    };
+}
+
 /// The IR schema version this build produces and accepts.
 pub const IR_VERSION: &str = "5";
 
 arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
+arena_registry!(declare_arena_name);
+
+const SURFACES_UNKNOWN_GEOMETRY: &str = "surfaces_unknown_geometry";
+
+/// A document census key: a registered model arena, the unknown-surface
+/// tally, a native arena row, or a target-record kind.
+///
+/// Construction from a wire string classifies registered arena names and
+/// `surfaces_unknown_geometry` so those rows cannot be stored as an untyped
+/// other key. Remaining strings are native arena rows (`native.{format}.{name}`)
+/// and export target-record kinds.
+#[derive(Debug, Clone)]
+pub struct CensusKey(CensusKeyInner);
+
+#[derive(Debug, Clone)]
+enum CensusKeyInner {
+    Model(ArenaName),
+    SurfacesUnknownGeometry,
+    Other(String),
+}
+
+impl CensusKey {
+    /// Key for a registered model arena.
+    #[must_use]
+    pub const fn model(name: ArenaName) -> Self {
+        Self(CensusKeyInner::Model(name))
+    }
+
+    /// Key for the unknown-surface geometry tally.
+    #[must_use]
+    pub const fn surfaces_unknown_geometry() -> Self {
+        Self(CensusKeyInner::SurfacesUnknownGeometry)
+    }
+
+    /// Key for a native namespace arena row, serialized as `native.{format}.{name}`.
+    #[must_use]
+    pub fn native(format: &str, name: &str) -> Self {
+        Self(CensusKeyInner::Other(format!("native.{format}.{name}")))
+    }
+
+    /// Classify a wire key, routing registry names and the unknown-surface
+    /// tally to their closed variants.
+    #[must_use]
+    pub fn from_wire(value: impl Into<String>) -> Self {
+        let value = value.into();
+        if let Some(name) = ArenaName::from_str(&value) {
+            return Self::model(name);
+        }
+        if value == SURFACES_UNKNOWN_GEOMETRY {
+            return Self::surfaces_unknown_geometry();
+        }
+        Self(CensusKeyInner::Other(value))
+    }
+
+    /// Rebuild a count map, classifying each wire key.
+    #[must_use]
+    pub fn count_map<K, I>(counts: I) -> BTreeMap<Self, usize>
+    where
+        I: IntoIterator<Item = (K, usize)>,
+        K: Into<String>,
+    {
+        counts
+            .into_iter()
+            .map(|(key, count)| (Self::from_wire(key), count))
+            .collect()
+    }
+
+    /// Wire spelling of this key.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match &self.0 {
+            CensusKeyInner::Model(name) => name.as_str(),
+            CensusKeyInner::SurfacesUnknownGeometry => SURFACES_UNKNOWN_GEOMETRY,
+            CensusKeyInner::Other(value) => value,
+        }
+    }
+}
+
+impl From<ArenaName> for CensusKey {
+    fn from(name: ArenaName) -> Self {
+        Self::model(name)
+    }
+}
+
+impl fmt::Display for CensusKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl AsRef<str> for CensusKey {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl Borrow<str> for CensusKey {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq for CensusKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for CensusKey {}
+
+impl PartialOrd for CensusKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CensusKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl Hash for CensusKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
+    }
+}
+
+impl Serialize for CensusKey {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for CensusKey {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self::from_wire(String::deserialize(deserializer)?))
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for CensusKey {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "CensusKey".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        String::json_schema(generator)
+    }
+}
 
 fn reconcile_feature_parents(
     model: &mut Model,
@@ -1181,16 +1387,16 @@ impl CadIr {
     }
 
     /// Count arena rows and native loss tallies without running validation.
-    pub fn census(&self) -> std::collections::BTreeMap<String, usize> {
+    pub fn census(&self) -> BTreeMap<CensusKey, usize> {
         entity_census(self)
     }
 }
 
 macro_rules! define_registered_entity_census {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
-        fn registered_entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+        fn registered_entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
             BTreeMap::from([
-                $((stringify!($field).into(), ir.model.$field.len())),*
+                $((CensusKey::model(ArenaName::$field), ir.model.$field.len())),*
             ])
         }
     };
@@ -1198,10 +1404,10 @@ macro_rules! define_registered_entity_census {
 arena_registry!(define_registered_entity_census);
 
 /// Count the records represented by the IR arenas without running validation.
-pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
+pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
     let mut counts = registered_entity_census(ir);
     counts.insert(
-        "surfaces_unknown_geometry".into(),
+        CensusKey::surfaces_unknown_geometry(),
         ir.model
             .surfaces
             .iter()
@@ -1214,7 +1420,7 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<String, usize> {
             .count(),
     );
     for loss in ir.native.loss_counts() {
-        counts.insert(format!("native.{}.{}", loss.format, loss.kind), loss.count);
+        counts.insert(CensusKey::native(&loss.format, &loss.kind), loss.count);
     }
     counts
 }

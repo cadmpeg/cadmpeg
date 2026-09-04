@@ -11,6 +11,7 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{LossNote, Severity};
+use crate::document::CensusKey;
 
 /// Entity census and fidelity details from a successful export.
 #[derive(Debug, Clone, PartialEq)]
@@ -202,7 +203,7 @@ pub struct EntityCensus {
     /// Semantic basis of `counts`.
     pub basis: CensusBasis,
     /// Counts keyed by arena or target-record kind.
-    pub counts: BTreeMap<String, usize>,
+    pub counts: BTreeMap<CensusKey, usize>,
 }
 
 impl EntityCensus {

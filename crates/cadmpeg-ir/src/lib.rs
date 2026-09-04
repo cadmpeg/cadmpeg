@@ -82,9 +82,10 @@ pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote};
 pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult};
 pub use container::ContainerSummary;
 pub use diff::{
-    diff, ArenaDiff, AttributeChange, DialectsChange, IrDiff, ModifiedEntity, SourceDiff,
+    diff, ArenaDiff, ArenaKind, AttributeChange, DialectsChange, IrDiff, ModifiedEntity,
+    NonEmptyFields, SourceDiff,
 };
-pub use document::{CadIr, SourceMeta, IR_VERSION};
+pub use document::{ArenaName, CadIr, CensusKey, SourceMeta, IR_VERSION};
 pub use draft::ModelDraft;
 pub use features::{
     BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction, CoilExtent, CoilPlacement,

@@ -4061,3 +4061,45 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::diff::SourceDiff::dialects_change"
 reason = "dialect layer changes are a DialectsChange built only when before and after differ"
+
+[[change]]
+commit = "07c837f4688e9e99f75246c41ad80dc036ec2ce1"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::diff::ModifiedEntity::fields"
+reason = "a modified entity carries a non-empty field list so a modification cannot name no fields"
+
+[[change]]
+commit = "07c837f4688e9e99f75246c41ad80dc036ec2ce1"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::diff::ArenaDiff::kind"
+reason = "arena diffs are named by the registry arena or a native namespace arena so an arbitrary string cannot name a compared arena"
+
+[[change]]
+commit = "07c837f4688e9e99f75246c41ad80dc036ec2ce1"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::ValidationReport::entity_counts"
+reason = "validation counts are keyed by registry arena names, the unknown-surface tally, and native arena rows so a count cannot be stored under an untyped string"
+
+[[change]]
+commit = "07c837f4688e9e99f75246c41ad80dc036ec2ce1"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::EntityCensus::counts"
+reason = "export census keys are classified from the same registry names, native rows, and target-record kinds so a count cannot be stored under an untyped string"
+
+[[change]]
+commit = "07c837f4688e9e99f75246c41ad80dc036ec2ce1"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::entity_census"
+reason = "census keys are CensusKey so a caller cannot insert a count under a string the registry does not name"
+
+[[change]]
+commit = "07c837f4688e9e99f75246c41ad80dc036ec2ce1"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::CadIr::census"
+reason = "census keys are CensusKey so a caller cannot insert a count under a string the registry does not name"
