@@ -1391,12 +1391,14 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 cadmpeg_ir::features::PathRef::Native(ref native)
             ),
             support_faces: cadmpeg_ir::features::FaceSelection::Faces(ref faces),
-            continuity: Some(cadmpeg_ir::features::SurfaceContinuity::Contact),
-            ref boundary_continuities,
+            ref continuity,
             merge_result: Some(false),
-        }) if boundary_continuities
-            == &[cadmpeg_ir::features::SurfaceContinuity::Contact]
-            && native == &patch_group.id && faces.is_empty()
+        }) if matches!(continuity.resolved(), Some(
+            cadmpeg_ir::features::FilledSurfaceContinuity::PerBoundary {
+                first: cadmpeg_ir::features::SurfaceContinuity::Contact,
+                rest,
+            }
+        ) if rest.is_empty()) && native == &patch_group.id && faces.is_empty()
     ));
 
     patch_scope.frame_length = 398;
@@ -1537,10 +1539,11 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
             ),
-            continuity: Some(cadmpeg_ir::features::SurfaceContinuity::Contact),
-            ref boundary_continuities,
+            ref continuity,
             ..
-        }) if native == &patch_group.id && boundary_continuities.is_empty()
+        }) if continuity.uniform_value()
+            == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
+            && native == &patch_group.id
     ));
 
     let mut fill_scope = scope.clone();

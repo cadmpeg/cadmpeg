@@ -377,8 +377,7 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
     let surface = |support_faces, continuity, merge_result| FeatureDefinition::FilledSurface {
         boundary: SurfaceBoundary::Path(PathRef::Edges(vec![EdgeId("edge:1".into())])),
         support_faces,
-        continuity: Some(continuity),
-        boundary_continuities: Vec::new(),
+        continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(continuity),
         merge_result,
     };
 

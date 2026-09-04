@@ -1483,14 +1483,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     cadmpeg_ir::features::SurfaceBoundary::Edges(edges) => incomplete_edge_selection(edges),
                     cadmpeg_ir::features::SurfaceBoundary::Path(path) => incomplete_path(path),
                 })
-                    || if *continuity
+                    || if continuity.uniform_value()
                         == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
                     {
                         incomplete_optional_face_selection(support_faces)
                     } else {
                         incomplete_face_selection(support_faces)
                     }
-                    || continuity.is_none()
+                    || continuity.is_unresolved()
                     || merge_result.is_none()
             }
             FeatureDefinition::TrimSurface {

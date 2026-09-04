@@ -13,8 +13,8 @@ use crate::history::classify::{feature_family, feature_input_class};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     Angle, BodySelection, EdgeSelection, FaceSelection, Length, PathRef, RuledSurfaceCorner,
-    RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceContinuity, SurfaceExtension,
-    ThickenSide, TrimRegion,
+    RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceExtension, ThickenSide,
+    TrimRegion,
 };
 
 #[allow(
@@ -468,8 +468,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         boundary: &SurfaceBoundary,
         support_faces: &FaceSelection,
-        continuity: &Option<SurfaceContinuity>,
-        boundary_continuities: &Vec<SurfaceContinuity>,
+        continuity: &cadmpeg_ir::features::FilledSurfaceContinuityState,
         merge_result: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -493,18 +492,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            let continuity = continuity.ok_or_else(|| {
+            let continuity = continuity.resolved().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved filled-surface continuity",
                     feature.id
                 ))
             })?;
-            if !boundary_continuities.is_empty() {
+            let cadmpeg_ir::features::FilledSurfaceContinuity::Uniform(continuity) = continuity
+            else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has per-boundary filled-surface continuity",
                     feature.id
                 )));
-            }
+            };
             let merge_result = merge_result.ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved filled-surface merge state",
@@ -517,7 +517,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert("SupportFaces".into(), support_faces);
             properties.insert(
                 "Continuity".into(),
-                crate::feature_schema::surface_continuity_token(continuity).into(),
+                crate::feature_schema::surface_continuity_token(*continuity).into(),
             );
             properties.insert("MergeResult".into(), merge_result.to_string());
             NeutralFeatureEncoding {

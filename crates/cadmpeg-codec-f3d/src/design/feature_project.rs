@@ -6918,19 +6918,6 @@ pub(crate) fn surface_patch_boundary_continuities(
         .unwrap_or_default()
 }
 
-/// Map the boundary-settings continuity of a `SurfacePatch` scope onto one
-/// neutral continuity when every boundary uses the same condition.
-pub(crate) fn surface_patch_continuity(
-    scope: &DesignParameterScope,
-) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
-    let boundaries = surface_patch_boundary_continuities(scope);
-    let (first, rest) = boundaries.split_first()?;
-    if rest.iter().any(|other| other != first) {
-        return None;
-    }
-    Some(*first)
-}
-
 pub(crate) fn project_surface_patch(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
@@ -6982,8 +6969,9 @@ pub(crate) fn project_surface_patch(
                 true,
             )),
             support_faces: FaceSelection::Faces(Vec::new()),
-            continuity: Some(cadmpeg_ir::features::SurfaceContinuity::Contact),
-            boundary_continuities: Vec::new(),
+            continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+                cadmpeg_ir::features::SurfaceContinuity::Contact,
+            ),
             merge_result: Some(false),
         });
     }
@@ -7070,8 +7058,9 @@ pub(crate) fn project_surface_patch(
     Some(FeatureDefinition::FilledSurface {
         boundary: SurfaceBoundary::Path(boundary),
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: surface_patch_continuity(scope),
-        boundary_continuities: surface_patch_boundary_continuities(scope),
+        continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary(
+            surface_patch_boundary_continuities(scope),
+        ),
         merge_result: Some(false),
     })
 }

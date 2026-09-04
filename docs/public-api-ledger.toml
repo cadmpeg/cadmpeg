@@ -3487,3 +3487,10 @@ crate = "cadmpeg-ir"
 kind = "struct"
 item = "cadmpeg_ir::features::HoleSpecification"
 reason = "clearance and threaded specifications are enum variants that carry only their applicable fit or thread geometry fields"
+
+[[change]]
+commit = "f515bc43537ee726cf9aba2bdf6c6ff786591d4d"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::FeatureDefinition::FilledSurface::{continuity,boundary_continuities}"
+reason = "one optional FilledSurfaceContinuity now carries either a uniform condition or a guaranteed non-empty component sequence"

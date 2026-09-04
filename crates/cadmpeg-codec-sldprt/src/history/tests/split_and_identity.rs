@@ -337,10 +337,10 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
         FeatureDefinition::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
             support_faces: FaceSelection::Unresolved,
-            continuity: None,
+            ref continuity,
             merge_result: None,
             ..
-        }
+        } if continuity.is_unresolved()
     ));
     assert!(matches!(
         projected[8].definition,

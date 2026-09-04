@@ -863,6 +863,56 @@ fn hole_wire_rejects_cross_form_thread_fields() {
 }
 
 #[test]
+fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
+    use crate::features::{
+        EdgeSelection, FaceSelection, FeatureDefinition, SurfaceBoundary, SurfaceContinuity,
+    };
+
+    let definition = FeatureDefinition::FilledSurface {
+        boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+        support_faces: FaceSelection::Faces(Vec::new()),
+        continuity: crate::features::FilledSurfaceContinuityState::per_boundary(vec![
+            SurfaceContinuity::Contact,
+            SurfaceContinuity::Contact,
+        ]),
+        merge_result: Some(false),
+    };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["continuity"], serde_json::json!("contact"));
+    assert_eq!(
+        wire["boundary_continuities"],
+        serde_json::json!(["contact", "contact"])
+    );
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut conflicting = wire;
+    conflicting["continuity"] = serde_json::json!("curvature");
+    assert!(serde_json::from_value::<FeatureDefinition>(conflicting).is_err());
+}
+
+#[test]
+fn unresolved_filled_surface_continuity_omits_both_wire_fields() {
+    use crate::features::{EdgeSelection, FaceSelection, FeatureDefinition, SurfaceBoundary};
+
+    let definition = FeatureDefinition::FilledSurface {
+        boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+        support_faces: FaceSelection::Faces(Vec::new()),
+        continuity: crate::features::FilledSurfaceContinuityState::unresolved(),
+        merge_result: None,
+    };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert!(wire.get("continuity").is_none());
+    assert!(wire.get("boundary_continuities").is_none());
+    assert_eq!(
+        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+        definition
+    );
+}
+
+#[test]
 fn scale_factor_forms_preserve_the_legacy_wire_layout() {
     use crate::features::ScaleFactors;
 
