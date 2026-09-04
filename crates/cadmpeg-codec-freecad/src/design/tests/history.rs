@@ -561,11 +561,11 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         sheet.column_widths,
         [
             cadmpeg_ir::SpreadsheetDimension {
-                name: "A".into(),
+                index: 1,
                 pixels: 120,
             },
             cadmpeg_ir::SpreadsheetDimension {
-                name: "B".into(),
+                index: 2,
                 pixels: 80,
             },
         ]
@@ -573,25 +573,27 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     assert_eq!(
         sheet.row_heights,
         [cadmpeg_ir::SpreadsheetDimension {
-            name: "2".into(),
+            index: 2,
             pixels: 45,
         }]
     );
     assert_eq!(
         sheet.merged_ranges,
-        [cadmpeg_ir::SpreadsheetRange {
-            start: "A1".into(),
-            end: "B1".into(),
-        }]
+        [cadmpeg_ir::SpreadsheetRange::new(
+            cadmpeg_ir::CellAddress::parse("A1").expect("A1"),
+            cadmpeg_ir::CellAddress::parse("B1").expect("B1"),
+        )
+        .expect("A1:B1")]
     );
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
-    corrupted.model.spreadsheets[0]
-        .merged_ranges
-        .push(cadmpeg_ir::SpreadsheetRange {
-            start: "A1".into(),
-            end: "A2".into(),
-        });
+    corrupted.model.spreadsheets[0].merged_ranges.push(
+        cadmpeg_ir::SpreadsheetRange::new(
+            cadmpeg_ir::CellAddress::parse("A1").expect("A1"),
+            cadmpeg_ir::CellAddress::parse("A2").expect("A2"),
+        )
+        .expect("A1:A2"),
+    );
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
         .iter()
