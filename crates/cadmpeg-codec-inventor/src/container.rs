@@ -131,7 +131,7 @@ impl<'a> InventorContainer<'a> {
         );
         ContainerSummary::classified(
             dialects,
-            "cfb",
+            cadmpeg_ir::ContainerKind::Cfb,
             entries,
             losses,
             vec![format!(

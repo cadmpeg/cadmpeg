@@ -76,7 +76,7 @@ impl CodecBackend for ForeignIdentityCodec {
     ) -> Result<ContainerSummary, CodecError> {
         Ok(ContainerSummary::unclassified(
             "foreign",
-            "test",
+            crate::ContainerKind::Flat,
             Vec::new(),
             Vec::new(),
             Vec::new(),

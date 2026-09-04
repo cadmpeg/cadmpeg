@@ -39,7 +39,7 @@ pub(crate) fn inspect<'a>(
     )];
     Ok(ContainerSummary::classified(
         classified.layers,
-        "zip",
+        cadmpeg_ir::ContainerKind::Zip,
         scan.entries.clone(),
         classified.losses,
         notes,

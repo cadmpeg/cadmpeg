@@ -2829,7 +2829,7 @@ pub fn summarize(
 
     ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(classification.matched().clone()),
-        "psb",
+        cadmpeg_ir::ContainerKind::Psb,
         entries,
         classification.loss().into_iter().collect(),
         notes,

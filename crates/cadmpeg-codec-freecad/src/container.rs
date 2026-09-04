@@ -113,7 +113,7 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
         .collect();
     ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched),
-        "zip",
+        cadmpeg_ir::ContainerKind::Zip,
         scan.entries.clone(),
         losses,
         summary_notes(scan),

@@ -8,13 +8,132 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::report::LossNote;
+use serde::de::Error as _;
+use std::fmt;
+
+/// Physical envelope of an inspected document.
+///
+/// Serialize as the historical container_kind string. Deserialize rejects any
+/// other string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ContainerKind {
+    /// Rhino 3DM chunk stream.
+    ThreeDmChunks,
+    /// IGES binary envelope.
+    Binary,
+    /// Compound File Binary.
+    Cfb,
+    /// SolidWorks CFB with compound streams.
+    CompoundFileBinary,
+    /// IGES compressed ASCII.
+    CompressedAscii,
+    /// IGES fixed ASCII.
+    FixedAscii,
+    /// Unframed byte stream used in tests and some scanners.
+    Flat,
+    /// STEP Part 21 clear text.
+    Iso10303ClearText,
+    /// STEP Part 21 inside ZIP.
+    Iso10303Zip,
+    /// Creo PSB.
+    Psb,
+    /// SolidWorks block table.
+    SldprtBlocks,
+    /// NX splmsstr.
+    Splmsstr,
+    /// SAT/SAB kernel stream.
+    Stream,
+    /// CATIA V5 CFV2.
+    V5Cfv2,
+    /// ZIP archive.
+    Zip,
+}
+
+impl ContainerKind {
+    /// Parse a container_kind wire string.
+    #[must_use]
+    pub fn parse(id: &str) -> Option<Self> {
+        Some(match id {
+            "3dm-chunks" => Self::ThreeDmChunks,
+            "binary" => Self::Binary,
+            "cfb" => Self::Cfb,
+            "compound-file-binary" => Self::CompoundFileBinary,
+            "compressed-ascii" => Self::CompressedAscii,
+            "fixed-ascii" => Self::FixedAscii,
+            "flat" => Self::Flat,
+            "iso-10303-21-clear-text" => Self::Iso10303ClearText,
+            "iso-10303-21-zip" => Self::Iso10303Zip,
+            "psb" => Self::Psb,
+            "sldprt-blocks" => Self::SldprtBlocks,
+            "splmsstr" => Self::Splmsstr,
+            "stream" => Self::Stream,
+            "v5-cfv2" => Self::V5Cfv2,
+            "zip" => Self::Zip,
+            _ => return None,
+        })
+    }
+
+    /// Wire label.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ThreeDmChunks => "3dm-chunks",
+            Self::Binary => "binary",
+            Self::Cfb => "cfb",
+            Self::CompoundFileBinary => "compound-file-binary",
+            Self::CompressedAscii => "compressed-ascii",
+            Self::FixedAscii => "fixed-ascii",
+            Self::Flat => "flat",
+            Self::Iso10303ClearText => "iso-10303-21-clear-text",
+            Self::Iso10303Zip => "iso-10303-21-zip",
+            Self::Psb => "psb",
+            Self::SldprtBlocks => "sldprt-blocks",
+            Self::Splmsstr => "splmsstr",
+            Self::Stream => "stream",
+            Self::V5Cfv2 => "v5-cfv2",
+            Self::Zip => "zip",
+        }
+    }
+}
+
+impl fmt::Display for ContainerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl PartialEq<str> for ContainerKind {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for ContainerKind {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl Serialize for ContainerKind {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ContainerKind {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = String::deserialize(deserializer)?;
+        Self::parse(&id)
+            .ok_or_else(|| D::Error::custom(format!("container_kind: unknown value {id}")))
+    }
+}
 
 /// The result of inspecting a container without decoding its geometry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContainerSummary {
     classification: FormatIdentity<DialectLayers>,
     /// Container kind, for example, `"zip"`.
-    pub container_kind: String,
+    pub container_kind: ContainerKind,
     /// Enumerated entries.
     pub entries: Vec<ContainerEntry>,
     /// Losses resolved during inspection.
@@ -79,7 +198,12 @@ impl<'de> Deserialize<'de> for ContainerSummary {
             .map_err(serde::de::Error::custom)?;
         Ok(Self {
             classification,
-            container_kind: wire.container_kind,
+            container_kind: ContainerKind::parse(&wire.container_kind).ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "container_kind: unknown value {}",
+                    wire.container_kind
+                ))
+            })?,
             entries: wire.entries,
             losses: wire.losses,
             notes: wire.notes,
@@ -109,14 +233,14 @@ impl ContainerSummary {
     #[must_use]
     pub fn classified(
         dialects: DialectLayers,
-        container_kind: impl Into<String>,
+        container_kind: ContainerKind,
         entries: Vec<ContainerEntry>,
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
         Self {
             classification: FormatIdentity::classified(dialects),
-            container_kind: container_kind.into(),
+            container_kind,
             entries,
             losses,
             notes,
@@ -127,14 +251,14 @@ impl ContainerSummary {
     #[must_use]
     pub fn unclassified(
         format: impl Into<String>,
-        container_kind: impl Into<String>,
+        container_kind: ContainerKind,
         entries: Vec<ContainerEntry>,
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
         Self {
             classification: FormatIdentity::unclassified(format),
-            container_kind: container_kind.into(),
+            container_kind,
             entries,
             losses,
             notes,
@@ -158,14 +282,19 @@ impl ContainerSummary {
 mod tests {
     use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
-    use super::ContainerSummary;
+    use super::{ContainerKind, ContainerSummary};
 
     /// Current writers emit the dialect field and omit an empty loss set.
     /// Readers still accept summaries written before either field existed.
     #[test]
     fn an_unclassified_summary_serializes_required_empty_fields() {
-        let summary =
-            ContainerSummary::unclassified("rhino", "flat", Vec::new(), Vec::new(), Vec::new());
+        let summary = ContainerSummary::unclassified(
+            "rhino",
+            ContainerKind::Flat,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
 
         let bare = serde_json::to_string(&summary).expect("a summary serializes");
         assert!(!bare.contains("\"losses\""), "{bare}");
@@ -188,7 +317,7 @@ mod tests {
         let extra = DialectMatch::admitted(DialectId::pinned("acis:save-format-217"));
         let summary = ContainerSummary::classified(
             DialectLayers::of(primary.clone()).with(extra.clone()),
-            "flat",
+            ContainerKind::Flat,
             Vec::new(),
             Vec::new(),
             Vec::new(),

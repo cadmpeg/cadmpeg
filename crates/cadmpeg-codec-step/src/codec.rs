@@ -70,7 +70,7 @@ impl CodecBackend for StepCodec {
         let inspected = inspect_exchange(self, ctx, root)?;
         Ok(ContainerSummary::classified(
             DialectLayers::of(inspected.matched),
-            "iso-10303-21-clear-text",
+            cadmpeg_ir::ContainerKind::Iso10303ClearText,
             inspected.entries,
             inspected.losses,
             inspected.notes,
@@ -335,7 +335,7 @@ fn inspect_zip(
     // document, so the root's own match is this summary's match.
     Ok(ContainerSummary::classified(
         DialectLayers::of(inspected.matched),
-        "iso-10303-21-zip",
+        cadmpeg_ir::ContainerKind::Iso10303Zip,
         entries,
         losses,
         notes,

@@ -535,7 +535,7 @@ pub fn summarize(
 ) -> ContainerSummary {
     ContainerSummary::classified(
         dialects,
-        "zip",
+        cadmpeg_ir::ContainerKind::Zip,
         scan.entries.clone(),
         Vec::new(),
         summary_notes(scan, SummaryScope::ContainerOnly),

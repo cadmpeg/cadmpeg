@@ -1494,7 +1494,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let losses = crate::dialect::dialect_loss(&matched).into_iter().collect();
     ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched),
-        "v5-cfv2",
+        cadmpeg_ir::ContainerKind::V5Cfv2,
         entries,
         losses,
         notes,

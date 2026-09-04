@@ -183,7 +183,7 @@ pub(crate) fn inspect(
     let losses = crate::dialect::dialect_loss(&kernel).into_iter().collect();
     Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched).with(kernel),
-        "stream",
+        cadmpeg_ir::ContainerKind::Stream,
         vec![ContainerEntry {
             name: "stream".to_string(),
             role: match kind {
