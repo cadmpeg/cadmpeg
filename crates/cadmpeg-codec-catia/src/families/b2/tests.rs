@@ -615,18 +615,21 @@ fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
     assert_eq!(
         records
             .iter()
-            .map(|record| record.width)
+            .map(|record| record.frame.width)
             .collect::<Vec<_>>(),
         [1, 2, 3]
     );
     assert_eq!(
-        records.iter().map(|record| record.flag).collect::<Vec<_>>(),
+        records
+            .iter()
+            .map(|record| record.frame.flag)
+            .collect::<Vec<_>>(),
         [0x13, 0x03, 0x83]
     );
     assert!(records.iter().all(|record| {
         record.source_index == 0
-            && record.source_offset == record.pos
-            && record.byte_len == 4 + usize::from(record.width) + record.payload.len()
+            && record.source_offset == record.frame.pos
+            && record.byte_len == 4 + usize::from(record.frame.width) + record.frame.payload.len()
     }));
 
     let mut invalid_flag = bytes;
@@ -1243,11 +1246,11 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
         "class 5b/5c control records",
         crate::families::b2::records::b2_class5b5c_records(&bytes)
             .into_iter()
-            .map(|record| record.pos)
+            .map(|record| record.frame.pos)
             .collect(),
         crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
             .into_iter()
-            .map(|record| record.pos)
+            .map(|record| record.frame.pos)
             .collect(),
     );
 

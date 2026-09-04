@@ -556,10 +556,10 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
     };
     let definition = run.definition.as_ref().expect("adjacent definition");
     assert_eq!(definition.class, 0x24);
-    assert_eq!(definition.header_token, 5);
-    assert_eq!(definition.payload, [0x81, 0x05, 0x0f, 0x87]);
+    assert_eq!(definition.frame.header_token, 5);
+    assert_eq!(definition.frame.payload, [0x81, 0x05, 0x0f, 0x87]);
     assert_eq!(
-        definition.data,
+        definition.data(),
         Some(ConsolidatedEdgeDefinitionData::Compact24 { operand: 1 })
     );
 
@@ -604,7 +604,7 @@ fn consolidated_edge_use_run_accepts_compact_successor_layout() {
     assert_eq!(run.uses[0].references(), Some(&[1, 11][..]));
     assert_eq!(run.uses[1].references(), Some(&[2, 12][..]));
     assert_eq!(
-        run.definition.as_ref().and_then(|value| value.data.clone()),
+        run.definition.as_ref().and_then(|value| value.data()),
         Some(ConsolidatedEdgeDefinitionData::Compact24 { operand: 10 })
     );
 }
@@ -944,8 +944,11 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     };
     assert_eq!(run.circle.center_pair, [12.0, 34.0]);
     assert_eq!(run.circle.radius, 5.0);
-    assert_eq!(run.descriptor.header_token, 0x15);
-    assert_eq!(run.definition.pos, parameter.len() + circle.len() + 10);
+    assert_eq!(run.descriptor.frame.header_token, 0x15);
+    assert_eq!(
+        run.definition.frame.pos,
+        parameter.len() + circle.len() + 10
+    );
 
     let native = crate::native::CatiaNative::decode(&bytes);
     let binding = native.consolidated_edge_nodes[0]

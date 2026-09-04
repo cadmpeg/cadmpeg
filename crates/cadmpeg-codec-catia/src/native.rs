@@ -7732,15 +7732,15 @@ fn consolidated_class5b5c_records(
         .enumerate()
         .map(|(index, record)| CatiaConsolidatedClass5b5cRecord {
             id: format!("catia:consolidated:class5b5c-record#{index}"),
-            byte_offset: record.pos as u64,
+            byte_offset: record.frame.pos as u64,
             source_index: record.source_index as u64,
             source_offset: record.source_offset as u64,
             byte_len: record.byte_len as u64,
-            width: record.width,
-            flag: record.flag,
+            width: record.frame.width,
+            flag: record.frame.flag,
             class: record.class,
-            header_token: record.header_token,
-            payload: record.payload,
+            header_token: record.frame.header_token,
+            payload: record.frame.payload,
         })
         .collect()
 }
@@ -8728,11 +8728,11 @@ fn consolidated_edge_nodes(
                     run.node.pos,
                     CatiaConsolidatedAnalyticCircleBinding {
                         descriptor: CatiaConsolidatedAnalyticCircleDescriptor {
-                            byte_offset: run.descriptor.pos as u64,
-                            width: run.descriptor.width,
-                            flag: run.descriptor.flag,
-                            header_token: run.descriptor.header_token,
-                            payload: run.descriptor.payload,
+                            byte_offset: run.descriptor.frame.pos as u64,
+                            width: run.descriptor.frame.width,
+                            flag: run.descriptor.frame.flag,
+                            header_token: run.descriptor.frame.header_token,
+                            payload: run.descriptor.frame.payload,
                         },
                         circle: (*circle).to_string(),
                     },
@@ -8798,14 +8798,15 @@ fn consolidated_edge_nodes(
 fn native_consolidated_edge_definition(
     definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
 ) -> CatiaConsolidatedEdgeDefinition {
+    let data = definition.data();
     CatiaConsolidatedEdgeDefinition {
-        byte_offset: definition.pos as u64,
-        width: definition.width,
-        flag: definition.flag,
+        byte_offset: definition.frame.pos as u64,
+        width: definition.frame.width,
+        flag: definition.frame.flag,
         class: definition.class,
-        header_token: definition.header_token,
-        payload: definition.payload,
-        data: definition.data,
+        header_token: definition.frame.header_token,
+        payload: definition.frame.payload,
+        data,
     }
 }
 
