@@ -175,7 +175,7 @@ fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelat
         && relation.parameter_selector == parameter_selector
         && relation.parameter_entity_id == parameter_entity_id
         && (relation.result_type == "VoidType") == relation.output.is_some()
-        && parsed.result_type == relation.result_type
+        && parsed.result_type() == relation.result_type
         && parsed.inputs.len() == relation.inputs.len()
         && parsed
             .inputs
@@ -185,8 +185,7 @@ fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelat
                 parsed.parameter == stored.parameter && parsed.value_type == stored.value_type
             })
         && parsed
-            .output
-            .as_ref()
+            .output()
             .map(|output| (output.parameter.as_str(), output.value_type.as_str()))
             == relation
                 .output

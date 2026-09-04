@@ -8075,11 +8075,12 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                             inputs: relation
                                 .signature
                                 .inputs
-                                .into_iter()
+                                .iter()
+                                .cloned()
                                 .map(parameter)
                                 .collect(),
-                            output: relation.signature.output.map(parameter),
-                            result_type: relation.signature.result_type,
+                            output: relation.signature.output().cloned().map(parameter),
+                            result_type: relation.signature.result_type().to_owned(),
                         }
                     })
                     .collect(),
