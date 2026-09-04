@@ -6,8 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use crate::native::{JointRecord, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
-    AssemblyJoint, JointConnector, JointId, JointKind, JointLimits, JointOperand, Occurrence,
-    PairedJointKind,
+    AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -248,99 +247,59 @@ pub(crate) fn transfer_neutral(
                 "EnableLengthMax",
                 1.0,
             );
-            let mut joint = if kind == JointKind::Grounded {
-                let [operand] = operands.try_into().ok()?;
-                let [frame] = frames.try_into().ok()?;
-                let offset_frame = match offsets.as_slice() {
-                    [] => None,
-                    [offset] => Some(*offset),
-                    _ => return None,
-                };
-                AssemblyJoint::grounded(
-                    id,
-                    JointConnector {
-                        operand,
-                        frame,
-                        detached: bool_value("Detach1").unwrap_or(false),
-                    },
-                    offset_frame,
-                )
-            } else {
-                let kind = PairedJointKind::try_from(kind).ok()?;
-                let kind = match kind {
-                    PairedJointKind::Fixed { .. } => PairedJointKind::Fixed {
-                        angle,
-                        translation_offset: None,
-                        angular_limits,
-                        linear_limits,
-                    },
-                    PairedJointKind::Revolute { .. } => PairedJointKind::Revolute {
-                        angle,
-                        angular_limits,
-                    },
-                    PairedJointKind::Slider { .. } => PairedJointKind::Slider {
-                        distance,
-                        translation_offset: None,
-                        linear_limits,
-                    },
-                    PairedJointKind::Cylindrical { .. } => PairedJointKind::Cylindrical {
-                        angle,
-                        distance,
-                        angular_limits,
-                        linear_limits,
-                    },
-                    PairedJointKind::Ball => PairedJointKind::Ball,
-                    PairedJointKind::Distance { .. } => PairedJointKind::Distance { distance },
-                    PairedJointKind::Parallel => PairedJointKind::Parallel,
-                    PairedJointKind::Perpendicular => PairedJointKind::Perpendicular,
-                    PairedJointKind::Angle { .. } => PairedJointKind::Angle { angle },
-                    PairedJointKind::RackPinion { .. } => PairedJointKind::RackPinion {
-                        distance,
-                        distance2,
-                    },
-                    PairedJointKind::Screw { .. } => PairedJointKind::Screw { distance },
-                    PairedJointKind::Gears { .. } => PairedJointKind::Gears {
-                        distance,
-                        distance2,
-                    },
-                    PairedJointKind::Belt { .. } => PairedJointKind::Belt {
-                        distance,
-                        distance2,
-                    },
-                    PairedJointKind::Native { name, .. } => PairedJointKind::Native {
-                        name,
-                        angle,
-                        translation_offset: None,
-                        distance,
-                        distance2,
-                        angular_limits,
-                        linear_limits,
-                    },
-                };
-                let [first_operand, second_operand] = operands.try_into().ok()?;
-                let [first_frame, second_frame] = frames.try_into().ok()?;
-                let offset_frames = if offsets.is_empty() {
-                    None
-                } else {
-                    Some(<Vec<Transform> as TryInto<[Transform; 2]>>::try_into(offsets).ok()?)
-                };
-                AssemblyJoint::paired(
-                    id,
-                    kind,
-                    [
+            let mut joint = match kind {
+                None => {
+                    let [operand] = operands.try_into().ok()?;
+                    let [frame] = frames.try_into().ok()?;
+                    let offset_frame = match offsets.as_slice() {
+                        [] => None,
+                        [offset] => Some(*offset),
+                        _ => return None,
+                    };
+                    AssemblyJoint::grounded(
+                        id,
                         JointConnector {
-                            operand: first_operand,
-                            frame: first_frame,
+                            operand,
+                            frame,
                             detached: bool_value("Detach1").unwrap_or(false),
                         },
-                        JointConnector {
-                            operand: second_operand,
-                            frame: second_frame,
-                            detached: bool_value("Detach2").unwrap_or(false),
-                        },
-                    ],
-                    offset_frames,
-                )
+                        offset_frame,
+                    )
+                }
+                Some(kind) => {
+                    let kind = kind.with_scalars(
+                        angle,
+                        None,
+                        distance,
+                        distance2,
+                        angular_limits,
+                        linear_limits,
+                    );
+                    let [first_operand, second_operand] = operands.try_into().ok()?;
+                    let [first_frame, second_frame] = frames.try_into().ok()?;
+                    let offset_frames = if offsets.is_empty() {
+                        None
+                    } else {
+                        Some(<Vec<Transform> as TryInto<[Transform; 2]>>::try_into(offsets).ok()?)
+                    };
+                    AssemblyJoint::paired(
+                        id,
+                        kind,
+                        [
+                            JointConnector {
+                                operand: first_operand,
+                                frame: first_frame,
+                                detached: bool_value("Detach1").unwrap_or(false),
+                            },
+                            JointConnector {
+                                operand: second_operand,
+                                frame: second_frame,
+                                detached: bool_value("Detach2").unwrap_or(false),
+                            },
+                        ],
+                        offset_frames,
+                    )
+                }
             };
             joint.suppressed = bool_value("Suppressed").unwrap_or(false);
             joint.native_ref = Some(record.id.clone());
@@ -349,24 +308,58 @@ pub(crate) fn transfer_neutral(
         .collect()
 }
 
-fn joint_kind(kind: &str) -> JointKind {
-    match kind.to_ascii_lowercase().as_str() {
-        "fixed" => JointKind::Fixed,
-        "revolute" => JointKind::Revolute,
-        "slider" | "prismatic" => JointKind::Slider,
-        "cylindrical" => JointKind::Cylindrical,
-        "ball" | "spherical" => JointKind::Ball,
-        "distance" => JointKind::Distance,
-        "parallel" => JointKind::Parallel,
-        "perpendicular" => JointKind::Perpendicular,
-        "angle" => JointKind::Angle,
-        "rackpinion" | "rack_pinion" => JointKind::RackPinion,
-        "screw" => JointKind::Screw,
-        "gears" => JointKind::Gears,
-        "belt" => JointKind::Belt,
-        "grounded" => JointKind::Grounded,
-        _ => JointKind::Native(kind.to_owned()),
-    }
+fn joint_kind(kind: &str) -> Option<PairedJointKind> {
+    Some(match kind.to_ascii_lowercase().as_str() {
+        "fixed" => PairedJointKind::Fixed {
+            angle: None,
+            translation_offset: None,
+            angular_limits: None,
+            linear_limits: None,
+        },
+        "revolute" => PairedJointKind::Revolute {
+            angle: None,
+            angular_limits: None,
+        },
+        "slider" | "prismatic" => PairedJointKind::Slider {
+            distance: None,
+            translation_offset: None,
+            linear_limits: None,
+        },
+        "cylindrical" => PairedJointKind::Cylindrical {
+            angle: None,
+            distance: None,
+            angular_limits: None,
+            linear_limits: None,
+        },
+        "ball" | "spherical" => PairedJointKind::Ball,
+        "distance" => PairedJointKind::Distance { distance: None },
+        "parallel" => PairedJointKind::Parallel,
+        "perpendicular" => PairedJointKind::Perpendicular,
+        "angle" => PairedJointKind::Angle { angle: None },
+        "rackpinion" | "rack_pinion" => PairedJointKind::RackPinion {
+            distance: None,
+            distance2: None,
+        },
+        "screw" => PairedJointKind::Screw { distance: None },
+        "gears" => PairedJointKind::Gears {
+            distance: None,
+            distance2: None,
+        },
+        "belt" => PairedJointKind::Belt {
+            distance: None,
+            distance2: None,
+        },
+        "grounded" => return None,
+        other => PairedJointKind::Native {
+            name: other.to_owned(),
+            angle: None,
+            translation_offset: None,
+            distance: None,
+            distance2: None,
+            angular_limits: None,
+            linear_limits: None,
+        },
+    })
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -640,6 +633,7 @@ pub(crate) mod tests {
     use super::joint_kind;
     use crate::test_support::*;
     use crate::FcstdCodec;
+    use cadmpeg_ir::products::PairedJointKind;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
 
@@ -664,10 +658,7 @@ pub(crate) mod tests {
             "grounded",
         ] {
             assert!(
-                !matches!(
-                    joint_kind(family),
-                    cadmpeg_ir::products::JointKind::Native(_)
-                ),
+                !matches!(joint_kind(family), Some(PairedJointKind::Native { .. })),
                 "{family} must not fall through to a native joint family"
             );
         }
@@ -727,7 +718,10 @@ pub(crate) mod tests {
         );
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
-        assert_eq!(joint.kind(), cadmpeg_ir::JointKind::Revolute);
+        assert!(matches!(
+            joint.paired_kind(),
+            Some(PairedJointKind::Revolute { .. })
+        ));
         let connectors = joint.connectors().collect::<Vec<_>>();
         assert_eq!(connectors.len(), 2);
         assert!(connectors.iter().all(|connector| matches!(
@@ -793,7 +787,7 @@ pub(crate) mod tests {
             .expect("grounded assembly object");
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
-        assert_eq!(joint.kind(), cadmpeg_ir::JointKind::Grounded);
+        assert!(joint.is_grounded());
         let connectors = joint.connectors().collect::<Vec<_>>();
         assert_eq!(connectors.len(), 1);
         assert!(matches!(

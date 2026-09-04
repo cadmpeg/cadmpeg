@@ -814,7 +814,7 @@ fn resolve_occurrence<'a>(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "native_kind", rename_all = "snake_case")]
-pub enum JointKind {
+pub(crate) enum JointKind {
     /// Rigid connection with no relative degrees of freedom.
     Fixed,
     /// Rotation about one axis.
@@ -1281,6 +1281,31 @@ impl PairedJointKind {
         }
     }
 
+    /// Replace this family's scalars while keeping the family identity.
+    #[must_use]
+    pub fn with_scalars(
+        self,
+        angle: Option<f64>,
+        translation_offset: Option<[f64; 3]>,
+        distance: Option<f64>,
+        distance2: Option<f64>,
+        angular_limits: Option<JointLimits>,
+        linear_limits: Option<JointLimits>,
+    ) -> Self {
+        Self::from_wire(
+            JointKind::from(self),
+            JointScalars {
+                angle,
+                translation_offset,
+                distance,
+                distance2,
+                angular_limits,
+                linear_limits,
+            },
+        )
+        .expect("a paired joint family is never grounded")
+    }
+
     fn scalars(&self) -> JointScalars {
         match self {
             Self::Fixed {
@@ -1509,11 +1534,23 @@ impl AssemblyJoint {
     }
 
     /// Returns the joint kinematic family.
-    pub fn kind(&self) -> JointKind {
+    pub(crate) fn kind(&self) -> JointKind {
         match &self.operands {
             JointOperands::Grounded { .. } => JointKind::Grounded,
             JointOperands::Pair { kind, .. } => kind.clone().into(),
         }
+    }
+
+    /// Paired family when this joint is not grounded.
+    #[must_use]
+    pub fn paired_kind(&self) -> Option<&PairedJointKind> {
+        self.pair_kind()
+    }
+
+    /// Whether this joint grounds a single connector.
+    #[must_use]
+    pub fn is_grounded(&self) -> bool {
+        matches!(self.operands, JointOperands::Grounded { .. })
     }
 
     /// Returns the structurally complete operand and frame state.

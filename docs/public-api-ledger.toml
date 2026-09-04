@@ -3998,3 +3998,17 @@ crate = "cadmpeg-ir"
 kind = "deletion"
 item = "cadmpeg_ir::products::AssemblyJoint::{detached,angle,translation_offset,distance,distance2,angular_limits,linear_limits,properties}"
 reason = "detached belongs on each connector; kind-specific scalars live on PairedJointKind; properties duplicated the parsed parameter map"
+
+[[change]]
+commit = "a234210104308b931d5e4b47ba6f84e050ac4dfe"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::JointKind"
+reason = "the public joint family is JointOperands plus PairedJointKind; JointKind remains the CADIR wire discriminant"
+
+[[change]]
+commit = "a234210104308b931d5e4b47ba6f84e050ac4dfe"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::products::AssemblyJoint::kind"
+reason = "the public joint family is paired_kind or is_grounded so callers cannot observe a grounded paired kind"
