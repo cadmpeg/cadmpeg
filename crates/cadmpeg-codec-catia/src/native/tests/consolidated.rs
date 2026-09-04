@@ -174,20 +174,20 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     };
     assert_eq!(
         [
-            uv.prefix,
-            station_uv.prefix,
-            five_scalars.prefix,
-            station_uv_last.prefix
+            uv.prefix.as_u8(),
+            station_uv.prefix.as_u8(),
+            five_scalars.prefix.as_u8(),
+            station_uv_last.prefix.as_u8()
         ],
         [0x05, 0x09, 0x0d, 0x11]
     );
-    assert_eq!(uv.layout, 0x12);
+    assert_eq!(uv.payload.layout(), 0x12);
     assert_eq!(uv.control, 0x12);
     assert!(matches!(
         &uv.payload,
         crate::native::CatiaConsolidatedParameterPointPayload::Uv { uv: [2.0, 3.0] }
     ));
-    assert_eq!(station_uv.layout, 0x1a);
+    assert_eq!(station_uv.payload.layout(), 0x1a);
     assert!(matches!(
         &station_uv.payload,
         crate::native::CatiaConsolidatedParameterPointPayload::StationUv {
@@ -195,7 +195,7 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
             uv: [4.0, 5.0],
         }
     ));
-    assert_eq!(five_scalars.layout, 0x2a);
+    assert_eq!(five_scalars.payload.layout(), 0x2a);
     assert!(matches!(
         &five_scalars.payload,
         crate::native::CatiaConsolidatedParameterPointPayload::FiveScalars {
@@ -211,14 +211,6 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
         crate::native::CatiaNative::load(&namespace).expect("load CATIA parameter points"),
         native
     );
-
-    let mut invalid = native;
-    invalid.consolidated_parameter_points[0].layout = 0x1a;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    invalid
-        .store(&mut invalid_namespace)
-        .expect("store invalid CATIA parameter point");
-    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
 #[test]
@@ -229,7 +221,11 @@ fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
         panic!("three consolidated plane carriers")
     };
     assert_eq!(
-        [direction2.selector, direction3.selector, tail.selector],
+        [
+            direction2.payload.selector(),
+            direction3.payload.selector(),
+            tail.payload.selector()
+        ],
         [0xe4, 0xc4, 0xec]
     );
     assert!(matches!(
@@ -264,14 +260,6 @@ fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
         crate::native::CatiaNative::load(&namespace).expect("load CATIA plane carriers"),
         native
     );
-
-    let mut invalid = native;
-    invalid.consolidated_plane_carriers[0].selector = 0xc4;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    invalid
-        .store(&mut invalid_namespace)
-        .expect("store invalid CATIA plane carrier");
-    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut file = standard_catpart();
     file.splice(16..16, plane_stream);
@@ -309,10 +297,10 @@ fn native_namespace_retains_unclassified_consolidated_plane_carrier_lanes() {
     let Some(carrier) = native.consolidated_plane_carriers.get(3) else {
         panic!("unclassified consolidated plane carrier")
     };
-    assert_eq!(carrier.selector, 0x40);
+    assert_eq!(carrier.payload.selector(), 0x40);
     assert!(matches!(
         &carrier.payload,
-        crate::native::CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values: lane }
+        crate::native::CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values: lane, .. }
             if lane == &values
     ));
 
@@ -392,23 +380,23 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
     let [explicit, implicit, range_origin] = native.consolidated_cylinders.as_slice() else {
         panic!("three consolidated cylinders")
     };
-    assert_eq!(explicit.layout, 0x5a);
+    assert_eq!(explicit.payload.layout(), 0x5a);
     assert_eq!(explicit.origin, [1.0, 2.0, 3.0]);
     assert_eq!(explicit.radius, 2.0);
     assert!(matches!(
         explicit.payload,
-        crate::native::CatiaConsolidatedCylinderPayload::Resolved {
+        crate::native::CatiaConsolidatedCylinderPayload::Layout5a {
             frame_token: 0x19,
             axis: [1.0, 0.0, 0.0],
             reference_direction: [0.0, 1.0, 0.0],
         }
     ));
-    assert_eq!(implicit.layout, 0x52);
+    assert_eq!(implicit.payload.layout(), 0x52);
     assert!(matches!(
         implicit.payload,
-        crate::native::CatiaConsolidatedCylinderPayload::Resolved { .. }
+        crate::native::CatiaConsolidatedCylinderPayload::Layout52 { .. }
     ));
-    assert_eq!(range_origin.layout, 0x62);
+    assert_eq!(range_origin.payload.layout(), 0x62);
     assert_eq!(range_origin.radius, 4.0);
     assert!(matches!(
         range_origin.payload,
@@ -1700,7 +1688,7 @@ fn native_namespace_retains_resolved_consolidated_plane_supports() {
     let directionless_offset = invalid
         .consolidated_plane_carriers
         .iter()
-        .find(|carrier| carrier.selector == 0xec)
+        .find(|carrier| carrier.payload.selector() == 0xec)
         .expect("directionless class-27 carrier")
         .byte_offset;
     invalid.consolidated_edge_runs[0].support_bindings[0] =

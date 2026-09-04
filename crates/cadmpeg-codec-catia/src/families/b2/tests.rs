@@ -28,9 +28,13 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     let points = crate::families::b2::records::b2_parameter_points(&b2_parameter_point_stream());
     assert_eq!(points.len(), 4);
     assert_eq!(
-        points.iter().map(|point| point.prefix).collect::<Vec<_>>(),
+        points
+            .iter()
+            .map(|point| point.prefix.as_u8())
+            .collect::<Vec<_>>(),
         [0x05, 0x09, 0x0d, 0x11]
     );
+    assert_eq!(points[0].payload.layout(), 0x12);
     assert!(matches!(
         &points[0].payload,
         B2ParameterPointPayload::Uv { uv: [2.0, 3.0] }
@@ -64,7 +68,7 @@ fn b2_plane_carrier_parser_preserves_each_selector_layout() {
     assert_eq!(
         carriers
             .iter()
-            .map(|carrier| carrier.selector)
+            .map(|carrier| carrier.payload.selector())
             .collect::<Vec<_>>(),
         [0xe4, 0xc4, 0xec]
     );
@@ -115,10 +119,10 @@ fn b2_plane_carrier_parser_retains_unclassified_scalar_lanes() {
 
     let carriers = crate::families::b2::records::b2_plane_carriers(&stream);
     assert_eq!(carriers.len(), 4);
-    assert_eq!(carriers[3].selector, 0x40);
+    assert_eq!(carriers[3].payload.selector(), 0x40);
     assert!(matches!(
         &carriers[3].payload,
-        B2PlaneCarrierPayload::ScalarLane { values: lane } if lane == &values
+        B2PlaneCarrierPayload::ScalarLane { values: lane, .. } if lane == &values
     ));
     assert!(crate::families::b2::records::b2_plane_geometry(&carriers[3]).is_none());
 }
@@ -457,7 +461,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
         assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
         assert_eq!(construction_radius, 1.0);
         assert_eq!(
-            chart.parameter_points.map(|point| point.prefix),
+            chart.parameter_points.map(|point| point.prefix.as_u8()),
             [0x05, 0x09, 0x0d, 0x11]
         );
 
@@ -501,7 +505,7 @@ fn owner_chart_applies_to_width_coded_identity_dialect() {
             });
         assert_eq!(chart.carrier, carrier);
         assert_eq!(
-            chart.parameter_points.map(|point| point.prefix),
+            chart.parameter_points.map(|point| point.prefix.as_u8()),
             [0x05, 0x09, 0x0d, 0x11]
         );
     }
