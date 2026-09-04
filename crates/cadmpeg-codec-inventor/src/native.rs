@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::pmdc::PmDcReference;
+
 /// Current Inventor native namespace version.
 pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 25;
 
@@ -664,6 +666,10 @@ pub(crate) struct PmAppRenderingStyleRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmGraphicsFaceRecordWire",
+    into = "PmGraphicsFaceRecordWire"
+)]
 pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -679,8 +685,7 @@ pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) parent_reference: u32,
     pub(crate) parent_reference_qualified: bool,
     pub(crate) state: u32,
-    pub(crate) edge_references: Vec<u32>,
-    pub(crate) edge_reference_qualifiers: Vec<bool>,
+    pub(crate) edge_references: Vec<PmDcReference>,
     pub(crate) edge_list_metadata: Option<[u32; 2]>,
     pub(crate) visibility_state: u8,
     pub(crate) bounds: [f64; 6],
@@ -688,15 +693,150 @@ pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) values: [u32; 2],
 }
 
+#[derive(Serialize, Deserialize)]
+struct PmGraphicsFaceRecordWire {
+    id: String,
+    segment_token: String,
+    record_ordinal: u32,
+    segment_version_major: u8,
+    header_value: u32,
+    header_id: u16,
+    flags: u32,
+    styles_reference: u32,
+    styles_reference_qualified: bool,
+    surface_reference: u32,
+    surface_reference_qualified: bool,
+    parent_reference: u32,
+    parent_reference_qualified: bool,
+    state: u32,
+    edge_references: Vec<u32>,
+    edge_reference_qualifiers: Vec<bool>,
+    edge_list_metadata: Option<[u32; 2]>,
+    visibility_state: u8,
+    bounds: [f64; 6],
+    key: u32,
+    values: [u32; 2],
+}
+
+impl From<PmGraphicsFaceRecord> for PmGraphicsFaceRecordWire {
+    fn from(value: PmGraphicsFaceRecord) -> Self {
+        let (edge_references, edge_reference_qualifiers) =
+            PmDcReference::unzip(&value.edge_references);
+        Self {
+            id: value.id,
+            segment_token: value.segment_token,
+            record_ordinal: value.record_ordinal,
+            segment_version_major: value.segment_version_major,
+            header_value: value.header_value,
+            header_id: value.header_id,
+            flags: value.flags,
+            styles_reference: value.styles_reference,
+            styles_reference_qualified: value.styles_reference_qualified,
+            surface_reference: value.surface_reference,
+            surface_reference_qualified: value.surface_reference_qualified,
+            parent_reference: value.parent_reference,
+            parent_reference_qualified: value.parent_reference_qualified,
+            state: value.state,
+            edge_references,
+            edge_reference_qualifiers,
+            edge_list_metadata: value.edge_list_metadata,
+            visibility_state: value.visibility_state,
+            bounds: value.bounds,
+            key: value.key,
+            values: value.values,
+        }
+    }
+}
+
+impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
+    type Error = String;
+
+    fn try_from(wire: PmGraphicsFaceRecordWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            segment_token: wire.segment_token,
+            record_ordinal: wire.record_ordinal,
+            segment_version_major: wire.segment_version_major,
+            header_value: wire.header_value,
+            header_id: wire.header_id,
+            flags: wire.flags,
+            styles_reference: wire.styles_reference,
+            styles_reference_qualified: wire.styles_reference_qualified,
+            surface_reference: wire.surface_reference,
+            surface_reference_qualified: wire.surface_reference_qualified,
+            parent_reference: wire.parent_reference,
+            parent_reference_qualified: wire.parent_reference_qualified,
+            state: wire.state,
+            edge_references: PmDcReference::zip(
+                wire.edge_references,
+                wire.edge_reference_qualifiers,
+            )?,
+            edge_list_metadata: wire.edge_list_metadata,
+            visibility_state: wire.visibility_state,
+            bounds: wire.bounds,
+            key: wire.key,
+            values: wire.values,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmGraphicsStyleCollectionRecordWire",
+    into = "PmGraphicsStyleCollectionRecordWire"
+)]
 pub(crate) struct PmGraphicsStyleCollectionRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
-    pub(crate) style_references: Vec<u32>,
-    pub(crate) style_reference_qualifiers: Vec<bool>,
+    pub(crate) style_references: Vec<PmDcReference>,
     pub(crate) list_metadata: Option<[u32; 2]>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmGraphicsStyleCollectionRecordWire {
+    id: String,
+    segment_token: String,
+    record_ordinal: u32,
+    segment_version_major: u8,
+    style_references: Vec<u32>,
+    style_reference_qualifiers: Vec<bool>,
+    list_metadata: Option<[u32; 2]>,
+}
+
+impl From<PmGraphicsStyleCollectionRecord> for PmGraphicsStyleCollectionRecordWire {
+    fn from(value: PmGraphicsStyleCollectionRecord) -> Self {
+        let (style_references, style_reference_qualifiers) =
+            PmDcReference::unzip(&value.style_references);
+        Self {
+            id: value.id,
+            segment_token: value.segment_token,
+            record_ordinal: value.record_ordinal,
+            segment_version_major: value.segment_version_major,
+            style_references,
+            style_reference_qualifiers,
+            list_metadata: value.list_metadata,
+        }
+    }
+}
+
+impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionRecord {
+    type Error = String;
+
+    fn try_from(wire: PmGraphicsStyleCollectionRecordWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            segment_token: wire.segment_token,
+            record_ordinal: wire.record_ordinal,
+            segment_version_major: wire.segment_version_major,
+            style_references: PmDcReference::zip(
+                wire.style_references,
+                wire.style_reference_qualifiers,
+            )?,
+            list_metadata: wire.list_metadata,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

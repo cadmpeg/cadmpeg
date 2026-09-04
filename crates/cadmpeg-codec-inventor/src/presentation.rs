@@ -10,6 +10,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
 use cadmpeg_ir::topology::Color;
 
+use crate::pmdc::PmDcReference;
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const DEFAULT_STYLE_TYPE: [u8; 16] = [
@@ -58,8 +59,7 @@ pub(crate) struct PmGraphicsStyleCollection {
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
-    pub(crate) style_references: Vec<u32>,
-    pub(crate) style_reference_qualifiers: Vec<bool>,
+    pub(crate) style_references: Vec<PmDcReference>,
     pub(crate) list_metadata: Option<[u32; 2]>,
 }
 
@@ -78,8 +78,7 @@ pub(crate) struct PmGraphicsFace {
     pub(crate) parent_reference: u32,
     pub(crate) parent_reference_qualified: bool,
     pub(crate) state: u32,
-    pub(crate) edge_references: Vec<u32>,
-    pub(crate) edge_reference_qualifiers: Vec<bool>,
+    pub(crate) edge_references: Vec<PmDcReference>,
     pub(crate) edge_list_metadata: Option<[u32; 2]>,
     pub(crate) visibility_state: u8,
     pub(crate) bounds: [f64; 6],
@@ -317,7 +316,7 @@ fn project_face_bindings(
         let color_styles = collection
             .style_references
             .iter()
-            .filter_map(|reference| reference.checked_sub(1))
+            .filter_map(|reference| reference.index.checked_sub(1))
             .flat_map(|ordinal| {
                 inventory
                     .graphics_primary_color_styles
@@ -566,7 +565,6 @@ fn parse_graphics_style_collection(
     )?;
     let ReferenceList {
         references: style_references,
-        qualifiers: style_reference_qualifiers,
         metadata: list_metadata,
     } = cursor.reference_list(ctx, "graphics-style collection")?;
     let suffix = cursor.remainder()?;
@@ -581,7 +579,6 @@ fn parse_graphics_style_collection(
         record_ordinal: 0,
         segment_version_major: version,
         style_references,
-        style_reference_qualifiers,
         list_metadata,
     })
 }
@@ -612,7 +609,6 @@ fn parse_graphics_face(
     )?;
     let ReferenceList {
         references: edge_references,
-        qualifiers: edge_reference_qualifiers,
         metadata: edge_list_metadata,
     } = cursor.reference_list(ctx, "graphics-face edge list")?;
     let visibility_state = cursor.u8("graphics-face visibility state")?;
@@ -655,7 +651,6 @@ fn parse_graphics_face(
         parent_reference_qualified,
         state,
         edge_references,
-        edge_reference_qualifiers,
         edge_list_metadata,
         visibility_state,
         bounds,
@@ -819,8 +814,7 @@ struct Cursor<'a> {
 }
 
 struct ReferenceList {
-    references: Vec<u32>,
-    qualifiers: Vec<bool>,
+    references: Vec<PmDcReference>,
     metadata: Option<[u32; 2]>,
 }
 
@@ -906,16 +900,16 @@ impl<'a> Cursor<'a> {
             ])
         };
         let mut references = Vec::with_capacity(count);
-        let mut qualifiers = Vec::with_capacity(count);
         for index in 0..count {
             let (reference, qualified) =
                 self.node_reference(&format!("{field} reference {index}"))?;
-            references.push(reference);
-            qualifiers.push(qualified);
+            references.push(PmDcReference {
+                index: reference,
+                qualified,
+            });
         }
         Ok(ReferenceList {
             references,
-            qualifiers,
             metadata,
         })
     }
@@ -1151,8 +1145,19 @@ mod tests {
         assert!(face.surface_reference_qualified);
         assert_eq!(face.parent_reference, 9);
         assert!(face.parent_reference_qualified);
-        assert_eq!(face.edge_references, [13, 14]);
-        assert_eq!(face.edge_reference_qualifiers, [true, true]);
+        assert_eq!(
+            face.edge_references,
+            [
+                PmDcReference {
+                    index: 13,
+                    qualified: true
+                },
+                PmDcReference {
+                    index: 14,
+                    qualified: true
+                }
+            ]
+        );
         assert_eq!(face.edge_list_metadata, Some([11, 12]));
         assert_eq!(face.bounds, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         assert_eq!(face.key, 15);
@@ -1176,8 +1181,19 @@ mod tests {
         let styles = parse_graphics_style_collection(&ctx, root, 26)
             .expect("graphics style collection parses");
 
-        assert_eq!(styles.style_references, [23, 24]);
-        assert_eq!(styles.style_reference_qualifiers, [true, false]);
+        assert_eq!(
+            styles.style_references,
+            [
+                PmDcReference {
+                    index: 23,
+                    qualified: true
+                },
+                PmDcReference {
+                    index: 24,
+                    qualified: false
+                }
+            ]
+        );
         assert_eq!(styles.list_metadata, Some([21, 22]));
     }
 
@@ -1218,7 +1234,6 @@ mod tests {
             parent_reference_qualified: false,
             state: 0,
             edge_references: Vec::new(),
-            edge_reference_qualifiers: Vec::new(),
             edge_list_metadata: None,
             visibility_state: 0,
             bounds: [0.0; 6],
@@ -1229,8 +1244,10 @@ mod tests {
             segment_token: "graphics".into(),
             record_ordinal: 4,
             segment_version_major: 26,
-            style_references: vec![7],
-            style_reference_qualifiers: vec![true],
+            style_references: vec![PmDcReference {
+                index: 7,
+                qualified: true,
+            }],
             list_metadata: Some([1, 2]),
         };
         let style = PmGraphicsPrimaryColorStyle {
