@@ -25,11 +25,11 @@ use crate::native::{
     PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
     PmGraphicsStyleCollectionRecord, PresentationRecordIssueRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
-    ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
-    RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
-    SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord,
-    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
+    ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord, RevisionRecord, RseRecordRecord,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
+    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UnpairedSegmentRecord,
+    INVENTOR_NATIVE_VERSION,
 };
 use crate::pmdc::PmDcReferenceList;
 
@@ -1808,55 +1808,11 @@ fn validate_protein(data: &NativeData, findings: &mut Vec<Finding>) {
         "Protein entry ordinal",
     );
     let record = &data.protein[0];
-    let valid = match record.state {
-        ProteinRecordState::Absent => {
-            record.directory_id.is_none()
-                && record.declared_len.is_none()
-                && record.entry_count == 0
-                && record.detail.is_none()
-                && data.protein_entries.is_empty()
-                && data.protein_assets.is_empty()
-                && data.protein_rejections.is_empty()
-        }
-        ProteinRecordState::Empty => {
-            record.directory_id.is_some()
-                && record.declared_len == Some(0)
-                && record.entry_count == 0
-                && record.detail.is_none()
-                && data.protein_entries.is_empty()
-                && data.protein_assets.is_empty()
-                && data.protein_rejections.is_empty()
-        }
-        ProteinRecordState::Package => {
-            record.directory_id.is_some()
-                && record.declared_len.is_some_and(|length| length != 0)
-                && record.entry_count == data.protein_entries.len() as u64
-                && record.detail.is_none()
-        }
-        ProteinRecordState::Malformed => {
-            record.directory_id.is_some()
-                && record.entry_count == 0
-                && record.detail.is_some()
-                && data.protein_entries.is_empty()
-                && data.protein_assets.is_empty()
-                && data.protein_rejections.is_empty()
-        }
-    };
-    if !valid {
+    if let ProteinRecord::Malformed { id, detail, .. } = record {
         findings.push(finding(
             Check::NativeLinks,
-            "Inventor Protein state fields are inconsistent".into(),
-            Some(record.id.clone()),
-        ));
-    }
-    if record.state == ProteinRecordState::Malformed {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor Protein stream is malformed: {}",
-                record.detail.as_deref().unwrap_or("no detail")
-            ),
-            Some(record.id.clone()),
+            format!("Inventor Protein stream is malformed: {detail}"),
+            Some(id.clone()),
         ));
     }
 }

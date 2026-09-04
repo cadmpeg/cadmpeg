@@ -110,22 +110,127 @@ pub(crate) struct PropertySetIssueRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ProteinRecord {
-    pub(crate) id: String,
-    pub(crate) state: ProteinRecordState,
-    pub(crate) directory_id: Option<u32>,
-    pub(crate) declared_len: Option<u32>,
-    pub(crate) entry_count: u64,
-    pub(crate) detail: Option<String>,
+#[serde(try_from = "ProteinRecordWire", into = "ProteinRecordWire")]
+pub(crate) enum ProteinRecord {
+    Absent {
+        id: String,
+    },
+    Empty {
+        id: String,
+        directory_id: u32,
+    },
+    Package {
+        id: String,
+        directory_id: u32,
+        declared_len: std::num::NonZeroU32,
+        entry_count: u64,
+    },
+    Malformed {
+        id: String,
+        directory_id: u32,
+        detail: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ProteinRecordState {
+enum ProteinRecordState {
     Absent,
     Empty,
     Package,
     Malformed,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ProteinRecordWire {
+    id: String,
+    state: ProteinRecordState,
+    directory_id: Option<u32>,
+    declared_len: Option<u32>,
+    entry_count: u64,
+    detail: Option<String>,
+}
+
+impl From<ProteinRecord> for ProteinRecordWire {
+    fn from(value: ProteinRecord) -> Self {
+        match value {
+            ProteinRecord::Absent { id } => Self {
+                id,
+                state: ProteinRecordState::Absent,
+                directory_id: None,
+                declared_len: None,
+                entry_count: 0,
+                detail: None,
+            },
+            ProteinRecord::Empty { id, directory_id } => Self {
+                id,
+                state: ProteinRecordState::Empty,
+                directory_id: Some(directory_id),
+                declared_len: Some(0),
+                entry_count: 0,
+                detail: None,
+            },
+            ProteinRecord::Package {
+                id,
+                directory_id,
+                declared_len,
+                entry_count,
+            } => Self {
+                id,
+                state: ProteinRecordState::Package,
+                directory_id: Some(directory_id),
+                declared_len: Some(declared_len.get()),
+                entry_count,
+                detail: None,
+            },
+            ProteinRecord::Malformed {
+                id,
+                directory_id,
+                detail,
+            } => Self {
+                id,
+                state: ProteinRecordState::Malformed,
+                directory_id: Some(directory_id),
+                declared_len: None,
+                entry_count: 0,
+                detail: Some(detail),
+            },
+        }
+    }
+}
+
+impl TryFrom<ProteinRecordWire> for ProteinRecord {
+    type Error = String;
+
+    fn try_from(wire: ProteinRecordWire) -> Result<Self, Self::Error> {
+        match wire.state {
+            ProteinRecordState::Absent => Ok(Self::Absent { id: wire.id }),
+            ProteinRecordState::Empty => Ok(Self::Empty {
+                id: wire.id,
+                directory_id: wire
+                    .directory_id
+                    .ok_or_else(|| "empty Protein requires directory_id".to_owned())?,
+            }),
+            ProteinRecordState::Package => Ok(Self::Package {
+                id: wire.id,
+                directory_id: wire
+                    .directory_id
+                    .ok_or_else(|| "Protein package requires directory_id".to_owned())?,
+                declared_len: std::num::NonZeroU32::new(wire.declared_len.unwrap_or(0))
+                    .ok_or_else(|| "Protein package declared_len must be nonzero".to_owned())?,
+                entry_count: wire.entry_count,
+            }),
+            ProteinRecordState::Malformed => Ok(Self::Malformed {
+                id: wire.id,
+                directory_id: wire
+                    .directory_id
+                    .ok_or_else(|| "malformed Protein requires directory_id".to_owned())?,
+                detail: wire
+                    .detail
+                    .ok_or_else(|| "malformed Protein requires detail".to_owned())?,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
