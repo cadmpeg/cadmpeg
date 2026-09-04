@@ -794,6 +794,7 @@ pub(crate) struct SegmentMetaIssueRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "SegmentBulkRecordWire", into = "SegmentBulkRecordWire")]
 pub(crate) struct SegmentBulkRecord {
     pub(crate) id: String,
     pub(crate) token: String,
@@ -801,13 +802,115 @@ pub(crate) struct SegmentBulkRecord {
     pub(crate) form: u16,
     pub(crate) compressed_len: u64,
     pub(crate) compressed_sha256: String,
-    pub(crate) expanded_len: Option<u64>,
-    pub(crate) expanded_sha256: Option<String>,
-    pub(crate) record_state: String,
-    pub(crate) record_count: u64,
-    pub(crate) stream_trailer_len: Option<u64>,
-    pub(crate) stream_trailer_sha256: Option<String>,
-    pub(crate) record_detail: Option<String>,
+    pub(crate) expanded_len: u64,
+    pub(crate) expanded_sha256: String,
+    pub(crate) records: SegmentBulkFrame,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SegmentBulkFrame {
+    Framed {
+        record_count: u64,
+        stream_trailer_len: u64,
+        stream_trailer_sha256: String,
+    },
+    Unavailable {
+        detail: String,
+    },
+    NotExpanded,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SegmentBulkRecordWire {
+    id: String,
+    token: String,
+    prefix: String,
+    form: u16,
+    compressed_len: u64,
+    compressed_sha256: String,
+    expanded_len: Option<u64>,
+    expanded_sha256: Option<String>,
+    record_state: String,
+    record_count: u64,
+    stream_trailer_len: Option<u64>,
+    stream_trailer_sha256: Option<String>,
+    record_detail: Option<String>,
+}
+
+impl From<SegmentBulkRecord> for SegmentBulkRecordWire {
+    fn from(value: SegmentBulkRecord) -> Self {
+        let (record_state, record_count, stream_trailer_len, stream_trailer_sha256, record_detail) =
+            match value.records {
+                SegmentBulkFrame::Framed {
+                    record_count,
+                    stream_trailer_len,
+                    stream_trailer_sha256,
+                } => (
+                    "framed".into(),
+                    record_count,
+                    Some(stream_trailer_len),
+                    Some(stream_trailer_sha256),
+                    None,
+                ),
+                SegmentBulkFrame::Unavailable { detail } => {
+                    ("unavailable".into(), 0, None, None, Some(detail))
+                }
+                SegmentBulkFrame::NotExpanded => ("not_expanded".into(), 0, None, None, None),
+            };
+        Self {
+            id: value.id,
+            token: value.token,
+            prefix: value.prefix,
+            form: value.form,
+            compressed_len: value.compressed_len,
+            compressed_sha256: value.compressed_sha256,
+            expanded_len: Some(value.expanded_len),
+            expanded_sha256: Some(value.expanded_sha256),
+            record_state,
+            record_count,
+            stream_trailer_len,
+            stream_trailer_sha256,
+            record_detail,
+        }
+    }
+}
+
+impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
+    type Error = String;
+
+    fn try_from(wire: SegmentBulkRecordWire) -> Result<Self, Self::Error> {
+        let expanded_len = wire.expanded_len.unwrap_or(0);
+        let expanded_sha256 = wire.expanded_sha256.unwrap_or_default();
+        let records = match wire.record_state.as_str() {
+            "framed" => SegmentBulkFrame::Framed {
+                record_count: wire.record_count,
+                stream_trailer_len: wire
+                    .stream_trailer_len
+                    .ok_or_else(|| "framed bulk requires stream_trailer_len".to_owned())?,
+                stream_trailer_sha256: wire
+                    .stream_trailer_sha256
+                    .ok_or_else(|| "framed bulk requires stream_trailer_sha256".to_owned())?,
+            },
+            "unavailable" => SegmentBulkFrame::Unavailable {
+                detail: wire
+                    .record_detail
+                    .ok_or_else(|| "unavailable bulk requires record_detail".to_owned())?,
+            },
+            "not_expanded" => SegmentBulkFrame::NotExpanded,
+            other => return Err(format!("unknown bulk record_state {other}")),
+        };
+        Ok(Self {
+            id: wire.id,
+            token: wire.token,
+            prefix: wire.prefix,
+            form: wire.form,
+            compressed_len: wire.compressed_len,
+            compressed_sha256: wire.compressed_sha256,
+            expanded_len,
+            expanded_sha256,
+            records,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

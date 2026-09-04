@@ -136,11 +136,9 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
     let bulk = namespace
         .arena_as::<crate::native::SegmentBulkRecord>("segment_bulk")
         .expect("container-only bulk records retain their outer envelopes");
-    assert!(bulk.iter().all(|record| {
-        record.record_state == "not_expanded"
-            && record.expanded_len.is_none()
-            && record.expanded_sha256.is_none()
-    }));
+    assert!(bulk
+        .iter()
+        .all(|record| { matches!(record.records, crate::native::SegmentBulkFrame::NotExpanded) }));
     assert!(container_only.source_fidelity().retained_records.is_empty());
 }
 

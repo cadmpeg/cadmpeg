@@ -1642,58 +1642,30 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
         "segment record ordinal",
     );
     for bulk in &data.bulk {
-        if bulk.record_state == "framed" {
-            if bulk.record_count != record_counts.get(bulk.token.as_str()).copied().unwrap_or(0)
-                || bulk.stream_trailer_len.is_none()
-                || bulk.stream_trailer_sha256.is_none()
-                || bulk.record_detail.is_some()
-                || bulk.expanded_len.is_none()
-                || bulk.expanded_sha256.is_none()
-            {
+        match &bulk.records {
+            crate::native::SegmentBulkFrame::Framed { record_count, .. } => {
+                if *record_count != record_counts.get(bulk.token.as_str()).copied().unwrap_or(0) {
+                    findings.push(finding(
+                        Check::NativeLinks,
+                        "Inventor bulk record summary does not match its record arena".into(),
+                        Some(bulk.id.clone()),
+                    ));
+                }
+            }
+            crate::native::SegmentBulkFrame::Unavailable { detail } => {
                 findings.push(finding(
                     Check::NativeLinks,
-                    "Inventor bulk record summary does not match its record arena".into(),
+                    format!("Inventor bulk records are unavailable: {detail}"),
                     Some(bulk.id.clone()),
                 ));
             }
-        } else if bulk.record_state == "unavailable" {
-            findings.push(finding(
-                Check::NativeLinks,
-                format!(
-                    "Inventor bulk records are unavailable: {}",
-                    bulk.record_detail.as_deref().unwrap_or("no detail")
-                ),
-                Some(bulk.id.clone()),
-            ));
-        } else if bulk.record_state == "not_expanded" {
-            if bulk.expanded_len.is_some()
-                || bulk.expanded_sha256.is_some()
-                || bulk.record_count != 0
-                || bulk.stream_trailer_len.is_some()
-                || bulk.stream_trailer_sha256.is_some()
-                || bulk.record_detail.is_some()
-            {
-                findings.push(finding(
-                    Check::NativeLinks,
-                    "Inventor unexpanded bulk state fields are inconsistent".into(),
-                    Some(bulk.id.clone()),
-                ));
-            }
-        } else {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor bulk record state is invalid".into(),
-                Some(bulk.id.clone()),
-            ));
+            crate::native::SegmentBulkFrame::NotExpanded => {}
         }
     }
     let expanded_lengths = data
         .bulk
         .iter()
-        .filter_map(|bulk| {
-            bulk.expanded_len
-                .map(|length| (bulk.token.as_str(), length))
-        })
+        .map(|bulk| (bulk.token.as_str(), bulk.expanded_len))
         .collect::<HashMap<_, _>>();
     for record in &data.records {
         let end = record.payload_offset.checked_add(record.payload_len);

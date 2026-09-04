@@ -764,23 +764,17 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             let SegmentBulkState::Framed(bulk) = &segment.bulk else {
                 return None;
             };
-            let (
-                record_state,
-                record_count,
-                stream_trailer_len,
-                stream_trailer_sha256,
-                record_detail,
-            ) = match &bulk.records {
-                RecordFrameState::NotExpanded => ("not_expanded", 0, None, None, None),
-                RecordFrameState::Framed(table) => (
-                    "framed",
-                    table.records.len() as u64,
-                    Some(table.stream_trailer.window().len() as u64),
-                    Some(sha256_hex(table.stream_trailer.window())),
-                    None,
-                ),
+            let records = match &bulk.records {
+                RecordFrameState::NotExpanded => crate::native::SegmentBulkFrame::NotExpanded,
+                RecordFrameState::Framed(table) => crate::native::SegmentBulkFrame::Framed {
+                    record_count: table.records.len() as u64,
+                    stream_trailer_len: table.stream_trailer.window().len() as u64,
+                    stream_trailer_sha256: sha256_hex(table.stream_trailer.window()),
+                },
                 RecordFrameState::Unavailable(detail) => {
-                    ("unavailable", 0, None, None, Some(detail.clone()))
+                    crate::native::SegmentBulkFrame::Unavailable {
+                        detail: detail.clone(),
+                    }
                 }
             };
             Some(SegmentBulkRecord {
@@ -790,13 +784,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 form: bulk.form.value(),
                 compressed_len: bulk.compressed.window().len() as u64,
                 compressed_sha256: sha256_hex(bulk.compressed.window()),
-                expanded_len: Some(bulk.expanded.window().len() as u64),
-                expanded_sha256: Some(sha256_hex(bulk.expanded.window())),
-                record_state: record_state.into(),
-                record_count,
-                stream_trailer_len,
-                stream_trailer_sha256,
-                record_detail,
+                expanded_len: bulk.expanded.window().len() as u64,
+                expanded_sha256: sha256_hex(bulk.expanded.window()),
+                records,
             })
         })
         .collect::<Vec<_>>();
