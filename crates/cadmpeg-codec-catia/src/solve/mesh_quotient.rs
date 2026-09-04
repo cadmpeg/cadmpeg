@@ -113,6 +113,14 @@ pub(crate) enum MeshCandidateSolve {
     Exhausted(MeshCandidateExhaustion),
 }
 
+/// Non-solved mesh candidate outcomes stored on topology diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MeshCandidateFailure {
+    Rejected(MeshCandidateRejection),
+    Ambiguous(MeshCandidateAmbiguity),
+    Exhausted(MeshCandidateExhaustion),
+}
+
 /// Exclusive search status: a solved candidate cannot also be ambiguous or exhausted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SearchOutcome<T> {
