@@ -117,14 +117,19 @@ pub(crate) struct PmAppRenderingStyle<'a> {
     pub(crate) name: String,
     pub(crate) comment: String,
     pub(crate) long_name: String,
-    pub(crate) style_state: Option<u16>,
-    pub(crate) style_label: Option<String>,
-    pub(crate) asset_guid: Option<String>,
-    pub(crate) material_id: Option<String>,
-    pub(crate) asset_library_id: Option<String>,
-    pub(crate) style_values: Option<[u16; 2]>,
-    pub(crate) guid: Option<String>,
+    pub(crate) extension: Option<RenderingStyleExtension>,
     pub(crate) suffix: View<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RenderingStyleExtension {
+    pub(crate) style_state: u16,
+    pub(crate) style_label: String,
+    pub(crate) asset_guid: String,
+    pub(crate) material_id: String,
+    pub(crate) asset_library_id: String,
+    pub(crate) style_values: [u16; 2],
+    pub(crate) guid: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,8 +204,9 @@ fn project_default_bindings(
     }
     let style = selected[0];
     let Some(asset_guid) = style
-        .asset_guid
-        .as_deref()
+        .extension
+        .as_ref()
+        .map(|extension| extension.asset_guid.as_str())
         .filter(|value| !value.is_empty())
     else {
         return PresentationProjection {
@@ -210,6 +216,10 @@ fn project_default_bindings(
             unresolved_face_overrides: 0,
         };
     };
+    let library_id = style
+        .extension
+        .as_ref()
+        .map(|extension| extension.asset_library_id.as_str());
     let matches = appearances
         .iter()
         .filter(|appearance| {
@@ -218,7 +228,7 @@ fn project_default_bindings(
                 .as_deref()
                 .is_some_and(|value| value.eq_ignore_ascii_case(asset_guid))
         })
-        .filter(|appearance| match style.asset_library_id.as_deref() {
+        .filter(|appearance| match library_id {
             Some(value) if !value.is_empty() => appearance
                 .library_id
                 .as_deref()
@@ -748,31 +758,28 @@ fn parse_rendering_style<'a>(
         legacy_block_len(version),
         "rendering-style legacy name padding",
     )?;
-    let (style_state, style_fields, style_values, guid) = if version > 16 {
+    let extension = if version > 16 {
         let style_state = cursor.u16("rendering-style style state")?;
-        let mut text_values = Vec::with_capacity(4);
-        for index in 0..4 {
-            text_values.push(cursor.utf16(ctx, &format!("rendering-style text {index}"))?);
-        }
+        let style_label = cursor.utf16(ctx, "rendering-style text 0")?;
+        let asset_guid = cursor.utf16(ctx, "rendering-style text 1")?;
+        let material_id = cursor.utf16(ctx, "rendering-style text 2")?;
+        let asset_library_id = cursor.utf16(ctx, "rendering-style text 3")?;
         let style_values = [
             cursor.u16("rendering-style style value 0")?,
             cursor.u16("rendering-style style value 1")?,
         ];
         let guid = cursor.guid("rendering-style guid")?;
-        (
-            Some(style_state),
-            text_values,
-            Some(style_values),
-            Some(guid),
-        )
+        Some(RenderingStyleExtension {
+            style_state,
+            style_label,
+            asset_guid,
+            material_id,
+            asset_library_id,
+            style_values,
+            guid,
+        })
     } else {
-        (None, Vec::new(), None, None)
-    };
-    let [style_label, asset_guid, material_id, asset_library_id] = if style_fields.is_empty() {
-        [None, None, None, None]
-    } else {
-        let mut fields = style_fields.into_iter();
-        [fields.next(), fields.next(), fields.next(), fields.next()]
+        None
     };
     let suffix = cursor.remainder()?;
     Ok(PmAppRenderingStyle {
@@ -790,13 +797,7 @@ fn parse_rendering_style<'a>(
         name,
         comment,
         long_name,
-        style_state,
-        style_label,
-        asset_guid,
-        material_id,
-        asset_library_id,
-        style_values,
-        guid,
+        extension,
         suffix,
     })
 }
@@ -1025,15 +1026,16 @@ mod tests {
         let style = parse_rendering_style(&ctx, root, 26).expect("rendering style parses");
 
         assert_eq!(style.name, "Steel");
-        assert_eq!(style.style_label.as_deref(), Some("1:Steel"));
+        let extension = style
+            .extension
+            .as_ref()
+            .expect("version 26 stores the rendering-style extension");
+        assert_eq!(extension.style_label, "1:Steel");
+        assert_eq!(extension.asset_guid, "d3c6130d-6c0f-4525-b268-53517ab46a78");
+        assert_eq!(extension.material_id, "InvGen-066");
         assert_eq!(
-            style.asset_guid.as_deref(),
-            Some("d3c6130d-6c0f-4525-b268-53517ab46a78")
-        );
-        assert_eq!(style.material_id.as_deref(), Some("InvGen-066"));
-        assert_eq!(
-            style.asset_library_id.as_deref(),
-            Some("afefc330-5e61-4e24-814f-ae810148b79d")
+            extension.asset_library_id,
+            "afefc330-5e61-4e24-814f-ae810148b79d"
         );
         assert_eq!(style.suffix.window(), &[0xaa, 0x55]);
     }

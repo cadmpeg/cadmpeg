@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::PmDcReference;
+use crate::presentation::RenderingStyleExtension;
 
 /// Current Inventor native namespace version.
 pub(crate) const INVENTOR_NATIVE_VERSION: u32 = 25;
@@ -638,6 +639,10 @@ pub(crate) struct PmAppDefaultStyleRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "PmAppRenderingStyleRecordWire",
+    into = "PmAppRenderingStyleRecordWire"
+)]
 pub(crate) struct PmAppRenderingStyleRecord {
     pub(crate) id: String,
     pub(crate) segment_token: String,
@@ -654,15 +659,146 @@ pub(crate) struct PmAppRenderingStyleRecord {
     pub(crate) name: String,
     pub(crate) comment: String,
     pub(crate) long_name: String,
-    pub(crate) style_state: Option<u16>,
-    pub(crate) style_label: Option<String>,
-    pub(crate) asset_guid: Option<String>,
-    pub(crate) material_id: Option<String>,
-    pub(crate) asset_library_id: Option<String>,
-    pub(crate) style_values: Option<[u16; 2]>,
-    pub(crate) guid: Option<String>,
+    pub(crate) extension: Option<RenderingStyleExtension>,
     pub(crate) suffix_len: u64,
     pub(crate) suffix_sha256: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PmAppRenderingStyleRecordWire {
+    id: String,
+    segment_token: String,
+    record_ordinal: u32,
+    segment_version_major: u8,
+    header_value: u32,
+    header_id: u16,
+    state: u8,
+    flags: u16,
+    values: [u16; 2],
+    default_state: u32,
+    value: u32,
+    name_reference: u32,
+    name: String,
+    comment: String,
+    long_name: String,
+    style_state: Option<u16>,
+    style_label: Option<String>,
+    asset_guid: Option<String>,
+    material_id: Option<String>,
+    asset_library_id: Option<String>,
+    style_values: Option<[u16; 2]>,
+    guid: Option<String>,
+    suffix_len: u64,
+    suffix_sha256: String,
+}
+
+impl From<PmAppRenderingStyleRecord> for PmAppRenderingStyleRecordWire {
+    fn from(value: PmAppRenderingStyleRecord) -> Self {
+        let (
+            style_state,
+            style_label,
+            asset_guid,
+            material_id,
+            asset_library_id,
+            style_values,
+            guid,
+        ) = match value.extension {
+            Some(extension) => (
+                Some(extension.style_state),
+                Some(extension.style_label),
+                Some(extension.asset_guid),
+                Some(extension.material_id),
+                Some(extension.asset_library_id),
+                Some(extension.style_values),
+                Some(extension.guid),
+            ),
+            None => (None, None, None, None, None, None, None),
+        };
+        Self {
+            id: value.id,
+            segment_token: value.segment_token,
+            record_ordinal: value.record_ordinal,
+            segment_version_major: value.segment_version_major,
+            header_value: value.header_value,
+            header_id: value.header_id,
+            state: value.state,
+            flags: value.flags,
+            values: value.values,
+            default_state: value.default_state,
+            value: value.value,
+            name_reference: value.name_reference,
+            name: value.name,
+            comment: value.comment,
+            long_name: value.long_name,
+            style_state,
+            style_label,
+            asset_guid,
+            material_id,
+            asset_library_id,
+            style_values,
+            guid,
+            suffix_len: value.suffix_len,
+            suffix_sha256: value.suffix_sha256,
+        }
+    }
+}
+
+impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
+    type Error = String;
+
+    fn try_from(wire: PmAppRenderingStyleRecordWire) -> Result<Self, Self::Error> {
+        let extension = match (
+            wire.style_state,
+            wire.style_label,
+            wire.asset_guid,
+            wire.material_id,
+            wire.asset_library_id,
+            wire.style_values,
+            wire.guid,
+        ) {
+            (None, None, None, None, None, None, None) => None,
+            (
+                Some(style_state),
+                Some(style_label),
+                Some(asset_guid),
+                Some(material_id),
+                Some(asset_library_id),
+                Some(style_values),
+                Some(guid),
+            ) => Some(RenderingStyleExtension {
+                style_state,
+                style_label,
+                asset_guid,
+                material_id,
+                asset_library_id,
+                style_values,
+                guid,
+            }),
+            _ => {
+                return Err("rendering style extension fields must be present together".into());
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            segment_token: wire.segment_token,
+            record_ordinal: wire.record_ordinal,
+            segment_version_major: wire.segment_version_major,
+            header_value: wire.header_value,
+            header_id: wire.header_id,
+            state: wire.state,
+            flags: wire.flags,
+            values: wire.values,
+            default_state: wire.default_state,
+            value: wire.value,
+            name_reference: wire.name_reference,
+            name: wire.name,
+            comment: wire.comment,
+            long_name: wire.long_name,
+            extension,
+            suffix_len: wire.suffix_len,
+            suffix_sha256: wire.suffix_sha256,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
