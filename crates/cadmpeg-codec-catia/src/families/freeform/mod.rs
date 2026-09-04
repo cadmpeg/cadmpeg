@@ -1173,8 +1173,9 @@ pub(crate) fn append_freeform_surface_pools(
                     u_sense: None,
                     v_sense: None,
                     support_extension: None,
-                    extension_flags: Vec::new(),
-                    revision_form: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
                 },
                 Some([
                     Some(offset.domain[0]),
@@ -1732,8 +1733,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                                     u_sense: None,
                                     v_sense: None,
                                     support_extension: None,
-                                    extension_flags: Vec::new(),
-                                    revision_form: None,
+                                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                                    ),
                                 },
                                 None,
                             ),

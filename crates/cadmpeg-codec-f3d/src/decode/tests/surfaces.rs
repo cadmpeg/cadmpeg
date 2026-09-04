@@ -502,19 +502,21 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
         let ProceduralSurfaceDefinition::Offset {
             support,
-            revision_form: _,
             distance,
             u_sense,
             v_sense,
             support_extension: _,
-            extension_flags,
+            extension,
         } = procedural.definition()
         else {
             panic!("expected offset surface construction")
         };
         assert_eq!(*distance, -12.5);
         assert_eq!((*u_sense, *v_sense), (Some(3), Some(-4)));
-        assert_eq!(*extension_flags, expected_flags);
+        let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
+            panic!("expected legacy offset extension")
+        };
+        assert_eq!(flags.wire_values(), expected_flags);
         assert!(result
             .ir()
             .model
@@ -537,14 +539,17 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
             distance,
             u_sense,
             v_sense,
-            extension_flags,
+            extension,
             ..
         } = &round_trip.ir().model.procedural_surfaces[0].definition()
         else {
             panic!("expected round-trip offset surface")
         };
         assert_eq!((*distance, *u_sense, *v_sense), (-12.5, Some(3), Some(-4)));
-        assert_eq!(*extension_flags, expected_flags);
+        let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
+            panic!("expected legacy offset extension")
+        };
+        assert_eq!(flags.wire_values(), expected_flags);
     }
 }
 

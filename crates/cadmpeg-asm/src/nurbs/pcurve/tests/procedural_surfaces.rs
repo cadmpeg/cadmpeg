@@ -35,8 +35,7 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
                 distance,
                 u_sense,
                 v_sense,
-                extension_flags,
-                revision_form: None,
+                extension,
             } = decoded.definition
             else {
                 panic!("expected legacy offset surface");
@@ -52,8 +51,11 @@ fn offset_surface_uses_direct_support_fields_then_cache() {
             assert!((distance - -2.5).abs() < f64::EPSILON);
             assert_eq!(u_sense, Some(2));
             assert_eq!(v_sense, Some(3));
+            let cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) = extension else {
+                panic!("expected legacy offset extension")
+            };
             assert_eq!(
-                extension_flags,
+                flags.wire_values(),
                 if name == "off_spl_sur" {
                     vec![false]
                 } else {

@@ -2419,8 +2419,9 @@ pub(super) fn project(
                     u_sense: Some(0),
                     v_sense: Some(0),
                     support_extension: None,
-                    extension_flags: Vec::new(),
-                    revision_form: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
                 },
                 None,
             ),

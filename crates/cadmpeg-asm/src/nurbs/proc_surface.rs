@@ -142,10 +142,8 @@ pub enum DecodedProceduralSurfaceDefinition {
         u_sense: Option<i64>,
         /// Native V sense enum, absent from the revision-gated layout.
         v_sense: Option<i64>,
-        /// Ordered conditional ASM flags.
-        extension_flags: Vec<bool>,
-        /// Revision-gated form fields.
-        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
+        /// Pre-revision conditional flags or revision-gated form.
+        extension: cadmpeg_ir::geometry::OffsetExtension,
     },
     /// Translation of an embedded directrix along a length-bearing direction.
     Extrusion {
@@ -3395,18 +3393,19 @@ fn off_spl_sur(
                 distance,
                 u_sense: None,
                 v_sense: None,
-                extension_flags: Vec::new(),
-                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
-                    revision,
-                    support_bounds,
-                    reference_endpoints: [None; 2],
-                    second_endpoints: [None; 2],
-                    flags,
-                    cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
-                    discontinuities,
-                    tail_flag,
-                    trailing_flags: Vec::new(),
-                }),
+                extension: cadmpeg_ir::geometry::OffsetExtension::Revision(
+                    cadmpeg_ir::geometry::RevisionSurfaceForm {
+                        revision,
+                        support_bounds,
+                        reference_endpoints: [None; 2],
+                        second_endpoints: [None; 2],
+                        flags: flags.try_into().ok()?,
+                        cache: revision_cache_form(tail_enum, fit_tolerance, parameterization)?,
+                        discontinuities,
+                        tail_flag,
+                        trailing_flags: Vec::new(),
+                    },
+                ),
             },
             cache_fit_tolerance: fit_tolerance,
         });
@@ -3415,17 +3414,21 @@ fn off_spl_sur(
     let distance = cur.take_f64()? * LEN_TO_MM;
     let u_sense = Some(cur.take_enum()?);
     let v_sense = Some(cur.take_enum()?);
-    let mut extension_flags = Vec::new();
-    if modern {
+    let extension_flags = if modern {
         let first = cur.take_bool()?;
-        extension_flags.push(first);
         if first {
-            extension_flags.push(cur.take_bool()?);
-            if matches!(cur.peek(), Some(Token::True | Token::False)) {
-                extension_flags.push(cur.take_bool()?);
+            cadmpeg_ir::geometry::LegacyExtensionFlags::Enabled {
+                secondary: cur.take_bool()?,
+                tertiary: matches!(cur.peek(), Some(Token::True | Token::False))
+                    .then(|| cur.take_bool())
+                    .flatten(),
             }
+        } else {
+            cadmpeg_ir::geometry::LegacyExtensionFlags::Disabled
         }
-    }
+    } else {
+        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent
+    };
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?;
@@ -3435,8 +3438,7 @@ fn off_spl_sur(
             distance,
             u_sense,
             v_sense,
-            extension_flags,
-            revision_form: None,
+            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(extension_flags),
         },
         cache_fit_tolerance,
     })

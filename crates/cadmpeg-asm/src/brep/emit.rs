@@ -306,8 +306,7 @@ fn emit_carrier_surface(
                 distance,
                 u_sense,
                 v_sense,
-                extension_flags,
-                revision_form,
+                extension,
             } => {
                 let support_id = SurfaceId(format!("{format}:brep:procedural_surface#{i}:support"));
                 out.surfaces.push(Surface {
@@ -321,8 +320,7 @@ fn emit_carrier_surface(
                     u_sense,
                     v_sense,
                     support_extension: None,
-                    extension_flags,
-                    revision_form,
+                    extension,
                 }
             }
             DecodedProceduralSurfaceDefinition::Extrusion {

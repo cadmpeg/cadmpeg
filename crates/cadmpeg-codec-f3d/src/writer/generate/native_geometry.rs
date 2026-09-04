@@ -1069,8 +1069,7 @@ fn native_procedural_surface_definition(
             u_sense,
             v_sense,
             support_extension: _,
-            extension_flags,
-            revision_form,
+            extension,
         } => {
             let support = target
                 .model
@@ -1083,31 +1082,38 @@ fn native_procedural_surface_definition(
                         procedural.id
                     ))
                 })?;
-            if let Some(form) = revision_form {
-                if form.revision <= 0 || form.flags.len() != 4 {
-                    return Err(CodecError::Malformed(
-                        "revision-gated off_spl_sur requires a positive revision and a four-boolean carrier run"
-                            .into(),
-                    ));
+            let extension_flags = match extension {
+                cadmpeg_ir::geometry::OffsetExtension::Revision(form) => {
+                    if form.revision <= 0 {
+                        return Err(CodecError::Malformed(
+                            "revision-gated off_spl_sur requires a positive revision".into(),
+                        ));
+                    }
+                    native_surface_base(bytes, "spline")?;
+                    bytes.push(0x0f);
+                    native_ident(bytes, "off_spl_sur")?;
+                    native_i64(bytes, form.revision);
+                    native_embedded_surface_with_bounds(
+                        bytes,
+                        &support.geometry,
+                        &form.support_bounds,
+                    )?;
+                    native_f64(bytes, *distance / LEN_TO_MM);
+                    // Leading sense pair, then the two-boolean ASM extension prefix.
+                    for flag in form.flags {
+                        bytes.push(native_bool(flag));
+                    }
+                    native_revision_surface_tail(
+                        bytes,
+                        "offset surface",
+                        form,
+                        Some(solved_cache),
+                    )?;
+                    bytes.push(0x10);
+                    return Ok(true);
                 }
-                native_surface_base(bytes, "spline")?;
-                bytes.push(0x0f);
-                native_ident(bytes, "off_spl_sur")?;
-                native_i64(bytes, form.revision);
-                native_embedded_surface_with_bounds(
-                    bytes,
-                    &support.geometry,
-                    &form.support_bounds,
-                )?;
-                native_f64(bytes, *distance / LEN_TO_MM);
-                // Leading sense pair, then the two-boolean ASM extension prefix.
-                for flag in &form.flags {
-                    bytes.push(native_bool(*flag));
-                }
-                native_revision_surface_tail(bytes, "offset surface", form, Some(solved_cache))?;
-                bytes.push(0x10);
-                return Ok(true);
-            }
+                cadmpeg_ir::geometry::OffsetExtension::Legacy(flags) => flags.wire_values(),
+            };
             let u_sense = (*u_sense).ok_or_else(|| {
                 CodecError::NotImplemented(
                     "source-less F3D offset surface requires a U sense".into(),
@@ -1118,15 +1124,6 @@ fn native_procedural_surface_definition(
                     "source-less F3D offset surface requires a V sense".into(),
                 )
             })?;
-            let valid_flags = matches!(
-                extension_flags.as_slice(),
-                [] | [false] | [true, _] | [true, _, _]
-            );
-            if !valid_flags {
-                return Err(CodecError::Malformed(
-                    "off_spl_sur ASM extension flags have an invalid conditional shape".into(),
-                ));
-            }
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(
@@ -1142,7 +1139,7 @@ fn native_procedural_surface_definition(
             native_enum(bytes, u_sense);
             native_enum(bytes, v_sense);
             for flag in extension_flags {
-                bytes.push(native_bool(*flag));
+                bytes.push(native_bool(flag));
             }
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
@@ -6071,10 +6068,10 @@ fn native_embedded_cone_with_bounds(
 /// trailing booleans. Form `0` writes the solved cache and its fit tolerance;
 /// form `2` writes the U and V parameter intervals followed by the U closure,
 /// V closure, U singularity, and V singularity enums.
-fn native_revision_surface_tail(
+fn native_revision_surface_tail<F: Default>(
     bytes: &mut Vec<u8>,
     carrier: &str,
-    form: &cadmpeg_ir::geometry::RevisionSurfaceForm,
+    form: &cadmpeg_ir::geometry::RevisionSurfaceForm<F>,
     solved_cache: Option<&cadmpeg_ir::geometry::NurbsSurface>,
 ) -> Result<(), CodecError> {
     native_revision_tail_head(bytes, carrier, &form.cache, solved_cache)?;
