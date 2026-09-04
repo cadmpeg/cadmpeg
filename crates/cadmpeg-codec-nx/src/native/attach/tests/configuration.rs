@@ -1077,7 +1077,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
 
 #[test]
 fn boolean_target_output_requires_one_resolved_segment_body() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
     use cadmpeg_ir::ids::BodyId;
 
     let body = BodyId("nx:s0:body#0".into());
@@ -1087,7 +1087,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
             native: "target".into(),
         },
         tools: BodySelection::Unresolved,
-        op: BooleanOp::Join,
+        op: BooleanKind::Join,
         keep_tools: false,
     };
     assert_eq!(super::boolean_target_output(Some(&definition)), Some(body));
@@ -1098,7 +1098,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
             native: "target".into(),
         },
         tools: BodySelection::Unresolved,
-        op: BooleanOp::Join,
+        op: BooleanKind::Join,
         keep_tools: false,
     };
     assert!(super::boolean_target_output(Some(&ambiguous)).is_none());
@@ -1752,7 +1752,7 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
 
 #[test]
 fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -1787,7 +1787,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
                 bodies: vec!["nx:om-body-object#122".to_string()],
                 native: "nx:om-object-indices#122".to_string(),
             },
-            op: BooleanOp::Cut,
+            op: BooleanKind::Cut,
             keep_tools: false,
         }
     );
@@ -1810,7 +1810,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
 
 #[test]
 fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
     use std::collections::BTreeMap;
 
     let operation = crate::native::features::FeatureBooleanOperation {
@@ -1850,7 +1850,7 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
                 ],
                 native: "nx:om-object-indices#402,403".to_string(),
             },
-            op: BooleanOp::Join,
+            op: BooleanKind::Join,
             keep_tools: false,
         }
     );
@@ -1858,7 +1858,7 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
 
 #[test]
 fn nx_boolean_writers_follow_selected_identity_namespace() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureId};
     use std::collections::BTreeMap;
 
     let operation = crate::native::features::FeatureBooleanOperation {
@@ -1910,7 +1910,7 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
     let native_definition = FeatureDefinition::Combine {
         target: BodySelection::Native("nx:om-object-index#401".to_string()),
         tools: BodySelection::Native("nx:om-object-indices#402".to_string()),
-        op: BooleanOp::Join,
+        op: BooleanKind::Join,
         keep_tools: false,
     };
     assert_eq!(

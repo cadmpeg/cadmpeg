@@ -3971,14 +3971,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 {
                     feature_geometry_error(findings, feature, "coil geometry is invalid");
                 }
-                if let CoilResult::Boolean { operation, targets } = result {
-                    if matches!(
-                        operation,
-                        crate::features::BooleanOp::Unresolved
-                            | crate::features::BooleanOp::NewBody
-                    ) {
-                        feature_geometry_error(findings, feature, "coil Boolean result is invalid");
-                    }
+                if let CoilResult::Boolean { targets, .. } = result {
                     body_selections.push(targets);
                 }
             }

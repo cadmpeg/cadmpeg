@@ -231,7 +231,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
 
 #[test]
 fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
     use std::collections::BTreeMap;
 
     let operation = super::FeatureBooleanOperation {
@@ -258,7 +258,7 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
         FeatureDefinition::Combine {
             target: BodySelection::Native("nx:om-object-index#10".to_string()),
             tools: BodySelection::Native("nx:om-object-indices#20".to_string()),
-            op: BooleanOp::Cut,
+            op: BooleanKind::Cut,
             keep_tools: false,
         }
     );
@@ -932,7 +932,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
         cadmpeg_ir::features::FeatureDefinition::Combine {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         } if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127"
     ));

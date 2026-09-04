@@ -542,7 +542,7 @@ fn loft_sections_accept_legacy_profiles_and_preserve_profile_shape() {
 #[test]
 fn generated_sweep_sections_round_trip_and_validate() {
     use crate::features::{
-        BooleanOp, Feature, FeatureDefinition, FeatureId, GeneratedSweepSection, Length, SweepMode,
+        Feature, FeatureDefinition, FeatureId, GeneratedSweepSection, Length, SweepMode,
         SweepSection,
     };
 
@@ -553,9 +553,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
         }),
         sections: Vec::new(),
         path: None,
-        mode: SweepMode::Solid {
-            op: BooleanOp::NewBody,
-        },
+        mode: SweepMode::NewBody,
         orientation: None,
         transition: None,
         transformation: None,
@@ -1102,16 +1100,39 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
 
 #[test]
 fn combine_omits_the_default_keep_tools_flag_from_json() {
-    use crate::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use crate::features::{BodySelection, BooleanKind, FeatureDefinition};
 
     let definition = FeatureDefinition::Combine {
         target: BodySelection::Native("body:17".into()),
         tools: BodySelection::Native("body:18".into()),
-        op: BooleanOp::Join,
+        op: BooleanKind::Join,
         keep_tools: false,
     };
     let json = serde_json::to_value(definition).unwrap();
     assert_eq!(json.get("keep_tools"), None);
+}
+
+#[test]
+fn sweep_mode_preserves_the_solid_new_body_wire_form() {
+    use crate::features::{BooleanKind, SweepMode};
+
+    let wire = serde_json::json!({"mode": "solid", "op": "new_body"});
+    assert_eq!(
+        serde_json::from_value::<SweepMode>(wire.clone()).unwrap(),
+        SweepMode::NewBody
+    );
+    assert_eq!(serde_json::to_value(SweepMode::NewBody).unwrap(), wire);
+    assert!(serde_json::from_value::<SweepMode>(
+        serde_json::json!({"mode": "solid", "op": "unresolved"})
+    )
+    .is_err());
+    assert_eq!(
+        serde_json::from_value::<SweepMode>(serde_json::json!({"mode": "solid", "op": "join"}))
+            .unwrap(),
+        SweepMode::Solid {
+            op: BooleanKind::Join
+        }
+    );
 }
 
 #[test]

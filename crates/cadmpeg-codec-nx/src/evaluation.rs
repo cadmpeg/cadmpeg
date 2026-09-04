@@ -401,7 +401,8 @@ fn rederived_body_census(
             FeatureDefinition::Sweep { .. } if output_free_local_body_construction(feature) => {}
             FeatureDefinition::Sweep { mode, .. } => {
                 let op = match mode {
-                    cadmpeg_ir::features::SweepMode::Solid { op } => *op,
+                    cadmpeg_ir::features::SweepMode::Solid { op } => (*op).into(),
+                    cadmpeg_ir::features::SweepMode::NewBody => BooleanOp::NewBody,
                     cadmpeg_ir::features::SweepMode::Surface => BooleanOp::NewBody,
                     cadmpeg_ir::features::SweepMode::Unresolved => BooleanOp::Unresolved,
                 };
@@ -2007,7 +2008,7 @@ mod tests {
             FeatureDefinition::Combine {
                 target: BodySelection::Bodies(vec![target.clone()]),
                 tools: BodySelection::Bodies(vec![tool]),
-                op: BooleanOp::Join,
+                op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
             },
         ));
@@ -2037,7 +2038,7 @@ mod tests {
             FeatureDefinition::Combine {
                 target: BodySelection::Bodies(vec![target.clone()]),
                 tools: BodySelection::Bodies(vec![tool.clone()]),
-                op: BooleanOp::Join,
+                op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: true,
             },
         ));
@@ -2064,7 +2065,7 @@ mod tests {
                     bodies: vec!["local-tool".to_string()],
                     native: "native-tools".to_string(),
                 },
-                op: BooleanOp::Cut,
+                op: cadmpeg_ir::features::BooleanKind::Cut,
                 keep_tools: false,
             },
         );
@@ -2093,7 +2094,7 @@ mod tests {
                     bodies: vec![String::new()],
                     native: "native-tools".to_string(),
                 },
-                op: BooleanOp::Cut,
+                op: cadmpeg_ir::features::BooleanKind::Cut,
                 keep_tools: false,
             },
         ));
@@ -2117,7 +2118,7 @@ mod tests {
             FeatureDefinition::Combine {
                 target: BodySelection::Native("native-target".to_string()),
                 tools: BodySelection::NativeSet(vec!["native-tool".to_string()]),
-                op: BooleanOp::Intersect,
+                op: cadmpeg_ir::features::BooleanKind::Intersect,
                 keep_tools: false,
             },
         );
@@ -2318,7 +2319,7 @@ mod tests {
             FeatureDefinition::Combine {
                 target: BodySelection::Bodies(vec![body]),
                 tools: BodySelection::Bodies(vec![BodyId("missing".to_string())]),
-                op: BooleanOp::Cut,
+                op: cadmpeg_ir::features::BooleanKind::Cut,
                 keep_tools: false,
             },
         ));

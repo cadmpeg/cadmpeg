@@ -7,7 +7,7 @@ use super::*;
 
 #[test]
 fn nx_boolean_keeps_body_namespace_proofs_atomic() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -36,7 +36,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         FeatureDefinition::Combine {
             target: BodySelection::Native("nx:om-object-index#94".to_string()),
             tools: BodySelection::Native("nx:om-object-indices#122".to_string()),
-            op: BooleanOp::Cut,
+            op: BooleanKind::Cut,
             keep_tools: false,
         }
     );
@@ -50,7 +50,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         FeatureDefinition::Combine {
             target: BodySelection::Native("nx:om-object-index#94".to_string()),
             tools: BodySelection::Native("nx:om-object-indices#122".to_string()),
-            op: BooleanOp::Cut,
+            op: BooleanKind::Cut,
             keep_tools: false,
         }
     );
@@ -75,7 +75,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
                 bodies: vec!["nx:om-data-blocks-3:block#122".to_string()],
                 native: "nx:om-object-indices#122".to_string(),
             },
-            op: BooleanOp::Cut,
+            op: BooleanKind::Cut,
             keep_tools: false,
         }
     );
@@ -107,7 +107,7 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         FeatureDefinition::Combine {
             target: BodySelection::Native("nx:om-object-index#401".to_string()),
             tools: BodySelection::Native("nx:om-object-indices#402,403".to_string()),
-            op: BooleanOp::Join,
+            op: BooleanKind::Join,
             keep_tools: false,
         }
     );
@@ -806,14 +806,14 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
 #[test]
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     use cadmpeg_ir::features::{
-        BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, EdgeSelection, FaceSelection,
-        FeatureDefinition, HoleKind, PatternKind, RibDraft,
+        BodySelection, BodyTrimSide, BooleanKind, BooleanOp, ChamferSpec, EdgeSelection,
+        FaceSelection, FeatureDefinition, HoleKind, PatternKind, RibDraft,
     };
 
     for (kind, op) in [
-        ("UNITE", BooleanOp::Join),
-        ("SUBTRACT", BooleanOp::Cut),
-        ("INTERSECT", BooleanOp::Intersect),
+        ("UNITE", BooleanKind::Join),
+        ("SUBTRACT", BooleanKind::Cut),
+        ("INTERSECT", BooleanKind::Intersect),
     ] {
         assert_eq!(
             super::non_boolean_feature_definition(kind, &[], None, None, None),

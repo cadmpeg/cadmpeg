@@ -760,8 +760,8 @@ fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
 #[test]
 fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
     use cadmpeg_ir::features::{
-        Angle, BodySelection, BooleanOp, CoilConstruction, CoilExtent, CoilPlacement, CoilResult,
-        CoilSection, CoilSectionPlacement, FeatureDefinition, Length,
+        Angle, BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
+        CoilSectionPlacement, FeatureDefinition, Length,
     };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -806,7 +806,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
     let native_target = definition(
         construction.clone(),
         CoilResult::Boolean {
-            operation: BooleanOp::Join,
+            operation: cadmpeg_ir::features::BooleanKind::Join,
             targets: BodySelection::Native("native:target".into()),
         },
     );
@@ -834,7 +834,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
     assert!(!feature_definition_is_incomplete(&definition(
         construction,
         CoilResult::Boolean {
-            operation: BooleanOp::Cut,
+            operation: cadmpeg_ir::features::BooleanKind::Cut,
             targets: BodySelection::Bodies(vec![BodyId("body:1".into())]),
         },
     )));

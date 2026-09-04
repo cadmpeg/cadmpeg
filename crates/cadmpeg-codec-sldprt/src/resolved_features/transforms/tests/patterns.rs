@@ -781,7 +781,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         sections: Vec::new(),
         path: Some(PathRef::Native("curve-reference".into())),
         mode: SweepMode::Solid {
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
         },
         orientation: None,
         transition: None,

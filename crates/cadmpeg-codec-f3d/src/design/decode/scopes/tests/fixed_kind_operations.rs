@@ -1400,7 +1400,7 @@ pub(super) fn continue_fixed_kind_operations(
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Sweep {
             mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanOp::Cut
+                op: cadmpeg_ir::features::BooleanKind::Cut
             },
             ..
         })

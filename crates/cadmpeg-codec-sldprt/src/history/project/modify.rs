@@ -3,9 +3,9 @@
 
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    EdgeSelection, FaceMotion, FaceSelection, FeatureDefinition, FlexForm, FlexMode, Length,
-    RadiusForm, RadiusSpec, ScaleCenter, ScaleFactors, VariableRadius,
+    Angle, AxisAngle, BodyRetentionMode, BodySelection, ChamferForm, ChamferSpec, EdgeSelection,
+    FaceMotion, FaceSelection, FeatureDefinition, FlexForm, FlexMode, Length, RadiusForm,
+    RadiusSpec, ScaleCenter, ScaleFactors, VariableRadius,
 };
 use cadmpeg_ir::math::Vector3;
 
@@ -240,10 +240,9 @@ pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
     let op = feature
         .properties
         .get("Operation")
-        .map_or(Some(BooleanOp::Unresolved), |value| parse_boolean_op(value))?;
-    if op == BooleanOp::NewBody {
-        return None;
-    }
+        .and_then(|value| parse_boolean_op(value))?
+        .try_into()
+        .ok()?;
     Some(FeatureDefinition::Combine {
         target: feature
             .properties

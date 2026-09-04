@@ -194,14 +194,10 @@ pub(crate) fn bind_sweep_operations(
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::Solid { op },
-            ..
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::Sweep { mode, .. } = &mut feature.definition else {
             continue;
         };
-        if *op != BooleanOp::Unresolved {
+        if *mode != cadmpeg_ir::features::SweepMode::Unresolved {
             continue;
         }
         let Some(history) = feature
@@ -225,7 +221,19 @@ pub(crate) fn bind_sweep_operations(
             continue;
         };
         if operations.all(|operation| operation == first) {
-            *op = first;
+            *mode = match first {
+                BooleanOp::Join => cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::BooleanKind::Join,
+                },
+                BooleanOp::Cut => cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::BooleanKind::Cut,
+                },
+                BooleanOp::Intersect => cadmpeg_ir::features::SweepMode::Solid {
+                    op: cadmpeg_ir::features::BooleanKind::Intersect,
+                },
+                BooleanOp::NewBody => cadmpeg_ir::features::SweepMode::NewBody,
+                BooleanOp::Unresolved => continue,
+            };
         }
     }
 }

@@ -2031,7 +2031,7 @@ pub(crate) fn project_combine(
     scope: &DesignParameterScope,
     native_scope: &str,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
 
     let operation = scope.combine_operation.as_ref()?;
     if operation.tools.is_empty() {
@@ -2052,9 +2052,9 @@ pub(crate) fn project_combine(
             )
         },
         op: match operation.operation {
-            DesignExtrudeOperation::Join => BooleanOp::Join,
-            DesignExtrudeOperation::Cut => BooleanOp::Cut,
-            DesignExtrudeOperation::Intersect => BooleanOp::Intersect,
+            DesignExtrudeOperation::Join => BooleanKind::Join,
+            DesignExtrudeOperation::Cut => BooleanKind::Cut,
+            DesignExtrudeOperation::Intersect => BooleanKind::Intersect,
             DesignExtrudeOperation::NewBody => return None,
         },
         keep_tools: operation.keep_tools,
@@ -6713,10 +6713,10 @@ pub(crate) fn project_fixed_sweep(
         sections: Vec::new(),
         path: Some(path),
         mode: if *operation == DesignExtrudeOperation::NewBody {
-            SweepMode::Unresolved
+            SweepMode::NewBody
         } else {
             SweepMode::Solid {
-                op: fixed_boolean_operation(*operation),
+                op: fixed_boolean_operation(*operation).try_into().ok()?,
             }
         },
         orientation,
@@ -6743,9 +6743,7 @@ fn project_fixed_pipe(
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{
-        BooleanOp, FeatureDefinition, GeneratedSweepSection, SweepMode, SweepSection,
-    };
+    use cadmpeg_ir::features::{FeatureDefinition, GeneratedSweepSection, SweepMode, SweepSection};
 
     let DesignPathFeatureConstruction::Pipe {
         operation,
@@ -6872,9 +6870,7 @@ fn project_fixed_pipe(
         }),
         sections: Vec::new(),
         path: Some(path),
-        mode: SweepMode::Solid {
-            op: BooleanOp::NewBody,
-        },
+        mode: SweepMode::NewBody,
         orientation: None,
         transition: None,
         transformation: None,
@@ -8310,8 +8306,8 @@ fn project_coil(
     construction_groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        BodySelection, BooleanOp, CoilConstruction, CoilExtent, CoilPlacement, CoilResult,
-        CoilSection, CoilSectionPlacement, FeatureDefinition,
+        BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult, CoilSection,
+        CoilSectionPlacement, FeatureDefinition,
     };
 
     let unique = |kind: &str| {
@@ -8427,9 +8423,9 @@ fn project_coil(
         (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody,
         (operation, Some(group)) => CoilResult::Boolean {
             operation: match operation {
-                DesignExtrudeOperation::Join => BooleanOp::Join,
-                DesignExtrudeOperation::Cut => BooleanOp::Cut,
-                DesignExtrudeOperation::Intersect => BooleanOp::Intersect,
+                DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanKind::Join,
+                DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanKind::Cut,
+                DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanKind::Intersect,
                 DesignExtrudeOperation::NewBody => return None,
             },
             targets: BodySelection::Native(group.id.clone()),

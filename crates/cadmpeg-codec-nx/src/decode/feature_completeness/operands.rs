@@ -355,11 +355,8 @@ pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: Bool
 
 pub(crate) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
     match mode {
-        SweepMode::Unresolved
-        | SweepMode::Solid {
-            op: BooleanOp::Unresolved,
-        } => true,
-        SweepMode::Solid { .. } | SweepMode::Surface => false,
+        SweepMode::Unresolved => true,
+        SweepMode::NewBody | SweepMode::Solid { .. } | SweepMode::Surface => false,
     }
 }
 

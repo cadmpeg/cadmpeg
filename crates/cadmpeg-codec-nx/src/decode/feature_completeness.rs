@@ -363,17 +363,13 @@ pub(crate) fn sew_bodies_definition_is_incomplete(feature: &Feature) -> bool {
 }
 
 pub(crate) fn combine_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::Combine {
-        target, tools, op, ..
-    } = &feature.definition
-    else {
+    let FeatureDefinition::Combine { target, tools, .. } = &feature.definition else {
         return true;
     };
     body_selection_is_incomplete(target)
         || body_selection_is_incomplete(tools)
         || resolved_body_selection_len(target) != Some(1)
         || body_selections_overlap(target, tools)
-        || matches!(op, BooleanOp::Unresolved | BooleanOp::NewBody)
 }
 
 pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {

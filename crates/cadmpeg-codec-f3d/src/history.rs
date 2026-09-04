@@ -878,7 +878,7 @@ pub(crate) fn bind_sweep_result_modes(
     features: &mut [cadmpeg_ir::features::Feature],
     bodies: &[cadmpeg_ir::topology::Body],
 ) {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, SweepMode};
+    use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
     use cadmpeg_ir::topology::BodyKind;
 
     let body_kinds = bodies
@@ -899,9 +899,7 @@ pub(crate) fn bind_sweep_result_modes(
             .collect::<Option<Vec<_>>>();
         *mode = match output_kinds.as_deref() {
             Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Sheet) => SweepMode::Surface,
-            Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Solid) => SweepMode::Solid {
-                op: BooleanOp::NewBody,
-            },
+            Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Solid) => SweepMode::NewBody,
             _ => SweepMode::Unresolved,
         };
     }

@@ -483,14 +483,10 @@ fn nx_loft_completeness_validates_point_sections() {
 
 #[test]
 fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
-    use cadmpeg_ir::features::{BooleanOp, PathRef, SweepMode, SweepOrientation};
+    use cadmpeg_ir::features::{PathRef, SweepMode, SweepOrientation};
 
-    assert!(super::sweep_mode_is_incomplete(SweepMode::Solid {
-        op: BooleanOp::Unresolved,
-    }));
-    assert!(!super::sweep_mode_is_incomplete(SweepMode::Solid {
-        op: BooleanOp::NewBody,
-    }));
+    assert!(super::sweep_mode_is_incomplete(SweepMode::Unresolved));
+    assert!(!super::sweep_mode_is_incomplete(SweepMode::NewBody));
     assert!(super::sweep_orientation_is_incomplete(
         &SweepOrientation::Auxiliary {
             path: PathRef::Native("nx:auxiliary-path#0".into()),
@@ -1722,7 +1718,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             bodies: vec!["tool".into()],
             native: "nx:body-selection#tools".into(),
         },
-        op: cadmpeg_ir::features::BooleanOp::Join,
+        op: cadmpeg_ir::features::BooleanKind::Join,
         keep_tools: false,
     };
     losses.clear();

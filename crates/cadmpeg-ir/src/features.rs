@@ -1903,7 +1903,7 @@ pub enum FeatureDefinition {
         /// Bodies consumed as Boolean tools.
         tools: BodySelection,
         /// Join, cut, or intersection operation.
-        op: BooleanOp,
+        op: BooleanKind,
         /// Whether tool bodies remain present after the Boolean result is created.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         keep_tools: bool,
@@ -4130,6 +4130,42 @@ pub enum BooleanOp {
     NewBody,
 }
 
+/// Boolean operation that consumes at least one existing target body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum BooleanKind {
+    /// Union with existing bodies.
+    Join,
+    /// Subtraction from existing bodies.
+    Cut,
+    /// Intersection with existing bodies.
+    Intersect,
+}
+
+impl From<BooleanKind> for BooleanOp {
+    fn from(value: BooleanKind) -> Self {
+        match value {
+            BooleanKind::Join => Self::Join,
+            BooleanKind::Cut => Self::Cut,
+            BooleanKind::Intersect => Self::Intersect,
+        }
+    }
+}
+
+impl TryFrom<BooleanOp> for BooleanKind {
+    type Error = BooleanOp;
+
+    fn try_from(value: BooleanOp) -> Result<Self, Self::Error> {
+        match value {
+            BooleanOp::Join => Ok(Self::Join),
+            BooleanOp::Cut => Ok(Self::Cut),
+            BooleanOp::Intersect => Ok(Self::Intersect),
+            BooleanOp::Unresolved | BooleanOp::NewBody => Err(value),
+        }
+    }
+}
+
 /// Placement and parameterization of a solid Coil primitive.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4256,26 +4292,120 @@ pub enum CoilResult {
     /// Combine the swept volume with selected existing bodies.
     Boolean {
         /// Join, cut, or intersection operation.
-        operation: BooleanOp,
+        operation: BooleanKind,
         /// Existing bodies participating in the operation.
         targets: BodySelection,
     },
 }
 
 /// Result semantics of a swept profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "mode", rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SweepMode {
     /// Native sweep family is known but its result subtype is unresolved.
     Unresolved,
+    /// Sweep creates an independent solid body.
+    NewBody,
     /// Sweep creates or modifies a solid body.
     Solid {
         /// Boolean combination with existing bodies.
-        op: BooleanOp,
+        op: BooleanKind,
     },
     /// Sweep creates a sheet body.
     Surface,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "mode", rename_all = "snake_case")]
+enum SweepModeWire {
+    Unresolved,
+    Solid { op: SolidSweepOperation },
+    Surface,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum SolidSweepOperation {
+    Join,
+    Cut,
+    Intersect,
+    NewBody,
+}
+
+impl From<SweepMode> for SweepModeWire {
+    fn from(value: SweepMode) -> Self {
+        match value {
+            SweepMode::Unresolved => Self::Unresolved,
+            SweepMode::NewBody => Self::Solid {
+                op: SolidSweepOperation::NewBody,
+            },
+            SweepMode::Solid { op } => Self::Solid {
+                op: match op {
+                    BooleanKind::Join => SolidSweepOperation::Join,
+                    BooleanKind::Cut => SolidSweepOperation::Cut,
+                    BooleanKind::Intersect => SolidSweepOperation::Intersect,
+                },
+            },
+            SweepMode::Surface => Self::Surface,
+        }
+    }
+}
+
+impl From<SweepModeWire> for SweepMode {
+    fn from(value: SweepModeWire) -> Self {
+        match value {
+            SweepModeWire::Unresolved => Self::Unresolved,
+            SweepModeWire::Solid {
+                op: SolidSweepOperation::NewBody,
+            } => Self::NewBody,
+            SweepModeWire::Solid {
+                op: SolidSweepOperation::Join,
+            } => Self::Solid {
+                op: BooleanKind::Join,
+            },
+            SweepModeWire::Solid {
+                op: SolidSweepOperation::Cut,
+            } => Self::Solid {
+                op: BooleanKind::Cut,
+            },
+            SweepModeWire::Solid {
+                op: SolidSweepOperation::Intersect,
+            } => Self::Solid {
+                op: BooleanKind::Intersect,
+            },
+            SweepModeWire::Surface => Self::Surface,
+        }
+    }
+}
+
+impl Serialize for SweepMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        SweepModeWire::from(*self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SweepMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(SweepModeWire::deserialize(deserializer)?.into())
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for SweepMode {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SweepMode".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SweepModeWire::json_schema(generator)
+    }
 }
 
 /// Directed fractions of a sweep path consumed from the profile location.

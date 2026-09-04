@@ -5970,9 +5970,9 @@ fn non_boolean_feature_definition_with_parameters(
         };
     }
     if let Some(op) = match kind {
-        "UNITE" => Some(BooleanOp::Join),
-        "SUBTRACT" => Some(BooleanOp::Cut),
-        "INTERSECT" => Some(BooleanOp::Intersect),
+        "UNITE" => Some(cadmpeg_ir::features::BooleanKind::Join),
+        "SUBTRACT" => Some(cadmpeg_ir::features::BooleanKind::Cut),
+        "INTERSECT" => Some(cadmpeg_ir::features::BooleanKind::Intersect),
         _ => None,
     } {
         return FeatureDefinition::Combine {
@@ -8099,9 +8099,15 @@ pub(crate) fn boolean_feature_definition(
         target,
         tools,
         op: match operation.kind {
-            crate::native::features::FeatureBooleanKind::Unite => BooleanOp::Join,
-            crate::native::features::FeatureBooleanKind::Subtract => BooleanOp::Cut,
-            crate::native::features::FeatureBooleanKind::Intersect => BooleanOp::Intersect,
+            crate::native::features::FeatureBooleanKind::Unite => {
+                cadmpeg_ir::features::BooleanKind::Join
+            }
+            crate::native::features::FeatureBooleanKind::Subtract => {
+                cadmpeg_ir::features::BooleanKind::Cut
+            }
+            crate::native::features::FeatureBooleanKind::Intersect => {
+                cadmpeg_ir::features::BooleanKind::Intersect
+            }
         },
         keep_tools: false,
     }

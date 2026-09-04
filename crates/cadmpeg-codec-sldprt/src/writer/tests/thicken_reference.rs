@@ -786,7 +786,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
 
 #[test]
 fn semantic_writer_round_trips_typed_combine() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -803,7 +803,7 @@ fn semantic_writer_round_trips_typed_combine() {
         FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
-            op: BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         } if target == "body:1" && tools == "body:2,body:3"
     ));
@@ -818,7 +818,7 @@ fn semantic_writer_round_trips_typed_combine() {
         };
         *target = BodySelection::Native("body:4".into());
         *tools = BodySelection::Native("body:5,body:6".into());
-        *op = BooleanOp::Intersect;
+        *op = cadmpeg_ir::features::BooleanKind::Intersect;
     }
 
     let mut encoded = Vec::new();
@@ -840,7 +840,7 @@ fn semantic_writer_round_trips_typed_combine() {
         FeatureDefinition::Combine {
             target: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
-            op: BooleanOp::Intersect,
+            op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
         } if target == "body:4" && tools == "body:5,body:6"
     ));

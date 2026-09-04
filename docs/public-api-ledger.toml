@@ -3515,3 +3515,31 @@ crate = "cadmpeg-ir"
 kind = "struct"
 item = "cadmpeg_ir::document::Model"
 reason = "private regeneration ancestry prevents callers from constructing a parent relation that contradicts TreeNode child ownership"
+
+[[change]]
+commit = "8a3943e2064990cb2a514969fd85d13f52a95afe"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::features::BooleanKind"
+reason = "boolean carriers that require an existing target accept only join, cut, or intersect operations"
+
+[[change]]
+commit = "8a3943e2064990cb2a514969fd85d13f52a95afe"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::{FeatureDefinition::Combine::op,CoilResult::Boolean::operation}"
+reason = "combine and Boolean coil results cannot carry unresolved or new-body operations"
+
+[[change]]
+commit = "8a3943e2064990cb2a514969fd85d13f52a95afe"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::features::SweepMode::NewBody"
+reason = "new-body result semantics are represented by the outer sweep mode instead of a contradictory solid-operation payload"
+
+[[change]]
+commit = "8a3943e2064990cb2a514969fd85d13f52a95afe"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::SweepMode::Solid::op"
+reason = "solid sweep Boolean payloads accept only join, cut, or intersect operations"

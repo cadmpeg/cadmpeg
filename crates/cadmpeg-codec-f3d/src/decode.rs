@@ -682,8 +682,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             };
             let mode_is_resolved = match mode {
                 SweepMode::Unresolved => false,
-                SweepMode::Solid { op } => *op != cadmpeg_ir::features::BooleanOp::Unresolved,
-                SweepMode::Surface => true,
+                SweepMode::NewBody | SweepMode::Solid { .. } | SweepMode::Surface => true,
             };
             let orientation_is_resolved = match orientation {
                 Some(SweepOrientation::Auxiliary { path, .. }) => loft_path_is_resolved(path),
@@ -749,15 +748,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             construction,
             result,
         } => {
-            use cadmpeg_ir::features::{BooleanOp, CoilPlacement, CoilResult};
+            use cadmpeg_ir::features::{CoilPlacement, CoilResult};
 
             matches!(construction.placement, CoilPlacement::Native { .. })
                 || match result {
                     CoilResult::NewBody => false,
-                    CoilResult::Boolean { operation, targets } => {
-                        matches!(operation, BooleanOp::Unresolved | BooleanOp::NewBody)
-                            || !body_selection_is_resolved(targets)
-                    }
+                    CoilResult::Boolean { targets, .. } => !body_selection_is_resolved(targets),
                 }
         }
         // The draft angle remains available when face recipes fail, but replay
@@ -1049,16 +1045,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         )
                 })
         }
-        FeatureDefinition::Combine {
-            target, tools, op, ..
-        } => {
-            !body_selection_is_resolved(target)
-                || !body_selection_is_resolved(tools)
-                || matches!(
-                    op,
-                    cadmpeg_ir::features::BooleanOp::Unresolved
-                        | cadmpeg_ir::features::BooleanOp::NewBody
-                )
+        FeatureDefinition::Combine { target, tools, .. } => {
+            !body_selection_is_resolved(target) || !body_selection_is_resolved(tools)
         }
         // A typed family is not replayable until this match states and checks
         // its complete construction invariants.

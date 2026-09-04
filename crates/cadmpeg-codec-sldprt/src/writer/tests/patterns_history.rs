@@ -529,7 +529,7 @@ fn semantic_writer_round_trips_generic_pattern_type() {
 
 #[test]
 fn semantic_writer_round_trips_typed_sweep() {
-    use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, PathRef, ProfileRef};
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, PathRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -554,9 +554,7 @@ fn semantic_writer_round_trips_typed_sweep() {
         FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile)),
             path: Some(PathRef::Native(path_ref)),
-            mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: BooleanOp::NewBody,
-            },
+            mode: cadmpeg_ir::features::SweepMode::NewBody,
             twist: Some(Angle(twist)),
             scale: Some(1.5),
             ..
@@ -580,7 +578,7 @@ fn semantic_writer_round_trips_typed_sweep() {
         *section =
             cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Feature(profile_b.clone()));
         *mode = cadmpeg_ir::features::SweepMode::Solid {
-            op: BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
         };
         *twist = Some(Angle(std::f64::consts::PI));
         *scale = Some(2.0);
@@ -697,7 +695,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
 
 #[test]
 fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, SweepMode};
+    use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -720,9 +718,7 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
         FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(_),
             path: None,
-            mode: SweepMode::Solid {
-                op: BooleanOp::Unresolved
-            },
+            mode: SweepMode::Unresolved,
             twist: None,
             scale: None,
             ..
@@ -743,9 +739,7 @@ fn semantic_writer_retains_native_solid_sweep_with_unresolved_operation() {
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
-            mode: SweepMode::Solid {
-                op: BooleanOp::Unresolved
-            },
+            mode: SweepMode::Unresolved,
             ..
         }
     ));

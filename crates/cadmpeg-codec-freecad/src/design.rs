@@ -4663,17 +4663,17 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
 fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let op = if kind == "PartDesign::Boolean" {
         match enumeration_selector(properties, "Type", 0)? {
-            0 => BooleanOp::Join,
-            1 => BooleanOp::Cut,
-            2 => BooleanOp::Intersect,
+            0 => cadmpeg_ir::features::BooleanKind::Join,
+            1 => cadmpeg_ir::features::BooleanKind::Cut,
+            2 => cadmpeg_ir::features::BooleanKind::Intersect,
             _ => return None,
         }
     } else if kind.ends_with("Cut") {
-        BooleanOp::Cut
+        cadmpeg_ir::features::BooleanKind::Cut
     } else if kind.ends_with("Common") || kind.ends_with("MultiCommon") {
-        BooleanOp::Intersect
+        cadmpeg_ir::features::BooleanKind::Intersect
     } else if kind.ends_with("Fuse") || kind.ends_with("MultiFuse") {
-        BooleanOp::Join
+        cadmpeg_ir::features::BooleanKind::Join
     } else {
         return None;
     };
@@ -4878,12 +4878,14 @@ fn sweep_definition(
             .map(cadmpeg_ir::features::SweepSection::Profile)
             .collect(),
         path: Some(PathRef::Native(path_property.id.clone())),
-        mode: if solid {
-            SweepMode::Solid {
-                op: operation_boolean(kind),
-            }
-        } else {
+        mode: if !solid {
             SweepMode::Surface
+        } else if operation_boolean(kind) == BooleanOp::NewBody {
+            SweepMode::NewBody
+        } else {
+            SweepMode::Solid {
+                op: operation_boolean(kind).try_into().ok()?,
+            }
         },
         orientation: Some(orientation),
         transition: Some(transition),

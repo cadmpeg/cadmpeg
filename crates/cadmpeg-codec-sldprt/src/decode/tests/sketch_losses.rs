@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::super::*;
-use cadmpeg_ir::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
+use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchConstraintId, SpatialSketchConstraint,
     SpatialSketchConstraintDefinition, SpatialSketchEntityId, SpatialSketchId,
@@ -86,7 +86,7 @@ fn typed_native_operands_are_reported_as_design_losses() {
         definition: FeatureDefinition::Combine {
             target: BodySelection::Native("target".into()),
             tools: BodySelection::Native("tools".into()),
-            op: BooleanOp::Unresolved,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         },
         native_ref: None,
