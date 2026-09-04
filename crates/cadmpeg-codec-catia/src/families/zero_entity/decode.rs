@@ -931,7 +931,6 @@ pub(crate) fn try_decode_zero_entity(
         },
         annotations: annotations.build(),
         unknowns,
-        standard_face_population: false,
     })
 }
 

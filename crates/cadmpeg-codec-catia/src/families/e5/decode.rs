@@ -271,7 +271,6 @@ pub(crate) fn try_decode_e5(
         },
         annotations,
         unknowns,
-        standard_face_population: false,
     })
 }
 

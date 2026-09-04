@@ -71,7 +71,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecE
                     out.report,
                     out.annotations,
                     out.unknowns,
-                    out.standard_face_population,
+                    route.standard_face_population,
                 );
             }
         }
