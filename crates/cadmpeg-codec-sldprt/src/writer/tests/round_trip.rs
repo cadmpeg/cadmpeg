@@ -153,14 +153,15 @@ fn bake_transform_is_applied_and_output_stays_valid() {
         .expect("triangle fixture should decode");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let original_x = decoded.ir().model.points[0].position.x;
-    decoded.ir_mut().model.bodies[0].transform = Some(Transform {
-        rows: [
+    decoded.ir_mut().model.bodies[0].transform = Some(
+        Transform::from_rows([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(

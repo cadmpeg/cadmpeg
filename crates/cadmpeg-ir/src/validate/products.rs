@@ -82,11 +82,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .flatten()
             .all(|definition| definitions.contains_key(definition.as_str()))
         });
-        let affine = occurrence.transform.is_affine()
-            && occurrence
-                .linked_prototype
-                .is_none_or(|transform| transform.is_affine())
-            && occurrence.scale.iter().all(|value| value.is_finite());
+        let affine = occurrence.scale.iter().all(|value| value.is_finite());
         if !valid_prototype || !valid_parent || !ordinal_unique || !auxiliary_definitions || !affine
         {
             invalid(
@@ -108,25 +104,20 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                     OperandContainer::Root | OperandContainer::External(_) => true,
                 });
         let finite = joint
-            .connectors()
-            .map(|connector| &connector.frame)
-            .chain(joint.offset_frames())
-            .all(crate::transform::Transform::is_affine)
-            && joint
-                .angle()
-                .into_iter()
-                .chain(joint.translation_offset().into_iter().flatten())
-                .chain(joint.distance())
-                .chain(joint.distance2())
-                .chain(
-                    joint
-                        .angular_limits()
-                        .into_iter()
-                        .chain(joint.linear_limits())
-                        .flat_map(|limits| [limits.minimum(), limits.maximum()])
-                        .flatten(),
-                )
-                .all(f64::is_finite);
+            .angle()
+            .into_iter()
+            .chain(joint.translation_offset().into_iter().flatten())
+            .chain(joint.distance())
+            .chain(joint.distance2())
+            .chain(
+                joint
+                    .angular_limits()
+                    .into_iter()
+                    .chain(joint.linear_limits())
+                    .flat_map(|limits| [limits.minimum(), limits.maximum()])
+                    .flatten(),
+            )
+            .all(f64::is_finite);
         let ordered = [joint.angular_limits(), joint.linear_limits()]
             .into_iter()
             .flatten()

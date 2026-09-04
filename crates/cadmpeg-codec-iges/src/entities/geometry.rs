@@ -664,14 +664,13 @@ impl Affine {
     }
 
     pub(super) fn body_transform(self) -> cadmpeg_ir::transform::Transform {
-        cadmpeg_ir::transform::Transform {
-            rows: [
-                self.rows[0],
-                self.rows[1],
-                self.rows[2],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        }
+        cadmpeg_ir::transform::Transform::from_rows([
+            self.rows[0],
+            self.rows[1],
+            self.rows[2],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform")
     }
 }
 

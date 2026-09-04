@@ -487,7 +487,7 @@ fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Tra
     for row in &mut transform[..3] {
         row[3] *= 10.0;
     }
-    cadmpeg_ir::transform::Transform { rows: transform }
+    cadmpeg_ir::transform::Transform::from_rows(transform).expect("affine transform")
 }
 
 #[cfg(test)]
@@ -594,7 +594,7 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ];
         assert_eq!(
-            super::neutral_transform(transform).rows,
+            super::neutral_transform(transform).rows(),
             [
                 [0.0, -1.0, 0.0, 12.5],
                 [1.0, 0.0, 0.0, -25.0],

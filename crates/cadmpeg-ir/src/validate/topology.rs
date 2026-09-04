@@ -4416,7 +4416,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             | FeatureDefinition::SketchBlockDefinition { .. }
             | FeatureDefinition::StoredGeometry
             | FeatureDefinition::Native { .. } => {}
-            FeatureDefinition::SketchBlockInstance { block, placement } => {
+            FeatureDefinition::SketchBlockInstance {
+                block,
+                placement: _,
+            } => {
                 if let Some(block) = block {
                     match features.get(block.0.as_str()) {
                         None => ref_error(findings, &feature.id.0, "sketch block", &block.0),
@@ -4453,9 +4456,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         }
                         Some(_) => {}
                     }
-                }
-                if placement.is_some_and(|placement| !placement.is_affine()) {
-                    feature_geometry_error(findings, feature, "sketch block placement is invalid");
                 }
             }
             FeatureDefinition::DerivedGeometry { source } => {
@@ -6510,17 +6510,6 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|shell| (shell.id.0.as_str(), shell))
         .collect::<HashMap<_, _>>();
     for body in &ir.model.bodies {
-        if body
-            .transform
-            .is_some_and(|transform| !transform.is_finite())
-        {
-            findings.push(Finding {
-                check: Check::Bounds,
-                severity: Severity::Error,
-                message: "body transform contains a non-finite coefficient".into(),
-                entity: Some(body.id.0.clone()),
-            });
-        }
         if body.kind == crate::topology::BodyKind::Wire
             && body.regions.iter().any(|region_id| {
                 regions.get(region_id.0.as_str()).is_some_and(|region| {

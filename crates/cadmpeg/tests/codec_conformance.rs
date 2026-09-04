@@ -300,7 +300,7 @@ mod product_roundtrip {
                     graph
                         .resolved_transform(&occurrence.id)
                         .expect("resolved transform")
-                        .rows,
+                        .rows(),
                 )
             })
             .collect()

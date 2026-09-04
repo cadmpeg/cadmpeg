@@ -32,7 +32,12 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     point.x += dx;
                 }
             }
-            CurveGeometry::Transformed { transform, .. } => transform.rows[0][3] += dx,
+            CurveGeometry::Transformed { transform, .. } => {
+                let mut rows = transform.rows();
+                rows[0][3] += dx;
+                *transform =
+                    cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
+            }
             CurveGeometry::Composite { .. } => {}
             CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Unknown { .. } => {}
@@ -62,7 +67,12 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     vertex.x += dx;
                 }
             }
-            SurfaceGeometry::Transformed { transform, .. } => transform.rows[0][3] += dx,
+            SurfaceGeometry::Transformed { transform, .. } => {
+                let mut rows = transform.rows();
+                rows[0][3] += dx;
+                *transform =
+                    cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
+            }
             SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Unknown { .. } => {}
         }

@@ -671,14 +671,13 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     if let CurveGeometry::Circle { center, .. } = &mut ir.model.curves[0].geometry {
         center.z = 0.01;
     }
-    let translated_pattern_plane = Transform {
-        rows: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.01],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let translated_pattern_plane = Transform::from_rows([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.01],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     assert!(sectioned_area_valid(
         &ir,
         &record,

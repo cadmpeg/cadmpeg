@@ -130,11 +130,10 @@ pub(crate) fn project_occurrences(
                 for row in rows.iter_mut().take(3) {
                     row[3] *= INVENTOR_LENGTH_TO_MILLIMETRES;
                 }
-                let transform = Transform { rows };
-                if !transform.is_affine() {
+                let Some(transform) = Transform::from_rows(rows) else {
                     unresolved_placements += 1;
                     continue;
-                }
+                };
                 (transform, suppressed.then_some(false))
             }
             None if suppressed => (Transform::identity(), Some(false)),
@@ -602,8 +601,8 @@ mod tests {
             panic!("one occurrence must be projected");
         };
         assert_eq!(projected.ordinal, 2);
-        assert_eq!(projected.transform.rows[0][3], 12.5);
-        assert_eq!(projected.transform.rows[1][3], -20.0);
+        assert_eq!(projected.transform.rows()[0][3], 12.5);
+        assert_eq!(projected.transform.rows()[1][3], -20.0);
         let PrototypeReference::External { document, object } = &projected.prototype else {
             panic!("the persisted file reference must remain external");
         };
@@ -766,7 +765,7 @@ mod tests {
             state: 0,
             transform_prefix: false,
             transform_encoding: [0, 0],
-            transform: Transform::identity().rows,
+            transform: Transform::identity().rows(),
             branch: 0,
             graphics_state: 0,
             occurrence_id,

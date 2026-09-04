@@ -40,10 +40,10 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
         len: 0,
     };
     let transform = cadmpeg_asm::brep::attributes::decode_transform(&record, 60.0).unwrap();
-    assert_eq!(transform.rows[0], [1.0, 0.0, 0.0, 600.0]);
-    assert_eq!(transform.rows[1], [0.0, 1.0, 0.0, 1200.0]);
-    assert_eq!(transform.rows[2], [0.0, 0.0, 1.0, 1800.0]);
-    assert_eq!(transform.rows[3], [0.0, 0.0, 0.0, 1.0]);
+    assert_eq!(transform.rows()[0], [1.0, 0.0, 0.0, 600.0]);
+    assert_eq!(transform.rows()[1], [0.0, 1.0, 0.0, 1200.0]);
+    assert_eq!(transform.rows()[2], [0.0, 0.0, 1.0, 1800.0]);
+    assert_eq!(transform.rows()[3], [0.0, 0.0, 0.0, 1.0]);
 }
 
 #[test]

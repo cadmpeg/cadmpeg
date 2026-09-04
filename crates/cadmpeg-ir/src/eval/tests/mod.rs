@@ -284,14 +284,13 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
 
     let transformed = SurfaceGeometry::Transformed {
         basis: Box::new(SurfaceGeometry::Nurbs(surface)),
-        transform: Transform {
-            rows: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        },
+        transform: Transform::from_rows([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     };
     let budget = WorkBudget::new(12);
     assert!(surface_point_with_budget(&transformed, 0.25, 0.75, &budget).is_none());
@@ -687,14 +686,13 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
         radius: 4.0,
     };
-    let transform = Transform {
-        rows: [
-            [-2.0, 0.0, 0.0, 1.0e6],
-            [0.0, 0.5, 0.0, -2.0e6],
-            [0.0, 0.0, 3.0, 3.0e6],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let transform = Transform::from_rows([
+        [-2.0, 0.0, 0.0, 1.0e6],
+        [0.0, 0.5, 0.0, -2.0e6],
+        [0.0, 0.0, 3.0, 3.0e6],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     let geometry = CurveGeometry::Transformed {
         basis: Box::new(basis.clone()),
         transform,
@@ -714,14 +712,13 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
 
     ir.model.curves[0].geometry = CurveGeometry::Transformed {
         basis: Box::new(basis),
-        transform: Transform {
-            rows: [
-                [0.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        },
+        transform: Transform::from_rows([
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     };
     assert!(
         super::model_curve_parameter_near_point(&ir, &id, Point3::new(0.0, 0.0, 0.0), 0.0,)
@@ -1638,14 +1635,13 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         }),
-        transform: Transform {
-            rows: [
-                [2.0, 0.0, 0.0, 7.0],
-                [0.0, 3.0, 0.0, 11.0],
-                [0.0, 0.0, 4.0, 13.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        },
+        transform: Transform::from_rows([
+            [2.0, 0.0, 0.0, 7.0],
+            [0.0, 3.0, 0.0, 11.0],
+            [0.0, 0.0, 4.0, 13.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     };
 
     let cylinder_second =
@@ -1992,9 +1988,8 @@ fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
             y_axis: Point2::new(0.0, 1.0),
             focal_distance: 0.5,
         }),
-        transform: Transform2 {
-            rows: [[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]],
-        },
+        transform: Transform2::from_rows([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]])
+            .expect("affine transform"),
     };
 
     assert_eq!(pcurve_uv(&geometry, 2.0), Some(Point2::new(2.0, 26.0)));

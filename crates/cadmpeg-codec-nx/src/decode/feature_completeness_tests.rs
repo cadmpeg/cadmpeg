@@ -1540,18 +1540,14 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     super::append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
-    for invalid_placement in [
-        {
-            let mut placement = cadmpeg_ir::transform::Transform::identity();
-            placement.rows[3][0] = 1.0;
-            placement
-        },
-        {
-            let mut placement = cadmpeg_ir::transform::Transform::identity();
-            placement.rows[0][0] = 2.0;
-            placement
-        },
-    ] {
+    for invalid_placement in [cadmpeg_ir::transform::Transform::from_rows([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform")]
+    {
         ir.model.features[0].definition = FeatureDefinition::Block {
             dimensions: Some([Length(1.0), Length(2.0), Length(3.0)]),
             placement: Some(invalid_placement),

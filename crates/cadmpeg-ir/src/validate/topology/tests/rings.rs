@@ -7,20 +7,6 @@ use crate::report::Check;
 use crate::validate::validate_neutral;
 
 #[test]
-fn non_finite_body_transform_is_invalid() {
-    let mut ir = unit_cube();
-    let mut transform = crate::transform::Transform::identity();
-    transform.rows[2][3] = f64::NAN;
-    ir.model.bodies[0].transform = Some(transform);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| {
-            finding.check == Check::Bounds && finding.message.contains("non-finite")
-        }));
-}
-
-#[test]
 fn dangling_reference_is_flagged() {
     let mut ir = unit_cube();
     // Point a coedge's edge at something that does not exist.

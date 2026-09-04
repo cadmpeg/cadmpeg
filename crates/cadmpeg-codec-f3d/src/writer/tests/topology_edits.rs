@@ -27,15 +27,13 @@ fn generated_f3d_rewrites_body_transform() {
     assert_eq!(f3d_native(decoded.ir()).transform_hints.len(), 1);
     assert!(!f3d_native(decoded.ir()).transform_hints[0].rotation);
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let transform = edited.model.bodies[0]
-        .transform
-        .as_mut()
-        .expect("generated body transform");
-    transform.rows[0][3] = 125.0;
-    transform.rows[1][3] = -75.0;
-    transform.rows[2][3] = 50.0;
-    transform.rows[3][3] = 2.0;
-    let expected = *transform;
+    let expected = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 125.0],
+        [0.0, 1.0, 0.0, -75.0],
+        [0.0, 0.0, 1.0, 50.0],
+    ])
+    .expect("affine transform");
+    edited.model.bodies[0].transform = Some(expected);
     f3d_native_mut(&mut edited).transform_hints[0].reflection = true;
     f3d_native_mut(&mut edited).body_native_keys[0].asm_body_key = Some(84);
 

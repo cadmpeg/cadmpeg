@@ -675,14 +675,15 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         .replace("f3d:brep:", "generated:wire_two:");
     let mut second =
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second wire IR");
-    second.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
-        rows: [
+    second.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::from_rows([
             [1.0, 0.0, 0.0, 25.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
     source_less.model.bodies.append(&mut second.model.bodies);
     source_less.model.regions.append(&mut second.model.regions);
     source_less.model.shells.append(&mut second.model.shells);
@@ -717,7 +718,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         round_trip.ir().model.bodies[1]
             .transform
             .expect("second wire transform")
-            .rows[0][3],
+            .rows()[0][3],
         25.0
     );
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());

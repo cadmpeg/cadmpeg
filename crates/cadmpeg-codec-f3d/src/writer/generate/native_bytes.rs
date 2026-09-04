@@ -137,29 +137,29 @@ pub(crate) fn native_transform(
     native_ident(bytes, "transform")?;
     for vector in [
         [
-            transform.rows[0][0],
-            transform.rows[1][0],
-            transform.rows[2][0],
+            transform.rows()[0][0],
+            transform.rows()[1][0],
+            transform.rows()[2][0],
         ],
         [
-            transform.rows[0][1],
-            transform.rows[1][1],
-            transform.rows[2][1],
+            transform.rows()[0][1],
+            transform.rows()[1][1],
+            transform.rows()[2][1],
         ],
         [
-            transform.rows[0][2],
-            transform.rows[1][2],
-            transform.rows[2][2],
+            transform.rows()[0][2],
+            transform.rows()[1][2],
+            transform.rows()[2][2],
         ],
         [
-            transform.rows[0][3] / 600.0,
-            transform.rows[1][3] / 600.0,
-            transform.rows[2][3] / 600.0,
+            transform.rows()[0][3] / 600.0,
+            transform.rows()[1][3] / 600.0,
+            transform.rows()[2][3] / 600.0,
         ],
     ] {
         native_vector(bytes, vector);
     }
-    native_f64(bytes, transform.rows[3][3]);
+    native_f64(bytes, transform.rows()[3][3]);
     let hints = topology.transform_hints.get(body.id.as_str()).map_or_else(
         || derived_transform_hints(transform),
         |hints| [hints.rotation, hints.reflection, hints.shear],
@@ -173,19 +173,19 @@ pub(crate) fn native_transform(
 fn derived_transform_hints(transform: Transform) -> [bool; 3] {
     let linear = [
         [
-            transform.rows[0][0],
-            transform.rows[0][1],
-            transform.rows[0][2],
+            transform.rows()[0][0],
+            transform.rows()[0][1],
+            transform.rows()[0][2],
         ],
         [
-            transform.rows[1][0],
-            transform.rows[1][1],
-            transform.rows[1][2],
+            transform.rows()[1][0],
+            transform.rows()[1][1],
+            transform.rows()[1][2],
         ],
         [
-            transform.rows[2][0],
-            transform.rows[2][1],
-            transform.rows[2][2],
+            transform.rows()[2][0],
+            transform.rows()[2][1],
+            transform.rows()[2][2],
         ],
     ];
     let determinant = linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])

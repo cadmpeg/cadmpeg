@@ -4237,7 +4237,7 @@ fn direct_curve_parameter_near_point(
 }
 
 fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, f64)> {
-    let [first, second, third, bottom] = transform.rows;
+    let [first, second, third, bottom] = transform.rows();
     let [matrix_00, matrix_01, matrix_02, translate_x] = first;
     let [matrix_10, matrix_11, matrix_12, translate_y] = second;
     let [matrix_20, matrix_21, matrix_22, translate_z] = third;
@@ -5512,14 +5512,13 @@ fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
     {
         return None;
     }
-    let transform = Transform {
-        rows: [
-            [vectors[0].x, vectors[1].x, vectors[2].x, 0.0],
-            [vectors[0].y, vectors[1].y, vectors[2].y, 0.0],
-            [vectors[0].z, vectors[1].z, vectors[2].z, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let transform = Transform::from_rows([
+        [vectors[0].x, vectors[1].x, vectors[2].x, 0.0],
+        [vectors[0].y, vectors[1].y, vectors[2].y, 0.0],
+        [vectors[0].z, vectors[1].z, vectors[2].z, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     transform
         .is_proper_rigid()
         .then_some([vectors[0], vectors[1], vectors[2]])
@@ -7467,7 +7466,7 @@ fn transform_surface_second_partials(
 }
 
 fn affine_orientation(transform: Transform) -> f64 {
-    let [first, second, third, _] = transform.rows;
+    let [first, second, third, _] = transform.rows();
     let determinant = first[0] * (second[1] * third[2] - second[2] * third[1])
         - first[1] * (second[0] * third[2] - second[2] * third[0])
         + first[2] * (second[0] * third[1] - second[1] * third[0]);
@@ -7479,33 +7478,20 @@ fn affine_orientation(transform: Transform) -> f64 {
 }
 
 fn affine_point(transform: Transform, point: Point3) -> Point3 {
+    let rows = transform.rows();
     Point3::new(
-        transform.rows[0][0] * point.x
-            + transform.rows[0][1] * point.y
-            + transform.rows[0][2] * point.z
-            + transform.rows[0][3],
-        transform.rows[1][0] * point.x
-            + transform.rows[1][1] * point.y
-            + transform.rows[1][2] * point.z
-            + transform.rows[1][3],
-        transform.rows[2][0] * point.x
-            + transform.rows[2][1] * point.y
-            + transform.rows[2][2] * point.z
-            + transform.rows[2][3],
+        rows[0][0] * point.x + rows[0][1] * point.y + rows[0][2] * point.z + rows[0][3],
+        rows[1][0] * point.x + rows[1][1] * point.y + rows[1][2] * point.z + rows[1][3],
+        rows[2][0] * point.x + rows[2][1] * point.y + rows[2][2] * point.z + rows[2][3],
     )
 }
 
 fn affine_vector(transform: Transform, vector: Vector3) -> Vector3 {
+    let rows = transform.rows();
     Vector3::new(
-        transform.rows[0][0] * vector.x
-            + transform.rows[0][1] * vector.y
-            + transform.rows[0][2] * vector.z,
-        transform.rows[1][0] * vector.x
-            + transform.rows[1][1] * vector.y
-            + transform.rows[1][2] * vector.z,
-        transform.rows[2][0] * vector.x
-            + transform.rows[2][1] * vector.y
-            + transform.rows[2][2] * vector.z,
+        rows[0][0] * vector.x + rows[0][1] * vector.y + rows[0][2] * vector.z,
+        rows[1][0] * vector.x + rows[1][1] * vector.y + rows[1][2] * vector.z,
+        rows[2][0] * vector.x + rows[2][1] * vector.y + rows[2][2] * vector.z,
     )
 }
 

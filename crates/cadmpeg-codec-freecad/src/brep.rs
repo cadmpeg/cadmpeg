@@ -903,12 +903,15 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecErro
         let kind = cursor.u8("binary location kind")?;
         let location = match kind {
             1 => {
-                let mut transform = Transform::identity();
+                let mut rows = Transform::identity().rows();
                 for row in 0..3 {
                     for column in 0..4 {
-                        transform.rows[row][column] = cursor.f64("binary location transform")?;
+                        rows[row][column] = cursor.f64("binary location transform")?;
                     }
                 }
+                let transform = Transform::from_rows(rows).ok_or_else(|| {
+                    CodecError::Malformed("location transform is not affine".into())
+                })?;
                 invert_affine(transform)?;
                 TextLocation {
                     factors: Vec::new(),
@@ -2208,12 +2211,15 @@ fn parse_locations(
         let kind = cursor.integer("location type")?;
         let location = match kind {
             1 => {
-                let mut transform = Transform::identity();
+                let mut rows = Transform::identity().rows();
                 for row in 0..3 {
                     for column in 0..4 {
-                        transform.rows[row][column] = cursor.real("location transform value")?;
+                        rows[row][column] = cursor.real("location transform value")?;
                     }
                 }
+                let transform = Transform::from_rows(rows).ok_or_else(|| {
+                    CodecError::Malformed("location transform is not affine".into())
+                })?;
                 invert_affine(transform)?;
                 TextLocation {
                     factors: Vec::new(),
@@ -2436,46 +2442,9 @@ fn transform_power(transform: Transform, power: i64) -> Result<Transform, CodecE
 }
 
 fn invert_affine(transform: Transform) -> Result<Transform, CodecError> {
-    if transform.rows[3] != [0.0, 0.0, 0.0, 1.0] {
-        return Err(CodecError::Malformed(
-            "location transform is not affine".into(),
-        ));
-    }
-    let m = transform.rows;
-    let determinant = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-    if !determinant.is_finite() || determinant == 0.0 {
-        return Err(CodecError::Malformed(
-            "location transform is not invertible".into(),
-        ));
-    }
-    let inverse_linear = [
-        [
-            (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / determinant,
-            (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / determinant,
-            (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / determinant,
-        ],
-        [
-            (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / determinant,
-            (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / determinant,
-            (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / determinant,
-        ],
-        [
-            (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / determinant,
-            (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / determinant,
-            (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / determinant,
-        ],
-    ];
-    let translation = [m[0][3], m[1][3], m[2][3]];
-    let mut result = Transform::identity();
-    for (row, inverse_row) in inverse_linear.iter().enumerate() {
-        result.rows[row][..3].copy_from_slice(inverse_row);
-        result.rows[row][3] = -(0..3)
-            .map(|column| inverse_row[column] * translation[column])
-            .sum::<f64>();
-    }
-    Ok(result)
+    transform
+        .try_inverse_affine()
+        .ok_or_else(|| CodecError::Malformed("location transform is not invertible".into()))
 }
 
 fn parse_polygons3d(
@@ -4594,9 +4563,9 @@ pub(crate) mod tests {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 3\n1 1 0 0 5 0 1 0 0 0 0 1 0\n2 1 2 0\n2 1 -1 2 1 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
         let facts = parse_text(input.as_bytes()).expect("location table");
         assert_eq!(facts.locations.len(), 3);
-        assert_eq!(facts.locations[0].transform.rows[0][3], 5.0);
-        assert_eq!(facts.locations[1].transform.rows[0][3], 10.0);
-        assert_eq!(facts.locations[2].transform.rows[0][3], 5.0);
+        assert_eq!(facts.locations[0].transform.rows()[0][3], 5.0);
+        assert_eq!(facts.locations[1].transform.rows()[0][3], 10.0);
+        assert_eq!(facts.locations[2].transform.rows()[0][3], 5.0);
         assert_eq!(facts.locations[2].factors[0].power, -1);
     }
 
@@ -4679,7 +4648,7 @@ pub(crate) mod tests {
 
         let facts = parse_binary_prefix(&bytes).expect("binary prefix");
         assert_eq!(facts.topology_version, 3);
-        assert_eq!(facts.locations[0].transform.rows[0][3], 5.0);
+        assert_eq!(facts.locations[0].transform.rows()[0][3], 5.0);
         assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
         assert!(matches!(facts.curve2ds[1], TextCurve2d::Trimmed { .. }));
         assert!(matches!(facts.curves[0], TextCurve::Line { .. }));

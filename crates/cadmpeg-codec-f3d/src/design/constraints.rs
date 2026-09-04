@@ -517,7 +517,7 @@ pub(crate) fn exact_text_relation(
                     for row in rows.iter_mut().take(3) {
                         row[3] *= 10.0;
                     }
-                    Transform { rows }
+                    Transform::from_rows(rows).expect("affine transform")
                 })
                 .collect();
             Some(Definition::TextPath {
@@ -1431,7 +1431,7 @@ mod tests {
                 ref glyph_transforms,
             } if text_id == text.id()
                 && path_id == path.id()
-                && glyph_transforms[0].rows[0][3] == 5.0
+                && glyph_transforms[0].rows()[0][3] == 5.0
         ));
     }
 }

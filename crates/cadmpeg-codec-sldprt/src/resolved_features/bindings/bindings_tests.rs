@@ -248,8 +248,12 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         color: None,
         tolerance: None,
     };
-    let mut transform = cadmpeg_ir::transform::Transform::identity();
-    transform.rows[0][3] = 12.0;
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 12.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("affine transform");
     let surface = Surface {
         id: SurfaceId::mint("surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Transformed {

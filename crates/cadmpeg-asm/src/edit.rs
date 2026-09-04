@@ -727,24 +727,24 @@ impl AsmEditSet {
         }
         let vectors = [
             [
-                transform.rows[0][0],
-                transform.rows[1][0],
-                transform.rows[2][0],
+                transform.rows()[0][0],
+                transform.rows()[1][0],
+                transform.rows()[2][0],
             ],
             [
-                transform.rows[0][1],
-                transform.rows[1][1],
-                transform.rows[2][1],
+                transform.rows()[0][1],
+                transform.rows()[1][1],
+                transform.rows()[2][1],
             ],
             [
-                transform.rows[0][2],
-                transform.rows[1][2],
-                transform.rows[2][2],
+                transform.rows()[0][2],
+                transform.rows()[1][2],
+                transform.rows()[2][2],
             ],
             [
-                transform.rows[0][3] / (self.header_scale * LEN_TO_MM),
-                transform.rows[1][3] / (self.header_scale * LEN_TO_MM),
-                transform.rows[2][3] / (self.header_scale * LEN_TO_MM),
+                transform.rows()[0][3] / (self.header_scale * LEN_TO_MM),
+                transform.rows()[1][3] / (self.header_scale * LEN_TO_MM),
+                transform.rows()[2][3] / (self.header_scale * LEN_TO_MM),
             ],
         ];
         for (index, vector) in vectors.into_iter().enumerate() {
@@ -752,7 +752,7 @@ impl AsmEditSet {
             Self::patch_vector_payload(bytes, offset + 1, vector)?;
         }
         let scale = self.required_payload_field(bytes, record, 4, 0x06)?;
-        Self::patch_f64_payload(bytes, scale + 1, transform.rows[3][3])
+        Self::patch_f64_payload(bytes, scale + 1, transform.rows()[3][3])
     }
 
     /// Apply one solved NURBS surface cache edit.

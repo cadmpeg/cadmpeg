@@ -15,7 +15,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchPlacement, SpatialSketchGeometry};
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::transform::{Transform, Transform2};
 
 /// Scale all neutral model lengths from the source unit into millimeters.
 pub(super) fn normalize_model_lengths(ir: &mut CadIr, length_scale_mm: f64) {
@@ -175,9 +175,11 @@ fn scale_vector3(vector: &mut Vector3, scale: f64) {
 }
 
 fn scale_transform_translation(transform: &mut Transform, scale: f64) {
-    for row in &mut transform.rows[..3] {
+    let mut rows = transform.rows();
+    for row in &mut rows[..3] {
         row[3] *= scale;
     }
+    *transform = Transform::from_rows(rows).expect("affine transform");
 }
 
 fn scale_length(length: &mut Length, scale: f64) {
@@ -1395,18 +1397,18 @@ fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> boo
             *distance *= u_scale;
         }
         PcurveGeometry::Transformed { basis, transform } => {
-            if !u_scale.is_finite()
-                || !v_scale.is_finite()
-                || u_scale == 0.0
-                || v_scale == 0.0
-                || !transform.is_affine()
-            {
+            if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0 {
                 return false;
             }
-            transform.rows[0][1] *= u_scale / v_scale;
-            transform.rows[0][2] *= u_scale;
-            transform.rows[1][0] *= v_scale / u_scale;
-            transform.rows[1][2] *= v_scale;
+            let mut rows = transform.rows();
+            rows[0][1] *= u_scale / v_scale;
+            rows[0][2] *= u_scale;
+            rows[1][0] *= v_scale / u_scale;
+            rows[1][2] *= v_scale;
+            let Some(scaled) = Transform2::from_rows(rows) else {
+                return false;
+            };
+            *transform = scaled;
             if !scale_pcurve_geometry(basis, scales) {
                 return false;
             }

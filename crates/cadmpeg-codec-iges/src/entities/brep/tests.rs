@@ -299,7 +299,7 @@ fn decode_applies_manifold_solid_placement_at_body_scope_once() {
         .find(|body| body.id.0 == "iges:model:body#D55")
         .unwrap();
     assert_eq!(
-        body.transform.as_ref().unwrap().rows,
+        body.transform.as_ref().unwrap().rows(),
         [
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 20.0],

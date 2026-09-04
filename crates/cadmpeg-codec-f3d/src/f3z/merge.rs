@@ -265,10 +265,11 @@ fn occurrence_key(reference: &XrefReference) -> String {
 }
 
 fn apply_occurrence_transform(model: &mut Model, source_rows: [[f64; 4]; 4]) {
-    let mut occurrence = cadmpeg_ir::transform::Transform { rows: source_rows };
+    let mut rows = source_rows;
     for row in 0..3 {
-        occurrence.rows[row][3] *= 10.0;
+        rows[row][3] *= 10.0;
     }
+    let occurrence = cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform");
     for body in &mut model.bodies {
         body.transform = Some(match body.transform {
             Some(local) => compose_transforms(occurrence, local),
@@ -286,11 +287,11 @@ pub(super) fn compose_transforms(
     for (row, values) in rows.iter_mut().enumerate() {
         for (column, value) in values.iter_mut().enumerate() {
             *value = (0..4)
-                .map(|index| outer.rows[row][index] * inner.rows[index][column])
+                .map(|index| outer.rows()[row][index] * inner.rows()[index][column])
                 .sum();
         }
     }
-    cadmpeg_ir::transform::Transform { rows }
+    cadmpeg_ir::transform::Transform::from_rows(rows).expect("affine transform")
 }
 
 fn rescope(text: &str, occurrence: &str) -> Option<String> {

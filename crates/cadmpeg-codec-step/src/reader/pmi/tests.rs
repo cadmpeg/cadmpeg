@@ -789,9 +789,9 @@ fn associated_curve_placement_does_not_create_presentation_ambiguity() {
     };
     assert_eq!(text.as_deref(), Some("note"));
     let transform = placement.as_ref().expect("text placement");
-    assert!((transform.rows[0][3] - 10.0).abs() < EPS_PLACEMENT_COORDINATE);
-    assert!((transform.rows[1][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
-    assert!((transform.rows[2][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows()[0][3] - 10.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows()[1][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows()[2][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::PresentationAnnotationPlacementAmbiguous.kind()
     }));
@@ -948,9 +948,9 @@ pub(crate) fn decode_transfers_ap242_presentation_pmi() {
     };
     assert_eq!(text.as_deref(), Some("inspect surface"));
     let transform = placement.as_ref().unwrap();
-    assert_eq!(transform.rows[0][3], 10.0);
-    assert_eq!(transform.rows[1][3], 20.0);
-    assert_eq!(transform.rows[2][3], 30.0);
+    assert_eq!(transform.rows()[0][3], 10.0);
+    assert_eq!(transform.rows()[1][3], 20.0);
+    assert_eq!(transform.rows()[2][3], 30.0);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
@@ -977,9 +977,9 @@ pub(crate) fn decode_transfers_ap242_presentation_pmi() {
             placement: Some(transform),
             ..
         } if text == "inspect surface"
-            && transform.rows[0][3] == 10.0
-            && transform.rows[1][3] == 20.0
-            && transform.rows[2][3] == 30.0
+            && transform.rows()[0][3] == 10.0
+            && transform.rows()[1][3] == 20.0
+            && transform.rows()[2][3] == 30.0
     ));
 }
 

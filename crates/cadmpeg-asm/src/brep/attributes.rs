@@ -193,14 +193,15 @@ pub fn decode_transform(
     let [x, y, z, translation] = vectors.as_slice() else {
         return None;
     };
-    Some(cadmpeg_ir::transform::Transform {
-        rows: [
+    Some(
+        cadmpeg_ir::transform::Transform::from_rows([
             [x[0], y[0], z[0], translation[0] * header_scale * LEN_TO_MM],
             [x[1], y[1], z[1], translation[1] * header_scale * LEN_TO_MM],
             [x[2], y[2], z[2], translation[2] * header_scale * LEN_TO_MM],
             [0.0, 0.0, 0.0, scale],
-        ],
-    })
+        ])
+        .expect("affine transform"),
+    )
 }
 
 /// Storage form and payload-field location of an exact direct-color attribute.
