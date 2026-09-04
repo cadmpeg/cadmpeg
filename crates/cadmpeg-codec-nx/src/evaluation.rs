@@ -1188,12 +1188,10 @@ mod tests {
                 profile: None,
                 profile_filter: None,
                 face: None,
-                position: None,
-                direction: None,
-                placements: vec![HolePlacement::Directed {
+                placements: Some(vec![HolePlacement::Directed {
                     position: Point3::new(0.0, 0.0, 0.0),
                     direction: Vector3::new(0.0, 0.0, 1.0),
-                }],
+                }]),
                 kind: HoleKind::Simple,
                 exit_kind: None,
                 diameter: Some(Length(0.5)),
@@ -1734,7 +1732,7 @@ mod tests {
         let FeatureDefinition::Hole { placements, .. } = &mut hole.definition else {
             unreachable!("hole fixture")
         };
-        placements.clear();
+        *placements = None;
         ir.model.features.push(hole);
 
         assert!(crate::decode::hole_definition_is_incomplete(
@@ -2881,7 +2879,7 @@ mod tests {
         let mut hole = complete_hole(body.clone());
         hole.suppressed = None;
         if let FeatureDefinition::Hole { placements, .. } = &mut hole.definition {
-            placements.clear();
+            *placements = None;
         }
         hole.outputs.clear();
         ir.model.features.push(hole);

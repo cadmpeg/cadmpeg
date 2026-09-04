@@ -1931,15 +1931,9 @@ pub enum FeatureDefinition {
         /// Face the hole is placed on, when known.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         face: Option<FaceSelection>,
-        /// Shared hole entry position when the construction carries one location separately.
+        /// Complete one-or-many hole placements, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        position: Option<Point3>,
-        /// Shared drilling direction when carried independently of complete placements.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
-        /// Complete one-or-many hole placements. Empty when placement is unresolved.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        placements: Vec<HolePlacement>,
+        placements: Option<Vec<HolePlacement>>,
         /// Structural drilling, entry-treatment, and threading form.
         #[cfg_attr(feature = "schema", schemars(with = "HoleKindWire"))]
         kind: HoleKind,

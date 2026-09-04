@@ -1129,14 +1129,12 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                 std::collections::BTreeMap::new(),
             ),
             FeatureDefinition::Hole {
-                position: None,
-                direction: None,
                 placements,
                 ..
-            } if placements == [HolePlacement::Axis {
+            } if placements.as_deref() == Some(&[HolePlacement::Axis {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
-            }]
+            }][..])
         ));
     }
 }

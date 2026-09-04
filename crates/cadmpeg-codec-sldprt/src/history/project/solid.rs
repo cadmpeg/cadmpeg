@@ -355,8 +355,6 @@ pub(crate) fn project_hole(
             .get("Face")
             .cloned()
             .map(FaceSelection::Native),
-        position: None,
-        direction: None,
         placements: feature
             .properties
             .get("Position")
@@ -373,8 +371,7 @@ pub(crate) fn project_hole(
                     position,
                     direction,
                 }]
-            })
-            .unwrap_or_default(),
+            }),
         kind,
         exit_kind: profile.as_ref().and_then(|profile| profile.exit_kind),
         diameter,

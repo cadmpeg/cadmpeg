@@ -16,7 +16,6 @@ use cadmpeg_ir::features::{
     ExtrusionFaceMaker, FaceSelection, HoleBottom, HoleKind, HolePlacement, HoleProfileFilter,
     HoleSpecification, InnerWireTaper, Length, LinearTermination, ProfileRef,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
 
 #[allow(
     clippy::too_many_arguments,
@@ -319,9 +318,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         profile: &Option<ProfileRef>,
         profile_filter: &Option<HoleProfileFilter>,
         face: &Option<FaceSelection>,
-        position: &Option<Point3>,
-        direction: &Option<Vector3>,
-        placements: &Vec<HolePlacement>,
+        placements: &Option<Vec<HolePlacement>>,
         kind: &HoleKind,
         exit_kind: &Option<HoleKind>,
         diameter: &Option<Length>,
@@ -336,8 +333,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             if profile.is_some()
                 || profile_filter.is_some()
-                || position.is_some()
-                || direction.is_some()
                 || exit_kind.is_some()
                 || bottom.is_some()
                 || taper_angle.is_some()
@@ -503,7 +498,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.remove("Face");
                 }
             }
-            match placements.as_slice() {
+            match placements.as_deref().unwrap_or_default() {
                 [cadmpeg_ir::features::HolePlacement::Directed {
                     position,
                     direction,

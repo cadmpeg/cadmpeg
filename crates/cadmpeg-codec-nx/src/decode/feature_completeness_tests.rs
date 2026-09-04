@@ -11,14 +11,18 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
+    let directed = HolePlacement::Directed {
+        position: Point3::new(1.0, 2.0, 3.0),
+        direction: Vector3::new(0.0, 0.0, 1.0),
+    };
+    let invalid_directed = HolePlacement::Directed {
+        position: Point3::new(f64::NAN, 2.0, 3.0),
+        direction: Vector3::new(0.0, 0.0, 1.0),
+    };
     assert!(!super::hole_feature_is_incomplete(
         None,
         None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
+        Some(std::slice::from_ref(&directed)),
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&LinearTermination::ThroughAll),
@@ -26,24 +30,15 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(super::hole_feature_is_incomplete(
         None,
         None,
-        (
-            Some(Point3::new(f64::NAN, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
+        Some(std::slice::from_ref(&invalid_directed)),
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&LinearTermination::ThroughAll),
     ));
-    let directed = HolePlacement::Directed {
-        position: Point3::new(1.0, 2.0, 3.0),
-        direction: Vector3::new(0.0, 0.0, 1.0),
-    };
     assert!(!super::hole_feature_is_incomplete(
         None,
         None,
-        (None, None),
-        std::slice::from_ref(&directed),
+        Some(std::slice::from_ref(&directed)),
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&LinearTermination::ThroughAll),
@@ -55,8 +50,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(!super::hole_feature_is_incomplete(
         None,
         None,
-        (None, None),
-        std::slice::from_ref(&axis),
+        Some(std::slice::from_ref(&axis)),
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&LinearTermination::ThroughAll),
@@ -78,7 +72,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             LinearTermination::ThroughAll,
         ),
         (
-            vec![directed.clone(), directed],
+            vec![directed.clone(), directed.clone()],
             None,
             LinearTermination::ThroughAll,
         ),
@@ -86,8 +80,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         assert!(super::hole_feature_is_incomplete(
             None,
             None,
-            (None, None),
-            &placements,
+            Some(&placements),
             (&HoleKind::Simple, exit.as_ref()),
             Some(Length(5.0)),
             Some(&extent),
@@ -96,8 +89,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(super::hole_feature_is_incomplete(
         Some(&ProfileRef::Unresolved("hole".into())),
         Some(&FaceSelection::Unresolved),
-        (None, None),
-        &[],
+        None,
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&LinearTermination::ThroughAll),
@@ -105,11 +97,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(super::hole_feature_is_incomplete(
         None,
         None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
+        Some(std::slice::from_ref(&directed)),
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
         Some(&LinearTermination::Unresolved),
@@ -117,11 +105,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(super::hole_feature_is_incomplete(
         None,
         None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
+        Some(std::slice::from_ref(&directed)),
         (
             &HoleKind::Simple,
             Some(&HoleKind::Unresolved(Some(
@@ -134,11 +118,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(super::hole_feature_is_incomplete(
         None,
         None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
+        Some(std::slice::from_ref(&directed)),
         (&HoleKind::Simple, None),
         Some(Length(0.0)),
         Some(&LinearTermination::ThroughAll),
@@ -146,11 +126,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
     assert!(super::hole_feature_is_incomplete(
         None,
         None,
-        (
-            Some(Point3::new(1.0, 2.0, 3.0)),
-            Some(Vector3::new(0.0, 0.0, 1.0)),
-        ),
-        &[],
+        Some(std::slice::from_ref(&directed)),
         (
             &HoleKind::Chamfer {
                 diameter: Length(7.0),
@@ -189,11 +165,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         assert!(super::hole_feature_is_incomplete(
             None,
             None,
-            (
-                Some(Point3::new(1.0, 2.0, 3.0)),
-                Some(Vector3::new(0.0, 0.0, 1.0)),
-            ),
-            &[],
+            Some(std::slice::from_ref(&directed)),
             (&kind, None),
             Some(Length(5.0)),
             Some(&LinearTermination::ThroughAll),
@@ -1236,18 +1208,20 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
 
 #[test]
 fn nx_hole_completeness_rejects_opaque_supplied_operands() {
-    use cadmpeg_ir::features::{FaceSelection, HoleKind, Length, LinearTermination, ProfileRef};
+    use cadmpeg_ir::features::{
+        FaceSelection, HoleKind, HolePlacement, Length, LinearTermination, ProfileRef,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
 
+    let placement = HolePlacement::Directed {
+        position: Point3::new(0.0, 0.0, 0.0),
+        direction: Vector3::new(0.0, 0.0, 1.0),
+    };
     let incomplete = |profile, face| {
         super::hole_feature_is_incomplete(
             profile,
             face,
-            (
-                Some(Point3::new(0.0, 0.0, 0.0)),
-                Some(Vector3::new(0.0, 0.0, 1.0)),
-            ),
-            &[],
+            Some(std::slice::from_ref(&placement)),
             (&HoleKind::Simple, None),
             Some(Length(1.0)),
             Some(&LinearTermination::ThroughAll),

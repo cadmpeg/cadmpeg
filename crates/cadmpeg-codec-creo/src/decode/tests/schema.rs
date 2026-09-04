@@ -44,8 +44,7 @@ fn decode_types_class_911_as_unresolved_hole() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Hole {
             face: None,
-            position: None,
-            direction: None,
+            placements: None,
             kind: cadmpeg_ir::features::HoleKind::Unresolved(None),
             diameter: None,
             extent: None,

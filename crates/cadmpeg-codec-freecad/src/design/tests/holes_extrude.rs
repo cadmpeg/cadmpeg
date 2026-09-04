@@ -67,7 +67,6 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     let cadmpeg_ir::features::FeatureDefinition::Hole {
         profile,
         profile_filter,
-        direction,
         kind,
         extent,
         bottom,
@@ -90,10 +89,6 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
             circles: true,
             arcs: true,
         })
-    );
-    assert_eq!(
-        *direction,
-        Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
     );
     assert!(matches!(
         kind,

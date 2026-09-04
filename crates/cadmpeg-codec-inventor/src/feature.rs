@@ -1435,16 +1435,14 @@ fn project_hole(
                 profile: None,
                 profile_filter: None,
                 face: None,
-                position: None,
-                direction: None,
-                placements: vec![HolePlacement::Directed {
+                placements: Some(vec![HolePlacement::Directed {
                     position: Point3::new(
                         transform.matrix[0][3] * 10.0,
                         transform.matrix[1][3] * 10.0,
                         transform.matrix[2][3] * 10.0,
                     ),
                     direction,
-                }],
+                }]),
                 kind,
                 exit_kind: None,
                 diameter: Some(diameter),
@@ -2499,11 +2497,11 @@ mod tests {
                 extent: Some(LinearTermination::ThroughAll),
                 ..
             } if matches!(
-                placements.as_slice(),
-                [HolePlacement::Directed {
+                placements.as_deref(),
+                Some([HolePlacement::Directed {
                     position: Point3 { x: 10.0, y: 20.0, z: 30.0 },
                     direction: Vector3 { z: -1.0, .. }
-                }]
+                }])
             )
         ));
     }

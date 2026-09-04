@@ -403,8 +403,6 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
         profile,
         profile_filter,
         face,
-        position,
-        direction,
         placements,
         kind,
         exit_kind,
@@ -421,8 +419,7 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
     hole_feature_is_incomplete(
         profile.as_ref(),
         face.as_ref(),
-        (*position, *direction),
-        placements,
+        placements.as_deref(),
         (kind, exit_kind.as_ref()),
         *diameter,
         extent.as_ref(),

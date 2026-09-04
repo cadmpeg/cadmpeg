@@ -628,6 +628,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
         panic!("expected hole");
     };
+    let placements = placements.as_deref().expect("resolved placements");
     assert_eq!(placements.len(), 1);
     assert!(matches!(
         placements[0],
@@ -664,6 +665,9 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     else {
         panic!("expected hole");
     };
+    let paired_placements = paired_placements
+        .as_deref()
+        .expect("resolved paired placements");
     assert_eq!(paired_placements.len(), 2);
     assert!(matches!(
         paired_placements[0],
@@ -717,7 +721,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     let FeatureDefinition::Hole { placements, .. } = &incomplete_features[0].definition else {
         panic!("expected hole");
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 }
 
 #[test]
@@ -806,8 +810,8 @@ fn unique_unindexed_point_locus_is_projected() {
         panic!("expected hole");
     };
     assert!(matches!(
-        placements.as_slice(),
-        [HolePlacement::Axis {
+        placements.as_deref(),
+        Some([HolePlacement::Axis {
             origin: Point3 {
                 x: 14.0,
                 y: 25.0,
@@ -818,7 +822,7 @@ fn unique_unindexed_point_locus_is_projected() {
                 y: 0.0,
                 z: 1.0
             },
-        }]
+        }])
     ));
 
     lane.sketch_entities
@@ -834,7 +838,7 @@ fn unique_unindexed_point_locus_is_projected() {
     let FeatureDefinition::Hole { placements, .. } = &ambiguous_features[0].definition else {
         panic!("expected hole");
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 }
 
 #[test]
@@ -977,11 +981,13 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         panic!("expected hole");
     };
     assert_eq!(
-        placements,
-        &[cadmpeg_ir::features::HolePlacement::Axis {
-            origin: Point3::new(12.0, 23.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        }]
+        placements.as_deref(),
+        Some(
+            &[cadmpeg_ir::features::HolePlacement::Axis {
+                origin: Point3::new(12.0, 23.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            }][..]
+        )
     );
 }
 
@@ -1066,21 +1072,23 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         panic!("expected hole");
     };
     assert_eq!(
-        placements,
-        &[
-            HolePlacement::Axis {
-                origin: Point3::new(12.0, 23.0, 30.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-            },
-            HolePlacement::Axis {
-                origin: Point3::new(12.0, 33.0, 30.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-            },
-            HolePlacement::Axis {
-                origin: Point3::new(22.0, 23.0, 30.0),
-                axis: Vector3::new(0.0, 0.0, 1.0),
-            },
-        ]
+        placements.as_deref(),
+        Some(
+            &[
+                HolePlacement::Axis {
+                    origin: Point3::new(12.0, 23.0, 30.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                HolePlacement::Axis {
+                    origin: Point3::new(12.0, 33.0, 30.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                HolePlacement::Axis {
+                    origin: Point3::new(22.0, 23.0, 30.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+            ][..]
+        )
     );
 }
 
@@ -1179,11 +1187,13 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         panic!("expected hole");
     };
     assert_eq!(
-        placements,
-        &[HolePlacement::Axis {
-            origin: Point3::new(12.0, 23.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-        }]
+        placements.as_deref(),
+        Some(
+            &[HolePlacement::Axis {
+                origin: Point3::new(12.0, 23.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            }][..]
+        )
     );
 }
 
@@ -1549,5 +1559,5 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
     let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
         unreachable!();
     };
-    assert!(placements.is_empty());
+    assert!(placements.is_none());
 }

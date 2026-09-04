@@ -486,7 +486,6 @@ fn scale_feature_definition(definition: &mut FeatureDefinition, scale: f64) {
         } => scale_point3(point, scale),
         FeatureDefinition::Scale { .. } => {}
         FeatureDefinition::Hole {
-            position,
             placements,
             kind,
             exit_kind,
@@ -495,10 +494,7 @@ fn scale_feature_definition(definition: &mut FeatureDefinition, scale: f64) {
             specification,
             ..
         } => {
-            if let Some(position) = position {
-                scale_point3(position, scale);
-            }
-            for placement in placements {
+            for placement in placements.iter_mut().flatten() {
                 scale_hole_placement(placement, scale);
             }
             scale_hole_kind(kind, scale);

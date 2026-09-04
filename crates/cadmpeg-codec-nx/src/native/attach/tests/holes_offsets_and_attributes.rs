@@ -260,10 +260,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             extent: Some(LinearTermination::Blind { length: Length(3.0) }),
             placements,
             ..
-        } if placements == [HolePlacement::Directed {
+        } if placements.as_deref() == Some(&[HolePlacement::Directed {
             position: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),
-        }]
+        }][..])
     ));
 
     let mut missing_cap = ir.clone();
@@ -590,10 +590,10 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             placements,
             ..
-        } if placements == [HolePlacement::Axis {
+        } if placements.as_deref() == Some(&[HolePlacement::Axis {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
-        }]
+        }][..])
     ));
 
     let mut missing_shoulder = ir.clone();

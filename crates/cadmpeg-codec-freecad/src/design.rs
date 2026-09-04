@@ -263,18 +263,12 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             })
         } else if is_hole(&object.type_name) {
-            hole_definition(
-                &object.id,
-                &owned,
-                &sketch_ids,
-                objects,
-                &properties_by_owner,
-                program_version,
-            )
-            .unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
-                parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
+            hole_definition(&object.id, &owned, &sketch_ids, program_version).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
             })
         } else if is_extrusion(&object.type_name) {
             let profile = match profile_ref(&object.id, &owned, &sketch_ids) {
@@ -4928,8 +4922,6 @@ fn hole_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-    objects: &[ObjectRecord],
-    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
     program_version: Option<&str>,
 ) -> Option<FeatureDefinition> {
     let profile = profile_ref(owner, properties, sketches);
@@ -5054,15 +5046,11 @@ fn hole_definition(
             },
         }))
     };
-    let direction = axis_reference(properties, "Profile", objects, properties_by_owner)
-        .map(|(_, direction)| direction);
     Some(FeatureDefinition::Hole {
         profile: Some(profile),
         profile_filter: Some(profile_filter),
         face: None,
-        position: None,
-        direction,
-        placements: Vec::new(),
+        placements: None,
         kind,
         exit_kind: None,
         diameter: Some(Length(diameter)),

@@ -483,8 +483,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         ),
         cadmpeg_ir::features::FeatureDefinition::Hole {
             face: None,
-            position: None,
-            direction: None,
+            placements: None,
             kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
                 cadmpeg_ir::features::HoleForm::Chamfer,
             )),

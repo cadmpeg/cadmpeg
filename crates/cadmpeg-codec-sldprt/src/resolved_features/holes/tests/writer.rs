@@ -34,7 +34,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
                 length: Length(12.0),
             }),
             ..
-        } if placements.is_empty()
+        } if placements.is_none()
     ));
 
     {
@@ -114,7 +114,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
             diameter: Some(Length(5.0)),
             extent: None,
             ..
-        } if placements.is_empty()
+        } if placements.is_none()
     ));
 
     for (index, message) in [
@@ -198,18 +198,20 @@ fn semantic_writer_round_trips_hole_placement() {
         };
         assert_eq!(face, &Some(FaceSelection::Native("face:12".into())));
         assert_eq!(
-            placements,
-            &[HolePlacement::Directed {
-                position: Point3::new(1.0, 2.0, 3.0),
-                direction: Vector3::new(0.0, 0.0, -1.0),
-            }]
+            placements.as_deref(),
+            Some(
+                &[HolePlacement::Directed {
+                    position: Point3::new(1.0, 2.0, 3.0),
+                    direction: Vector3::new(0.0, 0.0, -1.0),
+                }][..]
+            )
         );
 
         *face = Some(FaceSelection::Native("face:13".into()));
-        *placements = vec![HolePlacement::Directed {
+        *placements = Some(vec![HolePlacement::Directed {
             position: Point3::new(4.0, 5.0, 6.0),
             direction: Vector3::new(0.0, 1.0, 0.0),
-        }];
+        }]);
         *extent = Some(LinearTermination::ThroughAll);
     }
 
@@ -237,10 +239,10 @@ fn semantic_writer_round_trips_hole_placement() {
             extent: Some(LinearTermination::ThroughAll),
             ..
         } if face == "face:13"
-            && placements == &[HolePlacement::Directed {
+            && placements.as_deref() == Some(&[HolePlacement::Directed {
                 position: Point3::new(4.0, 5.0, 6.0),
                 direction: Vector3::new(0.0, 1.0, 0.0),
-            }]
+            }][..])
     ));
 }
 
