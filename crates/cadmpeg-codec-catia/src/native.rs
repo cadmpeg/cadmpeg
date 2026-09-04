@@ -9771,6 +9771,7 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
 impl From<catalog::Catalog> for CatiaCatalog {
     fn from(catalog: catalog::Catalog) -> Self {
         let id = format!("catia:outer:catalog#{:010}", catalog.pos);
+        let declared_count = catalog.declared_count();
         let entries = catalog
             .entries
             .into_iter()
@@ -9786,7 +9787,7 @@ impl From<catalog::Catalog> for CatiaCatalog {
             id,
             byte_offset: catalog.pos as u64,
             byte_len: catalog.total_len as u64,
-            declared_count: catalog.declared_count,
+            declared_count,
             entries,
         }
     }

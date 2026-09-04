@@ -16,10 +16,14 @@ pub struct Catalog {
     pub pos: usize,
     /// Total framed byte length.
     pub total_len: usize,
-    /// Stored count, equal to the entry population plus one.
-    pub declared_count: u32,
     /// Catalog entries in serialized order.
     pub entries: Vec<CatalogEntry>,
+}
+
+impl Catalog {
+    pub fn declared_count(&self) -> u32 {
+        u32::try_from(self.entries.len() + 1).unwrap_or(u32::MAX)
+    }
 }
 
 /// One inclusive-length ASCII catalog entry.
@@ -111,7 +115,6 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
     Some(Catalog {
         pos,
         total_len,
-        declared_count,
         entries,
     })
 }
