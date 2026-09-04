@@ -8311,13 +8311,13 @@ fn native_consolidated_edge_uses(
 ) -> Option<CatiaConsolidatedEdgeUses> {
     let references = uses
         .iter()
-        .map(|use_| use_.references.as_deref()?.try_into().ok())
+        .map(|use_| use_.references()?.try_into().ok())
         .collect::<Option<Vec<[u32; 2]>>>()?
         .try_into()
         .ok()?;
     let senses: [u8; 2] = uses
         .each_ref()
-        .map(|use_| match use_.sense? {
+        .map(|use_| match use_.sense()? {
             crate::families::b2::records::B2UseSense::Sense84 => Some(0x84),
             crate::families::b2::records::B2UseSense::Sense88 => Some(0x88),
         })

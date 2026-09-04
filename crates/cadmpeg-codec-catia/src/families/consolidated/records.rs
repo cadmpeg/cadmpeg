@@ -701,8 +701,8 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 .checked_sub(2)
                 .zip(node.curve_ref.checked_sub(1))
                 .is_some_and(|(first, second)| {
-                    uses[0].references.as_deref() == Some(&[first, second])
-                        && uses[1].references.as_deref() == Some(&[second, node.curve_ref])
+                    uses[0].references() == Some(&[first, second][..])
+                        && uses[1].references() == Some(&[second, node.curve_ref][..])
                 })
                 && [node.start_parameter_ref, node.end_parameter_ref] == [2, 1];
             let definition = index
@@ -766,9 +766,8 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                     .checked_add(1)
                     .zip(operand.checked_add(2))
                     .is_some_and(|(first, second)| {
-                        uses[0].references.as_deref() == Some(&[node.start_parameter_ref, first])
-                            && uses[1].references.as_deref()
-                                == Some(&[node.end_parameter_ref, second])
+                        uses[0].references() == Some(&[node.start_parameter_ref, first][..])
+                            && uses[1].references() == Some(&[node.end_parameter_ref, second][..])
                     })
                     && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2]
             }

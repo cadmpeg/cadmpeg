@@ -525,6 +525,20 @@ pub enum B2UseSense {
     Sense88,
 }
 
+/// Closed payload grammar of a class-`0x06` consolidated use record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum B2UsePayload {
+    /// Compact references and a terminal sense that exhaust the payload.
+    Closed {
+        sense: B2UseSense,
+        references: Vec<u32>,
+    },
+    /// Terminal sense without a closed compact-reference lane.
+    SenseOnly(B2UseSense),
+    /// Payload that does not end in a settled sense.
+    Opaque,
+}
+
 /// Byte-level metadata from a class-`0x06` consolidated use record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B2UseMetadata {
@@ -532,12 +546,24 @@ pub struct B2UseMetadata {
     pub pos: usize,
     /// Complete payload bytes.
     pub payload: Vec<u8>,
-    /// Compact persistent references following the `0x80+n` count and
-    /// preceding a settled terminal sense. `None` when the payload does not
-    /// close under that grammar.
-    pub references: Option<Vec<u32>>,
-    /// Decoded terminal sense when the payload ends in `0x84` or `0x88`.
-    pub sense: Option<B2UseSense>,
+    /// Closed payload grammar.
+    pub kind: B2UsePayload,
+}
+
+impl B2UseMetadata {
+    pub fn sense(&self) -> Option<B2UseSense> {
+        match self.kind {
+            B2UsePayload::Closed { sense, .. } | B2UsePayload::SenseOnly(sense) => Some(sense),
+            B2UsePayload::Opaque => None,
+        }
+    }
+
+    pub fn references(&self) -> Option<&[u32]> {
+        match &self.kind {
+            B2UsePayload::Closed { references, .. } => Some(references.as_slice()),
+            B2UsePayload::SenseOnly(_) | B2UsePayload::Opaque => None,
+        }
+    }
 }
 
 /// Byte-level metadata from a class-`0x5e` consolidated record.
@@ -600,21 +626,29 @@ pub(crate) fn b2_use_metadata_from_records(
                 Some(0x88) => Some(B2UseSense::Sense88),
                 _ => None,
             };
-            let references = sense.and_then(|_| {
-                let end = frame.end.checked_sub(1)?;
-                let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
-                let mut at = frame.payload + 1;
-                let mut references = Vec::new();
-                for _ in 0..count {
-                    references.push(compact_int(data, &mut at)?);
+            let kind = match sense {
+                None => B2UsePayload::Opaque,
+                Some(sense) => {
+                    let references = (|| {
+                        let end = frame.end.checked_sub(1)?;
+                        let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
+                        let mut at = frame.payload + 1;
+                        let mut references = Vec::new();
+                        for _ in 0..count {
+                            references.push(compact_int(data, &mut at)?);
+                        }
+                        (at == end).then_some(references)
+                    })();
+                    match references {
+                        Some(references) => B2UsePayload::Closed { sense, references },
+                        None => B2UsePayload::SenseOnly(sense),
+                    }
                 }
-                (at == end).then_some(references)
-            });
+            };
             B2UseMetadata {
                 pos: frame.pos,
                 payload,
-                references,
-                sense,
+                kind,
             }
         })
         .collect()
