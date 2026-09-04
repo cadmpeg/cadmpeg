@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{EntityRewrite, Model};
-use cadmpeg_ir::{Native, NativeRecord};
+use cadmpeg_ir::{AnnotationBuilder, Native, NativeRecord};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_value::Value;
 
@@ -242,11 +242,9 @@ fn merge_annotations(
         .into_iter()
         .map(|(id, provenance)| (remap_id_text(&id, occurrence), provenance))
         .collect();
-    source.exactness = source
-        .exactness
-        .into_iter()
-        .map(|(id, note)| (remap_id_text(&id, occurrence), note))
-        .collect();
+    let mut annotations = AnnotationBuilder::resume(source);
+    annotations.map_exactness_ids(|id| remap_id_text(id, occurrence));
+    source = annotations.build();
     target.merge_interned(source);
 }
 

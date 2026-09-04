@@ -808,9 +808,9 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
         result
             .source_fidelity()
             .annotations
-            .exactness
+            .exactness()
             .get(&subd.id.to_string())
-            .map(|note| note.entity),
+            .map(|note| note.entity()),
         Some(cadmpeg_ir::Exactness::Derived)
     );
     assert_eq!(

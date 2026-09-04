@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
-use crate::annotations::{Annotations, ExactnessNote};
+use crate::annotations::{AnnotationBuilder, Annotations};
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, Model};
@@ -191,7 +191,7 @@ pub enum DraftError {
 pub struct ModelDraft {
     model: Model,
     identity_index: Option<IdentityIndex>,
-    exactness: BTreeMap<String, ExactnessNote>,
+    exactness: BTreeMap<String, Exactness>,
     notes: Vec<LossNote>,
     ledger: TransferLedger,
 }
@@ -266,13 +266,7 @@ impl ModelDraft {
         if exactness == Exactness::ByteExact {
             self.exactness.remove(&identity);
         } else {
-            self.exactness.insert(
-                identity,
-                ExactnessNote {
-                    entity: exactness,
-                    fields: BTreeMap::new(),
-                },
-            );
+            self.exactness.insert(identity, exactness);
         }
     }
 
@@ -445,7 +439,11 @@ impl ModelDraft {
             };
         }
         crate::document::arena_registry!(extend_arenas);
-        annotations.exactness.extend(exactness);
+        let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
+        for (identity, exactness) in exactness {
+            annotation_builder.exactness(identity, exactness);
+        }
+        *annotations = annotation_builder.build();
         notes.extend(staged_notes);
         ledger.entries.extend(staged_ledger.entries);
     }
@@ -627,7 +625,7 @@ mod tests {
             Err(DraftError::IdentityCollision(_))
         ));
         assert_eq!(ir.model.points.len(), 1);
-        assert!(annotations.exactness.is_empty());
+        assert!(annotations.exactness().is_empty());
         assert!(notes.is_empty());
         assert!(ledger.is_empty());
     }

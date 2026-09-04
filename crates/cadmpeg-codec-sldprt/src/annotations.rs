@@ -2,9 +2,7 @@
 //! SLDPRT helpers for appending sparse IR annotations.
 #![deny(clippy::disallowed_methods)]
 
-use std::collections::BTreeMap;
-
-use cadmpeg_ir::annotations::{Annotations, ExactnessNote};
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 pub(crate) fn note(
@@ -19,16 +17,6 @@ pub(crate) fn note(
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     let stream = builder.stream(stream);
     builder.note(&id, stream, offset).tag(tag);
+    builder.exactness(id, exactness);
     *annotations = builder.build();
-    if exactness == Exactness::ByteExact {
-        annotations.exactness.remove(&id);
-    } else {
-        annotations.exactness.insert(
-            id,
-            ExactnessNote {
-                entity: exactness,
-                fields: BTreeMap::default(),
-            },
-        );
-    }
 }

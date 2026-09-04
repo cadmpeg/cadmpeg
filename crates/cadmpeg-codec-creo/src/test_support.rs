@@ -229,10 +229,10 @@ pub(crate) fn assert_annotation(
     assert_eq!(provenance.offset, offset);
     assert_eq!(provenance.tag.as_deref(), Some(tag));
     if exactness == Exactness::ByteExact {
-        assert!(!annotations.exactness.contains_key(id));
+        assert!(!annotations.exactness().contains_key(id));
     } else {
-        assert_eq!(annotations.exactness[id].entity, exactness);
-        assert!(annotations.exactness[id].fields.is_empty());
+        assert_eq!(annotations.exactness()[id].entity(), exactness);
+        assert!(annotations.exactness()[id].fields().is_empty());
     }
 }
 

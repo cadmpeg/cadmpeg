@@ -2,8 +2,6 @@
 #![allow(clippy::unwrap_used)]
 
 use super::annotated_entity_json;
-use crate::annotations::ExactnessNote;
-use crate::provenance::Exactness;
 use crate::report::Check;
 use crate::validate::validate_neutral;
 use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
@@ -35,17 +33,8 @@ fn annotation_keys_and_field_paths_are_checked() {
     let mut annotations = crate::AnnotationBuilder::new();
     let stream = annotations.stream("test:source");
     annotations.note("missing", stream, 0);
+    annotations.derived(&ir.model.edges[0].id.0, "not_a_serialized_field");
     source_fidelity.annotations = annotations.build();
-    source_fidelity.annotations.exactness.insert(
-        ir.model.edges[0].id.0.clone(),
-        ExactnessNote {
-            entity: Exactness::Derived,
-            fields: std::collections::BTreeMap::from([(
-                "not_a_serialized_field".into(),
-                Exactness::Derived,
-            )]),
-        },
-    );
     let findings =
         crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {

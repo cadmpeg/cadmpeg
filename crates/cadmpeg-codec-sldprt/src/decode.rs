@@ -28,7 +28,7 @@ use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 
 use crate::loss::SldprtLossCode;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::configuration_index;
 
@@ -2964,11 +2964,11 @@ fn build_geometry_ir(
     assigned_tessellations.extend(crate::tessellation::assign_unique_surface_owners(
         &mut ir.model,
     ));
+    let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        let note = annotations.exactness.entry(id).or_default();
-        note.fields.insert("body".into(), Exactness::Derived);
-        note.fields.insert("faces".into(), Exactness::Derived);
+        annotation_builder.derived(&id, "body").derived(id, "faces");
     }
+    let mut annotations = annotation_builder.build();
     for source_block in &scan.blocks {
         if unknowns
             .iter()

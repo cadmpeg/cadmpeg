@@ -360,7 +360,7 @@ fn decode_annotations_cover_every_emitted_entity() {
         emitted_entity_count
     );
     assert_eq!(
-        result.source_fidelity().annotations.exactness.len(),
+        result.source_fidelity().annotations.exactness().len(),
         emitted_entity_count
     );
 }

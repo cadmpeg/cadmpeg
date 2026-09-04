@@ -271,10 +271,9 @@ impl Brep {
             .into_iter()
             .map(|(id, value)| (qualify(&id), value))
             .collect();
-        self.annotations.exactness = std::mem::take(&mut self.annotations.exactness)
-            .into_iter()
-            .map(|(id, value)| (qualify(&id), value))
-            .collect();
+        let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
+        annotations.map_exactness_ids(qualify);
+        self.annotations = annotations.build();
     }
 }
 
@@ -2096,9 +2095,9 @@ fn decode_graph(
     out.annotations
         .provenance
         .retain(|id, _| retained_ids.contains(id.as_str()));
-    out.annotations
-        .exactness
-        .retain(|id, _| retained_ids.contains(id.as_str()));
+    let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
+    annotations.retain_exactness(|id| retained_ids.contains(id));
+    out.annotations = annotations.build();
     out
 }
 

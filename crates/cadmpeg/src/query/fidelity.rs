@@ -125,7 +125,7 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                 "annotations": {
                     "streams": payload.annotations.stream_count(),
                     "provenance": payload.annotations.provenance.len(),
-                    "exactness": payload.annotations.exactness.len(),
+                    "exactness": payload.annotations.exactness().len(),
                 },
                 "retained_records": records,
             });
@@ -153,7 +153,7 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                  FILE --stream NAME -o OUT`",
                 payload.annotations.stream_count(),
                 payload.annotations.provenance.len(),
-                payload.annotations.exactness.len(),
+                payload.annotations.exactness().len(),
             );
             Ok(())
         }

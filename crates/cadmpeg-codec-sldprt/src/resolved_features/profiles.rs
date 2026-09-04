@@ -63,6 +63,7 @@ use cadmpeg_ir::sketches::{
     SketchId, SketchPlacement,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
@@ -182,7 +183,9 @@ pub(crate) fn bind_sketch_profiles(
     sketch_entities.retain(|entity| !superseded.contains(&entity.sketch));
     sketch_constraints.retain(|constraint| !superseded.contains(&constraint.sketch));
     annotations.provenance.retain(|id, _| !removed.contains(id));
-    annotations.exactness.retain(|id, _| !removed.contains(id));
+    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
+    builder.retain_exactness(|id| !removed.contains(id));
+    *annotations = builder.build();
     bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
 }
 

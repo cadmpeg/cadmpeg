@@ -1854,7 +1854,8 @@ fn decode_transfers_point_plane_cylinder_line() {
         ["nx:s0:surf#0", "nx:s0:surf#1", "nx:s0:crv#0",]
     );
     assert_eq!(
-        result.source_fidelity().annotations.exactness[&unknowns[0].id.to_string()].fields["links"],
+        result.source_fidelity().annotations.exactness()[&unknowns[0].id.to_string()].fields()
+            ["links"],
         Exactness::Derived
     );
 

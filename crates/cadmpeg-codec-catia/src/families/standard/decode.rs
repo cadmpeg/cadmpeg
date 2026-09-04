@@ -1276,11 +1276,9 @@ fn merge_standard_population_annotations(
         .into_iter()
         .map(|(id, provenance)| (rescope_standard_id(&id, scope), provenance))
         .collect();
-    source.exactness = source
-        .exactness
-        .into_iter()
-        .map(|(id, note)| (rescope_standard_id(&id, scope), note))
-        .collect();
+    let mut annotations = AnnotationBuilder::resume(source);
+    annotations.map_exactness_ids(|id| rescope_standard_id(id, scope));
+    source = annotations.build();
     target.merge_interned(source);
 }
 

@@ -21,7 +21,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::SourceProvenance;
-use cadmpeg_ir::{Annotations, ExactnessNote};
+use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1788,15 +1788,13 @@ impl<'a> DecodeContext<'a> {
                 geometry: surface_geometry,
                 source_object: Some(association),
             });
-            candidate_annotations.exactness.insert(
-                surface_id.to_string(),
-                ExactnessNote {
-                    entity: if surface_derived {
-                        Exactness::Derived
-                    } else {
-                        Exactness::ByteExact
-                    },
-                    fields: BTreeMap::new(),
+            set_exactness(
+                candidate_annotations,
+                &surface_id,
+                if surface_derived {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
                 },
             );
             candidate.model.features.push(feature);
@@ -2172,10 +2170,11 @@ impl<'a> DecodeContext<'a> {
                 .model
                 .procedural_surfaces
                 .truncate(procedural_surface_start);
+            let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut self.annotations));
             for id in omitted_ids {
-                self.annotations.exactness.remove(&id);
-                self.annotations.provenance.remove(&id);
+                annotations.remove_entity(id);
             }
+            self.annotations = annotations.build();
             self.report.phase_warnings.push(
                 "instance: transformed procedural definition omitted; exact solved carrier retained"
                     .to_string(),
@@ -2295,15 +2294,13 @@ impl<'a> DecodeContext<'a> {
         let id = surface.id.to_string();
         let result = self.validate_candidate(|candidate, candidate_annotations| {
             candidate.model.subds.push(surface);
-            candidate_annotations.exactness.insert(
-                id.clone(),
-                ExactnessNote {
-                    entity: if scaled {
-                        Exactness::Derived
-                    } else {
-                        Exactness::ByteExact
-                    },
-                    fields: BTreeMap::new(),
+            set_exactness(
+                candidate_annotations,
+                &id,
+                if scaled {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
                 },
             );
             id.clone()
@@ -2838,15 +2835,13 @@ impl<'a> DecodeContext<'a> {
                     .map(|point| point.id.to_string())
                     .collect();
                 for point_id in point_ids {
-                    self.annotations.exactness.insert(
+                    set_exactness(
+                        &mut self.annotations,
                         point_id,
-                        ExactnessNote {
-                            entity: if scaled {
-                                Exactness::Derived
-                            } else {
-                                Exactness::ByteExact
-                            },
-                            fields: BTreeMap::new(),
+                        if scaled {
+                            Exactness::Derived
+                        } else {
+                            Exactness::ByteExact
                         },
                     );
                 }
@@ -2887,15 +2882,13 @@ impl<'a> DecodeContext<'a> {
                         geometry,
                         source_object: Some(association.clone()),
                     });
-                    self.annotations.exactness.insert(
-                        surface_id.to_string(),
-                        ExactnessNote {
-                            entity: if derived {
-                                Exactness::Derived
-                            } else {
-                                Exactness::ByteExact
-                            },
-                            fields: BTreeMap::new(),
+                    set_exactness(
+                        &mut self.annotations,
+                        &surface_id,
+                        if derived {
+                            Exactness::Derived
+                        } else {
+                            Exactness::ByteExact
                         },
                     );
                     self.append_link(source_order, surface_id.to_string());
@@ -3002,13 +2995,7 @@ impl<'a> DecodeContext<'a> {
                 ProceduralSurface::new(procedural_id.clone(), ir_definition, None),
             );
             for id in [surface_id.to_string(), procedural_id.to_string()] {
-                candidate_annotations.exactness.insert(
-                    id,
-                    ExactnessNote {
-                        entity: Exactness::Derived,
-                        fields: BTreeMap::new(),
-                    },
-                );
+                set_exactness(candidate_annotations, id, Exactness::Derived);
             }
             vec![surface_id.to_string()]
         });
@@ -3155,13 +3142,7 @@ impl<'a> DecodeContext<'a> {
                 },
                 source_object: Some(association),
             });
-            candidate_annotations.exactness.insert(
-                id.to_string(),
-                ExactnessNote {
-                    entity: Exactness::Unknown,
-                    fields: BTreeMap::new(),
-                },
-            );
+            set_exactness(candidate_annotations, &id, Exactness::Unknown);
             id.to_string()
         });
         match validation {
@@ -3189,26 +3170,14 @@ impl<'a> DecodeContext<'a> {
         } else {
             Exactness::ByteExact
         };
-        self.annotations.exactness.insert(
-            point.to_string(),
-            ExactnessNote {
-                entity: point_exactness,
-                fields: BTreeMap::new(),
-            },
-        );
+        set_exactness(&mut self.annotations, point, point_exactness);
         for id in [
             vertex.to_string(),
             shell.to_string(),
             region.to_string(),
             body.to_string(),
         ] {
-            self.annotations.exactness.insert(
-                id,
-                ExactnessNote {
-                    entity: Exactness::Derived,
-                    fields: BTreeMap::new(),
-                },
-            );
+            set_exactness(&mut self.annotations, id, Exactness::Derived);
         }
     }
 
@@ -3250,15 +3219,13 @@ impl<'a> DecodeContext<'a> {
             texture_assignments: Vec::new(),
             channels: mesh.tessellation.channels,
         });
-        self.annotations.exactness.insert(
-            id.clone(),
-            ExactnessNote {
-                entity: if mesh.scaled || mesh.quad_count != 0 {
-                    Exactness::Derived
-                } else {
-                    Exactness::ByteExact
-                },
-                fields: BTreeMap::new(),
+        set_exactness(
+            &mut self.annotations,
+            &id,
+            if mesh.scaled || mesh.quad_count != 0 {
+                Exactness::Derived
+            } else {
+                Exactness::ByteExact
             },
         );
         if mesh.ngon_count != 0 {
@@ -3583,13 +3550,17 @@ fn validation_findings(report: &cadmpeg_ir::report::ValidationReport) -> String 
 }
 
 fn annotate_derived(annotations: &mut cadmpeg_ir::Annotations, id: &str) {
-    annotations.exactness.insert(
-        id.to_string(),
-        ExactnessNote {
-            entity: Exactness::Derived,
-            fields: BTreeMap::new(),
-        },
-    );
+    set_exactness(annotations, id, Exactness::Derived);
+}
+
+fn set_exactness(
+    annotations: &mut cadmpeg_ir::Annotations,
+    id: impl std::fmt::Display,
+    exactness: Exactness,
+) {
+    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
+    builder.exactness(id, exactness);
+    *annotations = builder.build();
 }
 
 fn stage_extrusion_caps(
@@ -5179,13 +5150,7 @@ fn commit_curve_tree(
         geometry,
         source_object: Some(association.clone()),
     });
-    annotations.exactness.insert(
-        id.to_string(),
-        ExactnessNote {
-            entity: Exactness::Derived,
-            fields: BTreeMap::new(),
-        },
-    );
+    set_exactness(annotations, &id, Exactness::Derived);
     if let Some(compound) = curve.compound {
         let procedure_id: cadmpeg_ir::ids::ProceduralCurveId = if path == "root" {
             format!("rhino:object:procedural-curve#{key}").into()

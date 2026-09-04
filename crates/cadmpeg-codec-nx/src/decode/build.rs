@@ -1236,7 +1236,9 @@ pub(crate) fn retain_live_annotations(
     );
     ids.extend(unknowns.iter().map(|unknown| unknown.id().to_string()));
     annotations.provenance.retain(|id, _| ids.contains(id));
-    annotations.exactness.retain(|id, _| ids.contains(id));
+    let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
+    builder.retain_exactness(|id| ids.contains(id));
+    *annotations = builder.build();
 }
 
 pub(crate) fn retain_live_unknown_links(
