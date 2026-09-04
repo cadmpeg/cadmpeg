@@ -65,7 +65,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 && !parameters.contains_key("Radius")
                 && !parameters.keys().any(|name| indexed_name(name, "Radius"));
             match radius {
-                RadiusSpec::Unresolved { .. } => {
+                RadiusSpec::Unresolved
+                | RadiusSpec::UnresolvedConstant
+                | RadiusSpec::UnresolvedChordal
+                | RadiusSpec::UnresolvedAsymmetric
+                | RadiusSpec::UnresolvedVariable => {
                     if existing.is_none() {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has an unresolved fillet radius law",
@@ -199,7 +203,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .get("D2")
                     .is_some_and(|value| parse_bounded_angle_rad(value).is_some());
             match spec {
-                ChamferSpec::Unresolved { .. } => {
+                ChamferSpec::Unresolved
+                | ChamferSpec::UnresolvedDistance
+                | ChamferSpec::UnresolvedTwoDistances
+                | ChamferSpec::UnresolvedDistanceAngle => {
                     if existing.is_none() {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} has unresolved chamfer dimensions",

@@ -649,14 +649,12 @@ pub(crate) fn project_compact_edge_selections(
                 None => EdgeSelection::Native(native),
             }
         };
-        let unresolved_variable_fillet = matches!(
-            &feature.definition,
-            FeatureDefinition::Fillet { groups }
-                if matches!(groups.as_slice(), [FilletGroup {
-                    radius: RadiusSpec::Unresolved { .. },
-                    ..
-                }])
-        );
+        let unresolved_variable_fillet = match &feature.definition {
+            FeatureDefinition::Fillet { groups } => {
+                matches!(groups.as_slice(), [group] if group.radius.is_unresolved())
+            }
+            _ => false,
+        };
         if unresolved_variable_fillet {
             if let Some(radius_groups) =
                 variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
@@ -1175,18 +1173,15 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
-        let unresolved_full_round = matches!(
-            &feature.definition,
-            FeatureDefinition::Fillet { groups }
-                if matches!(
-                    groups.as_slice(),
-                    [cadmpeg_ir::features::FilletGroup {
-                        edges: EdgeSelection::Unresolved,
-                        radius: RadiusSpec::Unresolved { .. },
-                        ..
-                    }]
-                )
-        );
+        let unresolved_full_round = match &feature.definition {
+            FeatureDefinition::Fillet { groups } => matches!(
+                groups.as_slice(),
+                [group]
+                    if matches!(group.edges, EdgeSelection::Unresolved)
+                        && group.radius.is_unresolved()
+            ),
+            _ => false,
+        };
         if unresolved_full_round {
             let Some([center_faces, side_one_faces, side_two_faces]) =
                 full_round_fillet_selection_triple(feature_selections)

@@ -4942,16 +4942,18 @@ pub enum SplitFaceTool {
 }
 
 /// Radius assignment along filleted edges.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RadiusSpec {
-    /// Radius law is retained but not fully resolved.
-    Unresolved {
-        /// Structural law form, when independently identified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<RadiusForm>,
-    },
+    /// Radius law form is not identified.
+    Unresolved,
+    /// A constant-radius law is identified without its radius.
+    UnresolvedConstant,
+    /// A chordal law is identified without its chord length.
+    UnresolvedChordal,
+    /// An asymmetric law is identified without its offsets.
+    UnresolvedAsymmetric,
+    /// A variable-radius law is identified without its control points.
+    UnresolvedVariable,
     /// Same radius along the whole edge chain.
     Constant {
         /// The fillet radius.
@@ -4974,6 +4976,142 @@ pub enum RadiusSpec {
         /// Radius samples along the edge chain, in chain-parameter order.
         points: Vec<VariableRadius>,
     },
+}
+
+impl RadiusSpec {
+    /// Returns whether the radius law lacks its required dimensions.
+    pub fn is_unresolved(&self) -> bool {
+        matches!(
+            self,
+            Self::Unresolved
+                | Self::UnresolvedConstant
+                | Self::UnresolvedChordal
+                | Self::UnresolvedAsymmetric
+                | Self::UnresolvedVariable
+        )
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RadiusSpecWire {
+    Unresolved {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<RadiusFormWire>,
+    },
+    Constant {
+        radius: Length,
+    },
+    Chordal {
+        chord_length: Length,
+    },
+    Asymmetric {
+        offset_one: Length,
+        offset_two: Length,
+    },
+    Variable {
+        points: Vec<VariableRadius>,
+    },
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum RadiusFormWire {
+    Constant,
+    Chordal,
+    Asymmetric,
+    Variable,
+}
+
+impl From<RadiusSpec> for RadiusSpecWire {
+    fn from(value: RadiusSpec) -> Self {
+        match value {
+            RadiusSpec::Unresolved => Self::Unresolved { form: None },
+            RadiusSpec::UnresolvedConstant => Self::Unresolved {
+                form: Some(RadiusFormWire::Constant),
+            },
+            RadiusSpec::UnresolvedChordal => Self::Unresolved {
+                form: Some(RadiusFormWire::Chordal),
+            },
+            RadiusSpec::UnresolvedAsymmetric => Self::Unresolved {
+                form: Some(RadiusFormWire::Asymmetric),
+            },
+            RadiusSpec::UnresolvedVariable => Self::Unresolved {
+                form: Some(RadiusFormWire::Variable),
+            },
+            RadiusSpec::Constant { radius } => Self::Constant { radius },
+            RadiusSpec::Chordal { chord_length } => Self::Chordal { chord_length },
+            RadiusSpec::Asymmetric {
+                offset_one,
+                offset_two,
+            } => Self::Asymmetric {
+                offset_one,
+                offset_two,
+            },
+            RadiusSpec::Variable { points } => Self::Variable { points },
+        }
+    }
+}
+
+impl From<RadiusSpecWire> for RadiusSpec {
+    fn from(value: RadiusSpecWire) -> Self {
+        match value {
+            RadiusSpecWire::Unresolved { form: None } => Self::Unresolved,
+            RadiusSpecWire::Unresolved {
+                form: Some(RadiusFormWire::Constant),
+            } => Self::UnresolvedConstant,
+            RadiusSpecWire::Unresolved {
+                form: Some(RadiusFormWire::Chordal),
+            } => Self::UnresolvedChordal,
+            RadiusSpecWire::Unresolved {
+                form: Some(RadiusFormWire::Asymmetric),
+            } => Self::UnresolvedAsymmetric,
+            RadiusSpecWire::Unresolved {
+                form: Some(RadiusFormWire::Variable),
+            } => Self::UnresolvedVariable,
+            RadiusSpecWire::Constant { radius } => Self::Constant { radius },
+            RadiusSpecWire::Chordal { chord_length } => Self::Chordal { chord_length },
+            RadiusSpecWire::Asymmetric {
+                offset_one,
+                offset_two,
+            } => Self::Asymmetric {
+                offset_one,
+                offset_two,
+            },
+            RadiusSpecWire::Variable { points } => Self::Variable { points },
+        }
+    }
+}
+
+impl Serialize for RadiusSpec {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        RadiusSpecWire::from(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RadiusSpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(RadiusSpecWire::deserialize(deserializer)?.into())
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for RadiusSpec {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "RadiusSpec".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        RadiusSpecWire::json_schema(generator)
+    }
 }
 
 /// One independently dimensioned group of filleted edges.
@@ -5024,21 +5162,6 @@ pub struct ChamferGroup {
     pub spec: ChamferSpec,
 }
 
-/// Structural form of a fillet radius law.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum RadiusForm {
-    /// One radius applies to the entire edge chain.
-    Constant,
-    /// Constant transverse chord length defines the fillet width.
-    Chordal,
-    /// Distinct offsets define the two sides of the fillet.
-    Asymmetric,
-    /// Radius varies along the edge chain.
-    Variable,
-}
-
 /// Radius at a normalized position along a filleted edge chain.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5050,16 +5173,16 @@ pub struct VariableRadius {
 }
 
 /// Dimensional definition of an edge chamfer.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ChamferSpec {
-    /// Dimensional specification is retained but not fully resolved.
-    Unresolved {
-        /// Structural specification form, when independently identified.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<ChamferForm>,
-    },
+    /// Dimensional specification form is not identified.
+    Unresolved,
+    /// An equal-distance form is identified without its distance.
+    UnresolvedDistance,
+    /// A two-distance form is identified without its distances.
+    UnresolvedTwoDistances,
+    /// A distance-angle form is identified without its dimensions.
+    UnresolvedDistanceAngle,
     /// Equal setback distance on both faces meeting the edge.
     Distance {
         /// Setback distance from the edge.
@@ -5081,17 +5204,120 @@ pub enum ChamferSpec {
     },
 }
 
-/// Structural form of a chamfer dimensional specification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+impl ChamferSpec {
+    /// Returns whether the chamfer form lacks its required dimensions.
+    pub fn is_unresolved(self) -> bool {
+        matches!(
+            self,
+            Self::Unresolved
+                | Self::UnresolvedDistance
+                | Self::UnresolvedTwoDistances
+                | Self::UnresolvedDistanceAngle
+        )
+    }
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ChamferSpecWire {
+    Unresolved {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<ChamferFormWire>,
+    },
+    Distance {
+        distance: Length,
+    },
+    TwoDistances {
+        first: Length,
+        second: Length,
+    },
+    DistanceAngle {
+        distance: Length,
+        angle: Angle,
+    },
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum ChamferForm {
-    /// One equal setback distance.
+enum ChamferFormWire {
     Distance,
-    /// Independent setback distances on each adjacent face.
     TwoDistances,
-    /// One setback distance and one angle.
     DistanceAngle,
+}
+
+impl From<ChamferSpec> for ChamferSpecWire {
+    fn from(value: ChamferSpec) -> Self {
+        match value {
+            ChamferSpec::Unresolved => Self::Unresolved { form: None },
+            ChamferSpec::UnresolvedDistance => Self::Unresolved {
+                form: Some(ChamferFormWire::Distance),
+            },
+            ChamferSpec::UnresolvedTwoDistances => Self::Unresolved {
+                form: Some(ChamferFormWire::TwoDistances),
+            },
+            ChamferSpec::UnresolvedDistanceAngle => Self::Unresolved {
+                form: Some(ChamferFormWire::DistanceAngle),
+            },
+            ChamferSpec::Distance { distance } => Self::Distance { distance },
+            ChamferSpec::TwoDistances { first, second } => Self::TwoDistances { first, second },
+            ChamferSpec::DistanceAngle { distance, angle } => {
+                Self::DistanceAngle { distance, angle }
+            }
+        }
+    }
+}
+
+impl From<ChamferSpecWire> for ChamferSpec {
+    fn from(value: ChamferSpecWire) -> Self {
+        match value {
+            ChamferSpecWire::Unresolved { form: None } => Self::Unresolved,
+            ChamferSpecWire::Unresolved {
+                form: Some(ChamferFormWire::Distance),
+            } => Self::UnresolvedDistance,
+            ChamferSpecWire::Unresolved {
+                form: Some(ChamferFormWire::TwoDistances),
+            } => Self::UnresolvedTwoDistances,
+            ChamferSpecWire::Unresolved {
+                form: Some(ChamferFormWire::DistanceAngle),
+            } => Self::UnresolvedDistanceAngle,
+            ChamferSpecWire::Distance { distance } => Self::Distance { distance },
+            ChamferSpecWire::TwoDistances { first, second } => Self::TwoDistances { first, second },
+            ChamferSpecWire::DistanceAngle { distance, angle } => {
+                Self::DistanceAngle { distance, angle }
+            }
+        }
+    }
+}
+
+impl Serialize for ChamferSpec {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        ChamferSpecWire::from(*self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ChamferSpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(ChamferSpecWire::deserialize(deserializer)?.into())
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for ChamferSpec {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ChamferSpec".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        ChamferSpecWire::json_schema(generator)
+    }
 }
 
 /// Structural drilling, entry-treatment, and threading form of a hole.
@@ -5832,33 +6058,36 @@ pub enum FlexForm {
 }
 
 /// Spatial transform used to repeat or reflect seed features.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PatternKind {
-    /// Pattern construction whose form or required operands are unresolved.
-    Unresolved {
-        /// Native pattern form, when identified independently of its operands.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        form: Option<PatternForm>,
-    },
+    /// Pattern construction whose form is not identified.
+    Unresolved,
+    /// A linear pattern is identified without its required operands.
+    UnresolvedLinear,
+    /// A circular pattern is identified without its required operands.
+    UnresolvedCircular,
+    /// A curve-driven pattern is identified without its required operands.
+    UnresolvedCurveDriven,
+    /// A mirror pattern is identified without its required operands.
+    UnresolvedMirror,
+    /// A scale pattern is identified without its required operands.
+    UnresolvedScale,
+    /// A composite pattern is identified without its required stages.
+    UnresolvedComposite,
     /// Repeats seeds evenly along a straight direction.
     Linear {
         /// Repetition direction, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
         /// Distance between consecutive instances.
         spacing: Length,
         /// Total number of instances, including the original.
         count: u32,
         /// Optional complete second translation direction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         second: Option<LinearPatternDirection>,
     },
     /// Repeats seeds at explicitly located distances along a straight direction.
     LinearOffsets {
         /// Repetition direction, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
         /// Cumulative distances from the original instance, beginning with zero.
         offsets: Vec<Length>,
@@ -5886,7 +6115,6 @@ pub enum PatternKind {
     /// Repeats seeds at fixed arc-length spacing along a curve.
     CurveDriven {
         /// Pattern path, when its native reference is available.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<PathRef>,
         /// Arc-length spacing between consecutive instances.
         spacing: Length,
@@ -5919,6 +6147,292 @@ pub enum PatternKind {
         /// Stages in application order.
         stages: Vec<PatternStage>,
     },
+}
+
+impl PatternKind {
+    /// Returns whether the pattern form lacks its required operands.
+    pub fn is_unresolved(&self) -> bool {
+        matches!(
+            self,
+            Self::Unresolved
+                | Self::UnresolvedLinear
+                | Self::UnresolvedCircular
+                | Self::UnresolvedCurveDriven
+                | Self::UnresolvedMirror
+                | Self::UnresolvedScale
+                | Self::UnresolvedComposite
+        )
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum PatternKindWire {
+    Unresolved {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<PatternFormWire>,
+    },
+    Linear {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+        spacing: Length,
+        count: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        second: Option<LinearPatternDirection>,
+    },
+    LinearOffsets {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
+        offsets: Vec<Length>,
+    },
+    Circular {
+        axis_origin: Point3,
+        axis_dir: Vector3,
+        angle: Angle,
+        count: u32,
+    },
+    CircularAngles {
+        axis_origin: Point3,
+        axis_dir: Vector3,
+        angles: Vec<Angle>,
+    },
+    CurveDriven {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<PathRef>,
+        spacing: Length,
+        count: u32,
+    },
+    Mirror {
+        plane_origin: Point3,
+        plane_normal: Vector3,
+    },
+    MirrorReference {
+        plane: FaceSelection,
+    },
+    Scale {
+        center: PatternScaleCenter,
+        final_factor: f64,
+        count: u32,
+    },
+    Composite {
+        stages: Vec<PatternStage>,
+    },
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum PatternFormWire {
+    Linear,
+    Circular,
+    CurveDriven,
+    Mirror,
+    Scale,
+    Composite,
+}
+
+impl From<PatternKind> for PatternKindWire {
+    fn from(value: PatternKind) -> Self {
+        match value {
+            PatternKind::Unresolved => Self::Unresolved { form: None },
+            PatternKind::UnresolvedLinear => Self::Unresolved {
+                form: Some(PatternFormWire::Linear),
+            },
+            PatternKind::UnresolvedCircular => Self::Unresolved {
+                form: Some(PatternFormWire::Circular),
+            },
+            PatternKind::UnresolvedCurveDriven => Self::Unresolved {
+                form: Some(PatternFormWire::CurveDriven),
+            },
+            PatternKind::UnresolvedMirror => Self::Unresolved {
+                form: Some(PatternFormWire::Mirror),
+            },
+            PatternKind::UnresolvedScale => Self::Unresolved {
+                form: Some(PatternFormWire::Scale),
+            },
+            PatternKind::UnresolvedComposite => Self::Unresolved {
+                form: Some(PatternFormWire::Composite),
+            },
+            PatternKind::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            } => Self::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            },
+            PatternKind::LinearOffsets { direction, offsets } => {
+                Self::LinearOffsets { direction, offsets }
+            }
+            PatternKind::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            } => Self::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            },
+            PatternKind::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles,
+            } => Self::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles,
+            },
+            PatternKind::CurveDriven {
+                path,
+                spacing,
+                count,
+            } => Self::CurveDriven {
+                path,
+                spacing,
+                count,
+            },
+            PatternKind::Mirror {
+                plane_origin,
+                plane_normal,
+            } => Self::Mirror {
+                plane_origin,
+                plane_normal,
+            },
+            PatternKind::MirrorReference { plane } => Self::MirrorReference { plane },
+            PatternKind::Scale {
+                center,
+                final_factor,
+                count,
+            } => Self::Scale {
+                center,
+                final_factor,
+                count,
+            },
+            PatternKind::Composite { stages } => Self::Composite { stages },
+        }
+    }
+}
+
+impl From<PatternKindWire> for PatternKind {
+    fn from(value: PatternKindWire) -> Self {
+        match value {
+            PatternKindWire::Unresolved { form: None } => Self::Unresolved,
+            PatternKindWire::Unresolved {
+                form: Some(PatternFormWire::Linear),
+            } => Self::UnresolvedLinear,
+            PatternKindWire::Unresolved {
+                form: Some(PatternFormWire::Circular),
+            } => Self::UnresolvedCircular,
+            PatternKindWire::Unresolved {
+                form: Some(PatternFormWire::CurveDriven),
+            } => Self::UnresolvedCurveDriven,
+            PatternKindWire::Unresolved {
+                form: Some(PatternFormWire::Mirror),
+            } => Self::UnresolvedMirror,
+            PatternKindWire::Unresolved {
+                form: Some(PatternFormWire::Scale),
+            } => Self::UnresolvedScale,
+            PatternKindWire::Unresolved {
+                form: Some(PatternFormWire::Composite),
+            } => Self::UnresolvedComposite,
+            PatternKindWire::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            } => Self::Linear {
+                direction,
+                spacing,
+                count,
+                second,
+            },
+            PatternKindWire::LinearOffsets { direction, offsets } => {
+                Self::LinearOffsets { direction, offsets }
+            }
+            PatternKindWire::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            } => Self::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            },
+            PatternKindWire::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles,
+            } => Self::CircularAngles {
+                axis_origin,
+                axis_dir,
+                angles,
+            },
+            PatternKindWire::CurveDriven {
+                path,
+                spacing,
+                count,
+            } => Self::CurveDriven {
+                path,
+                spacing,
+                count,
+            },
+            PatternKindWire::Mirror {
+                plane_origin,
+                plane_normal,
+            } => Self::Mirror {
+                plane_origin,
+                plane_normal,
+            },
+            PatternKindWire::MirrorReference { plane } => Self::MirrorReference { plane },
+            PatternKindWire::Scale {
+                center,
+                final_factor,
+                count,
+            } => Self::Scale {
+                center,
+                final_factor,
+                count,
+            },
+            PatternKindWire::Composite { stages } => Self::Composite { stages },
+        }
+    }
+}
+
+impl Serialize for PatternKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        PatternKindWire::from(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PatternKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(PatternKindWire::deserialize(deserializer)?.into())
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for PatternKind {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PatternKind".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        PatternKindWire::json_schema(generator)
+    }
 }
 
 /// Fixed locus for a progressive pattern scale.
@@ -5967,25 +6481,6 @@ pub struct LinearPatternDirection {
     pub spacing: Length,
     /// Total number of instances, including the original.
     pub count: u32,
-}
-
-/// Structural form of a repeated or reflected feature operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum PatternForm {
-    /// Translation along a straight direction.
-    Linear,
-    /// Rotation around an axis.
-    Circular,
-    /// Translation along a curve.
-    CurveDriven,
-    /// Reflection across a plane.
-    Mirror,
-    /// Progressive uniform scaling.
-    Scale,
-    /// Ordered composition of multiple pattern forms.
-    Composite,
 }
 
 #[cfg(test)]

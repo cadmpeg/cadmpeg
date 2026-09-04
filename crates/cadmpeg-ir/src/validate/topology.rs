@@ -18,7 +18,13 @@ const EPS_TORUS_AXES_ORTHO: f64 = 1.0e-9;
 
 fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
     match pattern {
-        PatternKind::Unresolved { .. } => true,
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite => true,
         PatternKind::Linear {
             direction,
             spacing,
@@ -152,7 +158,14 @@ fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
         PatternKind::LinearOffsets { offsets, .. } => Some(offsets.len()),
         PatternKind::CircularAngles { angles, .. } => Some(angles.len()),
         PatternKind::Mirror { .. } | PatternKind::MirrorReference { .. } => Some(2),
-        PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite
+        | PatternKind::Composite { .. } => None,
     }
 }
 
@@ -3101,7 +3114,11 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         edge_selections.push(&group.edges);
                         group.tangency_weight.is_none_or(f64::is_finite)
                             && match &group.radius {
-                                RadiusSpec::Unresolved { .. } => true,
+                                RadiusSpec::Unresolved
+                                | RadiusSpec::UnresolvedConstant
+                                | RadiusSpec::UnresolvedChordal
+                                | RadiusSpec::UnresolvedAsymmetric
+                                | RadiusSpec::UnresolvedVariable => true,
                                 RadiusSpec::Constant { radius } => positive_feature_length(*radius),
                                 RadiusSpec::Chordal { chord_length } => {
                                     positive_feature_length(*chord_length)
@@ -3137,7 +3154,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     && groups.iter().all(|group| {
                         edge_selections.push(&group.edges);
                         match group.spec {
-                            ChamferSpec::Unresolved { .. } => true,
+                            ChamferSpec::Unresolved
+                            | ChamferSpec::UnresolvedDistance
+                            | ChamferSpec::UnresolvedTwoDistances
+                            | ChamferSpec::UnresolvedDistanceAngle => true,
                             ChamferSpec::Distance { distance } => positive_feature_length(distance),
                             ChamferSpec::TwoDistances { first, second } => {
                                 positive_feature_length(first) && positive_feature_length(second)
@@ -5274,7 +5294,11 @@ fn valid_draft_angle(value: crate::features::Angle) -> bool {
 
 fn radius_spec_is_valid(radius: &RadiusSpec) -> bool {
     match radius {
-        RadiusSpec::Unresolved { .. } => true,
+        RadiusSpec::Unresolved
+        | RadiusSpec::UnresolvedConstant
+        | RadiusSpec::UnresolvedChordal
+        | RadiusSpec::UnresolvedAsymmetric
+        | RadiusSpec::UnresolvedVariable => true,
         RadiusSpec::Constant { radius } => positive_feature_length(*radius),
         RadiusSpec::Chordal { chord_length } => positive_feature_length(*chord_length),
         RadiusSpec::Asymmetric {

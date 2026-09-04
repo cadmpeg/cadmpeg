@@ -466,10 +466,9 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         &result.ir().model.features[1].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
-        }])
+        } if matches!(groups.as_slice(), [group]
+            if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
+                && group.radius.is_unresolved())
     ));
     assert_eq!(
         result

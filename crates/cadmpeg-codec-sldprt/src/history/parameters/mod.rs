@@ -5,7 +5,7 @@ use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
 use cadmpeg_ir::features::{
     Angle, DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureTreeNodeRole,
-    Length, ParameterId, ParameterValue, PatternForm,
+    Length, ParameterId, ParameterValue,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -20,6 +20,7 @@ use crate::history::literals::{
 };
 use crate::history::project::{
     neutral_feature_id, neutral_parameter_id, pattern_form, projected_parameter_names,
+    NativePatternClass,
 };
 
 const EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9: f64 = 1.0e-9;
@@ -275,7 +276,7 @@ pub(crate) fn native_parameter_is_length(
         }
         "D3" if matches!(
             pattern_form(feature),
-            Some(PatternForm::Linear | PatternForm::CurveDriven)
+            Some(NativePatternClass::Linear | NativePatternClass::CurveDriven)
         ) =>
         {
             true

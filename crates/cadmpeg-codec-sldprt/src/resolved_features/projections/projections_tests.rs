@@ -653,7 +653,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
             FeatureDefinition::Fillet {
                 groups: vec![cadmpeg_ir::features::FilletGroup {
                     edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-                    radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+                    radius: cadmpeg_ir::features::RadiusSpec::Unresolved,
                     tangency_weight: None,
                 }],
             },

@@ -805,7 +805,11 @@ fn scale_radius_spec(radius: &mut cadmpeg_ir::features::RadiusSpec, scale: f64) 
                 scale_length(&mut point.radius, scale);
             }
         }
-        RadiusSpec::Unresolved { .. } => {}
+        RadiusSpec::Unresolved
+        | RadiusSpec::UnresolvedConstant
+        | RadiusSpec::UnresolvedChordal
+        | RadiusSpec::UnresolvedAsymmetric
+        | RadiusSpec::UnresolvedVariable => {}
     }
 }
 
@@ -820,7 +824,10 @@ fn scale_chamfer_spec(spec: &mut cadmpeg_ir::features::ChamferSpec, scale: f64) 
             scale_length(first, scale);
             scale_length(second, scale);
         }
-        ChamferSpec::Unresolved { .. } => {}
+        ChamferSpec::Unresolved
+        | ChamferSpec::UnresolvedDistance
+        | ChamferSpec::UnresolvedTwoDistances
+        | ChamferSpec::UnresolvedDistanceAngle => {}
     }
 }
 
@@ -984,7 +991,14 @@ fn scale_pattern_kind(pattern: &mut cadmpeg_ir::features::PatternKind, scale: f6
                 scale_point3(point, scale);
             }
         }
-        PatternKind::Unresolved { .. } | PatternKind::MirrorReference { .. } => {}
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite
+        | PatternKind::MirrorReference { .. } => {}
     }
 }
 

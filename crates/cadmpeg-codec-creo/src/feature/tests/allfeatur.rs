@@ -375,11 +375,9 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             ref groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
-            ..
-        }])
+        } if matches!(groups.as_slice(), [group]
+            if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
+                && group.radius.is_unresolved())
     ));
     assert_eq!(
         feature.source_properties["native_parameter.choice.blend_choice.count"],
@@ -625,10 +623,10 @@ fn scan_partitions_allfeatur_positional_round_operands() {
         &result.ir().model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::Fillet {
             groups,
-        } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. }, ..
-        }] if selection == "creo:allfeatur:replay_edgs_affected#4:9")
+        } if matches!(groups.as_slice(), [group]
+            if matches!(&group.edges, cadmpeg_ir::features::EdgeSelection::Native(selection)
+                if selection == "creo:allfeatur:replay_edgs_affected#4:9")
+                && group.radius.is_unresolved())
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas["feature_replay_affected_ids"];

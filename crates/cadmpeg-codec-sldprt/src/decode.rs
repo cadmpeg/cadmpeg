@@ -221,7 +221,13 @@ fn incomplete_pattern(
     use cadmpeg_ir::features::{PatternKind, PatternScaleCenter};
 
     match pattern {
-        PatternKind::Unresolved { .. } => true,
+        PatternKind::Unresolved
+        | PatternKind::UnresolvedLinear
+        | PatternKind::UnresolvedCircular
+        | PatternKind::UnresolvedCurveDriven
+        | PatternKind::UnresolvedMirror
+        | PatternKind::UnresolvedScale
+        | PatternKind::UnresolvedComposite => true,
         PatternKind::Linear { direction, .. } | PatternKind::LinearOffsets { direction, .. } => {
             direction.is_none()
         }
@@ -352,9 +358,9 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
 
 fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
     use cadmpeg_ir::features::{
-        AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec,
-        EdgeSelection, ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureSourceContent,
-        LinearTermination, PathRef, ProfileRef, RadiusSpec, RevolveExtent, SplitFaceTool,
+        AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
+        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureSourceContent, LinearTermination,
+        PathRef, ProfileRef, RadiusSpec, RevolveExtent, SplitFaceTool,
     };
     use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 
@@ -1352,7 +1358,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 groups.is_empty()
                     || groups.iter().any(|group| {
                         incomplete_edge_selection(&group.edges)
-                            || matches!(group.radius, RadiusSpec::Unresolved { .. })
+                            || group.radius.is_unresolved()
                             || matches!(group.radius, RadiusSpec::Variable { ref points } if points.is_empty())
                     })
             }
@@ -1383,7 +1389,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     })
             }
             FeatureDefinition::Chamfer { groups, .. } => groups.is_empty() || groups.iter().any(|group| {
-                incomplete_edge_selection(&group.edges) || matches!(group.spec, ChamferSpec::Unresolved { .. })
+                incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
             }),
             FeatureDefinition::FaceBlend {
                 first_faces,
@@ -1392,7 +1398,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             } => {
                 incomplete_face_selection(first_faces)
                     || incomplete_face_selection(second_faces)
-                    || matches!(radius, RadiusSpec::Unresolved { .. })
+                    || radius.is_unresolved()
                     || matches!(radius, RadiusSpec::Variable { points } if points.is_empty())
             }
             FeatureDefinition::Shell {
@@ -4142,12 +4148,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         else {
             continue;
         };
-        if *seeds == resolved_seeds
-            && matches!(
-                pattern,
-                cadmpeg_ir::features::PatternKind::Unresolved { .. }
-            )
-        {
+        if *seeds == resolved_seeds && pattern.is_unresolved() {
             *pattern = resolved_pattern;
         }
     }

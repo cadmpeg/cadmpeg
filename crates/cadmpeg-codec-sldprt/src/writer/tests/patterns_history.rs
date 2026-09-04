@@ -427,7 +427,7 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
 
 #[test]
 fn semantic_writer_retains_unresolved_native_pattern_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternForm, PatternKind};
+    use cadmpeg_ir::features::{FeatureDefinition, PatternKind};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -449,9 +449,7 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
             seeds,
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Linear),
-            },
+            pattern: PatternKind::UnresolvedLinear,
         } if seeds.is_empty()
     ));
     decoded.ir_mut().model.features[0].name = Some("Renamed pattern".into());
@@ -475,9 +473,7 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Linear),
-            },
+            pattern: PatternKind::UnresolvedLinear,
             ..
         }
     ));

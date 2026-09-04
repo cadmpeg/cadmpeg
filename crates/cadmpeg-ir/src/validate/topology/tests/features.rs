@@ -40,7 +40,7 @@ fn zero_count_composite_stage_is_compositionally_invalid() {
 fn unresolved_composite_count_can_feed_a_cartesian_stage() {
     let stages = [
         crate::features::PatternStage {
-            pattern: Box::new(PatternKind::Unresolved { form: None }),
+            pattern: Box::new(PatternKind::Unresolved),
             combination: PatternStageCombination::Initialize,
         },
         crate::features::PatternStage {

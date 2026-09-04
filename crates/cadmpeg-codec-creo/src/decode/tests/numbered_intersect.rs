@@ -1104,7 +1104,7 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     let fillet = IrFeatureDefinition::Fillet {
         groups: vec![cadmpeg_ir::features::FilletGroup {
             edges: generated_edges.clone(),
-            radius: RadiusSpec::Unresolved { form: None },
+            radius: RadiusSpec::Unresolved,
             tangency_weight: None,
         }],
     };
@@ -1116,7 +1116,7 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     let chamfer = IrFeatureDefinition::Chamfer {
         groups: vec![cadmpeg_ir::features::ChamferGroup {
             edges: generated_edges,
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
+            spec: cadmpeg_ir::features::ChamferSpec::Unresolved,
         }],
         flip_direction: false,
     };

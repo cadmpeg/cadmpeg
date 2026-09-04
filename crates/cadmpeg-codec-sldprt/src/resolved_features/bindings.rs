@@ -120,10 +120,9 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 };
                 let (needs_plane, needs_seeds) = match &model_features[model_index].definition {
-                    FeatureDefinition::Pattern { seeds, pattern, .. } => (
-                        matches!(pattern, PatternKind::Unresolved { .. }),
-                        seeds.is_empty(),
-                    ),
+                    FeatureDefinition::Pattern { seeds, pattern, .. } => {
+                        (pattern.is_unresolved(), seeds.is_empty())
+                    }
                     _ => continue,
                 };
                 if !needs_plane && !needs_seeds {
@@ -198,10 +197,7 @@ pub(crate) fn bind_pattern_inputs(
                 let (needs_seed, needs_axis) = match &model_features[model_index].definition {
                     FeatureDefinition::Pattern {
                         seeds,
-                        pattern:
-                            PatternKind::Unresolved {
-                                form: Some(cadmpeg_ir::features::PatternForm::Circular),
-                            },
+                        pattern: PatternKind::UnresolvedCircular,
                         ..
                     } => (seeds.is_empty(), true),
                     FeatureDefinition::Pattern { seeds, .. } => (seeds.is_empty(), false),
@@ -281,9 +277,7 @@ pub(crate) fn bind_pattern_inputs(
                 if matches!(
                     model_features[model_index].definition,
                     FeatureDefinition::Pattern {
-                        pattern: PatternKind::Unresolved {
-                            form: Some(cadmpeg_ir::features::PatternForm::Linear)
-                        },
+                        pattern: PatternKind::UnresolvedLinear,
                         ..
                     }
                 ) {
@@ -554,15 +548,13 @@ pub(crate) fn bind_pattern_inputs(
         let [(origin, normal)] = candidates.as_slice() else {
             continue;
         };
-        if let FeatureDefinition::Pattern {
-            pattern: slot @ PatternKind::Unresolved { .. },
-            ..
-        } = &mut model_features[index].definition
-        {
-            *slot = PatternKind::Mirror {
-                plane_origin: *origin,
-                plane_normal: *normal,
-            };
+        if let FeatureDefinition::Pattern { pattern, .. } = &mut model_features[index].definition {
+            if pattern.is_unresolved() {
+                *pattern = PatternKind::Mirror {
+                    plane_origin: *origin,
+                    plane_normal: *normal,
+                };
+            }
         }
     }
     let mut mirror_seed_sets_by_pattern = HashMap::<usize, Vec<_>>::new();
@@ -625,10 +617,7 @@ pub(crate) fn bind_pattern_inputs(
             continue;
         };
         if let FeatureDefinition::Pattern {
-            pattern:
-                slot @ PatternKind::Unresolved {
-                    form: Some(cadmpeg_ir::features::PatternForm::Circular),
-                },
+            pattern: slot @ PatternKind::UnresolvedCircular,
             ..
         } = &mut model_features[index].definition
         {
@@ -691,13 +680,12 @@ pub(crate) fn bind_mirror_surface_planes(
         .collect::<HashMap<_, _>>();
 
     for feature in features {
-        let FeatureDefinition::Pattern {
-            pattern: slot @ PatternKind::Unresolved { .. },
-            ..
-        } = &mut feature.definition
-        else {
+        let FeatureDefinition::Pattern { pattern, .. } = &mut feature.definition else {
             continue;
         };
+        if !pattern.is_unresolved() {
+            continue;
+        }
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
@@ -738,7 +726,7 @@ pub(crate) fn bind_mirror_surface_planes(
         let [(origin, normal)] = candidates.as_slice() else {
             continue;
         };
-        *slot = PatternKind::Mirror {
+        *pattern = PatternKind::Mirror {
             plane_origin: *origin,
             plane_normal: *normal,
         };

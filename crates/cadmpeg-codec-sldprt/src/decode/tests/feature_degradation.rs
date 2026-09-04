@@ -47,9 +47,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Constant),
-            },
+            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedConstant,
             ..
         }])
     ));
@@ -124,9 +122,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         FeatureDefinition::Fillet {
             ref groups,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Constant),
-            },
+            radius: cadmpeg_ir::features::RadiusSpec::UnresolvedConstant,
             ..
         }])
     ));
@@ -168,9 +164,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
             ref groups,
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::Distance),
-            },
+            spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistance,
             ..
         }])
     ));
@@ -178,7 +172,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
 
 #[test]
 fn decode_retains_invalid_feature_directions_and_angles_as_native() {
-    use cadmpeg_ir::features::{FeatureDefinition, PatternForm, PatternKind};
+    use cadmpeg_ir::features::{FeatureDefinition, PatternKind};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -201,9 +195,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
     assert!(matches!(
         decoded.ir().model.features[1].definition,
         FeatureDefinition::Pattern {
-            pattern: PatternKind::Unresolved {
-                form: Some(PatternForm::Linear),
-            },
+            pattern: PatternKind::UnresolvedLinear,
             ..
         }
     ));
@@ -238,9 +230,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             ref groups,
             ..
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
-            },
+            spec: cadmpeg_ir::features::ChamferSpec::UnresolvedDistanceAngle,
             ..
         }])
     ));

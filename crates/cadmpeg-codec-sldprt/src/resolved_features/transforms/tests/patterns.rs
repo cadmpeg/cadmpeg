@@ -632,9 +632,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     features[0].dependencies.clear();
     features[0].definition = FeatureDefinition::Pattern {
         seeds: Vec::new(),
-        pattern: PatternKind::Unresolved {
-            form: Some(cadmpeg_ir::features::PatternForm::Linear),
-        },
+        pattern: PatternKind::UnresolvedLinear,
     };
     bind_pattern_inputs(
         &mut features,
@@ -699,9 +697,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     features[0].dependencies.clear();
     features[0].definition = FeatureDefinition::Pattern {
         seeds: Vec::new(),
-        pattern: PatternKind::Unresolved {
-            form: Some(cadmpeg_ir::features::PatternForm::Mirror),
-        },
+        pattern: PatternKind::UnresolvedMirror,
     };
     bind_pattern_inputs(
         &mut features,
@@ -748,9 +744,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     features[0].dependencies.clear();
     features[0].definition = FeatureDefinition::Pattern {
         seeds: Vec::new(),
-        pattern: PatternKind::Unresolved {
-            form: Some(cadmpeg_ir::features::PatternForm::Mirror),
-        },
+        pattern: PatternKind::UnresolvedMirror,
     };
     bind_pattern_inputs(
         &mut features,
@@ -761,9 +755,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         features[0].definition,
         FeatureDefinition::Pattern {
             ref seeds,
-            pattern: PatternKind::Unresolved {
-                form: Some(cadmpeg_ir::features::PatternForm::Mirror),
-            },
+            pattern: PatternKind::UnresolvedMirror,
         } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
     ));
     assert_eq!(features[0].dependencies, [features[2].id.clone()]);
