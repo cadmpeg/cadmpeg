@@ -250,10 +250,10 @@ pub(crate) fn transfer_native_sketch_constraints(
                     continue;
                 };
                 for reference in &geometry_field.references {
-                    let Some(target_id) = reference.target.as_deref() else {
+                    let Some(target_id) = reference.target() else {
                         continue;
                     };
-                    if reference.is_null || ambiguous_object_records.contains(target_id) {
+                    if reference.is_null() || ambiguous_object_records.contains(target_id) {
                         continue;
                     }
                     let Some(target_record) = object_records.get(target_id).copied() else {
@@ -262,9 +262,8 @@ pub(crate) fn transfer_native_sketch_constraints(
                     if target_record.parent != owner_record.parent
                         || target_record.class_name.as_deref() != Some("ConstraintDYS")
                         || target_record.class_entry.is_none()
-                        || target_record.entity_id != Some(reference.entity_id)
-                        || reference.design_object.as_deref()
-                            != target_record.design_object.as_deref()
+                        || target_record.entity_id != Some(reference.entity_id())
+                        || reference.design_object() != target_record.design_object.as_deref()
                     {
                         continue;
                     }
@@ -330,7 +329,7 @@ pub(crate) fn transfer_native_sketch_constraints(
                     candidate.incidences.push(NativeSketchConstraintIncidence {
                         field: geometry_field.id.clone(),
                         field_offset: geometry_field.byte_offset,
-                        reference_offset: reference.payload_offset,
+                        reference_offset: reference.payload_offset(),
                     });
                 }
             }
@@ -470,21 +469,21 @@ fn insert_target_reference_properties(
         let prefix = format!("catia_relation_target_reference_{ordinal}");
         properties.insert(
             format!("{prefix}_entity_id"),
-            reference.entity_id.to_string(),
+            reference.entity_id().to_string(),
         );
         properties.insert(
             format!("{prefix}_payload_offset"),
-            reference.payload_offset.to_string(),
+            reference.payload_offset().to_string(),
         );
-        let state = if reference.is_null {
+        let state = if reference.is_null() {
             "null"
-        } else if reference.target.is_some() {
+        } else if reference.target().is_some() {
             "resolved"
         } else {
             "unresolved"
         };
         properties.insert(format!("{prefix}_state"), state.to_string());
-        match &reference.source {
+        match reference.source() {
             CatiaObjectRecordReferenceSource::Field => {
                 properties.insert(format!("{prefix}_source"), "field".to_string());
             }
@@ -500,7 +499,7 @@ fn insert_target_reference_properties(
                 properties.insert(format!("{prefix}_item_ordinal"), item_ordinal.to_string());
             }
         }
-        if let Some(target) = reference.target.as_deref() {
+        if let Some(target) = reference.target() {
             properties.insert(format!("{prefix}_target_record"), target.to_string());
             if !ambiguous_object_records.contains(target) {
                 if let Some(target_record) = object_records.get(target) {
@@ -514,7 +513,7 @@ fn insert_target_reference_properties(
                 }
             }
         }
-        if let Some(design_object) = reference.design_object.as_deref() {
+        if let Some(design_object) = reference.design_object() {
             properties.insert(
                 format!("{prefix}_target_design_object"),
                 design_object.to_string(),
@@ -534,14 +533,14 @@ fn exact_sketch_member_objects<'a>(
         .references
         .iter()
         .filter_map(|reference| {
-            let target_id = reference.target.as_deref()?;
-            if reference.is_null || ambiguous_object_records.contains(target_id) {
+            let target_id = reference.target()?;
+            if reference.is_null() || ambiguous_object_records.contains(target_id) {
                 return None;
             }
             let target_record = object_records.get(target_id).copied()?;
             if target_record.parent != owner_record.parent
-                || target_record.entity_id != Some(reference.entity_id)
-                || reference.design_object.as_deref() != target_record.design_object.as_deref()
+                || target_record.entity_id != Some(reference.entity_id())
+                || reference.design_object() != target_record.design_object.as_deref()
             {
                 return None;
             }
@@ -552,7 +551,7 @@ fn exact_sketch_member_objects<'a>(
             if ambiguous_design_objects.contains(child_object.id.as_str())
                 || child_object.parent != owner_record.parent
                 || child_object.owner_record.as_deref() != Some(target_id)
-                || child_object.owner_entity_id != reference.entity_id
+                || child_object.owner_entity_id != reference.entity_id()
             {
                 return None;
             }
@@ -767,8 +766,8 @@ fn constraint_binding(
         ([], [reference]) => (&reference.object_record, reference.source_entity.as_ref()),
         _ => return None,
     };
-    let source_entity = source_entity.filter(|entity| !entity.is_null)?;
-    let source_entity_id = source_entity.entity.as_deref()?;
+    let source_entity = source_entity.filter(|entity| !entity.is_null())?;
+    let source_entity_id = source_entity.entity()?;
     if indexes.ambiguous_entity_records.contains(source_entity_id)
         || indexes
             .ambiguous_object_records
@@ -782,16 +781,16 @@ fn constraint_binding(
         .get(source_record_id.as_str())
         .copied()?;
     if source_record.parent != range_entity.object_graph
-        || source_record.entity_id != Some(source_entity.entity_id)
+        || source_record.entity_id != Some(source_entity.entity_id())
         || source_record.entity_record.as_deref() != Some(source_entity_id)
-        || source_entity.class_name.as_deref() != source_record.class_name.as_deref()
+        || source_entity.class_name() != source_record.class_name.as_deref()
     {
         return None;
     }
     let source_entity_record = indexes.entity_records.get(source_entity_id).copied()?;
     if source_entity_record.object_graph != range_entity.object_graph
         || source_entity_record.object_record != source_record.id
-        || source_entity_record.entity_id != source_entity.entity_id
+        || source_entity_record.entity_id != source_entity.entity_id()
     {
         return None;
     }
@@ -1113,12 +1112,12 @@ mod tests {
                 .incoming_storage_references
                 .push(crate::native::CatiaEntityIncomingStorageReference {
                     object_record: "source-record".to_string(),
-                    source_entity: Some(crate::native::CatiaEntityReference {
-                        entity_id: 11,
-                        is_null: false,
-                        entity: Some("catia:outer:entity-record#source".to_string()),
-                        class_name: Some("ConstraintField".to_string()),
-                    }),
+                    source_entity: Some(crate::native::CatiaEntityReference::from_parts(
+                        11,
+                        false,
+                        Some("catia:outer:entity-record#source".to_string()),
+                        Some("ConstraintField".to_string()),
+                    )),
                 });
             source_record.storage_ref = Some(10);
         } else {
@@ -1129,23 +1128,25 @@ mod tests {
                 .incoming_references
                 .push(CatiaEntityIncomingReference {
                     object_record: "source-record".to_string(),
-                    source_entity: Some(crate::native::CatiaEntityReference {
-                        entity_id: 11,
-                        is_null: false,
-                        entity: Some("catia:outer:entity-record#source".to_string()),
-                        class_name: Some("ConstraintField".to_string()),
-                    }),
+                    source_entity: Some(crate::native::CatiaEntityReference::from_parts(
+                        11,
+                        false,
+                        Some("catia:outer:entity-record#source".to_string()),
+                        Some("ConstraintField".to_string()),
+                    )),
                     payload_offset: 9,
                     source: CatiaObjectRecordReferenceSource::Field,
                 });
-            source_record.references.push(CatiaObjectRecordReference {
-                entity_id: 10,
-                payload_offset: 9,
-                source: CatiaObjectRecordReferenceSource::Field,
-                is_null: false,
-                target: Some("range-record".to_string()),
-                design_object: None,
-            });
+            source_record
+                .references
+                .push(CatiaObjectRecordReference::from_parts(
+                    10,
+                    9,
+                    CatiaObjectRecordReferenceSource::Field,
+                    false,
+                    Some("range-record".to_string()),
+                    None,
+                ));
         }
         let range_record = object_record(
             "range-record",
@@ -1211,14 +1212,16 @@ mod tests {
             "Sketch",
         );
         sketch_owner.owner = Some(CatiaObjectOwner::Entity(2));
-        sketch_owner.references.push(CatiaObjectRecordReference {
-            entity_id: 3,
-            payload_offset: 0,
-            source: CatiaObjectRecordReferenceSource::Field,
-            is_null: false,
-            target: Some("child-owner-record".to_string()),
-            design_object: Some("parent-object".to_string()),
-        });
+        sketch_owner
+            .references
+            .push(CatiaObjectRecordReference::from_parts(
+                3,
+                0,
+                CatiaObjectRecordReferenceSource::Field,
+                false,
+                Some("child-owner-record".to_string()),
+                Some("parent-object".to_string()),
+            ));
 
         let mut child_owner = object_record(
             "child-owner-record",
@@ -1326,34 +1329,34 @@ mod tests {
         constraint_field.owner = Some(CatiaObjectOwner::Entity(5));
         constraint_field
             .references
-            .push(CatiaObjectRecordReference {
-                entity_id: 7,
-                payload_offset: 4,
-                source: CatiaObjectRecordReferenceSource::Field,
-                is_null: false,
-                target: Some("constraint-target-record".to_string()),
-                design_object: Some("parent-object".to_string()),
-            });
+            .push(CatiaObjectRecordReference::from_parts(
+                7,
+                4,
+                CatiaObjectRecordReferenceSource::Field,
+                false,
+                Some("constraint-target-record".to_string()),
+                Some("parent-object".to_string()),
+            ));
         constraint_field.references.extend([
-            CatiaObjectRecordReference {
-                entity_id: 8,
-                payload_offset: 8,
-                source: CatiaObjectRecordReferenceSource::ListItem {
+            CatiaObjectRecordReference::from_parts(
+                8,
+                8,
+                CatiaObjectRecordReferenceSource::ListItem {
                     list_payload_offset: 6,
                     item_ordinal: 2,
                 },
-                is_null: true,
-                target: None,
-                design_object: None,
-            },
-            CatiaObjectRecordReference {
-                entity_id: 9,
-                payload_offset: 12,
-                source: CatiaObjectRecordReferenceSource::Field,
-                is_null: false,
-                target: None,
-                design_object: None,
-            },
+                true,
+                None,
+                None,
+            ),
+            CatiaObjectRecordReference::from_parts(
+                9,
+                12,
+                CatiaObjectRecordReferenceSource::Field,
+                false,
+                None,
+                None,
+            ),
         ]);
         let constraint_target_record = object_record(
             "constraint-target-record",
@@ -1389,27 +1392,31 @@ mod tests {
             .iter_mut()
             .find(|record| record.id == "sketch-owner-record")
             .expect("sketch owner record");
-        sketch_owner.references.push(CatiaObjectRecordReference {
-            entity_id: 5,
-            payload_offset: 1,
-            source: CatiaObjectRecordReferenceSource::Field,
-            is_null: false,
-            target: Some("constraint-owner-record".to_string()),
-            design_object: Some("parent-object".to_string()),
-        });
+        sketch_owner
+            .references
+            .push(CatiaObjectRecordReference::from_parts(
+                5,
+                1,
+                CatiaObjectRecordReferenceSource::Field,
+                false,
+                Some("constraint-owner-record".to_string()),
+                Some("parent-object".to_string()),
+            ));
         let geometry_field = native.object_graphs[0]
             .records
             .iter_mut()
             .find(|record| record.id == "catia:outer:object-record#geometry-field")
             .expect("geometry field");
-        geometry_field.references.push(CatiaObjectRecordReference {
-            entity_id: 6,
-            payload_offset: 2,
-            source: CatiaObjectRecordReferenceSource::Field,
-            is_null: false,
-            target: Some(constraint_field_id.to_string()),
-            design_object: Some("constraint-object".to_string()),
-        });
+        geometry_field
+            .references
+            .push(CatiaObjectRecordReference::from_parts(
+                6,
+                2,
+                CatiaObjectRecordReferenceSource::Field,
+                false,
+                Some(constraint_field_id.to_string()),
+                Some("constraint-object".to_string()),
+            ));
 
         (ir, native, transfer, graph_scope)
     }
@@ -1621,7 +1628,7 @@ mod tests {
             .find(|record| record.id == "sketch-owner-record")
             .expect("sketch owner record")
             .references
-            .retain(|reference| reference.target.as_deref() != Some("constraint-owner-record"));
+            .retain(|reference| reference.target() != Some("constraint-owner-record"));
 
         transfer_native_sketch_entities(&mut ir, &native, &transfer, Some(&graph_scope));
         assert!(transfer_native_sketch_constraints(

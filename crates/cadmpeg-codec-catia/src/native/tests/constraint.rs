@@ -170,22 +170,26 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .source_entity
         .as_ref()
         .expect("source record has a paired entity");
-    assert_eq!(source_entity.entity_id, 2);
+    assert_eq!(source_entity.entity_id(), 2);
     assert_eq!(
-        source_entity.entity.as_deref(),
+        source_entity.entity(),
         Some(unique_native.entity_records[1].id.as_str())
     );
     assert_eq!(
-        source_entity.class_name,
-        unique_native.object_graphs[0].records[1].class_name
+        source_entity.class_name(),
+        unique_native.object_graphs[0].records[1]
+            .class_name
+            .as_deref()
     );
     assert_eq!(
         incoming[0].payload_offset,
-        unique_native.object_graphs[0].records[1].references[0].payload_offset
+        unique_native.object_graphs[0].records[1].references[0].payload_offset()
     );
     assert_eq!(
         incoming[0].source,
-        unique_native.object_graphs[0].records[1].references[0].source
+        unique_native.object_graphs[0].records[1].references[0]
+            .source()
+            .clone()
     );
 
     let uniquely_referenced = CatiaCodec
@@ -201,13 +205,13 @@ fn native_namespace_types_dimension_constraint_ranges() {
         uniquely_referenced.report().coverage_count(
             crate::coverage::DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT
         ),
-        usize::from(source_entity.class_name.is_some())
+        usize::from(source_entity.class_name().is_some())
     );
     assert_eq!(
         uniquely_referenced
             .report()
             .coverage_count(crate::coverage::UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT),
-        usize::from(source_entity.class_name.is_none())
+        usize::from(source_entity.class_name().is_none())
     );
     assert_eq!(
         uniquely_referenced
@@ -265,14 +269,16 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .source_entity
         .as_ref()
         .expect("storage source has a paired entity");
-    assert_eq!(storage_source_entity.entity_id, 2);
+    assert_eq!(storage_source_entity.entity_id(), 2);
     assert_eq!(
-        storage_source_entity.entity.as_deref(),
+        storage_source_entity.entity(),
         Some(storage_native.entity_records[1].id.as_str())
     );
     assert_eq!(
-        storage_source_entity.class_name,
-        storage_native.object_graphs[0].records[1].class_name
+        storage_source_entity.class_name(),
+        storage_native.object_graphs[0].records[1]
+            .class_name
+            .as_deref()
     );
 
     let storage_referenced = CatiaCodec
@@ -344,7 +350,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         multiple_native.object_graphs[0].records[1]
             .references
             .iter()
-            .map(|reference| reference.payload_offset)
+            .map(|reference| reference.payload_offset())
             .collect::<Vec<_>>()
     );
 

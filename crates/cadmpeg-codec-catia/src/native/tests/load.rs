@@ -302,36 +302,32 @@ fn schema_configuration_productions_retain_exact_same_graph_incidence() {
     assert_eq!(configuration.schema_name, "Boolean");
     assert_eq!(configuration.schema_payload_offset, 0);
     assert_eq!(configuration.entity_reference.payload_offset, 10);
-    assert_eq!(configuration.entity_reference.reference.entity_id, 5);
+    assert_eq!(configuration.entity_reference.reference.entity_id(), 5);
     assert_eq!(
-        configuration.entity_reference.reference.entity.as_deref(),
+        configuration.entity_reference.reference.entity(),
         Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(
-        configuration
-            .entity_reference
-            .reference
-            .class_name
-            .as_deref(),
+        configuration.entity_reference.reference.class_name(),
         Some("Configuration")
     );
     let row = native.entity_records[1]
         .schema_configuration_row_link
         .as_ref()
         .expect("complete configrow production");
-    assert_eq!(row.class_reference.entity_id, 6);
+    assert_eq!(row.class_reference.entity_id(), 6);
     assert_eq!(
-        row.class_reference.entity.as_deref(),
+        row.class_reference.entity(),
         Some(native.entity_records[1].id.as_str())
     );
-    assert_eq!(row.class_reference.class_name.as_deref(), Some("configrow"));
+    assert_eq!(row.class_reference.class_name(), Some("configrow"));
     assert_eq!(row.successor_payload_offset, 5);
-    assert_eq!(row.successor.entity_id, 7);
+    assert_eq!(row.successor.entity_id(), 7);
     assert_eq!(
-        row.successor.entity.as_deref(),
+        row.successor.entity(),
         Some(native.entity_records[2].id.as_str())
     );
-    assert_eq!(row.successor.class_name.as_deref(), Some("body"));
+    assert_eq!(row.successor.class_name(), Some("body"));
     assert_eq!(native.schema_configuration_row_chains.len(), 1);
     let chain = &native.schema_configuration_row_chains[0];
     assert_eq!(chain.object_graph, native.entity_records[1].object_graph);
@@ -354,12 +350,12 @@ fn schema_configuration_productions_retain_exact_same_graph_incidence() {
         chain
             .links
             .iter()
-            .map(|link| link.row.entity_id)
+            .map(|link| link.row.entity_id())
             .collect::<Vec<_>>(),
         [6]
     );
     assert_eq!(
-        chain.links[0].row.entity.as_deref(),
+        chain.links[0].row.entity(),
         Some(native.entity_records[1].id.as_str())
     );
     assert_eq!(chain.links[0].successor, row.successor);
@@ -472,19 +468,19 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
         crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     assert_eq!(native.schema_configuration_row_chains.len(), 1);
     let chain = &native.schema_configuration_row_chains[0];
-    assert_eq!(chain.links[0].row.entity_id, 5);
+    assert_eq!(chain.links[0].row.entity_id(), 5);
     assert_eq!(
         chain
             .links
             .iter()
-            .map(|link| link.row.entity_id)
+            .map(|link| link.row.entity_id())
             .collect::<Vec<_>>(),
         [5, 7, 9]
     );
     assert!(chain
         .links
         .iter()
-        .all(|link| link.row.class_name.as_deref() == Some("configrow")));
+        .all(|link| link.row.class_name() == Some("configrow")));
     assert_eq!(
         chain
             .links
@@ -502,7 +498,7 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
                     .as_ref()
                     .expect("source-ordered row interval")
                     .iter()
-                    .map(|entity| entity.entity_id)
+                    .map(|entity| entity.entity_id())
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
@@ -516,9 +512,9 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
                 .as_ref()
                 .expect("source-ordered row interval")
         })
-        .all(|reference| reference.class_name.as_deref() == Some("body")));
-    assert_eq!(chain.links[2].successor.entity_id, 11);
-    assert_eq!(chain.links[2].successor.class_name.as_deref(), Some("body"));
+        .all(|reference| reference.class_name() == Some("body")));
+    assert_eq!(chain.links[2].successor.entity_id(), 11);
+    assert_eq!(chain.links[2].successor.class_name(), Some("body"));
 
     let decoded = CatiaCodec
         .decode(
@@ -550,12 +546,12 @@ fn schema_configuration_productions_preserve_unresolved_identities() {
         .as_ref()
         .expect("complete schema-configuration production");
     assert_eq!(configuration.schema_name, "Boolean");
-    assert!(configuration.entity_reference.reference.entity.is_none());
+    assert!(configuration.entity_reference.reference.entity().is_none());
     let row = native.entity_records[1]
         .schema_configuration_row_link
         .as_ref()
         .expect("complete configrow production");
-    assert!(row.successor.entity.is_none());
+    assert!(row.successor.entity().is_none());
 
     let mismatched_schema = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(14, 15, 16),
@@ -619,21 +615,19 @@ fn schema_configuration_productions_distinguish_terminal_null_identities() {
         .schema_configuration_record
         .as_ref()
         .expect("complete schema-configuration production");
-    assert!(configuration.entity_reference.reference.is_null);
-    assert!(configuration.entity_reference.reference.entity.is_none());
+    assert!(configuration.entity_reference.reference.is_null());
+    assert!(configuration.entity_reference.reference.entity().is_none());
     let row = native.entity_records[1]
         .schema_configuration_row_link
         .as_ref()
         .expect("complete configrow production");
-    assert!(!row.class_reference.is_null);
-    assert!(row.successor.is_null);
-    assert!(row.successor.entity.is_none());
+    assert!(!row.class_reference.is_null());
+    assert!(row.successor.is_null());
+    assert!(row.successor.entity().is_none());
     assert_eq!(native.schema_configuration_row_chains.len(), 1);
-    assert!(
-        native.schema_configuration_row_chains[0].links[0]
-            .successor
-            .is_null
-    );
+    assert!(native.schema_configuration_row_chains[0].links[0]
+        .successor
+        .is_null());
 
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
@@ -925,15 +919,21 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .schema_configuration_record
         .as_mut()
         .expect("complete schema-configuration production");
-    configuration.entity_reference.reference.is_null = false;
+    configuration.entity_reference.reference = configuration
+        .entity_reference
+        .reference
+        .clone()
+        .with_null_cleared();
     let row = stale_nulls.entity_records[1]
         .schema_configuration_row_link
         .as_mut()
         .expect("complete configrow production");
-    row.successor.is_null = false;
-    stale_nulls.schema_configuration_row_chains[0].links[0]
+    row.successor = row.successor.clone().with_null_cleared();
+    let successor = stale_nulls.schema_configuration_row_chains[0].links[0]
         .successor
-        .is_null = false;
+        .clone()
+        .with_null_cleared();
+    stale_nulls.schema_configuration_row_chains[0].links[0].successor = successor;
     let mut version_239 = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     stale_nulls
         .store(&mut version_239)
@@ -947,9 +947,11 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     assert_eq!(migrated, expected_nulls);
 
     let mut malformed_chain = native.clone();
-    malformed_chain.schema_configuration_row_chains[0].links[0]
-        .successor
-        .entity_id = 6;
+    malformed_chain.schema_configuration_row_chains[0].links[0].successor =
+        malformed_chain.schema_configuration_row_chains[0].links[0]
+            .successor
+            .clone()
+            .with_entity_id(6);
     let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_chain
         .store(&mut current)
@@ -996,8 +998,14 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     malformed_intervals.schema_configuration_row_chains[0].links[0]
         .intervening_entities
         .as_mut()
-        .expect("source-ordered row interval")[0]
-        .entity_id = 8;
+        .expect("source-ordered row interval")[0] = {
+        let current = malformed_intervals.schema_configuration_row_chains[0].links[0]
+            .intervening_entities
+            .as_ref()
+            .expect("source-ordered row interval")[0]
+            .clone();
+        current.with_entity_id(8)
+    };
     let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_intervals
         .store(&mut current)
@@ -1008,12 +1016,18 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     ));
 
     let mut malformed = native;
+    let malformed_successor = malformed.entity_records[1]
+        .schema_configuration_row_link
+        .as_ref()
+        .expect("decoded configrow link")
+        .successor
+        .clone()
+        .with_entity_id(6);
     malformed.entity_records[1]
         .schema_configuration_row_link
         .as_mut()
         .expect("decoded configrow link")
-        .successor
-        .entity_id = 6;
+        .successor = malformed_successor;
     let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut current)

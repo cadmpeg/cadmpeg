@@ -114,8 +114,8 @@ impl CatiaNative {
                 )
                 .map(|production| CatiaReferenceSignature {
                     production,
-                    first_entity: CatiaEntityReference::default(),
-                    second_entity: CatiaEntityReference::default(),
+                    first_entity: CatiaEntityReference::Unresolved { entity_id: 0 },
+                    second_entity: CatiaEntityReference::Unresolved { entity_id: 0 },
                 });
             }
         }
@@ -331,7 +331,9 @@ impl CatiaNative {
                     .filter(|record| record.parent == graph.id)
                 {
                     for reference in &mut record.references {
-                        reference.is_null = Some(reference.entity_id) == terminal_null;
+                        *reference = reference
+                            .clone()
+                            .with_null_from_terminal(Some(reference.entity_id()) == terminal_null);
                     }
                 }
             }

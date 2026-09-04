@@ -2222,10 +2222,16 @@ pub struct CatiaDefinitionChainValue {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaFormulaRelation {
     /// Complete relation-expression incidence selected by the second payload reference.
-    #[serde(default, deserialize_with = "deserialize_payload_entity_reference")]
+    #[serde(
+        default = "default_payload_entity_reference",
+        deserialize_with = "deserialize_payload_entity_reference"
+    )]
     pub expression_entity: CatiaPayloadEntityReference,
     /// Output parameter incidence selected by the third payload reference.
-    #[serde(default, deserialize_with = "deserialize_payload_entity_reference")]
+    #[serde(
+        default = "default_payload_entity_reference",
+        deserialize_with = "deserialize_payload_entity_reference"
+    )]
     pub output_entity: CatiaPayloadEntityReference,
     /// Named parameter records selected by expression-local symbols, in occurrence order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2281,10 +2287,9 @@ where
             .into_iter()
             .map(|candidate| match candidate {
                 CatiaRelationDependencyCandidate::Reference(reference) => reference,
-                CatiaRelationDependencyCandidate::LegacyEntity(entity) => CatiaEntityReference {
-                    entity: Some(entity),
-                    ..CatiaEntityReference::default()
-                },
+                CatiaRelationDependencyCandidate::LegacyEntity(entity) => {
+                    CatiaEntityReference::from_parts(0, false, Some(entity), None)
+                }
             })
             .collect()
     })
@@ -2342,7 +2347,7 @@ impl CatiaRelationProgramInstance {
             CatiaRelationProgramInstanceFraming::Lead12 { context_entity } => context_entity,
             CatiaRelationProgramInstanceFraming::Lead54 { trailing_entity } => trailing_entity,
         };
-        (slot.class_name.as_deref() == Some("paramout")).then_some(slot)
+        (slot.class_name() == Some("paramout")).then_some(slot)
     }
 }
 
@@ -2352,9 +2357,9 @@ struct CatiaRelationProgramInstanceWire {
     #[serde(default)]
     framing: CatiaRelationProgramInstanceFramingTag,
     #[serde(default)]
-    program_entity: CatiaEntityReference,
+    program_entity: Option<CatiaEntityReference>,
     #[serde(default)]
-    repeated_entity: CatiaEntityReference,
+    repeated_entity: Option<CatiaEntityReference>,
     #[serde(
         default,
         skip_serializing_if = "Vec::is_empty",
@@ -2400,8 +2405,8 @@ impl From<CatiaRelationProgramInstance> for CatiaRelationProgramInstanceWire {
         };
         Self {
             framing,
-            program_entity: value.program_entity,
-            repeated_entity: value.repeated_entity,
+            program_entity: Some(value.program_entity),
+            repeated_entity: Some(value.repeated_entity),
             reference_incidences: value.reference_incidences,
             relation_expression: value.relation_expression,
             parameter_dependencies: value.parameter_dependencies,
@@ -2433,8 +2438,12 @@ impl TryFrom<CatiaRelationProgramInstanceWire> for CatiaRelationProgramInstance 
         };
         Ok(Self {
             framing,
-            program_entity: wire.program_entity,
-            repeated_entity: wire.repeated_entity,
+            program_entity: wire
+                .program_entity
+                .unwrap_or(CatiaEntityReference::Unresolved { entity_id: 0 }),
+            repeated_entity: wire
+                .repeated_entity
+                .unwrap_or(CatiaEntityReference::Unresolved { entity_id: 0 }),
             reference_incidences: wire.reference_incidences,
             relation_expression: wire.relation_expression,
             parameter_dependencies: wire.parameter_dependencies,
@@ -2444,7 +2453,7 @@ impl TryFrom<CatiaRelationProgramInstanceWire> for CatiaRelationProgramInstance 
 }
 
 /// One exact entity-reference occurrence in an object payload.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaPayloadEntityReference {
     /// Byte offset of the reference field within the object payload.
@@ -2484,6 +2493,13 @@ where
         .map(stored_payload_entity_reference)
 }
 
+fn default_payload_entity_reference() -> CatiaPayloadEntityReference {
+    CatiaPayloadEntityReference {
+        payload_offset: 0,
+        reference: CatiaEntityReference::Unresolved { entity_id: 0 },
+    }
+}
+
 fn stored_payload_entity_reference(
     incidence: StoredCatiaPayloadEntityReference,
 ) -> CatiaPayloadEntityReference {
@@ -2497,20 +2513,159 @@ fn stored_payload_entity_reference(
 }
 
 /// One stored entity identity and its optional same-graph resolution.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaEntityReference {
-    /// Stored entity identity.
-    pub entity_id: u32,
+#[serde(
+    try_from = "CatiaEntityReferenceWire",
+    into = "CatiaEntityReferenceWire"
+)]
+pub enum CatiaEntityReference {
     /// The stored identity is the graph's terminal null identity.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub is_null: bool,
+    Null { entity_id: u32 },
+    /// Stored identity with no same-graph entity.
+    Unresolved { entity_id: u32 },
     /// Same-graph entity selected by that identity.
+    Resolved {
+        entity_id: u32,
+        entity: String,
+        class_name: Option<String>,
+    },
+}
+
+impl CatiaEntityReference {
+    pub fn from_parts(
+        entity_id: u32,
+        is_null: bool,
+        entity: Option<String>,
+        class_name: Option<String>,
+    ) -> Self {
+        match (is_null, entity) {
+            (true, _) => Self::Null { entity_id },
+            (false, None) => Self::Unresolved { entity_id },
+            (false, Some(entity)) => Self::Resolved {
+                entity_id,
+                entity,
+                class_name,
+            },
+        }
+    }
+
+    pub fn entity_id(&self) -> u32 {
+        match *self {
+            Self::Null { entity_id }
+            | Self::Unresolved { entity_id }
+            | Self::Resolved { entity_id, .. } => entity_id,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null { .. })
+    }
+
+    pub fn entity(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { entity, .. } => Some(entity.as_str()),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    pub fn class_name(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { class_name, .. } => class_name.as_deref(),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_entity_id(self, entity_id: u32) -> Self {
+        match self {
+            Self::Null { .. } => Self::Null { entity_id },
+            Self::Unresolved { .. } => Self::Unresolved { entity_id },
+            Self::Resolved {
+                entity, class_name, ..
+            } => Self::Resolved {
+                entity_id,
+                entity,
+                class_name,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_null_cleared(self) -> Self {
+        match self {
+            Self::Null { entity_id } => Self::Unresolved { entity_id },
+            other => other,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn without_entity(self) -> Self {
+        Self::Unresolved {
+            entity_id: self.entity_id(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaEntityReferenceWire {
+    entity_id: u32,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    is_null: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity: Option<String>,
-    /// Class selected by the same-graph entity when its object record has one.
+    entity: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_name: Option<String>,
+    class_name: Option<String>,
+}
+
+impl From<CatiaEntityReference> for CatiaEntityReferenceWire {
+    fn from(value: CatiaEntityReference) -> Self {
+        match value {
+            CatiaEntityReference::Null { entity_id } => Self {
+                entity_id,
+                is_null: true,
+                entity: None,
+                class_name: None,
+            },
+            CatiaEntityReference::Unresolved { entity_id } => Self {
+                entity_id,
+                is_null: false,
+                entity: None,
+                class_name: None,
+            },
+            CatiaEntityReference::Resolved {
+                entity_id,
+                entity,
+                class_name,
+            } => Self {
+                entity_id,
+                is_null: false,
+                entity: Some(entity),
+                class_name,
+            },
+        }
+    }
+}
+
+impl TryFrom<CatiaEntityReferenceWire> for CatiaEntityReference {
+    type Error = String;
+
+    fn try_from(wire: CatiaEntityReferenceWire) -> Result<Self, Self::Error> {
+        match (wire.is_null, wire.entity) {
+            (true, _) => Ok(Self::Null {
+                entity_id: wire.entity_id,
+            }),
+            (false, None) => Ok(Self::Unresolved {
+                entity_id: wire.entity_id,
+            }),
+            (false, Some(entity)) => Ok(Self::Resolved {
+                entity_id: wire.entity_id,
+                entity,
+                class_name: wire.class_name,
+            }),
+        }
+    }
 }
 
 /// One complete reference-signature packet and its same-graph entity incidences.
@@ -2521,10 +2676,8 @@ pub struct CatiaReferenceSignature {
     #[serde(flatten)]
     pub production: entity_table::ReferenceSignature,
     /// Entity incidence selected by the first fixed-width reference.
-    #[serde(default)]
     pub first_entity: CatiaEntityReference,
     /// Entity incidence selected by the second fixed-width reference.
-    #[serde(default)]
     pub second_entity: CatiaEntityReference,
 }
 
@@ -2897,22 +3050,207 @@ impl CatiaObjectRecord {
 /// One typed payload reference from a `7C09` record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaObjectRecordReference {
-    /// Stored entity identity.
-    pub entity_id: u32,
-    /// Byte offset of the reference field within the payload.
-    pub payload_offset: u64,
-    /// Structural container of the reference occurrence.
-    pub source: CatiaObjectRecordReferenceSource,
+#[serde(
+    try_from = "CatiaObjectRecordReferenceWire",
+    into = "CatiaObjectRecordReferenceWire"
+)]
+pub enum CatiaObjectRecordReference {
     /// The stored identity is the graph's terminal null identity.
+    Null {
+        entity_id: u32,
+        payload_offset: u64,
+        source: CatiaObjectRecordReferenceSource,
+    },
+    /// Stored identity with no same-graph target.
+    Unresolved {
+        entity_id: u32,
+        payload_offset: u64,
+        source: CatiaObjectRecordReferenceSource,
+    },
+    /// Same-graph record selected by that identity.
+    Resolved {
+        entity_id: u32,
+        payload_offset: u64,
+        source: CatiaObjectRecordReferenceSource,
+        target: String,
+        design_object: Option<String>,
+    },
+}
+
+impl CatiaObjectRecordReference {
+    pub fn from_parts(
+        entity_id: u32,
+        payload_offset: u64,
+        source: CatiaObjectRecordReferenceSource,
+        is_null: bool,
+        target: Option<String>,
+        design_object: Option<String>,
+    ) -> Self {
+        match (is_null, target) {
+            (true, _) => Self::Null {
+                entity_id,
+                payload_offset,
+                source,
+            },
+            (false, None) => Self::Unresolved {
+                entity_id,
+                payload_offset,
+                source,
+            },
+            (false, Some(target)) => Self::Resolved {
+                entity_id,
+                payload_offset,
+                source,
+                target,
+                design_object,
+            },
+        }
+    }
+
+    pub fn entity_id(&self) -> u32 {
+        match *self {
+            Self::Null { entity_id, .. }
+            | Self::Unresolved { entity_id, .. }
+            | Self::Resolved { entity_id, .. } => entity_id,
+        }
+    }
+
+    pub fn payload_offset(&self) -> u64 {
+        match *self {
+            Self::Null { payload_offset, .. }
+            | Self::Unresolved { payload_offset, .. }
+            | Self::Resolved { payload_offset, .. } => payload_offset,
+        }
+    }
+
+    pub fn source(&self) -> &CatiaObjectRecordReferenceSource {
+        match self {
+            Self::Null { source, .. }
+            | Self::Unresolved { source, .. }
+            | Self::Resolved { source, .. } => source,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null { .. })
+    }
+
+    pub fn target(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { target, .. } => Some(target.as_str()),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    pub fn design_object(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { design_object, .. } => design_object.as_deref(),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_null_cleared(self) -> Self {
+        match self {
+            Self::Null {
+                entity_id,
+                payload_offset,
+                source,
+            } => Self::Unresolved {
+                entity_id,
+                payload_offset,
+                source,
+            },
+            other => other,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_null_from_terminal(self, is_null: bool) -> Self {
+        if is_null {
+            Self::Null {
+                entity_id: self.entity_id(),
+                payload_offset: self.payload_offset(),
+                source: self.source().clone(),
+            }
+        } else {
+            self.with_null_cleared()
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaObjectRecordReferenceWire {
+    entity_id: u32,
+    payload_offset: u64,
+    source: CatiaObjectRecordReferenceSource,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub is_null: bool,
-    /// Exact selected record; absent when the identity is outside the graph.
+    is_null: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    /// Design object owning the selected record.
+    target: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub design_object: Option<String>,
+    design_object: Option<String>,
+}
+
+impl From<CatiaObjectRecordReference> for CatiaObjectRecordReferenceWire {
+    fn from(value: CatiaObjectRecordReference) -> Self {
+        match value {
+            CatiaObjectRecordReference::Null {
+                entity_id,
+                payload_offset,
+                source,
+            } => Self {
+                entity_id,
+                payload_offset,
+                source,
+                is_null: true,
+                target: None,
+                design_object: None,
+            },
+            CatiaObjectRecordReference::Unresolved {
+                entity_id,
+                payload_offset,
+                source,
+            } => Self {
+                entity_id,
+                payload_offset,
+                source,
+                is_null: false,
+                target: None,
+                design_object: None,
+            },
+            CatiaObjectRecordReference::Resolved {
+                entity_id,
+                payload_offset,
+                source,
+                target,
+                design_object,
+            } => Self {
+                entity_id,
+                payload_offset,
+                source,
+                is_null: false,
+                target: Some(target),
+                design_object,
+            },
+        }
+    }
+}
+
+impl TryFrom<CatiaObjectRecordReferenceWire> for CatiaObjectRecordReference {
+    type Error = String;
+
+    fn try_from(wire: CatiaObjectRecordReferenceWire) -> Result<Self, Self::Error> {
+        Ok(Self::from_parts(
+            wire.entity_id,
+            wire.payload_offset,
+            wire.source,
+            wire.is_null,
+            wire.target,
+            wire.design_object,
+        ))
+    }
 }
 
 /// Structural container of one payload-reference occurrence.
@@ -2981,24 +3319,257 @@ pub enum CatiaDesignObjectRelationSource {
 /// One cell in a row-aligned design-object reference table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaDesignReferenceCell {
-    /// Byte offset of the reference item within the source field's payload.
-    #[serde(default)]
-    pub payload_offset: u64,
-    /// Stored target entity identity.
-    pub entity_id: u32,
+#[serde(
+    try_from = "CatiaDesignReferenceCellWire",
+    into = "CatiaDesignReferenceCellWire"
+)]
+pub enum CatiaDesignReferenceCell {
     /// The stored identity is the graph's terminal null identity.
+    Null { payload_offset: u64, entity_id: u32 },
+    /// Stored identity with no same-graph field.
+    Unresolved { payload_offset: u64, entity_id: u32 },
+    /// Same-graph field selected by that identity.
+    Resolved {
+        payload_offset: u64,
+        entity_id: u32,
+        field: String,
+        field_class: Option<CatiaDesignClass>,
+        design_object: Option<String>,
+    },
+}
+
+impl CatiaDesignReferenceCell {
+    pub fn from_parts(
+        payload_offset: u64,
+        entity_id: u32,
+        is_null: bool,
+        field: Option<String>,
+        field_class: Option<CatiaDesignClass>,
+        design_object: Option<String>,
+    ) -> Self {
+        match (is_null, field) {
+            (true, _) => Self::Null {
+                payload_offset,
+                entity_id,
+            },
+            (false, None) => Self::Unresolved {
+                payload_offset,
+                entity_id,
+            },
+            (false, Some(field)) => Self::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                field_class,
+                design_object,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn payload_offset(&self) -> u64 {
+        match *self {
+            Self::Null { payload_offset, .. }
+            | Self::Unresolved { payload_offset, .. }
+            | Self::Resolved { payload_offset, .. } => payload_offset,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn entity_id(&self) -> u32 {
+        match *self {
+            Self::Null { entity_id, .. }
+            | Self::Unresolved { entity_id, .. }
+            | Self::Resolved { entity_id, .. } => entity_id,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null { .. })
+    }
+
+    pub fn field(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { field, .. } => Some(field.as_str()),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    pub fn field_class(&self) -> Option<&CatiaDesignClass> {
+        match self {
+            Self::Resolved { field_class, .. } => field_class.as_ref(),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    pub fn design_object(&self) -> Option<&str> {
+        match self {
+            Self::Resolved { design_object, .. } => design_object.as_deref(),
+            Self::Null { .. } | Self::Unresolved { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_payload_offset(self, payload_offset: u64) -> Self {
+        match self {
+            Self::Null { entity_id, .. } => Self::Null {
+                payload_offset,
+                entity_id,
+            },
+            Self::Unresolved { entity_id, .. } => Self::Unresolved {
+                payload_offset,
+                entity_id,
+            },
+            Self::Resolved {
+                entity_id,
+                field,
+                field_class,
+                design_object,
+                ..
+            } => Self::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                field_class,
+                design_object,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_entity_id(self, entity_id: u32) -> Self {
+        match self {
+            Self::Null { payload_offset, .. } => Self::Null {
+                payload_offset,
+                entity_id,
+            },
+            Self::Unresolved { payload_offset, .. } => Self::Unresolved {
+                payload_offset,
+                entity_id,
+            },
+            Self::Resolved {
+                payload_offset,
+                field,
+                field_class,
+                design_object,
+                ..
+            } => Self::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                field_class,
+                design_object,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub fn without_field_class(self) -> Self {
+        match self {
+            Self::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                design_object,
+                ..
+            } => Self::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                field_class: None,
+                design_object,
+            },
+            other => other,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_null_cleared(self) -> Self {
+        match self {
+            Self::Null {
+                payload_offset,
+                entity_id,
+            } => Self::Unresolved {
+                payload_offset,
+                entity_id,
+            },
+            other => other,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaDesignReferenceCellWire {
+    #[serde(default)]
+    payload_offset: u64,
+    entity_id: u32,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub is_null: bool,
-    /// Exact field record selected by the stored identity.
+    is_null: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub field: Option<String>,
-    /// Exact class of the selected field record.
+    field: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub field_class: Option<CatiaDesignClass>,
-    /// Design object containing the selected field record, when it has an owner group.
+    field_class: Option<CatiaDesignClass>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub design_object: Option<String>,
+    design_object: Option<String>,
+}
+
+impl From<CatiaDesignReferenceCell> for CatiaDesignReferenceCellWire {
+    fn from(value: CatiaDesignReferenceCell) -> Self {
+        match value {
+            CatiaDesignReferenceCell::Null {
+                payload_offset,
+                entity_id,
+            } => Self {
+                payload_offset,
+                entity_id,
+                is_null: true,
+                field: None,
+                field_class: None,
+                design_object: None,
+            },
+            CatiaDesignReferenceCell::Unresolved {
+                payload_offset,
+                entity_id,
+            } => Self {
+                payload_offset,
+                entity_id,
+                is_null: false,
+                field: None,
+                field_class: None,
+                design_object: None,
+            },
+            CatiaDesignReferenceCell::Resolved {
+                payload_offset,
+                entity_id,
+                field,
+                field_class,
+                design_object,
+            } => Self {
+                payload_offset,
+                entity_id,
+                is_null: false,
+                field: Some(field),
+                field_class,
+                design_object,
+            },
+        }
+    }
+}
+
+impl TryFrom<CatiaDesignReferenceCellWire> for CatiaDesignReferenceCell {
+    type Error = String;
+
+    fn try_from(wire: CatiaDesignReferenceCellWire) -> Result<Self, Self::Error> {
+        Ok(Self::from_parts(
+            wire.payload_offset,
+            wire.entity_id,
+            wire.is_null,
+            wire.field,
+            wire.field_class,
+            wire.design_object,
+        ))
+    }
 }
 
 /// One source-ordered row in a parallel design-object reference table.
@@ -3224,19 +3795,20 @@ fn design_objects(
                                 storage
                                     .into_iter()
                                     .chain(record.references.iter().filter_map(|reference| {
-                                        let target_field = reference.target.as_ref()?.clone();
+                                        let target_field = reference.target()?.to_owned();
                                         let target_record = record_indices
-                                            .get(&reference.entity_id)
+                                            .get(&reference.entity_id())
                                             .and_then(|index| graph.records.get(*index))?;
-                                        let target_design_object = reference.design_object.clone();
+                                        let target_design_object =
+                                            reference.design_object().map(str::to_owned);
                                         Some(CatiaDesignObjectRelation {
                                             source_field: record.id.clone(),
                                             source_class: design_class(record),
                                             source: CatiaDesignObjectRelationSource::Payload {
-                                                payload_offset: reference.payload_offset,
-                                                container: reference.source.clone(),
+                                                payload_offset: reference.payload_offset(),
+                                                container: reference.source().clone(),
                                             },
-                                            target_entity_id: reference.entity_id,
+                                            target_entity_id: reference.entity_id(),
                                             target_field,
                                             target_class: design_class(target_record),
                                             target_design_object,
@@ -3316,30 +3888,30 @@ fn design_parallel_reference_table(
                     let target = record_indices
                         .get(&target_entity_id)
                         .and_then(|index| graph.records.get(*index));
-                    CatiaDesignReferenceCell {
-                        payload_offset: u64::try_from(payload_offset)
+                    CatiaDesignReferenceCell::from_parts(
+                        u64::try_from(payload_offset)
                             .expect("bounded CATIA list-item offset fits u64"),
-                        entity_id: target_entity_id,
-                        is_null: Some(target_entity_id) == terminal_null_entity_id,
-                        field: target.map(|record| record.id.clone()),
-                        field_class: target.and_then(design_class),
-                        design_object: target.and_then(|record| record.design_object.clone()),
-                    }
+                        target_entity_id,
+                        Some(target_entity_id) == terminal_null_entity_id,
+                        target.map(|record| record.id.clone()),
+                        target.and_then(design_class),
+                        target.and_then(|record| record.design_object.clone()),
+                    )
                 })
                 .collect::<Vec<_>>();
             let matching_design_object = cells
                 .first()
-                .and_then(|cell| cell.design_object.clone())
+                .and_then(|cell| cell.design_object().map(str::to_owned))
                 .filter(|member| {
                     let distinct_fields = cells
                         .iter()
-                        .filter_map(|cell| cell.field.as_deref())
+                        .filter_map(|cell| cell.field())
                         .collect::<HashSet<_>>();
                     columns.iter().zip(&cells).all(|((column, _), cell)| {
                         column.field_class.is_some()
-                            && cell.field.is_some()
-                            && cell.field_class.as_ref() == column.field_class.as_ref()
-                            && cell.design_object.as_ref() == Some(member)
+                            && cell.field().is_some()
+                            && cell.field_class() == column.field_class.as_ref()
+                            && cell.design_object() == Some(member.as_str())
                     }) && distinct_fields.len() == cells.len()
                 });
             CatiaDesignReferenceRow {
@@ -3417,18 +3989,17 @@ fn resolved_payload_references(
     payload_references(payload)
         .map(|(entity_id, payload_offset, source)| {
             let index = record_indices.get(&entity_id).copied();
-            CatiaObjectRecordReference {
+            CatiaObjectRecordReference::from_parts(
                 entity_id,
-                payload_offset: u64::try_from(payload_offset)
-                    .expect("bounded CATIA payload offset fits u64"),
+                u64::try_from(payload_offset).expect("bounded CATIA payload offset fits u64"),
                 source,
-                is_null: Some(entity_id) == terminal_null_entity_id,
-                target: index.and_then(|index| record_ids.get(index)).cloned(),
-                design_object: index
+                Some(entity_id) == terminal_null_entity_id,
+                index.and_then(|index| record_ids.get(index)).cloned(),
+                index
                     .and_then(|index| record_design_objects.get(index))
                     .cloned()
                     .flatten(),
-            }
+            )
         })
         .collect()
 }
@@ -3867,27 +4438,31 @@ fn entity_incidences(
             record
                 .references
                 .iter()
-                .filter(|reference| reference.entity_id == entity_id)
+                .filter(|reference| reference.entity_id() == entity_id)
                 .map(|reference| CatiaEntityIncomingReference {
                     object_record: record.id.clone(),
-                    source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
-                        entity_id,
-                        is_null: false,
-                        entity: record.entity_record.clone(),
-                        class_name: record.class_name.clone(),
+                    source_entity: record.entity_id.map(|entity_id| {
+                        CatiaEntityReference::from_parts(
+                            entity_id,
+                            false,
+                            record.entity_record.clone(),
+                            record.class_name.clone(),
+                        )
                     }),
-                    payload_offset: reference.payload_offset,
-                    source: reference.source.clone(),
+                    payload_offset: reference.payload_offset(),
+                    source: reference.source().clone(),
                 }),
         );
         if record.storage_ref == Some(entity_id) {
             incoming_storage_references.push(CatiaEntityIncomingStorageReference {
                 object_record: record.id.clone(),
-                source_entity: record.entity_id.map(|entity_id| CatiaEntityReference {
-                    entity_id,
-                    is_null: false,
-                    entity: record.entity_record.clone(),
-                    class_name: record.class_name.clone(),
+                source_entity: record.entity_id.map(|entity_id| {
+                    CatiaEntityReference::from_parts(
+                        entity_id,
+                        false,
+                        record.entity_record.clone(),
+                        record.class_name.clone(),
+                    )
                 }),
             });
         }
@@ -4334,11 +4909,16 @@ fn entity_reference(
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
 ) -> CatiaEntityReference {
     let key = (graph_id.to_owned(), entity_id);
-    CatiaEntityReference {
-        entity_id,
-        is_null: terminal_nulls.get(graph_id).copied() == Some(entity_id),
-        entity: entities.get(&key).cloned(),
-        class_name: entity_classes.get(&key).cloned(),
+    if terminal_nulls.get(graph_id).copied() == Some(entity_id) {
+        return CatiaEntityReference::Null { entity_id };
+    }
+    match entities.get(&key).cloned() {
+        Some(entity) => CatiaEntityReference::Resolved {
+            entity_id,
+            entity,
+            class_name: entity_classes.get(&key).cloned(),
+        },
+        None => CatiaEntityReference::Unresolved { entity_id },
     }
 }
 
@@ -4577,7 +5157,10 @@ fn derive_schema_configuration_row_chains(
             continue;
         };
         groups
-            .entry((entity.object_graph.as_str(), link.class_reference.entity_id))
+            .entry((
+                entity.object_graph.as_str(),
+                link.class_reference.entity_id(),
+            ))
             .or_default()
             .push((entity.entity_id, link));
     }
@@ -4603,7 +5186,7 @@ fn derive_schema_configuration_row_chains(
                     return None;
                 }
                 row_ids_in_order.push(current);
-                current = link.successor.entity_id;
+                current = link.successor.entity_id();
             }
             if visited.len() != links.len() || row_ids.contains(&(graph, current)) {
                 return None;
@@ -4612,7 +5195,7 @@ fn derive_schema_configuration_row_chains(
                 .into_iter()
                 .map(|row_id| {
                     let link = successors[&row_id];
-                    let successor_id = link.successor.entity_id;
+                    let successor_id = link.successor.entity_id();
                     CatiaSchemaConfigurationRowChainLink {
                         row: entity_reference(
                             graph,
@@ -4773,14 +5356,14 @@ fn formula_relation(
     else {
         return None;
     };
-    if owner_reference.entity_id != entity_id
-        || expression_reference.entity_id != *expression_entity_id
-        || parameter_reference.entity_id != *parameter_entity_id
-        || owner_reference.target.as_deref() != Some(object.id.as_str())
+    if owner_reference.entity_id() != entity_id
+        || expression_reference.entity_id() != *expression_entity_id
+        || parameter_reference.entity_id() != *parameter_entity_id
+        || owner_reference.target() != Some(object.id.as_str())
     {
         return None;
     }
-    let expression_object = expression_reference.target.as_ref()?;
+    let expression_object = expression_reference.target()?;
     let source = relation_expressions.get(expression_object)?;
     let parameter_dependencies =
         relation_parameter_dependencies(source, &object.parent, parameter_bindings);
@@ -4797,15 +5380,21 @@ fn formula_relation(
         },
         output_entity: CatiaPayloadEntityReference {
             payload_offset: u64::try_from(*parameter_offset).ok()?,
-            reference: CatiaEntityReference {
-                is_null: parameter_reference.is_null,
-                ..entity_reference(
+            reference: {
+                let resolved = entity_reference(
                     &object.parent,
                     *parameter_entity_id,
                     entity_references.entities,
                     entity_references.classes,
                     entity_references.terminal_nulls,
-                )
+                );
+                if parameter_reference.is_null() {
+                    CatiaEntityReference::Null {
+                        entity_id: resolved.entity_id(),
+                    }
+                } else {
+                    resolved
+                }
             },
         },
         parameter_dependencies,
@@ -4911,14 +5500,14 @@ fn semantic_entity_indices(
             .or_default()
             .entry(parameter.binding.value.clone())
             .or_default()
-            .push(CatiaEntityReference {
-                entity_id: entity.entity_id,
-                is_null: false,
-                entity: Some(entity.id.clone()),
-                class_name: entity_classes
+            .push(CatiaEntityReference::from_parts(
+                entity.entity_id,
+                false,
+                Some(entity.id.clone()),
+                entity_classes
                     .get(&(entity.object_graph.clone(), entity.entity_id))
                     .cloned(),
-            });
+            ));
     }
     (
         relation_expressions,
@@ -4997,7 +5586,7 @@ pub(crate) fn resolved_relation_program_inputs(
                 let [candidate] = dependency.candidates.as_slice() else {
                     return None;
                 };
-                if candidate.is_null || candidate.entity.is_none() {
+                if candidate.is_null() || candidate.entity().is_none() {
                     return None;
                 }
                 match &selected {
@@ -5007,7 +5596,7 @@ pub(crate) fn resolved_relation_program_inputs(
                 }
             }
             let entity = (occurrence_count != 0).then_some(selected)??;
-            if !entity_ids.insert(entity.entity_id) {
+            if !entity_ids.insert(entity.entity_id()) {
                 return None;
             }
             Some(CatiaRelationProgramInput {
@@ -8684,8 +9273,8 @@ fn native_object_graph(
                 reference_signature: reference_signature.map(|production| {
                     CatiaReferenceSignature {
                         production,
-                        first_entity: CatiaEntityReference::default(),
-                        second_entity: CatiaEntityReference::default(),
+                        first_entity: CatiaEntityReference::Unresolved { entity_id: 0 },
+                        second_entity: CatiaEntityReference::Unresolved { entity_id: 0 },
                     }
                 }),
                 record_suffix,

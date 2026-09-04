@@ -101,10 +101,10 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .expect("complete formula relation")
         .output_entity
         .reference;
-    assert_eq!(output_entity.entity_id, 4);
-    assert!(output_entity.entity.is_some());
+    assert_eq!(output_entity.entity_id(), 4);
+    assert!(output_entity.entity().is_some());
     assert_eq!(
-        output_entity.class_name,
+        output_entity.class_name().map(str::to_owned),
         native
             .object_graphs
             .iter()
@@ -155,13 +155,13 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         decoded
             .report()
             .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
-        usize::from(output_entity.class_name.is_some())
+        usize::from(output_entity.class_name().is_some())
     );
     assert_eq!(
         decoded
             .report()
             .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
-        usize::from(output_entity.class_name.is_none())
+        usize::from(output_entity.class_name().is_none())
     );
     let expression_classified = native.entity_records[0]
         .formula_relation
@@ -169,7 +169,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .expect("complete formula relation")
         .expression_entity
         .reference
-        .class_name
+        .class_name()
         .is_some();
     assert_eq!(
         decoded
@@ -199,13 +199,13 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         decoded.report().coverage_count(
             crate::coverage::DECODED_CLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
         ),
-        usize::from(dependency_candidate.class_name.is_some())
+        usize::from(dependency_candidate.class_name().is_some())
     );
     assert_eq!(
         decoded.report().coverage_count(
             crate::coverage::UNCLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
         ),
-        usize::from(dependency_candidate.class_name.is_none())
+        usize::from(dependency_candidate.class_name().is_none())
     );
     assert_eq!(
         decoded

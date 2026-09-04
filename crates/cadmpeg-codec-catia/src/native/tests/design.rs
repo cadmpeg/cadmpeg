@@ -38,28 +38,28 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
     assert_eq!(
         graph.records[0].references,
         [
-            crate::native::CatiaObjectRecordReference {
-                entity_id: 3,
-                payload_offset: 2,
-                source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
+            crate::native::CatiaObjectRecordReference::from_parts(
+                3,
+                2,
+                crate::native::CatiaObjectRecordReferenceSource::ListItem {
                     list_payload_offset: 0,
                     item_ordinal: 0,
                 },
-                is_null: false,
-                target: Some(graph.records[2].id.clone()),
-                design_object: graph.records[2].design_object.clone(),
-            },
-            crate::native::CatiaObjectRecordReference {
-                entity_id: 3,
-                payload_offset: 4,
-                source: crate::native::CatiaObjectRecordReferenceSource::ListItem {
+                false,
+                Some(graph.records[2].id.clone()),
+                graph.records[2].design_object.clone(),
+            ),
+            crate::native::CatiaObjectRecordReference::from_parts(
+                3,
+                4,
+                crate::native::CatiaObjectRecordReferenceSource::ListItem {
                     list_payload_offset: 0,
                     item_ordinal: 1,
                 },
-                is_null: false,
-                target: Some(graph.records[2].id.clone()),
-                design_object: graph.records[2].design_object.clone(),
-            },
+                false,
+                Some(graph.records[2].id.clone()),
+                graph.records[2].design_object.clone(),
+            ),
         ]
     );
     assert_eq!(
@@ -111,14 +111,14 @@ fn native_design_objects_preserve_payload_references_to_target_owners() {
     );
     assert_eq!(
         graph.records[1].references,
-        [crate::native::CatiaObjectRecordReference {
-            entity_id: 1,
-            payload_offset: 0,
-            source: crate::native::CatiaObjectRecordReferenceSource::Field,
-            is_null: false,
-            target: Some(graph.records[0].id.clone()),
-            design_object: graph.records[0].design_object.clone(),
-        }]
+        [crate::native::CatiaObjectRecordReference::from_parts(
+            1,
+            0,
+            crate::native::CatiaObjectRecordReferenceSource::Field,
+            false,
+            Some(graph.records[0].id.clone()),
+            graph.records[0].design_object.clone(),
+        )]
     );
     assert_eq!(native.design_objects[1].owner_entity_id, 3);
     assert_eq!(native.design_objects[1].ordinal, 1);
@@ -314,11 +314,11 @@ fn native_object_references_select_sparse_entity_identities() {
         [Some(1), Some(3), Some(7)]
     );
     assert_eq!(
-        graph.records[0].references[0].target.as_deref(),
+        graph.records[0].references[0].target(),
         Some(graph.records[1].id.as_str())
     );
     assert_ne!(
-        graph.records[0].references[0].target.as_deref(),
+        graph.records[0].references[0].target(),
         Some(graph.records[2].id.as_str())
     );
     assert_eq!(
@@ -517,7 +517,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
             .map(|row| {
                 row.cells
                     .iter()
-                    .map(|cell| cell.entity_id)
+                    .map(|cell| cell.entity_id())
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
@@ -530,31 +530,38 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
             .map(|row| {
                 row.cells
                     .iter()
-                    .map(|cell| cell.payload_offset)
+                    .map(|cell| cell.payload_offset())
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
         [vec![2, 2], vec![4, 4]]
     );
     assert!(table.rows.iter().flat_map(|row| &row.cells).all(|cell| {
-        cell.field.is_some() && cell.field_class.is_some() && cell.design_object.is_some()
+        cell.field().is_some() && cell.field_class().is_some() && cell.design_object().is_some()
     }));
     assert_eq!(
         table.rows[0].matching_design_object,
-        table.rows[0].cells[0].design_object
+        table.rows[0].cells[0].design_object().map(str::to_owned)
     );
     assert!(table.rows[0].matching_design_object.is_some());
     assert!(table.rows[1].matching_design_object.is_none());
 
     let expected = table.clone();
     let mut malformed = native.clone();
+    let malformed_cell = malformed.design_objects[0]
+        .parallel_reference_table
+        .as_ref()
+        .expect("parallel reference table")
+        .rows[0]
+        .cells[0]
+        .clone();
+    let malformed_entity_id = malformed_cell.entity_id() + 1;
     malformed.design_objects[0]
         .parallel_reference_table
         .as_mut()
         .expect("parallel reference table")
         .rows[0]
-        .cells[0]
-        .entity_id += 1;
+        .cells[0] = malformed_cell.with_entity_id(malformed_entity_id);
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
@@ -565,13 +572,20 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     ));
 
     let mut malformed_offset = native.clone();
+    let offset_cell = malformed_offset.design_objects[0]
+        .parallel_reference_table
+        .as_ref()
+        .expect("parallel reference table")
+        .rows[0]
+        .cells[0]
+        .clone();
+    let next_offset = offset_cell.payload_offset() + 1;
     malformed_offset.design_objects[0]
         .parallel_reference_table
         .as_mut()
         .expect("parallel reference table")
         .rows[0]
-        .cells[0]
-        .payload_offset += 1;
+        .cells[0] = offset_cell.with_payload_offset(next_offset);
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_offset
         .store(&mut namespace)
@@ -650,7 +664,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .iter_mut()
         .flat_map(|row| &mut row.cells)
     {
-        cell.payload_offset = 0;
+        *cell = cell.clone().with_payload_offset(0);
     }
     version_255_namespace
         .set_arena("design_objects", &version_255_objects)
@@ -752,7 +766,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .iter_mut()
         .flat_map(|row| &mut row.cells)
     {
-        cell.field_class = None;
+        *cell = cell.clone().without_field_class();
     }
     version_201_namespace
         .set_arena("design_objects", &version_201_objects)
@@ -779,7 +793,10 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .as_ref()
         .expect("parallel reference table with terminal null row");
     assert!(null_table.rows[1].cells.iter().all(|cell| {
-        cell.entity_id == 5 && cell.is_null && cell.field.is_none() && cell.design_object.is_none()
+        cell.entity_id() == 5
+            && cell.is_null()
+            && cell.field().is_none()
+            && cell.design_object().is_none()
     }));
 
     let mut version_210_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -793,7 +810,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .iter_mut()
         .flat_map(|record| &mut record.references)
     {
-        reference.is_null = false;
+        *reference = reference.clone().with_null_cleared();
     }
     version_210_namespace
         .set_arena("object_graph_records", &version_210_records)
@@ -809,7 +826,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .iter_mut()
         .flat_map(|row| &mut row.cells)
     {
-        cell.is_null = false;
+        *cell = cell.clone().with_null_cleared();
     }
     version_210_namespace
         .set_arena("design_objects", &version_210_objects)
@@ -824,7 +841,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .rows[1]
         .cells
         .iter()
-        .all(|cell| cell.is_null));
+        .all(|cell| cell.is_null()));
 
     let three_references = [0x3b, 0x83, 0x81, 0x83, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
     let mismatched = sequential_entity_backed_object_graph(&[
@@ -868,7 +885,10 @@ fn parallel_reference_row_match_requires_distinct_target_fields() {
 
     assert!(table.rows[0].matching_design_object.is_some());
     assert!(table.rows[1].matching_design_object.is_none());
-    assert_eq!(table.rows[1].cells[0].field, table.rows[1].cells[1].field);
+    assert_eq!(
+        table.rows[1].cells[0].field(),
+        table.rows[1].cells[1].field()
+    );
 
     let mut version_204_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
@@ -882,7 +902,10 @@ fn parallel_reference_row_match_requires_distinct_target_fields() {
         .as_mut()
         .expect("parallel reference table")
         .rows[1]
-        .matching_design_object = table.rows[1].cells[0].design_object.clone();
+        .matching_design_object = table.rows[1].cells[0]
+        .design_object()
+        .map(str::to_owned)
+        .clone();
     version_204_namespace
         .set_arena("design_objects", &version_204_objects)
         .expect("store version 204 design objects");
