@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Inventor-native structural records.
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use std::str::FromStr;
 
 use crate::pmdc::PmDcReference;
 use crate::presentation::RenderingStyleExtension;
@@ -87,64 +86,98 @@ pub(crate) struct PropertySetRecord {
     pub(crate) section_count: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PropertyValueKind {
-    Empty,
-    Signed,
-    Unsigned,
-    Float,
-    Bool,
-    Filetime,
-    String,
-    Guid,
-    Binary { len: usize },
-    Clipboard { format: u32, len: usize },
-    Vector { len: usize },
+    Empty {
+        type_code: u16,
+    },
+    Signed {
+        type_code: u16,
+    },
+    Unsigned {
+        type_code: u16,
+    },
+    Float {
+        type_code: u16,
+    },
+    Bool {
+        type_code: u16,
+    },
+    Filetime {
+        type_code: u16,
+    },
+    String {
+        type_code: u16,
+    },
+    Guid {
+        type_code: u16,
+    },
+    Binary {
+        type_code: u16,
+        len: usize,
+    },
+    Clipboard {
+        type_code: u16,
+        format: u32,
+        len: usize,
+    },
+    Vector {
+        type_code: u16,
+        len: usize,
+    },
     Dictionary,
-    Unknown,
+    Unknown {
+        type_code: u16,
+    },
 }
 
-impl Display for PropertyValueKind {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+impl PropertyValueKind {
+    fn type_code(&self) -> Option<u16> {
         match self {
-            Self::Empty => formatter.write_str("empty"),
-            Self::Signed => formatter.write_str("signed"),
-            Self::Unsigned => formatter.write_str("unsigned"),
-            Self::Float => formatter.write_str("float"),
-            Self::Bool => formatter.write_str("bool"),
-            Self::Filetime => formatter.write_str("filetime"),
-            Self::String => formatter.write_str("string"),
-            Self::Guid => formatter.write_str("guid"),
-            Self::Binary { len } => write!(formatter, "binary:{len}"),
-            Self::Clipboard { format, len } => write!(formatter, "clipboard:{format}:{len}"),
-            Self::Vector { len } => write!(formatter, "vector:{len}"),
-            Self::Dictionary => formatter.write_str("dictionary"),
-            Self::Unknown => formatter.write_str("unknown"),
+            Self::Dictionary => None,
+            Self::Empty { type_code }
+            | Self::Signed { type_code }
+            | Self::Unsigned { type_code }
+            | Self::Float { type_code }
+            | Self::Bool { type_code }
+            | Self::Filetime { type_code }
+            | Self::String { type_code }
+            | Self::Guid { type_code }
+            | Self::Binary { type_code, .. }
+            | Self::Clipboard { type_code, .. }
+            | Self::Vector { type_code, .. }
+            | Self::Unknown { type_code } => Some(*type_code),
         }
     }
-}
 
-impl FromStr for PropertyValueKind {
-    type Err = String;
-
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
+    fn from_wire(text: &str, type_code: Option<u16>) -> Result<Self, String> {
+        if text == "dictionary" {
+            return match type_code {
+                None => Ok(Self::Dictionary),
+                Some(type_code) => Err(format!(
+                    "dictionary property value_kind cannot carry type_code {type_code}"
+                )),
+            };
+        }
+        let Some(type_code) = type_code else {
+            return Err(format!("property value_kind {text} requires type_code"));
+        };
         match text {
-            "empty" => Ok(Self::Empty),
-            "signed" => Ok(Self::Signed),
-            "unsigned" => Ok(Self::Unsigned),
-            "float" => Ok(Self::Float),
-            "bool" => Ok(Self::Bool),
-            "filetime" => Ok(Self::Filetime),
-            "string" => Ok(Self::String),
-            "guid" => Ok(Self::Guid),
-            "dictionary" => Ok(Self::Dictionary),
-            "unknown" => Ok(Self::Unknown),
+            "empty" => Ok(Self::Empty { type_code }),
+            "signed" => Ok(Self::Signed { type_code }),
+            "unsigned" => Ok(Self::Unsigned { type_code }),
+            "float" => Ok(Self::Float { type_code }),
+            "bool" => Ok(Self::Bool { type_code }),
+            "filetime" => Ok(Self::Filetime { type_code }),
+            "string" => Ok(Self::String { type_code }),
+            "guid" => Ok(Self::Guid { type_code }),
+            "unknown" => Ok(Self::Unknown { type_code }),
             text => {
                 if let Some(len) = text.strip_prefix("binary:") {
                     let len = len
                         .parse()
                         .map_err(|_| format!("property value_kind {text}"))?;
-                    return Ok(Self::Binary { len });
+                    return Ok(Self::Binary { type_code, len });
                 }
                 if let Some(rest) = text.strip_prefix("clipboard:") {
                     let (format, len) = rest
@@ -156,13 +189,17 @@ impl FromStr for PropertyValueKind {
                     let len = len
                         .parse()
                         .map_err(|_| format!("property value_kind {text}"))?;
-                    return Ok(Self::Clipboard { format, len });
+                    return Ok(Self::Clipboard {
+                        type_code,
+                        format,
+                        len,
+                    });
                 }
                 if let Some(len) = text.strip_prefix("vector:") {
                     let len = len
                         .parse()
                         .map_err(|_| format!("property value_kind {text}"))?;
-                    return Ok(Self::Vector { len });
+                    return Ok(Self::Vector { type_code, len });
                 }
                 Err(format!("property value_kind {text}"))
             }
@@ -170,21 +207,30 @@ impl FromStr for PropertyValueKind {
     }
 }
 
-impl Serialize for PropertyValueKind {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_string())
-    }
-}
-
-impl<'de> Deserialize<'de> for PropertyValueKind {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(serde::de::Error::custom)
+impl Display for PropertyValueKind {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty { .. } => formatter.write_str("empty"),
+            Self::Signed { .. } => formatter.write_str("signed"),
+            Self::Unsigned { .. } => formatter.write_str("unsigned"),
+            Self::Float { .. } => formatter.write_str("float"),
+            Self::Bool { .. } => formatter.write_str("bool"),
+            Self::Filetime { .. } => formatter.write_str("filetime"),
+            Self::String { .. } => formatter.write_str("string"),
+            Self::Guid { .. } => formatter.write_str("guid"),
+            Self::Binary { len, .. } => write!(formatter, "binary:{len}"),
+            Self::Clipboard { format, len, .. } => {
+                write!(formatter, "clipboard:{format}:{len}")
+            }
+            Self::Vector { len, .. } => write!(formatter, "vector:{len}"),
+            Self::Dictionary => formatter.write_str("dictionary"),
+            Self::Unknown { .. } => formatter.write_str("unknown"),
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PropertyRecordWire", into = "PropertyRecordWire")]
 pub(crate) struct PropertyRecord {
     pub(crate) id: String,
     pub(crate) set_path: String,
@@ -192,11 +238,62 @@ pub(crate) struct PropertyRecord {
     pub(crate) fmtid: String,
     pub(crate) property_id: u32,
     pub(crate) name: Option<String>,
-    pub(crate) type_code: Option<u16>,
     pub(crate) value_kind: PropertyValueKind,
     pub(crate) scalar_value: Option<String>,
     pub(crate) raw_len: u64,
     pub(crate) raw_sha256: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PropertyRecordWire {
+    id: String,
+    set_path: String,
+    section_ordinal: u32,
+    fmtid: String,
+    property_id: u32,
+    name: Option<String>,
+    type_code: Option<u16>,
+    value_kind: String,
+    scalar_value: Option<String>,
+    raw_len: u64,
+    raw_sha256: String,
+}
+
+impl From<PropertyRecord> for PropertyRecordWire {
+    fn from(value: PropertyRecord) -> Self {
+        Self {
+            type_code: value.value_kind.type_code(),
+            value_kind: value.value_kind.to_string(),
+            id: value.id,
+            set_path: value.set_path,
+            section_ordinal: value.section_ordinal,
+            fmtid: value.fmtid,
+            property_id: value.property_id,
+            name: value.name,
+            scalar_value: value.scalar_value,
+            raw_len: value.raw_len,
+            raw_sha256: value.raw_sha256,
+        }
+    }
+}
+
+impl TryFrom<PropertyRecordWire> for PropertyRecord {
+    type Error = String;
+
+    fn try_from(wire: PropertyRecordWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            value_kind: PropertyValueKind::from_wire(&wire.value_kind, wire.type_code)?,
+            id: wire.id,
+            set_path: wire.set_path,
+            section_ordinal: wire.section_ordinal,
+            fmtid: wire.fmtid,
+            property_id: wire.property_id,
+            name: wire.name,
+            scalar_value: wire.scalar_value,
+            raw_len: wire.raw_len,
+            raw_sha256: wire.raw_sha256,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
