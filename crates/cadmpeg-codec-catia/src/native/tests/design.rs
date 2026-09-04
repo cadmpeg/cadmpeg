@@ -509,7 +509,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .columns
         .iter()
         .all(|column| column.list_payload_offset == 0));
-    assert_eq!(table.rows.len(), 2);
+    assert_eq!(table.rows().len(), 2);
     assert_eq!(
         table
             .rows
@@ -536,15 +536,15 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
             .collect::<Vec<_>>(),
         [vec![2, 2], vec![4, 4]]
     );
-    assert!(table.rows.iter().flat_map(|row| &row.cells).all(|cell| {
+    assert!(table.rows().iter().flat_map(|row| &row.cells).all(|cell| {
         cell.field().is_some() && cell.field_class().is_some() && cell.design_object().is_some()
     }));
     assert_eq!(
-        table.rows[0].matching_design_object,
-        table.rows[0].cells[0].design_object().map(str::to_owned)
+        table.rows()[0].matching_design_object,
+        table.rows()[0].cells[0].design_object().map(str::to_owned)
     );
-    assert!(table.rows[0].matching_design_object.is_some());
-    assert!(table.rows[1].matching_design_object.is_none());
+    assert!(table.rows()[0].matching_design_object.is_some());
+    assert!(table.rows()[1].matching_design_object.is_none());
 
     let expected = table.clone();
     let mut malformed = native.clone();
@@ -792,7 +792,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .parallel_reference_table
         .as_ref()
         .expect("parallel reference table with terminal null row");
-    assert!(null_table.rows[1].cells.iter().all(|cell| {
+    assert!(null_table.rows()[1].cells.iter().all(|cell| {
         cell.entity_id() == 5
             && cell.is_null()
             && cell.field().is_none()
@@ -883,8 +883,8 @@ fn parallel_reference_row_match_requires_distinct_target_fields() {
         .as_ref()
         .expect("parallel reference table");
 
-    assert!(table.rows[0].matching_design_object.is_some());
-    assert!(table.rows[1].matching_design_object.is_none());
+    assert!(table.rows()[0].matching_design_object.is_some());
+    assert!(table.rows()[1].matching_design_object.is_none());
     assert_eq!(
         table.rows[1].cells[0].field(),
         table.rows[1].cells[1].field()

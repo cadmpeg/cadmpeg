@@ -312,26 +312,26 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .map(|table| table.rows.len())
+        .map(|table| table.rows().len())
         .sum();
     let design_parallel_reference_column_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .map(|table| table.columns.len())
+        .map(|table| table.columns().len())
         .sum();
     let design_parallel_reference_cell_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(|table| table.rows())
         .map(|row| row.cells.len())
         .sum();
     let design_parallel_reference_resolved_cell_count = native
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(|table| table.rows())
         .flat_map(|row| &row.cells)
         .filter(|cell| cell.field().is_some())
         .count();
@@ -339,7 +339,7 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(|table| table.rows())
         .flat_map(|row| &row.cells)
         .filter(|cell| cell.is_null())
         .count();
@@ -347,7 +347,7 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(|table| table.rows())
         .flat_map(|row| &row.cells)
         .filter(|cell| cell.field_class().is_some())
         .count();
@@ -355,7 +355,7 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.columns)
+        .flat_map(|table| table.columns())
         .filter(|column| column.field_class.is_some())
         .count();
     let design_parallel_reference_unclassified_column_count =
@@ -369,7 +369,7 @@ fn finish_decode(
         .design_objects
         .iter()
         .filter_map(|object| object.parallel_reference_table.as_ref())
-        .flat_map(|table| &table.rows)
+        .flat_map(|table| table.rows())
         .filter(|row| row.matching_design_object.is_some())
         .count();
     let design_parallel_reference_unmatched_row_count =
