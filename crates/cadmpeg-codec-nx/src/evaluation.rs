@@ -1603,7 +1603,7 @@ mod tests {
                     extent: None,
                     axis_reference: None,
                     solid: None,
-                    face_maker_class: None,
+                    face_maker: None,
                     fuse_order: None,
                     allow_multi_profile_faces: None,
                 },

@@ -10,7 +10,7 @@ use crate::ids::{
     VertexId,
 };
 use crate::math::{Point2, Point3, Vector3};
-use crate::products::JointId;
+use crate::products::{JointId, NonEmptyString};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
@@ -1245,8 +1245,10 @@ pub enum FeatureDefinition {
     FaceFromShapes {
         /// Complete ordered source-shape selection.
         sources: BodySelection,
-        /// Extensible native face-building algorithm identifier.
-        face_maker_class: String,
+        /// Native face-building algorithm.
+        #[serde(rename = "face_maker_class")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
+        face_maker: FaceMaker,
     },
     /// Constructed model-space coordinate system.
     DatumCoordinateSystem {
@@ -1496,7 +1498,9 @@ pub enum FeatureDefinition {
         solid: Option<bool>,
         /// Native face-building policy used to turn closed wires into faces.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        face_maker: Option<ExtrusionFaceMaker>,
+        #[serde(with = "optional_extrusion_face_maker")]
+        #[cfg_attr(feature = "schema", schemars(with = "Option<ExtrusionFaceMakerWire>"))]
+        face_maker: Option<FaceMaker>,
         /// Taper orientation used for inner wires, when selectable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         inner_wire_taper: Option<InnerWireTaper>,
@@ -2422,7 +2426,9 @@ pub struct RevolutionConstruction {
     pub solid: Option<bool>,
     /// Face-building algorithm used for a standalone solid revolution.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub face_maker_class: Option<String>,
+    #[serde(rename = "face_maker_class")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+    pub face_maker: Option<FaceMaker>,
     /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fuse_order: Option<RevolutionFuseOrder>,
@@ -3937,15 +3943,130 @@ pub enum ExtrusionDirectionSource {
     ProfileNormal,
 }
 
-/// Native face-building policy for a solid linear extrusion.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Native algorithm used to construct faces from wires.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FaceMaker {
+    /// Builds each wire independently.
+    Simple,
+    /// Builds one face with non-nested holes.
+    Cheese,
+    /// Builds the extrusion-compatible face form.
+    Extrusion,
+    /// Builds planar faces with nested islands.
+    Bullseye,
+    /// Builds overlapping, nested, or non-planar faces.
+    Unified,
+    /// Retains an extension face-maker class.
+    Other(NonEmptyString),
+}
+
+impl FaceMaker {
+    /// Parses a non-empty runtime class name.
+    pub fn new(class: impl Into<String>) -> Option<Self> {
+        let class = class.into();
+        Some(match class.as_str() {
+            "Part::FaceMakerSimple" => Self::Simple,
+            "Part::FaceMakerCheese" => Self::Cheese,
+            "Part::FaceMakerExtrusion" => Self::Extrusion,
+            "Part::FaceMakerBullseye" => Self::Bullseye,
+            "Part::FaceMakerUnified" => Self::Unified,
+            _ => Self::Other(NonEmptyString::new(class)?),
+        })
+    }
+
+    /// Returns the FreeCAD runtime class name.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Simple => "Part::FaceMakerSimple",
+            Self::Cheese => "Part::FaceMakerCheese",
+            Self::Extrusion => "Part::FaceMakerExtrusion",
+            Self::Bullseye => "Part::FaceMakerBullseye",
+            Self::Unified => "Part::FaceMakerUnified",
+            Self::Other(class) => class.as_str(),
+        }
+    }
+
+    /// Returns the persisted FreeCAD extrusion enumeration value.
+    pub const fn mode(&self) -> u32 {
+        match self {
+            Self::Simple => 0,
+            Self::Cheese => 1,
+            Self::Extrusion => 2,
+            Self::Bullseye => 3,
+            Self::Unified | Self::Other(_) => 4,
+        }
+    }
+}
+
+impl Serialize for FaceMaker {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.as_str().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FaceMaker {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::new(String::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("face maker class must not be empty"))
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for FaceMaker {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FaceMaker".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        String::json_schema(generator)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct ExtrusionFaceMaker {
-    /// Runtime face-maker class, retained as an extensible semantic identifier.
-    pub class: String,
-    /// Persisted enumeration value corresponding to the class, when carried.
+struct ExtrusionFaceMakerWire {
+    class: FaceMaker,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<u32>,
+    mode: Option<u32>,
+}
+
+mod optional_extrusion_face_maker {
+    use super::{ExtrusionFaceMakerWire, FaceMaker};
+    use serde::{Deserialize, Serialize};
+
+    pub(super) fn serialize<S>(value: &Option<FaceMaker>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        value
+            .as_ref()
+            .map(|maker| ExtrusionFaceMakerWire {
+                class: maker.clone(),
+                mode: Some(maker.mode()),
+            })
+            .serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Option<FaceMaker>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let Some(wire) = Option::<ExtrusionFaceMakerWire>::deserialize(deserializer)? else {
+            return Ok(None);
+        };
+        if wire.mode.is_some_and(|mode| mode != wire.class.mode()) {
+            return Err(serde::de::Error::custom(
+                "face_maker.mode does not match face_maker.class",
+            ));
+        }
+        Ok(Some(wire.class))
+    }
 }
 
 /// Relationship between outer-wire and inner-wire taper directions.

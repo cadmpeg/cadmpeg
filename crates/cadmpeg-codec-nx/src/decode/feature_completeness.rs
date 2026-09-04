@@ -639,7 +639,6 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
         op,
         solid,
         direction_source,
-        face_maker,
         ..
     } = &feature.definition
     else {
@@ -667,9 +666,6 @@ pub(crate) fn extrude_definition_is_incomplete(feature: &Feature) -> bool {
                     if path_ref_is_incomplete(reference)
             )
         })
-        || face_maker
-            .as_ref()
-            .is_some_and(|maker| maker.class.trim().is_empty())
 }
 
 pub(crate) fn revolve_definition_is_incomplete(feature: &Feature) -> bool {

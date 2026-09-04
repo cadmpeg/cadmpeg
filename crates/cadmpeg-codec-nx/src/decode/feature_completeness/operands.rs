@@ -246,10 +246,6 @@ pub(crate) fn revolve_feature_is_incomplete(
             .as_ref()
             .is_some_and(path_ref_is_incomplete)
         || construction.solid.is_none()
-        || construction
-            .face_maker_class
-            .as_ref()
-            .is_some_and(|class| class.trim().is_empty())
         || matches!(op, BooleanOp::Unresolved)
 }
 

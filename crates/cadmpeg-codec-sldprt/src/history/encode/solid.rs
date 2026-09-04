@@ -13,7 +13,7 @@ use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, ExtrusionDirectionSource,
-    ExtrusionFaceMaker, FaceSelection, HoleBottom, HoleConstruction, HoleKind, HolePlacement,
+    FaceMaker, FaceSelection, HoleBottom, HoleConstruction, HoleKind, HolePlacement,
     HoleProfileFilter, InnerWireTaper, Length, LinearTermination, ProfileRef,
 };
 
@@ -34,7 +34,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         op: &BooleanOp,
         direction_source: &Option<ExtrusionDirectionSource>,
         solid: &Option<bool>,
-        face_maker: &Option<ExtrusionFaceMaker>,
+        face_maker: &Option<FaceMaker>,
         inner_wire_taper: &Option<InnerWireTaper>,
         length_along_profile_normal: &Option<bool>,
         allow_multi_profile_faces: &Option<bool>,

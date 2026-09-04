@@ -503,7 +503,7 @@ pub(in super::super) fn schema_feature_definition(
                 extent,
                 axis_reference: None,
                 solid: sweep_solid(output_kind),
-                face_maker_class: None,
+                face_maker: None,
                 fuse_order: None,
                 allow_multi_profile_faces: None,
             },

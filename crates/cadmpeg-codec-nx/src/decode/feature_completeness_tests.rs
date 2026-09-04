@@ -1021,7 +1021,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         }),
         axis_reference: None,
         solid: Some(true),
-        face_maker_class: None,
+        face_maker: None,
         fuse_order: None,
         allow_multi_profile_faces: None,
     };
@@ -1085,13 +1085,6 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     ));
     incomplete = complete.clone();
     incomplete.solid = None;
-    assert!(super::revolve_feature_is_incomplete(
-        &incomplete,
-        BooleanOp::NewBody,
-        &[],
-    ));
-    incomplete = complete.clone();
-    incomplete.face_maker_class = Some(" ".into());
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,

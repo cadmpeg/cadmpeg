@@ -516,7 +516,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             }),
             axis_reference: None,
             solid: Some(true),
-            face_maker_class: None,
+            face_maker: None,
             fuse_order: None,
             allow_multi_profile_faces: None,
         },

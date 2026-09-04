@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
     AngularTermination, BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset,
     BinderOffsetJoin, BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp,
     ChamferSpec, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-    ExtrusionDirectionSource, ExtrusionFaceMaker, Feature, FeatureDefinition, FeatureId,
+    ExtrusionDirectionSource, FaceMaker, Feature, FeatureDefinition, FeatureId,
     FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat, HelicalSweepConstruction,
     HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleConstruction, HoleKind,
     HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, Length,
@@ -3328,12 +3328,12 @@ fn revolution_definition(
         }
         _ => return None,
     };
-    let face_maker_class =
+    let face_maker =
         if kind == "Part::Revolution" && property(properties, "FaceMakerClass").is_some() {
-            Some(string_property_value(property(
+            Some(FaceMaker::new(string_property_value(property(
                 properties,
                 "FaceMakerClass",
-            )?)?)
+            )?)?)?)
         } else {
             None
         };
@@ -3358,7 +3358,7 @@ fn revolution_definition(
             } else {
                 true
             }),
-            face_maker_class,
+            face_maker,
             fuse_order,
             allow_multi_profile_faces: if kind.starts_with("PartDesign::") {
                 Some(bool_selector(properties, "AllowMultiFace", false)?)
@@ -3512,7 +3512,10 @@ fn part_construction_geometry_definition(
             }
             Some(FeatureDefinition::FaceFromShapes {
                 sources: BodySelection::Native(sources.id.clone()),
-                face_maker_class: string_property_value(property(properties, "FaceMakerClass")?)?,
+                face_maker: FaceMaker::new(string_property_value(property(
+                    properties,
+                    "FaceMakerClass",
+                )?)?)?,
             })
         }
         _ => None,
@@ -3732,15 +3735,14 @@ fn extrusion_definition(
             direction = Vector3::new(-direction.x, -direction.y, -direction.z);
         }
         let face_maker = if let Some(class_property) = property(properties, "FaceMakerClass") {
-            let mode = if property(properties, "FaceMakerMode").is_some() {
-                Some(u32::try_from(integer_property(properties, "FaceMakerMode")?).ok()?)
-            } else {
-                None
-            };
-            Some(ExtrusionFaceMaker {
-                class: string_property_value(class_property)?,
-                mode,
-            })
+            let maker = FaceMaker::new(string_property_value(class_property)?)?;
+            if property(properties, "FaceMakerMode").is_some()
+                && u32::try_from(integer_property(properties, "FaceMakerMode")?).ok()?
+                    != maker.mode()
+            {
+                return None;
+            }
+            Some(maker)
         } else {
             None
         };
