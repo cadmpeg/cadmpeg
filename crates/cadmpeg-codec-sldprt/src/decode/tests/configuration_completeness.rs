@@ -144,7 +144,6 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id.clone(),
@@ -284,7 +283,6 @@ fn active_configuration_inherits_late_feature_resolutions() {
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
             (
@@ -439,7 +437,6 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -515,7 +512,6 @@ fn active_configuration_snapshots_final_neutral_design_state() {
             properties: BTreeMap::new(),
             bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
             native_ref: None,
@@ -606,7 +602,6 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values,
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,

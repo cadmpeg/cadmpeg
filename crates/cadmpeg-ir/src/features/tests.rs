@@ -42,7 +42,6 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
-        suppressed_features: Vec::new(),
         bodies: crate::features::ConfigurationBodies::Resolved(vec![body.clone()]),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -70,19 +69,6 @@ fn configuration_body_membership_round_trips_and_validates() {
             && finding.message.contains("configuration parameter override")
     }));
     ir.model.configurations[0].parameter_overrides.clear();
-
-    let missing_feature = FeatureId("synthetic:test:feature#missing".into());
-    ir.model.configurations[0].suppressed_features = vec![missing_feature.clone(), missing_feature];
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("configuration suppressed feature")
-    }));
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("repeats suppressed feature")
-    }));
-    ir.model.configurations[0].suppressed_features.clear();
 
     ir.model.configurations[0].parameter_values = BTreeMap::from([(
         ParameterId("synthetic:test:parameter#missing-value".into()),
@@ -185,13 +171,12 @@ fn configuration_body_membership_round_trips_and_validates() {
     }
     ir.model.configurations[0].feature_states.clear();
 
-    ir.model.configurations[0].suppressed_features = vec![first_feature.clone()];
     ir.model.configurations[0].feature_states = BTreeMap::from([(
         first_feature.clone(),
         ConfigurationFeatureState {
-            suppressed: false,
+            suppressed: true,
             dependencies: Vec::new(),
-            outputs: Vec::new(),
+            outputs: vec![body.clone()],
             definition: FeatureDefinition::DatumPoint {
                 position: Point3::new(0.0, 0.0, 0.0),
                 construction: None,
@@ -201,22 +186,9 @@ fn configuration_body_membership_round_trips_and_validates() {
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message
-                == "configuration feature suppression disagrees with suppressed feature list"
-    }));
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&first_feature)
-        .expect("configuration feature state");
-    state.suppressed = true;
-    state.outputs.push(body.clone());
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
             && finding.message == "suppressed configuration feature state has output bodies"
     }));
     ir.model.configurations[0].feature_states.clear();
-    ir.model.configurations[0].suppressed_features.clear();
 
     ir.model.configurations[0].active = true.into();
     ir.model.features[0].suppressed = Some(true);
@@ -256,9 +228,6 @@ fn configuration_body_membership_round_trips_and_validates() {
             },
         },
     );
-    ir.model.configurations[0]
-        .suppressed_features
-        .push(first_feature.clone());
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(configuration_id.0.as_str())
@@ -273,7 +242,6 @@ fn configuration_body_membership_round_trips_and_validates() {
         .get_mut(&first_feature)
         .expect("dependency state")
         .suppressed = false;
-    ir.model.configurations[0].suppressed_features.clear();
     assert!(validate_neutral(&ir, Vec::new()).is_ok());
     ir.model.configurations[0].feature_states.clear();
 
@@ -300,7 +268,6 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         bodies: crate::features::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -341,6 +308,72 @@ fn configuration_name_preserves_resolution_state() {
         serde_json::from_value(encoded).expect("round-trip unresolved configuration");
     assert_eq!(round_trip.name, ConfigurationName::Unresolved);
     assert!(!round_trip.active);
+}
+
+#[test]
+fn configuration_suppression_is_derived_and_legacy_lists_migrate_at_the_model_boundary() {
+    use crate::features::{
+        ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
+        Feature, FeatureDefinition, FeatureId,
+    };
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let feature = Feature::new(
+        FeatureId("synthetic:test:feature#suppressed".into()),
+        0,
+        FeatureDefinition::DatumPoint {
+            position: Point3::new(0.0, 0.0, 0.0),
+            construction: None,
+        },
+    );
+    ir.model.features.push(feature.clone());
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId("synthetic:test:configuration#suppressed".into()),
+        ordinal: 0,
+        active: false,
+        source_index: None,
+        name: "Suppressed".into(),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: ConfigurationBodies::Unresolved,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::from([(
+            feature.id.clone(),
+            ConfigurationFeatureState {
+                suppressed: true,
+                dependencies: feature.dependencies.clone(),
+                outputs: Vec::new(),
+                definition: feature.definition.clone(),
+            },
+        )]),
+        native_ref: None,
+    });
+
+    let mut wire = serde_json::to_value(&ir).unwrap();
+    let configuration = &mut wire["model"]["configurations"][0];
+    assert_eq!(
+        configuration["suppressed_features"],
+        serde_json::json!([feature.id.0.clone()])
+    );
+    configuration
+        .as_object_mut()
+        .unwrap()
+        .remove("feature_states");
+    let migrated = serde_json::from_value::<CadIr>(wire).unwrap();
+    let state = &migrated.model.configurations[0].feature_states[&feature.id];
+    assert!(state.suppressed);
+    assert_eq!(state.definition, feature.definition);
+    assert!(state.outputs.is_empty());
+
+    let mut invalid = serde_json::to_value(&ir).unwrap();
+    invalid["model"]["configurations"][0]["feature_states"][feature.id.0.as_str()]["suppressed"] =
+        serde_json::json!(false);
+    let error = serde_json::from_value::<CadIr>(invalid).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("configuration suppression disagrees with feature state"));
 }
 
 #[test]

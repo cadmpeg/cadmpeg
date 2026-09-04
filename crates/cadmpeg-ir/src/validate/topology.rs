@@ -1854,12 +1854,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .iter()
         .map(|parameter| (parameter.id.0.as_str(), parameter.value.as_ref()))
         .collect::<HashMap<_, _>>();
-    let feature_ids = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| feature.id.0.as_str())
-        .collect::<HashSet<_>>();
     let features = ir
         .model
         .features
@@ -1913,25 +1907,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 );
             }
         }
-        let mut suppressed_features = HashSet::new();
-        for feature in &configuration.suppressed_features {
-            if !feature_ids.contains(feature.0.as_str()) {
-                ref_error(
-                    findings,
-                    &configuration.id.0,
-                    "configuration suppressed feature",
-                    &feature.0,
-                );
-            }
-            if !suppressed_features.insert(feature) {
-                findings.push(Finding {
-                    check: Check::Counts,
-                    severity: Severity::Error,
-                    message: format!("configuration repeats suppressed feature `{}`", feature.0),
-                    entity: Some(configuration.id.0.clone()),
-                });
-            }
-        }
+        let suppressed_features = configuration.suppressed_features().collect::<HashSet<_>>();
         if configuration.active {
             for feature in &ir.model.features {
                 if feature.suppressed.is_some_and(|suppressed| {
@@ -1972,16 +1948,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
         }
         for (feature, state) in &configuration.feature_states {
-            if suppressed_features.contains(feature) != state.suppressed {
-                findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message:
-                        "configuration feature suppression disagrees with suppressed feature list"
-                            .into(),
-                    entity: Some(configuration.id.0.clone()),
-                });
-            }
             let feature_ordinal = features.get(feature.0.as_str()).copied();
             if feature_ordinal.is_none() {
                 ref_error(

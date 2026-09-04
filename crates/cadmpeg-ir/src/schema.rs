@@ -559,7 +559,7 @@ impl_entity_schema!(
     DesignConfiguration,
     id.0;
     id, ordinal, active, source_index, name, material, properties, parameter_overrides,
-    suppressed_features, bodies, parameter_values, feature_states, native_ref
+    bodies, parameter_values, feature_states, native_ref
 );
 impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id.0; id, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
 impl_entity_schema!(crate::sketches::Sketch, Sketch, id.0; id, name, configuration, visible, placement, profiles, native_ref);

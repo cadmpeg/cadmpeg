@@ -321,7 +321,6 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         properties: BTreeMap::new(),
         bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
             (
@@ -550,7 +549,6 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
             properties: BTreeMap::new(),
             bodies: ConfigurationBodies::Resolved(Vec::new()),
             parameter_values: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::from([
                 (
@@ -715,7 +713,6 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         properties: BTreeMap::from([("id".into(), "1".into())]),
         bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
             (
@@ -1374,7 +1371,6 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
             (parameter_id.clone(), ParameterValue::Integer(7)),
             (count_id.clone(), ParameterValue::Length(Length(0.007))),
         ]),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,

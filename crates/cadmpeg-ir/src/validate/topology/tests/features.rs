@@ -897,7 +897,6 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         bodies: ConfigurationBodies::Unresolved,
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::from([(
@@ -1283,7 +1282,6 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         bodies: ConfigurationBodies::Unresolved,
         parameter_values: BTreeMap::new(),
         feature_states: [

@@ -306,7 +306,6 @@ pub(crate) fn attach(
                     })
                     .unwrap_or_default(),
                 parameter_overrides: BTreeMap::new(),
-                suppressed_features: Vec::new(),
                 bodies,
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),

@@ -1162,7 +1162,6 @@ mod tests {
             material: None,
             properties: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
-            suppressed_features: Vec::new(),
             bodies: ConfigurationBodies::Resolved(
                 ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
             ),

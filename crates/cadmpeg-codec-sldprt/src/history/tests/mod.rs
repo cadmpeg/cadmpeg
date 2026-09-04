@@ -60,7 +60,6 @@ fn design_configuration(
         properties: BTreeMap::new(),
         bodies: ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        suppressed_features: Vec::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: native_ref.map(str::to_string),

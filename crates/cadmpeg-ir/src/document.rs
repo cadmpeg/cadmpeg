@@ -15,7 +15,8 @@ use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
 use crate::features::{
-    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
+    DesignConfiguration, DesignConfigurationReadWire, DesignParameter, Feature,
+    FeatureInputTopology, FeatureResultTopology,
 };
 use crate::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveReadWire, ProceduralSurface,
@@ -221,6 +222,7 @@ macro_rules! model_write_value {
 macro_rules! model_read_type {
     (procedural_surfaces, $ty:ty) => { Vec<ProceduralSurfaceReadWire> };
     (procedural_curves, $ty:ty) => { Vec<ProceduralCurveReadWire> };
+    (configurations, $ty:ty) => { Vec<DesignConfigurationReadWire> };
     ($field:ident, $ty:ty) => { Vec<$ty> };
 }
 
@@ -229,6 +231,9 @@ macro_rules! model_read_value {
         Vec::new()
     };
     ($wire:expr, procedural_curves) => {
+        Vec::new()
+    };
+    ($wire:expr, configurations) => {
         Vec::new()
     };
     ($wire:expr, $field:ident) => {
@@ -402,6 +407,7 @@ macro_rules! declare_model {
                 let mut wire = ModelReadWire::deserialize(deserializer)?;
                 let procedural_surfaces = std::mem::take(&mut wire.procedural_surfaces);
                 let procedural_curves = std::mem::take(&mut wire.procedural_curves);
+                let configurations = std::mem::take(&mut wire.configurations);
                 let mut model = Self {
                     $($field: model_read_value!(wire, $field),)*
                 };
@@ -422,6 +428,12 @@ macro_rules! declare_model {
                     model
                         .add_procedural_curve(owner, procedural)
                         .map_err(serde::de::Error::custom)?;
+                }
+                for wire in configurations {
+                    model.configurations.push(
+                        wire.into_configuration(&model.features)
+                            .map_err(serde::de::Error::custom)?,
+                    );
                 }
                 Ok(model)
             }
