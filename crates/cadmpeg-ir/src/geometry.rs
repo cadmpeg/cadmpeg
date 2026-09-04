@@ -3492,13 +3492,39 @@ pub struct VariableBlendInterpolationPoint {
     pub parameter: f64,
     /// Radius in document length units.
     pub radius: f64,
-    /// First and second derivative scalars; the sentinel
-    /// `9.9999999999999995e+36` marks an unset derivative.
-    pub tangents: [f64; 2],
+    /// Optional first and second derivative scalars.
+    #[serde(with = "variable_blend_tangents_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "[Option<f64>; 2]"))]
+    pub tangents: [Option<f64>; 2],
     /// Model-space control location.
     pub location: Point3,
     /// Control normal.
     pub normal: Vector3,
+}
+
+mod variable_blend_tangents_wire {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    const LEGACY_UNSET_TANGENT: f64 = 1.0e37;
+
+    pub fn serialize<S>(tangents: &[Option<f64>; 2], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        tangents.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[Option<f64>; 2], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(
+            <[Option<f64>; 2]>::deserialize(deserializer)?.map(|value| match value {
+                Some(LEGACY_UNSET_TANGENT) => None,
+                value => value,
+            }),
+        )
+    }
 }
 
 /// Complete recursive native `getBlendValues` payload.

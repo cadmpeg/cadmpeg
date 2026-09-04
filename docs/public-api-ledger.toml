@@ -3830,3 +3830,10 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::radius_selector"
 reason = "ASM parsing canonicalizes the native -1 sentinel before the decoded construction can be built"
+
+[[change]]
+commit = "ec5e4ba05cc293e191243cb80cecb8c402b32739"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::VariableBlendInterpolationPoint::tangents"
+reason = "unset interpolation derivatives are represented by Option instead of the native 1e37 sentinel"

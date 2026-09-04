@@ -33,6 +33,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
+const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
+
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
 pub(crate) fn cyl_spl_sur(
     toks: &[Token],
@@ -734,7 +736,8 @@ fn variable_blend_value(
             for _ in 0..count {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;
-                let tangents = [cur.take_f64()?, cur.take_f64()?];
+                let tangents = [cur.take_f64()?, cur.take_f64()?]
+                    .map(|value| (value != UNSET_VARIABLE_BLEND_TANGENT).then_some(value));
                 let location = cur.take_position()?;
                 let normal = cur.take_vector3()?;
                 points.push(VariableBlendInterpolationPoint {
@@ -933,7 +936,7 @@ mod variable_blend_value_tests {
     #[test]
     fn decodes_interp_point_with_unset_derivatives() {
         // Sentinel value marking an unset first/second derivative.
-        const UNSET: f64 = 1e37;
+        const UNSET: f64 = UNSET_VARIABLE_BLEND_TANGENT;
         let mut bytes = Vec::new();
         text(&mut bytes, "interp");
         integer(&mut bytes, 0x15, 0);
@@ -980,7 +983,7 @@ mod variable_blend_value_tests {
             panic!("expected interpolated payload")
         };
         assert_eq!(points.len(), 1);
-        assert_eq!(points[0].tangents, [UNSET, UNSET]);
+        assert_eq!(points[0].tangents, [None, None]);
     }
 }
 

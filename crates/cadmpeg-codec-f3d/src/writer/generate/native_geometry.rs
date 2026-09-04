@@ -18,6 +18,8 @@ use super::native_bytes::{
 use crate::writer::primitives::{finite_point, finite_vector, native_bool, unique_knot_count};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
+const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
+
 pub(crate) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     if !target.tolerances.linear.is_finite()
         || target.tolerances.linear <= 0.0
@@ -3447,7 +3449,7 @@ fn native_variable_blend_value(
                 native_f64(bytes, point.parameter);
                 native_f64(bytes, point.radius / LEN_TO_MM);
                 for tangent in point.tangents {
-                    native_f64(bytes, tangent);
+                    native_f64(bytes, tangent.unwrap_or(UNSET_VARIABLE_BLEND_TANGENT));
                 }
                 native_point(
                     bytes,
