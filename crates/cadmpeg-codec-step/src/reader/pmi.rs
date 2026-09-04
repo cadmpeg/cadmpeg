@@ -2,6 +2,7 @@
 //! STEP semantic product-manufacturing information.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
@@ -162,7 +163,7 @@ pub(super) fn decode(
             .iter()
             .enumerate()
             .filter_map(|(index, constituent)| {
-                let precedence = u32::try_from(index + 1).ok()?;
+                let precedence = u32::try_from(index + 1).ok().and_then(NonZeroU32::new)?;
                 Some(datum_references(
                     constituent,
                     precedence,
@@ -974,7 +975,7 @@ fn source_numeric_id(identity: &str, kind: &str) -> Option<u64> {
 
 fn datum_references(
     value: &Value,
-    precedence: u32,
+    precedence: NonZeroU32,
     exchange: &Exchange,
     annotations: &BTreeMap<u64, usize>,
     typed: &mut HashSet<u64>,
@@ -1009,7 +1010,7 @@ fn datum_references(
             .iter()
             .filter_map(ValueExt::reference)
             .collect::<Vec<_>>();
-        let common_group = (element_ids.len() >= 2).then_some(precedence);
+        let common_group = (element_ids.len() >= 2).then_some(precedence.get());
         return element_ids
             .into_iter()
             .filter_map(|element_id| {

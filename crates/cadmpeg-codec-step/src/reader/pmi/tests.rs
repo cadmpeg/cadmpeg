@@ -78,7 +78,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         &datum_system.definition,
         PmiDefinition::DatumSystem { references }
             if references.len() == 1
-                && references[0].precedence == 1
+                && references[0].precedence.get() == 1
                 && references[0].modifiers == ["maximum_material_requirement", "distance:0.2"]
     ));
     assert!(matches!(
@@ -1248,13 +1248,13 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
     *references = vec![
         DatumReference {
             datum: datum_a.id,
-            precedence: 1,
+            precedence: std::num::NonZeroU32::MIN,
             common_group: Some(7),
             modifiers: modifiers.clone(),
         },
         DatumReference {
             datum: datum_b.id,
-            precedence: 1,
+            precedence: std::num::NonZeroU32::MIN,
             common_group: Some(7),
             modifiers: vec!["least_material_requirement".into()],
         },
@@ -1278,7 +1278,9 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
             if references.len() == 2
-                && references.iter().all(|reference| reference.precedence == 1)
+            && references
+                .iter()
+                .all(|reference| reference.precedence.get() == 1)
                 && references.iter().all(|reference| reference.common_group == Some(1))
                 && references[0].modifiers != references[1].modifiers
     )));

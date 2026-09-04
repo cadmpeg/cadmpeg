@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information independent of design history.
 
+use std::num::NonZeroU32;
+
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{
@@ -170,7 +173,8 @@ pub struct DatumReference {
     /// Referenced datum annotation.
     pub datum: PmiId,
     /// Precedence within the datum system, starting at one.
-    pub precedence: u32,
+    #[serde(deserialize_with = "deserialize_datum_precedence")]
+    pub precedence: NonZeroU32,
     /// Identity of a common-datum group within this datum system. References
     /// with the same precedence and group form one simultaneous compartment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -178,6 +182,15 @@ pub struct DatumReference {
     /// Source-defined material-condition and translation modifiers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modifiers: Vec<String>,
+}
+
+fn deserialize_datum_precedence<'de, D>(deserializer: D) -> Result<NonZeroU32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = u32::deserialize(deserializer)?;
+    NonZeroU32::new(value)
+        .ok_or_else(|| D::Error::custom("DatumReference.precedence must start at one"))
 }
 
 /// ISO limits-and-fits tolerance class attached to a dimension.
@@ -321,7 +334,7 @@ mod tests {
             definition: PmiDefinition::DatumSystem {
                 references: vec![DatumReference {
                     datum: datum_id,
-                    precedence: 1,
+                    precedence: NonZeroU32::MIN,
                     common_group: None,
                     modifiers: Vec::new(),
                 }],
@@ -330,6 +343,19 @@ mod tests {
         ir.finalize();
 
         assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn datum_reference_wire_rejects_zero_precedence() {
+        let error = serde_json::from_value::<DatumReference>(serde_json::json!({
+            "datum": "test:model:pmi#datum-a",
+            "precedence": 0
+        }))
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("DatumReference.precedence must start at one"));
     }
 
     #[test]
@@ -401,7 +427,7 @@ mod tests {
             definition: PmiDefinition::DatumSystem {
                 references: vec![DatumReference {
                     datum: dimension_id.clone(),
-                    precedence: 1,
+                    precedence: NonZeroU32::MIN,
                     common_group: None,
                     modifiers: Vec::new(),
                 }],
