@@ -48,13 +48,13 @@ struct WireSourceProcedural {
     cache_fit_tolerance: Option<f64>,
 }
 
-type ClosedWireMember<'a> = (
-    &'a crate::families::zero_entity::records::ZeroEntitySupportOccurrence,
-    CurveId,
-    [Point3; 2],
-    bool,
-    Option<[f64; 2]>,
-);
+struct ClosedWireMember<'a> {
+    support: &'a crate::families::zero_entity::records::ZeroEntitySupportOccurrence,
+    curve: CurveId,
+    endpoints: [Point3; 2],
+    forward: bool,
+    parameter_range: Option<[f64; 2]>,
+}
 
 const ZERO_ENTITY_WIRE_TOLERANCE: f64 = 2e-3;
 
@@ -91,22 +91,28 @@ fn closed_wire_loop_members<'a>(
             let parameter_range = support.model_parameters.filter(|parameters| {
                 parameters.iter().all(|value| value.is_finite()) && parameters[0] != parameters[1]
             });
-            Some((support, curve, *endpoints, *forward, parameter_range))
+            Some(ClosedWireMember {
+                support,
+                curve,
+                endpoints: *endpoints,
+                forward: *forward,
+                parameter_range,
+            })
         })
         .collect::<Option<Vec<_>>>();
     let members = members?;
-    if members
-        .iter()
-        .any(|(_, _, [start, end], _, _)| !finite_point(*start) || !finite_point(*end))
-    {
+    if members.iter().any(|member| {
+        let [start, end] = member.endpoints;
+        !finite_point(start) || !finite_point(end)
+    }) {
         return None;
     }
     members
         .iter()
         .enumerate()
-        .all(|(index, (_, _, [_, end], _, _))| {
-            let next_start = members[(index + 1) % member_count].2[0];
-            end.distance(next_start) <= ZERO_ENTITY_WIRE_TOLERANCE
+        .all(|(index, member)| {
+            let next_start = members[(index + 1) % member_count].endpoints[0];
+            member.endpoints[1].distance(next_start) <= ZERO_ENTITY_WIRE_TOLERANCE
         })
         .then_some(members)
 }
@@ -251,7 +257,8 @@ fn transfer_closed_wire_loops(
             }
 
             let mut vertex_ids = Vec::with_capacity(member_count);
-            for (index, (_, _, [start, _], _, _)) in members.iter().enumerate() {
+            for (index, member) in members.iter().enumerate() {
+                let start = member.endpoints[0];
                 let point_id =
                     PointId::mint(format!("catia:zero-entity:wire-point#{identity}-{index}"))
                         .expect("identity grammar");
@@ -279,7 +286,7 @@ fn transfer_closed_wire_loops(
                     .derived(&vertex_id, "point");
                 ir.model.points.push(Point {
                     id: point_id.clone(),
-                    position: *start,
+                    position: start,
                     source_object: None,
                 });
                 ir.model.vertices.push(Vertex {
@@ -293,8 +300,14 @@ fn transfer_closed_wire_loops(
             }
 
             let mut edge_ids = Vec::with_capacity(member_count);
-            for (index, (support, curve, _, forward, parameter_range)) in members.iter().enumerate()
-            {
+            for (index, member) in members.iter().enumerate() {
+                let ClosedWireMember {
+                    support,
+                    curve,
+                    forward,
+                    parameter_range,
+                    ..
+                } = member;
                 let edge_id =
                     EdgeId::mint(format!("catia:zero-entity:wire-edge#{identity}-{index}"))
                         .expect("identity grammar");
@@ -333,13 +346,10 @@ fn transfer_closed_wire_loops(
                     let existing = source_curve_orientations.get(curve).copied();
                     if canonical_source_range.is_none() {
                         (curve.clone(), None)
-                    } else if existing.is_some_and(|orientation| {
+                    } else if let Some(orientation) = existing.filter(|orientation| {
                         orientation.reversed == reversed && orientation.source_range == source_range
                     }) {
-                        (
-                            curve.clone(),
-                            Some(existing.expect("checked above").edge_range),
-                        )
+                        (curve.clone(), Some(orientation.edge_range))
                     } else if !reversed && existing.is_some_and(|orientation| !orientation.reversed)
                     {
                         (curve.clone(), Some(source_range))
