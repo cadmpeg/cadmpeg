@@ -343,7 +343,11 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
                 && points.iter().all(|point| {
                     point.parameter.is_finite()
                         && point.radius.is_finite()
-                        && finite(&point.tangents)
+                        && point
+                            .tangents
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
                         && point.location.x.is_finite()
                         && point.location.y.is_finite()
                         && point.location.z.is_finite()
