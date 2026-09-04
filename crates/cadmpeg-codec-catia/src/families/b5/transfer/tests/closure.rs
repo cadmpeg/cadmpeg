@@ -2,9 +2,9 @@
 
 use super::super::super::graph::{
     bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, pcurve_parameter_domain,
-    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5LogicalVertex, B5Loop,
-    B5LoopMember, B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve,
-    B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
+    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5IncidenceLane, B5LogicalVertex,
+    B5Loop, B5LoopMember, B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence,
+    B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
     B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
@@ -237,18 +237,22 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
                 40,
                 B5ParameterIncidence {
                     object_id: 40,
-                    curves: vec![20],
-                    parameters: vec![0.0],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 0.0,
+                        control: 0,
+                    }],
                 },
             ),
             (
                 41,
                 B5ParameterIncidence {
                     object_id: 41,
-                    curves: vec![20],
-                    parameters: vec![1.0],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 1.0,
+                        control: 0,
+                    }],
                 },
             ),
         ]),
@@ -298,9 +302,11 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
     };
     let incidence = |object_id: u32, curve: u32, parameter: f64| B5ParameterIncidence {
         object_id,
-        curves: vec![curve],
-        parameters: vec![parameter],
-        controls: vec![0],
+        lanes: vec![B5IncidenceLane {
+            curve,
+            parameter,
+            control: 0,
+        }],
     };
     let graph = B5Graph {
         complete: false,
@@ -465,27 +471,33 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
                 40,
                 B5ParameterIncidence {
                     object_id: 40,
-                    curves: vec![20],
-                    parameters: vec![0.0],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 0.0,
+                        control: 0,
+                    }],
                 },
             ),
             (
                 41,
                 B5ParameterIncidence {
                     object_id: 41,
-                    curves: vec![20],
-                    parameters: vec![0.5],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 0.5,
+                        control: 0,
+                    }],
                 },
             ),
             (
                 42,
                 B5ParameterIncidence {
                     object_id: 42,
-                    curves: vec![20],
-                    parameters: vec![1.0],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: 1.0,
+                        control: 0,
+                    }],
                 },
             ),
         ]),
@@ -1042,18 +1054,22 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
                 20,
                 B5ParameterIncidence {
                     object_id: 20,
-                    curves: vec![2],
-                    parameters: vec![0.25],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 2,
+                        parameter: 0.25,
+                        control: 0,
+                    }],
                 },
             ),
             (
                 21,
                 B5ParameterIncidence {
                     object_id: 21,
-                    curves: vec![2],
-                    parameters: vec![0.75],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 2,
+                        parameter: 0.75,
+                        control: 0,
+                    }],
                 },
             ),
         ]),

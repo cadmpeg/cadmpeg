@@ -855,18 +855,22 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
             20,
             B5ParameterIncidence {
                 object_id: 20,
-                curves: vec![2],
-                parameters: vec![trimmed_start],
-                controls: vec![1],
+                lanes: vec![B5IncidenceLane {
+                    curve: 2,
+                    parameter: trimmed_start,
+                    control: 1,
+                }],
             },
         ),
         (
             21,
             B5ParameterIncidence {
                 object_id: 21,
-                curves: vec![2],
-                parameters: vec![trimmed_end],
-                controls: vec![1],
+                lanes: vec![B5IncidenceLane {
+                    curve: 2,
+                    parameter: trimmed_end,
+                    control: 1,
+                }],
             },
         ),
     ]);
@@ -1047,18 +1051,22 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
             20,
             B5ParameterIncidence {
                 object_id: 20,
-                curves: vec![2],
-                parameters: vec![0.25],
-                controls: vec![1],
+                lanes: vec![B5IncidenceLane {
+                    curve: 2,
+                    parameter: 0.25,
+                    control: 1,
+                }],
             },
         ),
         (
             21,
             B5ParameterIncidence {
                 object_id: 21,
-                curves: vec![2],
-                parameters: vec![0.75],
-                controls: vec![1],
+                lanes: vec![B5IncidenceLane {
+                    curve: 2,
+                    parameter: 0.75,
+                    control: 1,
+                }],
             },
         ),
     ]);
@@ -1218,8 +1226,14 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
     };
     assert_eq!(counted_references(&records[0], 0x05), Some(vec![30, 31]));
     let incidence = parameter_incidence(&records[1]).expect("parameter incidence");
-    assert_eq!(incidence.curves, [2]);
-    assert_eq!(incidence.parameters, [parameter]);
+    assert_eq!(
+        incidence.lanes,
+        [B5IncidenceLane {
+            curve: 2,
+            parameter,
+            control: 1,
+        }]
+    );
     assert!(
         distance_squared(
             sphere_great_circle_point(

@@ -2,9 +2,10 @@
 
 use super::super::super::graph::{
     bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, B5ExtrusionDirectrix,
-    B5ExtrusionSurface, B5Face, B5Graph, B5LogicalVertex, B5Loop, B5LoopMetadata, B5OffsetSurface,
-    B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile,
-    B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
+    B5ExtrusionSurface, B5Face, B5Graph, B5IncidenceLane, B5LogicalVertex, B5Loop, B5LoopMetadata,
+    B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveParameterization,
+    B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters,
+    B5Surface,
 };
 use super::super::edges::{
     b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
@@ -157,18 +158,22 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
                 40,
                 B5ParameterIncidence {
                     object_id: 40,
-                    curves: vec![20],
-                    parameters: vec![angular_range[0]],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: angular_range[0],
+                        control: 0,
+                    }],
                 },
             ),
             (
                 41,
                 B5ParameterIncidence {
                     object_id: 41,
-                    curves: vec![20],
-                    parameters: vec![angular_range[1]],
-                    controls: vec![0],
+                    lanes: vec![B5IncidenceLane {
+                        curve: 20,
+                        parameter: angular_range[1],
+                        control: 0,
+                    }],
                 },
             ),
         ]),
