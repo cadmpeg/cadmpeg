@@ -3302,9 +3302,7 @@ pub fn offset_support_carriers(
                 .iter()
                 .enumerate()
                 .filter_map(|(index, carrier)| {
-                    let SurfaceGeometry::Nurbs(surface) = &carrier.geometry else {
-                        return None;
-                    };
+                    let surface = &carrier.geometry;
                     let u_min = *surface.u_knots().first()?;
                     let u_max = *surface.u_knots().last()?;
                     let v_min = *surface.v_knots().first()?;

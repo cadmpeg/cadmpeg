@@ -6861,10 +6861,8 @@ fn bind_standard_a5_owner_surfaces(
                 .iter()
                 .enumerate()
                 .filter_map(|(carrier, value)| {
-                    let SurfaceGeometry::Nurbs(surface) = &value.geometry else {
-                        return None;
-                    };
-                    owner_matches_a5_carrier(&owner.numeric_tail, surface).then_some(carrier)
+                    owner_matches_a5_carrier(&owner.numeric_tail, &value.geometry)
+                        .then_some(carrier)
                 })
                 .collect::<Vec<_>>()
         })
@@ -6923,9 +6921,7 @@ fn bind_standard_a5_owner_surfaces(
         let face_carriers = possible_carriers
             .into_iter()
             .filter(|carrier| {
-                let SurfaceGeometry::Nurbs(surface) = &carriers[*carrier].geometry else {
-                    return false;
-                };
+                let surface = &carriers[*carrier].geometry;
                 witnesses.get(face).is_some_and(|points| {
                     points.len() >= 3
                         && points
@@ -6957,7 +6953,8 @@ fn bind_standard_a5_owner_surfaces(
         let Some(carrier) = carrier else {
             continue;
         };
-        ir.model.surfaces[surface].geometry = carriers[carrier].geometry.clone();
+        ir.model.surfaces[surface].geometry =
+            SurfaceGeometry::Nurbs(carriers[carrier].geometry.clone());
         annotations.derived(&ir.model.surfaces[surface].id, "geometry");
         bound += 1;
     }

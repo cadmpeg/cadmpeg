@@ -12,7 +12,7 @@ use crate::wire::records::{
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
     knots_strictly_increasing, NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition,
-    RollingBallJetDerivative, RollingBallJetSite, SurfaceGeometry,
+    RollingBallJetDerivative, RollingBallJetSite,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::ops::Range;
@@ -21,24 +21,16 @@ const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 const EPS_ROLLING_BALL_ANGLE: f64 = 1.0e-9;
 
-/// Native identity form of one decoded freeform surface carrier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FreeformSurfaceIdentity {
-    /// Common-form `a8 <flag> 34` carrier with an inline persistent object id.
-    Object(u32),
-    /// Consolidated `a5 03 34` carrier identified by its framed source offset.
-    FrameOffset(usize),
-}
-
 /// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]
 pub struct FreeformSurface {
     /// Source offset of the framed record.
     pub pos: usize,
-    /// Identity form carried by this storage family.
-    pub identity: FreeformSurfaceIdentity,
+    /// Inline persistent object id for an A8 carrier. `None` for an A5
+    /// carrier identified only by [`Self::pos`].
+    pub identity: Option<u32>,
     /// The decoded NURBS carrier.
-    pub geometry: SurfaceGeometry,
+    pub geometry: NurbsSurface,
 }
 
 /// Whether an `a8 <flag> 34` surface stores poles inline or in an external grid.
@@ -54,10 +46,7 @@ impl FreeformSurface {
     /// Return the inline persistent object id when this is an A8 carrier.
     #[must_use]
     pub fn object_id(&self) -> Option<u32> {
-        match self.identity {
-            FreeformSurfaceIdentity::Object(object_id) => Some(object_id),
-            FreeformSurfaceIdentity::FrameOffset(_) => None,
-        }
+        self.identity
     }
 }
 
@@ -1296,23 +1285,21 @@ pub fn a8_surface_from_external_grid(
     };
     Some(FreeformSurface {
         pos: header.pos,
-        identity: FreeformSurfaceIdentity::Object(header.object_id),
-        geometry: SurfaceGeometry::Nurbs(
-            NurbsSurface::new(
-                header.u_degree,
-                header.v_degree,
-                expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
-                expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
-                header.u_count,
-                header.v_count,
-                control_points.clone(),
-                weights.clone(),
-                false,
-                false,
-                false,
-            )
-            .ok()?,
-        ),
+        identity: Some(header.object_id),
+        geometry: NurbsSurface::new(
+            header.u_degree,
+            header.v_degree,
+            expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
+            expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
+            header.u_count,
+            header.v_count,
+            control_points.clone(),
+            weights.clone(),
+            false,
+            false,
+            false,
+        )
+        .ok()?,
     })
 }
 
@@ -1500,23 +1487,21 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     }
     Some(FreeformSurface {
         pos,
-        identity: FreeformSurfaceIdentity::FrameOffset(pos),
-        geometry: SurfaceGeometry::Nurbs(
-            NurbsSurface::new(
-                u_degree,
-                v_degree,
-                u_knots,
-                v_knots,
-                u_count,
-                v_count,
-                control_points,
-                weights,
-                false,
-                false,
-                false,
-            )
-            .ok()?,
-        ),
+        identity: None,
+        geometry: NurbsSurface::new(
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            u_count,
+            v_count,
+            control_points,
+            weights,
+            false,
+            false,
+            false,
+        )
+        .ok()?,
     })
 }
 
@@ -1670,23 +1655,21 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     a8_surface_suffix_start(data, pole_start, end)?;
     Some(FreeformSurface {
         pos,
-        identity: FreeformSurfaceIdentity::Object(object_id),
-        geometry: SurfaceGeometry::Nurbs(
-            NurbsSurface::new(
-                u_degree,
-                v_degree,
-                expand_knots(&u_distinct_knots, &u_multiplicities)?,
-                expand_knots(&v_distinct_knots, &v_multiplicities)?,
-                u_count,
-                v_count,
-                control_points,
-                rational.then_some(weights),
-                false,
-                false,
-                false,
-            )
-            .ok()?,
-        ),
+        identity: Some(object_id),
+        geometry: NurbsSurface::new(
+            u_degree,
+            v_degree,
+            expand_knots(&u_distinct_knots, &u_multiplicities)?,
+            expand_knots(&v_distinct_knots, &v_multiplicities)?,
+            u_count,
+            v_count,
+            control_points,
+            rational.then_some(weights),
+            false,
+            false,
+            false,
+        )
+        .ok()?,
     })
 }
 

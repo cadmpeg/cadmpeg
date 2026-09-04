@@ -6,9 +6,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
-use cadmpeg_ir::geometry::{
-    knots_strictly_increasing, NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::{knots_strictly_increasing, NurbsSurface, ProceduralSurfaceDefinition};
 use cadmpeg_ir::math::Point2;
 
 use super::vecmath::{add, cross, scale};
@@ -937,14 +935,12 @@ pub(crate) fn parse_from_records_budgeted(
             frame.object_id,
         )
     }) {
-        if let (Some(object_id), SurfaceGeometry::Nurbs(nurbs)) =
-            (surface.object_id(), surface.geometry)
-        {
+        if let Some(object_id) = surface.object_id() {
             merge_surface_candidate(
                 &mut surfaces,
                 &mut conflicting_surfaces,
                 object_id,
-                B5Surface::Nurbs(nurbs),
+                B5Surface::Nurbs(surface.geometry),
             );
         }
     }
@@ -1688,10 +1684,7 @@ pub(crate) fn targeted_surfaces_from_frames(
         let Some(object_id) = surface.object_id() else {
             continue;
         };
-        let SurfaceGeometry::Nurbs(nurbs) = surface.geometry else {
-            continue;
-        };
-        merge_targeted_surface(&mut resolved, object_id, B5Surface::Nurbs(nurbs));
+        merge_targeted_surface(&mut resolved, object_id, B5Surface::Nurbs(surface.geometry));
     }
     let headers = frames
         .iter()

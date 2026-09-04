@@ -18,14 +18,10 @@ fn a8_surface_parser_reads_common_form_nurbs() {
     let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_surface_stream());
     assert_eq!(surfaces.len(), 1);
     assert_eq!(surfaces[0].object_id(), Some(0xdeca_fbad));
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!((surface.u_degree(), surface.v_degree()), (2, 2));
-            assert_eq!((surface.u_count(), surface.v_count()), (3, 3));
-            assert_eq!(surface.control_points()[8].x, 8.0);
-        }
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
+    let surface = &surfaces[0].geometry;
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 2));
+    assert_eq!((surface.u_count(), surface.v_count()), (3, 3));
+    assert_eq!(surface.control_points()[8].x, 8.0);
 }
 
 #[test]
@@ -55,9 +51,7 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
         inner_object_id,
     )
     .expect("selected nested surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = surface.geometry;
     assert_eq!(surface.control_points()[8].x, 8.0);
     assert!(
         crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
@@ -75,9 +69,7 @@ fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
     let surfaces =
         crate::families::a5a8::records::a8_surfaces(&a8_surface_stream_with_u_count(20_001));
     assert_eq!(surfaces.len(), 1);
-    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = &surfaces[0].geometry;
     assert_eq!((surface.u_count(), surface.v_count()), (20_002, 3));
     assert_eq!(surface.control_points().len(), 60_006);
 }
@@ -114,9 +106,7 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_poles() {
     let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
         .try_into()
         .expect("one inline-tail surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = surface.geometry;
     assert_eq!(surface.control_points()[8].x, 8.0);
 }
 
@@ -130,9 +120,7 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
     let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
         .try_into()
         .expect("one inline-weight-tail surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = surface.geometry;
     assert_eq!(surface.weights(), Some([2.0; 9].as_slice()));
 }
 
@@ -169,10 +157,9 @@ fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
         &alternate_extrapolated,
     ] {
         let bytes = surface_with_tail(tail);
-        let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
+        let [_surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
             .try_into()
             .expect("one inline-tail surface");
-        assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
         let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
             .try_into()
             .expect("one inline-tail header");
@@ -345,9 +332,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
         .expect("one elided header");
     let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, &header)
         .expect("unique external pole allocation");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = surface.geometry;
     assert_eq!(surface.control_points().len(), 9);
     assert_eq!(surface.control_points()[8], Point3::new(8.0, 2.0, 2.0));
 
@@ -355,9 +340,7 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
         .try_into()
         .expect("one resolved surface");
     assert_eq!(resolved.object_id(), Some(100));
-    let SurfaceGeometry::Nurbs(resolved) = resolved.geometry else {
-        panic!("NURBS surface");
-    };
+    let resolved = resolved.geometry;
     assert_eq!(resolved.control_points(), surface.control_points());
 }
 
@@ -429,9 +412,7 @@ fn a8_elided_surface_accepts_finite_large_external_poles() {
     let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes)
         .try_into()
         .expect("one resolved surface");
-    let SurfaceGeometry::Nurbs(surface) = resolved.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = resolved.geometry;
     assert_eq!(surface.control_points()[0].x, 2e12);
 
     bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(f64::NAN));
@@ -634,12 +615,7 @@ fn a5_pcurve_parser_accepts_frame_bounded_site_count() {
 #[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
     let surfaces = crate::families::a5a8::records::a8_surfaces(&a8_rational_surface_stream());
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!(surface.weights(), Some([2.0; 9].as_slice()));
-        }
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
+    assert_eq!(surfaces[0].geometry.weights(), Some([2.0; 9].as_slice()));
 }
 
 #[test]
@@ -649,9 +625,7 @@ fn surface_parsers_require_finite_nonzero_weights() {
     let [surface] = crate::families::a5a8::records::a5_surfaces(&a5)
         .try_into()
         .expect("one consolidated rational surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = surface.geometry;
     assert_eq!(surface.weights().expect("weights")[0], 2e12);
     a5[146..154].copy_from_slice(&le_f64(f64::NAN));
     assert!(crate::families::a5a8::records::a5_surfaces(&a5).is_empty());
@@ -661,9 +635,7 @@ fn surface_parsers_require_finite_nonzero_weights() {
     let [surface] = crate::families::a5a8::records::a8_surfaces(&a8)
         .try_into()
         .expect("one common-form rational surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = surface.geometry;
     assert_eq!(surface.weights().expect("weights")[0], 2e12);
     a8[275..283].copy_from_slice(&le_f64(f64::NAN));
     assert!(crate::families::a5a8::records::a8_surfaces(&a8).is_empty());
@@ -671,23 +643,14 @@ fn surface_parsers_require_finite_nonzero_weights() {
 
 #[test]
 fn a5_surface_parser_reads_consolidated_nurbs() {
-    use crate::families::a5a8::records::FreeformSurfaceIdentity;
-
     let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_surface_stream());
     assert_eq!(surfaces.len(), 1);
-    assert_eq!(
-        surfaces[0].identity,
-        FreeformSurfaceIdentity::FrameOffset(surfaces[0].pos)
-    );
+    assert_eq!(surfaces[0].identity, None);
     assert_eq!(surfaces[0].object_id(), None);
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
-            assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
-            assert_eq!(surface.control_points()[3].x, 3.0);
-        }
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
+    let surface = &surfaces[0].geometry;
+    assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
+    assert_eq!(surface.control_points()[3].x, 3.0);
 }
 
 #[test]
@@ -718,9 +681,7 @@ fn a5_surface_parser_reads_multispan_cubic_nurbs() {
     let [surface] = crate::families::a5a8::records::a5_surfaces(&bytes)
         .try_into()
         .expect("one multispan cubic surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = surface.geometry;
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
     assert_eq!((surface.u_count(), surface.v_count()), (5, 5));
     assert_eq!(
@@ -737,9 +698,7 @@ fn surface_parsers_accept_finite_large_control_points() {
     let [surface] = crate::families::a5a8::records::a5_surfaces(&a5)
         .try_into()
         .expect("one consolidated surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = surface.geometry;
     assert_eq!(surface.control_points()[0].x, 2e12);
 
     let mut a8 = a8_surface_stream();
@@ -747,9 +706,7 @@ fn surface_parsers_accept_finite_large_control_points() {
     let [surface] = crate::families::a5a8::records::a8_surfaces(&a8)
         .try_into()
         .expect("one common-form surface");
-    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
-        panic!("NURBS surface");
-    };
+    let surface = surface.geometry;
     assert_eq!(surface.control_points()[0].x, 2e12);
 
     a5[47..55].copy_from_slice(&le_f64(f64::NAN));
@@ -777,23 +734,19 @@ fn a5_surface_parser_rejects_nonfinite_and_repeated_distinct_knots() {
 fn consolidated_surface_parser_reads_width2_frame() {
     let surfaces = crate::families::a5a8::records::a5_surfaces(&a6_surface_stream());
     assert_eq!(surfaces.len(), 1);
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
-        }
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
+    assert_eq!(
+        (
+            surfaces[0].geometry.u_count(),
+            surfaces[0].geometry.v_count()
+        ),
+        (2, 2)
+    );
 }
 
 #[test]
 fn a5_surface_parser_reads_rational_weight_program() {
     let surfaces = crate::families::a5a8::records::a5_surfaces(&a5_rational_surface_stream());
-    match &surfaces[0].geometry {
-        SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!(surface.weights(), Some([2.0; 4].as_slice()));
-        }
-        other => panic!("expected NURBS surface, got {other:?}"),
-    }
+    assert_eq!(surfaces[0].geometry.weights(), Some([2.0; 4].as_slice()));
 }
 
 #[test]
