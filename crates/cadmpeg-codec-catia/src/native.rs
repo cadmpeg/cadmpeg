@@ -498,12 +498,19 @@ pub struct CatiaConsolidatedCircle {
 }
 
 /// Frame-specific payload of one consolidated `B:28` cylinder chart.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CatiaConsolidatedCylinderPayload {
-    /// Complete three-dimensional frame reconstructed from layout `0x52` or `0x5a`.
-    Resolved {
+    /// Complete three-dimensional frame reconstructed from layout `0x52`.
+    Layout52 {
+        /// Token selecting the serialized frame-vector role.
+        frame_token: u8,
+        /// Cylinder-axis unit direction.
+        axis: [f64; 3],
+        /// Unit direction from which the circumferential parameter is measured.
+        reference_direction: [f64; 3],
+    },
+    /// Complete three-dimensional frame reconstructed from layout `0x5a`.
+    Layout5a {
         /// Token selecting the serialized frame-vector role.
         frame_token: u8,
         /// Cylinder-axis unit direction.
@@ -524,16 +531,28 @@ pub enum CatiaConsolidatedCylinderPayload {
     },
 }
 
+impl CatiaConsolidatedCylinderPayload {
+    pub(crate) const fn layout(&self) -> u8 {
+        match self {
+            Self::Layout52 { .. } => 0x52,
+            Self::Layout5a { .. } => 0x5a,
+            Self::RangeOrigin { .. } => 0x62,
+        }
+    }
+}
+
 /// One structurally complete consolidated `B:28` cylinder chart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedCylinderWire",
+    into = "CatiaConsolidatedCylinderWire"
+)]
 pub struct CatiaConsolidatedCylinder {
     /// Stable native-record identity.
     pub id: String,
     /// Byte offset of the framed record.
     pub byte_offset: u64,
-    /// Payload-layout discriminator (`0x52`, `0x5a`, or `0x62`).
-    pub layout: u8,
     /// Cylinder-axis origin.
     pub origin: [f64; 3],
     /// Cylinder radius.
@@ -544,6 +563,140 @@ pub struct CatiaConsolidatedCylinder {
     pub v_range: [f64; 2],
     /// Layout-specific frame data.
     pub payload: CatiaConsolidatedCylinderPayload,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaConsolidatedCylinderWire {
+    id: String,
+    byte_offset: u64,
+    layout: u8,
+    origin: [f64; 3],
+    radius: f64,
+    u_range: [f64; 2],
+    v_range: [f64; 2],
+    payload: CatiaConsolidatedCylinderPayloadWire,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CatiaConsolidatedCylinderPayloadWire {
+    Resolved {
+        frame_token: u8,
+        axis: [f64; 3],
+        reference_direction: [f64; 3],
+    },
+    RangeOrigin {
+        stored_vector: [f64; 2],
+        axis: [f64; 3],
+        reference_direction: [f64; 3],
+        range_origin: f64,
+    },
+}
+
+impl From<CatiaConsolidatedCylinder> for CatiaConsolidatedCylinderWire {
+    fn from(value: CatiaConsolidatedCylinder) -> Self {
+        let layout = value.payload.layout();
+        let payload = match value.payload {
+            CatiaConsolidatedCylinderPayload::Layout52 {
+                frame_token,
+                axis,
+                reference_direction,
+            }
+            | CatiaConsolidatedCylinderPayload::Layout5a {
+                frame_token,
+                axis,
+                reference_direction,
+            } => CatiaConsolidatedCylinderPayloadWire::Resolved {
+                frame_token,
+                axis,
+                reference_direction,
+            },
+            CatiaConsolidatedCylinderPayload::RangeOrigin {
+                stored_vector,
+                axis,
+                reference_direction,
+                range_origin,
+            } => CatiaConsolidatedCylinderPayloadWire::RangeOrigin {
+                stored_vector,
+                axis,
+                reference_direction,
+                range_origin,
+            },
+        };
+        Self {
+            id: value.id,
+            byte_offset: value.byte_offset,
+            layout,
+            origin: value.origin,
+            radius: value.radius,
+            u_range: value.u_range,
+            v_range: value.v_range,
+            payload,
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedCylinderWire> for CatiaConsolidatedCylinder {
+    type Error = String;
+
+    fn try_from(wire: CatiaConsolidatedCylinderWire) -> Result<Self, Self::Error> {
+        let payload = match (wire.layout, wire.payload) {
+            (
+                0x52,
+                CatiaConsolidatedCylinderPayloadWire::Resolved {
+                    frame_token,
+                    axis,
+                    reference_direction,
+                },
+            ) => CatiaConsolidatedCylinderPayload::Layout52 {
+                frame_token,
+                axis,
+                reference_direction,
+            },
+            (
+                0x5a,
+                CatiaConsolidatedCylinderPayloadWire::Resolved {
+                    frame_token,
+                    axis,
+                    reference_direction,
+                },
+            ) => CatiaConsolidatedCylinderPayload::Layout5a {
+                frame_token,
+                axis,
+                reference_direction,
+            },
+            (
+                0x62,
+                CatiaConsolidatedCylinderPayloadWire::RangeOrigin {
+                    stored_vector,
+                    axis,
+                    reference_direction,
+                    range_origin,
+                },
+            ) => CatiaConsolidatedCylinderPayload::RangeOrigin {
+                stored_vector,
+                axis,
+                reference_direction,
+                range_origin,
+            },
+            (layout, _) => {
+                return Err(format!(
+                    "cylinder layout {layout:#04x} does not match payload"
+                ));
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            origin: wire.origin,
+            radius: wire.radius,
+            u_range: wire.u_range,
+            v_range: wire.v_range,
+            payload,
+        })
+    }
 }
 
 /// One layout-`0x5a` cylinder embedded in a type-3 consolidated group.
@@ -603,18 +756,27 @@ pub enum CatiaConsolidatedParameterPointPayload {
     },
 }
 
+impl CatiaConsolidatedParameterPointPayload {
+    pub(crate) const fn layout(&self) -> u8 {
+        match self {
+            Self::Scalar { .. } => 0x0a,
+            Self::Uv { .. } => 0x12,
+            Self::StationUv { .. } => 0x1a,
+            Self::FiveScalars { .. } => 0x2a,
+        }
+    }
+}
+
 #[cfg(test)]
 impl CatiaConsolidatedParameterPointPayload {
-    fn is_valid_for_layout(&self, layout: u8) -> bool {
+    fn is_valid(&self) -> bool {
         match self {
-            Self::Scalar { value } => layout == 0x0a && value.is_finite(),
-            Self::Uv { uv } => layout == 0x12 && uv.iter().all(|value| value.is_finite()),
+            Self::Scalar { value } => value.is_finite(),
+            Self::Uv { uv } => uv.iter().all(|value| value.is_finite()),
             Self::StationUv { station, uv } => {
-                layout == 0x1a && station.is_finite() && uv.iter().all(|value| value.is_finite())
+                station.is_finite() && uv.iter().all(|value| value.is_finite())
             }
-            Self::FiveScalars { values } => {
-                layout == 0x2a && values.iter().all(|value| value.is_finite())
-            }
+            Self::FiveScalars { values } => values.iter().all(|value| value.is_finite()),
         }
     }
 }
@@ -622,6 +784,10 @@ impl CatiaConsolidatedParameterPointPayload {
 /// One complete consolidated `B:18` parameter-space record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedParameterPointWire",
+    into = "CatiaConsolidatedParameterPointWire"
+)]
 pub struct CatiaConsolidatedParameterPoint {
     /// Stable native-record identity.
     pub id: String,
@@ -629,14 +795,61 @@ pub struct CatiaConsolidatedParameterPoint {
     pub byte_offset: u64,
     /// Complete framed-record length.
     pub byte_len: u64,
-    /// Payload-layout discriminator (`0x0a`, `0x12`, `0x1a`, or `0x2a`).
-    pub layout: u8,
     /// First byte of the two-byte class-specific prefix.
-    pub prefix: u8,
+    pub prefix: crate::families::b2::records::B2ParameterPointPrefix,
     /// Second byte of the two-byte class-specific prefix.
     pub control: u8,
     /// Layout-specific finite scalar lane.
     pub payload: CatiaConsolidatedParameterPointPayload,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaConsolidatedParameterPointWire {
+    id: String,
+    byte_offset: u64,
+    byte_len: u64,
+    layout: u8,
+    prefix: u8,
+    control: u8,
+    payload: CatiaConsolidatedParameterPointPayload,
+}
+
+impl From<CatiaConsolidatedParameterPoint> for CatiaConsolidatedParameterPointWire {
+    fn from(value: CatiaConsolidatedParameterPoint) -> Self {
+        Self {
+            id: value.id,
+            byte_offset: value.byte_offset,
+            byte_len: value.byte_len,
+            layout: value.payload.layout(),
+            prefix: value.prefix.as_u8(),
+            control: value.control,
+            payload: value.payload,
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedParameterPointWire> for CatiaConsolidatedParameterPoint {
+    type Error = String;
+
+    fn try_from(wire: CatiaConsolidatedParameterPointWire) -> Result<Self, Self::Error> {
+        if wire.layout != wire.payload.layout() {
+            return Err(format!(
+                "parameter-point layout {:#04x} does not match payload",
+                wire.layout
+            ));
+        }
+        let prefix = crate::families::b2::records::B2ParameterPointPrefix::from_u8(wire.prefix)
+            .ok_or_else(|| format!("unknown parameter-point prefix {:#04x}", wire.prefix))?;
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            byte_len: wire.byte_len,
+            prefix,
+            control: wire.control,
+            payload: wire.payload,
+        })
+    }
 }
 
 /// Selector-specific payload of a consolidated `B:27` plane carrier.
@@ -673,14 +886,32 @@ pub enum CatiaConsolidatedPlaneCarrierPayload {
     /// Finite scalar lane for a selector whose semantic layout is not yet
     /// established.
     ScalarLane {
+        /// Second payload byte selecting the scalar layout.
+        #[serde(skip, default)]
+        selector: u8,
         /// Complete selector-specific scalar lane in source order.
         values: Vec<f64>,
     },
 }
 
+impl CatiaConsolidatedPlaneCarrierPayload {
+    pub(crate) const fn selector(&self) -> u8 {
+        match self {
+            Self::PointDirection2 { .. } => 0xe4,
+            Self::PointDirection3 { .. } => 0xc4,
+            Self::PointTail { .. } => 0xec,
+            Self::ScalarLane { selector, .. } => *selector,
+        }
+    }
+}
+
 /// One complete consolidated `B:27` plane-carrier record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedPlaneCarrierWire",
+    into = "CatiaConsolidatedPlaneCarrierWire"
+)]
 pub struct CatiaConsolidatedPlaneCarrier {
     /// Stable native-record identity.
     pub id: String,
@@ -694,10 +925,61 @@ pub struct CatiaConsolidatedPlaneCarrier {
     pub flag: u8,
     /// Width-coded frame header token.
     pub header_token: u32,
-    /// Second payload byte selecting the scalar layout.
-    pub selector: u8,
     /// Selector-specific finite scalar payload.
     pub payload: CatiaConsolidatedPlaneCarrierPayload,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaConsolidatedPlaneCarrierWire {
+    id: String,
+    byte_offset: u64,
+    byte_len: u64,
+    width: u8,
+    flag: u8,
+    header_token: u32,
+    selector: u8,
+    payload: CatiaConsolidatedPlaneCarrierPayload,
+}
+
+impl From<CatiaConsolidatedPlaneCarrier> for CatiaConsolidatedPlaneCarrierWire {
+    fn from(value: CatiaConsolidatedPlaneCarrier) -> Self {
+        Self {
+            id: value.id,
+            byte_offset: value.byte_offset,
+            byte_len: value.byte_len,
+            width: value.width,
+            flag: value.flag,
+            header_token: value.header_token,
+            selector: value.payload.selector(),
+            payload: value.payload,
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedPlaneCarrierWire> for CatiaConsolidatedPlaneCarrier {
+    type Error = String;
+
+    fn try_from(mut wire: CatiaConsolidatedPlaneCarrierWire) -> Result<Self, Self::Error> {
+        if let CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, .. } = &mut wire.payload
+        {
+            *selector = wire.selector;
+        } else if wire.payload.selector() != wire.selector {
+            return Err(format!(
+                "plane-carrier selector {:#04x} does not match payload",
+                wire.selector
+            ));
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            byte_len: wire.byte_len,
+            width: wire.width,
+            flag: wire.flag,
+            header_token: wire.header_token,
+            payload: wire.payload,
+        })
+    }
 }
 
 /// One complete consolidated `B:37` persistent-reference list.
@@ -6318,18 +6600,31 @@ fn consolidated_cylinders(
                         axis,
                         ref_direction,
                         ..
-                    } => CatiaConsolidatedCylinderPayload::Resolved {
-                        frame_token: cylinder.frame_token,
-                        axis: [axis.x, axis.y, axis.z],
-                        reference_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-                    },
+                    } => {
+                        let frame = (
+                            cylinder.frame_token,
+                            [axis.x, axis.y, axis.z],
+                            [ref_direction.x, ref_direction.y, ref_direction.z],
+                        );
+                        match cylinder.layout {
+                            0x52 => CatiaConsolidatedCylinderPayload::Layout52 {
+                                frame_token: frame.0,
+                                axis: frame.1,
+                                reference_direction: frame.2,
+                            },
+                            _ => CatiaConsolidatedCylinderPayload::Layout5a {
+                                frame_token: frame.0,
+                                axis: frame.1,
+                                reference_direction: frame.2,
+                            },
+                        }
+                    }
                     _ => unreachable!("B2 cylinder parser produced a non-cylinder carrier"),
                 }
             };
             CatiaConsolidatedCylinder {
                 id: format!("catia:consolidated:cylinder#{index}"),
                 byte_offset: cylinder.pos as u64,
-                layout: cylinder.layout,
                 origin: cylinder.origin,
                 radius: cylinder.radius,
                 u_range: cylinder.u_range,
@@ -6409,7 +6704,6 @@ fn consolidated_parameter_points(
                 id: format!("catia:consolidated:parameter-point#{index}"),
                 byte_offset: point.pos as u64,
                 byte_len: (point.end - point.pos) as u64,
-                layout: point.layout,
                 prefix: point.prefix,
                 control: point.control,
                 payload,
@@ -6450,8 +6744,8 @@ fn consolidated_plane_carriers(
                 B2PlaneCarrierPayload::PointTail { point, tail } => {
                     CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
                 }
-                B2PlaneCarrierPayload::ScalarLane { values } => {
-                    CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values }
+                B2PlaneCarrierPayload::ScalarLane { selector, values } => {
+                    CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, values }
                 }
             };
             CatiaConsolidatedPlaneCarrier {
@@ -6461,7 +6755,6 @@ fn consolidated_plane_carriers(
                 width: carrier.width,
                 flag: carrier.flag,
                 header_token: carrier.header_token,
-                selector: carrier.selector,
                 payload,
             }
         })

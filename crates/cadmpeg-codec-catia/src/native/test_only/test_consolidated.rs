@@ -256,25 +256,34 @@ pub(super) fn validate_consolidated_cylinders(
             first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
         };
         let payload_valid = match &cylinder.payload {
-            CatiaConsolidatedCylinderPayload::Resolved {
+            CatiaConsolidatedCylinderPayload::Layout52 {
                 frame_token,
                 axis,
                 reference_direction,
             } => {
-                let frame_matches_layout = match cylinder.layout {
-                    0x52 => {
-                        *frame_token == 0x1d
-                            && *axis == [1.0, 0.0, 0.0]
-                            && *reference_direction == [0.0, 1.0, 0.0]
-                    }
-                    0x5a => {
-                        matches!(*frame_token, 0x19 | 0x1c)
-                            && axis[2] == 0.0
-                            && *reference_direction == [-axis[1], axis[0], 0.0]
-                    }
-                    _ => false,
-                };
-                frame_matches_layout
+                *frame_token == 0x1d
+                    && *axis == [1.0, 0.0, 0.0]
+                    && *reference_direction == [0.0, 1.0, 0.0]
+                    && axis
+                        .iter()
+                        .chain(reference_direction)
+                        .all(|value| value.is_finite())
+                    && (squared_length(*axis) - 1.0).abs() <= 1.0e-9
+                    && (squared_length(*reference_direction) - 1.0).abs() <= 1.0e-9
+                    && dot(*axis, *reference_direction).abs() <= 1.0e-9
+                    && crate::families::b2::records::circle_range_is_full_turn(
+                        cylinder.radius,
+                        cylinder.u_range,
+                    )
+            }
+            CatiaConsolidatedCylinderPayload::Layout5a {
+                frame_token,
+                axis,
+                reference_direction,
+            } => {
+                matches!(*frame_token, 0x19 | 0x1c)
+                    && axis[2] == 0.0
+                    && *reference_direction == [-axis[1], axis[0], 0.0]
                     && axis
                         .iter()
                         .chain(reference_direction)
@@ -293,7 +302,7 @@ pub(super) fn validate_consolidated_cylinders(
                 reference_direction,
                 range_origin,
             } => {
-                cylinder.layout == 0x62
+                cylinder.payload.layout() == 0x62
                     && stored_vector
                         .iter()
                         .chain(std::iter::once(range_origin))
@@ -403,11 +412,13 @@ pub(super) fn validate_consolidated_parameter_points(
     points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, point) in points.iter().enumerate() {
-        let payload_valid = point.payload.is_valid_for_layout(point.layout);
-        let frame_overhead = point.byte_len.checked_sub(u64::from(point.layout));
+        let payload_valid = point.payload.is_valid();
+        let frame_overhead = point
+            .byte_len
+            .checked_sub(u64::from(point.payload.layout()));
         if point.id != format!("catia:consolidated:parameter-point#{index}")
             || !matches!(frame_overhead, Some(5..=7))
-            || !matches!(point.prefix, 0x05 | 0x09 | 0x0d | 0x11)
+            || !matches!(point.prefix.as_u8(), 0x05 | 0x09 | 0x0d | 0x11)
             || !payload_valid
             || index > 0 && points[index - 1].byte_offset >= point.byte_offset
         {
@@ -456,8 +467,8 @@ pub(super) fn validate_consolidated_plane_carriers(
                 6,
                 point.iter().chain(tail).all(|value| value.is_finite()),
             ),
-            CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values } => (
-                carrier.selector,
+            CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values, .. } => (
+                carrier.payload.selector(),
                 values.len(),
                 !values.is_empty() && values.iter().all(|value| value.is_finite()),
             ),
@@ -477,8 +488,8 @@ pub(super) fn validate_consolidated_plane_carriers(
             || matches!(
                 &carrier.payload,
                 CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. }
-            ) && matches!(carrier.selector, 0xe4 | 0xc4 | 0xec)
-            || carrier.selector != selector
+            ) && matches!(carrier.payload.selector(), 0xe4 | 0xc4 | 0xec)
+            || carrier.payload.selector() != selector
             || carrier.byte_len != expected_len
             || !payload_valid
             || index > 0 && carriers[index - 1].byte_offset >= carrier.byte_offset

@@ -56,14 +56,42 @@ pub struct B2ParameterPoint {
     pub pos: usize,
     /// Exclusive end of the complete framed record.
     pub end: usize,
-    /// Payload-layout discriminator (`0x0a`, `0x12`, `0x1a`, or `0x2a`).
-    pub layout: u8,
     /// First byte of the two-byte class-specific prefix.
-    pub prefix: u8,
+    pub prefix: B2ParameterPointPrefix,
     /// Second byte of the two-byte class-specific prefix.
     pub control: u8,
     /// Layout-specific finite scalar lane.
     pub payload: B2ParameterPointPayload,
+}
+
+/// Closed set of class-`0x18` parameter-point prefixes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2ParameterPointPrefix {
+    Sel05,
+    Sel09,
+    Sel0d,
+    Sel11,
+}
+
+impl B2ParameterPointPrefix {
+    pub(crate) fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0x05 => Some(Self::Sel05),
+            0x09 => Some(Self::Sel09),
+            0x0d => Some(Self::Sel0d),
+            0x11 => Some(Self::Sel11),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn as_u8(self) -> u8 {
+        match self {
+            Self::Sel05 => 0x05,
+            Self::Sel09 => 0x09,
+            Self::Sel0d => 0x0d,
+            Self::Sel11 => 0x11,
+        }
+    }
 }
 
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
@@ -91,6 +119,18 @@ pub enum B2ParameterPointPayload {
         /// Stored scalar payload.
         values: [f64; 5],
     },
+}
+
+#[cfg(test)]
+impl B2ParameterPointPayload {
+    pub(crate) const fn layout(&self) -> u8 {
+        match self {
+            Self::Scalar { .. } => 0x0a,
+            Self::Uv { .. } => 0x12,
+            Self::StationUv { .. } => 0x1a,
+            Self::FiveScalars { .. } => 0x2a,
+        }
+    }
 }
 
 /// Structurally decoded payload of a consolidated class-`0x27` plane carrier.
@@ -128,9 +168,23 @@ pub enum B2PlaneCarrierPayload {
     /// Finite scalar lane for a selector whose semantic layout is not yet
     /// established.
     ScalarLane {
+        /// Second payload byte selecting the scalar layout.
+        selector: u8,
         /// Complete selector-specific scalar lane in source order.
         values: Vec<f64>,
     },
+}
+
+#[cfg(test)]
+impl B2PlaneCarrierPayload {
+    pub(crate) const fn selector(&self) -> u8 {
+        match self {
+            Self::PointDirection2 { .. } => 0xe4,
+            Self::PointDirection3 { .. } => 0xc4,
+            Self::PointTail { .. } => 0xec,
+            Self::ScalarLane { selector, .. } => *selector,
+        }
+    }
 }
 
 /// One complete consolidated `b2/b3/b4 03 27` plane-carrier record.
@@ -146,8 +200,6 @@ pub struct B2PlaneCarrier {
     pub flag: u8,
     /// Width-coded frame header token.
     pub header_token: u32,
-    /// Second payload byte selecting the scalar layout.
-    pub selector: u8,
     /// Selector-specific finite scalar payload.
     pub payload: B2PlaneCarrierPayload,
 }
@@ -995,7 +1047,7 @@ pub(crate) fn b2_owner_charts_from_records(
                 .into_iter()
                 .collect::<Option<Vec<_>>>()?;
             let points: [B2ParameterPoint; 4] = points.try_into().ok()?;
-            if points.each_ref().map(|point| point.prefix) != [0x05, 0x09, 0x0d, 0x11]
+            if points.each_ref().map(|point| point.prefix.as_u8()) != [0x05, 0x09, 0x0d, 0x11]
                 || !owner_chart_bounds_match(carrier_kind, &points, &owner.numeric_tail)
             {
                 return None;
@@ -1570,10 +1622,7 @@ pub(crate) fn b2_parameter_points_from_records(
             if frame.header_token != 5 {
                 return None;
             }
-            let prefix = *data.get(frame.payload)?;
-            if !matches!(prefix, 0x05 | 0x09 | 0x0d | 0x11) {
-                return None;
-            }
+            let prefix = B2ParameterPointPrefix::from_u8(*data.get(frame.payload)?)?;
             let layout = u8::try_from(frame.end - frame.payload).ok()?;
             let control = *data.get(frame.payload + 1)?;
             let at = frame.payload + 2;
@@ -1609,7 +1658,6 @@ pub(crate) fn b2_parameter_points_from_records(
             finite.then_some(B2ParameterPoint {
                 pos: frame.pos,
                 end: frame.end,
-                layout,
                 prefix,
                 control,
                 payload,
@@ -1667,7 +1715,7 @@ pub(crate) fn b2_plane_carriers_from_records(
                         tail: [values[2], values[3], values[4], values[5]],
                     }
                 }
-                _ if !values.is_empty() => B2PlaneCarrierPayload::ScalarLane { values },
+                _ if !values.is_empty() => B2PlaneCarrierPayload::ScalarLane { selector, values },
                 _ => return None,
             };
             Some(B2PlaneCarrier {
@@ -1676,7 +1724,6 @@ pub(crate) fn b2_plane_carriers_from_records(
                 width: record.width,
                 flag: record.flag,
                 header_token: record.header_token,
-                selector,
                 payload,
             })
         })
