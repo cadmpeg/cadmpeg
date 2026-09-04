@@ -646,19 +646,24 @@ fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
     }
     view.skip(E5_NURBS_SURFACE_TAIL_BYTES)?;
     view.is_empty()
-        .then_some(SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            u_count: u32::try_from(u_count).ok()?,
-            v_count: u32::try_from(v_count).ok()?,
-            control_points,
-            weights,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }))
+        .then(|| {
+            NurbsSurface::new(
+                u_degree,
+                v_degree,
+                u_knots,
+                v_knots,
+                u32::try_from(u_count).ok()?,
+                u32::try_from(v_count).ok()?,
+                control_points,
+                weights,
+                false,
+                false,
+                false,
+            )
+            .ok()
+            .map(SurfaceGeometry::Nurbs)
+        })
+        .flatten()
 }
 
 fn read_nurbs_axis(view: &mut View<'_>) -> Option<(u32, Vec<f64>, Vec<u32>)> {
@@ -891,14 +896,14 @@ mod tests {
             let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &surface.geometry else {
                 panic!("E7 surface was not NURBS");
             };
-            assert_eq!(nurbs.u_degree, 1);
-            assert_eq!(nurbs.v_degree, 1);
-            assert_eq!(nurbs.u_knots, [0.0, 0.0, 1.0, 1.0]);
-            assert_eq!(nurbs.v_knots, [0.0, 0.0, 1.0, 1.0]);
-            assert_eq!(nurbs.u_count, 2);
-            assert_eq!(nurbs.v_count, 2);
-            assert_eq!(nurbs.control_points.len(), 4);
-            assert_eq!(nurbs.weights.is_some(), mode == 1);
+            assert_eq!(nurbs.u_degree(), 1);
+            assert_eq!(nurbs.v_degree(), 1);
+            assert_eq!(nurbs.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.u_count(), 2);
+            assert_eq!(nurbs.v_count(), 2);
+            assert_eq!(nurbs.control_points().len(), 4);
+            assert_eq!(nurbs.weights().is_some(), mode == 1);
         }
     }
 

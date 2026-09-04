@@ -7,13 +7,14 @@ use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
-    NurbsCurve {
-        degree: 1,
-        knots: vec![start, start, end, end],
-        control_points: vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
-        weights: rational.then(|| vec![2.0, 1.0]),
-        periodic: false,
-    }
+    NurbsCurve::new(
+        1,
+        vec![start, start, end, end],
+        vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+        rational.then(|| vec![2.0, 1.0]),
+        false,
+    )
+    .expect("valid test line")
 }
 
 fn decoded_nurbs(curve: NurbsCurve) -> crate::curves::DecodedCurve {
@@ -67,8 +68,8 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
     let CurveGeometry::Nurbs(curve) = curve.geometry else {
         panic!("hatch loop must remain NURBS");
     };
-    assert_eq!(curve.control_points[0], Point3::new(100.0, 200.0, 300.0));
-    assert_eq!(curve.control_points[1], Point3::new(100.0, 220.0, 300.0));
+    assert_eq!(curve.control_points()[0], Point3::new(100.0, 200.0, 300.0));
+    assert_eq!(curve.control_points()[1], Point3::new(100.0, 220.0, 300.0));
 }
 
 #[test]
@@ -527,12 +528,12 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert_eq!(model.vertices[0].tolerance, Some(0.254));
     assert_eq!(model.edges[0].tolerance, Some(0.254));
     assert_eq!(model.pcurves[0].fit_tolerance(), Some(0.02));
-    let PcurveGeometry::Nurbs { control_points, .. } = &model.pcurves[0].geometry else {
+    let PcurveGeometry::Nurbs { nurbs } = &model.pcurves[0].geometry else {
         panic!("line C2 must be a NURBS pcurve");
     };
     // Plane parameters are lengths: the native `u = 1.0` trim endpoint
     // scales with the document (inches -> millimeters).
-    assert_eq!(control_points[1].u, 25.4);
+    assert_eq!(nurbs.control_points()[1].u, 25.4);
     assert_eq!(model.coedges[0].radial_next, model.coedges[0].id);
     let links = staged.links.clone();
     let mut candidate = CadIr::empty();
@@ -795,10 +796,10 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
         warnings: Vec::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
-    assert_eq!(merged.knots, vec![10.0, 10.0, 20.0, 40.0, 40.0]);
-    assert_eq!(merged.control_points.len(), 3);
-    assert_eq!(merged.weights, Some(vec![2.0, 1.0, 1.0]));
-    assert!(!merged.periodic);
+    assert_eq!(merged.knots(), vec![10.0, 10.0, 20.0, 40.0, 40.0]);
+    assert_eq!(merged.control_points().len(), 3);
+    assert_eq!(merged.weights(), Some(&[2.0, 1.0, 1.0][..]));
+    assert!(!merged.periodic());
 }
 
 #[test]
@@ -825,22 +826,23 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
     let merged = c2_curve_to_nurbs_join(outer, 0)
         .expect("nested merge")
         .curve;
-    assert_eq!(merged.knots, vec![5.0, 5.0, 7.0, 9.0, 9.0]);
+    assert_eq!(merged.knots(), vec![5.0, 5.0, 7.0, 9.0, 9.0]);
 }
 
 #[test]
 fn unequal_degree_c2_polycurve_elevates_lower_degree() {
-    let quadratic = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let quadratic = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.5, 1.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .expect("valid quadratic");
     let compound = crate::curves::DecodedCurve {
         geometry: CurveGeometry::Unknown { record: None },
         compound: Some(crate::curves::Compound {
@@ -855,31 +857,20 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
     let merged = c2_curve_to_nurbs_join(compound, 0)
         .expect("degree elevation")
         .curve;
-    assert_eq!(merged.degree, 2);
-    assert_eq!(merged.control_points.len(), 5);
-    assert_eq!(merged.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
+    assert_eq!(merged.degree(), 2);
+    assert_eq!(merged.control_points().len(), 5);
+    assert_eq!(merged.knots(), vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
 }
 
 fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0];
-    let start = NurbsCurve {
-        degree: 1,
-        knots: knots.clone(),
-        control_points: points.to_vec(),
-        weights: None,
-        periodic: false,
-    };
+    let start =
+        NurbsCurve::new(1, knots.clone(), points.to_vec(), None, false).expect("valid cap start");
     let end_points = points
         .iter()
         .map(|point| Point3::new(point.x, point.y, point.z + 5.0))
         .collect::<Vec<_>>();
-    let end = NurbsCurve {
-        degree: 1,
-        knots: knots.clone(),
-        control_points: end_points,
-        weights: None,
-        periodic: false,
-    };
+    let end = NurbsCurve::new(1, knots.clone(), end_points, None, false).expect("valid cap end");
     let pcurve_points = points
         .iter()
         .map(|point| Point2::new(point.x, point.y))

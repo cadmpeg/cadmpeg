@@ -63,24 +63,27 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let expected = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![-1.0, -1.0, 2.0, 2.0],
-        v_knots: vec![-2.0, -2.0, 3.0, 3.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
-            cadmpeg_ir::math::Point3::new(0.0, 10.0, 2.0),
-            cadmpeg_ir::math::Point3::new(20.0, 0.0, 3.0),
-            cadmpeg_ir::math::Point3::new(20.0, 10.0, 4.0),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: true,
-        v_periodic: false,
-    });
+    let expected = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![-1.0, -1.0, 2.0, 2.0],
+            vec![-2.0, -2.0, 3.0, 3.0],
+            2,
+            2,
+            vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Point3::new(0.0, 10.0, 2.0),
+                cadmpeg_ir::math::Point3::new(20.0, 0.0, 3.0),
+                cadmpeg_ir::math::Point3::new(20.0, 10.0, 4.0),
+            ],
+            None,
+            false,
+            true,
+            false,
+        )
+        .expect("valid source-less surface"),
+    );
     source_less.model.surfaces[0].geometry = expected.clone();
 
     let mut encoded = Vec::new();
@@ -105,24 +108,27 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let expected = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Point3::new(0.0, 8.0, 1.0),
-            cadmpeg_ir::math::Point3::new(12.0, 0.0, 2.0),
-            cadmpeg_ir::math::Point3::new(12.0, 8.0, 3.0),
-        ],
-        weights: Some(vec![1.0, 0.75, 1.25, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: true,
-    });
+    let expected = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 8.0, 1.0),
+                cadmpeg_ir::math::Point3::new(12.0, 0.0, 2.0),
+                cadmpeg_ir::math::Point3::new(12.0, 8.0, 3.0),
+            ],
+            Some(vec![1.0, 0.75, 1.25, 1.0]),
+            false,
+            false,
+            true,
+        )
+        .expect("valid source-less rational surface"),
+    );
     source_less.model.surfaces[0].geometry = expected.clone();
 
     let mut encoded = Vec::new();
@@ -149,17 +155,20 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId("generated:nurbs_curve#0".into());
-    let expected = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 2,
-        knots: vec![-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
-        control_points: vec![
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Point3::new(5.0, 8.0, 1.0),
-            cadmpeg_ir::math::Point3::new(10.0, 0.0, 2.0),
-        ],
-        weights: Some(vec![1.0, 0.6, 1.0]),
-        periodic: true,
-    });
+    let expected = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            2,
+            vec![-1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
+            vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(5.0, 8.0, 1.0),
+                cadmpeg_ir::math::Point3::new(10.0, 0.0, 2.0),
+            ],
+            Some(vec![1.0, 0.6, 1.0]),
+            true,
+        )
+        .expect("valid source-less rational curve"),
+    );
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected.clone(),
@@ -281,11 +290,14 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     assert_eq!(
         round_trip.ir().model.pcurves[0].geometry,
         PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![-2.0, -2.0, 3.0, 3.0],
-            control_points: vec![Point2::new(1.0, -5.0), Point2::new(3.5, 5.0)],
-            weights: None,
-            periodic: false,
+            nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                1,
+                vec![-2.0, -2.0, 3.0, 3.0],
+                vec![Point2::new(1.0, -5.0), Point2::new(3.5, 5.0)],
+                None,
+                false,
+            )
+            .unwrap(),
         }
     );
 }
@@ -302,10 +314,8 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     let expected = source_less.model.pcurves[0].clone();
     assert!(matches!(
         &expected.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            weights: Some(weights),
-            ..
-        } if weights == &vec![1.0, 0.5]
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+            if nurbs.weights() == Some([1.0, 0.5].as_slice())
     ));
 
     let mut encoded = Vec::new();
@@ -525,37 +535,43 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
-    let expected_surface = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Point3::new(0.0, 10.0, 1.0),
-            cadmpeg_ir::math::Point3::new(10.0, 0.0, 2.0),
-            cadmpeg_ir::math::Point3::new(10.0, 10.0, 3.0),
-        ],
-        weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: true,
-    });
+    let expected_surface = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            2,
+            2,
+            vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 10.0, 1.0),
+                cadmpeg_ir::math::Point3::new(10.0, 0.0, 2.0),
+                cadmpeg_ir::math::Point3::new(10.0, 10.0, 3.0),
+            ],
+            Some(vec![1.0, 0.8, 1.2, 1.0]),
+            false,
+            false,
+            true,
+        )
+        .expect("valid shared rational surface"),
+    );
     source_less.model.surfaces[1].geometry = expected_surface.clone();
     let curve_id = CurveId("generated:shared_nurbs#0".into());
-    let expected_curve = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Point3::new(5.0, 3.0, 1.0),
-            cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
-        ],
-        weights: Some(vec![1.0, 0.7, 1.0]),
-        periodic: false,
-    });
+    let expected_curve = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(5.0, 3.0, 1.0),
+                cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
+            ],
+            Some(vec![1.0, 0.7, 1.0]),
+            false,
+        )
+        .expect("valid shared rational curve"),
+    );
     source_less.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: expected_curve.clone(),
@@ -864,9 +880,9 @@ fn generated_source_less_writes_translational_extrusion_definition() {
             .find(|curve| curve.id == *directrix)
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-            if curve.degree == 1
-                && curve.knots == [0.25, 0.25, 0.75, 0.75]
-                && curve.control_points == [
+            if curve.degree() == 1
+                && curve.knots() == [0.25, 0.25, 0.75, 0.75]
+                && curve.control_points() == [
                     cadmpeg_ir::math::Point3::new(5.5, 9.0, -4.75),
                     cadmpeg_ir::math::Point3::new(6.5, 7.0, -4.25),
                 ]
@@ -1303,9 +1319,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
             .find(|curve| curve.id == *spine)
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-            if curve.degree == 1
-                && curve.knots == [0.0, 0.0, 1.0, 1.0]
-                && curve.control_points == [
+            if curve.degree() == 1
+                && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                && curve.control_points() == [
                     cadmpeg_ir::math::Point3::new(-2.0, 4.0, 1.0),
                     cadmpeg_ir::math::Point3::new(1.0, 3.0, 3.0),
                 ]

@@ -1027,7 +1027,7 @@ fn scale_surface_geometry(geometry: &mut SurfaceGeometry, scale: f64) {
             *minor_radius *= scale;
         }
         SurfaceGeometry::Nurbs(surface) => {
-            for point in &mut surface.control_points {
+            for point in surface.control_points_mut() {
                 scale_point3(point, scale);
             }
         }
@@ -1088,7 +1088,7 @@ fn scale_curve_geometry(geometry: &mut CurveGeometry, scale: f64) {
         }
         CurveGeometry::Degenerate { point } => scale_point3(point, scale),
         CurveGeometry::Nurbs(curve) => {
-            for point in &mut curve.control_points {
+            for point in curve.control_points_mut() {
                 scale_point3(point, scale);
             }
         }
@@ -1386,8 +1386,8 @@ fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> boo
             *cosine = scale_point(*cosine);
             *sine = scale_point(*sine);
         }
-        PcurveGeometry::Nurbs { control_points, .. } => {
-            for point in control_points {
+        PcurveGeometry::Nurbs { nurbs } => {
+            for point in nurbs.control_points_mut() {
                 *point = scale_point(*point);
             }
         }

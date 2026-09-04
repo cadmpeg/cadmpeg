@@ -200,10 +200,16 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
         unreachable!()
     };
-    nurbs.degree = 1;
-    nurbs.periodic = true;
-    nurbs.knots = vec![-1.0, -1.0, 2.0, 2.0, 2.0];
-    nurbs.control_points[1].z = 4.5;
+    let mut control_points = nurbs.control_points().to_vec();
+    control_points[1].z = 4.5;
+    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+        1,
+        vec![-1.0, -1.0, 2.0, 2.0, 2.0],
+        control_points,
+        nurbs.weights().map(<[f64]>::to_vec),
+        true,
+    )
+    .unwrap();
     let expected = nurbs.clone();
 
     let mut regenerated = Vec::new();

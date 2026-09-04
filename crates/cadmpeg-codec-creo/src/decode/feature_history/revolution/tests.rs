@@ -107,13 +107,16 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
 fn saved_spline_curve() -> Curve {
     Curve {
         id: CurveId("creo:featdefs:saved_spline_curve#40:1".to_string()),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+                None,
+                false,
+            )
+            .expect("valid saved-spline curve"),
+        ),
         source_object: None,
     }
 }

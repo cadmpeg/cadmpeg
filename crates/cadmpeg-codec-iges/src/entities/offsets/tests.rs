@@ -521,9 +521,9 @@ fn decode_solves_a_parameter_linear_line_offset() {
         let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &offset.geometry else {
             panic!("expected an exact degree-one offset carrier");
         };
-        assert_eq!(nurbs.knots, vec![0.0, 0.0, 10.0, 10.0]);
+        assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);
         assert_eq!(
-            nurbs.control_points,
+            nurbs.control_points(),
             vec![
                 cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
                 cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
@@ -573,9 +573,9 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &offset.geometry else {
         panic!("expected an exact function-offset carrier");
     };
-    assert_eq!(nurbs.knots, vec![0.0, 0.0, 10.0, 10.0]);
+    assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);
     assert_eq!(
-        nurbs.control_points,
+        nurbs.control_points(),
         vec![
             cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
             cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),

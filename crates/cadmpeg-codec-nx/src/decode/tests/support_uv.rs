@@ -42,12 +42,10 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     panic!("typed intersection");
                 };
-                let Some(PcurveGeometry::Nurbs { control_points, .. }) =
-                    context.sides[0].pcurve.as_mut()
-                else {
+                let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[0].pcurve.as_mut() else {
                     panic!("NURBS support lane");
                 };
-                for point in control_points {
+                for point in nurbs.control_points_mut() {
                     point.u += 100.0;
                 }
             });
@@ -267,28 +265,31 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 3,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count: 4,
-                v_count: 2,
-                control_points: vec![
-                    Point3::new(-3.0, 0.0, 0.0),
-                    Point3::new(-3.0, 0.0, 1.0),
-                    Point3::new(3.0, 2.0, 0.0),
-                    Point3::new(3.0, 2.0, 1.0),
-                    Point3::new(-3.0, 4.0, 0.0),
-                    Point3::new(-3.0, 4.0, 1.0),
-                    Point3::new(3.0, 6.0, 0.0),
-                    Point3::new(3.0, 6.0, 1.0),
-                ],
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    3,
+                    1,
+                    vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    4,
+                    2,
+                    vec![
+                        Point3::new(-3.0, 0.0, 0.0),
+                        Point3::new(-3.0, 0.0, 1.0),
+                        Point3::new(3.0, 2.0, 0.0),
+                        Point3::new(3.0, 2.0, 1.0),
+                        Point3::new(-3.0, 4.0, 0.0),
+                        Point3::new(-3.0, 4.0, 1.0),
+                        Point3::new(3.0, 6.0, 0.0),
+                        Point3::new(3.0, 6.0, 1.0),
+                    ],
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .expect("valid seeded offset support"),
+            ),
             source_object: None,
         },
         Surface {

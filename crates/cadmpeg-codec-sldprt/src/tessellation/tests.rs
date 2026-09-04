@@ -355,24 +355,25 @@ fn test_nurbs_surface() -> NurbsSurface {
     let control_points = (0..3)
         .flat_map(|u| (0..3).map(move |v| Point3::new(u as f64, v as f64, heights[u * 3 + v])))
         .collect();
-    NurbsSurface {
-        u_degree: 2,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 3,
+    NurbsSurface::new(
+        2,
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        3,
+        3,
         control_points,
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    }
+        None,
+        false,
+        false,
+        false,
+    )
+    .expect("valid test NURBS surface")
 }
 
 fn flat_test_nurbs_surface() -> NurbsSurface {
     let mut surface = test_nurbs_surface();
-    for point in &mut surface.control_points {
+    for point in surface.control_points_mut() {
         point.z = 0.0;
     }
     surface

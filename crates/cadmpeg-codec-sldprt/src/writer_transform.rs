@@ -284,7 +284,7 @@ fn transform_surface(
             *ref_direction = transform.apply_vector(*ref_direction);
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs
-            .control_points
+            .control_points_mut()
             .iter_mut()
             .for_each(|point| *point = transform.apply_point(*point)),
         SurfaceGeometry::Polygonal { vertices, .. } => vertices
@@ -323,7 +323,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             *major_direction = transform.apply_vector(*major_direction);
         }
         CurveGeometry::Nurbs(nurbs) => nurbs
-            .control_points
+            .control_points_mut()
             .iter_mut()
             .for_each(|point| *point = transform.apply_point(*point)),
         CurveGeometry::Polyline { points, .. } => points

@@ -926,7 +926,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         let geometry = &ir.model.curves[curve_index].geometry;
         range.map_or_else(
             || match geometry {
-                CurveGeometry::Nurbs(nurbs) => nurbs.knots.first().copied().unwrap_or(0.0),
+                CurveGeometry::Nurbs(nurbs) => nurbs.knots().first().copied().unwrap_or(0.0),
                 _ => 0.0,
             },
             |range| range[0],
@@ -966,7 +966,7 @@ pub(crate) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> O
             range.into_iter().all(f64::is_finite).then_some(range)
         }
         CurveGeometry::Nurbs(nurbs) => {
-            let domain = [*nurbs.knots.first()?, *nurbs.knots.last()?];
+            let domain = [*nurbs.knots().first()?, *nurbs.knots().last()?];
             let epsilon =
                 EPS_EMIT_CANONICAL_TRIM_RANGE_E6 * (1.0 + domain[0].abs().max(domain[1].abs()));
             if raw
@@ -1398,13 +1398,16 @@ mod tests {
     #[test]
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
         let curve = CurveId("synthetic:curve".into());
-        let geometry = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
-            weights: None,
-            periodic: false,
-        });
+        let geometry = CurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
+                None,
+                false,
+            )
+            .expect("valid test curve"),
+        );
         let geometry_budget = GeometryWorkBudget::new(1024);
         let mut cache = CurvePointCache::default();
 

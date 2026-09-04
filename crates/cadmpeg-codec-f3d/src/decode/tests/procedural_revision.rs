@@ -852,8 +852,8 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                     .find(|candidate| candidate.id == curve)
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1
-                        && curve.knots == [range[0], range[0], range[1], range[1]]
+                    if curve.degree() == 1
+                        && curve.knots() == [range[0], range[0], range[1], range[1]]
             ));
         }
     }
@@ -896,7 +896,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(directrix) = &directrix.geometry else {
         panic!("expected NURBS directrix")
     };
-    assert_eq!(directrix.control_points.len(), 3);
+    assert_eq!(directrix.control_points().len(), 3);
 }
 
 #[test]
@@ -1043,13 +1043,11 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &mut surface.geometry else {
         unreachable!()
     };
-    nurbs.control_points[2].x = 17.5;
-    nurbs.control_points[2].z = -3.25;
-    nurbs.u_degree = 2;
-    nurbs.v_degree = 2;
-    nurbs.u_knots = vec![-1.0, -1.0, -1.0, 2.0, 2.0];
-    nurbs.v_knots = vec![-0.5, -0.5, -0.5, 1.5, 1.5];
-    nurbs.u_periodic = true;
+    nurbs.control_points_mut()[2].x = 17.5;
+    nurbs.control_points_mut()[2].z = -3.25;
+    nurbs.u_knots_mut().copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+    nurbs.v_knots_mut().copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]);
+    nurbs.set_u_periodic(true);
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
 
@@ -1087,14 +1085,14 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
             matches!(
                 &surface.geometry,
                 cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs)
-                    if nurbs.weights.is_some()
+                    if nurbs.weights().is_some()
             )
         })
         .expect("generated rational surface");
     let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &mut surface.geometry else {
         unreachable!()
     };
-    nurbs.weights.as_mut().expect("rational weights")[1] = 0.65;
+    nurbs.weights_mut().expect("rational weights")[1] = 0.65;
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
 
@@ -1141,11 +1139,17 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
         panic!("expected NURBS directrix")
     };
-    nurbs.control_points[1].y = 12.5;
-    nurbs.control_points[1].z = -2.0;
-    nurbs.degree = 1;
-    nurbs.knots = vec![-2.0, -2.0, 3.0, 3.0, 3.0];
-    nurbs.periodic = true;
+    let mut control_points = nurbs.control_points().to_vec();
+    control_points[1].y = 12.5;
+    control_points[1].z = -2.0;
+    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+        1,
+        vec![-2.0, -2.0, 3.0, 3.0, 3.0],
+        control_points,
+        nurbs.weights().map(<[f64]>::to_vec),
+        true,
+    )
+    .unwrap();
     let expected = nurbs.clone();
 
     let mut regenerated = Vec::new();
@@ -1240,7 +1244,7 @@ fn decode_retains_generated_rolling_ball_definition() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(spine) = &spine.geometry else {
         panic!("expected NURBS blend spine")
     };
-    assert_eq!(spine.control_points.len(), 3);
+    assert_eq!(spine.control_points().len(), 3);
     assert_eq!(cross_section, &BlendCrossSection::Circular);
     assert_eq!(
         radius,
@@ -1318,17 +1322,20 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         .iter_mut()
         .find(|curve| curve.id == spine_id)
         .expect("rolling-ball spine")
-        .geometry = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point3::new(2.0, 2.0, -4.0),
-            Point3::new(2.0, 2.0, 0.0),
-            Point3::new(2.0, 2.0, 7.0),
-        ],
-        weights: None,
-        periodic: false,
-    });
+        .geometry = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(2.0, 2.0, -4.0),
+                Point3::new(2.0, 2.0, 0.0),
+                Point3::new(2.0, 2.0, 7.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    );
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1462,10 +1469,17 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
         panic!("expected NURBS blend spine")
     };
-    nurbs.control_points[1].x = 8.0;
-    nurbs.control_points[1].y = -6.0;
-    nurbs.degree = 1;
-    nurbs.knots = vec![-1.0, -1.0, 2.0, 2.0, 2.0];
+    let mut control_points = nurbs.control_points().to_vec();
+    control_points[1].x = 8.0;
+    control_points[1].y = -6.0;
+    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+        1,
+        vec![-1.0, -1.0, 2.0, 2.0, 2.0],
+        control_points,
+        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.periodic(),
+    )
+    .unwrap();
     let expected = curve.clone();
 
     let mut regenerated = Vec::new();
@@ -1510,10 +1524,9 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
     let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) = &mut surface.geometry else {
         panic!("expected NURBS blend support")
     };
-    nurbs.control_points[1].x = 6.0;
-    nurbs.control_points[1].z = 4.0;
-    nurbs.u_degree = 2;
-    nurbs.u_knots = vec![-1.0, -1.0, -1.0, 2.0, 2.0];
+    nurbs.control_points_mut()[1].x = 6.0;
+    nurbs.control_points_mut()[1].z = 4.0;
+    nurbs.u_knots_mut().copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
     let expected = surface.clone();
 
     let mut regenerated = Vec::new();
@@ -1564,7 +1577,7 @@ fn subtype_reference_resolves_surface_cache() {
         &cadmpeg_asm::nurbs::toks::test_table(&active, 8),
     )
     .expect("subtype-table reference resolves to its surface cache");
-    assert_eq!((decoded.u_count, decoded.v_count), (2, 2));
+    assert_eq!((decoded.u_count(), decoded.v_count()), (2, 2));
 }
 
 #[test]
@@ -1576,10 +1589,10 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // isoline at u = 1 is the patch's far edge.
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
     let curve = decode_par_int_cur_isoline(&scope, 8, None).expect("form-2 isoline");
-    assert_eq!(curve.degree, 1);
-    assert_eq!(curve.knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(curve.degree(), 1);
+    assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        curve.control_points,
+        curve.control_points(),
         [Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)]
     );
 

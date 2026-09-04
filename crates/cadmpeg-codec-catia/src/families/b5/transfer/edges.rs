@@ -69,7 +69,7 @@ pub(super) fn curve_cache_has_ordered_knots(geometry: &CurveGeometry) -> bool {
     let CurveGeometry::Nurbs(curve) = geometry else {
         return true;
     };
-    curve.knots.iter().all(|knot| knot.is_finite()) && knots_nondecreasing(&curve.knots)
+    curve.knots().iter().all(|knot| knot.is_finite()) && knots_nondecreasing(curve.knots())
 }
 
 pub(super) fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
@@ -77,14 +77,14 @@ pub(super) fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
         let CurveGeometry::Nurbs(curve) = &plan.geometry else {
             return None;
         };
-        let degree = usize::try_from(curve.degree).ok()?;
+        let degree = usize::try_from(curve.degree()).ok()?;
         Some([
-            *curve.knots.get(degree)?,
+            *curve.knots().get(degree)?,
             *curve
-                .knots
+                .knots()
                 .len()
                 .checked_sub(degree + 1)
-                .and_then(|index| curve.knots.get(index))?,
+                .and_then(|index| curve.knots().get(index))?,
         ])
     })
 }

@@ -540,15 +540,15 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
     else {
         panic!("expected a NURBS carrier");
     };
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(nurbs.weights, Some(vec![1.0, 0.5, 1.0]));
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.weights(), Some(&[1.0, 0.5, 1.0][..]));
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             0.5,
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
@@ -736,7 +736,7 @@ fn decode_treats_type_126_periodic_flag_as_evaluation_metadata() {
     let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
         panic!("expected a NURBS carrier");
     };
-    assert!(!nurbs.periodic);
+    assert!(!nurbs.periodic());
 }
 
 #[test]
@@ -802,17 +802,17 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
     else {
         panic!("expected a NURBS carrier");
     };
-    assert_eq!(nurbs.degree, 1);
-    assert_eq!(nurbs.knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(nurbs.control_points.len(), 2);
-    assert_eq!(nurbs.weights, None);
-    assert!(!nurbs.periodic);
+    assert_eq!(nurbs.degree(), 1);
+    assert_eq!(nurbs.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(nurbs.control_points().len(), 2);
+    assert_eq!(nurbs.weights(), None);
+    assert!(!nurbs.periodic());
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             0.5,
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
@@ -837,16 +837,16 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
     let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
         panic!("expected a NURBS carrier");
     };
-    assert_eq!(nurbs.degree, 0);
-    assert_eq!(nurbs.knots, vec![0.0, 1.0]);
-    assert_eq!(nurbs.control_points.len(), 1);
-    assert_eq!(nurbs.weights, None);
+    assert_eq!(nurbs.degree(), 0);
+    assert_eq!(nurbs.knots(), [0.0, 1.0]);
+    assert_eq!(nurbs.control_points().len(), 1);
+    assert_eq!(nurbs.weights(), None);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             0.5,
         ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
@@ -884,7 +884,7 @@ fn decode_applies_declared_real_significance_to_polynomial_weights() {
             else {
                 panic!("expected a NURBS carrier");
             };
-            assert_eq!(nurbs.weights, None);
+            assert_eq!(nurbs.weights(), None);
         } else {
             assert!(result.report().losses[0]
                 .message

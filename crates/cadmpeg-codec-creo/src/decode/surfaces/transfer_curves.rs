@@ -504,24 +504,27 @@ mod tests {
 
         let extrusion = Surface {
             id: SurfaceId("creo:visibgeom:surface#1".to_string()),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 1.0, 0.0),
-                    Point3::new(1.0, 0.0, 1.0),
-                    Point3::new(1.0, 1.0, 1.0),
-                ],
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 1.0, 0.0),
+                        Point3::new(1.0, 0.0, 1.0),
+                        Point3::new(1.0, 1.0, 1.0),
+                    ],
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .expect("valid test surface"),
+            ),
             source_object: None,
         };
         let plane = Surface {

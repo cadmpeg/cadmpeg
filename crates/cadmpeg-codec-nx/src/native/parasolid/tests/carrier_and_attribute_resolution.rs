@@ -423,9 +423,9 @@ fn decode_emits_charted_surface_intersection_construction() {
     let Some(CurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
         panic!("charted NURBS cache");
     };
-    assert_eq!(nurbs.degree, 1);
-    assert_eq!(nurbs.control_points[0].x, 0.0);
-    assert_eq!(nurbs.control_points[1].x, 10.0);
+    assert_eq!(nurbs.degree(), 1);
+    assert_eq!(nurbs.control_points()[0].x, 0.0);
+    assert_eq!(nurbs.control_points()[1].x, 10.0);
     assert_eq!(procedural.cache_fit_tolerance(), Some(0.01));
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         procedural.definition()

@@ -36,8 +36,8 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv, surface_second_partials,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, SurfaceGeometry, SurfaceParameterAxis,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs,
+    ProceduralCurve, ProceduralCurveDefinition, SurfaceGeometry, SurfaceParameterAxis,
     TolerantIntersectionParameterization,
 };
 use cadmpeg_ir::ids::{
@@ -68,10 +68,10 @@ pub(crate) fn endpoint_witness_for_candidate(
 }
 
 pub(crate) fn pcurve_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    let PcurveGeometry::Nurbs { knots, .. } = geometry else {
+    let PcurveGeometry::Nurbs { nurbs } = geometry else {
         return None;
     };
-    ordered_parameter_range([*knots.first()?, *knots.last()?])
+    ordered_parameter_range([*nurbs.knots().first()?, *nurbs.knots().last()?])
 }
 
 pub(crate) fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
@@ -766,24 +766,26 @@ pub(crate) fn reverse_pcurve_over_range(
                 sine: combine(*source_cosine, -sine, *source_sine, -cosine)?,
             })
         }
-        PcurveGeometry::PolarNurbs {
-            degree,
-            knots,
-            radial_control_points,
-            axial_control_points,
-            weights,
-            periodic,
-        } => {
-            let reversed_knots = knots
+        PcurveGeometry::PolarNurbs { nurbs } => {
+            let reversed_knots = nurbs
+                .knots()
                 .iter()
                 .rev()
                 .map(|knot| reflection - knot)
                 .collect::<Vec<_>>();
-            let mut radial_control_points = radial_control_points.clone();
+            let mut radial_control_points = nurbs
+                .poles()
+                .iter()
+                .map(|pole| pole.radial)
+                .collect::<Vec<_>>();
             radial_control_points.reverse();
-            let mut axial_control_points = axial_control_points.clone();
+            let mut axial_control_points = nurbs
+                .poles()
+                .iter()
+                .map(|pole| pole.axial)
+                .collect::<Vec<_>>();
             axial_control_points.reverse();
-            let mut weights = weights.clone();
+            let mut weights = nurbs.weights().map(<[f64]>::to_vec);
             if let Some(weights) = &mut weights {
                 weights.reverse();
             }
@@ -796,14 +798,20 @@ pub(crate) fn reverse_pcurve_over_range(
                 )
                 .chain(&axial_control_points)
                 .all(|value| value.is_finite());
-            finite.then_some(PcurveGeometry::PolarNurbs {
-                degree: *degree,
-                knots: reversed_knots,
-                radial_control_points,
-                axial_control_points,
-                weights,
-                periodic: *periodic,
-            })
+            finite
+                .then(|| {
+                    PolarPcurveNurbs::new(
+                        nurbs.degree(),
+                        reversed_knots,
+                        radial_control_points,
+                        axial_control_points,
+                        weights,
+                        nurbs.periodic(),
+                    )
+                    .ok()
+                })
+                .flatten()
+                .map(|nurbs| PcurveGeometry::PolarNurbs { nurbs })
         }
         PcurveGeometry::SphericalGreatCircle {
             azimuth_origin,
@@ -849,21 +857,16 @@ pub(crate) fn reverse_pcurve_over_range(
                     radius: *radius,
                 })
         }
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => {
-            let reversed_knots = knots
+        PcurveGeometry::Nurbs { nurbs } => {
+            let reversed_knots = nurbs
+                .knots()
                 .iter()
                 .rev()
                 .map(|knot| reflection - knot)
                 .collect::<Vec<_>>();
-            let mut control_points = control_points.clone();
+            let mut control_points = nurbs.control_points().to_vec();
             control_points.reverse();
-            let mut weights = weights.clone();
+            let mut weights = nurbs.weights().map(<[f64]>::to_vec);
             if let Some(weights) = &mut weights {
                 weights.reverse();
             }
@@ -871,13 +874,19 @@ pub(crate) fn reverse_pcurve_over_range(
                 .iter()
                 .chain(control_points.iter().flat_map(|point| [&point.u, &point.v]))
                 .all(|value| value.is_finite());
-            finite.then_some(PcurveGeometry::Nurbs {
-                degree: *degree,
-                knots: reversed_knots,
-                control_points,
-                weights,
-                periodic: *periodic,
-            })
+            finite
+                .then(|| {
+                    PcurveNurbs::new(
+                        nurbs.degree(),
+                        reversed_knots,
+                        control_points,
+                        weights,
+                        nurbs.periodic(),
+                    )
+                    .ok()
+                })
+                .flatten()
+                .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
         }
         PcurveGeometry::Trimmed {
             parameter_range,
@@ -972,13 +981,18 @@ pub(crate) fn reverse_pcurve_over_range(
             [first.u, first.v, middle.u, middle.v, last.u, last.v]
                 .into_iter()
                 .all(f64::is_finite)
-                .then_some(PcurveGeometry::Nurbs {
-                    degree: 2,
-                    knots: vec![start, start, start, end, end, end],
-                    control_points: vec![first, middle, last],
-                    weights: None,
-                    periodic: false,
+                .then(|| {
+                    PcurveNurbs::new(
+                        2,
+                        vec![start, start, start, end, end, end],
+                        vec![first, middle, last],
+                        None,
+                        false,
+                    )
+                    .ok()
                 })
+                .flatten()
+                .map(|nurbs| PcurveGeometry::Nurbs { nurbs })
         }
         PcurveGeometry::Hyperbola {
             center,
@@ -1819,20 +1833,20 @@ pub(crate) fn exact_boundary_curve_breaks(
     let mut breaks = match geometry {
         CurveGeometry::Line { .. } => range.to_vec(),
         CurveGeometry::Nurbs(nurbs)
-            if nurbs.degree == 1
-                && !nurbs.periodic
-                && !nurbs.weights.as_ref().is_some_and(|weights| {
+            if nurbs.degree() == 1
+                && !nurbs.periodic()
+                && !nurbs.weights().is_some_and(|weights| {
                     weights
                         .windows(2)
                         .any(|pair| pair[0].to_bits() != pair[1].to_bits())
                 }) =>
         {
-            let degree = usize::try_from(nurbs.degree).ok()?;
-            let count = nurbs.control_points.len();
+            let degree = usize::try_from(nurbs.degree()).ok()?;
+            let count = nurbs.control_points().len();
             if degree > count {
                 return None;
             }
-            nurbs.knots.get(degree..=count)?.to_vec()
+            nurbs.knots().get(degree..=count)?.to_vec()
         }
         _ => return None,
     };
@@ -2124,9 +2138,9 @@ fn boundary_curve_affine_breaks_with_index(
                 };
             let isocurve =
                 piecewise_linear_nurbs_surface_isocurve(nurbs, fixed_axis, fixed_parameter)?;
-            let degree = usize::try_from(isocurve.degree).ok()?;
-            let count = isocurve.control_points.len();
-            let mut breaks = isocurve.knots.get(degree..=count)?.to_vec();
+            let degree = usize::try_from(isocurve.degree()).ok()?;
+            let count = isocurve.control_points().len();
+            let mut breaks = isocurve.knots().get(degree..=count)?.to_vec();
             for parameter in &mut breaks {
                 *parameter = (*parameter - varying_origin) / varying_scale;
             }
@@ -2146,8 +2160,8 @@ fn piecewise_linear_nurbs_surface_isocurve(
     fixed_parameter: f64,
 ) -> Option<NurbsCurve> {
     let isocurve = nurbs_surface_isocurve(surface, fixed_axis, fixed_parameter)?;
-    (isocurve.degree == 1
-        && !isocurve.weights.as_ref().is_some_and(|weights| {
+    (isocurve.degree() == 1
+        && !isocurve.weights().is_some_and(|weights| {
             weights
                 .windows(2)
                 .any(|pair| pair[0].to_bits() != pair[1].to_bits())
@@ -2503,11 +2517,14 @@ fn transfer_intersection_pcurve_with_budget(
         )?;
     }
     Some(PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: linear_knots(&samples.iter().map(|sample| sample.0).collect::<Vec<_>>()),
-        control_points: samples.iter().map(|sample| sample.1).collect(),
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            1,
+            linear_knots(&samples.iter().map(|sample| sample.0).collect::<Vec<_>>()),
+            samples.iter().map(|sample| sample.1).collect(),
+            None,
+            false,
+        )
+        .ok()?,
     })
 }
 
@@ -3088,19 +3105,16 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
 }
 
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<([f64; 3], [f64; 3])> {
-    if surface.control_points.is_empty()
-        || surface.weights.as_ref().is_some_and(|weights| {
-            weights.len() != surface.control_points.len()
-                || weights
-                    .iter()
-                    .any(|weight| !weight.is_finite() || *weight <= 0.0)
-        })
-    {
+    if surface.weights().is_some_and(|weights| {
+        weights
+            .iter()
+            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+    }) {
         return None;
     }
     let mut minimum = [f64::INFINITY; 3];
     let mut maximum = [f64::NEG_INFINITY; 3];
-    for point in &surface.control_points {
+    for point in surface.control_points() {
         let coordinates = [point.x, point.y, point.z];
         if coordinates.iter().any(|coordinate| !coordinate.is_finite()) {
             return None;
@@ -3493,22 +3507,20 @@ pub(crate) fn linear_nurbs_curve_endpoint_witness_with_index(
     let CurveGeometry::Nurbs(curve) = &curve.geometry else {
         return None;
     };
-    if curve.degree != 1
-        || curve.periodic
-        || curve.weights.is_some()
-        || curve.control_points.len() < 2
-        || curve.knots.len() != curve.control_points.len() + 2
+    if curve.degree() != 1
+        || curve.periodic()
+        || curve.weights().is_some()
         || curve
-            .knots
+            .knots()
             .windows(2)
             .any(|pair| !pair[0].is_finite() || !pair[1].is_finite() || pair[0] > pair[1])
-        || curve.knots.first()?.to_bits() != curve.knots[1].to_bits()
-        || curve.knots[curve.knots.len() - 2].to_bits() != curve.knots.last()?.to_bits()
+        || curve.knots().first()?.to_bits() != curve.knots()[1].to_bits()
+        || curve.knots()[curve.knots().len() - 2].to_bits() != curve.knots().last()?.to_bits()
     {
         return None;
     }
-    let first = *curve.control_points.first()?;
-    let last = *curve.control_points.last()?;
+    let first = *curve.control_points().first()?;
+    let last = *curve.control_points().last()?;
     [first, last]
         .into_iter()
         .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())

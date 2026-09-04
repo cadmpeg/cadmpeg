@@ -585,16 +585,17 @@ pub(crate) fn rolling_ball_limit_curve(
         .collect::<Vec<_>>();
     let (knots, control_points) =
         crate::nurbs::quintic_jet_bspline3(jet.degree, &jet.knots, &positions, &first, &second)?;
-    Some(NurbsCurve {
-        degree: jet.degree,
+    NurbsCurve::new(
+        jet.degree,
         knots,
-        control_points: control_points
+        control_points
             .into_iter()
             .map(|point| Point3::new(point[0], point[1], point[2]))
             .collect(),
-        weights: None,
-        periodic: false,
-    })
+        None,
+        false,
+    )
+    .ok()
 }
 
 /// One position and unit reference direction in an `a5/a6/a7 03 39` jet.
@@ -723,13 +724,7 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
     Some(A5NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: NurbsCurve {
-            degree,
-            knots,
-            control_points,
-            weights: None,
-            periodic: false,
-        },
+        geometry: NurbsCurve::new(degree, knots, control_points, None, false).ok()?,
     })
 }
 
@@ -1287,19 +1282,22 @@ pub fn a8_surface_from_external_grid(
     Some(FreeformSurface {
         pos: header.pos,
         identity: FreeformSurfaceIdentity::Object(header.object_id),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree: header.u_degree,
-            v_degree: header.v_degree,
-            u_knots: expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
-            v_knots: expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
-            u_count: header.u_count,
-            v_count: header.v_count,
-            control_points: control_points.clone(),
-            weights: weights.clone(),
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }),
+        geometry: SurfaceGeometry::Nurbs(
+            NurbsSurface::new(
+                header.u_degree,
+                header.v_degree,
+                expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
+                expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
+                header.u_count,
+                header.v_count,
+                control_points.clone(),
+                weights.clone(),
+                false,
+                false,
+                false,
+            )
+            .ok()?,
+        ),
     })
 }
 
@@ -1488,19 +1486,22 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     Some(FreeformSurface {
         pos,
         identity: FreeformSurfaceIdentity::FrameOffset(pos),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree,
-            v_degree,
-            u_knots,
-            v_knots,
-            u_count,
-            v_count,
-            control_points,
-            weights,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }),
+        geometry: SurfaceGeometry::Nurbs(
+            NurbsSurface::new(
+                u_degree,
+                v_degree,
+                u_knots,
+                v_knots,
+                u_count,
+                v_count,
+                control_points,
+                weights,
+                false,
+                false,
+                false,
+            )
+            .ok()?,
+        ),
     })
 }
 
@@ -1668,19 +1669,22 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     Some(FreeformSurface {
         pos,
         identity: FreeformSurfaceIdentity::Object(object_id),
-        geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-            u_degree,
-            v_degree,
-            u_knots: expand_knots(&u_distinct_knots, &u_multiplicities)?,
-            v_knots: expand_knots(&v_distinct_knots, &v_multiplicities)?,
-            u_count,
-            v_count,
-            control_points,
-            weights: rational.then_some(weights),
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        }),
+        geometry: SurfaceGeometry::Nurbs(
+            NurbsSurface::new(
+                u_degree,
+                v_degree,
+                expand_knots(&u_distinct_knots, &u_multiplicities)?,
+                expand_knots(&v_distinct_knots, &v_multiplicities)?,
+                u_count,
+                v_count,
+                control_points,
+                rational.then_some(weights),
+                false,
+                false,
+                false,
+            )
+            .ok()?,
+        ),
     })
 }
 

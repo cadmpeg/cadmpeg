@@ -294,12 +294,11 @@ fn point3_finite(point: &crate::math::Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
 }
 
-fn nurbs_weights_valid(weights: Option<&[f64]>, pole_count: usize) -> bool {
+fn nurbs_weights_valid(weights: Option<&[f64]>) -> bool {
     weights.is_none_or(|weights| {
-        weights.len() == pole_count
-            && weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight != 0.0)
+        weights
+            .iter()
+            .all(|weight| weight.is_finite() && *weight != 0.0)
     })
 }
 
@@ -486,41 +485,17 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             SurfaceGeometry::Nurbs(n) => {
-                let shape = usize::try_from(n.u_count)
-                    .ok()
-                    .zip(usize::try_from(n.v_count).ok())
-                    .zip(usize::try_from(n.u_degree).ok())
-                    .zip(usize::try_from(n.v_degree).ok())
-                    .and_then(|(((u_count, v_count), u_degree), v_degree)| {
-                        u_count
-                            .checked_mul(v_count)
-                            .map(|pole_count| (u_count, v_count, u_degree, v_degree, pole_count))
-                    });
-                let valid =
-                    shape.is_some_and(|(u_count, v_count, u_degree, v_degree, pole_count)| {
-                        u_count > u_degree
-                            && v_count > v_degree
-                            && n.control_points.len() == pole_count
-                            && n.control_points.iter().all(point3_finite)
-                            && nurbs_weights_valid(n.weights.as_deref(), pole_count)
-                            && u_count
-                                .checked_add(u_degree)
-                                .and_then(|count| count.checked_add(1))
-                                .is_some_and(|count| n.u_knots.len() == count)
-                            && v_count
-                                .checked_add(v_degree)
-                                .and_then(|count| count.checked_add(1))
-                                .is_some_and(|count| n.v_knots.len() == count)
-                    });
+                let valid = n.control_points().iter().all(point3_finite)
+                    && nurbs_weights_valid(n.weights());
                 if !valid {
                     bounds_err(
                         findings,
                         &s.id.0,
-                        "NURBS surface degree, poles, weights, or knot cardinality is invalid",
+                        "NURBS surface poles or weights are invalid",
                     );
                 }
-                check_knots(findings, &s.id.0, &n.u_knots, "u");
-                check_knots(findings, &s.id.0, &n.v_knots, "v");
+                check_knots(findings, &s.id.0, n.u_knots(), "u");
+                check_knots(findings, &s.id.0, n.v_knots(), "v");
             }
             SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Polygonal {
@@ -1853,24 +1828,16 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             CurveGeometry::Nurbs(n) => {
-                let valid = usize::try_from(n.degree).ok().is_some_and(|degree| {
-                    n.control_points.len() > degree
-                        && n.control_points.iter().all(point3_finite)
-                        && nurbs_weights_valid(n.weights.as_deref(), n.control_points.len())
-                        && n.control_points
-                            .len()
-                            .checked_add(degree)
-                            .and_then(|count| count.checked_add(1))
-                            .is_some_and(|count| n.knots.len() == count)
-                });
+                let valid = n.control_points().iter().all(point3_finite)
+                    && nurbs_weights_valid(n.weights());
                 if !valid {
                     bounds_err(
                         findings,
                         &c.id.0,
-                        "NURBS curve degree, poles, weights, or knot cardinality is invalid",
+                        "NURBS curve poles or weights are invalid",
                     );
                 }
-                check_knots(findings, &c.id.0, &n.knots, "");
+                check_knots(findings, &c.id.0, n.knots(), "");
             }
             CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Polyline {
@@ -1994,25 +1961,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && axial_cos.is_finite()
                     && axial_sin.is_finite()
             }
-            crate::geometry::PcurveGeometry::PolarNurbs {
-                degree,
-                knots,
-                radial_control_points,
-                axial_control_points,
-                weights,
-                ..
-            } => {
-                *degree != 0
-                    && radial_control_points.len() > *degree as usize
-                    && axial_control_points.len() == radial_control_points.len()
-                    && knots.len() == radial_control_points.len() + *degree as usize + 1
-                    && radial_control_points.iter().all(point_finite)
-                    && axial_control_points.iter().all(|value| value.is_finite())
-                    && weights.as_ref().is_none_or(|weights| {
-                        weights.len() == radial_control_points.len()
-                            && weights
-                                .iter()
-                                .all(|weight| weight.is_finite() && *weight > 0.0)
+            crate::geometry::PcurveGeometry::PolarNurbs { nurbs } => {
+                nurbs
+                    .poles()
+                    .iter()
+                    .all(|pole| point_finite(&pole.radial) && pole.axial.is_finite())
+                    && nurbs.weights().is_none_or(|weights| {
+                        weights
+                            .iter()
+                            .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
             }
             crate::geometry::PcurveGeometry::SphericalGreatCircle {
@@ -2026,22 +1983,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     .all(|value| value.is_finite())
                     && *azimuth_rate != 0.0
             }
-            crate::geometry::PcurveGeometry::Nurbs {
-                degree,
-                knots,
-                control_points,
-                weights,
-                ..
-            } => {
-                *degree != 0
-                    && control_points.len() > *degree as usize
-                    && knots.len() == control_points.len() + *degree as usize + 1
-                    && control_points.iter().all(point_finite)
-                    && weights.as_ref().is_none_or(|weights| {
-                        weights.len() == control_points.len()
-                            && weights
-                                .iter()
-                                .all(|weight| weight.is_finite() && *weight > 0.0)
+            crate::geometry::PcurveGeometry::Nurbs { nurbs } => {
+                nurbs.control_points().iter().all(point_finite)
+                    && nurbs.weights().is_none_or(|weights| {
+                        weights
+                            .iter()
+                            .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
             }
             crate::geometry::PcurveGeometry::Transformed { basis, transform } => {
@@ -2051,9 +1998,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if !valid {
             bounds_err(findings, &pcurve.id.0, "pcurve geometry is invalid");
         }
-        if let crate::geometry::PcurveGeometry::Nurbs { knots, .. }
-        | crate::geometry::PcurveGeometry::PolarNurbs { knots, .. } = &pcurve.geometry
-        {
+        let nurbs_knots = match &pcurve.geometry {
+            crate::geometry::PcurveGeometry::Nurbs { nurbs } => Some(nurbs.knots()),
+            crate::geometry::PcurveGeometry::PolarNurbs { nurbs } => Some(nurbs.knots()),
+            _ => None,
+        };
+        if let Some(knots) = nurbs_knots {
             if knots.iter().any(|knot| !knot.is_finite()) {
                 bounds_err(findings, &pcurve.id.0, "pcurve knots must be finite");
             }
@@ -2591,27 +2541,17 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
                 && (direction(radial_cos) || direction(radial_sin))
                 && finite(&[*axial_origin, *axial_cos, *axial_sin])
         }
-        PcurveGeometry::PolarNurbs {
-            degree,
-            knots,
-            radial_control_points,
-            axial_control_points,
-            weights,
-            ..
-        } => {
-            *degree > 0
-                && radial_control_points.len() > *degree as usize
-                && axial_control_points.len() == radial_control_points.len()
-                && knots.len() == radial_control_points.len() + *degree as usize + 1
-                && finite(knots)
-                && knots_nondecreasing(knots)
-                && radial_control_points.iter().all(point)
-                && finite(axial_control_points)
-                && weights.as_ref().is_none_or(|weights| {
-                    weights.len() == radial_control_points.len()
-                        && weights
-                            .iter()
-                            .all(|weight| weight.is_finite() && *weight > 0.0)
+        PcurveGeometry::PolarNurbs { nurbs } => {
+            finite(nurbs.knots())
+                && knots_nondecreasing(nurbs.knots())
+                && nurbs
+                    .poles()
+                    .iter()
+                    .all(|pole| point(&pole.radial) && pole.axial.is_finite())
+                && nurbs.weights().is_none_or(|weights| {
+                    weights
+                        .iter()
+                        .all(|weight| weight.is_finite() && *weight > 0.0)
                 })
         }
         PcurveGeometry::SphericalGreatCircle {
@@ -2623,24 +2563,14 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
             finite(&[*azimuth_origin, *azimuth_rate, *plane_phase, *plane_slope])
                 && *azimuth_rate != 0.0
         }
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            ..
-        } => {
-            *degree > 0
-                && control_points.len() > *degree as usize
-                && knots.len() == control_points.len() + *degree as usize + 1
-                && finite(knots)
-                && knots_nondecreasing(knots)
-                && control_points.iter().all(point)
-                && weights.as_ref().is_none_or(|weights| {
-                    weights.len() == control_points.len()
-                        && weights
-                            .iter()
-                            .all(|weight| weight.is_finite() && *weight > 0.0)
+        PcurveGeometry::Nurbs { nurbs } => {
+            finite(nurbs.knots())
+                && knots_nondecreasing(nurbs.knots())
+                && nurbs.control_points().iter().all(point)
+                && nurbs.weights().is_none_or(|weights| {
+                    weights
+                        .iter()
+                        .all(|weight| weight.is_finite() && *weight > 0.0)
                 })
         }
         PcurveGeometry::Trimmed {
@@ -2705,9 +2635,7 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
                 && *minor_radius != 0.0
         }
         SurfaceGeometry::Nurbs(n) => {
-            n.control_points.len() == n.u_count as usize * n.v_count as usize
-                && knots_nondecreasing(&n.u_knots)
-                && knots_nondecreasing(&n.v_knots)
+            knots_nondecreasing(n.u_knots()) && knots_nondecreasing(n.v_knots())
         }
         SurfaceGeometry::Polygonal {
             vertices,
@@ -2755,9 +2683,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
         CurveGeometry::Degenerate { point } => {
             [point.x, point.y, point.z].into_iter().all(f64::is_finite)
         }
-        CurveGeometry::Nurbs(n) => {
-            n.control_points.len() > n.degree as usize && knots_nondecreasing(&n.knots)
-        }
+        CurveGeometry::Nurbs(n) => knots_nondecreasing(n.knots()),
         CurveGeometry::Polyline {
             points,
             parameters,

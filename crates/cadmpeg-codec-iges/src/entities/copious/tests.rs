@@ -93,10 +93,10 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
     else {
         panic!("expected a degree-one path carrier");
     };
-    assert_eq!(path.degree, 1);
-    assert_eq!(path.knots, vec![0.0, 0.0, 1.0, 2.0, 2.0]);
+    assert_eq!(path.degree(), 1);
+    assert_eq!(path.knots(), [0.0, 0.0, 1.0, 2.0, 2.0]);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(1, &path.knots, &path.control_points, None, 1.5),
+        cadmpeg_ir::eval::nurbs_curve_point(1, path.knots(), path.control_points(), None, 1.5),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0))
     );
     assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 2.0]));
@@ -190,7 +190,7 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
     else {
         panic!("expected a degree-one path carrier");
     };
-    assert_eq!(path.control_points[0], path.control_points[1]);
+    assert_eq!(path.control_points()[0], path.control_points()[1]);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -213,10 +213,10 @@ fn decode_preserves_crossing_segments_in_a_copious_linear_path() {
     else {
         panic!("expected a degree-one path carrier");
     };
-    assert_eq!(path.control_points.len(), 4);
-    assert!(path.control_points[1].x > path.control_points[0].x);
-    assert!(path.control_points[1].y > path.control_points[0].y);
-    assert!(path.control_points[3].x > path.control_points[0].x);
+    assert_eq!(path.control_points().len(), 4);
+    assert!(path.control_points()[1].x > path.control_points()[0].x);
+    assert!(path.control_points()[1].y > path.control_points()[0].y);
+    assert!(path.control_points()[3].x > path.control_points()[0].x);
     assert!(result.report().losses.is_empty());
 }
 

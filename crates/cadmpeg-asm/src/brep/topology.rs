@@ -367,16 +367,7 @@ pub(crate) fn walk_reachable_topology(
                                         .map(|range| (decoded, range))
                                 });
                                 if let Some((decoded, parameter_range)) = decoded {
-                                    pcurve_geo.insert(
-                                        pc,
-                                        PcurveGeometry::Nurbs {
-                                            degree: decoded.degree,
-                                            knots: decoded.knots,
-                                            control_points: decoded.control_points,
-                                            weights: decoded.weights,
-                                            periodic: decoded.periodic,
-                                        },
-                                    );
+                                    pcurve_geo.insert(pc, decoded.into_geometry());
                                     pcurve_parameter_ranges.insert(ci, parameter_range);
                                     kept_pcurves.insert(pc);
                                 } else {

@@ -669,19 +669,22 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
         Point3::new(0.0, 2.0, 0.0),
     ];
     let mut ir = polygon_sheet(&points);
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![2.0, 2.0, 5.0, 5.0],
-        v_knots: vec![7.0, 7.0, 11.0, 11.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![points[0], points[3], points[1], points[2]],
-        weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![7.0, 7.0, 11.0, 11.0],
+            2,
+            2,
+            vec![points[0], points[3], points[1], points[2]],
+            Some(vec![1.0, 0.8, 1.2, 1.0]),
+            false,
+            false,
+            false,
+        )
+        .expect("valid patch surface"),
+    );
     let edge_data = [
         (
             [20.0, 23.0],
@@ -716,13 +719,16 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
         edge_data.into_iter().enumerate()
     {
         ir.model.edges[index].param_range = Some(domain);
-        ir.model.curves[index].geometry = CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![domain[0], domain[0], domain[1], domain[1]],
-            control_points,
-            weights: Some(weights),
-            periodic: false,
-        });
+        ir.model.curves[index].geometry = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![domain[0], domain[0], domain[1], domain[1]],
+                control_points,
+                Some(weights),
+                false,
+            )
+            .expect("valid patch edge"),
+        );
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#patch.{index}").into();
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
@@ -755,19 +761,22 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
         Point3::new(1.0, 1.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
     ];
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![2.0, 2.0, 5.0, 5.0],
-        v_knots: vec![7.0, 7.0, 11.0, 11.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![points[0], points[3], points[1], points[2]],
-        weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![7.0, 7.0, 11.0, 11.0],
+            2,
+            2,
+            vec![points[0], points[3], points[1], points[2]],
+            Some(vec![1.0, 0.8, 1.2, 1.0]),
+            false,
+            false,
+            false,
+        )
+        .expect("valid mixed surface"),
+    );
     let edge_data = [
         (
             [20.0, 23.0],
@@ -802,13 +811,16 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
         edge_data.into_iter().enumerate()
     {
         ir.model.edges[index].param_range = Some(domain);
-        ir.model.curves[index].geometry = CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![domain[0], domain[0], domain[1], domain[1]],
-            control_points,
-            weights: Some(weights),
-            periodic: false,
-        });
+        ir.model.curves[index].geometry = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![domain[0], domain[0], domain[1], domain[1]],
+                control_points,
+                Some(weights),
+                false,
+            )
+            .expect("valid mixed edge"),
+        );
         let id: cadmpeg_ir::ids::PcurveId = format!("cadir:model:pcurve#mixed.{index}").into();
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
@@ -832,24 +844,27 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
 pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
     use cadmpeg_ir::geometry::{NurbsSurface, Pcurve, PcurveGeometry, SurfaceGeometry};
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 4.0, 4.0],
-        v_knots: vec![0.0, 0.0, 4.0, 4.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 4.0, 0.0),
-            Point3::new(4.0, 0.0, 0.0),
-            Point3::new(4.0, 4.0, 0.0),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            1,
+            vec![0.0, 0.0, 4.0, 4.0],
+            vec![0.0, 0.0, 4.0, 4.0],
+            2,
+            2,
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 4.0, 0.0),
+                Point3::new(4.0, 0.0, 0.0),
+                Point3::new(4.0, 4.0, 0.0),
+            ],
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid planar patch"),
+    );
     for index in 0..ir.model.coedges.len() {
         let coedge = &ir.model.coedges[index];
         let edge = ir

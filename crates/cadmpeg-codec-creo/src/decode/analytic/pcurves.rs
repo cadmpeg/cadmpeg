@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -1759,22 +1761,24 @@ pub fn planar_curve_pcurve(
         CurveGeometry::Nurbs(nurbs) => {
             nurbs_intrinsic_parameter_range(nurbs)?;
             nurbs
-                .weights
-                .as_ref()
+                .weights()
                 .is_none_or(|weights| weights.iter().all(|weight| weight.is_finite()))
                 .then_some(())?;
             let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
             let control_points = nurbs
-                .control_points
+                .control_points()
                 .iter()
                 .map(|point| project_point([point.x, point.y, point.z], tolerance))
                 .collect::<Option<Vec<_>>>()?;
             Some(PcurveGeometry::Nurbs {
-                degree: nurbs.degree,
-                knots: nurbs.knots.clone(),
-                control_points,
-                weights: nurbs.weights.clone(),
-                periodic: nurbs.periodic,
+                nurbs: PcurveNurbs::new(
+                    nurbs.degree(),
+                    nurbs.knots().to_vec(),
+                    control_points,
+                    nurbs.weights().map(<[f64]>::to_vec),
+                    nurbs.periodic(),
+                )
+                .ok()?,
             })
         }
         _ => None,
@@ -1859,24 +1863,27 @@ mod tests {
         ir.model.surfaces.extend([
             Surface {
                 id: SurfaceId("creo:visibgeom:surface#7".to_string()),
-                geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                    u_degree: 1,
-                    v_degree: 1,
-                    u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                    v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                    u_count: 2,
-                    v_count: 2,
-                    control_points: vec![
-                        Point3::new(0.0, 0.0, 0.0),
-                        Point3::new(0.0, 1.0, 0.0),
-                        Point3::new(1.0, 0.0, 0.0),
-                        Point3::new(1.0, 1.0, 0.0),
-                    ],
-                    weights: None,
-                    normal_reversed: false,
-                    u_periodic: false,
-                    v_periodic: false,
-                }),
+                geometry: SurfaceGeometry::Nurbs(
+                    NurbsSurface::new(
+                        1,
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        2,
+                        2,
+                        vec![
+                            Point3::new(0.0, 0.0, 0.0),
+                            Point3::new(0.0, 1.0, 0.0),
+                            Point3::new(1.0, 0.0, 0.0),
+                            Point3::new(1.0, 1.0, 0.0),
+                        ],
+                        None,
+                        false,
+                        false,
+                        false,
+                    )
+                    .expect("valid test surface"),
+                ),
                 source_object: None,
             },
             Surface {
@@ -1918,17 +1925,6 @@ mod tests {
         assert!(mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve).is_none());
 
         pcurve.samples[1][1][0] = 0.5;
-        let SurfaceGeometry::Nurbs(nurbs) = &mut ir.model.surfaces[0].geometry else {
-            panic!("first test surface must remain NURBS");
-        };
-        nurbs.u_knots.clear();
-        assert_eq!(
-            mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve),
-            Some(TwoChartEndpointSets {
-                paths: [None, Some([[-0.01, 0.25], [1.01, 0.75]])],
-                complete: false,
-            })
-        );
     }
 
     #[test]

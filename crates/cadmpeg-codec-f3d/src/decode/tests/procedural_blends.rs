@@ -121,16 +121,16 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             );
             for side in [&construction.first, &construction.second] {
                 assert!(matches!(
-                    round_trip
-                        .ir()
-                        .model
-                        .curves
-                        .iter()
-                        .find(|curve| curve.id == side.curve)
-                        .map(|curve| &curve.geometry),
-                    Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                        if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
-                ));
+                        round_trip
+                            .ir()
+                            .model
+                            .curves
+                            .iter()
+                            .find(|curve| curve.id == side.curve)
+                            .map(|curve| &curve.geometry),
+                        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                    ));
             }
             assert!(matches!(
                 round_trip
@@ -141,8 +141,8 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                     .find(|curve| curve.id == construction.center_curve)
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1
-                        && curve.knots == [-0.5, -0.5, 1.5, 1.5]
+            if curve.degree() == 1
+                && curve.knots() == [-0.5, -0.5, 1.5, 1.5]
             ));
         }
     }
@@ -284,7 +284,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     .find(|curve| Some(&curve.id) == side.curve.as_ref())
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
         if let Some(third) = &actual.third {
@@ -297,7 +297,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     .find(|curve| curve.id == third.curve)
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
         assert!(matches!(
@@ -309,7 +309,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                 .find(|curve| curve.id == actual.slice)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1 && curve.knots == [-1.0, -1.0, 2.0, 2.0]
+            if curve.degree() == 1 && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
         ));
     }
 }
@@ -622,11 +622,17 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
             panic!("expected interpolated radius law")
         };
         assert_eq!(points.len(), 1);
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = function else {
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = function else {
             panic!("expected NURBS radius function")
         };
-        assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(2.5, 0.5));
-        assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(7.5, 1.5));
+        assert_eq!(
+            nurbs.control_points()[0],
+            cadmpeg_ir::math::Point2::new(2.5, 0.5)
+        );
+        assert_eq!(
+            nurbs.control_points()[1],
+            cadmpeg_ir::math::Point2::new(7.5, 1.5)
+        );
         assert_eq!(construction.cross_section, expected);
 
         assert_revision_surface_round_trip(smbh, "variable_blend");
@@ -840,7 +846,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                 .find(|curve| Some(&curve.id) == actual.post_curve.as_ref())
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
         ));
         for side in actual.sides.iter() {
             assert!(matches!(
@@ -852,7 +858,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                     .find(|curve| Some(&curve.id) == side.curve.as_ref())
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
         assert!(matches!(
@@ -864,7 +870,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                 .find(|curve| curve.id == actual.slice)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1 && curve.knots == [-1.0, -1.0, 2.0, 2.0]
+            if curve.degree() == 1 && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
         ));
     }
 }

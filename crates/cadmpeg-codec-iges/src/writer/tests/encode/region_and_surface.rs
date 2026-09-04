@@ -124,74 +124,79 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
     let cases = [
         (
             "planar-open",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-                control_points: vec![
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(1.0, 0.0, 0.0),
                     Point3::new(2.0, 0.0, 0.0),
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .expect("valid planar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "unique-planar-open",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-                control_points: vec![
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(1.0, 0.0, 0.0),
                     Point3::new(1.0, 1.0, 0.0),
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .expect("valid unique-planar-open NURBS"),
             [1, 0, 1, 0],
         ),
         (
             "nonplanar-open",
-            NurbsCurve {
-                degree: 2,
-                knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-                control_points: vec![
+            NurbsCurve::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(1.0, 0.0, 1.0),
                     Point3::new(2.0, 1.0, 0.0),
                     Point3::new(3.0, 0.0, 0.0),
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .expect("valid nonplanar-open NURBS"),
             [0, 0, 1, 0],
         ),
         (
             "closed-planar",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-                control_points: vec![
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                vec![
                     Point3::new(0.0, 0.0, 0.0),
                     Point3::new(1.0, 0.0, 0.0),
                     Point3::new(0.0, 0.0, 0.0),
                 ],
-                weights: None,
-                periodic: false,
-            },
+                None,
+                false,
+            )
+            .expect("valid closed-planar NURBS"),
             [0, 1, 1, 0],
         ),
         (
             "equal-weight-rational",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                weights: Some(vec![2.0, 2.0]),
-                periodic: false,
-            },
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                Some(vec![2.0, 2.0]),
+                false,
+            )
+            .expect("valid equal-weight rational NURBS"),
             [0, 0, 1, 0],
         ),
     ];

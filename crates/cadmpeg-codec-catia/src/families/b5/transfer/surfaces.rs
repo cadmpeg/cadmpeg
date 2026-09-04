@@ -217,15 +217,16 @@ pub(super) fn profile_nurbs(profile: &B5Profile, interval: [f64; 2]) -> Option<N
     match profile {
         B5Profile::Line {
             point, direction, ..
-        } => Some(NurbsCurve {
-            degree: 1,
-            knots: vec![interval[0], interval[0], interval[1], interval[1]],
-            control_points: interval
+        } => NurbsCurve::new(
+            1,
+            vec![interval[0], interval[0], interval[1], interval[1]],
+            interval
                 .map(|parameter| point3(add(*point, scale(*direction, parameter))))
                 .to_vec(),
-            weights: None,
-            periodic: false,
-        }),
+            None,
+            false,
+        )
+        .ok(),
         B5Profile::Arc {
             center,
             direction_x,
@@ -291,13 +292,7 @@ pub(super) fn rational_arc(
         weights.push(1.0);
         append_quadratic_span_knots(&mut knots, interval, span, span_count);
     }
-    Some(NurbsCurve {
-        degree: 2,
-        knots,
-        control_points,
-        weights: Some(weights),
-        periodic: false,
-    })
+    NurbsCurve::new(2, knots, control_points, Some(weights), false).ok()
 }
 
 pub(super) fn revolve_nurbs(
@@ -315,7 +310,7 @@ pub(super) fn revolve_nurbs(
     let span_count = (span_count as usize).max(1);
     let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
     let control_count =
-        crate::nurbs_surface_control_count(profile.control_points.len(), angular_count)?;
+        crate::nurbs_surface_control_count(profile.control_points().len(), angular_count)?;
     let mut angles = Vec::with_capacity(angular_count);
     let mut angular_weights = Vec::with_capacity(angular_count);
     let mut v_knots = Vec::with_capacity(angular_count + 3);
@@ -339,10 +334,10 @@ pub(super) fn revolve_nurbs(
         angular_weights.push(1.0);
         append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count);
     }
-    let profile_weights = match profile.weights.clone() {
-        Some(weights) => weights,
+    let profile_weights = match profile.weights() {
+        Some(weights) => weights.to_vec(),
         None => alloc_filled(
-            profile.control_points.len(),
+            profile.control_points().len(),
             1.0,
             "catia b5 revolution profile weights",
         )
@@ -350,7 +345,7 @@ pub(super) fn revolve_nurbs(
     };
     let mut control_points = Vec::with_capacity(control_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
-    for (profile_point, profile_weight) in profile.control_points.iter().zip(profile_weights) {
+    for (profile_point, profile_weight) in profile.control_points().iter().zip(profile_weights) {
         let relative = [
             profile_point.x - axis_origin[0],
             profile_point.y - axis_origin[1],
@@ -369,19 +364,20 @@ pub(super) fn revolve_nurbs(
             weights.push(profile_weight * angular_weight);
         }
     }
-    Some(NurbsSurface {
-        u_degree: profile.degree,
-        v_degree: 2,
-        u_knots: profile.knots.clone(),
+    NurbsSurface::new(
+        profile.degree(),
+        2,
+        profile.knots().to_vec(),
         v_knots,
-        u_count: u32::try_from(profile.control_points.len()).ok()?,
-        v_count: u32::try_from(angular_count).ok()?,
+        u32::try_from(profile.control_points().len()).ok()?,
+        u32::try_from(angular_count).ok()?,
         control_points,
-        weights: Some(weights),
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    })
+        Some(weights),
+        false,
+        false,
+        false,
+    )
+    .ok()
 }
 
 pub(super) fn append_quadratic_span_knots(
@@ -809,7 +805,7 @@ fn emit_extrusion_procedure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
     use cadmpeg_ir::math::{Point2, Vector3};
 
     use crate::families::b5::transfer::{
@@ -823,11 +819,14 @@ mod tests {
             (20, SurfaceId("support-20".to_string())),
         ]);
         let pcurve = |x| PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
-            weights: None,
-            periodic: false,
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(x, 0.0), Point2::new(x, 1.0)],
+                None,
+                false,
+            )
+            .expect("valid support pcurve"),
         };
         let extrusion = ResolvedExtrusionSurface {
             surface_object_id: 30,

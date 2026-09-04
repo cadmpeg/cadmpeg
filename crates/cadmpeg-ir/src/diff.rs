@@ -561,24 +561,31 @@ mod tests {
 
         let nurbs = |degree: u32| Curve {
             id: CurveId("synthetic:tolerance:curve#nurbs".into()),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree,
-                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(2.0, 0.0, 0.0),
-                ],
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    degree,
+                    if degree == 1 {
+                        vec![0.0, 0.0, 0.5, 1.0, 1.0]
+                    } else {
+                        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                    },
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 0.0, 0.0),
+                        Point3::new(2.0, 0.0, 0.0),
+                    ],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            ),
             source_object: None,
         };
 
         let mut left = unit_cube();
         let mut right = left.clone();
-        left.model.curves.push(nurbs(2));
-        right.model.curves.push(nurbs(3));
+        left.model.curves.push(nurbs(1));
+        right.model.curves.push(nurbs(2));
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());

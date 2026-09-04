@@ -242,11 +242,10 @@ fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
         .expect("source-parameterized linear-extrusion pcurve");
     assert!(matches!(
         &used.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            degree: 1,
-            control_points,
-            ..
-        } if control_points == &[Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+            if nurbs.degree() == 1
+                && nurbs.control_points()
+                    == [Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]
     ));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveAssociationAmbiguous.kind()

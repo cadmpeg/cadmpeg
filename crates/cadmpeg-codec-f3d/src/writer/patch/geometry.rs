@@ -30,10 +30,10 @@ use cadmpeg_asm::asm_header::stream_ref_width;
 
 pub(crate) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
     valid_edited_nurbs_direction(
-        &before.knots,
-        after.degree,
-        &after.knots,
-        after.control_points.len(),
+        before.knots(),
+        after.degree(),
+        after.knots(),
+        after.control_points().len(),
     )
 }
 

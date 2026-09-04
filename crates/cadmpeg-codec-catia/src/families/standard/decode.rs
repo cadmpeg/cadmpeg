@@ -3438,19 +3438,19 @@ fn standard_limit_curve_point_parameter(
     point: Point3,
     tolerance: f64,
 ) -> Option<f64> {
-    let span_count = curve.control_points.len().checked_div(6)?;
+    let span_count = curve.control_points().len().checked_div(6)?;
     if span_count == 0
-        || span_count * 6 != curve.control_points.len()
-        || curve.knots.len() != (span_count + 1) * 6
-        || curve.weights.is_some()
-        || curve.degree != 5
+        || span_count * 6 != curve.control_points().len()
+        || curve.knots().len() != (span_count + 1) * 6
+        || curve.weights().is_some()
+        || curve.degree() != 5
     {
         return None;
     }
     let [parameter_start, parameter_end] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)?;
     let parameter_span = parameter_end - parameter_start;
     let control_polygon_length = curve
-        .control_points
+        .control_points()
         .chunks_exact(6)
         .map(|control| {
             control
@@ -3467,8 +3467,8 @@ fn standard_limit_curve_point_parameter(
     let mut parameters = Vec::new();
     for span in 0..span_count {
         collect_bezier_point_parameters(
-            &curve.control_points[span * 6..(span + 1) * 6],
-            [curve.knots[span * 6], curve.knots[(span + 1) * 6]],
+            &curve.control_points()[span * 6..(span + 1) * 6],
+            [curve.knots()[span * 6], curve.knots()[(span + 1) * 6]],
             point,
             tolerance,
             parameter_resolution,
@@ -6148,16 +6148,15 @@ fn standard_nurbs_line_pair_on_face(
 }
 
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]> {
-    if surface.weights.as_ref().is_some_and(|weights| {
-        weights.len() != surface.control_points.len()
-            || weights
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+    if surface.weights().is_some_and(|weights| {
+        weights
+            .iter()
+            .any(|weight| !weight.is_finite() || *weight <= 0.0)
     }) {
         return None;
     }
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
-    for point in &surface.control_points {
+    for point in surface.control_points() {
         for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
             if !coordinate.is_finite() {
                 return None;
@@ -6173,24 +6172,18 @@ fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]>
 }
 
 fn nurbs_surface_parameter_domain(surface: &NurbsSurface) -> Option<[[f64; 2]; 2]> {
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    if u_count <= u_degree
-        || v_count <= v_degree
-        || surface.control_points.len() != u_count.checked_mul(v_count)?
-    {
-        return None;
-    }
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
     let domains = [
         [
-            *surface.u_knots.get(u_degree)?,
-            *surface.u_knots.get(u_count)?,
+            *surface.u_knots().get(u_degree)?,
+            *surface.u_knots().get(u_count)?,
         ],
         [
-            *surface.v_knots.get(v_degree)?,
-            *surface.v_knots.get(v_count)?,
+            *surface.v_knots().get(v_degree)?,
+            *surface.v_knots().get(v_count)?,
         ],
     ];
     domains
@@ -6206,7 +6199,7 @@ fn reverse_nurbs_curve(curve: &NurbsCurve) -> Option<NurbsCurve> {
         return None;
     }
     let knots = curve
-        .knots
+        .knots()
         .iter()
         .rev()
         .map(|knot| sum - knot)
@@ -6215,16 +6208,18 @@ fn reverse_nurbs_curve(curve: &NurbsCurve) -> Option<NurbsCurve> {
         .iter()
         .copied()
         .all(f64::is_finite)
-        .then_some(NurbsCurve {
-            degree: curve.degree,
-            knots,
-            control_points: curve.control_points.iter().rev().copied().collect(),
-            weights: curve
-                .weights
-                .as_ref()
-                .map(|weights| weights.iter().rev().copied().collect()),
-            periodic: curve.periodic,
+        .then(|| {
+            NurbsCurve::new(
+                curve.degree(),
+                knots,
+                curve.control_points().iter().rev().copied().collect(),
+                curve
+                    .weights()
+                    .map(|weights| weights.iter().rev().copied().collect()),
+                curve.periodic(),
+            )
         })
+        .and_then(Result::ok)
 }
 
 fn nurbs_shared_boundary_scalar_matches(left: f64, right: f64) -> bool {
@@ -6236,26 +6231,26 @@ fn nurbs_shared_boundary_scalar_matches(left: f64, right: f64) -> bool {
 
 fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> bool {
     let same_payload = |left: &NurbsCurve, right: &NurbsCurve| {
-        left.degree == right.degree
-            && left.periodic == right.periodic
-            && left.knots.len() == right.knots.len()
+        left.degree() == right.degree()
+            && left.periodic() == right.periodic()
+            && left.knots().len() == right.knots().len()
             && left
-                .knots
+                .knots()
                 .iter()
-                .zip(&right.knots)
+                .zip(right.knots())
                 .all(|(left, right)| nurbs_shared_boundary_scalar_matches(*left, *right))
-            && left.control_points.len() == right.control_points.len()
+            && left.control_points().len() == right.control_points().len()
             && left
-                .control_points
+                .control_points()
                 .iter()
-                .zip(&right.control_points)
+                .zip(right.control_points())
                 .all(|(left, right)| {
                     [left.x, left.y, left.z]
                         .into_iter()
                         .zip([right.x, right.y, right.z])
                         .all(|(left, right)| nurbs_shared_boundary_scalar_matches(left, right))
                 })
-            && match (&left.weights, &right.weights) {
+            && match (left.weights(), right.weights()) {
                 (None, None) => true,
                 (Some(left), Some(right)) => {
                     left.len() == right.len()
@@ -6498,12 +6493,12 @@ fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Opt
 }
 
 fn nurbs_surface_start_grid(surface: &NurbsSurface, domains: [[f64; 2]; 2]) -> Option<Vec<Point2>> {
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    let u_samples = nurbs_surface_axis_samples(&surface.u_knots, u_degree, u_count)?;
-    let v_samples = nurbs_surface_axis_samples(&surface.v_knots, v_degree, v_count)?;
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
+    let u_samples = nurbs_surface_axis_samples(surface.u_knots(), u_degree, u_count)?;
+    let v_samples = nurbs_surface_axis_samples(surface.v_knots(), v_degree, v_count)?;
     if u_samples.len().checked_mul(v_samples.len())? > NURBS_SURFACE_MAX_SEEDS {
         let side = (NURBS_SURFACE_MAX_SEEDS as f64).sqrt() as usize;
         let mut grid = Vec::with_capacity(side * side);

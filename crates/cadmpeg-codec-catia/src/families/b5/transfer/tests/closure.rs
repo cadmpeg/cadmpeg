@@ -25,7 +25,8 @@ use super::*;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::surface_point;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
+    CurveGeometry, NurbsCurve, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -41,13 +42,14 @@ fn unit_preserves_tiny_finite_direction() {
 
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {
-    let nurbs = NurbsCurve {
-        degree: 1,
-        knots: vec![10.0, 10.0, 20.0, 20.0],
-        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
-        weights: None,
-        periodic: false,
-    };
+    let nurbs = NurbsCurve::new(
+        1,
+        vec![10.0, 10.0, 20.0, 20.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        None,
+        false,
+    )
+    .expect("valid affine curve");
     let CurveGeometry::Nurbs(translated) = curve_on_parameter_range(
         CurveGeometry::Nurbs(nurbs.clone()),
         [10.0, 20.0],
@@ -56,8 +58,8 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     .expect("equal-span NURBS translation") else {
         unreachable!();
     };
-    assert_eq!(translated.knots, [0.0, 0.0, 10.0, 10.0]);
-    assert_eq!(translated.control_points, nurbs.control_points);
+    assert_eq!(translated.knots(), [0.0, 0.0, 10.0, 10.0]);
+    assert_eq!(translated.control_points(), nurbs.control_points());
 
     let line = CurveGeometry::Line {
         origin: Point3::new(10.0, 0.0, 0.0),
@@ -84,7 +86,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     else {
         unreachable!();
     };
-    assert_eq!(scaled.knots, [0.0, 0.0, 2.0, 2.0]);
+    assert_eq!(scaled.knots(), [0.0, 0.0, 2.0, 2.0]);
     assert_eq!(
         curve_on_parameter_range(
             CurveGeometry::Line {
@@ -753,13 +755,16 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
 
 #[test]
 fn descending_nurbs_knots_are_not_promoted_as_curve_caches() {
-    let geometry = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![1.0, 1.0, 0.0, 0.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        weights: None,
-        periodic: false,
-    });
+    let geometry = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            1,
+            vec![1.0, 1.0, 0.0, 0.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("cardinality-valid descending-knot curve"),
+    );
     assert!(!curve_cache_has_ordered_knots(&geometry));
 }
 
@@ -773,13 +778,14 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 1.0],
     )
     .is_none());
-    let profile = cadmpeg_ir::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
-        weights: None,
-        periodic: false,
-    };
+    let profile = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("valid revolution profile");
     assert!(revolve_nurbs(
         &profile,
         [0.0; 3],
@@ -788,8 +794,16 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         [0.0, 1.0],
     )
     .is_none());
-    let mut wide_profile = profile;
-    wide_profile.control_points = vec![Point3::new(1.0, 0.0, 0.0); 123];
+    let mut wide_knots = vec![0.0; 123];
+    wide_knots.extend([1.0, 1.0]);
+    let wide_profile = NurbsCurve::new(
+        1,
+        wide_knots,
+        vec![Point3::new(1.0, 0.0, 0.0); 123],
+        None,
+        false,
+    )
+    .expect("valid wide revolution profile");
     assert!(revolve_nurbs(
         &wide_profile,
         [0.0; 3],
@@ -1040,11 +1054,14 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         2,
         (
             PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                weights: None,
-                periodic: false,
+                nurbs: PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("valid test pcurve"),
             },
             false,
             [0.0, 1.0],

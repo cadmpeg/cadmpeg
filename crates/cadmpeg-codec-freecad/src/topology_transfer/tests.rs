@@ -632,14 +632,17 @@ fn collapsed_pcurve_ranges_are_unbounded() {
 #[test]
 fn adjacent_pcurve_domain_rounding_is_canonicalized() {
     let geometry = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![2.0, 2.0, 4.0, 4.0],
-        control_points: vec![
-            cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        ],
-        weights: None,
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            1,
+            vec![2.0, 2.0, 4.0, 4.0],
+            vec![
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
     };
 
     assert_eq!(

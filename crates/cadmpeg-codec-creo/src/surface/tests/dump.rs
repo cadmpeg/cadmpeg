@@ -1124,14 +1124,14 @@ fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
         panic!("expected NURBS surface");
     };
 
-    assert_eq!((nurbs.u_degree, nurbs.v_degree), (3, 3));
-    assert_eq!((nurbs.u_count, nurbs.v_count), (4, 4));
+    assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (3, 3));
+    assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
     assert_eq!(
-        nurbs.control_points[0],
+        nurbs.control_points()[0],
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
     assert_eq!(
-        nurbs.control_points[15],
+        nurbs.control_points()[15],
         cadmpeg_ir::math::Point3::new(1.0, 1.0, 2.0)
     );
 }

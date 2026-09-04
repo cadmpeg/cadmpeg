@@ -641,16 +641,10 @@ fn blend_value_name(cur: &mut Cur<'_>) -> Option<String> {
 }
 
 fn radius_function_geometry(mut function: NurbsPcurve) -> PcurveGeometry {
-    for point in &mut function.control_points {
+    for point in function.control_points_mut() {
         point.u *= LEN_TO_MM;
     }
-    PcurveGeometry::Nurbs {
-        degree: function.degree,
-        knots: function.knots,
-        control_points: function.control_points,
-        weights: function.weights,
-        periodic: function.periodic,
-    }
+    function.into_geometry()
 }
 
 fn variable_blend_value(
@@ -926,11 +920,17 @@ mod variable_blend_value_tests {
         assert_eq!(enum_count, 2);
         assert!(enum_tagged);
         assert_eq!(points.len(), 1);
-        let PcurveGeometry::Nurbs { control_points, .. } = function else {
+        let PcurveGeometry::Nurbs { nurbs } = function else {
             panic!("expected NURBS radius function")
         };
-        assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(0.0, 0.0));
-        assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(10.0, 1.0));
+        assert_eq!(
+            nurbs.control_points()[0],
+            cadmpeg_ir::math::Point2::new(0.0, 0.0)
+        );
+        assert_eq!(
+            nurbs.control_points()[1],
+            cadmpeg_ir::math::Point2::new(10.0, 1.0)
+        );
     }
 
     #[test]

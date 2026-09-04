@@ -226,8 +226,8 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
     let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
         panic!("plane lift must be NURBS");
     };
-    assert_eq!(curve.control_points[0], Point3::new(1.0, 4.0, 3.0));
-    assert_eq!(curve.control_points[1], Point3::new(4.0, 4.0, 3.0));
+    assert_eq!(curve.control_points()[0], Point3::new(1.0, 4.0, 3.0));
+    assert_eq!(curve.control_points()[1], Point3::new(4.0, 4.0, 3.0));
 
     let cylinder = B5Surface::Cylinder {
         origin: [0.0, 0.0, 0.0],
@@ -376,19 +376,22 @@ fn affine_plane_lift_preserves_pcurve_weights() {
     let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
         panic!("expected lifted rational curve");
     };
-    assert_eq!(curve.weights, pcurve.weights);
-    assert!(curve.control_points.iter().all(|point| point.z == 2.0));
+    assert_eq!(curve.weights(), pcurve.weights.as_deref());
+    assert!(curve.control_points().iter().all(|point| point.z == 2.0));
 }
 
 #[test]
 fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
-    let geometry = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 10.0, 10.0],
-        control_points: vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
-        weights: None,
-        periodic: false,
-    });
+    let geometry = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 10.0, 10.0],
+            vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
+            None,
+            false,
+        )
+        .expect("valid affine lift curve"),
+    );
     let forward = oriented_nurbs_range(
         geometry.clone(),
         [2.0, 8.0],
@@ -412,19 +415,22 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         unreachable!();
     };
     assert_eq!(
-        reversed.control_points,
+        reversed.control_points(),
         [Point3::new(10.0, 0.0, 2.0), Point3::new(0.0, 0.0, 2.0)]
     );
     assert!(oriented_nurbs_range(geometry, [2.0, 8.0], [3.0, 0.0, 2.0], [8.0, 0.0, 2.0]).is_none());
 
     let tolerant = oriented_nurbs_range(
-        CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 10.0, 10.0],
-            control_points: vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
-            weights: None,
-            periodic: false,
-        }),
+        CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 10.0, 10.0],
+                vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
+                None,
+                false,
+            )
+            .expect("valid tolerant lift curve"),
+        ),
         [2.0, 8.0],
         [2.0, 0.0, 2.0 + 1e-4],
         [8.0, 0.0, 2.0],
@@ -1241,29 +1247,30 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
 
 #[test]
 fn tensor_surface_contraction_preserves_exact_isocurve() {
-    let surface = cadmpeg_ir::geometry::NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let surface = cadmpeg_ir::geometry::NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(2.0, 1.0, 2.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        None,
+        false,
+        false,
+        false,
+    )
+    .expect("valid tensor surface");
     let curve = crate::nurbs::nurbs_surface_isocurve(&surface, 0.25, true).expect("u isocurve");
-    assert_eq!(curve.degree, 1);
-    assert_eq!(curve.knots, surface.v_knots);
-    assert_eq!(curve.control_points[0], Point3::new(0.5, 0.0, 0.0));
-    assert_eq!(curve.control_points[1], Point3::new(0.5, 1.0, 0.5));
+    assert_eq!(curve.degree(), 1);
+    assert_eq!(curve.knots(), surface.v_knots());
+    assert_eq!(curve.control_points()[0], Point3::new(0.5, 0.0, 0.0));
+    assert_eq!(curve.control_points()[1], Point3::new(0.5, 1.0, 0.5));
 }
 
 #[test]
@@ -1312,7 +1319,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     assert_eq!(plan.parameter_range, [0.0, 2.0]);
     assert!(plan.fit_tolerance <= 1e-4);
     assert_eq!(
-        plan.cache.control_points.first(),
+        plan.cache.control_points().first(),
         Some(&Point3::new(2.0, 0.0, 3.0))
     );
 

@@ -162,7 +162,7 @@ mod tests {
         let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
             panic!("detail boundary must be NURBS");
         };
-        assert_eq!(boundary.control_points[1].x, 2.0);
+        assert_eq!(boundary.control_points()[1].x, 2.0);
     }
 
     #[test]
@@ -194,7 +194,7 @@ mod tests {
         let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
             panic!("detail boundary must be NURBS");
         };
-        assert_eq!(boundary.control_points[0].z, 7.0);
-        assert_eq!(boundary.control_points[1].z, 8.0);
+        assert_eq!(boundary.control_points()[0].z, 7.0);
+        assert_eq!(boundary.control_points()[1].z, 8.0);
     }
 }

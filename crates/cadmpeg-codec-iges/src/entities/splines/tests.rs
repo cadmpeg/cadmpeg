@@ -97,8 +97,8 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
     else {
         panic!("expected a bicubic NURBS carrier");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (3, 3));
-    assert_eq!((surface.u_count, surface.v_count), (4, 4));
+    assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
+    assert_eq!((surface.u_count(), surface.v_count()), (4, 4));
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
@@ -125,17 +125,17 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
     else {
         panic!("expected a cubic NURBS carrier");
     };
-    assert_eq!(nurbs.degree, 3);
+    assert_eq!(nurbs.degree(), 3);
     assert_eq!(
-        nurbs.knots,
-        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+        nurbs.knots(),
+        [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
     );
-    assert_eq!(nurbs.control_points.len(), 7);
+    assert_eq!(nurbs.control_points().len(), 7);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
             None,
             1.5,
         ),
@@ -163,9 +163,9 @@ fn decode_converts_nonzero_cubic_power_terms_on_a_nonunit_interval() {
         panic!("expected a cubic NURBS carrier");
     };
     let point = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree,
-        &nurbs.knots,
-        &nurbs.control_points,
+        nurbs.degree(),
+        nurbs.knots(),
+        nurbs.control_points(),
         None,
         3.25,
     )

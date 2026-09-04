@@ -845,7 +845,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 CurveGeometry::Nurbs(nurbs) => {
                     valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(
                         |[lower, upper]| {
-                            if nurbs.periodic {
+                            if nurbs.periodic() {
                                 let period = upper - lower;
                                 let tolerance = 1.0e-9_f64.max(
                                     period.abs()
@@ -940,20 +940,16 @@ fn parameter_in_domain(value: f64, [lower, upper]: [f64; 2]) -> bool {
 
 fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            ..
-        } => crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, control_points.len()),
-        PcurveGeometry::PolarNurbs {
-            degree,
-            knots,
-            radial_control_points,
-            ..
-        } => {
-            crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, radial_control_points.len())
-        }
+        PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points().len(),
+        ),
+        PcurveGeometry::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.poles().len(),
+        ),
         PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
         _ => None,
     }

@@ -37,25 +37,28 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn generated_nurbs_translations_define_a_blind_extrusion() {
-    let translated_surface = |last_z| NurbsSurface {
-        u_degree: 2,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 2.0),
-            Point3::new(1.0, 1.0, 0.0),
-            Point3::new(1.0, 1.0, 2.0),
-            Point3::new(2.0, 0.0, 0.0),
-            Point3::new(2.0, 0.0, last_z),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
+    let translated_surface = |last_z| {
+        NurbsSurface::new(
+            2,
+            1,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            3,
+            2,
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 2.0),
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(1.0, 1.0, 2.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, last_z),
+            ],
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("valid translated surface")
     };
     let span = nurbs_translation_span(&translated_surface(2.0)).expect("translation");
     assert_eq!(span.vector, [0.0, 0.0, 2.0]);
@@ -134,11 +137,20 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         ))
     );
 
-    let mut ambiguous = translated_surface(2.0);
-    ambiguous.u_degree = 1;
-    ambiguous.u_count = 2;
-    ambiguous.u_knots = vec![0.0, 0.0, 1.0, 1.0];
-    ambiguous.control_points.truncate(4);
+    let ambiguous = NurbsSurface::new(
+        1,
+        translated_surface(2.0).v_degree(),
+        vec![0.0, 0.0, 1.0, 1.0],
+        translated_surface(2.0).v_knots().to_vec(),
+        2,
+        translated_surface(2.0).v_count(),
+        translated_surface(2.0).control_points()[..4].to_vec(),
+        None,
+        false,
+        false,
+        false,
+    )
+    .expect("valid ambiguous translation surface");
     assert!(nurbs_translation_span(&ambiguous).is_none());
 }
 

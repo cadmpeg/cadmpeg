@@ -167,7 +167,7 @@ mod tests {
         else {
             panic!("expected NURBS parameter curve");
         };
-        assert_eq!(c2.control_points[1].x, 1.0);
+        assert_eq!(c2.control_points()[1].x, 1.0);
         let Some(DecodedCurve {
             geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(model_curve),
             ..
@@ -175,7 +175,7 @@ mod tests {
         else {
             panic!("expected NURBS model curve");
         };
-        assert_eq!(model_curve.control_points[1].x, 20.0);
+        assert_eq!(model_curve.control_points()[1].x, 20.0);
         let DecodedSurface::Typed { geometry, .. } = decoded.surface else {
             panic!("expected typed support surface");
         };

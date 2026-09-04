@@ -345,7 +345,7 @@ pub(crate) fn pcurve_ranges_on_domain(
     candidate: &nurbs::pcurve::NurbsPcurve,
     edge: Option<&Record>,
 ) -> Option<Vec<[f64; 2]>> {
-    let (&first, &last) = (candidate.knots.first()?, candidate.knots.last()?);
+    let (&first, &last) = (candidate.knots().first()?, candidate.knots().last()?);
     let tolerance = EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9 * (last - first).abs().max(1.0);
     let mut ranges = edge
         .and_then(edge_pcurve_parameter_ranges)
@@ -450,12 +450,12 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
 /// Reparameterize a cached B-spline to its record's reversed sense,
 /// `C'(t) = C(-t)`, by reversing poles and weights and negating reversed knots.
 pub fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
-    curve.control_points.reverse();
-    if let Some(weights) = curve.weights.as_mut() {
+    curve.control_points_mut().reverse();
+    if let Some(weights) = curve.weights_mut() {
         weights.reverse();
     }
-    curve.knots.reverse();
-    for knot in &mut curve.knots {
+    curve.knots_mut().reverse();
+    for knot in curve.knots_mut() {
         *knot = -*knot;
     }
 }
@@ -463,12 +463,12 @@ pub fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
 /// Reparameterize a referenced pcurve to its opposite orientation, preserving
 /// its UV chart while negating the parameterization.
 pub(crate) fn reverse_nurbs_pcurve(curve: &mut nurbs::pcurve::NurbsPcurve) {
-    curve.control_points.reverse();
-    if let Some(weights) = curve.weights.as_mut() {
+    curve.control_points_mut().reverse();
+    if let Some(weights) = curve.weights_mut() {
         weights.reverse();
     }
-    curve.knots.reverse();
-    for knot in &mut curve.knots {
+    curve.knots_mut().reverse();
+    for knot in curve.knots_mut() {
         *knot = -*knot;
     }
 }
@@ -740,23 +740,20 @@ fn analytic_rolling_ball_surface(
 }
 
 fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point3, Vector3)> {
-    if curve.degree == 0
-        || curve.periodic
-        || curve.control_points.len() <= curve.degree as usize
-        || curve.knots.len() != curve.control_points.len() + curve.degree as usize + 1
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
+    if curve.degree() == 0
+        || curve.periodic()
+        || curve.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(curve.knots())
         || curve
-            .control_points
+            .control_points()
             .iter()
             .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
     {
         return None;
     }
-    if let Some(weights) = curve.weights.as_deref() {
+    if let Some(weights) = curve.weights() {
         let first_sign = weights.first()?.signum();
         if first_sign == 0.0
-            || weights.len() != curve.control_points.len()
             || weights
                 .iter()
                 .any(|weight| !weight.is_finite() || weight.signum() != first_sign)
@@ -764,9 +761,9 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
             return None;
         }
     }
-    let origin = curve.control_points[0];
+    let origin = curve.control_points()[0];
     let (_, farthest) = curve
-        .control_points
+        .control_points()
         .iter()
         .copied()
         .map(|point| (point_vector(origin, point).norm(), point))
@@ -778,7 +775,7 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
     let axis = point_vector(origin, farthest).unit()?;
     let tolerance = EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10 * extent.max(1.0);
     if curve
-        .control_points
+        .control_points()
         .iter()
         .any(|point| axis.cross(point_vector(origin, *point)).norm() > tolerance)
     {
@@ -790,27 +787,25 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
 pub(crate) fn rational_four_arc_circle(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
 ) -> Option<(Point3, Vector3, Vector3, f64)> {
-    let weights = curve.weights.as_deref()?;
-    let degree = curve.degree as usize;
+    let weights = curve.weights()?;
+    let degree = curve.degree() as usize;
     if degree < 2
-        || curve.periodic
-        || curve.control_points.len() != 4 * degree + 1
-        || weights.len() != curve.control_points.len()
-        || curve.knots.len() != curve.control_points.len() + degree + 1
-        || curve.knots.iter().any(|knot| !knot.is_finite())
+        || curve.periodic()
+        || curve.control_points().len() != 4 * degree + 1
+        || curve.knots().iter().any(|knot| !knot.is_finite())
     {
         return None;
     }
     let knot_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12
-        * (curve.knots[curve.knots.len() - 1] - curve.knots[0])
+        * (curve.knots()[curve.knots().len() - 1] - curve.knots()[0])
             .abs()
             .max(1.0);
     let spans = [
-        curve.knots[0],
-        curve.knots[degree + 1],
-        curve.knots[2 * degree + 1],
-        curve.knots[3 * degree + 1],
-        curve.knots[4 * degree + 1],
+        curve.knots()[0],
+        curve.knots()[degree + 1],
+        curve.knots()[2 * degree + 1],
+        curve.knots()[3 * degree + 1],
+        curve.knots()[4 * degree + 1],
     ];
     if spans
         .windows(2)
@@ -819,11 +814,11 @@ pub(crate) fn rational_four_arc_circle(
             let range = if span == 0 {
                 0..degree + 1
             } else if span == 4 {
-                4 * degree + 1..curve.knots.len()
+                4 * degree + 1..curve.knots().len()
             } else {
                 span * degree + 1..(span + 1) * degree + 1
             };
-            curve.knots[range]
+            curve.knots()[range]
                 .iter()
                 .any(|value| (*value - spans[span]).abs() > knot_tolerance)
         })
@@ -831,7 +826,7 @@ pub(crate) fn rational_four_arc_circle(
         return None;
     }
     let homogeneous = curve
-        .control_points
+        .control_points()
         .iter()
         .zip(weights)
         .map(|(point, weight)| {
@@ -996,7 +991,7 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
         .iter()
         .filter_map(|curve| match &curve.geometry {
             CurveGeometry::Nurbs(nurbs) => {
-                let (first, last) = (nurbs.knots.first()?, nurbs.knots.last()?);
+                let (first, last) = (nurbs.knots().first()?, nurbs.knots().last()?);
                 Some((curve.id.0.as_str(), [*first, *last]))
             }
             _ => None,

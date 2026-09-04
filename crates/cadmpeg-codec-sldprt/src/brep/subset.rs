@@ -13,43 +13,35 @@ const PAYLOAD_LEN: usize = 2 + 8 * 8;
 const POINT_TOLERANCE_MM: f64 = 1.0e-7;
 
 fn nurbs_point(curve: &cadmpeg_ir::geometry::NurbsCurve, parameter: f64) -> Option<Point3> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let last_control = curve.control_points.len().checked_sub(1)?;
-    if degree > last_control
-        || curve.knots.len() != curve.control_points.len() + degree + 1
-        || curve
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != curve.control_points.len())
-    {
-        return None;
-    }
-    let domain_start = *curve.knots.get(degree)?;
-    let domain_end = *curve.knots.get(last_control + 1)?;
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let last_control = curve.control_points().len().checked_sub(1)?;
+    let domain_start = *curve.knots().get(degree)?;
+    let domain_end = *curve.knots().get(last_control + 1)?;
     if parameter < domain_start || parameter > domain_end {
         return None;
     }
     let span = if parameter == domain_end {
         last_control
     } else {
-        (degree..=last_control)
-            .find(|index| curve.knots[*index] <= parameter && parameter < curve.knots[*index + 1])?
+        (degree..=last_control).find(|index| {
+            curve.knots()[*index] <= parameter && parameter < curve.knots()[*index + 1]
+        })?
     };
     let mut poles = (span - degree..=span)
         .map(|index| {
-            let point = curve.control_points[index];
-            let weight = curve.weights.as_ref().map_or(1.0, |weights| weights[index]);
+            let point = curve.control_points()[index];
+            let weight = curve.weights().map_or(1.0, |weights| weights[index]);
             [point.x * weight, point.y * weight, point.z * weight, weight]
         })
         .collect::<Vec<_>>();
     for level in 1..=degree {
         for local in (level..=degree).rev() {
             let knot = span - degree + local;
-            let denominator = curve.knots[knot + degree - level + 1] - curve.knots[knot];
+            let denominator = curve.knots()[knot + degree - level + 1] - curve.knots()[knot];
             let alpha = if denominator.abs() <= f64::EPSILON {
                 0.0
             } else {
-                (parameter - curve.knots[knot]) / denominator
+                (parameter - curve.knots()[knot]) / denominator
             };
             let previous = poles[local - 1];
             let current = poles[local];
@@ -253,13 +245,14 @@ mod tests {
 
     #[test]
     fn evaluates_rational_nurbs_in_homogeneous_coordinates() {
-        let curve = NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
-            weights: Some(vec![1.0, 2.0]),
-            periodic: false,
-        };
+        let curve = NurbsCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            Some(vec![1.0, 2.0]),
+            false,
+        )
+        .expect("valid rational test NURBS");
         let point = nurbs_point(&curve, 0.5).expect("valid NURBS parameter");
         assert!((point.x - 20.0 / 3.0).abs() < 1.0e-12);
     }

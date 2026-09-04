@@ -308,51 +308,47 @@ fn rational_surface_patches_with_budget(
     surface: &NurbsSurface,
     budget: &WorkBudget<'_>,
 ) -> Option<Vec<RationalBezierSurfacePatch>> {
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
     let control_count = u_count.checked_mul(v_count)?;
     let patch_control_count = (u_degree + 1).checked_mul(v_degree + 1)?;
     budget
         .charge_by(
             control_count
-                .checked_add(surface.u_knots.len())?
-                .checked_add(surface.v_knots.len())?,
+                .checked_add(surface.u_knots().len())?
+                .checked_add(surface.v_knots().len())?,
         )
         .then_some(())?;
     if u_degree >= u_count
         || v_degree >= v_count
-        || surface.control_points.len() != control_count
-        || surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
-        || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
         || surface
-            .u_knots
+            .u_knots()
             .iter()
-            .chain(&surface.v_knots)
+            .chain(surface.v_knots())
             .any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&surface.u_knots)
-        || !knots_nondecreasing(&surface.v_knots)
-        || surface.control_points.iter().any(|control| {
+        || !knots_nondecreasing(surface.u_knots())
+        || !knots_nondecreasing(surface.v_knots())
+        || surface.control_points().iter().any(|control| {
             !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
         })
     {
         return None;
     }
-    let weights = match &surface.weights {
+    let weights = match surface.weights() {
         Some(weights)
-            if weights.len() == control_count
-                && weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0) =>
+            if weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight > 0.0) =>
         {
-            weights.clone()
+            weights.to_vec()
         }
         Some(_) => return None,
         None => alloc_filled(control_count, 1.0, "ir_nurbs_surface_weights").ok()?,
     };
     let homogeneous_controls = surface
-        .control_points
+        .control_points()
         .iter()
         .zip(weights)
         .map(|(control, weight)| {
@@ -375,7 +371,7 @@ fn rational_surface_patches_with_budget(
         .map(|v| {
             homogeneous_bezier_spans(
                 u_degree,
-                &surface.u_knots,
+                surface.u_knots(),
                 (0..u_count)
                     .map(|u| homogeneous_controls[u * v_count + v])
                     .collect(),
@@ -399,7 +395,7 @@ fn rational_surface_patches_with_budget(
             .map(|u_control| {
                 homogeneous_bezier_spans(
                     v_degree,
-                    &surface.v_knots,
+                    surface.v_knots(),
                     (0..v_count)
                         .map(|v| u_spans_by_v[v][u_span].controls[u_control])
                         .collect(),
@@ -980,19 +976,19 @@ fn complete_nurbs_surface_starts(
     };
     let surface_u_domain = [
         *surface
-            .u_knots
-            .get(usize::try_from(surface.u_degree).ok()?)?,
+            .u_knots()
+            .get(usize::try_from(surface.u_degree()).ok()?)?,
         *surface
-            .u_knots
-            .get(usize::try_from(surface.u_count).ok()?)?,
+            .u_knots()
+            .get(usize::try_from(surface.u_count()).ok()?)?,
     ];
     let surface_v_domain = [
         *surface
-            .v_knots
-            .get(usize::try_from(surface.v_degree).ok()?)?,
+            .v_knots()
+            .get(usize::try_from(surface.v_degree()).ok()?)?,
         *surface
-            .v_knots
-            .get(usize::try_from(surface.v_count).ok()?)?,
+            .v_knots()
+            .get(usize::try_from(surface.v_count()).ok()?)?,
     ];
     let refined_upper = |start, u_domain, v_domain| {
         let parameters =
@@ -1167,17 +1163,17 @@ fn solve_nurbs_surface_parameter(
     budget: &WorkBudget<'_>,
 ) -> Option<(Point2, f64)> {
     let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
     let u_domain = [
-        *surface.u_knots.get(u_degree)?,
-        *surface.u_knots.get(u_count)?,
+        *surface.u_knots().get(u_degree)?,
+        *surface.u_knots().get(u_count)?,
     ];
     let v_domain = [
-        *surface.v_knots.get(v_degree)?,
-        *surface.v_knots.get(v_count)?,
+        *surface.v_knots().get(v_degree)?,
+        *surface.v_knots().get(v_count)?,
     ];
     if u_domain[0] >= u_domain[1] || v_domain[0] >= v_domain[1] {
         return None;
@@ -1288,17 +1284,17 @@ pub fn nurbs_surface_parameter_near_point(
     {
         return None;
     }
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
     let u_domain = [
-        *surface.u_knots.get(u_degree)?,
-        *surface.u_knots.get(u_count)?,
+        *surface.u_knots().get(u_degree)?,
+        *surface.u_knots().get(u_count)?,
     ];
     let v_domain = [
-        *surface.v_knots.get(v_degree)?,
-        *surface.v_knots.get(v_count)?,
+        *surface.v_knots().get(v_degree)?,
+        *surface.v_knots().get(v_count)?,
     ];
     if !u_domain[0].is_finite()
         || !u_domain[1].is_finite()
@@ -1584,7 +1580,7 @@ pub fn nurbs_curve_point(
 
 /// Effective knot domain of a structurally evaluable NURBS curve.
 pub fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
-    nurbs_pcurve_parameter_domain(curve.degree, &curve.knots, curve.control_points.len())
+    nurbs_pcurve_parameter_domain(curve.degree(), curve.knots(), curve.control_points().len())
 }
 
 /// Effective knot domain shared by model-space and parameter-space NURBS
@@ -1629,8 +1625,8 @@ pub fn nurbs_curve_parameter_near_point(
     tolerance: f64,
     seed: f64,
 ) -> Option<f64> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let count = curve.control_points.len();
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let count = curve.control_points().len();
     let domain = nurbs_curve_parameter_domain(curve)?;
     if degree == 0
         || !tolerance.is_finite()
@@ -1646,9 +1642,9 @@ pub fn nurbs_curve_parameter_near_point(
     let speed_bound = nurbs_curve_speed_bound_about(curve, weights.as_ref(), point)?;
     let distance = |parameter| {
         let position = nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
             Some(weights.as_ref()),
             parameter,
         )?;
@@ -1660,7 +1656,7 @@ pub fn nurbs_curve_parameter_near_point(
         )
     };
     let seed = seed.clamp(domain[0], domain[1]);
-    let boundaries = &curve.knots[degree..=count];
+    let boundaries = &curve.knots()[degree..=count];
     match nearest_boundary_witness(boundaries, seed, tolerance, distance) {
         BoundaryWitness::Found(parameter) => return Some(parameter),
         BoundaryWitness::Invalid => return None,
@@ -1718,9 +1714,9 @@ fn nurbs_curve_parameter_near_point_newton(
     let mut parameter = seed.clamp(lower, upper);
     for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
         let position = nurbs_curve_point(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
             Some(weights),
             parameter,
         )?;
@@ -1733,9 +1729,9 @@ fn nurbs_curve_parameter_near_point_newton(
             return Some(parameter);
         }
         let tangent = nurbs_curve_tangent(
-            curve.degree,
-            &curve.knots,
-            &curve.control_points,
+            curve.degree(),
+            curve.knots(),
+            curve.control_points(),
             Some(weights),
             parameter,
         )?;
@@ -1765,14 +1761,13 @@ pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<f64> {
 
 fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'_, [f64]>> {
     nurbs_curve_parameter_domain(curve)?;
-    let count = curve.control_points.len();
-    let weights = match &curve.weights {
-        Some(weights) if weights.len() == count => Cow::Borrowed(weights.as_slice()),
-        Some(_) => return None,
+    let count = curve.control_points().len();
+    let weights = match curve.weights() {
+        Some(weights) => Cow::Borrowed(weights),
         None => Cow::Owned(alloc_filled(count, 1.0, "ir_nurbs_curve_weights").ok()?),
     };
     if curve
-        .control_points
+        .control_points()
         .iter()
         .zip(weights.as_ref())
         .any(|(control, weight)| {
@@ -1782,8 +1777,8 @@ fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'_, [f64]>> {
                 || !weight.is_finite()
                 || *weight <= 0.0
         })
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
+        || curve.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(curve.knots())
     {
         return None;
     }
@@ -1795,8 +1790,8 @@ fn nurbs_curve_speed_bound_about(
     weights: &[f64],
     origin: Point3,
 ) -> Option<f64> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let count = curve.control_points.len();
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let count = curve.control_points().len();
     let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
     let radius = |control: &Point3| {
         ((control.x - origin.x).powi(2)
@@ -1805,7 +1800,7 @@ fn nurbs_curve_speed_bound_about(
         .sqrt()
     };
     let maximum_weighted_radius = curve
-        .control_points
+        .control_points()
         .iter()
         .zip(weights)
         .map(|(control, weight)| weight * radius(control))
@@ -1813,13 +1808,13 @@ fn nurbs_curve_speed_bound_about(
     let mut maximum_numerator_speed = 0.0_f64;
     let mut maximum_weight_speed = 0.0_f64;
     for index in 0..count - 1 {
-        let denominator = curve.knots[index + degree + 1] - curve.knots[index + 1];
+        let denominator = curve.knots()[index + degree + 1] - curve.knots()[index + 1];
         if denominator == 0.0 {
             continue;
         }
-        let factor = f64::from(curve.degree) / denominator;
-        let first = curve.control_points[index];
-        let second = curve.control_points[index + 1];
+        let factor = f64::from(curve.degree()) / denominator;
+        let first = curve.control_points()[index];
+        let second = curve.control_points()[index + 1];
         let numerator_delta = Vector3::new(
             weights[index + 1] * (second.x - origin.x) - weights[index] * (first.x - origin.x),
             weights[index + 1] * (second.y - origin.y) - weights[index] * (first.y - origin.y),
@@ -1972,7 +1967,7 @@ pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: f64) -> Option<f
     if !parameter.is_finite() {
         return None;
     }
-    if curve.periodic {
+    if curve.periodic() {
         let period = upper - lower;
         Some(lower + (parameter - lower).rem_euclid(period))
     } else {
@@ -2335,31 +2330,28 @@ pub fn nurbs_pcurve_contains_point(
 
 /// Evaluate a tensor-product NURBS surface at `(u, v)`.
 pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Option<Point3> {
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    if surface.control_points.len() != u_count.checked_mul(v_count)? {
-        return None;
-    }
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
     let u_at = periodic_parameter(
-        &surface.u_knots,
+        surface.u_knots(),
         u_degree,
         u_count,
-        surface.u_periodic,
+        surface.u_periodic(),
         u_at,
     )?;
     let v_at = periodic_parameter(
-        &surface.v_knots,
+        surface.v_knots(),
         v_degree,
         v_count,
-        surface.v_periodic,
+        surface.v_periodic(),
         v_at,
     )?;
-    let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
-    let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
-    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at)?;
-    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at)?;
+    let u_span = bspline_span(surface.u_knots(), u_degree, u_count, u_at)?;
+    let v_span = bspline_span(surface.v_knots(), v_degree, v_count, v_at)?;
+    let u_basis = bspline_basis(surface.u_knots(), u_degree, u_span, u_at)?;
+    let v_basis = bspline_basis(surface.v_knots(), v_degree, v_span, v_at)?;
     let mut x = 0.0;
     let mut y = 0.0;
     let mut z = 0.0;
@@ -2368,12 +2360,11 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
         for (j, v_value) in v_basis.iter().enumerate() {
             let index = (u_span - u_degree + i) * v_count + (v_span - v_degree + j);
             let weight = surface
-                .weights
-                .as_ref()
+                .weights()
                 .and_then(|weights| weights.get(index).copied())
                 .unwrap_or(1.0);
             let factor = u_value * v_value * weight;
-            let pole = surface.control_points.get(index)?;
+            let pole = surface.control_points().get(index)?;
             x += factor * pole.x;
             y += factor * pole.y;
             z += factor * pole.z;
@@ -2432,21 +2423,13 @@ pub fn nurbs_surface_isocurve(
     fixed_axis: SurfaceParameterAxis,
     fixed_parameter: f64,
 ) -> Option<NurbsCurve> {
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    if surface.control_points.len() != u_count.checked_mul(v_count)?
-        || surface
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != surface.control_points.len())
-    {
-        return None;
-    }
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
-        SurfaceParameterAxis::U => (u_degree, u_count, &surface.u_knots, surface.u_periodic),
-        SurfaceParameterAxis::V => (v_degree, v_count, &surface.v_knots, surface.v_periodic),
+        SurfaceParameterAxis::U => (u_degree, u_count, surface.u_knots(), surface.u_periodic()),
+        SurfaceParameterAxis::V => (v_degree, v_count, surface.v_knots(), surface.v_periodic()),
     };
     let fixed_parameter = periodic_parameter(
         fixed_knots,
@@ -2473,12 +2456,11 @@ pub fn nurbs_surface_isocurve(
                 SurfaceParameterAxis::V => varying * v_count + fixed,
             };
             let weight = surface
-                .weights
-                .as_ref()
+                .weights()
                 .and_then(|weights| weights.get(index).copied())
                 .unwrap_or(1.0);
             let factor = basis * weight;
-            let point = surface.control_points.get(index)?;
+            let point = surface.control_points().get(index)?;
             weighted[0] += factor * point.x;
             weighted[1] += factor * point.y;
             weighted[2] += factor * point.z;
@@ -2496,23 +2478,24 @@ pub fn nurbs_surface_isocurve(
     }
     let (degree, knots, periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
-            surface.v_degree,
-            surface.v_knots.clone(),
-            surface.v_periodic,
+            surface.v_degree(),
+            surface.v_knots().to_vec(),
+            surface.v_periodic(),
         ),
         SurfaceParameterAxis::V => (
-            surface.u_degree,
-            surface.u_knots.clone(),
-            surface.u_periodic,
+            surface.u_degree(),
+            surface.u_knots().to_vec(),
+            surface.u_periodic(),
         ),
     };
-    Some(NurbsCurve {
+    NurbsCurve::new(
         degree,
         knots,
         control_points,
-        weights: surface.weights.as_ref().map(|_| derived_weights),
+        surface.weights().map(|_| derived_weights),
         periodic,
-    })
+    )
+    .ok()
 }
 
 /// Point and first partial derivatives of a NURBS surface in its stored
@@ -2580,40 +2563,32 @@ pub fn nurbs_surface_second_partials(
     u_at: f64,
     v_at: f64,
 ) -> Option<SurfaceSecondPartials> {
-    let u_degree = usize::try_from(surface.u_degree).ok()?;
-    let v_degree = usize::try_from(surface.v_degree).ok()?;
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    if surface.control_points.len() != u_count.checked_mul(v_count)?
-        || surface
-            .weights
-            .as_ref()
-            .is_some_and(|weights| weights.len() != surface.control_points.len())
-    {
-        return None;
-    }
+    let u_degree = usize::try_from(surface.u_degree()).ok()?;
+    let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    let u_count = usize::try_from(surface.u_count()).ok()?;
+    let v_count = usize::try_from(surface.v_count()).ok()?;
     let u_at = periodic_parameter(
-        &surface.u_knots,
+        surface.u_knots(),
         u_degree,
         u_count,
-        surface.u_periodic,
+        surface.u_periodic(),
         u_at,
     )?;
     let v_at = periodic_parameter(
-        &surface.v_knots,
+        surface.v_knots(),
         v_degree,
         v_count,
-        surface.v_periodic,
+        surface.v_periodic(),
         v_at,
     )?;
-    let u_span = bspline_span(&surface.u_knots, u_degree, u_count, u_at)?;
-    let v_span = bspline_span(&surface.v_knots, v_degree, v_count, v_at)?;
-    let u_basis = bspline_basis(&surface.u_knots, u_degree, u_span, u_at)?;
-    let v_basis = bspline_basis(&surface.v_knots, v_degree, v_span, v_at)?;
-    let u_derivative = bspline_basis_derivative(&surface.u_knots, u_degree, u_span, u_at)?;
-    let v_derivative = bspline_basis_derivative(&surface.v_knots, v_degree, v_span, v_at)?;
-    let u_second = bspline_basis_second_derivative(&surface.u_knots, u_degree, u_span, u_at)?;
-    let v_second = bspline_basis_second_derivative(&surface.v_knots, v_degree, v_span, v_at)?;
+    let u_span = bspline_span(surface.u_knots(), u_degree, u_count, u_at)?;
+    let v_span = bspline_span(surface.v_knots(), v_degree, v_count, v_at)?;
+    let u_basis = bspline_basis(surface.u_knots(), u_degree, u_span, u_at)?;
+    let v_basis = bspline_basis(surface.v_knots(), v_degree, v_span, v_at)?;
+    let u_derivative = bspline_basis_derivative(surface.u_knots(), u_degree, u_span, u_at)?;
+    let v_derivative = bspline_basis_derivative(surface.v_knots(), v_degree, v_span, v_at)?;
+    let u_second = bspline_basis_second_derivative(surface.u_knots(), u_degree, u_span, u_at)?;
+    let v_second = bspline_basis_second_derivative(surface.v_knots(), v_degree, v_span, v_at)?;
     let mut weighted = [0.0; 3];
     let mut weighted_u = [0.0; 3];
     let mut weighted_v = [0.0; 3];
@@ -2629,11 +2604,8 @@ pub fn nurbs_surface_second_partials(
     for i in 0..=u_degree {
         for j in 0..=v_degree {
             let index = (u_span - u_degree + i) * v_count + (v_span - v_degree + j);
-            let pole = surface.control_points.get(index)?;
-            let pole_weight = surface
-                .weights
-                .as_ref()
-                .map_or(1.0, |weights| weights[index]);
+            let pole = surface.control_points().get(index)?;
+            let pole_weight = surface.weights().map_or(1.0, |weights| weights[index]);
             let basis = u_basis[i] * v_basis[j] * pole_weight;
             let basis_u = u_derivative[i] * v_basis[j] * pole_weight;
             let basis_v = u_basis[i] * v_derivative[j] * pole_weight;
@@ -2727,8 +2699,8 @@ fn nurbs_surface_partials_evaluation_cost(surface: &NurbsSurface) -> Option<usiz
 
 fn nurbs_surface_support_sizes(surface: &NurbsSurface) -> Option<(usize, usize)> {
     Some((
-        usize::try_from(surface.u_degree).ok()?.checked_add(1)?,
-        usize::try_from(surface.v_degree).ok()?.checked_add(1)?,
+        usize::try_from(surface.u_degree()).ok()?.checked_add(1)?,
+        usize::try_from(surface.v_degree()).ok()?.checked_add(1)?,
     ))
 }
 
@@ -2891,7 +2863,7 @@ pub fn curve_second_derivative_with_budget(
 }
 
 fn nurbs_curve_evaluation_cost(curve: &NurbsCurve) -> Option<usize> {
-    let support = usize::try_from(curve.degree).ok()?.checked_add(1)?;
+    let support = usize::try_from(curve.degree()).ok()?.checked_add(1)?;
     support.checked_mul(support).filter(|cost| *cost > 0)
 }
 
@@ -2949,10 +2921,10 @@ fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option
         CurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_tangent(
-                nurbs.degree,
-                &nurbs.knots,
-                &nurbs.control_points,
-                nurbs.weights.as_deref(),
+                nurbs.degree(),
+                nurbs.knots(),
+                nurbs.control_points(),
+                nurbs.weights(),
                 parameter,
             )
         }
@@ -3020,10 +2992,10 @@ fn curve_second_derivative_inner(
         CurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_second_derivative(
-                nurbs.degree,
-                &nurbs.knots,
-                &nurbs.control_points,
-                nurbs.weights.as_deref(),
+                nurbs.degree(),
+                nurbs.knots(),
+                nurbs.control_points(),
+                nurbs.weights(),
                 parameter,
             )
         }
@@ -4440,10 +4412,10 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
         CurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_point(
-                nurbs.degree,
-                &nurbs.knots,
-                &nurbs.control_points,
-                nurbs.weights.as_deref(),
+                nurbs.degree(),
+                nurbs.knots(),
+                nurbs.control_points(),
+                nurbs.weights(),
                 parameter,
             )
         }
@@ -5567,7 +5539,7 @@ fn straight_sweep_path_origin(
     match &curve.geometry {
         CurveGeometry::Line { origin, .. } => Some(*origin),
         CurveGeometry::Nurbs(nurbs)
-            if nurbs.degree == 1 && nurbs.control_points.len() == 2 && !nurbs.periodic =>
+            if nurbs.degree() == 1 && nurbs.control_points().len() == 2 && !nurbs.periodic() =>
         {
             let [start, _] = nurbs_curve_parameter_domain(nurbs)?;
             curve_point(&curve.geometry, start)
@@ -6604,12 +6576,18 @@ fn model_surface_point_by_id_inner(
         let SurfaceGeometry::Nurbs(nurbs) = &support.geometry else {
             return None;
         };
-        let u_degree = usize::try_from(nurbs.u_degree).ok()?;
-        let v_degree = usize::try_from(nurbs.v_degree).ok()?;
-        let u_count = usize::try_from(nurbs.u_count).ok()?;
-        let v_count = usize::try_from(nurbs.v_count).ok()?;
-        let u_domain = [*nurbs.u_knots.get(u_degree)?, *nurbs.u_knots.get(u_count)?];
-        let v_domain = [*nurbs.v_knots.get(v_degree)?, *nurbs.v_knots.get(v_count)?];
+        let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
+        let v_degree = usize::try_from(nurbs.v_degree()).ok()?;
+        let u_count = usize::try_from(nurbs.u_count()).ok()?;
+        let v_count = usize::try_from(nurbs.v_count()).ok()?;
+        let u_domain = [
+            *nurbs.u_knots().get(u_degree)?,
+            *nurbs.u_knots().get(u_count)?,
+        ];
+        let v_domain = [
+            *nurbs.v_knots().get(v_degree)?,
+            *nurbs.v_knots().get(v_count)?,
+        ];
         let boundary_u = u.clamp(u_domain[0], u_domain[1]);
         let boundary_v = v.clamp(v_domain[0], v_domain[1]);
         if boundary_u == u && boundary_v == v {
@@ -6618,7 +6596,7 @@ fn model_surface_point_by_id_inner(
         let partials =
             surface_partials_with_budget(&support.geometry, boundary_u, boundary_v, budget)?;
         let normal = partials.du.cross(partials.dv);
-        let normal = if nurbs.normal_reversed {
+        let normal = if nurbs.normal_reversed() {
             scale_vector(normal, -1.0)
         } else {
             normal
@@ -6928,7 +6906,7 @@ fn model_surface_point_by_id_inner(
             _ => surface_partials_with_budget(&surface.geometry, u, v, budget).map(|partials| {
                 let normal = partials.du.cross(partials.dv);
                 let normal = match &surface.geometry {
-                    SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed => {
+                    SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed() => {
                         scale_vector(normal, -1.0)
                     }
                     _ => normal,
@@ -7771,30 +7749,31 @@ fn pcurve_uv_differential_inner(
                 ),
             )
         }
-        PcurveGeometry::PolarNurbs {
-            degree,
-            knots,
-            radial_control_points,
-            axial_control_points,
-            weights,
-            ..
-        } => {
-            if radial_control_points.len() != axial_control_points.len() {
-                return None;
-            }
+        PcurveGeometry::PolarNurbs { nurbs } => {
+            let radial_control_points = nurbs
+                .poles()
+                .iter()
+                .map(|pole| pole.radial)
+                .collect::<Vec<_>>();
             let radial = nurbs_pcurve_differential(
-                *degree,
-                knots,
-                radial_control_points,
-                weights.as_deref(),
+                nurbs.degree(),
+                nurbs.knots(),
+                &radial_control_points,
+                nurbs.weights(),
                 t,
             )?;
-            let axial_points = axial_control_points
+            let axial_points = nurbs
+                .poles()
                 .iter()
-                .map(|value| Point2::new(*value, 0.0))
+                .map(|pole| Point2::new(pole.axial, 0.0))
                 .collect::<Vec<_>>();
-            let axial =
-                nurbs_pcurve_differential(*degree, knots, &axial_points, weights.as_deref(), t)?;
+            let axial = nurbs_pcurve_differential(
+                nurbs.degree(),
+                nurbs.knots(),
+                &axial_points,
+                nurbs.weights(),
+                t,
+            )?;
             let radius_squared = radial.point.u * radial.point.u + radial.point.v * radial.point.v;
             if radius_squared == 0.0 {
                 return None;
@@ -7869,18 +7848,12 @@ fn pcurve_uv_differential_inner(
                     .then_some(acceleration),
             });
         }
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            ..
-        } => {
+        PcurveGeometry::Nurbs { nurbs } => {
             return nurbs_pcurve_differential(
-                *degree,
-                knots,
-                control_points,
-                weights.as_deref(),
+                nurbs.degree(),
+                nurbs.knots(),
+                nurbs.control_points(),
+                nurbs.weights(),
                 t,
             );
         }

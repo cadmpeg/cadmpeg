@@ -580,19 +580,22 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
     )]);
     let resolved = HashMap::from([(
         1,
-        Some(B5Surface::Nurbs(NurbsSurface {
-            u_degree: 1,
-            v_degree: 1,
-            u_count: 2,
-            v_count: 2,
-            u_knots: vec![0.0, 0.0, 1.0, 1.0],
-            v_knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
-            weights: None,
-            normal_reversed: false,
-            u_periodic: false,
-            v_periodic: false,
-        })),
+        Some(B5Surface::Nurbs(
+            NurbsSurface::new(
+                1,
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                2,
+                2,
+                vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
+                None,
+                false,
+                false,
+                false,
+            )
+            .expect("valid bilinear NURBS"),
+        )),
     )]);
     assert!(
         resolve_targeted_surface(1, &HashMap::new(), &HashMap::new(), &resolved, &rolling,)

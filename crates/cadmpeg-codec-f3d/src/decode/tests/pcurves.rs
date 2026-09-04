@@ -390,9 +390,9 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 .find(|curve| curve.id == *round_source)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
-                if curve.degree == 1
-                    && curve.knots == [0.0, 0.0, 1.0, 1.0]
-                    && curve.control_points == [
+            if curve.degree() == 1
+                    && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                    && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
                         cadmpeg_ir::math::Point3::new(5.0, 2.0, 4.0),
                     ]
@@ -543,10 +543,17 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
         panic!("expected NURBS edge carrier")
     };
-    nurbs.control_points[1].x = 14.0;
-    nurbs.control_points[1].z = -3.0;
-    nurbs.degree = 1;
-    nurbs.knots = vec![-1.0, -1.0, 2.0, 2.0, 2.0];
+    let mut control_points = nurbs.control_points().to_vec();
+    control_points[1].x = 14.0;
+    control_points[1].z = -3.0;
+    *nurbs = cadmpeg_ir::geometry::NurbsCurve::new(
+        1,
+        vec![-1.0, -1.0, 2.0, 2.0, 2.0],
+        control_points,
+        nurbs.weights().map(<[f64]>::to_vec),
+        nurbs.periodic(),
+    )
+    .unwrap();
     let expected = curve.clone();
 
     let mut regenerated = Vec::new();
@@ -572,10 +579,10 @@ fn nurbs_pcurve_block_decodes_without_length_scaling() {
     let b = generated_pcurve_block();
 
     let pcurve = decode_pcurve_cache(&b).expect("2D pcurve block decodes");
-    assert_eq!(pcurve.degree, 1);
-    assert_eq!(pcurve.knots, vec![0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(pcurve.control_points[0].u, 0.25);
-    assert_eq!(pcurve.control_points[1].v, 1.5);
+    assert_eq!(pcurve.degree(), 1);
+    assert_eq!(pcurve.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(pcurve.control_points()[0].u, 0.25);
+    assert_eq!(pcurve.control_points()[1].v, 1.5);
 }
 
 #[test]
@@ -589,8 +596,8 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
         &cadmpeg_asm::nurbs::toks::test_table(&intcurve, 8),
     )
     .expect("intcurve slot 2 carries the UV cache");
-    assert_eq!(pcurve.control_points[0].u, 0.25);
-    assert_eq!(pcurve.control_points[1].v, 1.5);
+    assert_eq!(pcurve.control_points()[0].u, 0.25);
+    assert_eq!(pcurve.control_points()[1].v, 1.5);
     assert!(
         cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
             &cadmpeg_asm::nurbs::toks::lex_test_span(&intcurve, 8),
@@ -769,13 +776,13 @@ fn negative_ref_pcurve_reverses_its_uv_parameterization() {
             &DecodeOptions::default(),
         )
         .expect("reversed ref pcurve decode");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } =
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } =
         &result.ir().model.pcurves[0].geometry
     else {
         panic!("ref pcurve is not a NURBS");
     };
     assert_eq!(
-        control_points.first(),
+        nurbs.control_points().first(),
         Some(&cadmpeg_ir::math::Point2::new(0.75, 1.5))
     );
 }
@@ -794,13 +801,13 @@ fn ref_pcurve_selector_reversal_xors_intcurve_reversal() {
             &DecodeOptions::default(),
         )
         .expect("doubly reversed ref pcurve decode");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } =
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } =
         &result.ir().model.pcurves[0].geometry
     else {
         panic!("ref pcurve is not a NURBS");
     };
     assert_eq!(
-        control_points.first(),
+        nurbs.control_points().first(),
         Some(&cadmpeg_ir::math::Point2::new(0.25, 0.5))
     );
 }
@@ -926,21 +933,20 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     assert_eq!(pcurve.native_tail_flags(), Some([true, false, true, false]));
     assert_eq!(pcurve.parameter_range(), Some([-1.0, 2.0]));
     assert_eq!(pcurve.fit_tolerance(), Some(0.001));
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        periodic,
-        ..
-    } = &mut pcurve.geometry
-    else {
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
+    let mut control_points = nurbs.control_points().to_vec();
     control_points[0].u = -0.5;
     control_points[1].v = 2.25;
-    *degree = 2;
-    *knots = vec![-1.0, -1.0, -1.0, 2.0, 2.0];
-    *periodic = true;
+    *nurbs = cadmpeg_ir::geometry::PcurveNurbs::new(
+        1,
+        vec![-1.0, -1.0, 2.0, 2.0],
+        control_points,
+        nurbs.weights().map(<[f64]>::to_vec),
+        true,
+    )
+    .unwrap();
     let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
@@ -968,11 +974,10 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
         .expect("generated scoped pcurve decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let pcurve = &mut edited.model.pcurves[0];
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry
-    else {
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
-    control_points[0].u = -0.75;
+    nurbs.control_points_mut()[0].u = -0.75;
     let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
@@ -995,16 +1000,13 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated rational pcurve decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        control_points,
-        weights: Some(weights),
-        ..
-    } = &mut edited.model.pcurves[0].geometry
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } =
+        &mut edited.model.pcurves[0].geometry
     else {
         panic!("expected rational pcurve")
     };
-    control_points[0].u = -0.25;
-    weights[1] = 0.75;
+    nurbs.control_points_mut()[0].u = -0.25;
+    nurbs.weights_mut().expect("expected rational weights")[1] = 0.75;
     let expected = edited.model.pcurves[0].clone();
 
     let mut regenerated = Vec::new();
@@ -1027,17 +1029,12 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     assert_eq!(pcurve.wrapper_reversed(), None);
     assert_eq!(pcurve.fit_tolerance(), None);
     assert_eq!(pcurve.parameter_range(), Some([-2.0, 4.0]));
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        control_points,
-        knots,
-        ..
-    } = &mut pcurve.geometry
-    else {
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected ref-form NURBS pcurve")
     };
-    control_points[0].u = -0.75;
-    control_points[1].v = 3.5;
-    *knots = vec![-1.0, -1.0, 2.0, 2.0];
+    nurbs.control_points_mut()[0].u = -0.75;
+    nurbs.control_points_mut()[1].v = 3.5;
+    nurbs.knots_mut().copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
     let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
         panic!("decoded fixture uses general pcurve metadata")
     };

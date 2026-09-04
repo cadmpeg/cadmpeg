@@ -1751,7 +1751,7 @@ pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
             valid_positive_nurbs_curve(nurbs)?;
             let plane = topology_bound_plane(
                 nurbs
-                    .control_points
+                    .control_points()
                     .iter()
                     .map(|point| [point.x, point.y, point.z]),
             )?;
@@ -1775,20 +1775,20 @@ pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> 
             normalized([direction.x, direction.y, direction.z])?,
         ),
         CurveGeometry::Nurbs(nurbs) => {
-            (nurbs.degree == 1 && !nurbs.periodic).then_some(())?;
+            (nurbs.degree() == 1 && !nurbs.periodic()).then_some(())?;
             valid_positive_nurbs_curve(nurbs)?;
-            let first = *nurbs.control_points.first()?;
-            let last = *nurbs.control_points.last()?;
+            let first = *nurbs.control_points().first()?;
+            let last = *nurbs.control_points().last()?;
             let origin = [first.x, first.y, first.z];
             let direction = normalized([last.x - first.x, last.y - first.y, last.z - first.z])?;
             let scale = nurbs
-                .control_points
+                .control_points()
                 .iter()
                 .flat_map(|point| [point.x, point.y, point.z])
                 .map(f64::abs)
                 .fold(1.0, f64::max);
             nurbs
-                .control_points
+                .control_points()
                 .iter()
                 .map(|point| {
                     let relative = [
@@ -1811,8 +1811,7 @@ pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> 
 pub fn valid_positive_nurbs_curve(nurbs: &NurbsCurve) -> Option<()> {
     nurbs_intrinsic_parameter_range(nurbs)?;
     nurbs
-        .weights
-        .as_ref()
+        .weights()
         .is_none_or(|weights| {
             weights
                 .iter()

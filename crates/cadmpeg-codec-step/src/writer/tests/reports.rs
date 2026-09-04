@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsSurface, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
@@ -1570,42 +1570,4 @@ fn source_native_record_reduction_is_reported() {
     assert!(report.losses.iter().any(|loss| loss
         .message
         .contains("source-native record(s) were not represented in STEP")));
-}
-
-#[test]
-fn incomplete_nurbs_surface_is_omitted_and_reported() {
-    let mut ir = cylinder_surface_doc();
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
-
-    let mut bytes = Vec::new();
-    let report = write_step(
-        &ir,
-        &mut bytes,
-        StepSchema::Ap214,
-        &StepWriteOptions::default(),
-    )
-    .expect("report mode omits the invalid carrier");
-    assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.message.contains("'cyl'")
-    }));
-    assert!(!String::from_utf8(bytes)
-        .expect("STEP output is UTF-8")
-        .contains("B_SPLINE_SURFACE_WITH_KNOTS"));
 }

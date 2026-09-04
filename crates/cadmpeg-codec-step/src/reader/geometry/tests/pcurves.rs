@@ -428,13 +428,11 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
 
     assert!(matches!(
         &decoded.ir().model.pcurves[0].geometry,
-        PcurveGeometry::Nurbs {
-            degree: 1,
-            control_points,
-            weights: None,
-            periodic: false,
-            ..
-        } if control_points == &[
+        PcurveGeometry::Nurbs { nurbs }
+            if nurbs.degree() == 1
+                && nurbs.weights().is_none()
+                && !nurbs.periodic()
+                && nurbs.control_points() == [
             Point2::new(0.0, 0.0),
             Point2::new(1.0, 2.0),
             Point2::new(3.0, 2.0),
@@ -906,13 +904,12 @@ fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
     assert!(result.ir().model.pcurves.iter().any(|pcurve| {
         matches!(
             &pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                degree: 1,
-                knots,
-                control_points,
-                weights: None,
-                periodic: false,
-            } if knots == &[0.0, 0.0, 1.0, 1.0] && control_points.len() == 2
+            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+                if nurbs.degree() == 1
+                    && nurbs.knots() == [0.0, 0.0, 1.0, 1.0]
+                    && nurbs.control_points().len() == 2
+                    && nurbs.weights().is_none()
+                    && !nurbs.periodic()
         )
     }));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());

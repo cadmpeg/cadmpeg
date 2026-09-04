@@ -189,34 +189,308 @@ impl<'de> Deserialize<'de> for OffsetExtension {
 /// A tensor-product NURBS surface.
 ///
 /// Control points use u-major order. `weights == None` denotes a non-rational
-/// surface. Validation checks knot, count, control-point, and weight lengths.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// surface.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NurbsSurface {
     /// Degree in the u parametric direction.
-    pub u_degree: u32,
+    u_degree: u32,
     /// Degree in the v parametric direction.
-    pub v_degree: u32,
+    v_degree: u32,
     /// Full knot vector in u.
-    pub u_knots: Vec<f64>,
+    u_knots: Vec<f64>,
     /// Full knot vector in v.
-    pub v_knots: Vec<f64>,
+    v_knots: Vec<f64>,
     /// Number of control points along u (poles per row).
-    pub u_count: u32,
+    u_count: u32,
     /// Number of control points along v (poles per column).
-    pub v_count: u32,
+    v_count: u32,
     /// Control points, u-major: index `i*v_count + j` is pole `(i, j)`.
-    pub control_points: Vec<Point3>,
+    control_points: Vec<Point3>,
     /// Per-pole weights in control-point order; `None` denotes non-rational.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub weights: Option<Vec<f64>>,
+    weights: Option<Vec<f64>>,
     /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub normal_reversed: bool,
+    normal_reversed: bool,
     /// Whether the surface is periodic in u.
-    pub u_periodic: bool,
+    u_periodic: bool,
     /// Whether the surface is periodic in v.
-    pub v_periodic: bool,
+    v_periodic: bool,
+}
+
+/// Structural error in a NURBS knot or pole carrier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NurbsError(String);
+
+impl std::fmt::Display for NurbsError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for NurbsError {}
+
+fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usize, NurbsError> {
+    pole_count
+        .checked_add(degree as usize)
+        .and_then(|count| count.checked_add(1))
+        .ok_or_else(|| NurbsError(format!("{field} knot count overflows usize")))
+}
+
+fn require_length(field: &str, actual: usize, expected: usize) -> Result<(), NurbsError> {
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(NurbsError(format!(
+            "{field} must contain {expected} values, found {actual}"
+        )))
+    }
+}
+
+fn require_curve_cardinality(
+    degree: u32,
+    knot_count: usize,
+    pole_count: usize,
+    weight_count: Option<usize>,
+    point_field: &str,
+) -> Result<(), NurbsError> {
+    if pole_count <= degree as usize {
+        return Err(NurbsError(format!(
+            "{point_field} must contain more than degree {degree} poles, found {pole_count}"
+        )));
+    }
+    require_length(
+        "knots",
+        knot_count,
+        checked_knot_count("curve", pole_count, degree)?,
+    )?;
+    if let Some(weight_count) = weight_count {
+        require_length("weights", weight_count, pole_count)?;
+    }
+    Ok(())
+}
+
+impl NurbsSurface {
+    /// Build a tensor-product NURBS surface with consistent cardinalities.
+    pub fn new(
+        u_degree: u32,
+        v_degree: u32,
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        u_count: u32,
+        v_count: u32,
+        control_points: Vec<Point3>,
+        weights: Option<Vec<f64>>,
+        normal_reversed: bool,
+        u_periodic: bool,
+        v_periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        if u_count <= u_degree {
+            return Err(NurbsError(format!(
+                "u_count must exceed u_degree {u_degree}, found {u_count}"
+            )));
+        }
+        if v_count <= v_degree {
+            return Err(NurbsError(format!(
+                "v_count must exceed v_degree {v_degree}, found {v_count}"
+            )));
+        }
+        let pole_count = (u_count as usize)
+            .checked_mul(v_count as usize)
+            .ok_or_else(|| NurbsError("surface pole count overflows usize".into()))?;
+        require_length("control_points", control_points.len(), pole_count)?;
+        require_length(
+            "u_knots",
+            u_knots.len(),
+            checked_knot_count("u", u_count as usize, u_degree)?,
+        )?;
+        require_length(
+            "v_knots",
+            v_knots.len(),
+            checked_knot_count("v", v_count as usize, v_degree)?,
+        )?;
+        if let Some(weights) = &weights {
+            require_length("weights", weights.len(), pole_count)?;
+        }
+        Ok(Self {
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            u_count,
+            v_count,
+            control_points,
+            weights,
+            normal_reversed,
+            u_periodic,
+            v_periodic,
+        })
+    }
+
+    /// Degree in the u parametric direction.
+    pub const fn u_degree(&self) -> u32 {
+        self.u_degree
+    }
+
+    /// Degree in the v parametric direction.
+    pub const fn v_degree(&self) -> u32 {
+        self.v_degree
+    }
+
+    /// Full knot vector in u.
+    pub fn u_knots(&self) -> &[f64] {
+        &self.u_knots
+    }
+
+    /// Full knot vector in v.
+    pub fn v_knots(&self) -> &[f64] {
+        &self.v_knots
+    }
+
+    /// Mutable u-knot values. The cardinality cannot change.
+    pub fn u_knots_mut(&mut self) -> &mut [f64] {
+        &mut self.u_knots
+    }
+
+    /// Mutable v-knot values. The cardinality cannot change.
+    pub fn v_knots_mut(&mut self) -> &mut [f64] {
+        &mut self.v_knots
+    }
+
+    /// Number of control points along u.
+    pub const fn u_count(&self) -> u32 {
+        self.u_count
+    }
+
+    /// Number of control points along v.
+    pub const fn v_count(&self) -> u32 {
+        self.v_count
+    }
+
+    /// Control points in u-major order.
+    pub fn control_points(&self) -> &[Point3] {
+        &self.control_points
+    }
+
+    /// Mutable control-point values. The cardinality cannot change.
+    pub fn control_points_mut(&mut self) -> &mut [Point3] {
+        &mut self.control_points
+    }
+
+    /// Rational weights in control-point order.
+    pub fn weights(&self) -> Option<&[f64]> {
+        self.weights.as_deref()
+    }
+
+    /// Mutable rational weight values. The cardinality cannot change.
+    pub fn weights_mut(&mut self) -> Option<&mut [f64]> {
+        self.weights.as_deref_mut()
+    }
+
+    /// Replace rational weights after checking pole cardinality.
+    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
+        if let Some(values) = &weights {
+            require_length("weights", values.len(), self.control_points.len())?;
+        }
+        self.weights = weights;
+        Ok(())
+    }
+
+    /// Whether the carrier's oriented normal is reversed.
+    pub const fn normal_reversed(&self) -> bool {
+        self.normal_reversed
+    }
+
+    /// Set whether the carrier's oriented normal is reversed.
+    pub fn set_normal_reversed(&mut self, value: bool) {
+        self.normal_reversed = value;
+    }
+
+    /// Whether the surface is periodic in u.
+    pub const fn u_periodic(&self) -> bool {
+        self.u_periodic
+    }
+
+    /// Set whether the surface is periodic in u.
+    pub fn set_u_periodic(&mut self, value: bool) {
+        self.u_periodic = value;
+    }
+
+    /// Whether the surface is periodic in v.
+    pub const fn v_periodic(&self) -> bool {
+        self.v_periodic
+    }
+
+    /// Set whether the surface is periodic in v.
+    pub fn set_v_periodic(&mut self, value: bool) {
+        self.v_periodic = value;
+    }
+
+    /// Exchange the u and v parameter axes and transpose pole storage.
+    pub fn transpose_parameter_axes(&mut self) {
+        let old_u = self.u_count as usize;
+        let old_v = self.v_count as usize;
+        let old_points = std::mem::take(&mut self.control_points);
+        let old_weights = std::mem::take(&mut self.weights);
+        self.control_points = Vec::with_capacity(old_points.len());
+        self.weights = old_weights
+            .as_ref()
+            .map(|_| Vec::with_capacity(old_points.len()));
+        for new_u in 0..old_v {
+            for new_v in 0..old_u {
+                let old_index = new_v * old_v + new_u;
+                self.control_points.push(old_points[old_index]);
+                if let (Some(source), Some(target)) = (&old_weights, &mut self.weights) {
+                    target.push(source[old_index]);
+                }
+            }
+        }
+        std::mem::swap(&mut self.u_degree, &mut self.v_degree);
+        std::mem::swap(&mut self.u_knots, &mut self.v_knots);
+        std::mem::swap(&mut self.u_count, &mut self.v_count);
+        std::mem::swap(&mut self.u_periodic, &mut self.v_periodic);
+    }
+}
+
+impl<'de> Deserialize<'de> for NurbsSurface {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            u_degree: u32,
+            v_degree: u32,
+            u_knots: Vec<f64>,
+            v_knots: Vec<f64>,
+            u_count: u32,
+            v_count: u32,
+            control_points: Vec<Point3>,
+            #[serde(default)]
+            weights: Option<Vec<f64>>,
+            #[serde(default)]
+            normal_reversed: bool,
+            u_periodic: bool,
+            v_periodic: bool,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(
+            wire.u_degree,
+            wire.v_degree,
+            wire.u_knots,
+            wire.v_knots,
+            wire.u_count,
+            wire.v_count,
+            wire.control_points,
+            wire.weights,
+            wire.normal_reversed,
+            wire.u_periodic,
+            wire.v_periodic,
+        )
+        .map_err(serde::de::Error::custom)
+    }
 }
 
 /// Fixed parameter axis used to extract an isoparametric surface curve.
@@ -231,20 +505,127 @@ pub enum SurfaceParameterAxis {
 }
 
 /// A NURBS curve knot/pole payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NurbsCurve {
     /// Curve degree.
-    pub degree: u32,
+    degree: u32,
     /// Full knot vector.
-    pub knots: Vec<f64>,
+    knots: Vec<f64>,
     /// Control points in parameter order.
-    pub control_points: Vec<Point3>,
+    control_points: Vec<Point3>,
     /// Per-pole weights; `None` denotes non-rational.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub weights: Option<Vec<f64>>,
+    weights: Option<Vec<f64>>,
     /// Whether the curve is periodic.
-    pub periodic: bool,
+    periodic: bool,
+}
+
+impl NurbsCurve {
+    /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.
+    pub fn new(
+        degree: u32,
+        knots: Vec<f64>,
+        control_points: Vec<Point3>,
+        weights: Option<Vec<f64>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(
+            degree,
+            knots.len(),
+            control_points.len(),
+            weights.as_ref().map(Vec::len),
+            "control_points",
+        )?;
+        Ok(Self {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        })
+    }
+
+    /// Curve degree.
+    pub const fn degree(&self) -> u32 {
+        self.degree
+    }
+
+    /// Full knot vector.
+    pub fn knots(&self) -> &[f64] {
+        &self.knots
+    }
+
+    /// Mutable knot values. The cardinality cannot change.
+    pub fn knots_mut(&mut self) -> &mut [f64] {
+        &mut self.knots
+    }
+
+    /// Control points in parameter order.
+    pub fn control_points(&self) -> &[Point3] {
+        &self.control_points
+    }
+
+    /// Mutable control-point values. The cardinality cannot change.
+    pub fn control_points_mut(&mut self) -> &mut [Point3] {
+        &mut self.control_points
+    }
+
+    /// Rational weights in pole order.
+    pub fn weights(&self) -> Option<&[f64]> {
+        self.weights.as_deref()
+    }
+
+    /// Mutable rational weight values. The cardinality cannot change.
+    pub fn weights_mut(&mut self) -> Option<&mut [f64]> {
+        self.weights.as_deref_mut()
+    }
+
+    /// Replace rational weights after checking pole cardinality.
+    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
+        if let Some(values) = &weights {
+            require_length("weights", values.len(), self.control_points.len())?;
+        }
+        self.weights = weights;
+        Ok(())
+    }
+
+    /// Whether the curve is periodic.
+    pub const fn periodic(&self) -> bool {
+        self.periodic
+    }
+
+    /// Set whether the curve is periodic.
+    pub fn set_periodic(&mut self, value: bool) {
+        self.periodic = value;
+    }
+}
+
+impl<'de> Deserialize<'de> for NurbsCurve {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            degree: u32,
+            knots: Vec<f64>,
+            control_points: Vec<Point3>,
+            #[serde(default)]
+            weights: Option<Vec<f64>>,
+            periodic: bool,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(
+            wire.degree,
+            wire.knots,
+            wire.control_points,
+            wire.weights,
+            wire.periodic,
+        )
+        .map_err(serde::de::Error::custom)
+    }
 }
 
 /// True when each knot is at least as large as the previous (repeats allowed).
@@ -6643,20 +7024,10 @@ pub enum PcurveGeometry {
     },
     /// Polar angle and axial coordinate obtained from a rational NURBS vector.
     PolarNurbs {
-        /// Polynomial degree shared by every component.
-        degree: u32,
-        /// Expanded nondecreasing knot vector.
-        knots: Vec<f64>,
-        /// Euclidean radial-plane control points.
-        radial_control_points: Vec<Point2>,
-        /// Axial control values paired with `radial_control_points`.
-        axial_control_points: Vec<f64>,
-        /// Optional positive rational weights shared by every component.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        weights: Option<Vec<f64>>,
-        /// Whether the NURBS parameterization is periodic.
-        #[serde(default)]
-        periodic: bool,
+        /// Checked polar NURBS payload.
+        #[serde(flatten)]
+        #[cfg_attr(feature = "schema", schemars(flatten, with = "PolarPcurveNurbsWire"))]
+        nurbs: PolarPcurveNurbs,
     },
     /// Great-circle locus in a sphere's azimuth/latitude parameter chart.
     SphericalGreatCircle {
@@ -6737,18 +7108,10 @@ pub enum PcurveGeometry {
     },
     /// A free-form NURBS curve in parameter space (control points are (u, v)).
     Nurbs {
-        /// Curve degree.
-        degree: u32,
-        /// Full knot vector.
-        knots: Vec<f64>,
-        /// Control points in (u, v) parameter space.
-        control_points: Vec<Point2>,
-        /// Per-pole weights; `None` denotes non-rational.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        weights: Option<Vec<f64>>,
-        /// Whether the parameter-space curve is periodic.
-        #[serde(default)]
-        periodic: bool,
+        /// Checked parameter-space NURBS payload.
+        #[serde(flatten)]
+        #[cfg_attr(feature = "schema", schemars(flatten))]
+        nurbs: PcurveNurbs,
     },
     /// Affine replica of a parent pcurve in the same parameter space.
     Transformed {
@@ -6776,6 +7139,280 @@ pub enum PcurveGeometry {
         /// Exact basis geometry.
         basis: Box<PcurveGeometry>,
     },
+}
+
+/// One paired radial and axial pole of a polar parameter-space NURBS.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PolarNurbsPole {
+    /// Euclidean radial-plane pole.
+    pub radial: Point2,
+    /// Axial pole value.
+    pub axial: f64,
+}
+
+/// Checked polar parameter-space NURBS payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PolarPcurveNurbs {
+    degree: u32,
+    knots: Vec<f64>,
+    poles: Vec<PolarNurbsPole>,
+    weights: Option<Vec<f64>>,
+    periodic: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct PolarPcurveNurbsWire {
+    degree: u32,
+    knots: Vec<f64>,
+    radial_control_points: Vec<Point2>,
+    axial_control_points: Vec<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    weights: Option<Vec<f64>>,
+    #[serde(default)]
+    periodic: bool,
+}
+
+impl PolarPcurveNurbs {
+    /// Build a polar NURBS with paired radial and axial poles.
+    pub fn new(
+        degree: u32,
+        knots: Vec<f64>,
+        radial_control_points: Vec<Point2>,
+        axial_control_points: Vec<f64>,
+        weights: Option<Vec<f64>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_length(
+            "axial_control_points",
+            axial_control_points.len(),
+            radial_control_points.len(),
+        )?;
+        require_curve_cardinality(
+            degree,
+            knots.len(),
+            radial_control_points.len(),
+            weights.as_ref().map(Vec::len),
+            "radial_control_points",
+        )?;
+        if degree == 0 {
+            return Err(NurbsError("polar NURBS degree must be positive".into()));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles: radial_control_points
+                .into_iter()
+                .zip(axial_control_points)
+                .map(|(radial, axial)| PolarNurbsPole { radial, axial })
+                .collect(),
+            weights,
+            periodic,
+        })
+    }
+
+    /// Polynomial degree shared by every component.
+    pub const fn degree(&self) -> u32 {
+        self.degree
+    }
+
+    /// Expanded knot vector.
+    pub fn knots(&self) -> &[f64] {
+        &self.knots
+    }
+
+    /// Mutable knot values. The cardinality cannot change.
+    pub fn knots_mut(&mut self) -> &mut [f64] {
+        &mut self.knots
+    }
+
+    /// Paired radial and axial poles.
+    pub fn poles(&self) -> &[PolarNurbsPole] {
+        &self.poles
+    }
+
+    /// Mutable paired poles. The cardinality cannot change.
+    pub fn poles_mut(&mut self) -> &mut [PolarNurbsPole] {
+        &mut self.poles
+    }
+
+    /// Rational weights in pole order.
+    pub fn weights(&self) -> Option<&[f64]> {
+        self.weights.as_deref()
+    }
+
+    /// Mutable rational weight values. The cardinality cannot change.
+    pub fn weights_mut(&mut self) -> Option<&mut [f64]> {
+        self.weights.as_deref_mut()
+    }
+
+    /// Replace rational weights after checking pole cardinality.
+    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
+        if let Some(values) = &weights {
+            require_length("weights", values.len(), self.poles.len())?;
+        }
+        self.weights = weights;
+        Ok(())
+    }
+
+    /// Whether the NURBS parameterization is periodic.
+    pub const fn periodic(&self) -> bool {
+        self.periodic
+    }
+}
+
+impl Serialize for PolarPcurveNurbs {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        PolarPcurveNurbsWire {
+            degree: self.degree,
+            knots: self.knots.clone(),
+            radial_control_points: self.poles.iter().map(|pole| pole.radial).collect(),
+            axial_control_points: self.poles.iter().map(|pole| pole.axial).collect(),
+            weights: self.weights.clone(),
+            periodic: self.periodic,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PolarPcurveNurbs {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = PolarPcurveNurbsWire::deserialize(deserializer)?;
+        Self::new(
+            wire.degree,
+            wire.knots,
+            wire.radial_control_points,
+            wire.axial_control_points,
+            wire.weights,
+            wire.periodic,
+        )
+        .map_err(serde::de::Error::custom)
+    }
+}
+
+/// Checked parameter-space NURBS payload.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct PcurveNurbs {
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<Point2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    weights: Option<Vec<f64>>,
+    #[serde(default)]
+    periodic: bool,
+}
+
+impl PcurveNurbs {
+    /// Build a parameter-space NURBS with consistent cardinalities.
+    pub fn new(
+        degree: u32,
+        knots: Vec<f64>,
+        control_points: Vec<Point2>,
+        weights: Option<Vec<f64>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(
+            degree,
+            knots.len(),
+            control_points.len(),
+            weights.as_ref().map(Vec::len),
+            "control_points",
+        )?;
+        if degree == 0 {
+            return Err(NurbsError("pcurve NURBS degree must be positive".into()));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        })
+    }
+
+    /// Curve degree.
+    pub const fn degree(&self) -> u32 {
+        self.degree
+    }
+
+    /// Full knot vector.
+    pub fn knots(&self) -> &[f64] {
+        &self.knots
+    }
+
+    /// Mutable knot values. The cardinality cannot change.
+    pub fn knots_mut(&mut self) -> &mut [f64] {
+        &mut self.knots
+    }
+
+    /// Control points in parameter order.
+    pub fn control_points(&self) -> &[Point2] {
+        &self.control_points
+    }
+
+    /// Mutable control-point values. The cardinality cannot change.
+    pub fn control_points_mut(&mut self) -> &mut [Point2] {
+        &mut self.control_points
+    }
+
+    /// Rational weights in pole order.
+    pub fn weights(&self) -> Option<&[f64]> {
+        self.weights.as_deref()
+    }
+
+    /// Mutable rational weight values. The cardinality cannot change.
+    pub fn weights_mut(&mut self) -> Option<&mut [f64]> {
+        self.weights.as_deref_mut()
+    }
+
+    /// Replace rational weights after checking pole cardinality.
+    pub fn set_weights(&mut self, weights: Option<Vec<f64>>) -> Result<(), NurbsError> {
+        if let Some(values) = &weights {
+            require_length("weights", values.len(), self.control_points.len())?;
+        }
+        self.weights = weights;
+        Ok(())
+    }
+
+    /// Whether the parameter-space curve is periodic.
+    pub const fn periodic(&self) -> bool {
+        self.periodic
+    }
+}
+
+impl<'de> Deserialize<'de> for PcurveNurbs {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            degree: u32,
+            knots: Vec<f64>,
+            control_points: Vec<Point2>,
+            #[serde(default)]
+            weights: Option<Vec<f64>>,
+            #[serde(default)]
+            periodic: bool,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(
+            wire.degree,
+            wire.knots,
+            wire.control_points,
+            wire.weights,
+            wire.periodic,
+        )
+        .map_err(serde::de::Error::custom)
+    }
 }
 
 impl PcurveGeometry {

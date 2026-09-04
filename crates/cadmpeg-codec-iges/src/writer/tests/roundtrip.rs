@@ -361,12 +361,11 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("procedural line generatrix pcurve");
     let source = super::super::source_pcurve(original.ir(), pcurve)
         .expect("procedural pcurve source-domain mapping");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = &source.geometry
-    else {
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };
-    assert!((control_points[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
-    assert!((control_points[0].v - 0.3).abs() < EPS_PCURVE_SOURCE_DOMAIN);
+    assert!((nurbs.control_points()[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
+    assert!((nurbs.control_points()[0].v - 0.3).abs() < EPS_PCURVE_SOURCE_DOMAIN);
 
     let mut source_without_record_bounds = original.ir().clone();
     for procedural in &mut source_without_record_bounds.model.procedural_surfaces {
@@ -379,12 +378,11 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("procedural line generatrix pcurve without record bounds");
     let source = super::super::source_pcurve(&source_without_record_bounds, pcurve)
         .expect("derive the line carrier interval from its edge");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = &source.geometry
-    else {
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };
-    assert!((control_points[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
-    assert!((control_points[0].v - 0.3).abs() < EPS_PCURVE_SOURCE_DOMAIN);
+    assert!((nurbs.control_points()[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
+    assert!((nurbs.control_points()[0].v - 0.3).abs() < EPS_PCURVE_SOURCE_DOMAIN);
 }
 
 #[test]
@@ -425,8 +423,8 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
         else {
             panic!("{version:?}: expected a NURBS carrier");
         };
-        assert_eq!(nurbs.degree, 0, "{version:?}");
-        assert_eq!(nurbs.control_points.len(), 1, "{version:?}");
+        assert_eq!(nurbs.degree(), 0, "{version:?}");
+        assert_eq!(nurbs.control_points().len(), 1, "{version:?}");
         assert_eq!(
             round_trip.ir().model.curves[0].geometry,
             original.ir().model.curves[0].geometry,
@@ -483,9 +481,13 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, 
         else {
             panic!("{version:?}: expected a NURBS surface carrier");
         };
-        assert_eq!((surface.u_degree, surface.v_degree), (0, 0), "{version:?}");
         assert_eq!(
-            (surface.u_count, surface.v_count),
+            (surface.u_degree(), surface.v_degree()),
+            (0, 0),
+            "{version:?}"
+        );
+        assert_eq!(
+            (surface.u_count(), surface.v_count()),
             expected_counts,
             "{version:?}"
         );

@@ -547,17 +547,13 @@ pub(super) fn project(
                     distances,
                     control_range,
                 };
-                (
-                    distances[0],
-                    Some(law),
-                    CurveGeometry::Nurbs(NurbsCurve {
-                        degree: 1,
-                        knots: vec![start, start, end, end],
-                        control_points: controls,
-                        weights: None,
-                        periodic: false,
-                    }),
-                )
+                let Ok(offset_nurbs) =
+                    NurbsCurve::new(1, vec![start, start, end, end], controls, None, false)
+                else {
+                    losses.push(entity_loss(entry, "linear offset carrier is inconsistent"));
+                    continue;
+                };
+                (distances[0], Some(law), CurveGeometry::Nurbs(offset_nurbs))
             }
             3 => {
                 let Some(function_sequence) = record
@@ -606,7 +602,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                if function_nurbs.weights.is_some() || function_nurbs.degree == 0 {
+                if function_nurbs.weights().is_some() || function_nurbs.degree() == 0 {
                     losses.push(entity_loss(
                         entry,
                         "offset function is rational or degree zero",
@@ -639,14 +635,14 @@ pub(super) fn project(
                 };
                 let function_range = independent_range
                     .map(|value| function_parameter_offset + function_parameter_scale * value);
-                let degree = function_nurbs.degree as usize;
-                let Some(domain_start) = function_nurbs.knots.get(degree).copied() else {
+                let degree = function_nurbs.degree() as usize;
+                let Some(domain_start) = function_nurbs.knots().get(degree).copied() else {
                     losses.push(entity_loss(entry, "offset function knot domain is missing"));
                     continue;
                 };
                 let Some(domain_end) = function_nurbs
-                    .knots
-                    .get(function_nurbs.knots.len().saturating_sub(degree + 1))
+                    .knots()
+                    .get(function_nurbs.knots().len().saturating_sub(degree + 1))
                     .copied()
                 else {
                     losses.push(entity_loss(entry, "offset function knot domain is missing"));
@@ -666,11 +662,11 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal.cross(*direction);
-                let mut controls = Vec::with_capacity(function_nurbs.control_points.len());
+                let mut controls = Vec::with_capacity(function_nurbs.control_points().len());
                 for (index, function_control) in
-                    function_nurbs.control_points.iter().copied().enumerate()
+                    function_nurbs.control_points().iter().copied().enumerate()
                 {
-                    let Some(function_parameter) = greville(&function_nurbs.knots, degree, index)
+                    let Some(function_parameter) = greville(function_nurbs.knots(), degree, index)
                     else {
                         losses.push(entity_loss(
                             entry,
@@ -693,7 +689,7 @@ pub(super) fn project(
                     };
                     controls.push(base.translated(offset_direction, distance));
                 }
-                if controls.len() != function_nurbs.control_points.len() {
+                if controls.len() != function_nurbs.control_points().len() {
                     losses.push(entity_loss(
                         entry,
                         "offset function controls cannot be composed",
@@ -701,7 +697,7 @@ pub(super) fn project(
                     continue;
                 }
                 let knots = function_nurbs
-                    .knots
+                    .knots()
                     .iter()
                     .map(|value| source_parameter(inverse_parameter(*value)))
                     .collect();
@@ -725,17 +721,16 @@ pub(super) fn project(
                     function_parameter_offset,
                     function_parameter_scale,
                 };
-                (
-                    distance,
-                    Some(law),
-                    CurveGeometry::Nurbs(NurbsCurve {
-                        degree: function_nurbs.degree,
-                        knots,
-                        control_points: controls,
-                        weights: None,
-                        periodic: false,
-                    }),
-                )
+                let Ok(offset_nurbs) =
+                    NurbsCurve::new(function_nurbs.degree(), knots, controls, None, false)
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset-function carrier is inconsistent",
+                    ));
+                    continue;
+                };
+                (distance, Some(law), CurveGeometry::Nurbs(offset_nurbs))
             }
             _ => {
                 losses.push(entity_loss(entry, "offset curve form is unsupported"));

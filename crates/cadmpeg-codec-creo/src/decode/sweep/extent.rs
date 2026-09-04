@@ -336,17 +336,17 @@ pub(in super::super) fn nurbs_translation_candidate(
 ) -> Option<ExtrusionCarrierSpan> {
     let (degree, count, knots, periodic) = if along_v {
         (
-            nurbs.v_degree,
-            nurbs.v_count,
-            nurbs.v_knots.as_slice(),
-            nurbs.v_periodic,
+            nurbs.v_degree(),
+            nurbs.v_count(),
+            nurbs.v_knots(),
+            nurbs.v_periodic(),
         )
     } else {
         (
-            nurbs.u_degree,
-            nurbs.u_count,
-            nurbs.u_knots.as_slice(),
-            nurbs.u_periodic,
+            nurbs.u_degree(),
+            nurbs.u_count(),
+            nurbs.u_knots(),
+            nurbs.u_periodic(),
         )
     };
     let [first, second, third, fourth] = knots else {
@@ -361,14 +361,8 @@ pub(in super::super) fn nurbs_translation_candidate(
         && third == fourth
         && first < third)
         .then_some(())?;
-    let u_count = usize::try_from(nurbs.u_count).ok()?;
-    let v_count = usize::try_from(nurbs.v_count).ok()?;
-    (u_count.checked_mul(v_count)? == nurbs.control_points.len()
-        && nurbs
-            .weights
-            .as_ref()
-            .is_none_or(|weights| weights.len() == nurbs.control_points.len()))
-    .then_some(())?;
+    let u_count = usize::try_from(nurbs.u_count()).ok()?;
+    let v_count = usize::try_from(nurbs.v_count()).ok()?;
     let pair_count = if along_v { u_count } else { v_count };
     let mut starts = Vec::with_capacity(pair_count);
     let mut vector: Option<[f64; 3]> = None;
@@ -378,8 +372,8 @@ pub(in super::super) fn nurbs_translation_candidate(
         } else {
             (index, v_count + index)
         };
-        let start = *nurbs.control_points.get(start_index)?;
-        let end = *nurbs.control_points.get(end_index)?;
+        let start = *nurbs.control_points().get(start_index)?;
+        let end = *nurbs.control_points().get(end_index)?;
         let start = [start.x, start.y, start.z];
         let end = [end.x, end.y, end.z];
         start
@@ -387,7 +381,7 @@ pub(in super::super) fn nurbs_translation_candidate(
             .chain(end)
             .all(f64::is_finite)
             .then_some(())?;
-        if let Some(weights) = &nurbs.weights {
+        if let Some(weights) = nurbs.weights() {
             let start_weight = *weights.get(start_index)?;
             let end_weight = *weights.get(end_index)?;
             (start_weight.is_finite()

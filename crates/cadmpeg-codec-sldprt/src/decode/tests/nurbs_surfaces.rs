@@ -38,9 +38,9 @@ fn faces_decode_nurbs_surface() {
             _ => None,
         })
         .expect("NURBS surface");
-    assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
-    assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
-    assert_eq!(nurbs.control_points.len(), 4);
+    assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
+    assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
+    assert_eq!(nurbs.control_points().len(), 4);
 }
 
 #[test]
@@ -65,12 +65,12 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
     let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
         panic!("compact counted NURBS surface");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
-    assert_eq!((surface.u_count, surface.v_count), (2, 2));
-    assert_eq!(surface.u_knots, [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points.len(), 4);
-    assert_eq!(surface.control_points[3].z, 500.0);
+    assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
+    assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.control_points().len(), 4);
+    assert_eq!(surface.control_points()[3].z, 500.0);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
@@ -328,8 +328,8 @@ fn surface_descriptor_uses_terminal_array_references() {
     else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.control_points[0].x, 10_000.0);
-    assert_eq!(surface.control_points[3].y, 1_000.0);
+    assert_eq!(surface.control_points()[0].x, 10_000.0);
+    assert_eq!(surface.control_points()[3].y, 1_000.0);
 }
 
 #[test]
@@ -361,7 +361,7 @@ fn faces_decode_markerless_nurbs_surface_arrays() {
             _ => None,
         })
         .expect("NURBS surface");
-    assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
+    assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
 }
 
 #[test]

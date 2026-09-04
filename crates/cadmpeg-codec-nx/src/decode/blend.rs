@@ -379,14 +379,10 @@ fn blend_surface_parameters_inner(
             .curves(spine.0.as_str())
             .and_then(|curve| match &curve.geometry {
                 CurveGeometry::Nurbs(nurbs) => {
-                    let degree = usize::try_from(nurbs.degree).ok()?;
-                    let count = nurbs.control_points.len();
-                    let knot_count = count.checked_add(degree)?.checked_add(1)?;
-                    if count <= degree || nurbs.knots.len() != knot_count {
-                        return Some(false);
-                    }
-                    let lower = *nurbs.knots.get(degree)?;
-                    let upper = *nurbs.knots.get(count)?;
+                    let degree = usize::try_from(nurbs.degree()).ok()?;
+                    let count = nurbs.control_points().len();
+                    let lower = *nurbs.knots().get(degree)?;
+                    let upper = *nurbs.knots().get(count)?;
                     Some(
                         lower.is_finite()
                             && upper.is_finite()
@@ -629,9 +625,9 @@ pub(crate) fn blend_surface_parameter_grid_with_index_and_budget(
     let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
         return None;
     };
-    let degree = usize::try_from(nurbs.degree).ok()?;
-    let count = nurbs.control_points.len();
-    let domain = [*nurbs.knots.get(degree)?, *nurbs.knots.get(count)?];
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let count = nurbs.control_points().len();
+    let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
     if !domain.into_iter().all(f64::is_finite) || domain[0] >= domain[1] {
         return None;
     }
@@ -794,9 +790,9 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
         .curves(spine.0.as_str())
         .and_then(|curve| match &curve.geometry {
             CurveGeometry::Nurbs(nurbs) => {
-                let degree = usize::try_from(nurbs.degree).ok()?;
-                let count = nurbs.control_points.len();
-                Some([*nurbs.knots.get(degree)?, *nurbs.knots.get(count)?])
+                let degree = usize::try_from(nurbs.degree()).ok()?;
+                let count = nurbs.control_points().len();
+                Some([*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?])
             }
             _ => None,
         });
@@ -2011,24 +2007,14 @@ const LOCAL_CONTACT_PCURVE_SEARCH_STEPS: usize = 12;
 const COARSE_CONTACT_PCURVE_SEARCH_INTERVALS: usize = 16;
 
 fn pcurve_domain(pcurve: &PcurveGeometry) -> Option<([f64; 2], bool)> {
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        periodic,
-        ..
-    } = pcurve
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
     };
-    let degree = usize::try_from(*degree).ok()?;
-    let count = control_points.len();
-    if count <= degree || knots.len() != count.checked_add(degree)?.checked_add(1)? {
-        return None;
-    }
-    let domain = [*knots.get(degree)?, *knots.get(count)?];
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let count = nurbs.control_points().len();
+    let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
     (domain[0].is_finite() && domain[1].is_finite() && domain[0] < domain[1])
-        .then_some((domain, *periodic))
+        .then_some((domain, nurbs.periodic()))
 }
 
 fn closest_pcurve_parameter_from_coarse_grid(
@@ -2094,39 +2080,35 @@ pub(crate) fn closest_pcurve_parameters(
     point: Point2,
     seed: Option<f64>,
 ) -> Option<Vec<f64>> {
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = pcurve
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
     };
-    let degree = usize::try_from(*degree).ok()?;
-    let count = control_points.len();
-    if count <= degree || knots.len() != count.checked_add(degree)?.checked_add(1)? {
-        return None;
-    }
-    let domain = [*knots.get(degree)?, *knots.get(count)?];
+    let degree = usize::try_from(nurbs.degree()).ok()?;
+    let count = nurbs.control_points().len();
+    let domain = [*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?];
     if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
         return None;
     }
     if seed.is_some_and(|seed| !seed.is_finite()) {
         return None;
     }
-    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, *periodic, seed));
-    let homogeneous =
-        homogeneous_pcurve_spans(degree, knots, control_points, weights.as_deref(), point)?;
-    let candidates = if degree != 1 || weights.is_some() {
+    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, nurbs.periodic(), seed));
+    let homogeneous = homogeneous_pcurve_spans(
+        degree,
+        nurbs.knots(),
+        nurbs.control_points(),
+        nurbs.weights(),
+        point,
+    )?;
+    let candidates = if degree != 1 || nurbs.weights().is_some() {
         let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
         closest_parameter_candidates(
             stationary_rational_distance_candidates(&homogeneous, search_seed, &geometry_budget)?,
             search_seed,
         )?
     } else {
-        let candidates = control_points
+        let candidates = nurbs
+            .control_points()
             .windows(2)
             .enumerate()
             .filter_map(|(index, segment)| {
@@ -2141,8 +2123,8 @@ pub(crate) fn closest_pcurve_parameters(
                     + (point.v - start.v) * direction.v)
                     / squared_length)
                     .clamp(0.0, 1.0);
-                let span_start = *knots.get(index + 1)?;
-                let span_end = *knots.get(index + 2)?;
+                let span_start = *nurbs.knots().get(index + 1)?;
+                let span_end = *nurbs.knots().get(index + 2)?;
                 if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
                     return None;
                 }
@@ -2161,7 +2143,10 @@ pub(crate) fn closest_pcurve_parameters(
         closest_parameter_candidates(candidates, search_seed)?
     };
     Some(lift_periodic_parameters(
-        candidates, domain, *periodic, seed,
+        candidates,
+        domain,
+        nurbs.periodic(),
+        seed,
     ))
 }
 
@@ -3736,14 +3721,11 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let count = curve.control_points.len();
-    if degree == 0
-        || count <= degree
-        || curve.knots.len() != count.checked_add(degree)?.checked_add(1)?
-        || curve.knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(&curve.knots)
-        || curve.control_points.iter().any(|control| {
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let count = curve.control_points().len();
+    if curve.knots().iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(curve.knots())
+        || curve.control_points().iter().any(|control| {
             !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
         })
         || !point.x.is_finite()
@@ -3752,34 +3734,33 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
     {
         return None;
     }
-    let domain = [*curve.knots.get(degree)?, *curve.knots.get(count)?];
+    let domain = [*curve.knots().get(degree)?, *curve.knots().get(count)?];
     if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
         return None;
     }
     if seed.is_some_and(|seed| !seed.is_finite()) {
         return None;
     }
-    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic, seed));
-    let weights = match &curve.weights {
+    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
+    let weights = match curve.weights() {
         Some(weights)
-            if weights.len() == count
-                && weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0) =>
+            if weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight > 0.0) =>
         {
-            weights.clone()
+            weights.to_vec()
         }
         Some(_) => return None,
         None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,
     };
     let coordinate_scale = curve
-        .control_points
+        .control_points()
         .iter()
         .flat_map(|control| [control.x, control.y, control.z])
         .chain([point.x, point.y, point.z])
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
     let controls = curve
-        .control_points
+        .control_points()
         .iter()
         .zip(weights)
         .map(|(control, weight)| {
@@ -3795,14 +3776,14 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
         return None;
     }
     let homogeneous = HomogeneousCurveSpans {
-        spans: bezier_spans(degree, &curve.knots, controls)?,
+        spans: bezier_spans(degree, curve.knots(), controls)?,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     };
     let parameters = closest_parameter_candidates(
         stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)?,
         search_seed,
     )?;
-    lift_periodic_parameters(parameters, domain, curve.periodic, seed)
+    lift_periodic_parameters(parameters, domain, curve.periodic(), seed)
         .into_iter()
         .next()
 }

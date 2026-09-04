@@ -59,9 +59,9 @@ fn support_pcurve_mapping_requires_a_finite_nonzero_pcurve_interval() {
 #[test]
 fn exact_geometry_scalars_require_finite_nonzero_values_without_a_size_floor() {
     let tiny = 1e-200;
-    assert!(nurbs_weights_valid(Some(&[tiny, -tiny]), 2));
-    assert!(!nurbs_weights_valid(Some(&[tiny, 0.0]), 2));
-    assert!(!nurbs_weights_valid(Some(&[tiny, f64::NAN]), 2));
+    assert!(nurbs_weights_valid(Some(&[tiny, -tiny])));
+    assert!(!nurbs_weights_valid(Some(&[tiny, 0.0])));
+    assert!(!nurbs_weights_valid(Some(&[tiny, f64::NAN])));
 
     assert!(pcurve_basis_is_valid(
         &PcurveGeometry::SphericalGreatCircle {

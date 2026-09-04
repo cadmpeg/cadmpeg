@@ -211,8 +211,8 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
     else {
         panic!("expected an exact rational ruled cache");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (4, 1));
-    assert!(surface.weights.is_some());
+    assert_eq!((surface.u_degree(), surface.v_degree()), (4, 1));
+    assert!(surface.weights().is_some());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
             && loss.message.contains("entity type 118")
@@ -246,42 +246,44 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
 
 #[test]
 fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
-    let first = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        weights: None,
-        periodic: false,
-    };
-    let second = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
-        control_points: vec![
+    let first = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("valid first rail");
+    let second = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 2.0, 0.0),
             Point3::new(2.0, 1.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .expect("valid second rail");
     let surface = super::ruled_surface_carrier(&first, &second, None)
         .expect("relative-parameter rational ruled carrier");
-    assert_eq!((surface.u_degree, surface.v_degree), (3, 1));
-    assert_eq!((surface.u_count, surface.v_count), (4, 2));
+    assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
     for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
         let first_point = cadmpeg_ir::eval::nurbs_curve_point(
-            first.degree,
-            &first.knots,
-            &first.control_points,
-            first.weights.as_deref(),
+            first.degree(),
+            first.knots(),
+            first.control_points(),
+            first.weights(),
             u,
         )
         .expect("first rail point");
         let second_point = cadmpeg_ir::eval::nurbs_curve_point(
-            second.degree,
-            &second.knots,
-            &second.control_points,
-            second.weights.as_deref(),
+            second.degree(),
+            second.knots(),
+            second.control_points(),
+            second.weights(),
             2.0 * u,
         )
         .expect("second rail point");
@@ -298,46 +300,45 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
 
 #[test]
 fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
-    let first = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        control_points: vec![
+    let first = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.5, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
-    let second = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        weights: Some(vec![1.0, 0.5]),
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .expect("valid first rail");
+    let second = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        Some(vec![1.0, 0.5]),
+        false,
+    )
+    .expect("valid second rail");
     let surface = super::ruled_surface_carrier(&first, &second, None)
         .expect("partition-aligned rational ruled carrier");
-    assert_eq!((surface.u_degree, surface.v_degree), (2, 1));
-    assert_eq!((surface.u_count, surface.v_count), (5, 2));
-    assert_eq!(
-        surface.u_knots,
-        vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
-    );
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (5, 2));
+    assert_eq!(surface.u_knots(), [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]);
     for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
         let first_point = cadmpeg_ir::eval::nurbs_curve_point(
-            first.degree,
-            &first.knots,
-            &first.control_points,
-            first.weights.as_deref(),
+            first.degree(),
+            first.knots(),
+            first.control_points(),
+            first.weights(),
             u,
         )
         .expect("first rail point");
         let second_point = cadmpeg_ir::eval::nurbs_curve_point(
-            second.degree,
-            &second.knots,
-            &second.control_points,
-            second.weights.as_deref(),
+            second.degree(),
+            second.knots(),
+            second.control_points(),
+            second.weights(),
             u,
         )
         .expect("second rail point");
@@ -365,8 +366,8 @@ fn decode_projects_rational_circular_arc_length_ruled_surface() {
     else {
         panic!("expected an exact circular ruled cache");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (2, 1));
-    assert!(surface.weights.is_some());
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
+    assert!(surface.weights().is_some());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
             && loss.message.contains("entity type 118")
@@ -445,8 +446,8 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     else {
         panic!("expected an exact rational revolution cache");
     };
-    assert_eq!(surface.v_degree, 2);
-    assert_eq!(surface.weights.as_ref().unwrap().len(), 6);
+    assert_eq!(surface.v_degree(), 2);
+    assert_eq!(surface.weights().unwrap().len(), 6);
     let point =
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, std::f64::consts::FRAC_PI_4).unwrap();
     let expected = 0.5_f64.sqrt();
@@ -756,7 +757,7 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
     else {
         panic!("expected an exact rational revolution cache");
     };
-    assert_eq!(surface.control_points[0].x, 11.0);
+    assert_eq!(surface.control_points()[0].x, 11.0);
     let procedural = &result.ir().model.procedural_surfaces[0];
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
         directrix,
@@ -1381,11 +1382,11 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
     else {
         panic!("expected a NURBS surface carrier");
     };
-    assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
-    assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
+    assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
+    assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
     assert_eq!(
-        nurbs.control_points,
-        vec![
+        nurbs.control_points(),
+        [
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
             cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
@@ -1413,10 +1414,10 @@ fn decode_projects_a_degree_zero_bspline_surface() {
     let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
         panic!("expected a NURBS surface carrier");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (0, 0));
-    assert_eq!((surface.u_count, surface.v_count), (1, 1));
-    assert_eq!(surface.u_knots, vec![0.0, 1.0]);
-    assert_eq!(surface.v_knots, vec![0.0, 1.0]);
+    assert_eq!((surface.u_degree(), surface.v_degree()), (0, 0));
+    assert_eq!((surface.u_count(), surface.v_count()), (1, 1));
+    assert_eq!(surface.u_knots(), [0.0, 1.0]);
+    assert_eq!(surface.v_knots(), [0.0, 1.0]);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
         Some(Point3::new(1.0, 2.0, 3.0))
@@ -1438,8 +1439,8 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
     let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
         panic!("expected a NURBS surface carrier");
     };
-    assert_eq!((surface.u_degree, surface.v_degree), (0, 0));
-    assert_eq!((surface.u_count, surface.v_count), (2, 1));
+    assert_eq!((surface.u_degree(), surface.v_degree()), (0, 0));
+    assert_eq!((surface.u_count(), surface.v_count()), (2, 1));
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5),
         Some(Point3::new(1.0, 2.0, 3.0))
@@ -1501,21 +1502,22 @@ fn decode_enforces_type128_closure_flags_in_iges_4_and_5_0() {
 
 #[test]
 fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
-    let first = NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        weights: Some(vec![1.0, 1.0]),
-        periodic: false,
-    };
+    let first = NurbsCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        Some(vec![1.0, 1.0]),
+        false,
+    )
+    .expect("valid rational boundary");
     let mut scaled = first.clone();
-    scaled.weights = Some(vec![2.0, 2.0]);
+    scaled.weights_mut().unwrap().fill(2.0);
     assert_eq!(
         homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
         Some(true)
     );
 
-    scaled.control_points[1].x = 1.1;
+    scaled.control_points_mut()[1].x = 1.1;
     assert_eq!(
         homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
         Some(false)
@@ -1564,7 +1566,7 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
                     panic!("expected a NURBS surface carrier");
                 };
                 assert_eq!(
-                    surface.weights.as_deref(),
+                    surface.weights(),
                     Some([1.0, 1.0, 0.99, 1.0].as_slice())
                 );
             } else {

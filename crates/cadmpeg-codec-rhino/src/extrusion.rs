@@ -354,10 +354,10 @@ fn split_profiles(
 
 fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, GeometryError> {
     let curve = exact_nurbs(curve, offset)?;
-    if curve.control_points.len() < 2 || curve.degree == 0 {
+    if curve.control_points().len() < 2 || curve.degree() == 0 {
         return Err(error(offset, "extrusion profile closure is degenerate"));
     }
-    if curve.control_points.iter().any(|point| point.z != 0.0) {
+    if curve.control_points().iter().any(|point| point.z != 0.0) {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
     let domain = nurbs_curve_parameter_domain(&curve)
@@ -384,10 +384,10 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
         }
     }
 
-    let degree = usize::try_from(curve.degree)
+    let degree = usize::try_from(curve.degree())
         .map_err(|_| error(offset, "extrusion profile degree is too large"))?;
     let span_count = curve
-        .knots
+        .knots()
         .windows(2)
         .filter(|pair| pair[0] < pair[1] && pair[1] > domain[0] && pair[0] < domain[1])
         .count();
@@ -417,7 +417,7 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
 
     let mut previous = end;
     let mut twice_area = 0.0;
-    for pair in curve.knots.windows(2) {
+    for pair in curve.knots().windows(2) {
         let span_start = pair[0].max(domain[0]);
         let span_end = pair[1].min(domain[1]);
         if span_start >= span_end {
@@ -446,15 +446,15 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
 }
 
 fn source_periodic(curve: &NurbsCurve) -> bool {
-    if !curve.periodic || curve.degree <= 1 {
+    if !curve.periodic() || curve.degree() <= 1 {
         return false;
     }
-    let degree = curve.degree as usize;
-    curve.control_points.len() >= degree
+    let degree = curve.degree() as usize;
+    curve.control_points().len() >= degree
         && (0..degree).all(|offset| {
             points_coincident(
-                curve.control_points[degree - 1 - offset],
-                curve.control_points[curve.control_points.len() - 1 - offset],
+                curve.control_points()[degree - 1 - offset],
+                curve.control_points()[curve.control_points().len() - 1 - offset],
             )
         })
 }
@@ -465,10 +465,10 @@ fn evaluate_profile_point(
     offset: usize,
 ) -> Result<Point3, GeometryError> {
     nurbs_curve_point(
-        curve.degree,
-        &curve.knots,
-        &curve.control_points,
-        curve.weights.as_deref(),
+        curve.degree(),
+        curve.knots(),
+        curve.control_points(),
+        curve.weights(),
         parameter,
     )
     .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
@@ -490,7 +490,7 @@ fn points_coincident(first: Point3, second: Point3) -> bool {
 }
 
 fn require_profile_plane(curve: &NurbsCurve, offset: usize) -> Result<(), GeometryError> {
-    if curve.control_points.iter().any(|point| point.z != 0.0) {
+    if curve.control_points().iter().any(|point| point.z != 0.0) {
         return Err(error(offset, "extrusion profile is not in the XY plane"));
     }
     Ok(())
@@ -506,7 +506,7 @@ fn transform_nurbs(
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let mut result = curve.clone();
-    for point in &mut result.control_points {
+    for point in result.control_points_mut() {
         *point = transform_local(*point, origin, xaxis, yaxis, zaxis, miter, offset)?;
     }
     Ok(result)
@@ -557,8 +557,8 @@ fn cap_pcurve(
     frame: (Vector3, Vector3, Vector3),
     offset: usize,
 ) -> Result<CapPcurve, GeometryError> {
-    let mut points = Vec::with_capacity(curve.control_points.len());
-    for point in &curve.control_points {
+    let mut points = Vec::with_capacity(curve.control_points().len());
+    for point in curve.control_points() {
         let delta = point.vector_from(origin);
         let distance = delta.dot(frame.2);
         if distance.abs() > EPS_EXTRUSION_POSITION {
@@ -567,11 +567,11 @@ fn cap_pcurve(
         points.push(Point2::new(delta.dot(frame.0), delta.dot(frame.1)));
     }
     Ok(CapPcurve {
-        degree: curve.degree,
-        knots: curve.knots.clone(),
+        degree: curve.degree(),
+        knots: curve.knots().to_vec(),
         control_points: points,
-        weights: curve.weights.clone(),
-        periodic: curve.periodic,
+        weights: curve.weights().map(<[f64]>::to_vec),
+        periodic: curve.periodic(),
     })
 }
 
@@ -1210,13 +1210,16 @@ pub(crate) mod tests {
         }
         let count = points.len();
         DecodedCurve {
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: (0..count + 2).map(|value| value as f64).collect(),
-                control_points: points,
-                weights: None,
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    1,
+                    (0..count + 2).map(|value| value as f64).collect(),
+                    points,
+                    None,
+                    false,
+                )
+                .expect("valid polygon curve"),
+            ),
             compound: None,
             warnings: Vec::new(),
         }
@@ -1251,13 +1254,16 @@ pub(crate) mod tests {
             weights.reverse();
         }
         DecodedCurve {
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 2,
-                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
-                control_points: points,
-                weights: Some(weights),
-                periodic: false,
-            }),
+            geometry: CurveGeometry::Nurbs(
+                NurbsCurve::new(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
+                    points,
+                    Some(weights),
+                    false,
+                )
+                .expect("valid circle curve"),
+            ),
             compound: None,
             warnings: Vec::new(),
         }
@@ -1277,7 +1283,7 @@ pub(crate) mod tests {
             )
             .expect("required invariant");
             assert_eq!(decoded.boundaries.len(), 1);
-            assert_eq!(decoded.laterals[0].v_knots, vec![4.0, 4.0, 9.0, 9.0]);
+            assert_eq!(decoded.laterals[0].v_knots(), vec![4.0, 4.0, 9.0, 9.0]);
             assert_eq!(
                 decoded.caps,
                 if minor < 2 {
@@ -1319,7 +1325,7 @@ pub(crate) mod tests {
         .expect("required invariant");
         assert_eq!(decoded.cap_origins[0], Point3::new(254.0, 508.0, 825.5));
         assert_eq!(decoded.cap_origins[1], Point3::new(254.0, 508.0, 952.5));
-        let first = decoded.boundaries[0].start_nurbs.control_points[1];
+        let first = decoded.boundaries[0].start_nurbs.control_points()[1];
         assert_eq!(first, Point3::new(304.8, 508.0, 825.5));
         assert_eq!(decoded.direction, Vector3::new(0.0, 0.0, 127.0));
     }
@@ -1377,7 +1383,7 @@ pub(crate) mod tests {
         let CurveGeometry::Nurbs(curve) = &mut off_plane.geometry else {
             unreachable!()
         };
-        curve.control_points[1].z = 1.0;
+        curve.control_points_mut()[1].z = 1.0;
         assert!(exact_orientation(&off_plane, 0).is_err());
     }
 

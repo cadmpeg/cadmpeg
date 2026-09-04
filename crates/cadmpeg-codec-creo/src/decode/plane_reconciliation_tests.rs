@@ -15,6 +15,18 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+fn nurbs_curve(
+    degree: u32,
+    knots: Vec<f64>,
+    control_points: Vec<Point3>,
+    weights: Option<Vec<f64>>,
+) -> CurveGeometry {
+    CurveGeometry::Nurbs(
+        NurbsCurve::new(degree, knots, control_points, weights, false)
+            .expect("cardinality-valid test curve"),
+    )
+}
+
 #[test]
 fn topology_boundary_points_define_one_plane() {
     let plane = topology_bound_plane([
@@ -58,57 +70,53 @@ fn analytic_conic_boundary_defines_its_plane() {
 
 #[test]
 fn complete_nurbs_boundaries_supply_only_provable_plane_evidence() {
-    let planar = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let planar = nurbs_curve(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 2.0),
             Point3::new(1.0, 0.0, 2.0),
             Point3::new(1.0, 1.0, 2.0),
         ],
-        weights: None,
-        periodic: false,
-    });
+        None,
+    );
     let plane = analytic_curve_plane(&planar).expect("planar NURBS boundary");
     assert_eq!(plane.origin[2], 2.0);
     assert_eq!(plane.normal, [0.0, 0.0, 1.0]);
 
-    let nonplanar = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 3,
-        knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let nonplanar = nurbs_curve(
+        3,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 2.0),
             Point3::new(1.0, 0.0, 2.0),
             Point3::new(1.0, 1.0, 3.0),
             Point3::new(0.0, 1.0, 2.0),
         ],
-        weights: None,
-        periodic: false,
-    });
+        None,
+    );
     assert!(analytic_curve_plane(&nonplanar).is_none());
 
-    let line = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point3::new(0.0, 2.0, 4.0), Point3::new(3.0, 2.0, 4.0)],
-        weights: Some(vec![2.0, 1.0]),
-        periodic: false,
-    });
+    let line = nurbs_curve(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 2.0, 4.0), Point3::new(3.0, 2.0, 4.0)],
+        Some(vec![2.0, 1.0]),
+    );
     let line = analytic_boundary_line(&line).expect("degree-one NURBS line");
     assert_eq!(line.origin, [0.0, 2.0, 4.0]);
     assert_eq!(line.direction, [1.0, 0.0, 0.0]);
 
-    let bent = CurveGeometry::Nurbs(NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-        control_points: vec![
+    let bent = nurbs_curve(
+        1,
+        vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    });
+        None,
+    );
     assert!(analytic_boundary_line(&bent).is_none());
 }
 
@@ -266,10 +274,10 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
     ] {
         ir.model.curves.push(Curve {
             id: CurveId(format!("creo:visibgeom:curve#{id}")),
-            geometry: CurveGeometry::Nurbs(NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![
+            geometry: nurbs_curve(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
                     origin,
                     Point3::new(
                         origin.x + direction.x,
@@ -277,9 +285,8 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
                         origin.z + direction.z,
                     ),
                 ],
-                weights: None,
-                periodic: false,
-            }),
+                None,
+            ),
             source_object: None,
         });
     }

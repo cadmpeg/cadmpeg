@@ -905,8 +905,8 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
     else {
         panic!("free member curve must remain a transformed solved carrier");
     };
-    assert_eq!(curve.control_points[0].x, 11.0);
-    assert_eq!(curve.control_points[1].x, 12.0);
+    assert_eq!(curve.control_points()[0].x, 11.0);
+    assert_eq!(curve.control_points()[1].x, 12.0);
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 
@@ -968,8 +968,8 @@ pub(crate) fn nested_instance_composes_parent_child_and_records_outer_to_inner_p
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
         panic!("expected transformed NURBS");
     };
-    assert_eq!(nurbs.control_points[0].x, 12.0);
-    assert_eq!(nurbs.control_points[1].x, 14.0);
+    assert_eq!(nurbs.control_points()[0].x, 12.0);
+    assert_eq!(nurbs.control_points()[1].x, 14.0);
     assert_eq!(
         curve
             .source_object
@@ -1209,11 +1209,11 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     else {
         panic!("nonuniform circle must become NURBS");
     };
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.control_points[0].x, 2.0);
-    assert_eq!(nurbs.control_points[2].y, 1.0);
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.control_points()[0].x, 2.0);
+    assert_eq!(nurbs.control_points()[2].y, 1.0);
     assert_eq!(
-        nurbs.weights.as_ref().expect("required invariant")[1],
+        nurbs.weights().expect("required invariant")[1],
         std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());

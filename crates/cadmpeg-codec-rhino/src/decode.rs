@@ -6,7 +6,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
+    Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
     SurfaceGeometry,
 };
@@ -3614,9 +3614,9 @@ fn stage_extrusion_caps(
                 id
             };
             let endpoint = if cap == 0 {
-                boundary.start_nurbs.control_points.first().copied()
+                boundary.start_nurbs.control_points().first().copied()
             } else {
-                boundary.end_nurbs.control_points.first().copied()
+                boundary.end_nurbs.control_points().first().copied()
             };
             let Some(endpoint) = endpoint else {
                 return false;
@@ -3653,6 +3653,15 @@ fn stage_extrusion_caps(
             else {
                 return false;
             };
+            let Ok(nurbs) = PcurveNurbs::new(
+                pcurve.degree,
+                pcurve.knots.clone(),
+                pcurve.control_points.clone(),
+                pcurve.weights.clone(),
+                pcurve.periodic,
+            ) else {
+                return false;
+            };
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position: endpoint,
@@ -3673,13 +3682,7 @@ fn stage_extrusion_caps(
             });
             ir.model.pcurves.push(Pcurve {
                 id: pcurve_id.clone(),
-                geometry: PcurveGeometry::Nurbs {
-                    degree: pcurve.degree,
-                    knots: pcurve.knots.clone(),
-                    control_points: pcurve.control_points.clone(),
-                    weights: pcurve.weights.clone(),
-                    periodic: pcurve.periodic,
-                },
+                geometry: PcurveGeometry::Nurbs { nurbs },
                 metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                     None,
                     Some(parameter_range),
@@ -4559,8 +4562,8 @@ fn scale_plane_pcurves(staged: &mut BrepDraft, scale: f64) {
         if !plane_pcurves.contains(&pcurve.id.0) {
             continue;
         }
-        if let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry {
-            for pole in control_points {
+        if let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry {
+            for pole in nurbs.control_points_mut() {
                 pole.u *= scale;
                 pole.v *= scale;
             }
@@ -4826,8 +4829,9 @@ fn decode_pcurves(
             .and_then(|loop_record| raw.faces.get(loop_record.face as usize))
             .and_then(|face| plane_parameterizations.get(&face.surface).copied());
         let control_points = nurbs
-            .control_points
-            .into_iter()
+            .control_points()
+            .iter()
+            .copied()
             .map(|point| {
                 let point = Point2::new(point.x, point.y);
                 plane_parameterization.map_or(point, |map| map.map_point(point))
@@ -4835,15 +4839,19 @@ fn decode_pcurves(
             .collect();
         let id: cadmpeg_ir::ids::PcurveId =
             format!("rhino:object:pcurve#{key}.trim-{index}").into();
+        let Ok(nurbs) = PcurveNurbs::new(
+            nurbs.degree(),
+            nurbs.knots().to_vec(),
+            control_points,
+            nurbs.weights().map(<[f64]>::to_vec),
+            nurbs.periodic(),
+        ) else {
+            warnings.push(format!("trim {index} C2 has an invalid NURBS shape"));
+            continue;
+        };
         values.push(Pcurve {
             id: id.clone(),
-            geometry: PcurveGeometry::Nurbs {
-                degree: nurbs.degree,
-                knots: nurbs.knots,
-                control_points,
-                weights: nurbs.weights,
-                periodic: nurbs.periodic,
-            },
+            geometry: PcurveGeometry::Nurbs { nurbs },
             metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
                 Some(trim.proxy_reversed != 0),
                 Some(trim.domain.0),
@@ -5235,7 +5243,7 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
     let geometry = std::mem::replace(&mut curve.geometry, CurveGeometry::Unknown { record: None });
     curve.geometry = match geometry {
         CurveGeometry::Nurbs(mut nurbs) => {
-            for pole in &mut nurbs.control_points {
+            for pole in nurbs.control_points_mut() {
                 *pole = transform.apply_point(*pole);
             }
             CurveGeometry::Nurbs(nurbs)
@@ -5258,7 +5266,7 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             };
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
-            for pole in &mut nurbs.control_points {
+            for pole in nurbs.control_points_mut() {
                 *pole = transform.apply_point(*pole);
             }
             CurveGeometry::Nurbs(nurbs)
@@ -5312,7 +5320,7 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     );
     surface.geometry = match geometry {
         SurfaceGeometry::Nurbs(mut nurbs) => {
-            for pole in &mut nurbs.control_points {
+            for pole in nurbs.control_points_mut() {
                 *pole = transform.apply_point(*pole);
             }
             SurfaceGeometry::Nurbs(nurbs)

@@ -1762,26 +1762,27 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
 
 #[test]
 fn spline_extrusion_preserves_directrix_basis_and_weights() {
-    let directrix = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let directrix = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(4.0, 5.0, 6.0),
             Point3::new(7.0, 8.0, 9.0),
         ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .expect("valid directrix");
     let surface =
         extruded_nurbs_surface(&directrix, [0.0, 0.0, 4.0]).expect("valid extrusion surface");
 
-    assert_eq!((surface.u_degree, surface.v_degree), (2, 1));
-    assert_eq!((surface.u_count, surface.v_count), (3, 2));
-    assert_eq!(surface.u_knots, directrix.knots);
-    assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
+    assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
+    assert_eq!(surface.u_knots(), directrix.knots());
+    assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        surface.control_points,
+        surface.control_points(),
         [
             Point3::new(1.0, 2.0, 3.0),
             Point3::new(1.0, 2.0, 7.0),
@@ -1791,7 +1792,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
             Point3::new(7.0, 8.0, 13.0),
         ]
     );
-    assert_eq!(surface.weights, Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]));
+    assert_eq!(surface.weights(), Some(&[1.0, 1.0, 0.5, 0.5, 1.0, 1.0][..]));
 }
 
 #[test]

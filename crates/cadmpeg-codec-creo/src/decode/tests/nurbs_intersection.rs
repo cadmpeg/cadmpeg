@@ -168,13 +168,16 @@ fn source_ir() -> CadIr {
     let y = 5.0_f64.sqrt();
     ir.model.curves.push(Curve {
         id: CurveId("creo:visibgeom:curve#10".to_string()),
-        geometry: CurveGeometry::Nurbs(NurbsCurve {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point3::new(2.0, y, 0.0), Point3::new(2.0, y, 5.0)],
-            weights: None,
-            periodic: false,
-        }),
+        geometry: CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(2.0, y, 0.0), Point3::new(2.0, y, 5.0)],
+                None,
+                false,
+            )
+            .expect("valid intersection witness curve"),
+        ),
         source_object: None,
     });
     ir

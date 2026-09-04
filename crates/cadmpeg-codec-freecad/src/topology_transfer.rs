@@ -7,8 +7,8 @@ use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -248,10 +248,12 @@ impl<'a> Builder<'a> {
                     .surface
                     .and_then(|surface| self.tables.surfaces.get(surface - 1))
                     .map(surface_parameter_affine);
-                let primary_geometry = transformed_pcurve_geometry(
-                    pcurve_geometry(&self.tables.curve2ds[representation.primary - 1]),
-                    parameter_affine,
-                );
+                let Some(primary_geometry) =
+                    pcurve_geometry(&self.tables.curve2ds[representation.primary - 1])
+                        .map(|geometry| transformed_pcurve_geometry(geometry, parameter_affine))
+                else {
+                    continue;
+                };
                 let primary_range = normalize_pcurve_parameter_range(
                     &primary_geometry,
                     representation.parameter_range,
@@ -266,10 +268,13 @@ impl<'a> Builder<'a> {
                     ),
                 });
                 if let Some(secondary) = representation.secondary {
-                    let secondary_geometry = transformed_pcurve_geometry(
-                        pcurve_geometry(&self.tables.curve2ds[secondary - 1]),
-                        parameter_affine,
-                    );
+                    let Some(secondary_geometry) =
+                        pcurve_geometry(&self.tables.curve2ds[secondary - 1]).map(|geometry| {
+                            transformed_pcurve_geometry(geometry, parameter_affine)
+                        })
+                    else {
+                        continue;
+                    };
                     let secondary_range = normalize_pcurve_parameter_range(
                         &secondary_geometry,
                         representation.parameter_range,
@@ -1256,7 +1261,7 @@ impl<'a> Builder<'a> {
         } else {
             representation.primary
         };
-        let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]);
+        let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1])?;
         let parameter_range =
             normalize_pcurve_parameter_range(&geometry, representation.parameter_range);
         Some((
@@ -1292,11 +1297,13 @@ fn normalize_pcurve_parameter_range(
 ) -> Option<[f64; 2]> {
     let mut range = range?;
     let domain = match geometry {
-        PcurveGeometry::Nurbs { degree, knots, .. } => {
-            let degree = usize::try_from(*degree).ok()?;
+        PcurveGeometry::Nurbs { nurbs } => {
+            let degree = usize::try_from(nurbs.degree()).ok()?;
             [
-                *knots.get(degree)?,
-                *knots.get(knots.len().checked_sub(degree + 1)?)?,
+                *nurbs.knots().get(degree)?,
+                *nurbs
+                    .knots()
+                    .get(nurbs.knots().len().checked_sub(degree + 1)?)?,
             ]
         }
         PcurveGeometry::Trimmed {
@@ -1386,8 +1393,8 @@ fn positive_tolerance(value: f64) -> Option<f64> {
     (value.is_finite() && value > 0.0).then_some(value)
 }
 
-pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> PcurveGeometry {
-    match curve {
+pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> Option<PcurveGeometry> {
+    Some(match curve {
         TextCurve2d::Line { origin, direction } => PcurveGeometry::Line {
             origin: *origin,
             direction: *direction,
@@ -1441,11 +1448,14 @@ pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> PcurveGeometry {
             minor_radius: *minor_radius,
         },
         TextCurve2d::Nurbs(nurbs) => PcurveGeometry::Nurbs {
-            degree: nurbs.degree,
-            knots: nurbs.knots.clone(),
-            control_points: nurbs.control_points.clone(),
-            weights: nurbs.weights.clone(),
-            periodic: nurbs.periodic,
+            nurbs: PcurveNurbs::new(
+                nurbs.degree,
+                nurbs.knots.clone(),
+                nurbs.control_points.clone(),
+                nurbs.weights.clone(),
+                nurbs.periodic,
+            )
+            .ok()?,
         },
         TextCurve2d::Trimmed {
             parameter_range,
@@ -1453,13 +1463,13 @@ pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> PcurveGeometry {
         } => PcurveGeometry::Trimmed {
             parameter_range: *parameter_range,
             same_sense: true,
-            basis: Box::new(pcurve_geometry(basis)),
+            basis: Box::new(pcurve_geometry(basis)?),
         },
         TextCurve2d::Offset { distance, basis } => PcurveGeometry::Offset {
             distance: *distance,
-            basis: Box::new(pcurve_geometry(basis)),
+            basis: Box::new(pcurve_geometry(basis)?),
         },
-    }
+    })
 }
 
 #[derive(Clone, Copy)]

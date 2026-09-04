@@ -96,9 +96,9 @@ fn edge_uses_decode_nurbs_curve() {
             _ => None,
         })
         .expect("NURBS curve");
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.control_points.len(), 3);
-    assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.control_points().len(), 3);
+    assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
 }
 
 #[test]
@@ -130,8 +130,8 @@ fn edge_uses_decode_typed_reference_nurbs_curve() {
             _ => None,
         })
         .expect("NURBS curve");
-    assert_eq!(nurbs.degree, 2);
-    assert_eq!(nurbs.control_points.len(), 3);
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(nurbs.control_points().len(), 3);
 }
 
 #[test]

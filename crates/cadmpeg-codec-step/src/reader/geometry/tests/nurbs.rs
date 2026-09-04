@@ -41,17 +41,20 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
             .unwrap_or_else(|| panic!("missing NURBS curve {id}"))
     };
     assert_eq!(
-        nurbs("step:data:curve#4").knots,
+        nurbs("step:data:curve#4").knots(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
-    assert_eq!(nurbs("step:data:curve#5").knots, [-1.0, 0.0, 1.0, 2.0, 3.0]);
     assert_eq!(
-        nurbs("step:data:curve#6").knots,
+        nurbs("step:data:curve#5").knots(),
+        [-1.0, 0.0, 1.0, 2.0, 3.0]
+    );
+    assert_eq!(
+        nurbs("step:data:curve#6").knots(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
     let rational = nurbs("step:data:curve#7");
-    assert_eq!(rational.knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(rational.weights.as_deref(), Some(&[1.0, 0.5, 1.0][..]));
+    assert_eq!(rational.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(rational.weights(), Some(&[1.0, 0.5, 1.0][..]));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -86,19 +89,28 @@ fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
             })
             .unwrap_or_else(|| panic!("missing NURBS surface {id}"))
     };
-    assert_eq!(nurbs("step:data:surface#10").u_knots, [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        nurbs("step:data:surface#10").v_knots,
+        nurbs("step:data:surface#10").u_knots(),
+        [0.0, 0.0, 1.0, 1.0]
+    );
+    assert_eq!(
+        nurbs("step:data:surface#10").v_knots(),
         [0.0, 0.0, 1.0, 2.0, 2.0]
     );
-    assert_eq!(nurbs("step:data:surface#11").u_knots, [-1.0, 0.0, 1.0, 2.0]);
     assert_eq!(
-        nurbs("step:data:surface#11").v_knots,
+        nurbs("step:data:surface#11").u_knots(),
+        [-1.0, 0.0, 1.0, 2.0]
+    );
+    assert_eq!(
+        nurbs("step:data:surface#11").v_knots(),
         [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]
     );
-    assert_eq!(nurbs("step:data:surface#12").u_knots, [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        nurbs("step:data:surface#12").v_knots,
+        nurbs("step:data:surface#12").u_knots(),
+        [0.0, 0.0, 1.0, 1.0]
+    );
+    assert_eq!(
+        nurbs("step:data:surface#12").v_knots(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -129,12 +141,9 @@ fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
     let SurfaceGeometry::Nurbs(nurbs) = &surface.geometry else {
         panic!("complex rational surface is not NURBS")
     };
-    assert_eq!(nurbs.u_knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(nurbs.v_knots, [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(
-        nurbs.weights.as_deref(),
-        Some(&[1.0, 0.5, 1.0, 0.5, 1.0, 1.0][..])
-    );
+    assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(nurbs.weights(), Some(&[1.0, 0.5, 1.0, 0.5, 1.0, 1.0][..]));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

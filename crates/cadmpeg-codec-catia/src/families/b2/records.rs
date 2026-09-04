@@ -2029,13 +2029,7 @@ fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Nurbs
     Some(B2NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: NurbsCurve {
-            degree,
-            knots,
-            control_points,
-            weights: Some(weights),
-            periodic: false,
-        },
+        geometry: NurbsCurve::new(degree, knots, control_points, Some(weights), false).ok()?,
     })
 }
 
@@ -3227,10 +3221,10 @@ pub fn offset_support_carriers(
                     let SurfaceGeometry::Nurbs(surface) = &carrier.geometry else {
                         return None;
                     };
-                    let u_min = *surface.u_knots.first()?;
-                    let u_max = *surface.u_knots.last()?;
-                    let v_min = *surface.v_knots.first()?;
-                    let v_max = *surface.v_knots.last()?;
+                    let u_min = *surface.u_knots().first()?;
+                    let u_max = *surface.u_knots().last()?;
+                    let v_min = *surface.v_knots().first()?;
+                    let v_max = *surface.v_knots().last()?;
                     let u_span = u_max - u_min;
                     let v_span = v_max - v_min;
                     if !u_span.is_finite() || u_span <= 0.0 || !v_span.is_finite() || v_span <= 0.0
@@ -3245,7 +3239,7 @@ pub fn offset_support_carriers(
                         && v1 <= v_max + v_tolerance;
                     let has_v_limit = |limit: f64| {
                         surface
-                            .v_knots
+                            .v_knots()
                             .iter()
                             .any(|knot| (*knot - limit).abs() <= v_tolerance)
                     };

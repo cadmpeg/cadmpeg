@@ -107,13 +107,7 @@ pub(crate) fn elliptical_arc_nurbs(
             knots.extend([end, end, end]);
         }
     }
-    Some(NurbsCurve {
-        degree: 2,
-        knots,
-        control_points,
-        weights: Some(weights),
-        periodic: false,
-    })
+    NurbsCurve::new(2, knots, control_points, Some(weights), false).ok()
 }
 
 pub(crate) fn parabolic_arc_nurbs(
@@ -145,13 +139,17 @@ pub(crate) fn parabolic_arc_nurbs(
                 .iter()
                 .all(|value| value.is_finite())
         })
-        .then_some(NurbsCurve {
-            degree: 2,
-            knots: vec![start, start, start, end, end, end],
-            control_points: vec![start_point, middle_point, end_point],
-            weights: None,
-            periodic: false,
+        .then(|| {
+            NurbsCurve::new(
+                2,
+                vec![start, start, start, end, end, end],
+                vec![start_point, middle_point, end_point],
+                None,
+                false,
+            )
+            .ok()
         })
+        .flatten()
 }
 
 #[cfg(test)]

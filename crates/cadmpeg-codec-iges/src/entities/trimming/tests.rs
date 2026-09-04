@@ -6,7 +6,8 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PcurveId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -29,11 +30,14 @@ const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 #[test]
 fn pcurve_bounds_use_the_active_nurbs_subrange() {
     let geometry = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid test pcurve"),
     };
     let bounds = Some([Some(0.2), Some(0.8), None, None]);
 
@@ -54,18 +58,21 @@ fn pcurve_bounds_use_the_active_nurbs_subrange() {
 #[test]
 fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
     let geometry = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point2::new(2.0, 0.0),
-            Point2::new(2.0, 0.0),
-            Point2::new(2.0, 0.0),
-            Point2::new(0.2, 0.0),
-            Point2::new(0.3, 0.0),
-            Point2::new(0.4, 0.0),
-        ],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            2,
+            vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
+            vec![
+                Point2::new(2.0, 0.0),
+                Point2::new(2.0, 0.0),
+                Point2::new(2.0, 0.0),
+                Point2::new(0.2, 0.0),
+                Point2::new(0.3, 0.0),
+                Point2::new(0.4, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("valid test pcurve"),
     };
     let bounds = Some([Some(0.0), Some(1.0), None, None]);
 
@@ -86,11 +93,14 @@ fn pcurve_bounds_handle_a_full_multiplicity_internal_knot() {
 #[test]
 fn pcurve_bounds_keep_partial_domains_and_periodic_seams() {
     let geometry = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.5, 0.3), Point2::new(0.5, 2.0)],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.5, 0.3), Point2::new(0.5, 2.0)],
+            None,
+            false,
+        )
+        .expect("valid test pcurve"),
     };
 
     assert!(pcurve_within_declared_bounds(
@@ -1539,13 +1549,13 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .iter()
         .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
         .unwrap();
-    let PcurveGeometry::Nurbs { control_points, .. } = &pcurve.geometry else {
+    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         panic!("expected a NURBS pcurve, got {:?}", pcurve.geometry);
     };
     let expected_u =
         (11.762_109_22_f64 - 6.814_348_186).hypot(-6.969_522_429_f64 - -2.592_356_749_f64) * 0.5;
-    assert!((control_points[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
-    assert!(control_points[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!((nurbs.control_points()[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(nurbs.control_points()[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1594,15 +1604,15 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
         .iter()
         .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
         .unwrap();
-    let PcurveGeometry::Nurbs { control_points, .. } = &pcurve.geometry else {
+    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
         panic!("expected a NURBS pcurve, got {:?}", pcurve.geometry);
     };
     let expected_u = (11.762_109_22_f64 - 6.814_348_186)
         .hypot(-6.969_522_429_f64 - -2.592_356_749_f64)
         * 0.5
         * 25.4;
-    assert!((control_points[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
-    assert!(control_points[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!((nurbs.control_points()[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(nurbs.control_points()[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

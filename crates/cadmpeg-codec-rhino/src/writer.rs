@@ -1017,7 +1017,7 @@ fn planar_sheet_brep_payload(
         }
         SurfaceGeometry::Nurbs(nurbs) => {
             check_nurbs_surface(&surface.id.0, nurbs)?;
-            if nurbs.u_periodic || nurbs.v_periodic {
+            if nurbs.u_periodic() || nurbs.v_periodic() {
                 return Err(CodecError::NotImplemented(
                     "rectangular Brep patch surface must be nonperiodic".into(),
                 ));
@@ -1162,7 +1162,7 @@ fn planar_sheet_brep_payload(
                 .find(|curve| edge.curve.as_ref() == Some(&curve.id))
                 .expect("validated edge curve");
             if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-                for point in &nurbs.control_points {
+                for point in nurbs.control_points() {
                     let distance = (point.x - origin.x) * normal.x
                         + (point.y - origin.y) * normal.y
                         + (point.z - origin.z) * normal.z;
@@ -1580,7 +1580,7 @@ fn multi_face_brep_payload(
             }
             SurfaceGeometry::Nurbs(nurbs) => {
                 check_nurbs_surface(&surface.id.0, nurbs)?;
-                if nurbs.u_periodic || nurbs.v_periodic {
+                if nurbs.u_periodic() || nurbs.v_periodic() {
                     return Err(CodecError::NotImplemented(format!(
                         "face {} does not have a nonperiodic NURBS surface",
                         face.id.0
@@ -1807,7 +1807,7 @@ fn multi_face_brep_payload(
                 .find(|curve| edge.curve.as_ref() == Some(&curve.id))
                 .expect("validated edge curve");
             if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
-                for point in &nurbs.control_points {
+                for point in nurbs.control_points() {
                     let distance = (point.x - origin.x) * normal.x
                         + (point.y - origin.y) * normal.y
                         + (point.z - origin.z) * normal.z;
@@ -2190,18 +2190,15 @@ fn validate_planar_edge(
         }
         CurveGeometry::Nurbs(nurbs) => {
             check_nurbs_curve(&curve.id.0, nurbs)?;
-            let count = nurbs.control_points.len();
-            let domain = [nurbs.knots[nurbs.degree as usize], nurbs.knots[count]];
-            if nurbs.periodic || domain != [start_parameter, end_parameter] {
+            let count = nurbs.control_points().len();
+            let domain = [nurbs.knots()[nurbs.degree() as usize], nurbs.knots()[count]];
+            if nurbs.periodic() || domain != [start_parameter, end_parameter] {
                 return Err(CodecError::NotImplemented(format!(
                     "edge {} requires a nonperiodic full-domain NURBS curve",
                     edge.id.0
                 )));
             }
-            (
-                *nurbs.control_points.first().expect("validated NURBS poles"),
-                *nurbs.control_points.last().expect("validated NURBS poles"),
-            )
+            (nurbs.control_points()[0], nurbs.control_points()[count - 1])
         }
         _ => {
             return Err(CodecError::NotImplemented(format!(
@@ -2303,27 +2300,24 @@ fn generated_projected_brep_c2_curve(
         }
         CurveGeometry::Nurbs(nurbs) => {
             let mut projected = nurbs.clone();
-            projected.control_points = nurbs
-                .control_points
-                .iter()
-                .map(|point| {
-                    let uv = plane_uv(*point, origin, u_axis, v_axis);
-                    cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0)
-                })
-                .collect();
+            for point in projected.control_points_mut() {
+                let uv = plane_uv(*point, origin, u_axis, v_axis);
+                *point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+            }
             if sense == Sense::Reversed {
-                projected.control_points.reverse();
-                if let Some(weights) = &mut projected.weights {
+                projected.control_points_mut().reverse();
+                if let Some(weights) = projected.weights_mut() {
                     weights.reverse();
                 }
-                let sum = projected.knots[projected.degree as usize]
-                    + projected.knots[projected.control_points.len()];
-                projected.knots = projected
-                    .knots
+                let sum = projected.knots()[projected.degree() as usize]
+                    + projected.knots()[projected.control_points().len()];
+                let reversed = projected
+                    .knots()
                     .iter()
                     .rev()
                     .map(|knot| sum - knot)
-                    .collect();
+                    .collect::<Vec<_>>();
+                projected.knots_mut().copy_from_slice(&reversed);
                 canonicalize_native_curve_knots(&mut projected, &curve.id.0)?;
             }
             (
@@ -2339,11 +2333,12 @@ fn canonicalize_native_curve_knots(
     curve: &mut cadmpeg_ir::geometry::NurbsCurve,
     id: &str,
 ) -> Result<(), CodecError> {
-    let order = curve.degree as usize + 1;
-    let count = curve.control_points.len();
-    let stored = curve.knots[1..curve.knots.len() - 1].to_vec();
-    curve.knots = crate::surfaces::reconstruct_knots(&stored, order, count)
+    let order = curve.degree() as usize + 1;
+    let count = curve.control_points().len();
+    let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
+    let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
         .map_err(|error| CodecError::malformed(format_args!("curve {id}: {error}")))?;
+    curve.knots_mut().copy_from_slice(&reconstructed);
     Ok(())
 }
 
@@ -2432,26 +2427,25 @@ fn explicit_brep_c2_curve(
             ];
             Ok((LINE_CLASS, bounded_line_payload(from, to, domain, 2)))
         }
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => {
-            let curve = cadmpeg_ir::geometry::NurbsCurve {
-                degree: *degree,
-                knots: knots.clone(),
-                control_points: control_points
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } => {
+            let curve = cadmpeg_ir::geometry::NurbsCurve::new(
+                nurbs.degree(),
+                nurbs.knots().to_vec(),
+                nurbs
+                    .control_points()
                     .iter()
                     .map(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
                     .collect(),
-                weights: weights.clone(),
-                periodic: *periodic,
-            };
+                nurbs.weights().map(<[f64]>::to_vec),
+                nurbs.periodic(),
+            )
+            .map_err(|error| {
+                CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id.0))
+            })?;
             check_nurbs_curve(&pcurve.id.0, &curve)?;
-            let count = curve.control_points.len();
-            if curve.periodic || [curve.knots[curve.degree as usize], curve.knots[count]] != domain
+            let count = curve.control_points().len();
+            if curve.periodic()
+                || [curve.knots()[curve.degree() as usize], curve.knots()[count]] != domain
             {
                 return Err(CodecError::NotImplemented(format!(
                     "pcurve {} is not a nonperiodic full-domain NURBS curve",
@@ -2527,15 +2521,15 @@ fn validate_nurbs_trim_loop(
     use cadmpeg_ir::eval::{curve_point, nurbs_surface_point, pcurve_uv};
     use cadmpeg_ir::topology::Sense;
 
-    let u_count = surface.u_count as usize;
-    let v_count = surface.v_count as usize;
+    let u_count = surface.u_count() as usize;
+    let v_count = surface.v_count() as usize;
     let u_domain = [
-        surface.u_knots[surface.u_degree as usize],
-        surface.u_knots[u_count],
+        surface.u_knots()[surface.u_degree() as usize],
+        surface.u_knots()[u_count],
     ];
     let v_domain = [
-        surface.v_knots[surface.v_degree as usize],
-        surface.v_knots[v_count],
+        surface.v_knots()[surface.v_degree() as usize],
+        surface.v_knots()[v_count],
     ];
     for (edge, coedge) in edges.iter().zip(coedges) {
         explicit_brep_c2_curve(model, edge, coedge)?;
@@ -2571,7 +2565,8 @@ fn validate_nurbs_trim_loop(
                     )
                 })
             }
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } => control_points
+            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } => nurbs
+                .control_points()
                 .iter()
                 .all(|point| inside_domain(point.u, point.v)),
             _ => {
@@ -2597,7 +2592,7 @@ fn validate_nurbs_trim_loop(
         if let CurveGeometry::Nurbs(nurbs) = &curve.geometry {
             breaks.extend(
                 nurbs
-                    .knots
+                    .knots()
                     .iter()
                     .copied()
                     .filter(|value| *value > domain[0] && *value < domain[1])
@@ -2610,9 +2605,10 @@ fn validate_nurbs_trim_loop(
                     }),
             );
         }
-        if let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { knots, .. } = &pcurve.geometry {
+        if let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry {
             breaks.extend(
-                knots
+                nurbs
+                    .knots()
                     .iter()
                     .copied()
                     .filter(|value| *value > domain[0] && *value < domain[1]),
@@ -3004,45 +3000,39 @@ fn check_nurbs_surface(
     id: &str,
     surface: &cadmpeg_ir::geometry::NurbsSurface,
 ) -> Result<(), CodecError> {
-    let u_order = surface.u_degree as usize + 1;
-    let v_order = surface.v_degree as usize + 1;
-    let u_count = surface.u_count as usize;
-    let v_count = surface.v_count as usize;
-    let pole_count = u_count.checked_mul(v_count);
+    let u_order = surface.u_degree() as usize + 1;
+    let v_order = surface.v_degree() as usize + 1;
+    let u_count = surface.u_count() as usize;
+    let v_count = surface.v_count() as usize;
     if u_order < 2
         || v_order < 2
-        || u_count < u_order
-        || v_count < v_order
         || i32::try_from(u_order).is_err()
         || i32::try_from(v_order).is_err()
         || i32::try_from(u_count).is_err()
         || i32::try_from(v_count).is_err()
-        || pole_count.is_none_or(|count| i32::try_from(count).is_err())
-        || surface.u_knots.len() != u_count + u_order
-        || surface.v_knots.len() != v_count + v_order
-        || pole_count != Some(surface.control_points.len())
+        || i32::try_from(surface.control_points().len()).is_err()
     {
         return Err(CodecError::malformed(format_args!(
-            "surface {id} has inconsistent NURBS counts"
+            "surface {id} cannot be represented by Rhino NURBS counts"
         )));
     }
     if surface
-        .u_knots
+        .u_knots()
         .iter()
-        .chain(&surface.v_knots)
+        .chain(surface.v_knots())
         .any(|v| !v.is_finite())
         || surface
-            .u_knots
+            .u_knots()
             .windows(2)
-            .chain(surface.v_knots.windows(2))
+            .chain(surface.v_knots().windows(2))
             .any(|v| v[0] > v[1])
         || surface
-            .control_points
+            .control_points()
             .iter()
             .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
-        || surface.weights.as_ref().is_some_and(|w| {
-            w.len() != surface.control_points.len() || w.iter().any(|v| !v.is_finite() || *v == 0.0)
-        })
+        || surface
+            .weights()
+            .is_some_and(|w| w.iter().any(|v| !v.is_finite() || *v == 0.0))
     {
         return Err(CodecError::malformed(format_args!(
             "surface {id} has invalid NURBS data"
@@ -3051,51 +3041,45 @@ fn check_nurbs_surface(
     check_knot_roundtrip(
         id,
         "surface U",
-        &surface.u_knots,
+        surface.u_knots(),
         u_order,
         u_count,
-        surface.u_periodic,
+        surface.u_periodic(),
     )?;
     check_knot_roundtrip(
         id,
         "surface V",
-        &surface.v_knots,
+        surface.v_knots(),
         v_order,
         v_count,
-        surface.v_periodic,
+        surface.v_periodic(),
     )?;
     Ok(())
 }
 
 fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Result<(), CodecError> {
-    let order = curve.degree as usize + 1;
-    let count = curve.control_points.len();
-    if i32::try_from(order).is_err()
-        || i32::try_from(count).is_err()
-        || order < 2
-        || count < order
-        || curve.knots.len() != count + order
-    {
+    let order = curve.degree() as usize + 1;
+    let count = curve.control_points().len();
+    if i32::try_from(order).is_err() || i32::try_from(count).is_err() || order < 2 {
         return Err(CodecError::malformed(format_args!(
-            "curve {id} has inconsistent NURBS counts"
+            "curve {id} cannot be represented by Rhino NURBS counts"
         )));
     }
-    if curve.knots.iter().any(|v| !v.is_finite())
-        || !knots_nondecreasing(&curve.knots)
+    if curve.knots().iter().any(|v| !v.is_finite())
+        || !knots_nondecreasing(curve.knots())
         || curve
-            .control_points
+            .control_points()
             .iter()
             .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
         || curve
-            .weights
-            .as_ref()
-            .is_some_and(|w| w.len() != count || w.iter().any(|v| !v.is_finite() || *v == 0.0))
+            .weights()
+            .is_some_and(|w| w.iter().any(|v| !v.is_finite() || *v == 0.0))
     {
         return Err(CodecError::malformed(format_args!(
             "curve {id} has invalid NURBS data"
         )));
     }
-    check_knot_roundtrip(id, "curve", &curve.knots, order, count, curve.periodic)?;
+    check_knot_roundtrip(id, "curve", curve.knots(), order, count, curve.periodic())?;
     Ok(())
 }
 
@@ -3261,21 +3245,21 @@ fn nurbs_curve_payload_dimension(
     curve: &cadmpeg_ir::geometry::NurbsCurve,
     dimension: i32,
 ) -> Vec<u8> {
-    let rational = i32::from(curve.weights.is_some());
-    let order = (curve.degree + 1) as i32;
-    let count = curve.control_points.len() as i32;
+    let rational = i32::from(curve.weights().is_some());
+    let order = (curve.degree() + 1) as i32;
+    let count = curve.control_points().len() as i32;
     let mut payload = vec![0x10];
     for value in [dimension, rational, order, count, 0, 0] {
         payload.extend(value.to_le_bytes());
     }
     let min = curve
-        .control_points
+        .control_points()
         .iter()
         .fold([f64::INFINITY; 3], |a, p| {
             [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
         });
     let max = curve
-        .control_points
+        .control_points()
         .iter()
         .fold([f64::NEG_INFINITY; 3], |a, p| {
             [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
@@ -3283,13 +3267,13 @@ fn nurbs_curve_payload_dimension(
     for value in min.into_iter().chain(max) {
         payload.extend(value.to_le_bytes());
     }
-    payload.extend(((curve.knots.len() - 2) as i32).to_le_bytes());
-    for knot in &curve.knots[1..curve.knots.len() - 1] {
+    payload.extend(((curve.knots().len() - 2) as i32).to_le_bytes());
+    for knot in &curve.knots()[1..curve.knots().len() - 1] {
         payload.extend(knot.to_le_bytes());
     }
     payload.extend(count.to_le_bytes());
-    for (index, point) in curve.control_points.iter().enumerate() {
-        let weight = curve.weights.as_ref().map_or(1.0, |weights| weights[index]);
+    for (index, point) in curve.control_points().iter().enumerate() {
+        let weight = curve.weights().map_or(1.0, |weights| weights[index]);
         payload.extend((point.x * weight).to_le_bytes());
         payload.extend((point.y * weight).to_le_bytes());
         if dimension == 3 {
@@ -3320,28 +3304,28 @@ fn plane_surface_payload(
 }
 
 fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8> {
-    let rational = i32::from(surface.weights.is_some());
+    let rational = i32::from(surface.weights().is_some());
     let mut payload = vec![0x10];
     for value in [
         3,
         rational,
-        (surface.u_degree + 1) as i32,
-        (surface.v_degree + 1) as i32,
-        surface.u_count as i32,
-        surface.v_count as i32,
+        (surface.u_degree() + 1) as i32,
+        (surface.v_degree() + 1) as i32,
+        surface.u_count() as i32,
+        surface.v_count() as i32,
         0,
         0,
     ] {
         payload.extend(value.to_le_bytes());
     }
     let min = surface
-        .control_points
+        .control_points()
         .iter()
         .fold([f64::INFINITY; 3], |a, p| {
             [a[0].min(p.x), a[1].min(p.y), a[2].min(p.z)]
         });
     let max = surface
-        .control_points
+        .control_points()
         .iter()
         .fold([f64::NEG_INFINITY; 3], |a, p| {
             [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
@@ -3349,18 +3333,15 @@ fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface) -> Vec<u8
     for value in min.into_iter().chain(max) {
         payload.extend(value.to_le_bytes());
     }
-    for knots in [&surface.u_knots, &surface.v_knots] {
+    for knots in [surface.u_knots(), surface.v_knots()] {
         payload.extend(((knots.len() - 2) as i32).to_le_bytes());
         for knot in &knots[1..knots.len() - 1] {
             payload.extend(knot.to_le_bytes());
         }
     }
-    payload.extend((surface.control_points.len() as i32).to_le_bytes());
-    for (index, point) in surface.control_points.iter().enumerate() {
-        let weight = surface
-            .weights
-            .as_ref()
-            .map_or(1.0, |weights| weights[index]);
+    payload.extend((surface.control_points().len() as i32).to_le_bytes());
+    for (index, point) in surface.control_points().iter().enumerate() {
+        let weight = surface.weights().map_or(1.0, |weights| weights[index]);
         payload.extend((point.x * weight).to_le_bytes());
         payload.extend((point.y * weight).to_le_bytes());
         payload.extend((point.z * weight).to_le_bytes());

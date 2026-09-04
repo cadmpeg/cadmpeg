@@ -101,22 +101,21 @@ pub(crate) fn surface_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsS
         }
     }
 
-    Some((
-        NurbsSurface {
-            u_degree: degree_u as u32,
-            v_degree: degree_v as u32,
-            u_knots,
-            v_knots,
-            u_count: n_poles_u as u32,
-            v_count: n_poles_v as u32,
-            control_points: grid,
-            weights,
-            normal_reversed: false,
-            u_periodic: is_periodic(enums[0]),
-            v_periodic: is_periodic(enums[1]),
-        },
-        cur.pos(),
-    ))
+    let surface = NurbsSurface::new(
+        degree_u as u32,
+        degree_v as u32,
+        u_knots,
+        v_knots,
+        n_poles_u as u32,
+        n_poles_v as u32,
+        grid,
+        weights,
+        false,
+        is_periodic(enums[0]),
+        is_periodic(enums[1]),
+    )
+    .ok()?;
+    Some((surface, cur.pos()))
 }
 
 /// Decode a curve `nubs`/`nurbs` block at token `marker_pos`, returning the
@@ -138,16 +137,15 @@ pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCur
     let (knot_vector, n_poles) = knots(&mut cur, n_uniq as usize, degree)?;
     let (points, weights) = control_points(&mut cur, n_poles, cp_dims)?;
 
-    Some((
-        NurbsCurve {
-            degree: degree as u32,
-            knots: knot_vector,
-            control_points: points,
-            weights,
-            periodic: is_periodic(closure),
-        },
-        cur.pos(),
-    ))
+    let curve = NurbsCurve::new(
+        degree as u32,
+        knot_vector,
+        points,
+        weights,
+        is_periodic(closure),
+    )
+    .ok()?;
+    Some((curve, cur.pos()))
 }
 
 /// Decode the face-surface cache of a spline surface record from its payload
@@ -332,20 +330,22 @@ pub(crate) fn decode_surface_block(
         }
     }
 
+    let surface = NurbsSurface::new(
+        degree_u as u32,
+        degree_v as u32,
+        u_knots,
+        v_knots,
+        n_poles_u as u32,
+        n_poles_v as u32,
+        control_points,
+        weights,
+        false,
+        is_periodic(enums[0]),
+        is_periodic(enums[1]),
+    )
+    .ok()?;
     Some(DecodedSurfaceBlock {
-        surface: NurbsSurface {
-            u_degree: degree_u as u32,
-            v_degree: degree_v as u32,
-            u_knots,
-            v_knots,
-            u_count: n_poles_u as u32,
-            v_count: n_poles_v as u32,
-            control_points,
-            weights,
-            normal_reversed: false,
-            u_periodic: is_periodic(enums[0]),
-            v_periodic: is_periodic(enums[1]),
-        },
+        surface,
         end: pos,
         control_value_offsets,
         rational,
@@ -413,8 +413,8 @@ pub fn final_surface_patch_layout(record: &[u8], int_width: usize) -> Option<Sur
         int_width: decoded.int_width,
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
-        u_count: decoded.surface.u_count as usize,
-        v_count: decoded.surface.v_count as usize,
+        u_count: decoded.surface.u_count() as usize,
+        v_count: decoded.surface.v_count() as usize,
         u_knots: decoded.u_knot_layout.into(),
         v_knots: decoded.v_knot_layout.into(),
         end: decoded.end,
@@ -438,8 +438,8 @@ pub fn surface_patch_layout_at(
         int_width: decoded.int_width,
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
-        u_count: decoded.surface.u_count as usize,
-        v_count: decoded.surface.v_count as usize,
+        u_count: decoded.surface.u_count() as usize,
+        v_count: decoded.surface.v_count() as usize,
         u_knots: decoded.u_knot_layout.into(),
         v_knots: decoded.v_knot_layout.into(),
         end: decoded.end,
@@ -488,14 +488,16 @@ pub(crate) fn decode_curve_block(
         .map(|ordinal| control_start + ordinal * 9 + 1)
         .collect();
 
+    let curve = NurbsCurve::new(
+        degree as u32,
+        knots,
+        control_points,
+        weights,
+        is_periodic(closure),
+    )
+    .ok()?;
     Some(DecodedCurveBlock {
-        curve: NurbsCurve {
-            degree: degree as u32,
-            knots,
-            control_points,
-            weights,
-            periodic: is_periodic(closure),
-        },
+        curve,
         end: pos,
         control_value_offsets,
         rational,
@@ -533,7 +535,7 @@ pub fn first_curve_patch_layout(record: &[u8], int_width: usize) -> Option<Curve
         .find_map(|position| decode_curve_block(record, position, int_width))?;
     Some(CurvePatchLayout {
         int_width: decoded.int_width,
-        control_count: decoded.curve.control_points.len(),
+        control_count: decoded.curve.control_points().len(),
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
         knots: decoded.knot_layout.into(),
@@ -551,7 +553,7 @@ pub fn final_curve_patch_layout(record: &[u8], int_width: usize) -> Option<Curve
         .next_back()?;
     Some(CurvePatchLayout {
         int_width: decoded.int_width,
-        control_count: decoded.curve.control_points.len(),
+        control_count: decoded.curve.control_points().len(),
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
         knots: decoded.knot_layout.into(),

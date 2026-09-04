@@ -8,8 +8,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs,
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
@@ -705,10 +705,10 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
         unreachable!()
     };
     let pcurve = context.sides[1].pcurve.as_ref().unwrap();
-    let PcurveGeometry::Nurbs { control_points, .. } = pcurve else {
+    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         unreachable!()
     };
-    assert!(control_points.len() > 2);
+    assert!(nurbs.control_points().len() > 2);
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).unwrap();
         let point =
@@ -768,15 +768,18 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     const CONTACT_FIT_TOLERANCE: f64 = 1.0e-2;
 
     let source_pcurve = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point2::new(0.0, 0.0),
-            Point2::new(0.2, 0.0),
-            Point2::new(1.0, 0.0),
-        ],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(0.2, 0.0),
+                Point2::new(1.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("valid blend-contact pcurve"),
     };
     let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE, true);
 
@@ -787,13 +790,12 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     else {
         unreachable!()
     };
-    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[1].pcurve.as_ref()
-    else {
+    let Some(PcurveGeometry::Nurbs { nurbs }) = context.sides[1].pcurve.as_ref() else {
         panic!("adaptive blend-contact transfer did not produce a pcurve")
     };
     let source_pcurve = context.sides[0].pcurve.as_ref().unwrap();
     let target_pcurve = context.sides[1].pcurve.as_ref().unwrap();
-    assert!(control_points.len() > 2);
+    assert!(nurbs.control_points().len() > 2);
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let source_uv = cadmpeg_ir::eval::pcurve_uv(source_pcurve, parameter).unwrap();
         let target_uv = cadmpeg_ir::eval::pcurve_uv(target_pcurve, parameter).unwrap();
@@ -1010,11 +1012,14 @@ fn blend_contact_transfer_fixture(
         source_object: None,
     });
     let contact_pcurve = PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-        weights: None,
-        periodic: false,
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid contact pcurve"),
     };
     let contact_surface = if contact_on_source_support {
         offset
@@ -1231,12 +1236,11 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     else {
         unreachable!()
     };
-    let PcurveGeometry::Nurbs { control_points, .. } = context.sides[1].pcurve.as_ref().unwrap()
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = context.sides[1].pcurve.as_ref().unwrap() else {
         unreachable!()
     };
-    assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
-    assert_eq!(control_points.last(), Some(&Point2::new(1.0, 0.0)));
+    assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));
+    assert_eq!(nurbs.control_points().last(), Some(&Point2::new(1.0, 0.0)));
 }
 
 #[test]
@@ -1252,24 +1256,27 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     ir.model.surfaces.extend([
         Surface {
             id: nurbs.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: 1,
-                v_degree: 1,
-                u_knots: vec![0.0, 0.0, 1.0, 1.0],
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count: 2,
-                v_count: 2,
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(0.0, 5.0, 0.0),
-                    Point3::new(10.0, 0.0, 0.0),
-                    Point3::new(10.0, 5.0, 0.0),
-                ],
-                weights: None,
-                normal_reversed: false,
-                u_periodic: false,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(
+                NurbsSurface::new(
+                    1,
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.0, 5.0, 0.0),
+                        Point3::new(10.0, 0.0, 0.0),
+                        Point3::new(10.0, 5.0, 0.0),
+                    ],
+                    None,
+                    false,
+                    false,
+                    false,
+                )
+                .expect("valid boundary surface"),
+            ),
             source_object: None,
         },
         Surface {
@@ -1540,24 +1547,17 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
             .map(|pcurve| &pcurve.pcurve),
         Some(&result.ir().model.pcurves[0].id)
     );
-    let PcurveGeometry::Nurbs {
-        degree,
-        knots,
-        control_points,
-        weights,
-        periodic,
-    } = &result.ir().model.pcurves[0].geometry
-    else {
+    let PcurveGeometry::Nurbs { nurbs } = &result.ir().model.pcurves[0].geometry else {
         panic!("expected NURBS pcurve");
     };
-    assert_eq!(*degree, 1);
-    assert_eq!(knots, &[0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(nurbs.degree(), 1);
+    assert_eq!(nurbs.knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
-        control_points,
-        &[Point2::new(10.0, 20.0), Point2::new(10.0, 20.0)]
+        nurbs.control_points(),
+        [Point2::new(10.0, 20.0), Point2::new(10.0, 20.0)]
     );
-    assert!(weights.is_none());
-    assert!(!periodic);
+    assert!(nurbs.weights().is_none());
+    assert!(!nurbs.periodic());
     assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), Some(0.01));
     assert_eq!(
         result.ir().model.points[0].position,

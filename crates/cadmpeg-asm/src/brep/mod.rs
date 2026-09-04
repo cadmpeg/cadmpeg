@@ -64,13 +64,7 @@ use self::topology::{
     keep_faces_and_carriers, walk_reachable_topology,
 };
 pub(crate) fn embedded_pcurve_geometry(pcurve: nurbs::pcurve::NurbsPcurve) -> PcurveGeometry {
-    PcurveGeometry::Nurbs {
-        degree: pcurve.degree,
-        knots: pcurve.knots,
-        control_points: pcurve.control_points,
-        weights: pcurve.weights,
-        periodic: pcurve.periodic,
-    }
+    pcurve.into_geometry()
 }
 
 /// The decoded ASM B-rep graph plus loss accounting. Every field is a fact

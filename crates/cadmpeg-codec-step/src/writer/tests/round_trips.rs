@@ -81,19 +81,16 @@ fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeo
             major_radius: *major_radius,
             minor_radius: *minor_radius,
         }),
-        PcurveGeometry::Nurbs {
-            degree,
-            knots,
-            control_points,
-            weights,
-            periodic,
-        } => Some(CurveGeometry::Nurbs(NurbsCurve {
-            degree: *degree,
-            knots: knots.clone(),
-            control_points: control_points.iter().copied().map(point).collect(),
-            weights: weights.clone(),
-            periodic: *periodic,
-        })),
+        PcurveGeometry::Nurbs { nurbs } => Some(CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                nurbs.degree(),
+                nurbs.knots().to_vec(),
+                nurbs.control_points().iter().copied().map(point).collect(),
+                nurbs.weights().map(<[f64]>::to_vec),
+                nurbs.periodic(),
+            )
+            .ok()?,
+        )),
         PcurveGeometry::Transformed { basis, transform } => {
             let CurveGeometry::Line { origin, direction } = curve_geometry_for_sheet_pcurve(basis)?
             else {
@@ -259,14 +256,17 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
         .into_parts()
         .0;
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![
-            cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            cadmpeg_ir::math::Point2::new(10.0, 0.0),
-        ],
-        weights: Some(vec![1.0, 2.0]),
-        periodic: false,
+        nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(10.0, 0.0),
+            ],
+            Some(vec![1.0, 2.0]),
+            false,
+        )
+        .unwrap(),
     };
     let geometry = ir.model.pcurves[0].geometry.clone();
     align_sheet_edge_to_pcurve(&mut ir, &geometry);
@@ -284,13 +284,11 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves() {
         .expect("decode NURBS pcurve");
     assert!(matches!(
         &decoded.ir().model.pcurves[0].geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-            degree: 1,
-            control_points,
-            weights: Some(weights),
-            periodic: false,
-            ..
-        } if control_points.len() == 2 && weights == &[1.0, 2.0]
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+            if nurbs.degree() == 1
+                && !nurbs.periodic()
+                && nurbs.control_points().len() == 2
+                && nurbs.weights() == Some(&[1.0, 2.0][..])
     ));
 }
 
@@ -1121,17 +1119,18 @@ fn analytic_surface_placements_preserve_orientation() {
 
 #[test]
 fn nurbs_curve_non_rational_uses_with_knots() {
-    let n = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let n = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
         ],
-        weights: None,
-        periodic: false,
-    };
+        None,
+        false,
+    )
+    .unwrap();
     let s = emit_curve_only(&CurveGeometry::Nurbs(n));
     assert!(s.contains("B_SPLINE_CURVE_WITH_KNOTS"));
     // Clamped end knots collapse to multiplicity 3.
@@ -1141,17 +1140,18 @@ fn nurbs_curve_non_rational_uses_with_knots() {
 
 #[test]
 fn nurbs_curve_rational_uses_complex_form() {
-    let n = NurbsCurve {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
+    let n = NurbsCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
         ],
-        weights: Some(vec![1.0, 0.5, 1.0]),
-        periodic: false,
-    };
+        Some(vec![1.0, 0.5, 1.0]),
+        false,
+    )
+    .unwrap();
     let s = emit_curve_only(&CurveGeometry::Nurbs(n));
     assert!(s.contains("RATIONAL_B_SPLINE_CURVE"));
     assert!(s.contains("BOUNDED_CURVE()"));
@@ -1159,24 +1159,25 @@ fn nurbs_curve_rational_uses_complex_form() {
 
 #[test]
 pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
-    let n = NurbsSurface {
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 2,
-        control_points: vec![
+    let n = NurbsSurface::new(
+        1,
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        2,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    };
+        None,
+        false,
+        false,
+        false,
+    )
+    .unwrap();
     let s = emit_surface_only(&SurfaceGeometry::Nurbs(n));
     assert!(s.contains("B_SPLINE_SURFACE_WITH_KNOTS"));
 }

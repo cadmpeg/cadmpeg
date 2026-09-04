@@ -1123,7 +1123,7 @@ pub(super) fn curve_geometry_coplanar(
             ..
         } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
         CurveGeometry::Degenerate { point } => point_valid(*point),
-        CurveGeometry::Nurbs(curve) => curve.control_points.iter().copied().all(point_valid),
+        CurveGeometry::Nurbs(curve) => curve.control_points().iter().copied().all(point_valid),
         CurveGeometry::Polyline { points, .. } => points.iter().copied().all(point_valid),
         CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
             let Some(curve) = index.curves(&segment.curve.0) else {
@@ -1966,20 +1966,23 @@ pub(crate) fn project_geometry(
             continue;
         }
         let weights = (!polynomial).then_some(native_weights);
-        let nurbs = NurbsCurve {
+        let Ok(nurbs) = NurbsCurve::new(
             degree,
             knots,
             control_points,
             weights,
             // IGES PROP4 is informational; neutral evaluation uses the
             // serialized active carrier without periodic parameter wrapping.
-            periodic: false,
+            false,
+        ) else {
+            losses.push(entity_loss(entry, "spline cardinalities are inconsistent"));
+            continue;
         };
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             parameter_range[0],
         )
         .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {
@@ -1987,10 +1990,10 @@ pub(crate) fn project_geometry(
             continue;
         };
         let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points(),
+            nurbs.weights(),
             parameter_range[1],
         )
         .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite()) else {

@@ -9,14 +9,14 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn translated_surface() -> NurbsSurface {
-    NurbsSurface {
-        u_degree: 2,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        u_count: 3,
-        v_count: 2,
-        control_points: vec![
+    NurbsSurface::new(
+        2,
+        1,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![0.0, 0.0, 1.0, 1.0],
+        3,
+        2,
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(0.0, 0.0, 2.0),
             Point3::new(1.0, 1.0, 0.0),
@@ -24,11 +24,12 @@ fn translated_surface() -> NurbsSurface {
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 2.0),
         ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    }
+        None,
+        false,
+        false,
+        false,
+    )
+    .expect("valid translated surface")
 }
 
 fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {

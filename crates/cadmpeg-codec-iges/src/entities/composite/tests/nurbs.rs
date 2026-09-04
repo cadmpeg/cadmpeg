@@ -5,17 +5,18 @@ use super::*;
 #[test]
 fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
     let interval = [-29.063_334_917_342_4, 2.000_000_000_000_02];
-    let mut curve = NurbsCurve {
-        degree: 1,
-        knots: vec![interval[0], interval[0], interval[1], interval[1]],
-        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        weights: None,
-        periodic: false,
-    };
+    let mut curve = NurbsCurve::new(
+        1,
+        vec![interval[0], interval[0], interval[1], interval[1]],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("valid line");
 
     assert!(elevate_nurbs_to_degree(&mut curve, interval, 3, None));
-    assert_eq!(curve.knots.first(), Some(&interval[0]));
-    assert_eq!(curve.knots.last(), Some(&interval[1]));
+    assert_eq!(curve.knots().first(), Some(&interval[0]));
+    assert_eq!(curve.knots().last(), Some(&interval[1]));
 }
 
 #[test]
@@ -39,10 +40,10 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
     .unwrap();
     assert!(
         first
-            .control_points
+            .control_points()
             .last()
             .unwrap()
-            .distance(second.control_points[0])
+            .distance(second.control_points()[0])
             < 0.001
     );
     concatenate_nurbs(
@@ -119,8 +120,8 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
     let (carrier, _) =
         bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None)
             .expect("the source endpoint is inside the declared resolution");
-    assert_eq!(carrier.control_points.first(), Some(&start));
-    assert_eq!(carrier.control_points.last(), Some(&declared_end));
+    assert_eq!(carrier.control_points().first(), Some(&start));
+    assert_eq!(carrier.control_points().last(), Some(&declared_end));
     assert!(
         bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.0001), None, None,).is_none()
     );

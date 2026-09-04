@@ -129,7 +129,8 @@ pub fn write_semantic(
                     curve.id.0.clone(),
                     NurbsCurveEdit {
                         curve: nurbs.clone(),
-                        periodic: (before.periodic != nurbs.periodic).then_some(nurbs.periodic),
+                        periodic: (before.periodic() != nurbs.periodic())
+                            .then_some(nurbs.periodic()),
                     },
                 ))
             }
@@ -158,9 +159,9 @@ pub fn write_semantic(
                     surface.id.0.clone(),
                     NurbsSurfaceEdit {
                         surface: nurbs.clone(),
-                        periodic: (before.u_periodic != nurbs.u_periodic
-                            || before.v_periodic != nurbs.v_periodic)
-                            .then_some([nurbs.u_periodic, nurbs.v_periodic]),
+                        periodic: (before.u_periodic() != nurbs.u_periodic()
+                            || before.v_periodic() != nurbs.v_periodic())
+                        .then_some([nurbs.u_periodic(), nurbs.v_periodic()]),
                     },
                 ))
             }

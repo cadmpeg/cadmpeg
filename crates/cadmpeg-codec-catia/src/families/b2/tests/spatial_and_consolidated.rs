@@ -90,7 +90,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
     let SurfaceGeometry::Nurbs(surface) = &mut decoy.geometry else {
         panic!("NURBS fixture");
     };
-    for knot in &mut surface.v_knots {
+    for knot in surface.v_knots_mut() {
         *knot += 10.0;
     }
     carriers.push(decoy);
@@ -102,10 +102,10 @@ fn offset_support_binds_by_native_domain_knot_limits() {
         support_id: 7,
         distance: 2.0,
         domain: [
-            surface.u_knots[0],
-            surface.v_knots[0],
-            *surface.u_knots.last().unwrap(),
-            *surface.v_knots.last().unwrap(),
+            surface.u_knots()[0],
+            surface.v_knots()[0],
+            *surface.u_knots().last().unwrap(),
+            *surface.v_knots().last().unwrap(),
         ],
     };
 

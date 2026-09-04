@@ -134,19 +134,22 @@ fn decode_surfaces(
             }
             Some(Surface {
                 pos: node.pos,
-                geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                    u_degree: descriptor.u_degree as u32,
-                    v_degree: descriptor.v_degree as u32,
-                    u_knots: full_u,
-                    v_knots: full_v,
-                    u_count: descriptor.u_count as u32,
-                    v_count: descriptor.v_count as u32,
-                    control_points,
-                    weights,
-                    normal_reversed: node.byte_at(18)? == b'-',
-                    u_periodic: descriptor.u_periodic,
-                    v_periodic: descriptor.v_periodic,
-                }),
+                geometry: SurfaceGeometry::Nurbs(
+                    NurbsSurface::new(
+                        descriptor.u_degree as u32,
+                        descriptor.v_degree as u32,
+                        full_u,
+                        full_v,
+                        descriptor.u_count as u32,
+                        descriptor.v_count as u32,
+                        control_points,
+                        weights,
+                        node.byte_at(18)? == b'-',
+                        descriptor.u_periodic,
+                        descriptor.v_periodic,
+                    )
+                    .ok()?,
+                ),
             })
         })
         .collect()
@@ -219,11 +222,14 @@ fn decode_pcurves(
             Some(Pcurve {
                 pos: node.pos,
                 geometry: PcurveGeometry::Nurbs {
-                    degree: descriptor.degree as u32,
-                    knots,
-                    control_points,
-                    weights,
-                    periodic: descriptor.periodic,
+                    nurbs: cadmpeg_ir::geometry::PcurveNurbs::new(
+                        descriptor.degree as u32,
+                        knots,
+                        control_points,
+                        weights,
+                        descriptor.periodic,
+                    )
+                    .ok()?,
                 },
             })
         })
@@ -302,13 +308,16 @@ fn decode_curves(
             }
             Some(Curve {
                 pos: node.pos,
-                geometry: CurveGeometry::Nurbs(NurbsCurve {
-                    degree: descriptor.degree as u32,
-                    knots,
-                    control_points,
-                    weights,
-                    periodic: descriptor.periodic,
-                }),
+                geometry: CurveGeometry::Nurbs(
+                    NurbsCurve::new(
+                        descriptor.degree as u32,
+                        knots,
+                        control_points,
+                        weights,
+                        descriptor.periodic,
+                    )
+                    .ok()?,
+                ),
             })
         })
         .collect()

@@ -422,17 +422,17 @@ fn curve_properties(
     curve: &NurbsCurve,
     properties: &mut std::collections::BTreeMap<String, String>,
 ) {
-    properties.insert(format!("{prefix}_degree"), curve.degree.to_string());
+    properties.insert(format!("{prefix}_degree"), curve.degree().to_string());
     properties.insert(
         format!("{prefix}_knots"),
-        numbers(curve.knots.iter().copied()),
+        numbers(curve.knots().iter().copied()),
     );
     properties.insert(
         format!("{prefix}_control_points"),
-        points(&curve.control_points),
+        points(curve.control_points()),
     );
-    properties.insert(format!("{prefix}_periodic"), curve.periodic.to_string());
-    if let Some(weights) = &curve.weights {
+    properties.insert(format!("{prefix}_periodic"), curve.periodic().to_string());
+    if let Some(weights) = curve.weights() {
         properties.insert(
             format!("{prefix}_weights"),
             numbers(weights.iter().copied()),
@@ -445,31 +445,31 @@ fn surface_properties(
     surface: &NurbsSurface,
     properties: &mut std::collections::BTreeMap<String, String>,
 ) {
-    properties.insert(format!("{prefix}_u_degree"), surface.u_degree.to_string());
-    properties.insert(format!("{prefix}_v_degree"), surface.v_degree.to_string());
+    properties.insert(format!("{prefix}_u_degree"), surface.u_degree().to_string());
+    properties.insert(format!("{prefix}_v_degree"), surface.v_degree().to_string());
     properties.insert(
         format!("{prefix}_u_knots"),
-        numbers(surface.u_knots.iter().copied()),
+        numbers(surface.u_knots().iter().copied()),
     );
     properties.insert(
         format!("{prefix}_v_knots"),
-        numbers(surface.v_knots.iter().copied()),
+        numbers(surface.v_knots().iter().copied()),
     );
-    properties.insert(format!("{prefix}_u_count"), surface.u_count.to_string());
-    properties.insert(format!("{prefix}_v_count"), surface.v_count.to_string());
+    properties.insert(format!("{prefix}_u_count"), surface.u_count().to_string());
+    properties.insert(format!("{prefix}_v_count"), surface.v_count().to_string());
     properties.insert(
         format!("{prefix}_control_points"),
-        points(&surface.control_points),
+        points(surface.control_points()),
     );
     properties.insert(
         format!("{prefix}_u_periodic"),
-        surface.u_periodic.to_string(),
+        surface.u_periodic().to_string(),
     );
     properties.insert(
         format!("{prefix}_v_periodic"),
-        surface.v_periodic.to_string(),
+        surface.v_periodic().to_string(),
     );
-    if let Some(weights) = &surface.weights {
+    if let Some(weights) = surface.weights() {
         properties.insert(
             format!("{prefix}_weights"),
             numbers(weights.iter().copied()),
@@ -770,8 +770,8 @@ mod tests {
         let Control::Curve { start, end } = &morph.control else {
             panic!("expected curve morph");
         };
-        assert_eq!(start.control_points[1].x, 10.0);
-        assert_eq!(end.control_points[1].x, 20.0);
+        assert_eq!(start.control_points()[1].x, 10.0);
+        assert_eq!(end.control_points()[1].x, 20.0);
         assert_eq!(morph.localizers[0].point, [10.0, 20.0, 30.0]);
         assert_eq!(morph.localizers[0].vector, [0.0, 0.0, 1.0]);
         assert_eq!(morph.localizers[0].interval, [40.0, 50.0]);

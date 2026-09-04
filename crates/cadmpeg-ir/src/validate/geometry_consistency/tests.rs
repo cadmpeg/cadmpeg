@@ -343,15 +343,18 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
 fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
     let mut ir = untrimmed_surface_curve();
     ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
-        degree: 2,
-        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        control_points: vec![
-            Point2::new(0.0, 1.0),
-            Point2::new(-1.0, 1.0),
-            Point2::new(-1.0, 0.0),
-        ],
-        weights: Some(vec![1.0, 2.0_f64.sqrt() / 2.0, 1.0]),
-        periodic: false,
+        nurbs: crate::geometry::PcurveNurbs::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point2::new(0.0, 1.0),
+                Point2::new(-1.0, 1.0),
+                Point2::new(-1.0, 0.0),
+            ],
+            Some(vec![1.0, 2.0_f64.sqrt() / 2.0, 1.0]),
+            false,
+        )
+        .unwrap(),
     };
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(&ir, &mut findings);
@@ -381,15 +384,18 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
     let pcurve = Pcurve {
         id: "pcurve".into(),
         geometry: PcurveGeometry::Nurbs {
-            degree: 2,
-            knots: vec![-1.0, 0.0, 0.0, 1.0, 1.0, 2.0],
-            control_points: vec![
-                Point2::new(0.0, 0.0),
-                Point2::new(1.0, 0.0),
-                Point2::new(2.0, 0.0),
-            ],
-            weights: None,
-            periodic: false,
+            nurbs: crate::geometry::PcurveNurbs::new(
+                2,
+                vec![-1.0, 0.0, 0.0, 1.0, 1.0, 2.0],
+                vec![
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                    Point2::new(2.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
         },
         metadata: PcurveMetadata::general(None, None, None),
     };
@@ -403,11 +409,14 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
         parameter_range: [1.0, 1.0],
         same_sense: true,
         basis: Box::new(PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-            weights: None,
-            periodic: true,
+            nurbs: crate::geometry::PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                None,
+                true,
+            )
+            .unwrap(),
         }),
     };
     assert_eq!(pcurve_parameter_domain(&geometry), Some([0.0, 1.0]));
@@ -418,26 +427,29 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     // At v=0 the quadratic surface has a zero derivative. The ordinary
     // seed at t=0 therefore cannot start Newton recovery; the finite
     // surface domain supplies an interior seed on the same branch.
-    let surface = SurfaceGeometry::Nurbs(NurbsSurface {
-        u_degree: 1,
-        v_degree: 2,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        u_count: 2,
-        v_count: 3,
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 1.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 1.0),
-        ],
-        weights: None,
-        normal_reversed: false,
-        u_periodic: false,
-        v_periodic: false,
-    });
+    let surface = SurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            1,
+            2,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            2,
+            3,
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 1.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 1.0),
+            ],
+            None,
+            false,
+            false,
+            false,
+        )
+        .unwrap(),
+    );
     let surface_id = SurfaceId("surface".to_string());
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
@@ -674,14 +686,17 @@ fn pcurve_surface_mismatch_is_flagged() {
         ir.model.pcurves.push(crate::geometry::Pcurve {
             id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
             geometry: crate::geometry::PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![
-                    crate::math::Point2::new(0.0, 0.0),
-                    crate::math::Point2::new(u_end, v_end),
-                ],
-                weights: None,
-                periodic: false,
+                nurbs: crate::geometry::PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![
+                        crate::math::Point2::new(0.0, 0.0),
+                        crate::math::Point2::new(u_end, v_end),
+                    ],
+                    None,
+                    false,
+                )
+                .unwrap(),
             },
             metadata: PcurveMetadata::general(None, None, fit_tolerance),
         });
@@ -735,14 +750,17 @@ fn pcurve_surface_mismatch_is_flagged() {
     procedural.model.pcurves.push(crate::geometry::Pcurve {
         id: crate::ids::PcurveId("synthetic:cube:pcurve#procedural".into()),
         geometry: crate::geometry::PcurveGeometry::Nurbs {
-            degree: 1,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            control_points: vec![
-                crate::math::Point2::new(0.0, 0.0),
-                crate::math::Point2::new(10.0, 5.0),
-            ],
-            weights: None,
-            periodic: false,
+            nurbs: crate::geometry::PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    crate::math::Point2::new(0.0, 0.0),
+                    crate::math::Point2::new(10.0, 5.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
         },
         metadata: PcurveMetadata::general(None, None, None),
     });
@@ -825,14 +843,17 @@ fn pcurve_surface_mismatch_is_flagged() {
         .push(crate::geometry::Pcurve {
             id: crate::ids::PcurveId("synthetic:cube:pcurve#negative".into()),
             geometry: crate::geometry::PcurveGeometry::Nurbs {
-                degree: 1,
-                knots: vec![-10.0, -10.0, 0.0, 0.0],
-                control_points: vec![
-                    crate::math::Point2::new(10.0, 0.0),
-                    crate::math::Point2::new(0.0, 0.0),
-                ],
-                weights: None,
-                periodic: false,
+                nurbs: crate::geometry::PcurveNurbs::new(
+                    1,
+                    vec![-10.0, -10.0, 0.0, 0.0],
+                    vec![
+                        crate::math::Point2::new(10.0, 0.0),
+                        crate::math::Point2::new(0.0, 0.0),
+                    ],
+                    None,
+                    false,
+                )
+                .unwrap(),
             },
             metadata: PcurveMetadata::general(None, None, None),
         });

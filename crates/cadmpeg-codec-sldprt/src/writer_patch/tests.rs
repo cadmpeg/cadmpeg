@@ -23,9 +23,9 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         panic!("compact NURBS surface");
     };
     let mut new = old.clone();
-    new.control_points[3].z = 750.0;
-    new.u_knots[2..].fill(2.0);
-    new.v_knots[2..].fill(3.0);
+    new.control_points_mut()[3].z = 750.0;
+    new.u_knots_mut()[2..].fill(2.0);
+    new.v_knots_mut()[2..].fill(3.0);
     let dirty_slots = [
         f64::from_bits(0x7ff8_0000_0000_0001).to_be_bytes(),
         f64::from_bits(0x7ff8_0000_0000_0002).to_be_bytes(),
@@ -97,8 +97,8 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 _ => None,
             })
             .unwrap();
-        curve.control_points[1].y = 1_500.0;
-        curve.knots[3..].fill(2.0);
+        curve.control_points_mut()[1].y = 1_500.0;
+        curve.knots_mut()[3..].fill(2.0);
         let expected_curve = curve.clone();
         let surface = ir_edit
             .model
@@ -109,9 +109,9 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 _ => None,
             })
             .unwrap();
-        surface.control_points[3].z = 750.0;
-        surface.u_knots[2..].fill(2.0);
-        surface.v_knots[2..].fill(3.0);
+        surface.control_points_mut()[3].z = 750.0;
+        surface.u_knots_mut()[2..].fill(2.0);
+        surface.v_knots_mut()[2..].fill(3.0);
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)
     };

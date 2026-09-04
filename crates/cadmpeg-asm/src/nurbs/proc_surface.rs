@@ -1503,12 +1503,12 @@ pub(crate) fn ellipse_to_nurbs(
         )
     };
     let w = std::f64::consts::FRAC_1_SQRT_2;
-    Some(NurbsCurve {
-        degree: 2,
-        knots: vec![
+    NurbsCurve::new(
+        2,
+        vec![
             0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,
         ],
-        control_points: vec![
+        vec![
             at(1.0, 0.0),
             at(1.0, 1.0),
             at(0.0, 1.0),
@@ -1519,9 +1519,10 @@ pub(crate) fn ellipse_to_nurbs(
             at(1.0, -1.0),
             at(1.0, 0.0),
         ],
-        weights: Some(vec![1.0, w, 1.0, w, 1.0, w, 1.0, w, 1.0]),
-        periodic: false,
-    })
+        Some(vec![1.0, w, 1.0, w, 1.0, w, 1.0, w, 1.0]),
+        false,
+    )
+    .ok()
 }
 
 /// Payload form of a revision-gated loft profile member, selected by the
@@ -3292,8 +3293,8 @@ pub fn revision_surface_tail(cur: &mut Cur<'_>) -> Option<RevisionSurfaceTail> {
             let (cache, cache_end) = surface_block(cur.toks(), cur.pos())?;
             cur.set_pos(cache_end);
             let domains = [
-                [*cache.u_knots.first()?, *cache.u_knots.last()?],
-                [*cache.v_knots.first()?, *cache.v_knots.last()?],
+                [*cache.u_knots().first()?, *cache.u_knots().last()?],
+                [*cache.v_knots().first()?, *cache.v_knots().last()?],
             ];
             (Some(cur.take_f64()? * LEN_TO_MM), Some(domains), None)
         }
@@ -3481,8 +3482,8 @@ fn rot_spl_sur(
         cur.at_scope_end().then_some(())?;
         let angular_interval = solved_cache_domains?[1];
         let parameter_interval = [
-            profile_endpoints[0].unwrap_or(*profile.knots.first()?),
-            profile_endpoints[1].unwrap_or(*profile.knots.last()?),
+            profile_endpoints[0].unwrap_or(*profile.knots().first()?),
+            profile_endpoints[1].unwrap_or(*profile.knots().last()?),
         ];
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Revolution {
@@ -3512,7 +3513,7 @@ fn rot_spl_sur(
     }
     let (directrix, directrix_end) = curve_block(span, cur.pos())?;
     cur.set_pos(directrix_end);
-    let parameter_interval = [*directrix.knots.first()?, *directrix.knots.last()?];
+    let parameter_interval = [*directrix.knots().first()?, *directrix.knots().last()?];
     let origin = cur.take_position()?;
     let axis_origin = Point3::new(
         origin[0] * LEN_TO_MM,
@@ -3523,7 +3524,7 @@ fn rot_spl_sur(
     let axis_direction = normalized(axis)?;
     let (cache, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
-    let angular_interval = [*cache.v_knots.first()?, *cache.v_knots.last()?];
+    let angular_interval = [*cache.v_knots().first()?, *cache.v_knots().last()?];
     let cache_fit_tolerance = optional_trailing_cache_tolerance(&mut cur)?;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Revolution {
