@@ -35,8 +35,9 @@ pub(super) use crate::solve::mesh_quotient::{
     mesh_assignment_endpoint_cycles_viable, mesh_edge_points_compatible,
     mesh_face_endpoint_configurations, possible_face_choices, possible_face_choices_with_limit,
     possible_face_equations, prune_mesh_endpoint_pair_support,
-    prune_mesh_endpoint_pair_support_with_limit, MeshPartialEndpointConstraint, MeshQuotient,
-    MeshSelectionSearch, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
+    prune_mesh_endpoint_pair_support_with_limit, AssignmentOrder, MeshPartialEndpointConstraint,
+    MeshQuotient, MeshSelectionSearch, MAX_FACE_EQUATION_CACHE_ENTRIES,
+    MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 pub(super) use crate::solve::missing_edge::{
     bind_edge_port_candidates, bounded_endpoint_cycle_orders, bounded_oriented_trail_orders,

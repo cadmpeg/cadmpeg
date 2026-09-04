@@ -11,11 +11,11 @@ use crate::families::standard::topology::{
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
     mesh_assignment_endpoint_cycles_viable_by, mesh_assignment_endpoint_cycles_viable_where,
-    mesh_face_endpoint_configurations, CoordinateRootClosure, MeshCoordinateRootDomains,
-    MeshEndpointCandidates, MeshEndpointPair, MeshEndpointSolutionFilter,
-    MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates, MeshPartialEndpointConstraint,
-    MeshQuotient, MeshQuotientGaugeState, SearchOutcome, MAX_FACE_ENDPOINT_CONFIGURATION_WORK,
-    MAX_MESH_CONSTRAINT_OPERATIONS,
+    mesh_face_endpoint_configurations, AssignmentOrder, CoordinateRootClosure,
+    MeshCoordinateRootDomains, MeshEndpointCandidates, MeshEndpointPair,
+    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates,
+    MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState, SearchOutcome,
+    MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     propagate_edge_port_points, same_unordered_pair, MeshBoundaryEdgeCandidate,
@@ -501,9 +501,10 @@ pub(crate) fn order_incidence_components_by_branch_width(
 pub(crate) fn order_incidence_components_by_constraints(
     components: &mut Vec<Vec<usize>>,
     choices: &[Vec<[usize; 2]>],
-    assignment_predecessors: Option<&[Option<usize>]>,
-    assignment_dependencies: Option<&[Vec<usize>]>,
+    assignment_order: Option<AssignmentOrder<'_>>,
 ) -> Option<()> {
+    let assignment_predecessors = assignment_order.and_then(AssignmentOrder::predecessors);
+    let assignment_dependencies = assignment_order.and_then(AssignmentOrder::dependencies);
     if components
         .iter()
         .flatten()
@@ -525,7 +526,7 @@ pub(crate) fn order_incidence_components_by_constraints(
     {
         return None;
     }
-    if assignment_predecessors.is_none() && assignment_dependencies.is_none() {
+    if assignment_order.is_none() {
         return order_incidence_components_by_branch_width(components, choices);
     }
 
@@ -1859,7 +1860,8 @@ impl IncidenceComponentSearch<'_, '_> {
     fn branch_edge_ready(&self, edge: usize) -> bool {
         let predecessor_ready = self
             .partial_solution_filter
-            .and_then(|constraint| constraint.assignment_predecessors)
+            .and_then(|constraint| constraint.assignment_order)
+            .and_then(AssignmentOrder::predecessors)
             .and_then(|predecessors| predecessors.get(edge).copied().flatten())
             .is_none_or(|predecessor| {
                 self.assignment
@@ -1868,7 +1870,8 @@ impl IncidenceComponentSearch<'_, '_> {
             });
         let dependencies_ready = self
             .partial_solution_filter
-            .and_then(|constraint| constraint.assignment_dependencies)
+            .and_then(|constraint| constraint.assignment_order)
+            .and_then(AssignmentOrder::dependencies)
             .and_then(|dependencies| dependencies.get(edge))
             .is_none_or(|dependencies| {
                 dependencies.iter().all(|&predecessor| {
@@ -3967,7 +3970,8 @@ where
             constraint.active_edges.len() != choices.len()
                 || constraint.coupled_edges.len() != choices.len()
                 || constraint
-                    .assignment_predecessors
+                    .assignment_order
+                    .and_then(AssignmentOrder::predecessors)
                     .is_some_and(|predecessors| predecessors.len() != choices.len())
         }) {
             return None;
@@ -4059,8 +4063,7 @@ where
         order_incidence_components_by_constraints(
             &mut components,
             choices,
-            partial_solution_valid.and_then(|constraint| constraint.assignment_predecessors),
-            partial_solution_valid.and_then(|constraint| constraint.assignment_dependencies),
+            partial_solution_valid.and_then(|constraint| constraint.assignment_order),
         )?;
         let mut face_edges =
             alloc_filled(face_count, Vec::new(), "catia incidence face edges").ok()?;

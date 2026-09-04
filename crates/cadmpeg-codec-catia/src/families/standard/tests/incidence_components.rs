@@ -113,8 +113,7 @@ fn incidence_components_order_prerequisites_without_joining_domains() {
     crate::solve::incidence::order_incidence_components_by_constraints(
         &mut components,
         &choices,
-        None,
-        Some(&dependencies),
+        AssignmentOrder::new(None, Some(&dependencies)),
     )
     .expect("acyclic component prerequisites");
 
@@ -131,8 +130,7 @@ fn incidence_components_reject_prerequisite_cycles() {
         crate::solve::incidence::order_incidence_components_by_constraints(
             &mut components,
             &choices,
-            Some(&predecessors),
-            None,
+            AssignmentOrder::new(Some(&predecessors), None),
         )
         .is_none()
     );
@@ -142,8 +140,7 @@ fn incidence_components_reject_prerequisite_cycles() {
         crate::solve::incidence::order_incidence_components_by_constraints(
             &mut component,
             &choices,
-            Some(&predecessors),
-            None,
+            AssignmentOrder::new(Some(&predecessors), None),
         )
         .is_none()
     );
@@ -1057,8 +1054,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
         Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
-            assignment_predecessors: None,
-            assignment_dependencies: None,
+            assignment_order: None,
             valid: &partial,
         }),
         &|_| true,
@@ -1147,8 +1143,7 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
         Some(MeshPartialEndpointConstraint {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
-            assignment_predecessors: None,
-            assignment_dependencies: None,
+            assignment_order: None,
             valid: &partial,
         }),
         &|_| true,
