@@ -71,7 +71,7 @@ pub(crate) fn transfer_parameters(
     };
     let legacy_transfer = collect_legacy_parameters(native, &mut candidates, legacy_scope);
     let mut relation_program_parameters =
-        BTreeMap::<ParameterId, Option<(DesignParameter, &'static str)>>::new();
+        BTreeMap::<ParameterId, Option<(DesignParameter, FormulaParameterType)>>::new();
     for program_entity in native.entity_records.iter().filter(|entity| {
         graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
     }) {
@@ -280,15 +280,14 @@ pub(crate) fn transfer_parameters(
                                     },
                                     dependencies,
                                     properties: parameter_properties(
-                                        parameter_type,
+                                        parameter_type.as_str(),
                                         Some(output_value.binding.value.as_str()),
                                     ),
                                     pmi: None,
                                     native_ref: Some(output.id.clone()),
                                 },
                                 parameter_type,
-                                formula_output: true,
-                                input_fallback: None,
+                                role: FormulaParameterRole::FormulaOutput { fallback: None },
                                 source_order: output.byte_offset,
                             });
                         }
@@ -348,8 +347,10 @@ pub(crate) fn transfer_parameters(
 
     for id in &conflicting_inputs {
         match candidates.get_mut(id) {
-            Some(candidate) if candidate.formula_output => {
-                candidate.input_fallback = None;
+            Some(candidate) if candidate.role.is_formula_output() => {
+                if let FormulaParameterRole::FormulaOutput { fallback } = &mut candidate.role {
+                    *fallback = None;
+                }
             }
             Some(_) => {
                 candidates.remove(id);
@@ -358,7 +359,10 @@ pub(crate) fn transfer_parameters(
         }
     }
     candidates.retain(|id, candidate| {
-        match (candidate.formula_output, formula_definition_counts.get(id)) {
+        match (
+            candidate.role.is_formula_output(),
+            formula_definition_counts.get(id),
+        ) {
             (true, Some(count)) if *count != 1 => demote_formula_output(candidate),
             (true, Some(_)) => true,
             (false, _) | (true, None) => true,
@@ -379,7 +383,7 @@ pub(crate) fn transfer_parameters(
         let Some(candidate) = candidates.get_mut(&output) else {
             continue;
         };
-        if !candidate.formula_output {
+        if !candidate.role.is_formula_output() {
             continue;
         }
         if !demote_formula_output(candidate) {
@@ -440,7 +444,7 @@ pub(crate) fn transfer_parameters(
     for program in programs {
         if candidates
             .get(&program.output)
-            .is_some_and(|candidate| candidate.formula_output)
+            .is_some_and(|candidate| candidate.role.is_formula_output())
             && program
                 .inputs
                 .iter()
@@ -488,7 +492,7 @@ pub(crate) fn transfer_parameters(
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in &parameters {
         annotation_builder.derived(&candidate.parameter.id.as_str(), "properties");
-        if !candidate.formula_output && candidate.parameter.dependencies.is_empty() {
+        if !candidate.role.is_formula_output() && candidate.parameter.dependencies.is_empty() {
             annotation_builder.derived(&candidate.parameter.id.as_str(), "expression");
         }
     }
@@ -557,7 +561,7 @@ fn definition_chain_parameter_candidate(
             None,
         ),
         crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
-            if parameter_type == "Boolean" =>
+            if parameter_type == FormulaParameterType::Boolean =>
         {
             (
                 TypedParameterEvaluation::Value(ParameterValue::Boolean(match value {
@@ -582,7 +586,7 @@ fn definition_chain_parameter_candidate(
     // A definition chain names the parameter in its first definition. It does
     // not carry the named-parameter value record's scope/expression binding,
     // so do not publish the definition name as `catia_binding`.
-    let mut properties = parameter_properties(parameter_type, None);
+    let mut properties = parameter_properties(parameter_type.as_str(), None);
     properties.insert(
         "catia_definition_selector_entry".to_string(),
         chain.selector.entry.clone(),
@@ -638,8 +642,7 @@ fn definition_chain_parameter_candidate(
             native_ref: Some(entity.id.clone()),
         },
         parameter_type,
-        formula_output: false,
-        input_fallback: None,
+        role: FormulaParameterRole::Input,
         source_order: entity.byte_offset,
     })
 }
@@ -731,13 +734,12 @@ fn collect_legacy_parameters(
                         display: None,
                         value,
                         dependencies: Vec::new(),
-                        properties: parameter_properties(parameter_type, None),
+                        properties: parameter_properties(parameter_type.as_str(), None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
                     parameter_type,
-                    formula_output: false,
-                    input_fallback: None,
+                    role: FormulaParameterRole::Input,
                     source_order: scalar.byte_offset,
                 },
             );
@@ -790,9 +792,8 @@ fn collect_legacy_parameters(
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
-                    parameter_type: "String",
-                    formula_output: false,
-                    input_fallback: None,
+                    parameter_type: FormulaParameterType::String,
+                    role: FormulaParameterRole::Input,
                     source_order: string.byte_offset,
                 },
             );
@@ -845,9 +846,8 @@ fn collect_legacy_parameters(
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
-                    parameter_type: "Integer",
-                    formula_output: false,
-                    input_fallback: None,
+                    parameter_type: FormulaParameterType::Integer,
+                    role: FormulaParameterRole::Input,
                     source_order: integer.byte_offset,
                 },
             );
@@ -900,7 +900,7 @@ fn collect_legacy_parameters(
             }
             candidate.parameter.expression = evaluation.expression.to_string();
             candidate.parameter.dependencies = evaluation.dependencies;
-            candidate.formula_output = true;
+            candidate.role = FormulaParameterRole::FormulaOutput { fallback: None };
             transfer.formulas += 1;
         }
     }
@@ -1083,10 +1083,46 @@ fn resolved_or_intrinsic_legacy_type<'a>(
 
 struct FormulaParameterCandidate {
     parameter: DesignParameter,
-    parameter_type: &'static str,
-    formula_output: bool,
-    input_fallback: Option<(DesignParameter, &'static str)>,
+    parameter_type: FormulaParameterType,
+    role: FormulaParameterRole,
     source_order: u64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FormulaParameterType {
+    Length,
+    Angle,
+    Real,
+    Integer,
+    Boolean,
+    String,
+}
+
+impl FormulaParameterType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Length => "LENGTH",
+            Self::Angle => "ANGLE",
+            Self::Real => "Real",
+            Self::Integer => "Integer",
+            Self::Boolean => "Boolean",
+            Self::String => "String",
+        }
+    }
+}
+
+#[derive(Clone)]
+enum FormulaParameterRole {
+    Input,
+    FormulaOutput {
+        fallback: Option<(DesignParameter, FormulaParameterType)>,
+    },
+}
+
+impl FormulaParameterRole {
+    fn is_formula_output(&self) -> bool {
+        matches!(self, Self::FormulaOutput { .. })
+    }
 }
 
 fn typed_entity_parameter_candidate(
@@ -1115,15 +1151,14 @@ fn typed_entity_parameter_candidate(
             value,
             dependencies: Vec::new(),
             properties: parameter_properties(
-                parameter_type,
+                parameter_type.as_str(),
                 Some(parameter.binding.value.as_str()),
             ),
             pmi: None,
             native_ref: Some(entity.id.clone()),
         },
         parameter_type,
-        formula_output: false,
-        input_fallback: None,
+        role: FormulaParameterRole::Input,
         source_order: entity.byte_offset,
     })
 }
@@ -1145,7 +1180,7 @@ struct FormulaProgramCandidate {
     expression_entity: String,
     output: ParameterId,
     inputs: Vec<ParameterId>,
-    input_parameters: Vec<(DesignParameter, &'static str)>,
+    input_parameters: Vec<(DesignParameter, FormulaParameterType)>,
 }
 
 fn merge_formula_parameter_candidate(
@@ -1155,7 +1190,10 @@ fn merge_formula_parameter_candidate(
 ) {
     match candidates.get(&candidate.parameter.id) {
         Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
-            match (existing.formula_output, candidate.formula_output) {
+            match (
+                existing.role.is_formula_output(),
+                candidate.role.is_formula_output(),
+            ) {
                 (true, true) => {}
                 (true, false) => {
                     conflicting_inputs.insert(candidate.parameter.id);
@@ -1169,16 +1207,24 @@ fn merge_formula_parameter_candidate(
                 }
             }
         }
-        Some(existing) if !existing.formula_output && candidate.formula_output => {
-            candidate.input_fallback = Some((existing.parameter.clone(), existing.parameter_type));
+        Some(existing)
+            if !existing.role.is_formula_output() && candidate.role.is_formula_output() =>
+        {
+            candidate.role = FormulaParameterRole::FormulaOutput {
+                fallback: Some((existing.parameter.clone(), existing.parameter_type)),
+            };
             candidates.insert(candidate.parameter.id.clone(), candidate);
         }
-        Some(existing) if existing.formula_output && !candidate.formula_output => {
-            candidates
+        Some(existing)
+            if existing.role.is_formula_output() && !candidate.role.is_formula_output() =>
+        {
+            if let FormulaParameterRole::FormulaOutput { fallback } = &mut candidates
                 .get_mut(&candidate.parameter.id)
                 .expect("candidate exists")
-                .input_fallback
-                .get_or_insert((candidate.parameter, candidate.parameter_type));
+                .role
+            {
+                fallback.get_or_insert((candidate.parameter, candidate.parameter_type));
+            }
         }
         Some(_) => {}
         None => {
@@ -1281,15 +1327,14 @@ fn relation_program_output_candidate(
             },
             dependencies: dependencies.clone(),
             properties: parameter_properties(
-                parameter_type,
+                parameter_type.as_str(),
                 Some(output_value.binding.value.as_str()),
             ),
             pmi: None,
             native_ref: Some(output_entity.id.clone()),
         },
         parameter_type,
-        formula_output: true,
-        input_fallback: None,
+        role: FormulaParameterRole::FormulaOutput { fallback: None },
         source_order: output_entity.byte_offset,
     };
     Some((
@@ -1313,7 +1358,10 @@ fn formula_parameter_candidates_agree(
     {
         return false;
     }
-    match (existing.formula_output, candidate.formula_output) {
+    match (
+        existing.role.is_formula_output(),
+        candidate.role.is_formula_output(),
+    ) {
         (true, true) | (false, false) => existing.parameter == candidate.parameter,
         (true, false) => formula_parameter_matches_input(&existing.parameter, &candidate.parameter),
         (false, true) => formula_parameter_matches_input(&candidate.parameter, &existing.parameter),
@@ -1334,12 +1382,12 @@ fn formula_parameter_matches_input(formula: &DesignParameter, input: &DesignPara
 
 fn formula_parameter_candidate_accepts_input(
     candidate: &FormulaParameterCandidate,
-    input: &(DesignParameter, &'static str),
+    input: &(DesignParameter, FormulaParameterType),
 ) -> bool {
     if candidate.parameter_type != input.1 {
         return false;
     }
-    if candidate.formula_output {
+    if candidate.role.is_formula_output() {
         formula_parameter_matches_input(&candidate.parameter, &input.0)
     } else {
         candidate.parameter == input.0
@@ -1347,12 +1395,15 @@ fn formula_parameter_candidate_accepts_input(
 }
 
 fn demote_formula_output(candidate: &mut FormulaParameterCandidate) -> bool {
-    let Some((input, parameter_type)) = candidate.input_fallback.take() else {
+    let FormulaParameterRole::FormulaOutput {
+        fallback: Some((input, parameter_type)),
+    } = std::mem::replace(&mut candidate.role, FormulaParameterRole::Input)
+    else {
+        candidate.role = FormulaParameterRole::Input;
         return false;
     };
     candidate.parameter = input;
     candidate.parameter_type = parameter_type;
-    candidate.formula_output = false;
     true
 }
 
@@ -3066,40 +3117,39 @@ fn evaluate_formula_expression_with_mode<'a>(
     .parse()
 }
 
-fn static_formula_value(source_type: &str) -> Option<EvaluatedFormulaValue> {
-    match canonical_parameter_type(source_type)? {
-        "LENGTH" => Some(EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
+fn static_formula_value(parameter_type: FormulaParameterType) -> Option<EvaluatedFormulaValue> {
+    Some(match parameter_type {
+        FormulaParameterType::Length => EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
             value: 0.0,
             dimension: FormulaDimension::LENGTH,
             integral: None,
             known_value: None,
-        })),
-        "ANGLE" => Some(EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
+        }),
+        FormulaParameterType::Angle => EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
             value: 0.0,
             dimension: FormulaDimension::ANGLE,
             integral: None,
             known_value: None,
-        })),
-        "Real" => Some(EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
+        }),
+        FormulaParameterType::Real => EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
             value: 0.5,
             dimension: FormulaDimension::SCALAR,
             integral: None,
             known_value: None,
-        })),
-        "Integer" => Some(EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
+        }),
+        FormulaParameterType::Integer => EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
             value: 0.0,
             dimension: FormulaDimension::SCALAR,
             integral: Some(true),
             known_value: None,
-        })),
-        "Boolean" => Some(EvaluatedFormulaValue::Boolean(
-            EvaluatedFormulaBoolean::unknown(),
-        )),
-        "String" => Some(EvaluatedFormulaValue::String(
-            EvaluatedFormulaString::unknown(),
-        )),
-        _ => None,
-    }
+        }),
+        FormulaParameterType::Boolean => {
+            EvaluatedFormulaValue::Boolean(EvaluatedFormulaBoolean::unknown())
+        }
+        FormulaParameterType::String => {
+            EvaluatedFormulaValue::String(EvaluatedFormulaString::unknown())
+        }
+    })
 }
 
 fn typed_parameter_evaluation(
@@ -3134,14 +3184,14 @@ fn typed_parameter_evaluation(
     Some(TypedParameterEvaluation::Value(value))
 }
 
-fn canonical_parameter_type(source_type: &str) -> Option<&'static str> {
+fn canonical_parameter_type(source_type: &str) -> Option<FormulaParameterType> {
     match source_type {
-        "LENGTH" => Some("LENGTH"),
-        "ANGLE" => Some("ANGLE"),
-        "Real" | "R" => Some("Real"),
-        "Integer" | "I" => Some("Integer"),
-        "Boolean" => Some("Boolean"),
-        "String" => Some("String"),
+        "LENGTH" => Some(FormulaParameterType::Length),
+        "ANGLE" => Some(FormulaParameterType::Angle),
+        "Real" | "R" => Some(FormulaParameterType::Real),
+        "Integer" | "I" => Some(FormulaParameterType::Integer),
+        "Boolean" => Some(FormulaParameterType::Boolean),
+        "String" => Some(FormulaParameterType::String),
         _ => None,
     }
 }
@@ -3157,7 +3207,7 @@ fn neutral_parameter_id(native_id: &str) -> ParameterId {
 mod parser_tests {
     use super::*;
 
-    fn unset_candidate(parameter_type: &'static str) -> FormulaParameterCandidate {
+    fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
         FormulaParameterCandidate {
             parameter: DesignParameter {
                 id: ParameterId("parameter".to_string()),
@@ -3173,8 +3223,7 @@ mod parser_tests {
                 native_ref: Some("native-parameter".to_string()),
             },
             parameter_type,
-            formula_output: false,
-            input_fallback: None,
+            role: FormulaParameterRole::Input,
             source_order: 1,
         }
     }
@@ -3182,12 +3231,12 @@ mod parser_tests {
     #[test]
     fn unset_parameter_candidates_require_one_canonical_type() {
         assert!(formula_parameter_candidates_agree(
-            &unset_candidate("Real"),
-            &unset_candidate("Real")
+            &unset_candidate(FormulaParameterType::Real),
+            &unset_candidate(FormulaParameterType::Real)
         ));
         assert!(!formula_parameter_candidates_agree(
-            &unset_candidate("LENGTH"),
-            &unset_candidate("Real")
+            &unset_candidate(FormulaParameterType::Length),
+            &unset_candidate(FormulaParameterType::Real)
         ));
     }
 
@@ -3226,17 +3275,26 @@ mod parser_tests {
     #[test]
     fn static_formula_check_preserves_type_closure_without_values() {
         let bindings = BTreeMap::from([
-            ("#1_", static_formula_value("LENGTH").expect("length type")),
+            (
+                "#1_",
+                static_formula_value(FormulaParameterType::Length).expect("length type"),
+            ),
             (
                 "#2_",
-                static_formula_value("Integer").expect("integer type"),
+                static_formula_value(FormulaParameterType::Integer).expect("integer type"),
             ),
             (
                 "#3_",
-                static_formula_value("Boolean").expect("Boolean type"),
+                static_formula_value(FormulaParameterType::Boolean).expect("Boolean type"),
             ),
-            ("#4_", static_formula_value("String").expect("String type")),
-            ("#5_", static_formula_value("Real").expect("Real type")),
+            (
+                "#4_",
+                static_formula_value(FormulaParameterType::String).expect("String type"),
+            ),
+            (
+                "#5_",
+                static_formula_value(FormulaParameterType::Real).expect("Real type"),
+            ),
         ]);
 
         assert!(
@@ -3280,13 +3338,22 @@ mod parser_tests {
     #[test]
     fn static_formula_check_does_not_use_placeholder_values_as_facts() {
         let bindings = BTreeMap::from([
-            ("#1_", static_formula_value("LENGTH").expect("length type")),
+            (
+                "#1_",
+                static_formula_value(FormulaParameterType::Length).expect("length type"),
+            ),
             (
                 "#2_",
-                static_formula_value("Integer").expect("integer type"),
+                static_formula_value(FormulaParameterType::Integer).expect("integer type"),
             ),
-            ("#3_", static_formula_value("Real").expect("real type")),
-            ("#4_", static_formula_value("String").expect("string type")),
+            (
+                "#3_",
+                static_formula_value(FormulaParameterType::Real).expect("real type"),
+            ),
+            (
+                "#4_",
+                static_formula_value(FormulaParameterType::String).expect("string type"),
+            ),
         ]);
 
         let unknown_predicate = evaluate_formula_expression_with_mode("#3_ > 1", &bindings, false)
