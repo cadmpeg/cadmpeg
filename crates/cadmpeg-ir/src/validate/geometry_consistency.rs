@@ -868,7 +868,7 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
         | SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Unknown { .. } => None,
     }
 }

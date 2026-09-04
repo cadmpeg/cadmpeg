@@ -7289,7 +7289,7 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         SurfaceGeometry::Nurbs(surface) => {
             return point_on_nurbs_surface(point, surface);
         }
-        SurfaceGeometry::Polygonal { .. }
+        SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
@@ -9076,7 +9076,7 @@ pub(crate) fn circle_axis_from_carrier(
             }
         }
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,

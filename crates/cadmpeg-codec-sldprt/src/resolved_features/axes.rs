@@ -1344,7 +1344,7 @@ pub(super) fn common_generated_surface_axis(
             SurfaceGeometry::Plane { .. }
             | SurfaceGeometry::Sphere { .. }
             | SurfaceGeometry::Nurbs(_)
-            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Polygonal(_)
             | SurfaceGeometry::Procedural { .. }
             | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Unknown { .. } => None,

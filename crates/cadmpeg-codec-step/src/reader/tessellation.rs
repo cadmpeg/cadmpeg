@@ -393,37 +393,39 @@ pub(super) fn decode(
             warnings.push(message.clone());
             losses.push(StepLossCode::TessellationItemUndeclared.note(message));
         }
-        ir.model.tessellations.push(Tessellation {
-            faces: Vec::new(),
-            chordal_deflection: None,
-            id: StepIdentity::tessellation("mesh", id),
-            body: (!unresolved_items.contains(&id))
-                .then(|| item_bodies.get(&id))
-                .flatten()
-                .filter(|bodies| bodies.len() == 1)
-                .and_then(|bodies| bodies.iter().next().cloned()),
-            source_object: (!declared_items.contains(&id)
-                || unresolved_items.contains(&id)
-                || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
-            .then(|| SourceObjectAssociation {
-                format: crate::dialect::FORMAT.into(),
-                object_id: format!("#{id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-            vertices: local_vertices,
-            triangles: local_triangles,
-            feature_edges: Vec::new(),
-            strip_lengths,
-            normals,
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
+        ir.model.tessellations.push(
+            Tessellation::from_decoded(
+                StepIdentity::tessellation("mesh", id),
+                local_vertices,
+                local_triangles,
+                strip_lengths,
+                normals,
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("decoded STEP tessellation is valid")
+            .with_body(
+                (!unresolved_items.contains(&id))
+                    .then(|| item_bodies.get(&id))
+                    .flatten()
+                    .filter(|bodies| bodies.len() == 1)
+                    .and_then(|bodies| bodies.iter().next().cloned()),
+            )
+            .with_source_object(
+                (!declared_items.contains(&id)
+                    || unresolved_items.contains(&id)
+                    || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
+                .then(|| SourceObjectAssociation {
+                    format: crate::dialect::FORMAT.into(),
+                    object_id: format!("#{id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            ),
+        );
         typed.extend([id, coordinate_id]);
     }
     if !ir.model.tessellations.is_empty() {

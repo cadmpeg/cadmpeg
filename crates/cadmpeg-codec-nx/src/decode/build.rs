@@ -326,7 +326,7 @@ pub(crate) fn try_decode_geometry(
                 SurfaceGeometry::Torus { .. } => counts.tori += 1,
                 SurfaceGeometry::Nurbs(_)
                 | SurfaceGeometry::Procedural { .. }
-                | SurfaceGeometry::Polygonal { .. }
+                | SurfaceGeometry::Polygonal(_)
                 | SurfaceGeometry::Transformed { .. }
                 | SurfaceGeometry::Unknown { .. } => {}
             }
@@ -520,7 +520,7 @@ pub(crate) fn try_decode_geometry(
                 | CurveGeometry::Composite { .. }
                 | CurveGeometry::Nurbs(_)
                 | CurveGeometry::Procedural { .. }
-                | CurveGeometry::Polyline { .. }
+                | CurveGeometry::Polyline(_)
                 | CurveGeometry::Transformed { .. }
                 | CurveGeometry::Unknown { .. } => {}
             }

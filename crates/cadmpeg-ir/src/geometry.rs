@@ -644,6 +644,200 @@ pub fn knots_strictly_increasing(knots: &[f64]) -> bool {
     knots.windows(2).all(|pair| pair[0] < pair[1])
 }
 
+/// Structural error in a sampled polyline or polygonal carrier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeometryLayoutError(String);
+
+impl std::fmt::Display for GeometryLayoutError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for GeometryLayoutError {}
+
+fn geometry_layout_error(message: impl Into<String>) -> GeometryLayoutError {
+    GeometryLayoutError(message.into())
+}
+
+/// Source-native polygonal surface with an explicit chordal error bound.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct PolygonalSurface {
+    vertices: Vec<Point3>,
+    triangles: Vec<[u32; 3]>,
+    chordal_deflection: f64,
+}
+
+impl PolygonalSurface {
+    /// Build a polygonal surface whose triangle indices address `vertices`.
+    pub fn new(
+        vertices: Vec<Point3>,
+        triangles: Vec<[u32; 3]>,
+        chordal_deflection: f64,
+    ) -> Result<Self, GeometryLayoutError> {
+        if vertices.len() < 3 {
+            return Err(geometry_layout_error(
+                "polygonal surface must contain at least three vertices",
+            ));
+        }
+        if triangles.is_empty() {
+            return Err(geometry_layout_error(
+                "polygonal surface must contain at least one triangle",
+            ));
+        }
+        if triangles
+            .iter()
+            .flatten()
+            .any(|index| *index as usize >= vertices.len())
+        {
+            return Err(geometry_layout_error(
+                "polygonal surface contains an out-of-range triangle index",
+            ));
+        }
+        Ok(Self {
+            vertices,
+            triangles,
+            chordal_deflection,
+        })
+    }
+
+    /// Ordered model-space vertices.
+    #[must_use]
+    pub fn vertices(&self) -> &[Point3] {
+        &self.vertices
+    }
+
+    /// Mutable vertex positions. The cardinality cannot change.
+    pub fn vertices_mut(&mut self) -> &mut [Point3] {
+        &mut self.vertices
+    }
+
+    /// Zero-based triangle indices into [`Self::vertices`].
+    #[must_use]
+    pub fn triangles(&self) -> &[[u32; 3]] {
+        &self.triangles
+    }
+
+    /// Maximum chordal deviation recorded by the source.
+    #[must_use]
+    pub const fn chordal_deflection(&self) -> f64 {
+        self.chordal_deflection
+    }
+
+    /// Set the recorded chordal deviation.
+    pub fn set_chordal_deflection(&mut self, chordal_deflection: f64) {
+        self.chordal_deflection = chordal_deflection;
+    }
+}
+
+impl<'de> Deserialize<'de> for PolygonalSurface {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            vertices: Vec<Point3>,
+            triangles: Vec<[u32; 3]>,
+            chordal_deflection: f64,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.vertices, wire.triangles, wire.chordal_deflection)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+/// Source-native polyline with an explicit chordal error bound.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct PolylineCurve {
+    points: Vec<Point3>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parameters: Option<Vec<f64>>,
+    chordal_deflection: f64,
+}
+
+impl PolylineCurve {
+    /// Build a polyline whose optional parameters match the sample count.
+    pub fn new(
+        points: Vec<Point3>,
+        parameters: Option<Vec<f64>>,
+        chordal_deflection: f64,
+    ) -> Result<Self, GeometryLayoutError> {
+        if points.len() < 2 {
+            return Err(geometry_layout_error(
+                "polyline must contain at least two points",
+            ));
+        }
+        if let Some(parameters) = &parameters {
+            if parameters.len() != points.len() {
+                return Err(geometry_layout_error(
+                    "polyline parameters do not match the point count",
+                ));
+            }
+        }
+        Ok(Self {
+            points,
+            parameters,
+            chordal_deflection,
+        })
+    }
+
+    /// Ordered model-space samples.
+    #[must_use]
+    pub fn points(&self) -> &[Point3] {
+        &self.points
+    }
+
+    /// Mutable sample positions. The cardinality cannot change.
+    pub fn points_mut(&mut self) -> &mut [Point3] {
+        &mut self.points
+    }
+
+    /// Optional source parameters parallel to [`Self::points`].
+    #[must_use]
+    pub fn parameters(&self) -> Option<&[f64]> {
+        self.parameters.as_deref()
+    }
+
+    /// Mutable source parameters. The cardinality cannot change.
+    pub fn parameters_mut(&mut self) -> Option<&mut [f64]> {
+        self.parameters.as_deref_mut()
+    }
+
+    /// Maximum chordal deviation recorded by the source.
+    #[must_use]
+    pub const fn chordal_deflection(&self) -> f64 {
+        self.chordal_deflection
+    }
+
+    /// Set the recorded chordal deviation.
+    pub fn set_chordal_deflection(&mut self, chordal_deflection: f64) {
+        self.chordal_deflection = chordal_deflection;
+    }
+}
+
+impl<'de> Deserialize<'de> for PolylineCurve {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            points: Vec<Point3>,
+            #[serde(default)]
+            parameters: Option<Vec<f64>>,
+            chordal_deflection: f64,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.points, wire.parameters, wire.chordal_deflection)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 /// Analytic, NURBS, or opaque surface geometry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -723,14 +917,7 @@ pub enum SurfaceGeometry {
         cache: Option<SolvedSurfaceGeometry>,
     },
     /// Source-native polygonal surface with an explicit chordal error bound.
-    Polygonal {
-        /// Ordered model-space vertices.
-        vertices: Vec<Point3>,
-        /// Zero-based triangle indices into `vertices`.
-        triangles: Vec<[u32; 3]>,
-        /// Maximum chordal deviation recorded by the source.
-        chordal_deflection: f64,
-    },
+    Polygonal(PolygonalSurface),
     /// Exact affine placement of an inline basis surface.
     Transformed {
         /// Unplaced basis geometry with unchanged parameterization.
@@ -917,15 +1104,7 @@ pub enum CurveGeometry {
         cache: Option<SolvedCurveGeometry>,
     },
     /// Source-native polyline with an explicit chordal error bound.
-    Polyline {
-        /// Ordered model-space samples.
-        points: Vec<Point3>,
-        /// Optional source parameters parallel to `points`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parameters: Option<Vec<f64>>,
-        /// Maximum chordal deviation recorded by the source.
-        chordal_deflection: f64,
-    },
+    Polyline(PolylineCurve),
     /// Exact affine placement of an inline basis curve.
     Transformed {
         /// Unplaced basis geometry with unchanged parameterization.

@@ -346,8 +346,8 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
     let mut coordinate_scale = 0.0_f64;
     for mesh in meshes {
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
-        for triangle in &mesh.triangles {
-            let [a, b, c] = triangle.map(|index| mesh.vertices.get(index as usize).copied());
+        for triangle in mesh.triangles() {
+            let [a, b, c] = triangle.map(|index| mesh.vertices().get(index as usize).copied());
             let (Some(a), Some(b), Some(c)) = (a, b, c) else {
                 return None;
             };

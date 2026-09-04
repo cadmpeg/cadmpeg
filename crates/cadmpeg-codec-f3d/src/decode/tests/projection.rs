@@ -183,12 +183,12 @@ fn indexed_mesh_channels_project_default_and_override_selectors() {
     assert!(unresolved.is_empty());
     assert_eq!(channels.len(), 1);
     assert_eq!(
-        channels[0].domain,
+        channels[0].domain(),
         cadmpeg_ir::tessellation::TessellationChannelDomain::Corner
     );
-    assert_eq!(channels[0].count, 5);
-    assert_eq!(channels[0].indices, [3, 1, 4]);
-    assert_eq!(channels[0].data, [10, 11, 12, 13, 14]);
+    assert_eq!(channels[0].count(), 5);
+    assert_eq!(channels[0].indices(), [3, 1, 4]);
+    assert_eq!(channels[0].data(), [10, 11, 12, 13, 14]);
 }
 
 #[test]

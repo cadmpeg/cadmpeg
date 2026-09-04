@@ -1060,7 +1060,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
         SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => None,
     }
@@ -2406,7 +2406,7 @@ pub(super) fn project(
             SurfaceGeometry::Plane { .. } => true,
             SurfaceGeometry::Nurbs(_)
             | SurfaceGeometry::Procedural { .. }
-            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Polygonal(_)
             | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Unknown { .. } => false,
         };

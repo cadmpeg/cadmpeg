@@ -295,25 +295,22 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
     ir.model.tessellations = body_ids
         .iter()
         .enumerate()
-        .map(|(index, body)| Tessellation {
-            id: format!("synthetic:test:tessellation#{index}"),
-            body: Some(body.clone()),
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: vec![3],
-            normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
+        .map(|(index, body)| {
+            Tessellation::from_decoded(
+                format!("synthetic:test:tessellation#{index}"),
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                vec![[0, 1, 2]],
+                vec![3],
+                vec![Vector3::new(0.0, 0.0, 1.0); 3],
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("valid tessellation")
+            .with_body(Some(body.clone()))
         })
         .collect();
     ir.model.configurations = body_ids
@@ -373,7 +370,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .model
         .tessellations
         .iter()
-        .flat_map(|mesh| mesh.vertices.iter().map(|point| point.x))
+        .flat_map(|mesh| mesh.vertices().iter().map(|point| point.x))
         .collect::<Vec<_>>();
     assert!(mesh_x.iter().any(|value| (*value - 10.0).abs() < 1.0e-6));
     assert!(mesh_x.iter().any(|value| (*value - 20.0).abs() < 1.0e-6));

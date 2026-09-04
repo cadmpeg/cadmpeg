@@ -953,20 +953,16 @@ So 1001000 +2 0 *
         .expect("triangulation-only topology");
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.tessellations[0].vertices[0].x, 0.0);
+    assert_eq!(result.ir().model.tessellations[0].vertices()[0].x, 0.0);
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Polygonal {
-            chordal_deflection: 0.02,
-            ..
-        }
+        cadmpeg_ir::geometry::SurfaceGeometry::Polygonal(ref surface)
+            if (surface.chordal_deflection() - 0.02).abs() < f64::EPSILON
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Polyline {
-            chordal_deflection: 0.01,
-            ..
-        }
+        cadmpeg_ir::geometry::CurveGeometry::Polyline(ref polyline)
+            if (polyline.chordal_deflection() - 0.01).abs() < f64::EPSILON
     ));
     assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 1.0]));
     assert!(result.report().losses.is_empty());

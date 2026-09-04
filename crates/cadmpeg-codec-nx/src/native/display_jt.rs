@@ -3769,18 +3769,18 @@ pub(crate) fn display_jt_tessellations(
                     }
                     triangles.push([base, base.checked_add(1)?, base.checked_add(2)?]);
                 }
-                let count = u32::try_from(vertices.len()).ok()?;
                 let mut channels = Vec::new();
                 if color_array.is_some() {
-                    channels.push(TessellationChannel {
-                        domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
-                        item_size: 16,
-                        kind: DISPLAY_JT_COLOR_CHANNEL,
-                        flags: ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
-                        count,
-                        data: color_data,
-                        indices: Vec::new(),
-                    });
+                    channels.push(
+                        TessellationChannel::new(
+                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                            16,
+                            DISPLAY_JT_COLOR_CHANNEL,
+                            ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
+                            color_data,
+                        )
+                        .ok()?,
+                    );
                 }
                 for (((array, component_count), data), ordinal) in texture_arrays
                     .iter()
@@ -3788,29 +3788,31 @@ pub(crate) fn display_jt_tessellations(
                     .zip(texture_data)
                     .zip(0_u32..)
                 {
-                    channels.push(TessellationChannel {
-                        domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
-                        item_size: u32::try_from(component_count.checked_mul(4)?).ok()?,
-                        kind: DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)?,
-                        flags: u32::from(array.channel)
-                            | (((vertex_header.vertex_bindings >> (8 + 4 * array.channel)) & 0xf)
-                                as u32)
-                                << 8,
-                        count,
-                        data,
-                        indices: Vec::new(),
-                    });
+                    channels.push(
+                        TessellationChannel::new(
+                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                            u32::try_from(component_count.checked_mul(4)?).ok()?,
+                            DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)?,
+                            u32::from(array.channel)
+                                | (((vertex_header.vertex_bindings >> (8 + 4 * array.channel))
+                                    & 0xf) as u32)
+                                    << 8,
+                            data,
+                        )
+                        .ok()?,
+                    );
                 }
                 if vertex_flag_array.is_some() {
-                    channels.push(TessellationChannel {
-                        domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
-                        item_size: 4,
-                        kind: DISPLAY_JT_VERTEX_FLAG_CHANNEL,
-                        flags: 0,
-                        count,
-                        data: vertex_flag_data,
-                        indices: Vec::new(),
-                    });
+                    channels.push(
+                        TessellationChannel::new(
+                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                            4,
+                            DISPLAY_JT_VERTEX_FLAG_CHANNEL,
+                            0,
+                            vertex_flag_data,
+                        )
+                        .ok()?,
+                    );
                 }
                 (vertices, triangles, normal_vectors, channels)
             } else {
@@ -3828,8 +3830,8 @@ pub(crate) fn display_jt_tessellations(
             };
             tessellations.try_reserve(1).ok()?;
             tessellations.push((
-                Tessellation {
-                    id: if path.node_path.len() == 1 {
+                Tessellation::from_decoded(
+                    if path.node_path.len() == 1 {
                         format!(
                             "nx:display-jt:tessellation#{}-{}",
                             shape_element.source_offset, shape_element.object_id
@@ -3840,28 +3842,23 @@ pub(crate) fn display_jt_tessellations(
                             shape_element.source_offset, shape_element.object_id
                         )
                     },
-                    body: None,
-                    faces: Vec::new(),
-                    chordal_deflection: None,
-                    source_object: Some(SourceObjectAssociation {
-                        format: "nx".to_string(),
-                        object_id: shape_node.id.clone(),
-                        name: None,
-                        color,
-                        visible: None,
-                        layer: None,
-                        instance_path,
-                    }),
                     vertices,
                     triangles,
-                    feature_edges: Vec::new(),
-                    strip_lengths: Vec::new(),
-                    normals: normal_vectors,
-                    corner_normals: Vec::new(),
-                    triangle_groups: Vec::new(),
-                    texture_assignments: Vec::new(),
+                    Vec::new(),
+                    normal_vectors,
+                    Vec::new(),
                     channels,
-                },
+                )
+                .ok()?
+                .with_source_object(Some(SourceObjectAssociation {
+                    format: "nx".to_string(),
+                    object_id: shape_node.id.clone(),
+                    name: None,
+                    color,
+                    visible: None,
+                    layer: None,
+                    instance_path,
+                })),
                 shape_node.source_offset,
             ));
         }
@@ -3877,6 +3874,8 @@ mod tests {
     use flate2::Compression;
 
     use super::*;
+
+    const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
 
     #[test]
     fn display_jt_index_requires_every_declared_header() {
@@ -4561,11 +4560,11 @@ mod tests {
         })
         .expect("complete scene binding");
         assert_eq!(tessellations.len(), 2);
-        assert!((tessellations[0].0.vertices[1].x - 12.0).abs() < 1.0e-6);
-        assert!((tessellations[0].0.vertices[2].y - 26.0).abs() < 1.0e-6);
-        assert_eq!(tessellations[0].0.triangles, vec![[0, 1, 2]]);
+        assert!((tessellations[0].0.vertices()[1].x - 12.0).abs() < EPS_JT_TRANSFORMED_VERTEX);
+        assert!((tessellations[0].0.vertices()[2].y - 26.0).abs() < EPS_JT_TRANSFORMED_VERTEX);
+        assert_eq!(tessellations[0].0.triangles(), vec![[0, 1, 2]]);
         assert_eq!(
-            tessellations[0].0.normals[1],
+            tessellations[0].0.normals()[1],
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         assert_eq!(
@@ -4609,13 +4608,13 @@ mod tests {
                 .instance_path,
             ["second-instance-node"]
         );
-        assert_eq!(tessellations[0].0.channels.len(), 3);
-        assert_eq!(tessellations[0].0.channels[0].kind, 0x4e58_0001);
-        assert_eq!(tessellations[0].0.channels[0].item_size, 16);
-        assert_eq!(tessellations[0].0.channels[0].flags, 1);
-        assert_eq!(tessellations[0].0.channels[0].count, 3);
+        assert_eq!(tessellations[0].0.channels().len(), 3);
+        assert_eq!(tessellations[0].0.channels()[0].kind(), 0x4e58_0001);
+        assert_eq!(tessellations[0].0.channels()[0].item_size(), 16);
+        assert_eq!(tessellations[0].0.channels()[0].flags(), 1);
+        assert_eq!(tessellations[0].0.channels()[0].count(), 3);
         assert_eq!(
-            &tessellations[0].0.channels[0].data[16..32],
+            &tessellations[0].0.channels()[0].data()[16..32],
             &[
                 0.0_f32.to_le_bytes(),
                 1.0_f32.to_le_bytes(),
@@ -4624,19 +4623,19 @@ mod tests {
             ]
             .concat()
         );
-        assert_eq!(tessellations[0].0.channels[1].kind, 0x4e58_0100);
-        assert_eq!(tessellations[0].0.channels[1].item_size, 8);
-        assert_eq!(tessellations[0].0.channels[1].flags, 0x100);
-        assert_eq!(tessellations[0].0.channels[1].count, 3);
+        assert_eq!(tessellations[0].0.channels()[1].kind(), 0x4e58_0100);
+        assert_eq!(tessellations[0].0.channels()[1].item_size(), 8);
+        assert_eq!(tessellations[0].0.channels()[1].flags(), 0x100);
+        assert_eq!(tessellations[0].0.channels()[1].count(), 3);
         assert_eq!(
-            &tessellations[0].0.channels[1].data[16..24],
+            &tessellations[0].0.channels()[1].data()[16..24],
             &[0.0_f32.to_le_bytes(), 1.0_f32.to_le_bytes()].concat()
         );
-        assert_eq!(tessellations[0].0.channels[2].kind, 0x4e58_0002);
-        assert_eq!(tessellations[0].0.channels[2].item_size, 4);
-        assert_eq!(tessellations[0].0.channels[2].count, 3);
+        assert_eq!(tessellations[0].0.channels()[2].kind(), 0x4e58_0002);
+        assert_eq!(tessellations[0].0.channels()[2].item_size(), 4);
+        assert_eq!(tessellations[0].0.channels()[2].count(), 3);
         assert_eq!(
-            tessellations[0].0.channels[2].data,
+            tessellations[0].0.channels()[2].data(),
             [
                 0_u32.to_le_bytes(),
                 1_u32.to_le_bytes(),

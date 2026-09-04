@@ -12,7 +12,7 @@ use crate::geometry::{
 use crate::ids::{CurveId, ProceduralSurfaceId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::Check;
-use crate::tessellation::{TessellationChannel, TessellationChannelDomain};
+use crate::tessellation::{Tessellation, TessellationNormals, TessellationTopology};
 use crate::validate::validate_neutral;
 
 fn context(pcurve: bool, pcurve_parameter_range: Option<[f64; 2]>) -> IntcurveSupportContext {
@@ -92,72 +92,28 @@ fn exact_geometry_scalars_require_finite_nonzero_values_without_a_size_floor() {
 #[test]
 fn tessellation_counts_must_be_consistent() {
     use crate::ids::FaceId;
-    use crate::math::{Point3, Vector3};
-    use crate::tessellation::Tessellation;
+    use crate::math::Point3;
 
     let mut ir = unit_cube();
-    ir.model.tessellations.push(Tessellation {
-        id: "synthetic:test:tessellation#invalid-counts".into(),
-        body: None,
-        faces: vec![FaceId("synthetic:test:face#missing".into())],
-        chordal_deflection: Some(-1.0),
-        source_object: None,
-        vertices: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: vec![4],
-        normals: vec![Vector3::new(0.0, 0.0, 1.0); 2],
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: vec![TessellationChannel {
-            domain: TessellationChannelDomain::Corner,
-            item_size: 1,
-            kind: 0,
-            flags: 0,
-            count: 1,
-            data: vec![0],
-            indices: vec![0, 1, 0],
-        }],
-    });
-    ir.model.tessellations.push(Tessellation {
-        id: "synthetic:test:tessellation#invalid-strips".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        triangles: vec![[0, 2, 1]],
-        feature_edges: Vec::new(),
-        strip_lengths: vec![3],
-        normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    ir.model.tessellations.push(
+        Tessellation::new(
+            "synthetic:test:tessellation#invalid-counts",
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            vec![[0, 1, 2]],
+            TessellationTopology::List,
+            TessellationNormals::None,
+            Vec::new(),
+        )
+        .expect("valid tessellation")
+        .with_faces(vec![FaceId("synthetic:test:face#missing".into())])
+        .with_chordal_deflection(Some(-1.0)),
+    );
     ir.finalize();
     let report = validate_neutral(&ir, Vec::new());
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("normals do not match")));
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("strips do not match")));
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("triangles do not match strips")));
     assert!(report
         .findings
         .iter()
@@ -166,47 +122,35 @@ fn tessellation_counts_must_be_consistent() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid tessellation deflection")));
-    assert!(report.findings.iter().any(|finding| finding
-        .message
-        .contains("invalid tessellation channel indices")));
 }
 
 #[test]
 fn corner_normals_and_feature_edges_have_explicit_domains() {
     use crate::math::{Point3, Vector3};
     use crate::report::{Check, Severity};
-    use crate::tessellation::Tessellation;
 
-    let mesh = |id: &str| Tessellation {
-        id: id.into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: vec![[0, 1]],
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
+    let mesh = |id: &str| {
+        Tessellation::new(
+            id,
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            vec![[0, 1, 2]],
+            TessellationTopology::List,
+            TessellationNormals::PerCorner(vec![Vector3::new(0.0, 0.0, 1.0); 3]),
+            Vec::new(),
+        )
+        .expect("valid tessellation")
+        .with_feature_edges(vec![[0, 1]])
     };
-    let mut invalid_normals = mesh("synthetic:test:tessellation#invalid-corner-normals");
-    invalid_normals.corner_normals.pop();
     let mut invalid_edge = mesh("synthetic:test:tessellation#invalid-feature-edge");
     invalid_edge.feature_edges = vec![[1, 2], [0, 1]];
     let valid = mesh("synthetic:test:tessellation#valid-domains");
 
     let mut ir = unit_cube();
-    ir.model
-        .tessellations
-        .extend([invalid_normals, invalid_edge, valid]);
+    ir.model.tessellations.extend([invalid_edge, valid]);
     ir.finalize();
     let report = validate_neutral(&ir, Vec::new());
     let errors_for = |entity: &str| {
@@ -220,10 +164,6 @@ fn corner_normals_and_feature_edges_have_explicit_domains() {
             })
             .count()
     };
-    assert_eq!(
-        errors_for("synthetic:test:tessellation#invalid-corner-normals"),
-        1
-    );
     assert_eq!(
         errors_for("synthetic:test:tessellation#invalid-feature-edge"),
         1
@@ -241,47 +181,42 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
     };
 
     let texture = AssetId("synthetic:test:asset#mesh-texture".into());
-    let valid = Tessellation {
-        id: "synthetic:test:tessellation#valid-groups".into(),
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        source_object: None,
-        vertices: vec![
+    let valid = Tessellation::new(
+        "synthetic:test:tessellation#valid-groups",
+        vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(0.0, 1.0, 0.0),
             Point3::new(1.0, 1.0, 0.0),
         ],
-        triangles: vec![[0, 1, 2], [1, 3, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: vec![
-            TessellationTriangleGroup {
-                source_id: Some("group-a".into()),
-                triangles: vec![0],
-            },
-            TessellationTriangleGroup {
-                source_id: Some("group-b".into()),
-                triangles: vec![1],
-            },
-        ],
-        texture_assignments: vec![
-            TessellationTextureAssignment {
-                source_id: Some("texture-resource-a".into()),
-                texture: texture.clone(),
-                triangles: vec![0],
-            },
-            TessellationTextureAssignment {
-                source_id: Some("texture-resource-b".into()),
-                texture: texture.clone(),
-                triangles: vec![1],
-            },
-        ],
-        channels: Vec::new(),
-    };
+        vec![[0, 1, 2], [1, 3, 2]],
+        TessellationTopology::List,
+        TessellationNormals::None,
+        Vec::new(),
+    )
+    .expect("valid tessellation")
+    .with_triangle_groups(vec![
+        TessellationTriangleGroup {
+            source_id: Some("group-a".into()),
+            triangles: vec![0],
+        },
+        TessellationTriangleGroup {
+            source_id: Some("group-b".into()),
+            triangles: vec![1],
+        },
+    ])
+    .with_texture_assignments(vec![
+        TessellationTextureAssignment {
+            source_id: Some("texture-resource-a".into()),
+            texture: texture.clone(),
+            triangles: vec![0],
+        },
+        TessellationTextureAssignment {
+            source_id: Some("texture-resource-b".into()),
+            texture: texture.clone(),
+            triangles: vec![1],
+        },
+    ]);
     let mut invalid = valid.clone();
     invalid.id = "synthetic:test:tessellation#invalid-groups".into();
     invalid.triangle_groups.push(TessellationTriangleGroup {

@@ -148,15 +148,19 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     ))
                 }
             };
-            mesh.vertices
+            mesh.vertices_mut()
                 .iter_mut()
                 .for_each(|point| *point = transform.apply_point(*point));
-            mesh.normals
-                .iter_mut()
-                .for_each(|normal| *normal = transform.apply_vector(*normal));
-            mesh.corner_normals
-                .iter_mut()
-                .for_each(|normal| *normal = transform.apply_vector(*normal));
+            if let Some(normals) = mesh.normals_mut() {
+                normals
+                    .iter_mut()
+                    .for_each(|normal| *normal = transform.apply_vector(*normal));
+            }
+            if let Some(normals) = mesh.corner_normals_mut() {
+                normals
+                    .iter_mut()
+                    .for_each(|normal| *normal = transform.apply_vector(*normal));
+            }
         }
     }
     ir.model
@@ -287,7 +291,8 @@ fn transform_surface(
             .control_points_mut()
             .iter_mut()
             .for_each(|point| *point = transform.apply_point(*point)),
-        SurfaceGeometry::Polygonal { vertices, .. } => vertices
+        SurfaceGeometry::Polygonal(surface) => surface
+            .vertices_mut()
             .iter_mut()
             .for_each(|point| *point = transform.apply_point(*point)),
         SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => {
@@ -326,7 +331,8 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .control_points_mut()
             .iter_mut()
             .for_each(|point| *point = transform.apply_point(*point)),
-        CurveGeometry::Polyline { points, .. } => points
+        CurveGeometry::Polyline(polyline) => polyline
+            .points_mut()
             .iter_mut()
             .for_each(|point| *point = transform.apply_point(*point)),
         CurveGeometry::Parabola {

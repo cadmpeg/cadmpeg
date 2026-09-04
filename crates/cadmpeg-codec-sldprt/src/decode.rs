@@ -2894,24 +2894,18 @@ fn build_geometry_ir(
                 });
             }
             let mesh = display_face.mesh;
-            ir.model
-                .tessellations
-                .push(cadmpeg_ir::tessellation::Tessellation {
+            ir.model.tessellations.push(
+                cadmpeg_ir::tessellation::Tessellation::from_decoded(
                     id,
-                    body: None,
-                    faces: Vec::new(),
-                    chordal_deflection: None,
-                    source_object: None,
-                    vertices: mesh.vertices,
-                    triangles: mesh.triangles,
-                    feature_edges: Vec::new(),
-                    strip_lengths: mesh.strip_lengths,
-                    normals: mesh.normals,
-                    corner_normals: Vec::new(),
-                    triangle_groups: Vec::new(),
-                    texture_assignments: Vec::new(),
-                    channels: mesh.channels,
-                });
+                    mesh.vertices,
+                    mesh.triangles,
+                    mesh.strip_lengths,
+                    mesh.normals,
+                    Vec::new(),
+                    mesh.channels,
+                )
+                .expect("decoded SLDPRT display mesh is a valid tessellation"),
+            );
         }
         let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());
         crate::annotations::note(

@@ -912,11 +912,11 @@ fn extended_geometry_json(
         .ok()?;
         serde_json::json!({
             "kind": "mesh",
-            "vertices": mesh.tessellation.vertices,
-            "triangles": mesh.tessellation.triangles,
-            "strip_lengths": mesh.tessellation.strip_lengths,
-            "normals": mesh.tessellation.normals,
-            "channels": mesh.tessellation.channels,
+            "vertices": mesh.tessellation.vertices(),
+            "triangles": mesh.tessellation.triangles(),
+            "strip_lengths": mesh.tessellation.strip_lengths(),
+            "normals": mesh.tessellation.normals(),
+            "channels": mesh.tessellation.channels(),
         })
     } else if crate::subd::supported_class(value.class_id) {
         let subd = crate::subd::decode(

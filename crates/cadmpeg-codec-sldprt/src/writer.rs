@@ -1980,10 +1980,10 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
     out.extend_from_slice(b"uoTempFaceTessData_c");
     let (triangle_count, strip_count) = match meshes.first() {
         Some(mesh) => (
-            u32::try_from(mesh.triangles.len()).map_err(|_| {
+            u32::try_from(mesh.triangles().len()).map_err(|_| {
                 CodecError::Malformed("tessellation triangle count overflow".into())
             })?,
-            u32::try_from(mesh.strip_lengths.len())
+            u32::try_from(mesh.strip_lengths().len())
                 .map_err(|_| CodecError::Malformed("tessellation strip count overflow".into()))?,
         ),
         None => (0, 0),
@@ -1992,32 +1992,32 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
     out.extend_from_slice(&strip_count.to_le_bytes());
     for mesh in &meshes {
         let strips = mesh
-            .strip_lengths
+            .strip_lengths()
             .iter()
             .flat_map(|value| value.to_le_bytes())
             .collect::<Vec<_>>();
-        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths.len(), &strips);
-        let mut positions = Vec::with_capacity(mesh.vertices.len() * 12);
-        for point in &mesh.vertices {
+        descriptor(&mut out, 4, 8, 2, mesh.strip_lengths().len(), &strips);
+        let mut positions = Vec::with_capacity(mesh.vertices().len() * 12);
+        for point in mesh.vertices() {
             for value in [point.x, point.y, point.z] {
                 positions.extend_from_slice(
                     &tessellation_f32(value * length_scale, "position")?.to_le_bytes(),
                 );
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.vertices.len(), &positions);
-        let mut normals = Vec::with_capacity(mesh.normals.len() * 12);
-        for normal in &mesh.normals {
+        descriptor(&mut out, 12, 100, 2, mesh.vertices().len(), &positions);
+        let mut normals = Vec::with_capacity(mesh.normals().len() * 12);
+        for normal in mesh.normals() {
             for value in [normal.x, normal.y, normal.z] {
                 normals.extend_from_slice(&tessellation_f32(value, "normal")?.to_le_bytes());
             }
         }
-        descriptor(&mut out, 12, 100, 2, mesh.normals.len(), &normals);
-        let auxiliary_start = usize::from(has_core_tessellation_channels(&mesh.channels)) * 3;
-        let auxiliary_count = mesh.channels.len().saturating_sub(auxiliary_start).min(3);
-        let auxiliary = &mesh.channels[auxiliary_start..auxiliary_start + auxiliary_count];
+        descriptor(&mut out, 12, 100, 2, mesh.normals().len(), &normals);
+        let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
+        let auxiliary_count = mesh.channels().len().saturating_sub(auxiliary_start).min(3);
+        let auxiliary = &mesh.channels()[auxiliary_start..auxiliary_start + auxiliary_count];
         let strip_lengths = mesh
-            .strip_lengths
+            .strip_lengths()
             .iter()
             .map(|length| usize::try_from(*length))
             .collect::<Result<Vec<_>, _>>()
@@ -2032,15 +2032,15 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         for channel in auxiliary {
             descriptor(
                 &mut out,
-                channel.item_size,
-                channel.kind,
-                channel.flags,
-                channel.count as usize,
-                &channel.data,
+                channel.item_size(),
+                channel.kind(),
+                channel.flags(),
+                channel.count() as usize,
+                channel.data(),
             );
         }
         let list_c = mesh
-            .strip_lengths
+            .strip_lengths()
             .iter()
             .map(|length| {
                 length
@@ -2073,9 +2073,9 @@ fn has_core_tessellation_channels(
     channels: &[cadmpeg_ir::tessellation::TessellationChannel],
 ) -> bool {
     matches!(channels, [strips, positions, normals, ..]
-        if (strips.item_size, strips.kind) == (4, 8)
-            && (positions.item_size, positions.kind) == (12, 100)
-            && (normals.item_size, normals.kind) == (12, 100))
+        if (strips.item_size(), strips.kind()) == (4, 8)
+            && (positions.item_size(), positions.kind()) == (12, 100)
+            && (normals.item_size(), normals.kind()) == (12, 100))
 }
 
 pub(super) fn sequential_tessellation(
@@ -2092,69 +2092,82 @@ pub(super) fn sequential_tessellation(
             "SLDPRT display tessellation feature edges are not writable".into(),
         ));
     }
-    let expected = triangles_from_strips(&mesh.strip_lengths)?;
-    if expected == mesh.triangles
-        && mesh.strip_lengths.iter().sum::<u32>() as usize == mesh.vertices.len()
-        && mesh.corner_normals.is_empty()
+    let expected = triangles_from_strips(mesh.strip_lengths())?;
+    if expected == mesh.triangles()
+        && mesh.strip_lengths().iter().sum::<u32>() as usize == mesh.vertices().len()
+        && mesh.corner_normals().is_empty()
     {
         return Ok(mesh.clone());
     }
     let indices = mesh
-        .triangles
+        .triangles()
         .iter()
         .flat_map(|triangle| triangle.iter().copied())
         .map(|index| {
             usize::try_from(index)
                 .ok()
-                .filter(|index| *index < mesh.vertices.len())
+                .filter(|index| *index < mesh.vertices().len())
                 .ok_or_else(|| CodecError::Malformed("tessellation index is out of bounds".into()))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let vertices = indices.iter().map(|index| mesh.vertices[*index]).collect();
-    let normals = if !mesh.corner_normals.is_empty() {
-        if mesh.corner_normals.len() != indices.len() {
+    let vertices = indices
+        .iter()
+        .map(|index| mesh.vertices()[*index])
+        .collect();
+    let normals = if !mesh.corner_normals().is_empty() {
+        if mesh.corner_normals().len() != indices.len() {
             return Err(CodecError::Malformed(
                 "tessellation corner normals are not parallel to triangle corners".into(),
             ));
         }
-        mesh.corner_normals.clone()
-    } else if mesh.normals.is_empty() {
+        mesh.corner_normals().to_vec()
+    } else if mesh.normals().is_empty() {
         Vec::new()
     } else {
-        if mesh.normals.len() != mesh.vertices.len() {
+        if mesh.normals().len() != mesh.vertices().len() {
             return Err(CodecError::Malformed(
                 "tessellation normals are not parallel to vertices".into(),
             ));
         }
-        indices.iter().map(|index| mesh.normals[*index]).collect()
+        indices.iter().map(|index| mesh.normals()[*index]).collect()
     };
-    let mut channels = mesh.channels.clone();
-    for channel in &mut channels {
-        if channel.count as usize != mesh.vertices.len() {
+    let mut channels = Vec::new();
+    for channel in mesh.channels() {
+        if channel.count() as usize != mesh.vertices().len() {
+            channels.push(channel.clone());
             continue;
         }
-        let item_size = usize::try_from(channel.item_size)
+        let item_size = usize::try_from(channel.item_size())
             .map_err(|_| CodecError::Malformed("tessellation channel item size overflow".into()))?;
-        let expected_len =
-            mesh.vertices.len().checked_mul(item_size).ok_or_else(|| {
-                CodecError::Malformed("tessellation channel size overflow".into())
-            })?;
-        if channel.data.len() != expected_len {
+        let expected_len = mesh
+            .vertices()
+            .len()
+            .checked_mul(item_size)
+            .ok_or_else(|| CodecError::Malformed("tessellation channel size overflow".into()))?;
+        if channel.data().len() != expected_len {
             return Err(CodecError::Malformed(
                 "tessellation channel payload length is inconsistent".into(),
             ));
         }
-        channel.data = indices
+        let data = indices
             .iter()
             .flat_map(|index| {
                 let start = index * item_size;
-                channel.data[start..start + item_size].iter().copied()
+                channel.data()[start..start + item_size].iter().copied()
             })
             .collect();
-        channel.count = u32::try_from(indices.len())
-            .map_err(|_| CodecError::Malformed("tessellation vertex count overflow".into()))?;
+        channels.push(
+            cadmpeg_ir::tessellation::TessellationChannel::new(
+                channel.addressing().clone(),
+                channel.item_size(),
+                channel.kind(),
+                channel.flags(),
+                data,
+            )
+            .map_err(|err| CodecError::Malformed(err.to_string()))?,
+        );
     }
-    let triangle_count = u32::try_from(mesh.triangles.len())
+    let triangle_count = u32::try_from(mesh.triangles().len())
         .map_err(|_| CodecError::Malformed("tessellation triangle count overflow".into()))?;
     let strip_lengths = alloc_filled(
         triangle_count as usize,
@@ -2162,22 +2175,20 @@ pub(super) fn sequential_tessellation(
         "SLDPRT tessellation triangle strips",
     )?;
     let triangles = triangles_from_strips(&strip_lengths)?;
-    Ok(cadmpeg_ir::tessellation::Tessellation {
-        id: mesh.id.clone(),
-        body: mesh.body.clone(),
-        faces: mesh.faces.clone(),
-        chordal_deflection: mesh.chordal_deflection,
-        source_object: mesh.source_object.clone(),
+    Ok(cadmpeg_ir::tessellation::Tessellation::from_decoded(
+        mesh.id.clone(),
         vertices,
         triangles,
-        feature_edges: Vec::new(),
         strip_lengths,
         normals,
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
+        Vec::new(),
         channels,
-    })
+    )
+    .map_err(|err| CodecError::Malformed(err.to_string()))?
+    .with_body(mesh.body.clone())
+    .with_faces(mesh.faces.clone())
+    .with_chordal_deflection(mesh.chordal_deflection)
+    .with_source_object(mesh.source_object.clone()))
 }
 
 fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
@@ -3150,7 +3161,7 @@ pub(super) fn surface_values(
             )
         }
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => {
@@ -3475,7 +3486,7 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
-        CurveGeometry::Polyline { .. } => {
+        CurveGeometry::Polyline(_) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support polyline curve carriers".into(),
             ))
@@ -3519,7 +3530,7 @@ pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math:
         } => *ref_direction,
         SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
         SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,

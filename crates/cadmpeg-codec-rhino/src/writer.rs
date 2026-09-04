@@ -2774,20 +2774,20 @@ fn class_wrapper(class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
 }
 
 fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), CodecError> {
-    let vertex_count = mesh.vertices.len();
-    if vertex_count == 0 || vertex_count > (1 << 24) || mesh.triangles.len() > (1 << 24) {
+    let vertex_count = mesh.vertices().len();
+    if vertex_count == 0 || vertex_count > (1 << 24) || mesh.triangles().len() > (1 << 24) {
         return Err(CodecError::malformed(format_args!(
             "mesh {} has invalid native counts",
             mesh.id
         )));
     }
-    if mesh.body.is_some() || !mesh.strip_lengths.is_empty() {
+    if mesh.body.is_some() || !mesh.strip_lengths().is_empty() {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} uses body binding or strips not yet writable",
             mesh.id
         )));
     }
-    if !mesh.feature_edges.is_empty() || !mesh.corner_normals.is_empty() {
+    if !mesh.feature_edges.is_empty() || !mesh.corner_normals().is_empty() {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} uses feature edges or corner normals not yet writable",
             mesh.id
@@ -2799,20 +2799,20 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
-    if !mesh.normals.is_empty() && mesh.normals.len() != vertex_count {
+    if !mesh.normals().is_empty() && mesh.normals().len() != vertex_count {
         return Err(CodecError::malformed(format_args!(
             "mesh {} normal count mismatch",
             mesh.id
         )));
     }
-    if mesh.vertices.iter().any(|p| {
+    if mesh.vertices().iter().any(|p| {
         !p.x.is_finite()
             || !p.y.is_finite()
             || !p.z.is_finite()
             || !(p.x as f32).is_finite()
             || !(p.y as f32).is_finite()
             || !(p.z as f32).is_finite()
-    }) || mesh.normals.iter().any(|n| {
+    }) || mesh.normals().iter().any(|n| {
         !n.x.is_finite()
             || !n.y.is_finite()
             || !n.z.is_finite()
@@ -2826,7 +2826,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
         )));
     }
     if mesh
-        .triangles
+        .triangles()
         .iter()
         .flatten()
         .any(|index| *index as usize >= vertex_count)
@@ -2837,27 +2837,29 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
         )));
     }
     let mut kinds = std::collections::BTreeSet::new();
-    for channel in &mesh.channels {
-        let expected = match channel.kind {
+    for channel in mesh.channels() {
+        let expected = match channel.kind() {
             CHANNEL_UV => 8,
             CHANNEL_COLOR => 4,
             CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => 16,
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "mesh {} channel kind {:#x} is not writable",
-                    mesh.id, channel.kind
+                    mesh.id,
+                    channel.kind()
                 )))
             }
         };
-        if !kinds.insert(channel.kind)
-            || channel.flags != 0
-            || channel.item_size != expected
-            || channel.count as usize != vertex_count
-            || channel.data.len() != vertex_count * expected as usize
+        if !kinds.insert(channel.kind())
+            || channel.flags() != 0
+            || channel.item_size() != expected
+            || channel.count() as usize != vertex_count
+            || channel.data().len() != vertex_count * expected as usize
         {
             return Err(CodecError::malformed(format_args!(
                 "mesh {} channel {:#x} has invalid metadata",
-                mesh.id, channel.kind
+                mesh.id,
+                channel.kind()
             )));
         }
     }
@@ -3364,8 +3366,8 @@ fn mesh_payload(
     let writes_double_vertices = archive_version.stores_mesh_vertices_as_f64();
     let payload_version = if writes_double_vertices { 0x38 } else { 0x35 };
     let mut payload = vec![payload_version];
-    payload.extend((mesh.vertices.len() as i32).to_le_bytes());
-    payload.extend((mesh.triangles.len() as i32).to_le_bytes());
+    payload.extend((mesh.vertices().len() as i32).to_le_bytes());
+    payload.extend((mesh.triangles().len() as i32).to_le_bytes());
     for _ in 0..4 {
         payload.extend(0.0_f64.to_le_bytes());
         payload.extend(1.0_f64.to_le_bytes());
@@ -3375,15 +3377,15 @@ fn mesh_payload(
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 5]);
 
-    let width = if mesh.vertices.len() < 256 {
+    let width = if mesh.vertices().len() < 256 {
         1_i32
-    } else if mesh.vertices.len() < 65_536 {
+    } else if mesh.vertices().len() < 65_536 {
         2_i32
     } else {
         4_i32
     };
     payload.extend(width.to_le_bytes());
-    for triangle in &mesh.triangles {
+    for triangle in mesh.triangles() {
         for index in [triangle[0], triangle[1], triangle[2], triangle[2]] {
             match width {
                 1 => payload.push(index as u8),
@@ -3395,7 +3397,7 @@ fn mesh_payload(
     }
 
     let float_vertices = mesh
-        .vertices
+        .vertices()
         .iter()
         .flat_map(|point| {
             [point.x as f32, point.y as f32, point.z as f32]
@@ -3404,7 +3406,7 @@ fn mesh_payload(
         })
         .collect::<Vec<_>>();
     let normals = mesh
-        .normals
+        .normals()
         .iter()
         .flat_map(|normal| {
             [normal.x as f32, normal.y as f32, normal.z as f32]
@@ -3434,7 +3436,7 @@ fn mesh_payload(
         payload.push(1);
         direct.push(1);
         let doubles = mesh
-            .vertices
+            .vertices()
             .iter()
             .flat_map(|point| {
                 [point.x, point.y, point.z]
@@ -3444,14 +3446,14 @@ fn mesh_payload(
             .collect::<Vec<_>>();
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(0_i32.to_le_bytes());
-        body.extend((mesh.vertices.len() as u32).to_le_bytes());
+        body.extend((mesh.vertices().len() as u32).to_le_bytes());
         body.extend(mesh_buffer(&doubles));
         payload.extend(crc_chunk(0x4000_8000, &body));
-        let min = mesh.vertices.iter().fold([f64::INFINITY; 3], |a, point| {
+        let min = mesh.vertices().iter().fold([f64::INFINITY; 3], |a, point| {
             [a[0].min(point.x), a[1].min(point.y), a[2].min(point.z)]
         });
         let max = mesh
-            .vertices
+            .vertices()
             .iter()
             .fold([f64::NEG_INFINITY; 3], |a, point| {
                 [a[0].max(point.x), a[1].max(point.y), a[2].max(point.z)]
@@ -3484,10 +3486,10 @@ fn mesh_mapping_tag() -> Vec<u8> {
 }
 
 fn mesh_channel(mesh: &cadmpeg_ir::tessellation::Tessellation, kind: u32) -> &[u8] {
-    mesh.channels
+    mesh.channels()
         .iter()
-        .find(|channel| channel.kind == kind)
-        .map_or(&[], |channel| channel.data.as_slice())
+        .find(|channel| channel.kind() == kind)
+        .map_or(&[], |channel| channel.data())
 }
 
 fn mesh_buffer(data: &[u8]) -> Vec<u8> {

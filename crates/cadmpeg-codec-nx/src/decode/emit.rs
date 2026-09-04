@@ -875,7 +875,7 @@ pub(crate) fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
         SurfaceGeometry::Torus { .. } => "TORUS",
         SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
         SurfaceGeometry::Procedural { .. } => "PROCEDURAL_SURFACE",
-        SurfaceGeometry::Polygonal { .. } => "POLYGONAL_SURFACE",
+        SurfaceGeometry::Polygonal(_) => "POLYGONAL_SURFACE",
         SurfaceGeometry::Transformed { basis, .. } => surface_tag(basis),
         SurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
     }
@@ -892,7 +892,7 @@ pub(crate) fn curve_tag(geometry: &CurveGeometry) -> &'static str {
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
         CurveGeometry::Procedural { .. } => "PROCEDURAL_CURVE",
         CurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
-        CurveGeometry::Polyline { .. } => "POLYLINE",
+        CurveGeometry::Polyline(_) => "POLYLINE",
         CurveGeometry::Transformed { basis, .. } => curve_tag(basis),
         CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }

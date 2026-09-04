@@ -342,7 +342,7 @@ fn surface_class(value: &SurfaceGeometry) -> u8 {
         SurfaceGeometry::Unknown { .. } => 6,
         SurfaceGeometry::Procedural { .. } => 7,
         SurfaceGeometry::Transformed { .. } => 7,
-        SurfaceGeometry::Polygonal { .. } => 8,
+        SurfaceGeometry::Polygonal(_) => 8,
     }
 }
 
@@ -358,7 +358,7 @@ fn curve_class(value: &CurveGeometry) -> u8 {
         CurveGeometry::Unknown { .. } => 7,
         CurveGeometry::Procedural { .. } => 8,
         CurveGeometry::Transformed { .. } => 8,
-        CurveGeometry::Polyline { .. } => 9,
+        CurveGeometry::Polyline(_) => 9,
         CurveGeometry::Composite { .. } => 10,
     }
 }

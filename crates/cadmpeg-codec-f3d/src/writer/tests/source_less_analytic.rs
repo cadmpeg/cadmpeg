@@ -960,26 +960,22 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         .contains("source-object association on curve"));
 
     source_less.model.curves.pop();
-    source_less.model.tessellations.push(Tessellation {
-        id: "generated:tessellation#0".into(),
-        source_object: None,
-        body: None,
-        faces: Vec::new(),
-        chordal_deflection: None,
-        vertices: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        triangles: vec![[0, 1, 2]],
-        feature_edges: Vec::new(),
-        strip_lengths: Vec::new(),
-        normals: Vec::new(),
-        corner_normals: Vec::new(),
-        triangle_groups: Vec::new(),
-        texture_assignments: Vec::new(),
-        channels: Vec::new(),
-    });
+    source_less.model.tessellations.push(
+        Tessellation::from_decoded(
+            "generated:tessellation#0",
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))

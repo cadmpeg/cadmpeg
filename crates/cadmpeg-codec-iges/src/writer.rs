@@ -505,7 +505,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                 | CurveGeometry::Parabola { .. }
                 | CurveGeometry::Hyperbola { .. }
                 | CurveGeometry::Nurbs(_)
-                | CurveGeometry::Polyline { .. }
+                | CurveGeometry::Polyline(_)
         ) {
             return Err(CodecError::NotImplemented(format!(
                 "IGES procedural curve {} has no writable solved carrier",
@@ -3085,12 +3085,16 @@ fn oriented_curve_entity(
                 version,
             )?
         }
-        CurveGeometry::Polyline {
-            points, parameters, ..
-        } => {
-            let values = polyline_parameters(points.len(), parameters.as_deref())?;
-            let original = NurbsCurve::new(1, polyline_knots(&values), points.clone(), None, false)
-                .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
+        CurveGeometry::Polyline(polyline) => {
+            let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
+            let original = NurbsCurve::new(
+                1,
+                polyline_knots(&values),
+                polyline.points().to_vec(),
+                None,
+                false,
+            )
+            .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             let (reversed, range) = reverse_nurbs(&original, span.range)?;
             let reversed_span = CurveSpan {
                 range,
@@ -5447,7 +5451,7 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             | CurveGeometry::Parabola { .. }
             | CurveGeometry::Hyperbola { .. }
             | CurveGeometry::Nurbs(_)
-            | CurveGeometry::Polyline { .. }
+            | CurveGeometry::Polyline(_)
     ) {
         let evaluated_start = curve_point(geometry, range[0]).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -5501,15 +5505,8 @@ fn default_range(geometry: &CurveGeometry) -> Result<[f64; 2], CodecError> {
         } => default_range(geometry),
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => Ok([0.0, TAU]),
         CurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
-        CurveGeometry::Polyline {
-            points, parameters, ..
-        } => {
-            if points.len() < 2 {
-                return Err(CodecError::NotImplemented(
-                    "IGES semantic writer requires at least two polyline points".into(),
-                ));
-            }
-            let values = polyline_parameters(points.len(), parameters.as_deref())?;
+        CurveGeometry::Polyline(polyline) => {
+            let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
             Ok([values[0], *values.last().expect("polyline has points")])
         }
         CurveGeometry::Line { .. }
@@ -5722,12 +5719,16 @@ fn curve_entity(
             })
         }
         CurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
-        CurveGeometry::Polyline {
-            points, parameters, ..
-        } => {
-            let values = polyline_parameters(points.len(), parameters.as_deref())?;
-            let nurbs = NurbsCurve::new(1, polyline_knots(&values), points.clone(), None, false)
-                .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
+        CurveGeometry::Polyline(polyline) => {
+            let values = polyline_parameters(polyline.points().len(), polyline.parameters())?;
+            let nurbs = NurbsCurve::new(
+                1,
+                polyline_knots(&values),
+                polyline.points().to_vec(),
+                None,
+                false,
+            )
+            .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?;
             encode_nurbs(&nurbs, range, "POLYLINE")
         }
         CurveGeometry::Degenerate { .. }
@@ -6004,15 +6005,14 @@ fn apply_rigid_transform(
             }
             CurveGeometry::Nurbs(nurbs)
         }
-        CurveGeometry::Polyline {
-            points,
-            parameters,
-            chordal_deflection,
-        } => CurveGeometry::Polyline {
-            points: points.into_iter().map(point).collect(),
-            parameters,
-            chordal_deflection,
-        },
+        CurveGeometry::Polyline(polyline) => CurveGeometry::Polyline(
+            cadmpeg_ir::geometry::PolylineCurve::new(
+                polyline.points().iter().copied().map(point).collect(),
+                polyline.parameters().map(|values| values.to_vec()),
+                polyline.chordal_deflection(),
+            )
+            .map_err(|error| CodecError::malformed(format_args!("polyline: {error}")))?,
+        ),
         other => {
             return Err(CodecError::NotImplemented(format!(
                 "IGES semantic writer cannot flatten curve geometry {other:?}"

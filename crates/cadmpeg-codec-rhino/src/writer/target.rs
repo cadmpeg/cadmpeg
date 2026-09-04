@@ -38,7 +38,7 @@ pub(crate) fn plan(
             .model
             .tessellations
             .iter()
-            .flat_map(|mesh| &mesh.vertices)
+            .flat_map(|mesh| mesh.vertices())
             .any(|point| {
                 f64::from(point.x as f32) != point.x
                     || f64::from(point.y as f32) != point.y
@@ -49,7 +49,7 @@ pub(crate) fn plan(
         .model
         .tessellations
         .iter()
-        .flat_map(|mesh| &mesh.normals)
+        .flat_map(|mesh| mesh.normals())
         .any(|normal| {
             f64::from(normal.x as f32) != normal.x
                 || f64::from(normal.y as f32) != normal.y

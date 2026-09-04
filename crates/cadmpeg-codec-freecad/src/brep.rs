@@ -4907,7 +4907,7 @@ pub(crate) mod tests {
             cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
         ));
         assert_eq!(result.ir().model.tessellations.len(), 1);
-        assert_eq!(result.ir().model.tessellations[0].triangles, [[0, 1, 2]]);
+        assert_eq!(result.ir().model.tessellations[0].triangles(), [[0, 1, 2]]);
         assert_eq!(result.ir().model.bodies.len(), 1);
         assert_eq!(result.ir().model.faces.len(), 1);
         assert_eq!(

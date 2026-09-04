@@ -8,8 +8,9 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::geometry::{
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralCurve, ProceduralCurveDefinition,
-    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    NurbsSurface, Pcurve, PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
@@ -2048,13 +2049,12 @@ fn decode_tessellated_curve_sets(
                 format!("{id}-strip-{strip_index}")
             };
             let points = indices.into_iter().map(|index| vertices[index]).collect();
+            let Some(polyline) = PolylineCurve::new(points, None, 0.0).ok() else {
+                continue;
+            };
             ir.model.curves.push(Curve {
                 id: CurveId(StepIdentity::data("curve", curve_key)),
-                geometry: CurveGeometry::Polyline {
-                    points,
-                    parameters: None,
-                    chordal_deflection: 0.0,
-                },
+                geometry: CurveGeometry::Polyline(polyline),
                 source_object: Some(SourceObjectAssociation {
                     format: crate::dialect::FORMAT.into(),
                     object_id: format!("#{id}"),
@@ -3604,7 +3604,7 @@ fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_
         CurveGeometry::Parabola { .. }
         | CurveGeometry::Hyperbola { .. }
         | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline { .. }
+        | CurveGeometry::Polyline(_)
         | CurveGeometry::Degenerate { .. }
         | CurveGeometry::Composite { .. }
         | CurveGeometry::Procedural { .. }
@@ -4625,7 +4625,7 @@ fn surface_geometry_parameter_scales(
                 active,
             )
         }
-        SurfaceGeometry::Polygonal { .. } => None,
+        SurfaceGeometry::Polygonal(_) => None,
     }
 }
 
@@ -4772,7 +4772,7 @@ fn directrix_geometry_parameter_scale(
         CurveGeometry::Parabola { .. }
         | CurveGeometry::Hyperbola { .. }
         | CurveGeometry::Nurbs(_)
-        | CurveGeometry::Polyline { .. } => Some(1.0),
+        | CurveGeometry::Polyline(_) => Some(1.0),
         CurveGeometry::Transformed { basis, .. } => {
             directrix_geometry_parameter_scale(ir, basis, length_scale, angle_scale, active)
         }
@@ -4838,7 +4838,7 @@ pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f
         SurfaceGeometry::Transformed { basis, .. } => surface_parameter_periods(basis),
         SurfaceGeometry::Plane { .. }
         | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Polygonal(_)
         | SurfaceGeometry::Unknown { .. } => [None, None],
     }
 }

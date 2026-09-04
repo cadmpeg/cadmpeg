@@ -14,6 +14,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -578,28 +579,23 @@ fn writer_round_trips_standalone_points_and_curves() {
 #[test]
 pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
     let mut ir = unit_cube();
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            faces: Vec::new(),
-            chordal_deflection: None,
-            id: "mesh-0".into(),
-            body: Some(ir.model.bodies[0].id.clone()),
-            source_object: None,
-            vertices: vec![
+    ir.model.tessellations.push(
+        Tessellation::from_decoded(
+            "mesh-0",
+            vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            triangles: vec![[0, 1, 2], [2, 1, 0]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
+            vec![[0, 1, 2], [2, 1, 0]],
+            Vec::new(),
+            vec![Vector3::new(0.0, 0.0, 1.0); 3],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation")
+        .with_body(Some(ir.model.bodies[0].id.clone())),
+    );
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
@@ -620,9 +616,9 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
         .expect("decode AP242 tessellation");
     assert_eq!(decoded.ir().model.tessellations.len(), 1);
     let mesh = &decoded.ir().model.tessellations[0];
-    assert_eq!(mesh.vertices.len(), 3);
-    assert_eq!(mesh.triangles, [[0, 1, 2], [2, 1, 0]]);
-    assert_eq!(mesh.normals.len(), 3);
+    assert_eq!(mesh.vertices().len(), 3);
+    assert_eq!(mesh.triangles(), [[0, 1, 2], [2, 1, 0]]);
+    assert_eq!(mesh.normals().len(), 3);
     assert!(mesh.body.is_some());
 }
 

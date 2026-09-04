@@ -251,11 +251,14 @@ fn directrix_parameter_units_follow_step_curve_equations() {
         major_radius: 2.0,
         minor_radius: 1.0,
     };
-    let polyline = CurveGeometry::Polyline {
-        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        parameters: None,
-        chordal_deflection: 0.0,
-    };
+    let polyline = CurveGeometry::Polyline(
+        cadmpeg_ir::geometry::PolylineCurve::new(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            0.0,
+        )
+        .unwrap(),
+    );
     let mut active = BTreeSet::new();
 
     assert_eq!(

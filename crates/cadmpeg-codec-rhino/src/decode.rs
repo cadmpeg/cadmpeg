@@ -2127,13 +2127,15 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Tessellation>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
         {
-            for vertex in &mut mesh.vertices {
+            for vertex in mesh.vertices_mut() {
                 *vertex = transform.apply_point(*vertex);
             }
-            for value in &mut mesh.normals {
-                *value = transform
-                    .apply_normal(*value)
-                    .ok_or_else(|| "mesh normal transform is singular".to_string())?;
+            if let Some(normals) = mesh.normals_mut() {
+                for value in normals {
+                    *value = transform
+                        .apply_normal(*value)
+                        .ok_or_else(|| "mesh normal transform is singular".to_string())?;
+                }
             }
             links.push(mesh.id.clone());
             derived_ids.push(mesh.id.clone());
@@ -3203,22 +3205,9 @@ impl<'a> DecodeContext<'a> {
                 .map(|warning| format!("{}: {warning}", identity.source_id)),
         );
         let id = mesh.tessellation.id.clone();
-        self.ir.model.tessellations.push(Tessellation {
-            id: id.clone(),
-            body: None,
-            faces: mesh.tessellation.faces,
-            chordal_deflection: mesh.tessellation.chordal_deflection,
-            source_object: Some(self.source_association(identity)),
-            vertices: mesh.tessellation.vertices,
-            triangles: mesh.tessellation.triangles,
-            feature_edges: mesh.tessellation.feature_edges,
-            strip_lengths: mesh.tessellation.strip_lengths,
-            normals: mesh.tessellation.normals,
-            corner_normals: mesh.tessellation.corner_normals,
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: mesh.tessellation.channels,
-        });
+        let mut tessellation = mesh.tessellation;
+        tessellation.source_object = Some(self.source_association(identity));
+        self.ir.model.tessellations.push(tessellation);
         set_exactness(
             &mut self.annotations,
             &id,

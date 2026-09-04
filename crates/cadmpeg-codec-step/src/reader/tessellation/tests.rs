@@ -37,10 +37,10 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(result.ir().model.tessellations.len(), 2);
     assert_eq!(result.ir().model.bodies.len(), 1);
     let mesh = &result.ir().model.tessellations[0];
-    assert_eq!(mesh.vertices.len(), 3);
-    assert!((mesh.vertices[1].x - 10.0).abs() < EPS_SAME_POINT);
-    assert_eq!(mesh.triangles, [[0, 1, 2]]);
-    assert_eq!(mesh.normals.len(), 3);
+    assert_eq!(mesh.vertices().len(), 3);
+    assert!((mesh.vertices()[1].x - 10.0).abs() < EPS_SAME_POINT);
+    assert_eq!(mesh.triangles(), [[0, 1, 2]]);
+    assert_eq!(mesh.normals().len(), 3);
     assert_eq!(
         mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
@@ -52,10 +52,10 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
         .iter()
         .find(|mesh| mesh.id.ends_with("#7"))
         .unwrap();
-    assert_eq!(complex.triangles, [[0, 1, 2], [2, 1, 3], [0, 1, 3]]);
-    assert_point3_close(complex.vertices[0], Point3::new(10.0, 10.0, 0.0));
-    assert_eq!(complex.normals.len(), 4);
-    assert!((complex.normals[0].x - 1.0).abs() < EPS_SAME_POINT);
+    assert_eq!(complex.triangles(), [[0, 1, 2], [2, 1, 3], [0, 1, 3]]);
+    assert_point3_close(complex.vertices()[0], Point3::new(10.0, 10.0, 0.0));
+    assert_eq!(complex.normals().len(), 4);
+    assert!((complex.normals()[0].x - 1.0).abs() < EPS_SAME_POINT);
     assert!(result
         .ir()
         .model
@@ -145,10 +145,10 @@ fn complex_tessellation_partials_transfer_coordinates_and_indices() {
         .iter()
         .find(|mesh| mesh.id.ends_with("#4"))
         .expect("complex tessellated face");
-    assert_eq!(mesh.vertices.len(), 3);
-    assert_point3_close(mesh.vertices[1], Point3::new(10.0, 0.0, 0.0));
-    assert_eq!(mesh.triangles, [[0, 1, 2]]);
-    assert_eq!(mesh.normals.len(), 3);
+    assert_eq!(mesh.vertices().len(), 3);
+    assert_point3_close(mesh.vertices()[1], Point3::new(10.0, 0.0, 0.0));
+    assert_eq!(mesh.triangles(), [[0, 1, 2]]);
+    assert_eq!(mesh.normals().len(), 3);
     assert_eq!(
         mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
@@ -361,8 +361,8 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
         .iter()
         .find(|mesh| mesh.id == "step:tessellation:mesh#7")
         .expect("repositioned annotation mesh");
-    assert_point3_close(mesh.vertices[0], Point3::new(110.0, 210.0, 300.0));
-    assert_vector3_close(mesh.normals[0], Vector3::new(1.0, 0.0, 0.0));
+    assert_point3_close(mesh.vertices()[0], Point3::new(110.0, 210.0, 300.0));
+    assert_vector3_close(mesh.normals()[0], Vector3::new(1.0, 0.0, 0.0));
     assert!(mesh.body.is_none());
     let exact_mesh = decoded
         .ir()
@@ -371,7 +371,7 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
         .iter()
         .find(|mesh| mesh.id == "step:tessellation:mesh#4")
         .expect("exact body mesh");
-    assert_point3_close(exact_mesh.vertices[0], Point3::new(0.0, 0.0, 0.0));
+    assert_point3_close(exact_mesh.vertices()[0], Point3::new(0.0, 0.0, 0.0));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationItemUndeclared.kind()
             && loss.message.contains("tessellation item #7")
@@ -414,7 +414,7 @@ fn repositioned_annotation_mesh_with_invalid_or_missing_placement_keeps_source_c
             .iter()
             .find(|mesh| mesh.id == "step:tessellation:mesh#4")
             .expect("invalid-placement tessellation");
-        assert_point3_close(mesh.vertices[1], Point3::new(10.0, 0.0, 0.0));
+        assert_point3_close(mesh.vertices()[1], Point3::new(10.0, 0.0, 0.0));
         assert!(decoded.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::TessellationPlacementUnresolved.kind()
                 && loss.message.contains("repositioned tessellated item #5")
@@ -460,7 +460,7 @@ fn unresolved_outer_repositioning_preserves_inner_valid_placement() {
         .iter()
         .find(|mesh| mesh.id == "step:tessellation:mesh#7")
         .expect("nested repositioned annotation mesh");
-    assert_point3_close(mesh.vertices[0], Point3::new(110.0, 210.0, 300.0));
+    assert_point3_close(mesh.vertices()[0], Point3::new(110.0, 210.0, 300.0));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationPlacementUnresolved.kind()
             && loss.message.contains("repositioned tessellated item #88")
@@ -494,7 +494,7 @@ fn repositioned_annotation_mesh_rejects_conflicting_placements() {
         .iter()
         .find(|mesh| mesh.id == "step:tessellation:mesh#7")
         .expect("conflicting repositioned annotation mesh");
-    assert_point3_close(mesh.vertices[0], Point3::new(10.0, 10.0, 0.0));
+    assert_point3_close(mesh.vertices()[0], Point3::new(10.0, 10.0, 0.0));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationPlacementAmbiguous.kind()
             && loss.message.contains("tessellation item #7")
@@ -734,7 +734,7 @@ fn malformed_complex_strip_does_not_discard_valid_strips() {
 #2=COMPLEX_TRIANGULATED_SURFACE_SET('',#1,4,$,$,((1,2),(1,2,3,4)),());",
     );
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.tessellations[0].triangles.len(), 2);
+    assert_eq!(result.ir().model.tessellations[0].triangles().len(), 2);
 }
 
 #[test]
@@ -746,7 +746,7 @@ fn complex_triangle_strip_alternates_winding() {
 
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(
-        result.ir().model.tessellations[0].triangles,
+        result.ir().model.tessellations[0].triangles(),
         [[0, 1, 2], [2, 1, 3]]
     );
 }
@@ -768,7 +768,7 @@ fn complex_strip_and_malformed_strip_witnesses_preserve_winding() {
             .decode(&mut Cursor::new(input), &DecodeOptions::default())
             .expect("decode strip witness");
         assert_eq!(result.ir().model.tessellations.len(), 1);
-        assert_eq!(result.ir().model.tessellations[0].triangles, expected);
+        assert_eq!(result.ir().model.tessellations[0].triangles(), expected);
     }
 }
 

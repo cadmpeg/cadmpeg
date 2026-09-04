@@ -10,6 +10,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::Point;
 use sha2::{Digest, Sha256};
 
@@ -311,28 +312,22 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
 #[test]
 fn standalone_mesh_round_trips_across_archive_versions() {
     let mut ir = CadIr::empty();
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            id: "cadir:model:tessellation#mesh".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: vec![
+    ir.model.tessellations.push(
+        Tessellation::from_decoded(
+            "cadir:model:tessellation#mesh",
+            vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(2.0, 0.0, 0.0),
                 Point3::new(0.0, 3.0, 0.0),
             ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
+            vec![[0, 1, 2]],
+            Vec::new(),
+            vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
@@ -361,9 +356,9 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         );
         assert_eq!(decoded.ir().model.tessellations.len(), 1);
         let actual = &decoded.ir().model.tessellations[0];
-        assert_eq!(actual.vertices, ir.model.tessellations[0].vertices);
-        assert_eq!(actual.triangles, ir.model.tessellations[0].triangles);
-        assert_eq!(actual.normals, ir.model.tessellations[0].normals);
+        assert_eq!(actual.vertices(), ir.model.tessellations[0].vertices());
+        assert_eq!(actual.triangles(), ir.model.tessellations[0].triangles());
+        assert_eq!(actual.normals(), ir.model.tessellations[0].normals());
     }
 
     ir.model.tessellations[0].triangle_groups.push(
@@ -384,28 +379,22 @@ fn standalone_mesh_round_trips_across_archive_versions() {
 #[test]
 fn mesh_precision_is_target_specific_and_reported() {
     let mut ir = CadIr::empty();
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            id: "cadir:model:tessellation#precision".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: vec![
+    ir.model.tessellations.push(
+        Tessellation::from_decoded(
+            "cadir:model:tessellation#precision",
+            vec![
                 Point3::new(0.1, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: Vec::new(),
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: Vec::new(),
-        });
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid tessellation"),
+    );
     let mut v5 = Vec::new();
     let v5_report = RhinoCodec
         .plan(
@@ -418,7 +407,7 @@ fn mesh_precision_is_target_specific_and_reported() {
     let decoded_v5 = RhinoCodec
         .decode(&mut Cursor::new(v5), &DecodeOptions::default())
         .expect("required invariant");
-    assert_ne!(decoded_v5.ir().model.tessellations[0].vertices[0].x, 0.1);
+    assert_ne!(decoded_v5.ir().model.tessellations[0].vertices()[0].x, 0.1);
     let mut v8 = Vec::new();
     let v8_report = RhinoCodec
         .plan(
@@ -431,7 +420,7 @@ fn mesh_precision_is_target_specific_and_reported() {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(v8), &DecodeOptions::default())
         .expect("required invariant");
-    assert_eq!(decoded.ir().model.tessellations[0].vertices[0].x, 0.1);
+    assert_eq!(decoded.ir().model.tessellations[0].vertices()[0].x, 0.1);
 }
 
 #[test]
@@ -449,36 +438,29 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
         (CHANNEL_CURVATURE, 16, vec![0x22; 48]),
     ]
     .into_iter()
-    .map(
-        |(kind, item_size, data)| cadmpeg_ir::tessellation::TessellationChannel {
-            domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
+    .map(|(kind, item_size, data)| {
+        cadmpeg_ir::tessellation::TessellationChannel::new(
+            cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
             item_size,
             kind,
-            flags: 0,
-            count: 3,
+            0,
             data,
-            indices: Vec::new(),
-        },
-    )
+        )
+        .expect("valid channel")
+    })
     .collect::<Vec<_>>();
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            id: "cadir:model:tessellation#channels".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
+    ir.model.tessellations.push(
+        cadmpeg_ir::tessellation::Tessellation::from_decoded(
+            "cadir:model:tessellation#channels",
             vertices,
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: Vec::new(),
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: channels.clone(),
-        });
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            channels.clone(),
+        )
+        .expect("valid tessellation"),
+    );
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
@@ -490,10 +472,12 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
-    let actual = &decoded.ir().model.tessellations[0].channels;
+    let actual = decoded.ir().model.tessellations[0].channels();
     for expected in channels {
         assert_eq!(
-            actual.iter().find(|channel| channel.kind == expected.kind),
+            actual
+                .iter()
+                .find(|channel| channel.kind() == expected.kind()),
             Some(&expected)
         );
     }
@@ -505,36 +489,29 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
     let mut uv_data = vec![0_u8; 24];
     uv_data[..4].copy_from_slice(&0x4000_8000_u32.to_le_bytes());
     uv_data[4..12].copy_from_slice(&160_i64.to_le_bytes());
-    ir.model
-        .tessellations
-        .push(cadmpeg_ir::tessellation::Tessellation {
-            id: "cadir:model:tessellation#chunk-like-channel".into(),
-            body: None,
-            faces: Vec::new(),
-            chordal_deflection: None,
-            source_object: None,
-            vertices: vec![
+    ir.model.tessellations.push(
+        Tessellation::from_decoded(
+            "cadir:model:tessellation#chunk-like-channel",
+            vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            triangles: vec![[0, 1, 2]],
-            feature_edges: Vec::new(),
-            strip_lengths: Vec::new(),
-            normals: Vec::new(),
-            corner_normals: Vec::new(),
-            triangle_groups: Vec::new(),
-            texture_assignments: Vec::new(),
-            channels: vec![cadmpeg_ir::tessellation::TessellationChannel {
-                domain: cadmpeg_ir::tessellation::TessellationChannelDomain::default(),
-                kind: CHANNEL_UV,
-                item_size: 8,
-                flags: 0,
-                count: 3,
-                data: uv_data.clone(),
-                indices: Vec::new(),
-            }],
-        });
+            vec![[0, 1, 2]],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![cadmpeg_ir::tessellation::TessellationChannel::new(
+                cadmpeg_ir::tessellation::ChannelAddressing::Vertex,
+                8,
+                CHANNEL_UV,
+                0,
+                uv_data.clone(),
+            )
+            .expect("valid channel")],
+        )
+        .expect("valid tessellation"),
+    );
 
     let mut bytes = Vec::new();
     RhinoCodec
@@ -548,7 +525,7 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("generated mesh remains decodable");
     assert_eq!(
-        decoded.ir().model.tessellations[0].channels[0].data,
+        decoded.ir().model.tessellations[0].channels()[0].data(),
         uv_data
     );
 }
