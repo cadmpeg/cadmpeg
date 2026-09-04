@@ -123,7 +123,7 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
     )
     .expect("archive 70 is in the catalog");
     assert_eq!(
-        plan.report().fidelity,
+        plan.report().fidelity(),
         cadmpeg_ir::FidelityResolution::NotProvided
     );
     let loss = plan
@@ -148,7 +148,7 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
     )
     .expect("archive 50 is in the catalog");
     assert_eq!(
-        plan.report().fidelity,
+        plan.report().fidelity(),
         cadmpeg_ir::FidelityResolution::NotProvided
     );
 }

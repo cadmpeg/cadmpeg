@@ -113,7 +113,7 @@ fn inherit_preserves_a_schema_four_source_entry_for_entry() {
         .expect("decode source");
     let plan = inherit(decoded.ir()).expect("schema 4 is preserved");
 
-    assert_eq!(plan.report().write_path, cadmpeg_ir::WritePath::Patched);
+    assert_eq!(plan.report().write_path(), cadmpeg_ir::WritePath::Patched);
     assert_eq!(
         plan.report().target().map(ToString::to_string),
         Some("fcstd:schema-4".to_owned())

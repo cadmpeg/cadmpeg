@@ -179,16 +179,19 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
                 TargetRequest::Inherit,
             )
             .expect("edited STEP document plan");
-        assert_eq!(plan.report().write_path, cadmpeg_ir::WritePath::Synthesized);
         assert_eq!(
-            &plan.report().fidelity,
+            plan.report().write_path(),
+            cadmpeg_ir::WritePath::Synthesized
+        );
+        assert_eq!(
+            &plan.report().fidelity(),
             &cadmpeg_ir::FidelityResolution::NotConsumed
         );
         let mut edited_bytes = Vec::new();
         let export = plan
             .write_to(&mut edited_bytes)
             .expect("edited STEP document write");
-        assert_eq!(export.write_path, cadmpeg_ir::WritePath::Synthesized);
+        assert_eq!(export.write_path(), cadmpeg_ir::WritePath::Synthesized);
         let edited_result = codec
             .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())
             .expect("edited STEP document decode");

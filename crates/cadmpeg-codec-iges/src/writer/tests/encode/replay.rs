@@ -8,7 +8,7 @@ use cadmpeg_ir::report::FidelityResolution;
 
 /// Reads the degradation reason from `plan`, or panics with the resolution.
 fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {
-    match &plan.report().fidelity {
+    match &plan.report().fidelity() {
         FidelityResolution::Degraded { reason } => reason.clone(),
         other => panic!("{context}: {other:?}"),
     }
@@ -34,8 +34,8 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         )
         .unwrap();
 
-    assert_eq!(plan.report().write_path, WritePath::Synthesized);
-    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotConsumed);
+    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
+    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
     let displacement = plan
         .report()
         .losses
@@ -70,8 +70,8 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
         )
         .unwrap();
 
-    assert_eq!(plan.report().write_path, WritePath::Synthesized);
-    assert_eq!(&plan.report().fidelity, &FidelityResolution::NotConsumed);
+    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
+    assert_eq!(&plan.report().fidelity(), &FidelityResolution::NotConsumed);
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
             TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
-    assert_eq!(plan.report().write_path, WritePath::VerbatimReplay);
+    assert_eq!(plan.report().write_path(), WritePath::VerbatimReplay);
 
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
@@ -146,7 +146,7 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
         )
         .unwrap();
 
-    assert_eq!(plan.report().write_path, WritePath::Synthesized);
+    assert_eq!(plan.report().write_path(), WritePath::Synthesized);
     let reason = degraded_reason(&plan, "an edited model must degrade");
     assert!(reason.contains("digest"), "{reason}");
 }

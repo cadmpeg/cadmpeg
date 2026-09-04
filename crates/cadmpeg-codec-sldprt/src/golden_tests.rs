@@ -289,7 +289,7 @@ fn fixtures_survive_the_semantic_write_path() {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
                 assert_eq!(
-                    report.write_path,
+                    report.write_path(),
                     WritePath::Patched,
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );

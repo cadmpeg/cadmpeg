@@ -73,7 +73,7 @@ where
         TargetRequest::Inherit,
     )
     .unwrap_or_else(|error| panic!("{label}: plan failed: {error}"));
-    let path = plan.report().write_path;
+    let path = plan.report().write_path();
     let mut written = Vec::new();
     let report = plan
         .write_to(&mut written)
@@ -155,7 +155,7 @@ pub fn semantic_roundtrip<C>(
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.report().write_path;
+            let path = plan.report().write_path();
             let mut bytes = Vec::new();
             let report = plan
                 .write_to(&mut bytes)
@@ -266,7 +266,7 @@ where
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.report().write_path;
+            let path = plan.report().write_path();
             let mut bytes = Vec::new();
             let report = plan
                 .write_to(&mut bytes)

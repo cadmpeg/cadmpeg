@@ -366,7 +366,7 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.report().write_path;
+            let path = plan.report().write_path();
             match plan.write_to(&mut out) {
                 Ok(_) => {
                     assert_eq!(
@@ -390,7 +390,7 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     Some(match F3dCodec.encode(result.ir(), &mut out) {
         Ok(report) => {
             assert_eq!(
-                report.write_path,
+                report.write_path(),
                 WritePath::Synthesized,
                 "the generate lane withholds the sidecar, so the writer must author every byte"
             );
@@ -744,7 +744,7 @@ fn fixtures_refuse_to_write_without_a_baseline() {
             ),
             SemanticOutcome::Written { report, .. } => panic!(
                 "fixture `{name}`: the baseline was removed, yet the encoder wrote by the {} path",
-                report.write_path
+                report.write_path()
             ),
         }
         });
