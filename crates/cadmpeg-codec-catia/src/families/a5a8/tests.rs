@@ -177,8 +177,8 @@ fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
             .try_into()
             .expect("one inline-tail header");
         assert_eq!(
-            header.parameter_tail.unwrap().continuation,
-            [2.0, -3.0, 5.0, 7.0, 11.0, 13.0, 17.0, 19.0]
+            header.pole_storage,
+            crate::families::a5a8::records::PoleStorage::Inline
         );
     }
 }
@@ -192,7 +192,10 @@ fn a8_elided_surface_requires_the_fixed_zero_continuation() {
     let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
         .try_into()
         .expect("one parameter lattice");
-    assert!(!header.poles_elided);
+    assert_eq!(
+        header.pole_storage,
+        crate::families::a5a8::records::PoleStorage::Inline
+    );
     assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
 }
 
@@ -259,7 +262,10 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
     assert_eq!((headers[0].u_count, headers[0].v_count), (3, 3));
     assert_eq!(headers[0].u_multiplicities, [3, 3]);
     assert_eq!(headers[0].v_multiplicities, [3, 3]);
-    assert!(!headers[0].poles_elided);
+    assert_eq!(
+        headers[0].pole_storage,
+        crate::families::a5a8::records::PoleStorage::Inline
+    );
 }
 
 #[test]
@@ -268,18 +274,10 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
     assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
     let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
     assert_eq!(headers.len(), 1);
-    assert!(headers[0].poles_elided);
-    let tail = headers[0]
-        .parameter_tail
-        .as_ref()
-        .expect("elided parameter tail");
-    assert_eq!((tail.u_control, tail.v_control), (0x21, 0x05));
-    assert_eq!(tail.u_range, [0.0, 1.0]);
-    assert_eq!(tail.v_range, [0.0, 1.0]);
-    assert_eq!(tail.u_affine, [1.0, 0.0]);
-    assert_eq!(tail.v_affine, [1.0, 0.0]);
-    assert_eq!(tail.flags, [0x01, 0x01, 0x01]);
-    assert_eq!(tail.continuation, [0.0; 8]);
+    assert_eq!(
+        headers[0].pole_storage,
+        crate::families::a5a8::records::PoleStorage::Elided
+    );
 }
 
 #[test]
@@ -289,12 +287,10 @@ fn a8_surface_header_retains_an_inline_parameter_tail() {
     let [header] = headers.as_slice() else {
         panic!("one inline-tail header");
     };
-    assert!(!header.poles_elided);
-    let tail = header
-        .parameter_tail
-        .as_ref()
-        .expect("inline parameter tail");
-    assert_eq!(tail.v_range[1], 1.0);
+    assert_eq!(
+        header.pole_storage,
+        crate::families::a5a8::records::PoleStorage::Inline
+    );
 }
 
 #[test]
@@ -304,7 +300,10 @@ fn a8_surface_header_rejects_an_incomplete_elided_program() {
     let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
         .try_into()
         .expect("one surface header");
-    assert!(!header.poles_elided);
+    assert_eq!(
+        header.pole_storage,
+        crate::families::a5a8::records::PoleStorage::Inline
+    );
     assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
 }
 
@@ -321,13 +320,19 @@ fn a8_elided_surface_requires_length_closed_nested_children() {
     let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
         .try_into()
         .expect("one elided surface header");
-    assert!(header.poles_elided);
+    assert_eq!(
+        header.pole_storage,
+        crate::families::a5a8::records::PoleStorage::Elided
+    );
 
     bytes[a8_end + 3] = 250;
     let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
         .try_into()
         .expect("one surface header");
-    assert!(!header.poles_elided);
+    assert_eq!(
+        header.pole_storage,
+        crate::families::a5a8::records::PoleStorage::Inline
+    );
     assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
 }
 

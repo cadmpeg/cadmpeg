@@ -41,30 +41,13 @@ pub struct FreeformSurface {
     pub geometry: SurfaceGeometry,
 }
 
-/// The fixed parameterization program carried by an `a8 <flag> 34` surface.
-///
-/// The two control bytes are retained as encoded because their compact
-/// subprograms are not part of the fixed elided form's scalar map. The eight
-/// f64 lanes have one stable meaning: the active U/V limits followed by the
-/// affine map from the source parameter to each active parameter.
-#[derive(Debug, Clone, PartialEq)]
-pub struct A8SurfaceParameterTail {
-    /// U-side control byte.
-    pub u_control: u8,
-    /// V-side control byte.
-    pub v_control: u8,
-    /// Active U parameter interval.
-    pub u_range: [f64; 2],
-    /// Active V parameter interval.
-    pub v_range: [f64; 2],
-    /// U affine map `(coefficient, shift)`.
-    pub u_affine: [f64; 2],
-    /// V affine map `(coefficient, shift)`.
-    pub v_affine: [f64; 2],
-    /// Extrapolation control flags.
-    pub flags: [u8; 3],
-    /// Eight continuation scalars following the flags.
-    pub continuation: [f64; 8],
+/// Whether an `a8 <flag> 34` surface stores poles inline or in an external grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PoleStorage {
+    /// Pole and weight grid occupy the payload after the mode byte.
+    Inline,
+    /// The fixed 141-byte surface tail begins immediately after the mode byte.
+    Elided,
 }
 
 impl FreeformSurface {
@@ -220,7 +203,7 @@ pub(crate) fn a8_nested_b5_run_start(
             object_id: frame.object_id,
         },
     )?;
-    let suffix_start = if parsed.header.poles_elided {
+    let suffix_start = if parsed.header.pole_storage == PoleStorage::Elided {
         parsed.pole_start.checked_add(141)?
     } else {
         let poles = crate::nurbs_surface_control_count(
@@ -242,11 +225,7 @@ pub(crate) fn a8_nested_b5_run_start(
     (child_start < frame_end).then_some(child_start)
 }
 
-fn parse_a8_elided_surface_tail(
-    data: &[u8],
-    at: usize,
-    v_knots: &[f64],
-) -> Option<A8SurfaceParameterTail> {
+fn parse_a8_elided_surface_tail(data: &[u8], at: usize, v_knots: &[f64]) -> Option<usize> {
     let end = at.checked_add(141)?;
     let tail = data.get(at..end)?;
     if tail[0] != 0x05
@@ -281,19 +260,10 @@ fn parse_a8_elided_surface_tail(
         && zero_w == 0.0
         && one_v == 1.0
         && zero_x == 0.0)
-        .then_some(A8SurfaceParameterTail {
-            u_control: tail[1],
-            v_control: tail[3],
-            u_range: [zero_u, positive_u],
-            v_range: [zero_v, v_span],
-            u_affine: [one_u, zero_w],
-            v_affine: [one_v, zero_x],
-            flags: [tail[68], tail[69], tail[70]],
-            continuation: [0.0; 8],
-        })
+        .then_some(end)
 }
 
-fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<A8SurfaceParameterTail> {
+fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     let tail_len = end.checked_sub(at)?;
     let continuation_bytes = match tail_len {
         133 => 56,
@@ -348,39 +318,22 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<A8SurfacePar
         }
         _ => false,
     };
-    valid_suffix.then_some(())?;
-    let mut continuation_values = [0.0; 8];
-    continuation_values[..continuation.len()].copy_from_slice(&continuation);
-    Some(A8SurfaceParameterTail {
-        u_control: tail[1],
-        v_control: tail[3],
-        u_range: [parameters[0], parameters[1]],
-        v_range: [parameters[2], parameters[3]],
-        u_affine: [parameters[4], parameters[5]],
-        v_affine: [parameters[6], parameters[7]],
-        flags: tail[68..71].try_into().ok()?,
-        continuation: continuation_values,
-    })
+    valid_suffix.then_some(end)
 }
 
 fn valid_a5_surface_tail(data: &[u8], at: usize, end: usize) -> bool {
     parse_surface_tail(data, at, end).is_some()
 }
 
-fn a8_inline_surface_tail(
-    data: &[u8],
-    at: usize,
-    end: usize,
-) -> Option<(A8SurfaceParameterTail, usize)> {
+fn a8_inline_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     for tail_len in [133, 141, 142] {
         let Some(tail_end) = at.checked_add(tail_len).filter(|tail_end| *tail_end <= end) else {
             continue;
         };
-        let Some(tail) = parse_surface_tail(data, at, tail_end) else {
-            continue;
-        };
-        if closed_a8_child_run(data, tail_end, end) {
-            return Some((tail, tail_end));
+        if parse_surface_tail(data, at, tail_end).is_some()
+            && closed_a8_child_run(data, tail_end, end)
+        {
+            return Some(tail_end);
         }
     }
     None
@@ -390,7 +343,7 @@ fn a8_surface_suffix_start(data: &[u8], at: usize, end: usize) -> Option<usize> 
     if closed_a8_child_run(data, at, end) {
         return Some(at);
     }
-    a8_inline_surface_tail(data, at, end).map(|(_, tail_end)| tail_end)
+    a8_inline_surface_tail(data, at, end)
 }
 
 fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
@@ -469,11 +422,8 @@ pub struct A8SurfaceHeader {
     pub v_count: u32,
     /// Whether the record selects rational weights.
     pub rational: bool,
-    /// Decoded range, affine-map, and continuation program, when present.
-    pub parameter_tail: Option<A8SurfaceParameterTail>,
-    /// The fixed 141-byte surface tail begins immediately after the mode byte,
-    /// so no inline pole or weight grid is present.
-    pub poles_elided: bool,
+    /// Whether poles occupy the payload or an external grid.
+    pub pole_storage: PoleStorage,
 }
 
 #[derive(Debug, Clone)]
@@ -1254,7 +1204,7 @@ pub(crate) fn resolved_a8_surface_from_object_frame(
     object_id: u32,
 ) -> Option<FreeformSurface> {
     let parsed = parse_selected_a8_surface_header(data, start, end, object_id)?;
-    if parsed.header.poles_elided {
+    if parsed.header.pole_storage == PoleStorage::Elided {
         a8_surface_from_external_grid(data, &parsed.header)
     } else {
         a8_surface_from_parsed(data, parsed)
@@ -1326,7 +1276,7 @@ fn a8_external_grid_candidates(
     data: &[u8],
     header: &A8SurfaceHeader,
 ) -> Vec<ExternalGridCandidate> {
-    if !header.poles_elided {
+    if header.pole_storage != PoleStorage::Elided {
         return Vec::new();
     }
     let (Ok(u_count), Ok(v_count)) = (
@@ -1575,25 +1525,9 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
         return None;
     }
     let tail_end = at.checked_add(141)?;
-    let elided_tail = (tail_end <= end && closed_a8_child_run(data, tail_end, end))
-        .then(|| parse_a8_elided_surface_tail(data, at, &v_distinct))
-        .flatten();
-    let poles_elided = elided_tail.is_some();
-    let inline_tail = || {
-        let poles = crate::nurbs_surface_control_count(
-            usize::try_from(u_count).ok()?,
-            usize::try_from(v_count).ok()?,
-        )?;
-        let pole_bytes = poles.checked_mul(24)?;
-        let weight_bytes = if mode == 0x05 {
-            poles.checked_mul(8)?
-        } else {
-            0
-        };
-        let tail_start = at.checked_add(pole_bytes)?.checked_add(weight_bytes)?;
-        a8_inline_surface_tail(data, tail_start, end).map(|(tail, _)| tail)
-    };
-    let parameter_tail = elided_tail.or_else(inline_tail);
+    let elided = tail_end <= end
+        && closed_a8_child_run(data, tail_end, end)
+        && parse_a8_elided_surface_tail(data, at, &v_distinct).is_some();
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
             pos,
@@ -1607,8 +1541,11 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
             u_count,
             v_count,
             rational: mode == 0x05,
-            parameter_tail,
-            poles_elided,
+            pole_storage: if elided {
+                PoleStorage::Elided
+            } else {
+                PoleStorage::Inline
+            },
         },
         pole_start: at,
         end,
@@ -1633,10 +1570,10 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
         u_count,
         v_count,
         rational,
-        poles_elided,
+        pole_storage,
         ..
     } = header;
-    if poles_elided {
+    if pole_storage == PoleStorage::Elided {
         return None;
     }
     let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
