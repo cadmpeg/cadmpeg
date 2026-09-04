@@ -156,22 +156,40 @@ pub(crate) struct ProteinRejectionRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct UfrxRecord {
-    pub(crate) id: String,
-    pub(crate) state: UfrxRecordState,
-    pub(crate) directory_id: Option<u32>,
-    pub(crate) schema: Option<u16>,
-    pub(crate) section_versions: Vec<u16>,
-    pub(crate) original_file_name: Option<String>,
-    pub(crate) caption: Option<String>,
-    pub(crate) representation: Option<UfrxRepresentationRecord>,
-    pub(crate) model_state_count: u64,
-    pub(crate) reference_count: u64,
-    pub(crate) embedded_reference_count: u64,
-    pub(crate) occurrence_count: u64,
-    pub(crate) tail_len: u64,
-    pub(crate) tail_sha256: Option<String>,
-    pub(crate) detail: Option<String>,
+#[serde(try_from = "UfrxRecordWire", into = "UfrxRecordWire")]
+pub(crate) enum UfrxRecord {
+    Absent {
+        id: String,
+    },
+    ParsedPrefix {
+        id: String,
+        directory_id: u32,
+        schema: u16,
+        section_versions: Vec<u16>,
+        original_file_name: String,
+        caption: String,
+        representation: Option<UfrxRepresentationRecord>,
+        model_state_count: u64,
+        reference_count: u64,
+        embedded_reference_count: u64,
+        occurrence_count: u64,
+        tail_len: u64,
+        tail_sha256: String,
+    },
+    Unsupported {
+        id: String,
+        directory_id: u32,
+        schema: u16,
+        section_versions: Vec<u16>,
+        tail_len: u64,
+        tail_sha256: String,
+        detail: String,
+    },
+    Malformed {
+        id: String,
+        directory_id: u32,
+        detail: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,11 +227,192 @@ pub(crate) struct UfrxModelStateParameterRecord {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum UfrxRecordState {
+enum UfrxRecordState {
     Absent,
     ParsedPrefix,
     Unsupported,
     Malformed,
+}
+
+#[derive(Serialize, Deserialize)]
+struct UfrxRecordWire {
+    id: String,
+    state: UfrxRecordState,
+    directory_id: Option<u32>,
+    schema: Option<u16>,
+    section_versions: Vec<u16>,
+    original_file_name: Option<String>,
+    caption: Option<String>,
+    representation: Option<UfrxRepresentationRecord>,
+    model_state_count: u64,
+    reference_count: u64,
+    embedded_reference_count: u64,
+    occurrence_count: u64,
+    tail_len: u64,
+    tail_sha256: Option<String>,
+    detail: Option<String>,
+}
+
+impl From<UfrxRecord> for UfrxRecordWire {
+    fn from(value: UfrxRecord) -> Self {
+        match value {
+            UfrxRecord::Absent { id } => Self {
+                id,
+                state: UfrxRecordState::Absent,
+                directory_id: None,
+                schema: None,
+                section_versions: Vec::new(),
+                original_file_name: None,
+                caption: None,
+                representation: None,
+                model_state_count: 0,
+                reference_count: 0,
+                embedded_reference_count: 0,
+                occurrence_count: 0,
+                tail_len: 0,
+                tail_sha256: None,
+                detail: None,
+            },
+            UfrxRecord::ParsedPrefix {
+                id,
+                directory_id,
+                schema,
+                section_versions,
+                original_file_name,
+                caption,
+                representation,
+                model_state_count,
+                reference_count,
+                embedded_reference_count,
+                occurrence_count,
+                tail_len,
+                tail_sha256,
+            } => Self {
+                id,
+                state: UfrxRecordState::ParsedPrefix,
+                directory_id: Some(directory_id),
+                schema: Some(schema),
+                section_versions,
+                original_file_name: Some(original_file_name),
+                caption: Some(caption),
+                representation,
+                model_state_count,
+                reference_count,
+                embedded_reference_count,
+                occurrence_count,
+                tail_len,
+                tail_sha256: Some(tail_sha256),
+                detail: None,
+            },
+            UfrxRecord::Unsupported {
+                id,
+                directory_id,
+                schema,
+                section_versions,
+                tail_len,
+                tail_sha256,
+                detail,
+            } => Self {
+                id,
+                state: UfrxRecordState::Unsupported,
+                directory_id: Some(directory_id),
+                schema: Some(schema),
+                section_versions,
+                original_file_name: None,
+                caption: None,
+                representation: None,
+                model_state_count: 0,
+                reference_count: 0,
+                embedded_reference_count: 0,
+                occurrence_count: 0,
+                tail_len,
+                tail_sha256: Some(tail_sha256),
+                detail: Some(detail),
+            },
+            UfrxRecord::Malformed {
+                id,
+                directory_id,
+                detail,
+            } => Self {
+                id,
+                state: UfrxRecordState::Malformed,
+                directory_id: Some(directory_id),
+                schema: None,
+                section_versions: Vec::new(),
+                original_file_name: None,
+                caption: None,
+                representation: None,
+                model_state_count: 0,
+                reference_count: 0,
+                embedded_reference_count: 0,
+                occurrence_count: 0,
+                tail_len: 0,
+                tail_sha256: None,
+                detail: Some(detail),
+            },
+        }
+    }
+}
+
+impl TryFrom<UfrxRecordWire> for UfrxRecord {
+    type Error = String;
+
+    fn try_from(wire: UfrxRecordWire) -> Result<Self, Self::Error> {
+        match wire.state {
+            UfrxRecordState::Absent => Ok(Self::Absent { id: wire.id }),
+            UfrxRecordState::ParsedPrefix => Ok(Self::ParsedPrefix {
+                id: wire.id,
+                directory_id: wire
+                    .directory_id
+                    .ok_or_else(|| "parsed UFRxDoc requires directory_id".to_owned())?,
+                schema: wire
+                    .schema
+                    .ok_or_else(|| "parsed UFRxDoc requires schema".to_owned())?,
+                section_versions: wire.section_versions,
+                original_file_name: wire
+                    .original_file_name
+                    .ok_or_else(|| "parsed UFRxDoc requires original_file_name".to_owned())?,
+                caption: wire
+                    .caption
+                    .ok_or_else(|| "parsed UFRxDoc requires caption".to_owned())?,
+                representation: wire.representation,
+                model_state_count: wire.model_state_count,
+                reference_count: wire.reference_count,
+                embedded_reference_count: wire.embedded_reference_count,
+                occurrence_count: wire.occurrence_count,
+                tail_len: wire.tail_len,
+                tail_sha256: wire
+                    .tail_sha256
+                    .ok_or_else(|| "parsed UFRxDoc requires tail_sha256".to_owned())?,
+            }),
+            UfrxRecordState::Unsupported => Ok(Self::Unsupported {
+                id: wire.id,
+                directory_id: wire
+                    .directory_id
+                    .ok_or_else(|| "unsupported UFRxDoc requires directory_id".to_owned())?,
+                schema: wire
+                    .schema
+                    .ok_or_else(|| "unsupported UFRxDoc requires schema".to_owned())?,
+                section_versions: wire.section_versions,
+                tail_len: wire.tail_len,
+                tail_sha256: wire
+                    .tail_sha256
+                    .ok_or_else(|| "unsupported UFRxDoc requires tail_sha256".to_owned())?,
+                detail: wire
+                    .detail
+                    .ok_or_else(|| "unsupported UFRxDoc requires detail".to_owned())?,
+            }),
+            UfrxRecordState::Malformed => Ok(Self::Malformed {
+                id: wire.id,
+                directory_id: wire
+                    .directory_id
+                    .ok_or_else(|| "malformed UFRxDoc requires directory_id".to_owned())?,
+                detail: wire
+                    .detail
+                    .ok_or_else(|| "malformed UFRxDoc requires detail".to_owned())?,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
