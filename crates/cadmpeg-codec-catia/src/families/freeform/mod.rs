@@ -396,7 +396,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         crate::families::b5::graph::typed_parameter_incidences_from_records(&census_object_records);
     let typed_parameter_incidence_member_count = typed_parameter_incidences
         .values()
-        .map(|incidence| incidence.curves.len())
+        .map(|incidence| incidence.lanes.len())
         .sum();
     let typed_vertex_incidence_rosters =
         crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(

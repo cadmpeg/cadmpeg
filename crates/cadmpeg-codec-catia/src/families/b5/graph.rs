@@ -154,10 +154,9 @@ fn edge_pcurve_parameter_values(
         .map(|incidence_id| {
             let incidence = parameter_incidences.get(&incidence_id)?;
             let mut parameters = incidence
-                .curves
+                .lanes
                 .iter()
-                .zip(&incidence.parameters)
-                .filter_map(|(&curve, &parameter)| (curve == pcurve).then_some(parameter));
+                .filter_map(|lane| (lane.curve == pcurve).then_some(lane.parameter));
             let parameter = parameters.next()?;
             parameters
                 .all(|other| other == parameter)
@@ -542,12 +541,19 @@ pub enum B5SupportedSurfaceParameters {
 pub struct B5ParameterIncidence {
     /// This record's stream object id.
     pub object_id: u32,
-    /// Ordered curve or pcurve references.
-    pub curves: Vec<u32>,
-    /// Finite native parameters aligned with `curves`.
-    pub parameters: Vec<f64>,
-    /// Compact native controls aligned with `curves`.
-    pub controls: Vec<u32>,
+    /// Curve, parameter, and control triples in serialized order.
+    pub lanes: Vec<B5IncidenceLane>,
+}
+
+/// One curve/parameter/control triple of a class-`06` incidence record.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct B5IncidenceLane {
+    /// Referenced curve or pcurve object id.
+    pub curve: u32,
+    /// Finite native parameter on that curve.
+    pub parameter: f64,
+    /// Compact native control for this lane.
+    pub control: u32,
 }
 
 /// One complete class-`5e` physical-edge reference production.
@@ -1982,12 +1988,9 @@ fn incidence_vertex_coordinates(
                 .map(|incidence_record| {
                     let incidence = parameter_incidence(by_id.get(&incidence_record)?)?;
                     let points = incidence
-                        .curves
+                        .lanes
                         .into_iter()
-                        .zip(incidence.parameters)
-                        .map(|(pcurve_id, parameter)| {
-                            lift_parameter_incidence(pcurve_id, parameter, geometry)
-                        })
+                        .map(|lane| lift_parameter_incidence(lane.curve, lane.parameter, geometry))
                         .collect::<Option<Vec<_>>>()?;
                     (!points.is_empty()).then_some(points)
                 })
@@ -2077,9 +2080,16 @@ fn parameter_incidence(record: &B5Record) -> Option<B5ParameterIncidence> {
     }
     (position == record.payload.len()).then_some(B5ParameterIncidence {
         object_id: record.object_id,
-        curves: references,
-        parameters,
-        controls,
+        lanes: references
+            .into_iter()
+            .zip(parameters)
+            .zip(controls)
+            .map(|((curve, parameter), control)| B5IncidenceLane {
+                curve,
+                parameter,
+                control,
+            })
+            .collect(),
     })
 }
 
@@ -2117,7 +2127,9 @@ fn implicit_pcurve_bindings(
                 by_id
                     .get(&reference_id)
                     .and_then(|incidence| parameter_incidence(incidence))
-                    .is_some_and(|incidence| incidence.curves.contains(&pcurve))
+                    .is_some_and(|incidence| {
+                        incidence.lanes.iter().any(|lane| lane.curve == pcurve)
+                    })
             };
             let curve_wrapper_contains = by_id.get(&edge.support).is_some_and(|wrapper| {
                 matches!(wrapper.class, 0x23..=0x25) && record_references(wrapper).contains(&pcurve)

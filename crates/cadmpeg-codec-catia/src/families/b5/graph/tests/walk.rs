@@ -1559,9 +1559,21 @@ fn parameter_incidence_retains_aligned_compact_controls() {
     .expect("parameter incidence");
 
     assert_eq!(incidence.object_id, 17);
-    assert_eq!(incidence.curves, [9, 10]);
-    assert_eq!(incidence.parameters, [1.25, 2.5]);
-    assert_eq!(incidence.controls, [5, 11]);
+    assert_eq!(
+        incidence.lanes,
+        [
+            B5IncidenceLane {
+                curve: 9,
+                parameter: 1.25,
+                control: 5,
+            },
+            B5IncidenceLane {
+                curve: 10,
+                parameter: 2.5,
+                control: 11,
+            },
+        ]
+    );
 }
 
 #[test]
