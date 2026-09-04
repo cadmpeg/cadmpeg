@@ -1600,23 +1600,36 @@ impl EvaluatedFormulaBoolean {
 }
 
 #[derive(Clone)]
-struct EvaluatedFormulaString {
-    value: String,
-    known: bool,
+enum EvaluatedFormulaString {
+    Known(String),
+    Unknown,
 }
 
 impl EvaluatedFormulaString {
     fn known(value: impl Into<String>) -> Self {
-        Self {
-            value: value.into(),
-            known: true,
-        }
+        Self::Known(value.into())
     }
 
     fn unknown() -> Self {
-        Self {
-            value: String::new(),
-            known: false,
+        Self::Unknown
+    }
+
+    fn from_parts(value: String, known: bool) -> Self {
+        if known {
+            Self::Known(value)
+        } else {
+            Self::Unknown
+        }
+    }
+
+    fn is_known(&self) -> bool {
+        matches!(self, Self::Known(_))
+    }
+
+    fn value(&self) -> &str {
+        match self {
+            Self::Known(value) => value.as_str(),
+            Self::Unknown => "",
         }
     }
 }
@@ -1670,7 +1683,7 @@ impl EvaluatedFormulaValue {
     #[cfg(test)]
     fn string(self) -> Option<String> {
         match self {
-            Self::String(value) => Some(value.value),
+            Self::String(value) => Some(value.value().to_owned()),
             Self::Scalar(_) | Self::Boolean(_) => None,
         }
     }
@@ -1690,7 +1703,7 @@ impl EvaluatedFormulaValue {
                 (Self::Boolean(left), ParameterValue::Boolean(right)) => {
                     left.known_value() == Some(*right)
                 }
-                (Self::String(left), ParameterValue::String(right)) => left.value == *right,
+                (Self::String(left), ParameterValue::String(right)) => left.value() == *right,
                 (
                     Self::Scalar(left),
                     value @ (ParameterValue::Length(_)
@@ -1845,8 +1858,8 @@ impl FormulaExpressionParser<'_, '_> {
             ),
             (EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => {
                 Some(EvaluatedFormulaValue::String(
-                    if left.known && right.known && left.value == right.value {
-                        EvaluatedFormulaString::known(&left.value)
+                    if left.is_known() && right.is_known() && left.value() == right.value() {
+                        EvaluatedFormulaString::known(left.value())
                     } else {
                         EvaluatedFormulaString::unknown()
                     },
@@ -1965,12 +1978,14 @@ impl FormulaExpressionParser<'_, '_> {
                     left.is_known() && right.is_known(),
                 )
             }
-            ("==", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => {
-                (left.value == right.value, left.known && right.known)
-            }
-            ("<>", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => {
-                (left.value != right.value, left.known && right.known)
-            }
+            ("==", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => (
+                left.value() == right.value(),
+                left.is_known() && right.is_known(),
+            ),
+            ("<>", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => (
+                left.value() != right.value(),
+                left.is_known() && right.is_known(),
+            ),
             (
                 operator,
                 EvaluatedFormulaValue::Scalar(left),
@@ -2012,19 +2027,21 @@ impl FormulaExpressionParser<'_, '_> {
                 if let (EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) =
                     (&value, &right)
                 {
-                    let known = left.known && right.known;
+                    let known = left.is_known() && right.is_known();
                     let joined = if known {
-                        let mut joined =
-                            String::with_capacity(left.value.len().checked_add(right.value.len())?);
-                        joined.push_str(&left.value);
-                        joined.push_str(&right.value);
+                        let mut joined = String::with_capacity(
+                            left.value().len().checked_add(right.value().len())?,
+                        );
+                        joined.push_str(left.value());
+                        joined.push_str(right.value());
                         joined
                     } else {
                         String::new()
                     };
-                    value = EvaluatedFormulaValue::String(EvaluatedFormulaString {
-                        value: joined,
-                        known,
+                    value = EvaluatedFormulaValue::String(if known {
+                        EvaluatedFormulaString::known(joined)
+                    } else {
+                        EvaluatedFormulaString::unknown()
                     });
                     continue;
                 }
@@ -2033,19 +2050,22 @@ impl FormulaExpressionParser<'_, '_> {
                 if let (EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) =
                     (&value, &right)
                 {
-                    if (self.evaluate || self.static_check) && right.known && right.value.is_empty()
+                    if (self.evaluate || self.static_check)
+                        && right.is_known()
+                        && right.value().is_empty()
                     {
                         return None;
                     }
-                    let known = left.known && right.known && !right.value.is_empty();
+                    let known = left.is_known() && right.is_known() && !right.value().is_empty();
                     let string_value = if known {
-                        left.value.replace(&right.value, "")
+                        left.value().replace(right.value(), "")
                     } else {
                         String::new()
                     };
-                    value = EvaluatedFormulaValue::String(EvaluatedFormulaString {
-                        value: string_value,
-                        known,
+                    value = EvaluatedFormulaValue::String(if known {
+                        EvaluatedFormulaString::known(string_value)
+                    } else {
+                        EvaluatedFormulaString::unknown()
                     });
                     continue;
                 }
@@ -2354,9 +2374,9 @@ impl FormulaExpressionParser<'_, '_> {
             let arguments = self.function_arguments(Self::nested_depth(depth)?)?;
             value = match (method, value, arguments.as_slice()) {
                 ("Length", EvaluatedFormulaValue::String(value), []) => {
-                    let length = u32::try_from(value.value.chars().count()).ok()?;
+                    let length = u32::try_from(value.value().chars().count()).ok()?;
                     EvaluatedFormulaValue::Scalar(
-                        if self.evaluate || (self.static_check && value.known) {
+                        if self.evaluate || (self.static_check && value.is_known()) {
                             finite_scalar(f64::from(length))?
                         } else {
                             static_integral_result(0.0, FormulaDimension::SCALAR)
@@ -2368,8 +2388,9 @@ impl FormulaExpressionParser<'_, '_> {
                     EvaluatedFormulaValue::String(value),
                     [EvaluatedFormulaValue::String(needle)],
                 ) => EvaluatedFormulaValue::Scalar(
-                    if self.evaluate || (self.static_check && value.known && needle.known) {
-                        let index = Self::search_string(&value.value, &needle.value, 0, true)?;
+                    if self.evaluate || (self.static_check && value.is_known() && needle.is_known())
+                    {
+                        let index = Self::search_string(value.value(), needle.value(), 0, true)?;
                         finite_scalar(index as f64)?
                     } else {
                         static_integral_result(0.0, FormulaDimension::SCALAR)
@@ -2382,11 +2403,12 @@ impl FormulaExpressionParser<'_, '_> {
                 ) => {
                     let start_value = *start;
                     let start = self.string_index(start_value)?;
-                    let known = value.known && needle.known && start_value.known_value.is_some();
+                    let known =
+                        value.is_known() && needle.is_known() && start_value.known_value.is_some();
                     EvaluatedFormulaValue::Scalar(
                         if self.evaluate || (self.static_check && known) {
                             let index =
-                                Self::search_string(&value.value, &needle.value, start, true)?;
+                                Self::search_string(value.value(), needle.value(), start, true)?;
                             finite_scalar(index as f64)?
                         } else {
                             static_integral_result(0.0, FormulaDimension::SCALAR)
@@ -2401,8 +2423,8 @@ impl FormulaExpressionParser<'_, '_> {
                     let start = self.string_index(*start)?;
                     EvaluatedFormulaValue::Scalar(if self.evaluate {
                         let index = Self::search_string(
-                            &value.value,
-                            &needle.value,
+                            value.value(),
+                            needle.value(),
                             start,
                             forward.value(),
                         )?;
@@ -2420,26 +2442,26 @@ impl FormulaExpressionParser<'_, '_> {
                     let length_value = *length;
                     let start = self.string_index(start_value)?;
                     let length = self.string_index(length_value)?;
-                    let known = value.known
+                    let known = value.is_known()
                         && start_value.known_value.is_some()
                         && length_value.known_value.is_some();
                     let string_value = if self.evaluate || (self.static_check && known) {
                         let end = start.checked_add(length)?;
-                        let start = Self::string_boundary(&value.value, start)?;
-                        let end = Self::string_boundary(&value.value, end)?;
-                        value.value[start..end].to_string()
+                        let start = Self::string_boundary(value.value(), start)?;
+                        let end = Self::string_boundary(value.value(), end)?;
+                        value.value()[start..end].to_string()
                     } else {
                         String::new()
                     };
-                    EvaluatedFormulaValue::String(EvaluatedFormulaString {
-                        value: string_value,
-                        known: self.evaluate || (self.static_check && known),
-                    })
+                    EvaluatedFormulaValue::String(EvaluatedFormulaString::from_parts(
+                        string_value,
+                        self.evaluate || (self.static_check && known),
+                    ))
                 }
                 ("ToReal", EvaluatedFormulaValue::String(value), []) => {
                     EvaluatedFormulaValue::Scalar(
-                        if self.evaluate || (self.static_check && value.known) {
-                            finite_scalar(value.value.parse::<f64>().ok()?)?
+                        if self.evaluate || (self.static_check && value.is_known()) {
+                            finite_scalar(value.value().parse::<f64>().ok()?)?
                         } else {
                             static_unknown_result(0.0, FormulaDimension::SCALAR)
                         },
@@ -2527,19 +2549,22 @@ impl FormulaExpressionParser<'_, '_> {
             else {
                 return None;
             };
-            if (self.evaluate || self.static_check) && from.known && from.value.is_empty() {
+            if (self.evaluate || self.static_check) && from.is_known() && from.value().is_empty() {
                 return None;
             }
-            let known = source.known && from.known && to.known && !from.value.is_empty();
+            let known =
+                source.is_known() && from.is_known() && to.is_known() && !from.value().is_empty();
             let value = if self.evaluate || (self.static_check && known) {
-                source.value.replace(&from.value, &to.value)
+                source.value().replace(from.value(), to.value())
             } else {
                 String::new()
             };
-            return Some(EvaluatedFormulaValue::String(EvaluatedFormulaString {
-                value,
-                known: self.evaluate || (self.static_check && known),
-            }));
+            return Some(EvaluatedFormulaValue::String(
+                EvaluatedFormulaString::from_parts(
+                    value,
+                    self.evaluate || (self.static_check && known),
+                ),
+            ));
         }
 
         if function == "ToString" {
@@ -2555,30 +2580,34 @@ impl FormulaExpressionParser<'_, '_> {
             } else {
                 String::new()
             };
-            return Some(EvaluatedFormulaValue::String(EvaluatedFormulaString {
-                value: string_value,
-                known: self.evaluate || (self.static_check && known),
-            }));
+            return Some(EvaluatedFormulaValue::String(
+                EvaluatedFormulaString::from_parts(
+                    string_value,
+                    self.evaluate || (self.static_check && known),
+                ),
+            ));
         }
 
         if matches!(function, "ToUpper" | "ToLower") {
             let [EvaluatedFormulaValue::String(value)] = arguments.as_slice() else {
                 return None;
             };
-            let known = value.known;
+            let known = value.is_known();
             let string_value = if self.evaluate || (self.static_check && known) {
                 if function == "ToUpper" {
-                    value.value.to_uppercase()
+                    value.value().to_uppercase()
                 } else {
-                    value.value.to_lowercase()
+                    value.value().to_lowercase()
                 }
             } else {
                 String::new()
             };
-            return Some(EvaluatedFormulaValue::String(EvaluatedFormulaString {
-                value: string_value,
-                known: self.evaluate || (self.static_check && known),
-            }));
+            return Some(EvaluatedFormulaValue::String(
+                EvaluatedFormulaString::from_parts(
+                    string_value,
+                    self.evaluate || (self.static_check && known),
+                ),
+            ));
         }
 
         if function == "round" && arguments.len() == 3 {
@@ -2594,12 +2623,12 @@ impl FormulaExpressionParser<'_, '_> {
             {
                 return None;
             }
-            let unit_spec = formula_unit(&unit.value);
+            let unit_spec = formula_unit(unit.value());
             if let Some((unit_dimension, _)) = unit_spec {
                 if value.dimension != unit_dimension {
                     return None;
                 }
-            } else if self.evaluate || (self.static_check && unit.known) {
+            } else if self.evaluate || (self.static_check && unit.is_known()) {
                 return None;
             }
             if (self.static_check || self.evaluate) && !digits.satisfies_source_type("Integer") {
