@@ -1084,12 +1084,12 @@ fn outer_object_graph_resolves_class_names_from_following_schema() {
         Some(native.catalogs[0].id.clone())
     );
     assert_eq!(
-        native.object_graphs[0].records[0].class_entry,
-        Some(native.catalogs[0].entries[3].id.clone())
+        native.object_graphs[0].records[0].class_entry(),
+        Some(native.catalogs[0].entries[3].id.as_str())
     );
     assert_eq!(
-        native.object_graphs[0].records[1].class_entry,
-        Some(native.catalogs[0].entries[4].id.clone())
+        native.object_graphs[0].records[1].class_entry(),
+        Some(native.catalogs[0].entries[4].id.as_str())
     );
     assert_eq!(
         native.design_objects[0].field_classes,

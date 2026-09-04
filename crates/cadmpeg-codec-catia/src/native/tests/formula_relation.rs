@@ -35,8 +35,8 @@ fn native_namespace_types_and_validates_formula_relations() {
             .object_graphs
             .iter()
             .flat_map(|graph| &graph.records)
-            .find(|record| record.entity_id == Some(2))
-            .and_then(|record| record.class_name.clone())
+            .find(|record| record.entity_id() == Some(2))
+            .and_then(|record| record.class_name().map(str::to_owned))
     );
     assert_eq!(formula.output_entity.reference.entity_id(), 99);
     assert_eq!(formula.output_entity.reference.entity(), None);
@@ -54,8 +54,8 @@ fn native_namespace_types_and_validates_formula_relations() {
                     .object_graphs
                     .iter()
                     .flat_map(|graph| &graph.records)
-                    .find(|record| record.entity_id == Some(parameter_entity.entity_id))
-                    .and_then(|record| record.class_name.clone()),
+                    .find(|record| record.entity_id() == Some(parameter_entity.entity_id))
+                    .and_then(|record| record.class_name().map(str::to_owned)),
             )],
         }]
     );
@@ -478,8 +478,8 @@ fn formula_relation_resolves_bare_expression_symbols() {
                 native.object_graphs[0]
                     .records
                     .iter()
-                    .find(|record| record.entity_id == Some(native.entity_records[2].entity_id))
-                    .and_then(|record| record.class_name.clone()),
+                    .find(|record| record.entity_id() == Some(native.entity_records[2].entity_id))
+                    .and_then(|record| record.class_name().map(str::to_owned)),
             )],
         }]
     );

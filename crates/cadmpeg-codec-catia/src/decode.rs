@@ -240,7 +240,7 @@ fn finish_decode(
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .filter(|record| record.storage_record.is_some())
+        .filter(|record| record.storage_record().is_some())
         .count();
     let unresolved_storage_record_count = native
         .object_graphs
@@ -248,9 +248,9 @@ fn finish_decode(
         .flat_map(|graph| &graph.records)
         .filter(|record| {
             record
-                .storage_ref
+                .storage_ref()
                 .is_some_and(|storage_ref| storage_ref != 0)
-                && record.storage_record.is_none()
+                && record.storage_record().is_none()
         })
         .count();
     let object_record_reference_count = native

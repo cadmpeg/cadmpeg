@@ -111,8 +111,10 @@ fn object_record(
         id: id.to_string(),
         parent: "graph".to_string(),
         design_object: design_object.map(str::to_string),
-        entity_record: None,
-        entity_id,
+        entity: entity_id.map(|id| crate::native::CatiaObjectEntity {
+            record: String::new(),
+            id,
+        }),
         ordinal: 0,
         byte_offset: 0,
         byte_len: 0,
@@ -120,12 +122,15 @@ fn object_record(
         head: Vec::new(),
         inline_body: None,
         owner: owner.map(CatiaObjectOwner::Entity),
-        class_ref: None,
-        class_name: class_name.map(str::to_string),
-        class_entry: class_entry.map(str::to_string),
-        storage_ref: None,
-        storage_record: None,
-        storage_design_object: None,
+        class: match (class_name, class_entry) {
+            (None, None) => None,
+            (class_name, class_entry) => Some(crate::native::CatiaObjectClass {
+                class_ref: 0,
+                class_name: class_name.map(str::to_string),
+                class_entry: class_entry.map(str::to_string),
+            }),
+        },
+        storage: None,
         payload: ObjectPayload {
             size: 1,
             fields: vec![PayloadField::Terminator],
@@ -195,7 +200,15 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
         HeadToken::NullHandle,
         HeadToken::Reference(1),
     ];
-    record.class_ref = Some(7);
+    if let Some(class) = &mut record.class {
+        class.class_ref = 7;
+    } else {
+        record.class = Some(crate::native::CatiaObjectClass {
+            class_ref: 7,
+            class_name: None,
+            class_entry: None,
+        });
+    }
 
     let native = CatiaNative {
         design_objects: vec![object],
@@ -242,7 +255,15 @@ fn malformed_compact_root_does_not_promote_an_operation() {
         HeadToken::Reference(1),
         HeadToken::Literal(0),
     ];
-    record.class_ref = Some(7);
+    if let Some(class) = &mut record.class {
+        class.class_ref = 7;
+    } else {
+        record.class = Some(crate::native::CatiaObjectClass {
+            class_ref: 7,
+            class_name: None,
+            class_entry: None,
+        });
+    }
 
     let native = CatiaNative {
         design_objects: vec![object],
@@ -1165,7 +1186,9 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         None,
     );
     late_parameter_record.byte_offset = 30;
-    late_parameter_record.entity_record = Some("late-parameter-entity".to_string());
+    if let Some(entity) = &mut late_parameter_record.entity {
+        entity.record = "late-parameter-entity".to_string();
+    }
     let mut early_parameter_record = object_record(
         "early-parameter-record",
         Some("operation-object"),
@@ -1175,7 +1198,9 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         None,
     );
     early_parameter_record.byte_offset = 20;
-    early_parameter_record.entity_record = Some("early-parameter-entity".to_string());
+    if let Some(entity) = &mut early_parameter_record.entity {
+        entity.record = "early-parameter-entity".to_string();
+    }
     let native = CatiaNative {
         design_objects: vec![operation],
         object_graphs: vec![CatiaObjectGraph {
@@ -1295,7 +1320,9 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         None,
         None,
     );
-    parameter_record.entity_record = Some("parameter-entity".to_string());
+    if let Some(entity) = &mut parameter_record.entity {
+        entity.record = "parameter-entity".to_string();
+    }
     let native = CatiaNative {
         design_objects: vec![parent, child],
         object_graphs: vec![CatiaObjectGraph {
@@ -1516,7 +1543,15 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
         .expect("definition value")
         .definition
         .value = "CircPattern".to_string();
-    native.object_graphs[0].records[0].class_name = Some("Element1".to_string());
+    if let Some(class) = &mut native.object_graphs[0].records[0].class {
+        class.class_name = Some("Element1".to_string());
+    } else {
+        native.object_graphs[0].records[0].class = Some(crate::native::CatiaObjectClass {
+            class_ref: 0,
+            class_name: Some("Element1".to_string()),
+            class_entry: None,
+        });
+    }
 
     let mut ir = CadIr::empty();
     let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
@@ -1540,7 +1575,7 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
     ]));
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(
-        native.object_graphs[0].records[1].class_name.as_deref(),
+        native.object_graphs[0].records[1].class_name(),
         Some("PRTSketch")
     );
 
@@ -1575,8 +1610,16 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
         .flat_map(|graph| graph.records.iter_mut())
         .find(|record| record.id == owner_record_id)
         .expect("mutable synthetic owner declaration record");
-    owner_record_mut.class_name = Some("Sketch".to_string());
-    owner_record_mut.class_entry = Some(owner_class_entry.clone());
+    if let Some(class) = &mut owner_record_mut.class {
+        class.class_name = Some("Sketch".to_string());
+        class.class_entry = Some(owner_class_entry.clone());
+    } else {
+        owner_record_mut.class = Some(crate::native::CatiaObjectClass {
+            class_ref: 0,
+            class_name: Some("Sketch".to_string()),
+            class_entry: Some(owner_class_entry.clone()),
+        });
+    }
 
     let object = native
         .design_objects
@@ -1713,8 +1756,16 @@ fn parameter_owner_follows_one_exact_child_design_object() {
         .flat_map(|graph| graph.records.iter_mut())
         .find(|record| record.id == owner_record_id)
         .expect("mutable synthetic owner declaration record");
-    owner_record_mut.class_name = Some("Sketch".to_string());
-    owner_record_mut.class_entry = Some(owner_class_entry.clone());
+    if let Some(class) = &mut owner_record_mut.class {
+        class.class_name = Some("Sketch".to_string());
+        class.class_entry = Some(owner_class_entry.clone());
+    } else {
+        owner_record_mut.class = Some(crate::native::CatiaObjectClass {
+            class_ref: 0,
+            class_name: Some("Sketch".to_string()),
+            class_entry: Some(owner_class_entry.clone()),
+        });
+    }
 
     let feature_object = native
         .design_objects
@@ -1732,8 +1783,10 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     let child_entity_id = "synthetic-child-entity".to_string();
     let mut child_record = owner_record.clone();
     child_record.id.clone_from(&child_record_id);
-    child_record.entity_record = Some(child_entity_id.clone());
-    child_record.entity_id = Some(2);
+    child_record.entity = Some(crate::native::CatiaObjectEntity {
+        record: child_entity_id.clone(),
+        id: 2,
+    });
     child_record.owner = Some(crate::native::CatiaObjectOwner::Entity(2));
     child_record.design_object = Some("synthetic-child-object".to_string());
     native.object_graphs[0].records.push(child_record);

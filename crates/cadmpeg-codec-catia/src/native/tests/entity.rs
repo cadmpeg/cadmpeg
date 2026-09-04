@@ -29,7 +29,7 @@ fn inline_entity_and_object_records_pair_by_extent_and_cardinality() {
         .find(|graph| graph.byte_offset == graph_offset as u64)
         .expect("entity-paired graph");
     assert_eq!(graph.records.len(), 1);
-    assert_eq!(graph.records[0].entity_id, Some(1));
+    assert_eq!(graph.records[0].entity_id(), Some(1));
     let record = native
         .entity_records
         .iter()
@@ -1343,16 +1343,20 @@ fn native_namespace_binds_and_validates_definition_values() {
         [native.entity_records[0].id.clone()]
     );
     assert_eq!(
-        native.object_graphs[0].records[0].storage_record,
-        Some(native.object_graphs[0].records[0].id.clone())
+        native.object_graphs[0].records[0].storage_record(),
+        Some(native.object_graphs[0].records[0].id.as_str())
     );
     assert_eq!(
-        native.object_graphs[0].records[0].storage_design_object,
-        Some(native.design_objects[0].id.clone())
+        native.object_graphs[0].records[0].storage_design_object(),
+        Some(native.design_objects[0].id.as_str())
     );
 
     let mut malformed_storage = native.clone();
-    malformed_storage.object_graphs[0].records[0].storage_record = None;
+    malformed_storage.object_graphs[0].records[0]
+        .storage
+        .as_mut()
+        .expect("decoded storage role")
+        .storage_record = None;
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_storage
         .store(&mut namespace)

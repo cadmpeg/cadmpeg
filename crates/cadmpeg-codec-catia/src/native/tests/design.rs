@@ -309,7 +309,7 @@ fn native_object_references_select_sparse_entity_identities() {
         graph
             .records
             .iter()
-            .map(|record| record.entity_id)
+            .map(|record| record.entity_id())
             .collect::<Vec<_>>(),
         [Some(1), Some(3), Some(7)]
     );
@@ -368,14 +368,14 @@ fn native_design_relations_preserve_both_endpoint_schema_classes() {
             .source_class
             .as_ref()
             .map(|class| class.entry.as_str()),
-        native.object_graphs[0].records[0].class_entry.as_deref()
+        native.object_graphs[0].records[0].class_entry()
     );
     assert_eq!(
         relation
             .target_class
             .as_ref()
             .map(|class| class.entry.as_str()),
-        native.object_graphs[0].records[2].class_entry.as_deref()
+        native.object_graphs[0].records[2].class_entry()
     );
 }
 

@@ -1896,15 +1896,15 @@ pub(super) fn validate_native_links(
         }
         for record in &graph.records {
             let expected_class = catalog.and_then(|catalog| {
-                usize::try_from(record.class_ref?).ok().and_then(|ordinal| {
+                usize::try_from(record.class_ref()?).ok().and_then(|ordinal| {
                     catalog
                         .entries
                         .get(ordinal)
                         .map(|entry| (entry.id.as_str(), entry.value.as_str()))
                 })
             });
-            if record.class_entry.as_deref() != expected_class.map(|(entry, _)| entry)
-                || record.class_name.as_deref() != expected_class.map(|(_, value)| value)
+            if record.class_entry() != expected_class.map(|(entry, _)| entry)
+                || record.class_name() != expected_class.map(|(_, value)| value)
                 || record.repeated_reference_schema_selection
                     != repeated_reference_schema_selection(
                         record.repeated_reference_suffix.as_ref(),

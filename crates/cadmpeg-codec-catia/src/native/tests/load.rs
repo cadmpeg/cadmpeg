@@ -1054,8 +1054,8 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     assert!(native.object_graphs[0].catalog_byte_offset.is_some());
     assert!(native.object_graphs[0].catalog.is_some());
-    assert!(native.object_graphs[0].records[0].class_name.is_some());
-    assert!(native.object_graphs[0].records[0].class_entry.is_some());
+    assert!(native.object_graphs[0].records[0].class_name().is_some());
+    assert!(native.object_graphs[0].records[0].class_entry().is_some());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
         let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
         malformed
@@ -1076,11 +1076,19 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
     assert_rejected(missing_catalog_identity);
 
     let mut invalid_class = native.clone();
-    invalid_class.object_graphs[0].records[0].class_name = Some("WrongClass".to_string());
+    invalid_class.object_graphs[0].records[0]
+        .class
+        .as_mut()
+        .expect("decoded class role")
+        .class_name = Some("WrongClass".to_string());
     assert_rejected(invalid_class);
 
     let mut invalid_class_entry = native;
-    invalid_class_entry.object_graphs[0].records[0].class_entry = None;
+    invalid_class_entry.object_graphs[0].records[0]
+        .class
+        .as_mut()
+        .expect("decoded class role")
+        .class_entry = None;
     assert_rejected(invalid_class_entry);
 }
 

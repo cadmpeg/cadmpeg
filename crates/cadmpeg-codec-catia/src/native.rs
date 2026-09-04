@@ -3628,23 +3628,53 @@ pub struct CatiaOuterContainerBinding {
     pub stream_name: String,
 }
 
+/// Paired entity-table identity for one object record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaObjectEntity {
+    /// Positionally paired `7C05` entity-table record.
+    pub record: String,
+    /// Stored entity-table identity used to select this record.
+    pub id: u32,
+}
+
+/// Class role resolved through the graph schema catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaObjectClass {
+    /// Head role identifying the per-file class ordinal.
+    pub class_ref: u32,
+    /// UTF-8 class name resolved through the graph's schema catalog.
+    pub class_name: Option<String>,
+    /// Exact schema-catalog entry selected by `class_ref`.
+    pub class_entry: Option<String>,
+}
+
+/// Storage role resolved through the same graph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaObjectStorage {
+    /// Head role selecting class-specific storage.
+    pub storage_ref: u32,
+    /// Same-graph field record selected by `storage_ref`.
+    pub storage_record: Option<String>,
+    /// Design object containing the selected storage record.
+    pub storage_design_object: Option<String>,
+}
+
 /// One `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CatiaObjectRecordWire", into = "CatiaObjectRecordWire")]
 pub struct CatiaObjectRecord {
     /// Globally unique record identity.
     pub id: String,
     /// Containing [`CatiaObjectGraph`] identity.
     pub parent: String,
     /// Design object selected by this record's owner entity identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_object: Option<String>,
-    /// Positionally paired `7C05` entity-table record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity_record: Option<String>,
-    /// Stored entity-table identity used to select this record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entity_id: Option<u32>,
+    /// Paired entity-table identity.
+    pub entity: Option<CatiaObjectEntity>,
     /// Stable serialized order within the graph.
     pub ordinal: u64,
     /// Byte offset of the `7C09` record.
@@ -3656,40 +3686,22 @@ pub struct CatiaObjectRecord {
     /// Decoded head tokens in serialized order.
     pub head: Vec<HeadToken>,
     /// Complete alternate inline body when the record has no nested `7C0A`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     pub inline_body: Option<Vec<u8>>,
     /// Structurally assigned owner slot.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<CatiaObjectOwner>,
-    /// Head role identifying the per-file class ordinal.
-    pub class_ref: Option<u32>,
-    /// UTF-8 class name resolved through the graph's schema catalog.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_name: Option<String>,
-    /// Exact schema-catalog entry selected by `class_ref`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_entry: Option<String>,
-    /// Head role selecting class-specific storage.
-    pub storage_ref: Option<u32>,
-    /// Same-graph field record selected by `storage_ref`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub storage_record: Option<String>,
-    /// Design object containing the selected storage record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub storage_design_object: Option<String>,
+    /// Class role when the head carries a class ordinal.
+    pub class: Option<CatiaObjectClass>,
+    /// Storage role when the head carries a storage ordinal.
+    pub storage: Option<CatiaObjectStorage>,
     /// Typed nested payload, empty for an inline record.
     pub payload: ObjectPayload,
     /// Counted reference suffix when the payload repeats its reference prefix exactly.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
     /// Repeated-reference preamble selector resolved through the graph catalog.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeated_reference_schema_selection: Option<CatiaRepeatedReferenceSchemaSelection>,
     /// Structural payload classification.
     pub subtype: PayloadSubtype,
     /// Ordered same-graph payload-reference links.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<CatiaObjectRecordReference>,
 }
 
@@ -3704,6 +3716,46 @@ pub enum CatiaObjectOwner {
 }
 
 impl CatiaObjectRecord {
+    pub fn entity_record(&self) -> Option<&str> {
+        self.entity.as_ref().map(|entity| entity.record.as_str())
+    }
+
+    pub fn entity_id(&self) -> Option<u32> {
+        self.entity.as_ref().map(|entity| entity.id)
+    }
+
+    pub fn class_ref(&self) -> Option<u32> {
+        self.class.as_ref().map(|class| class.class_ref)
+    }
+
+    pub fn class_name(&self) -> Option<&str> {
+        self.class
+            .as_ref()
+            .and_then(|class| class.class_name.as_deref())
+    }
+
+    pub fn class_entry(&self) -> Option<&str> {
+        self.class
+            .as_ref()
+            .and_then(|class| class.class_entry.as_deref())
+    }
+
+    pub fn storage_ref(&self) -> Option<u32> {
+        self.storage.as_ref().map(|storage| storage.storage_ref)
+    }
+
+    pub fn storage_record(&self) -> Option<&str> {
+        self.storage
+            .as_ref()
+            .and_then(|storage| storage.storage_record.as_deref())
+    }
+
+    pub fn storage_design_object(&self) -> Option<&str> {
+        self.storage
+            .as_ref()
+            .and_then(|storage| storage.storage_design_object.as_deref())
+    }
+
     pub(crate) fn owner_entity_id(&self) -> Option<u32> {
         match self.owner {
             Some(CatiaObjectOwner::Entity(entity_id)) => Some(entity_id),
@@ -3713,6 +3765,152 @@ impl CatiaObjectRecord {
 
     pub(crate) fn has_unassigned_owner(&self) -> bool {
         matches!(self.owner, Some(CatiaObjectOwner::UnassignedLiteral(_)))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaObjectRecordWire {
+    id: String,
+    parent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    design_object: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_record: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_id: Option<u32>,
+    ordinal: u64,
+    byte_offset: u64,
+    byte_len: u64,
+    lead: u8,
+    head: Vec<HeadToken>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+    inline_body: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner: Option<CatiaObjectOwner>,
+    class_ref: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_entry: Option<String>,
+    storage_ref: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    storage_record: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    storage_design_object: Option<String>,
+    payload: ObjectPayload,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repeated_reference_schema_selection: Option<CatiaRepeatedReferenceSchemaSelection>,
+    subtype: PayloadSubtype,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    references: Vec<CatiaObjectRecordReference>,
+}
+
+impl From<CatiaObjectRecord> for CatiaObjectRecordWire {
+    fn from(value: CatiaObjectRecord) -> Self {
+        let (entity_record, entity_id) = match value.entity {
+            Some(entity) => (Some(entity.record), Some(entity.id)),
+            None => (None, None),
+        };
+        let (class_ref, class_name, class_entry) = match value.class {
+            Some(class) => (Some(class.class_ref), class.class_name, class.class_entry),
+            None => (None, None, None),
+        };
+        let (storage_ref, storage_record, storage_design_object) = match value.storage {
+            Some(storage) => (
+                Some(storage.storage_ref),
+                storage.storage_record,
+                storage.storage_design_object,
+            ),
+            None => (None, None, None),
+        };
+        Self {
+            id: value.id,
+            parent: value.parent,
+            design_object: value.design_object,
+            entity_record,
+            entity_id,
+            ordinal: value.ordinal,
+            byte_offset: value.byte_offset,
+            byte_len: value.byte_len,
+            lead: value.lead,
+            head: value.head,
+            inline_body: value.inline_body,
+            owner: value.owner,
+            class_ref,
+            class_name,
+            class_entry,
+            storage_ref,
+            storage_record,
+            storage_design_object,
+            payload: value.payload,
+            repeated_reference_suffix: value.repeated_reference_suffix,
+            repeated_reference_schema_selection: value.repeated_reference_schema_selection,
+            subtype: value.subtype,
+            references: value.references,
+        }
+    }
+}
+
+impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
+    type Error = String;
+
+    fn try_from(wire: CatiaObjectRecordWire) -> Result<Self, Self::Error> {
+        let entity = match (wire.entity_record, wire.entity_id) {
+            (None, None) => None,
+            (Some(record), Some(id)) => Some(CatiaObjectEntity { record, id }),
+            _ => {
+                return Err(
+                    "object record entity_record and entity_id must both be present or both absent"
+                        .to_owned(),
+                );
+            }
+        };
+        let class = match wire.class_ref {
+            Some(class_ref) => Some(CatiaObjectClass {
+                class_ref,
+                class_name: wire.class_name,
+                class_entry: wire.class_entry,
+            }),
+            None if wire.class_name.is_some() || wire.class_entry.is_some() => {
+                return Err("object record class name/entry requires class_ref".to_owned());
+            }
+            None => None,
+        };
+        let storage = match wire.storage_ref {
+            Some(storage_ref) => Some(CatiaObjectStorage {
+                storage_ref,
+                storage_record: wire.storage_record,
+                storage_design_object: wire.storage_design_object,
+            }),
+            None if wire.storage_record.is_some() || wire.storage_design_object.is_some() => {
+                return Err("object record storage links require storage_ref".to_owned());
+            }
+            None => None,
+        };
+        Ok(Self {
+            id: wire.id,
+            parent: wire.parent,
+            design_object: wire.design_object,
+            entity,
+            ordinal: wire.ordinal,
+            byte_offset: wire.byte_offset,
+            byte_len: wire.byte_len,
+            lead: wire.lead,
+            head: wire.head,
+            inline_body: wire.inline_body,
+            owner: wire.owner,
+            class,
+            storage,
+            payload: wire.payload,
+            repeated_reference_suffix: wire.repeated_reference_suffix,
+            repeated_reference_schema_selection: wire.repeated_reference_schema_selection,
+            subtype: wire.subtype,
+            references: wire.references,
+        })
     }
 }
 
@@ -4373,7 +4571,7 @@ fn design_objects(
                 .records
                 .iter()
                 .enumerate()
-                .filter_map(|(index, record)| Some((record.entity_id?, index)))
+                .filter_map(|(index, record)| Some((record.entity_id()?, index)))
                 .collect::<HashMap<_, _>>();
             let mut fields = Vec::<(u32, Vec<&CatiaObjectRecord>)>::new();
             let mut owner_indices = HashMap::<u32, usize>::new();
@@ -4416,7 +4614,7 @@ fn design_objects(
                             .and_then(design_class),
                         owner_storage_ref: owner_record
                             .filter(|record| record_has_separator_roles(record))
-                            .and_then(|record| record.storage_ref),
+                            .and_then(CatiaObjectRecord::storage_ref),
                         fields: records.iter().map(|record| record.id.clone()).collect(),
                         field_classes: records
                             .iter()
@@ -4429,38 +4627,35 @@ fn design_objects(
                             }),
                         definition_values: records
                             .iter()
-                            .filter_map(|record| record.entity_record.as_ref())
-                            .filter(|entity| definition_value_entities.contains(entity.as_str()))
-                            .cloned()
+                            .filter_map(|record| record.entity_record())
+                            .filter(|entity| definition_value_entities.contains(*entity))
+                            .map(str::to_owned)
                             .collect(),
                         definition_chain_values: records
                             .iter()
-                            .filter_map(|record| record.entity_record.as_ref())
-                            .filter(|entity| {
-                                definition_chain_value_entities.contains(entity.as_str())
-                            })
-                            .cloned()
+                            .filter_map(|record| record.entity_record())
+                            .filter(|entity| definition_chain_value_entities.contains(*entity))
+                            .map(str::to_owned)
                             .collect(),
                         relations: records
                             .iter()
                             .flat_map(|record| {
-                                let storage =
-                                    record.storage_record.as_ref().and_then(|target_field| {
-                                        let target_record = record_indices
-                                            .get(&record.storage_ref?)
-                                            .and_then(|index| graph.records.get(*index))?;
-                                        let target_design_object =
-                                            record.storage_design_object.clone();
-                                        Some(CatiaDesignObjectRelation {
-                                            source_field: record.id.clone(),
-                                            source_class: design_class(record),
-                                            source: CatiaDesignObjectRelationSource::Storage,
-                                            target_entity_id: record.storage_ref?,
-                                            target_field: target_field.clone(),
-                                            target_class: design_class(target_record),
-                                            target_design_object,
-                                        })
-                                    });
+                                let storage = record.storage_record().and_then(|target_field| {
+                                    let target_record = record_indices
+                                        .get(&record.storage_ref()?)
+                                        .and_then(|index| graph.records.get(*index))?;
+                                    let target_design_object =
+                                        record.storage_design_object().map(str::to_owned);
+                                    Some(CatiaDesignObjectRelation {
+                                        source_field: record.id.clone(),
+                                        source_class: design_class(record),
+                                        source: CatiaDesignObjectRelationSource::Storage,
+                                        target_entity_id: record.storage_ref()?,
+                                        target_field: target_field.to_owned(),
+                                        target_class: design_class(target_record),
+                                        target_design_object,
+                                    })
+                                });
                                 storage
                                     .into_iter()
                                     .chain(record.references.iter().filter_map(|reference| {
@@ -4597,8 +4792,8 @@ fn design_parallel_reference_table(
 
 fn design_class(record: &CatiaObjectRecord) -> Option<CatiaDesignClass> {
     Some(CatiaDesignClass {
-        entry: record.class_entry.clone()?,
-        name: record.class_name.clone()?,
+        entry: record.class_entry()?.to_owned(),
+        name: record.class_name()?.to_owned(),
     })
 }
 
@@ -5110,27 +5305,27 @@ fn entity_incidences(
                 .filter(|reference| reference.entity_id() == entity_id)
                 .map(|reference| CatiaEntityIncomingReference {
                     object_record: record.id.clone(),
-                    source_entity: record.entity_id.map(|entity_id| {
+                    source_entity: record.entity_id().map(|entity_id| {
                         CatiaEntityReference::from_parts(
                             entity_id,
                             false,
-                            record.entity_record.clone(),
-                            record.class_name.clone(),
+                            record.entity_record().map(str::to_owned),
+                            record.class_name().map(str::to_owned),
                         )
                     }),
                     payload_offset: reference.payload_offset(),
                     source: reference.source().clone(),
                 }),
         );
-        if record.storage_ref == Some(entity_id) {
+        if record.storage_ref() == Some(entity_id) {
             incoming_storage_references.push(CatiaEntityIncomingStorageReference {
                 object_record: record.id.clone(),
-                source_entity: record.entity_id.map(|entity_id| {
+                source_entity: record.entity_id().map(|entity_id| {
                     CatiaEntityReference::from_parts(
                         entity_id,
                         false,
-                        record.entity_record.clone(),
-                        record.class_name.clone(),
+                        record.entity_record().map(str::to_owned),
+                        record.class_name().map(str::to_owned),
                     )
                 }),
             });
@@ -5474,14 +5669,14 @@ fn relation_program_instance(
     relation_expressions: &CatiaRelationExpressionEntityIndex,
     parameter_bindings: &CatiaParameterBindingIndex,
 ) -> Option<CatiaRelationProgramInstance> {
-    if object.entity_id != Some(entity_id)
+    if object.entity_id() != Some(entity_id)
         || object.owner_entity_id().is_none()
-        || object.class_ref.is_none()
+        || object.class_ref().is_none()
     {
         return None;
     }
     let (framing, program_entity_id, repeated_reference_entity_id) =
-        if object.lead == 0x12 && object.storage_ref.is_none() {
+        if object.lead == 0x12 && object.storage_ref().is_none() {
             let (program_entity_id, repeated_reference_entity_id, context_entity_id) =
                 relation_program_instance_lead_12(entity_id, &object.payload.fields)?;
             (
@@ -5497,7 +5692,7 @@ fn relation_program_instance(
                 program_entity_id,
                 repeated_reference_entity_id,
             )
-        } else if object.lead == 0x54 && object.storage_ref.is_some() {
+        } else if object.lead == 0x54 && object.storage_ref().is_some() {
             let (program_entity_id, repeated_reference_entity_id, trailing_entity_id) =
                 relation_program_instance_lead_54(entity_id, &object.payload.fields)?;
             (
@@ -5722,12 +5917,12 @@ fn schema_configuration_record(
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
 ) -> Option<CatiaSchemaConfigurationRecord> {
-    if object.entity_id != Some(entity_id)
+    if object.entity_id() != Some(entity_id)
         || object.lead != 0x12
         || object.owner_entity_id().is_none()
-        || object.class_ref != Some(entity_id)
-        || object.class_name.as_deref() != Some("Configuration")
-        || object.storage_ref.is_some()
+        || object.class_ref() != Some(entity_id)
+        || object.class_name() != Some("Configuration")
+        || object.storage_ref().is_some()
     {
         return None;
     }
@@ -5774,15 +5969,15 @@ fn schema_configuration_row_link(
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
 ) -> Option<CatiaSchemaConfigurationRowLink> {
-    if object.entity_id != Some(entity_id)
+    if object.entity_id() != Some(entity_id)
         || object.lead != 0x12
         || object.owner_entity_id().is_none()
-        || object.class_name.as_deref() != Some("configrow")
-        || object.storage_ref.is_some()
+        || object.class_name() != Some("configrow")
+        || object.storage_ref().is_some()
     {
         return None;
     }
-    let class_entity_id = object.class_ref?;
+    let class_entity_id = object.class_ref()?;
     let [PayloadField::Atom { value: 250, .. }, PayloadField::Atom {
         value: successor_entity_id,
         offset: successor_offset,
@@ -6095,8 +6290,8 @@ fn entity_class_index<'a>(
         .into_iter()
         .filter_map(|record| {
             Some((
-                (record.parent.clone(), record.entity_id?),
-                record.class_name.clone()?,
+                (record.parent.clone(), record.entity_id()?),
+                record.class_name()?.to_owned(),
             ))
         })
         .collect()
@@ -9329,18 +9524,16 @@ impl CatiaNative {
             });
             graph.catalog = catalog.map(|catalog| catalog.id.clone());
             for record in &mut graph.records {
-                record.class_entry = record.class_ref.and_then(|ordinal| {
-                    usize::try_from(ordinal)
+                if let Some(class) = &mut record.class {
+                    class.class_entry = usize::try_from(class.class_ref)
                         .ok()
                         .and_then(|ordinal| catalog?.entries.get(ordinal))
-                        .map(|entry| entry.id.clone())
-                });
-                record.class_name = record.class_ref.and_then(|ordinal| {
-                    usize::try_from(ordinal)
+                        .map(|entry| entry.id.clone());
+                    class.class_name = usize::try_from(class.class_ref)
                         .ok()
                         .and_then(|ordinal| catalog?.entries.get(ordinal))
-                        .map(|entry| entry.value.clone())
-                });
+                        .map(|entry| entry.value.clone());
+                }
                 record.repeated_reference_schema_selection = repeated_reference_schema_selection(
                     record.repeated_reference_suffix.as_ref(),
                     catalog,
@@ -9816,9 +10009,10 @@ fn native_object_graph(
                 id: format!("catia:outer:object-record#{:010}", record.pos),
                 parent: id.clone(),
                 design_object: None,
-                entity_record: entity
-                    .map(|entity| format!("catia:outer:entity-record#{:010}", entity.pos)),
-                entity_id: entity.map(|entity| entity.entity_id),
+                entity: entity.map(|entity| CatiaObjectEntity {
+                    record: format!("catia:outer:entity-record#{:010}", entity.pos),
+                    id: entity.entity_id,
+                }),
                 ordinal: ordinal as u64,
                 byte_offset: record.pos as u64,
                 byte_len: record.total_len as u64,
@@ -9830,12 +10024,16 @@ fn native_object_graph(
                         .owner_literal
                         .map(CatiaObjectOwner::UnassignedLiteral)
                 }),
-                class_ref: record.class_ref,
-                class_name: None,
-                class_entry: None,
-                storage_ref: record.storage_ref,
-                storage_record: None,
-                storage_design_object: None,
+                class: record.class_ref.map(|class_ref| CatiaObjectClass {
+                    class_ref,
+                    class_name: None,
+                    class_entry: None,
+                }),
+                storage: record.storage_ref.map(|storage_ref| CatiaObjectStorage {
+                    storage_ref,
+                    storage_record: None,
+                    storage_design_object: None,
+                }),
                 payload: record.payload().clone(),
                 repeated_reference_suffix: record.repeated_reference_suffix().cloned(),
                 repeated_reference_schema_selection: None,
@@ -9860,16 +10058,20 @@ fn native_object_graph(
     let record_indices = records
         .iter()
         .enumerate()
-        .filter_map(|(index, record)| Some((record.entity_id?, index)))
+        .filter_map(|(index, record)| Some((record.entity_id()?, index)))
         .collect::<HashMap<_, _>>();
     let terminal_null_entity_id = terminal_null_entity_id(&record_indices);
     for record in &mut records {
-        (record.storage_record, record.storage_design_object) = resolved_storage_link(
-            record.storage_ref,
-            &record_ids,
-            &record_design_objects,
-            &record_indices,
-        );
+        if let Some(storage) = &mut record.storage {
+            let (storage_record, storage_design_object) = resolved_storage_link(
+                Some(storage.storage_ref),
+                &record_ids,
+                &record_design_objects,
+                &record_indices,
+            );
+            storage.storage_record = storage_record;
+            storage.storage_design_object = storage_design_object;
+        }
         record.references = resolved_payload_references(
             &record.payload,
             &record_ids,

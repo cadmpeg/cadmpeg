@@ -703,9 +703,9 @@ fn reference_plane_candidate<'a>(
     is_admitted_native_reference_plane_class(&owner_class.name).then_some(())?;
     let owner_record_id = object.owner_record.as_deref()?;
     let owner_record = records.get(owner_record_id).copied()?;
-    (owner_record.class_name.as_deref() == Some(owner_class.name.as_str())
-        && owner_record.class_entry.as_deref() == Some(owner_class.entry.as_str())
-        && owner_record.entity_id == Some(object.owner_entity_id)
+    (owner_record.class_name() == Some(owner_class.name.as_str())
+        && owner_record.class_entry() == Some(owner_class.entry.as_str())
+        && owner_record.entity_id() == Some(object.owner_entity_id)
         && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
     .then_some(ReferencePlaneCandidate {
         object,
@@ -726,9 +726,9 @@ fn native_operation_candidate<'a>(
     let owner_class_name = owner_class.name.as_str();
     let owner_class_entry = owner_class.entry.as_str();
     is_admitted_native_operation_class(owner_class_name).then_some(())?;
-    (owner_record.class_name.as_deref() == Some(owner_class_name)
-        && owner_record.class_entry.as_deref() == Some(owner_class_entry)
-        && owner_record.entity_id == Some(object.owner_entity_id)
+    (owner_record.class_name() == Some(owner_class_name)
+        && owner_record.class_entry() == Some(owner_class_entry)
+        && owner_record.entity_id() == Some(object.owner_entity_id)
         && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
     .then_some(NativeOperationCandidate {
         object,
@@ -990,7 +990,7 @@ fn native_operation_definition_properties(
             })
         })
         .filter_map(|field| {
-            let entity_id = field.entity_record.as_deref()?;
+            let entity_id = field.entity_record()?;
             let entity = entities.get(entity_id).copied()?;
             (entity.object_record == field.id && entity.range_interval.is_some()).then_some(entity)
         })
@@ -1335,14 +1335,14 @@ fn principal_plane_candidate<'a>(
         .map(|field| records.get(field.as_str()).copied())
         .collect::<Option<Vec<_>>>()?;
     let first = declarations.first()?;
-    let class_name = first.class_name.as_deref()?;
-    let class_entry = first.class_entry.as_deref()?;
+    let class_name = first.class_name()?;
+    let class_entry = first.class_entry()?;
     let plane = principal_plane(class_name)?;
     declarations
         .iter()
         .all(|record| {
-            record.class_name.as_deref() == Some(class_name)
-                && record.class_entry.as_deref() == Some(class_entry)
+            record.class_name() == Some(class_name)
+                && record.class_entry() == Some(class_entry)
                 && complete_empty_declaration(record, &object.id, object.owner_entity_id)
         })
         .then_some(PrincipalPlaneCandidate {
@@ -1361,8 +1361,8 @@ fn sketch_candidate<'a>(
     (owner_class.name == "Sketch").then_some(())?;
     let owner_record_id = object.owner_record.as_deref()?;
     let owner_record = records.get(owner_record_id).copied()?;
-    (owner_record.class_name.as_deref() == Some("Sketch")
-        && owner_record.class_entry.as_deref() == Some(owner_class.entry.as_str())
+    (owner_record.class_name() == Some("Sketch")
+        && owner_record.class_entry() == Some(owner_class.entry.as_str())
         && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
     .then_some(owner_record)
 }
@@ -1391,7 +1391,7 @@ fn complete_empty_declaration(
     owner_entity_id: u32,
 ) -> bool {
     bound_declaration(record, design_object, owner_entity_id)
-        && record.storage_ref.is_none()
+        && record.storage_ref().is_none()
         && record.references.is_empty()
         && record.subtype == PayloadSubtype::Empty
         && record.payload.size == 1
