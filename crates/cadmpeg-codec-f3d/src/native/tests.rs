@@ -669,20 +669,20 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
         )
         .expect("cache-first parametric decode");
     let ProceduralCurveDefinition::SurfaceCurve {
-        family,
-        context,
-        tail,
+        family:
+            SurfaceCurveFamily::Parametric {
+                context,
+                tail: Some(tail),
+            },
     } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected surface-curve construction")
     };
-    assert_eq!(*family, SurfaceCurveFamily::Parametric);
-    let tail = tail.as_ref().expect("cache-first parametric tail");
-    assert_eq!(tail.revision, 23100);
-    assert_eq!(tail.extension, 7);
-    assert!(tail.flag);
-    assert_eq!(tail.second_flag, Some(false));
-    assert_eq!(tail.solved_range, [Some(-1.0), Some(2.0)]);
+    assert_eq!(tail.tail.revision, 23100);
+    assert_eq!(tail.tail.extension, 7);
+    assert!(tail.flags.flag);
+    assert_eq!(tail.flags.second_flag, Some(false));
+    assert_eq!(tail.tail.solved_range, [Some(-1.0), Some(2.0)]);
     assert_eq!(context.parameter_range, [-1.0, 2.0]);
 
     let (mut source_less, _, _) = result.into_parts();

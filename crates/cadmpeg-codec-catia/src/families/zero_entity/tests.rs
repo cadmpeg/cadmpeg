@@ -166,17 +166,15 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     );
     assert_eq!(construction.cache_fit_tolerance(), None);
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-        family,
-        context,
-        tail: None,
+        family:
+            cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric {
+                context,
+                tail: None,
+            },
     } = construction.definition()
     else {
         panic!("parametric surface-curve construction")
     };
-    assert_eq!(
-        *family,
-        cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric
-    );
     assert_eq!(context.parameter_range, [0.0, 1.0]);
     assert_eq!(
         context.sides[0].surface.as_ref(),

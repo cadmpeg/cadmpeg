@@ -490,8 +490,7 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     assert!(matches!(
         result.ir().model.procedural_curves[0].definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-            family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
-            ..
+            family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { .. },
         }
     ));
     assert!(result

@@ -3774,3 +3774,38 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Exact"
 reason = "legacy ordered ranges and revision intervals now carry only the form required by their exact-spline layout"
+
+[[change]]
+commit = "e219ed8b59c6f707cee2a418d87573bb74a0c743"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve"
+reason = "the surface-curve family now owns its support context and its family-specific cache-first tail"
+
+[[change]]
+commit = "e219ed8b59c6f707cee2a418d87573bb74a0c743"
+crate = "cadmpeg-ir"
+kind = "enum"
+item = "cadmpeg_ir::geometry::SurfaceCurveFamily"
+reason = "each family variant carries the exact flag shape admitted by that native surface-curve form"
+
+[[change]]
+commit = "e219ed8b59c6f707cee2a418d87573bb74a0c743"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::geometry::SurfaceCurveTail::{flag,second_flag}"
+reason = "a non-parametric surface curve can no longer carry the parametric-only second tail flag"
+
+[[change]]
+commit = "e219ed8b59c6f707cee2a418d87573bb74a0c743"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_curve::DecodedProceduralCurve::embedded_surface_curve"
+reason = "the decoded ASM carrier now preserves the same family-specific tail shape as CADIR"
+
+[[change]]
+commit = "e219ed8b59c6f707cee2a418d87573bb74a0c743"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::surface_curve_patch_layout"
+reason = "layout selection takes the family discriminant because the invariant-bearing family now also owns decoded payload data"

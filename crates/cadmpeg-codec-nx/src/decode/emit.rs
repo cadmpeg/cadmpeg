@@ -306,24 +306,25 @@ pub(super) fn emit_topology(
                     ProceduralCurve::new(
                         construction,
                         ProceduralCurveDefinition::SurfaceCurve {
-                            family: SurfaceCurveFamily::Parametric,
-                            context: IntcurveSupportContext {
-                                sides: [
-                                    IntcurveSupportSide {
-                                        surface: Some(surface),
-                                        pcurve: Some(pcurve),
-                                        pcurve_parameter_range: None,
-                                    },
-                                    IntcurveSupportSide {
-                                        surface: None,
-                                        pcurve: None,
-                                        pcurve_parameter_range: None,
-                                    },
-                                ],
-                                parameter_range,
-                                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                            family: SurfaceCurveFamily::Parametric {
+                                context: IntcurveSupportContext {
+                                    sides: [
+                                        IntcurveSupportSide {
+                                            surface: Some(surface),
+                                            pcurve: Some(pcurve),
+                                            pcurve_parameter_range: None,
+                                        },
+                                        IntcurveSupportSide {
+                                            surface: None,
+                                            pcurve: None,
+                                            pcurve_parameter_range: None,
+                                        },
+                                    ],
+                                    parameter_range,
+                                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                                },
+                                tail: None,
                             },
-                            tail: None,
                         },
                     ),
                 );

@@ -393,9 +393,7 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
         .expect("lifted carrier");
     assert!(matches!(carrier.geometry, CurveGeometry::Procedural { .. }));
     let ProceduralCurveDefinition::SurfaceCurve {
-        family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
-        context,
-        ..
+        family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { context, .. },
     } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("parametric surface curve");

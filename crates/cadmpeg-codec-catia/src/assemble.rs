@@ -125,8 +125,9 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
                             .is_some_and(|surface| resolved_surfaces.contains(surface))
                     })
                 }
-                ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
-                    let (has_side, all_resolved) = context
+                ProceduralCurveDefinition::SurfaceCurve { family } => {
+                    let (has_side, all_resolved) = family
+                        .context()
                         .sides
                         .iter()
                         .filter_map(|side| side.surface.as_ref().zip(side.pcurve.as_ref()))

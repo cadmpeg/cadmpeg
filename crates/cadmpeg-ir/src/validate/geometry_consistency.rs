@@ -157,11 +157,13 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         let (context, third) = match procedural.definition() {
             crate::geometry::ProceduralCurveDefinition::Law { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Intersection { context, .. }
-            | crate::geometry::ProceduralCurveDefinition::SurfaceCurve { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Silhouette { context, .. }
             | crate::geometry::ProceduralCurveDefinition::Projection { context, .. }
             | crate::geometry::ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
                 (std::borrow::Cow::Borrowed(context), None)
+            }
+            crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } => {
+                (std::borrow::Cow::Borrowed(family.context()), None)
             }
             crate::geometry::ProceduralCurveDefinition::Spring { layout, .. } => {
                 (layout.support_context(), None)

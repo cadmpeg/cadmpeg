@@ -159,9 +159,10 @@ pub(super) fn b5_edge_support_definition(
             "surface-curve",
             "parametric_surface_curve",
             ProceduralCurveDefinition::SurfaceCurve {
-                family: SurfaceCurveFamily::Parametric,
-                context,
-                tail: None,
+                family: SurfaceCurveFamily::Parametric {
+                    context,
+                    tail: None,
+                },
             },
         ))
     }

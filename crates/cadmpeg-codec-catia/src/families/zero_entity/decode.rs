@@ -711,24 +711,25 @@ pub(crate) fn try_decode_zero_entity(
                     transferred_parametric_surface_curves += 1;
                     (
                         ProceduralCurveDefinition::SurfaceCurve {
-                            family: SurfaceCurveFamily::Parametric,
-                            context: IntcurveSupportContext {
-                                sides: [
-                                    IntcurveSupportSide {
-                                        surface: Some(surface.clone()),
-                                        pcurve: Some(pcurve),
-                                        pcurve_parameter_range: None,
-                                    },
-                                    IntcurveSupportSide {
-                                        surface: None,
-                                        pcurve: None,
-                                        pcurve_parameter_range: None,
-                                    },
-                                ],
-                                parameter_range,
-                                discontinuities: std::array::from_fn(|_| Vec::new()),
+                            family: SurfaceCurveFamily::Parametric {
+                                context: IntcurveSupportContext {
+                                    sides: [
+                                        IntcurveSupportSide {
+                                            surface: Some(surface.clone()),
+                                            pcurve: Some(pcurve),
+                                            pcurve_parameter_range: None,
+                                        },
+                                        IntcurveSupportSide {
+                                            surface: None,
+                                            pcurve: None,
+                                            pcurve_parameter_range: None,
+                                        },
+                                    ],
+                                    parameter_range,
+                                    discontinuities: std::array::from_fn(|_| Vec::new()),
+                                },
+                                tail: None,
                             },
-                            tail: None,
                         },
                         "parametric_surface_curve",
                     )

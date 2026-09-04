@@ -2271,8 +2271,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::SurfaceCurve { context, .. } = procedural.definition() {
-            if !support_context_is_finite(context) {
+        if let ProceduralCurveDefinition::SurfaceCurve { family } = procedural.definition() {
+            if !support_context_is_finite(family.context()) {
                 bounds_err(
                     findings,
                     &procedural.id.0,

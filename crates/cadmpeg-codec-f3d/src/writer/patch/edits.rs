@@ -3611,22 +3611,18 @@ pub(crate) fn validate_procedural_curve_edits(
             (
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
                     family: before_family,
-                    context: before_context,
-                    tail: before_tail,
                 },
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
                     family: after_family,
-                    context: after_context,
-                    tail: after_tail,
                 },
-            ) if before_family == after_family
-                && before_context.sides == after_context.sides
-                && before_tail == after_tail
-                && before_context
+            ) if before_family.has_same_form(after_family)
+                && before_family.context().sides == after_family.context().sides
+                && before_family
+                    .context()
                     .discontinuities
                     .iter()
                     .map(Vec::len)
-                    .eq(after_context.discontinuities.iter().map(Vec::len))
+                    .eq(after_family.context().discontinuities.iter().map(Vec::len))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())

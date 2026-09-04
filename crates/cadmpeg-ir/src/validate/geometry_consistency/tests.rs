@@ -62,8 +62,8 @@ fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
     let construction = procedural_curve! {
         id: ProceduralCurveId("surface-curve".to_string()),
         definition: ProceduralCurveDefinition::SurfaceCurve {
-            family: SurfaceCurveFamily::Parametric,
-            context: IntcurveSupportContext {
+            family: SurfaceCurveFamily::Parametric {
+                context: IntcurveSupportContext {
                 sides: [
                     IntcurveSupportSide {
                         surface: Some(surface),
@@ -81,8 +81,9 @@ fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
                 ],
                 parameter_range: [0.0, 1.0],
                 discontinuities: std::array::from_fn(|_| Vec::new()),
+                },
+                tail: None,
             },
-            tail: None,
         },
         cache_fit_tolerance: None,
     };
@@ -108,12 +109,12 @@ fn mapped_surface_offset() -> CadIr {
         },
         source_object: None,
     });
-    let ProceduralCurveDefinition::SurfaceCurve { context, .. } =
+    let ProceduralCurveDefinition::SurfaceCurve { family } =
         ir.model.procedural_curves[0].definition()
     else {
         unreachable!();
     };
-    let context = context.clone();
+    let context = family.context().clone();
     ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::SurfaceOffset {
         context,
         discontinuity_flag: false,

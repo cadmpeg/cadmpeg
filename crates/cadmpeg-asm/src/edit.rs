@@ -1456,14 +1456,13 @@ fn patch_surface_curve_definition(
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
-        family, context, ..
-    } = definition
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { family } = definition
     else {
         return Err(CodecError::Malformed(
             "surface-curve patch received another definition".into(),
         ));
     };
+    let context = family.context();
     if context
         .parameter_range
         .into_iter()
@@ -1478,7 +1477,7 @@ fn patch_surface_curve_definition(
     let layout = crate::nurbs::proc_curve::surface_curve_patch_layout(
         record_bytes,
         stream_ref_width(bytes),
-        family,
+        family.kind(),
     )
     .ok_or_else(|| CodecError::Malformed("surface-curve construction is malformed".into()))?;
     if layout

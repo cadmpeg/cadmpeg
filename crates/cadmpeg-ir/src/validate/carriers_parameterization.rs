@@ -620,8 +620,8 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
             }
-            ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
-                for side in &context.sides {
+            ProceduralCurveDefinition::SurfaceCurve { family } => {
+                for side in &family.context().sides {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(&surface.0);
                     }

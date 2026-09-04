@@ -595,11 +595,11 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
             .expect("one-sided surface curve");
     assert!(matches!(
         one_sided,
-        ProceduralCurveDefinition::SurfaceCurve { context, .. }
-            if context.parameter_range == [2.0, 4.0]
-                && context.sides[0].surface == Some(surfaces[&10].clone())
-                && context.sides[0].pcurve == Some(pcurve_20)
-                && context.sides[1].surface.is_none()
+        ProceduralCurveDefinition::SurfaceCurve { family }
+            if family.context().parameter_range == [2.0, 4.0]
+                && family.context().sides[0].surface == Some(surfaces[&10].clone())
+                && family.context().sides[0].pcurve == Some(pcurve_20)
+                && family.context().sides[1].surface.is_none()
     ));
 
     let (_, _, intersection) = b5_edge_support_definition(
@@ -640,9 +640,9 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     .expect("distance-parameterized surface curve");
     assert!(matches!(
         distance_parameterized,
-        ProceduralCurveDefinition::SurfaceCurve { context, .. }
-            if context.parameter_range == [0.0, 8.0]
-                && context.sides[0].pcurve_parameter_range == Some([2.0, 4.0])
+        ProceduralCurveDefinition::SurfaceCurve { family }
+            if family.context().parameter_range == [0.0, 8.0]
+                && family.context().sides[0].pcurve_parameter_range == Some([2.0, 4.0])
     ));
 }
 

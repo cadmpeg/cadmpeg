@@ -71,6 +71,54 @@ pub struct EmbeddedIntersection {
     pub discontinuities: [Vec<f64>; 3],
 }
 
+/// Embedded support context and family-specific cache-first tail of a native
+/// surface curve.
+pub enum EmbeddedSurfaceCurve {
+    /// Blend family.
+    Blend {
+        /// Embedded support context.
+        context: EmbeddedIntersection,
+        /// Optional cache-first tail and family flag.
+        tail: Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<bool>>,
+    },
+    /// Surface-constrained family.
+    SurfaceConstrained {
+        /// Embedded support context.
+        context: EmbeddedIntersection,
+        /// Optional cache-first tail and family flag.
+        tail: Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<bool>>,
+    },
+    /// Parametric family with its optional second tail flag.
+    Parametric {
+        /// Embedded support context.
+        context: EmbeddedIntersection,
+        /// Optional cache-first tail and parametric-family flags.
+        tail: Option<
+            cadmpeg_ir::geometry::SurfaceCurveCacheFirst<
+                cadmpeg_ir::geometry::ParametricSurfaceCurveFlags,
+            >,
+        >,
+    },
+    /// Skin family.
+    Skin {
+        /// Embedded support context.
+        context: EmbeddedIntersection,
+        /// Optional cache-first tail and family flag.
+        tail: Option<cadmpeg_ir::geometry::SurfaceCurveCacheFirst<bool>>,
+    },
+}
+
+impl EmbeddedSurfaceCurve {
+    fn context(&self) -> &EmbeddedIntersection {
+        match self {
+            Self::Blend { context, .. }
+            | Self::SurfaceConstrained { context, .. }
+            | Self::Parametric { context, .. }
+            | Self::Skin { context, .. } => context,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum NativeSupportChart {
     Canonical,
@@ -425,11 +473,7 @@ pub struct DecodedProceduralCurve {
     /// Three embedded support pairs of an `sss_int_cur`.
     pub embedded_three_surface_intersection: Option<EmbeddedThreeSurfaceIntersection>,
     /// Prefix-only surface-curve family and support context.
-    pub embedded_surface_curve: Option<(
-        cadmpeg_ir::geometry::SurfaceCurveFamily,
-        EmbeddedIntersection,
-        Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-    )>,
+    pub embedded_surface_curve: Option<EmbeddedSurfaceCurve>,
     /// Embedded silhouette support, cast surface, and light vector.
     pub embedded_silhouette: Option<EmbeddedSilhouette>,
     /// Embedded support context and base curve of an `off_surf_int_cur`.
@@ -609,7 +653,8 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Nurb
     if let Some(context) = decoded.embedded_three_surface_intersection.as_ref() {
         return context.pcurves.get(slot).cloned();
     }
-    if let Some((_, context, _)) = decoded.embedded_surface_curve.as_ref() {
+    if let Some(surface_curve) = decoded.embedded_surface_curve.as_ref() {
+        let context = surface_curve.context();
         return selected_optional_pcurve(&context.surfaces, &context.pcurves, slot);
     }
     if let Some(context) = decoded.embedded_silhouette.as_ref() {
@@ -1706,29 +1751,25 @@ fn embedded_surface_curve(
     toks: &[Token],
     solved: &NurbsCurve,
     table: &SubtypeTable,
-) -> Option<(
-    cadmpeg_ir::geometry::SurfaceCurveFamily,
-    EmbeddedIntersection,
-    Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-)> {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
+) -> Option<EmbeddedSurfaceCurve> {
+    use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
     let names = [
-        ("blend_int_cur", SurfaceCurveFamily::Blend),
-        ("bldcur", SurfaceCurveFamily::Blend),
-        ("surf_int_cur", SurfaceCurveFamily::SurfaceConstrained),
-        ("surfcur", SurfaceCurveFamily::SurfaceConstrained),
-        ("par_int_cur", SurfaceCurveFamily::Parametric),
-        ("parcur", SurfaceCurveFamily::Parametric),
-        ("skin_int_cur", SurfaceCurveFamily::Skin),
-        ("d5c2_cur", SurfaceCurveFamily::Skin),
+        ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
+        ("bldcur", SurfaceCurveFamilyKind::Blend),
+        ("surf_int_cur", SurfaceCurveFamilyKind::SurfaceConstrained),
+        ("surfcur", SurfaceCurveFamilyKind::SurfaceConstrained),
+        ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
+        ("parcur", SurfaceCurveFamilyKind::Parametric),
+        ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
+        ("d5c2_cur", SurfaceCurveFamilyKind::Skin),
     ];
     let candidates: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
     let (marker, name) = crate::nurbs::toks::find_owned_subtype_marker(toks, &candidates)?;
     let family = names
         .iter()
-        .find_map(|(candidate, family)| (*candidate == name).then(|| family.clone()))?;
+        .find_map(|(candidate, family)| (*candidate == name).then_some(*family))?;
     let position = marker + 2;
-    context_first_surface_curve(toks, position, family.clone())
+    context_first_surface_curve(toks, position, family)
         .or_else(|| cache_first_surface_curve(toks, position, family, solved, table))
 }
 
@@ -1972,12 +2013,8 @@ fn cache_first_curve_context(
 fn context_first_surface_curve(
     toks: &[Token],
     position: usize,
-    family: cadmpeg_ir::geometry::SurfaceCurveFamily,
-) -> Option<(
-    cadmpeg_ir::geometry::SurfaceCurveFamily,
-    EmbeddedIntersection,
-    Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-)> {
+    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
+) -> Option<EmbeddedSurfaceCurve> {
     let mut cur = Cur::at(toks, position);
     let (surfaces, pcurves) = required_support_pair(&mut cur)?;
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
@@ -1986,7 +2023,7 @@ fn context_first_surface_curve(
         cur.take_float_array()?,
         cur.take_float_array()?,
     ];
-    Some((
+    embedded_surface_curve_from_parts(
         family,
         EmbeddedIntersection {
             surfaces: surfaces.map(Some),
@@ -1996,27 +2033,30 @@ fn context_first_surface_curve(
             discontinuities,
         },
         None,
-    ))
+    )
 }
 
 fn cache_first_surface_curve(
     toks: &[Token],
     position: usize,
-    family: cadmpeg_ir::geometry::SurfaceCurveFamily,
+    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
     solved: &NurbsCurve,
     table: &SubtypeTable,
-) -> Option<(
-    cadmpeg_ir::geometry::SurfaceCurveFamily,
-    EmbeddedIntersection,
-    Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
-)> {
+) -> Option<EmbeddedSurfaceCurve> {
     let mut cur = Cur::at(toks, position);
     let context = cache_first_curve_context(&mut cur, solved, table)?;
     let flag = cur.take_bool()?;
     let second_flag = matches!(cur.peek(), Some(Token::True | Token::False))
         .then(|| cur.take_bool())
         .flatten();
-    Some((
+    let tail = cadmpeg_ir::geometry::SurfaceCurveTail {
+        extension: context.form.extension,
+        revision: context.form.revision,
+        cache: context.form.cache,
+        support_bounds: context.form.support_bounds,
+        solved_range: context.form.solved_range,
+    };
+    embedded_surface_curve_from_parts(
         family,
         EmbeddedIntersection {
             surfaces: context.surfaces,
@@ -2025,16 +2065,46 @@ fn cache_first_surface_curve(
             parameter_range: context.parameter_range,
             discontinuities: context.discontinuities,
         },
-        Some(cadmpeg_ir::geometry::SurfaceCurveTail {
-            extension: context.form.extension,
-            flag,
-            second_flag,
-            revision: context.form.revision,
-            cache: context.form.cache,
-            support_bounds: context.form.support_bounds,
-            solved_range: context.form.solved_range,
+        Some((tail, flag, second_flag)),
+    )
+}
+
+fn embedded_surface_curve_from_parts(
+    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
+    context: EmbeddedIntersection,
+    tail: Option<(cadmpeg_ir::geometry::SurfaceCurveTail, bool, Option<bool>)>,
+) -> Option<EmbeddedSurfaceCurve> {
+    use cadmpeg_ir::geometry::{
+        ParametricSurfaceCurveFlags, SurfaceCurveCacheFirst, SurfaceCurveFamilyKind,
+    };
+    let single_tail = |tail| match tail {
+        None => Some(None),
+        Some((tail, flag, None)) => Some(Some(SurfaceCurveCacheFirst { tail, flags: flag })),
+        Some((_, _, Some(_))) => None,
+    };
+    match family {
+        SurfaceCurveFamilyKind::Blend => Some(EmbeddedSurfaceCurve::Blend {
+            context,
+            tail: single_tail(tail)?,
         }),
-    ))
+        SurfaceCurveFamilyKind::SurfaceConstrained => {
+            Some(EmbeddedSurfaceCurve::SurfaceConstrained {
+                context,
+                tail: single_tail(tail)?,
+            })
+        }
+        SurfaceCurveFamilyKind::Parametric => Some(EmbeddedSurfaceCurve::Parametric {
+            context,
+            tail: tail.map(|(tail, flag, second_flag)| SurfaceCurveCacheFirst {
+                tail,
+                flags: ParametricSurfaceCurveFlags { flag, second_flag },
+            }),
+        }),
+        SurfaceCurveFamilyKind::Skin => Some(EmbeddedSurfaceCurve::Skin {
+            context,
+            tail: single_tail(tail)?,
+        }),
+    }
 }
 
 /// Writable shared-context fields in a surface-related `intcurve` subtype.
@@ -2049,14 +2119,14 @@ pub struct SurfaceCurvePatchLayout {
 pub fn surface_curve_patch_layout(
     bytes: &[u8],
     int_width: usize,
-    family: &cadmpeg_ir::geometry::SurfaceCurveFamily,
+    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
 ) -> Option<SurfaceCurvePatchLayout> {
-    use cadmpeg_ir::geometry::SurfaceCurveFamily;
+    use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
     let names: &[&[u8]] = match family {
-        SurfaceCurveFamily::Blend => &[b"blend_int_cur", b"bldcur"],
-        SurfaceCurveFamily::SurfaceConstrained => &[b"surf_int_cur", b"surfcur"],
-        SurfaceCurveFamily::Parametric => &[b"par_int_cur", b"parcur"],
-        SurfaceCurveFamily::Skin => &[b"skin_int_cur", b"d5c2_cur"],
+        SurfaceCurveFamilyKind::Blend => &[b"blend_int_cur", b"bldcur"],
+        SurfaceCurveFamilyKind::SurfaceConstrained => &[b"surf_int_cur", b"surfcur"],
+        SurfaceCurveFamilyKind::Parametric => &[b"par_int_cur", b"parcur"],
+        SurfaceCurveFamilyKind::Skin => &[b"skin_int_cur", b"d5c2_cur"],
     };
     let (marker, name) = find_owned_subtype_marker(bytes, names, int_width)?;
     let mut position = marker + name.len() + 3;

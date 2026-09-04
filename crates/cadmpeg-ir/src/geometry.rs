@@ -5197,37 +5197,38 @@ pub struct CacheFirstCurveParameterization {
     pub closed_form: i64,
 }
 
-/// Tail fields carried by the cache-first surface-curve layout.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+/// Family-independent tail fields carried by a cache-first surface curve.
+#[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceCurveTail {
     /// Native integer following the discontinuity arrays.
     pub extension: i64,
-    /// Terminating boolean shared by all cache-first surface-curve families.
-    /// For `par_int_cur` it is the support-slot selector: `true` places the
-    /// support surface and its BS2 pcurve in serialized slot 1 with slot 2
-    /// null; `false` places them in slot 2 with slot 1 null. For the other
-    /// families (`blend_int_cur`, `surf_int_cur`, `skin_int_cur`) the field is
-    /// a terminating flag with no settled slot-selector semantics.
-    pub flag: bool,
-    /// Second terminating boolean stored by `par_int_cur`, following the
-    /// support-slot selector; semantics unresolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub second_flag: Option<bool>,
     /// Positive serializer-revision integer opening the cache-first layout.
-    #[serde(default)]
     pub revision: i64,
     /// Approximation-cache form selected by the shared context enum.
-    #[serde(flatten, with = "cache_first_curve_cache_wire")]
-    #[cfg_attr(feature = "schema", schemars(with = "CacheFirstCurveCacheSchemaWire"))]
     pub cache: RevisionCacheForm<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
-    #[serde(default)]
     pub support_bounds: [[Option<f64>; 4]; 2],
     /// Optional solved-curve interval endpoints; absent endpoints inherit the
     /// solved NURBS domain.
-    #[serde(default)]
     pub solved_range: [Option<f64>; 2],
+}
+
+/// Cache-first surface-curve tail paired with its family-specific flags.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfaceCurveCacheFirst<F> {
+    /// Family-independent cache-first fields.
+    pub tail: SurfaceCurveTail,
+    /// Flags admitted by the selected surface-curve family.
+    pub flags: F,
+}
+
+/// Two terminating flags carried only by a parametric surface curve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParametricSurfaceCurveFlags {
+    /// Support-slot selector.
+    pub flag: bool,
+    /// Optional later-revision terminating flag.
+    pub second_flag: Option<bool>,
 }
 
 /// Mutually exclusive tail forms of a native projected intcurve.
@@ -5251,11 +5252,45 @@ pub enum ProjectionTail {
     },
 }
 
-/// Native prefix-only surface-curve construction family.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Native surface-curve family with its support context and optional
+/// cache-first form.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SurfaceCurveFamily {
+    /// Blend edge curve whose construction details live on its blend support.
+    Blend {
+        /// Shared support context.
+        context: IntcurveSupportContext,
+        /// Cache-first fields, when this is not the prefix-first layout.
+        tail: Option<SurfaceCurveCacheFirst<bool>>,
+    },
+    /// Curve constrained to a support surface.
+    SurfaceConstrained {
+        /// Shared support context.
+        context: IntcurveSupportContext,
+        /// Cache-first fields, when this is not the prefix-first layout.
+        tail: Option<SurfaceCurveCacheFirst<bool>>,
+    },
+    /// Parametric curve on a support surface.
+    Parametric {
+        /// Shared support context.
+        context: IntcurveSupportContext,
+        /// Cache-first fields with the parametric-only second flag.
+        tail: Option<SurfaceCurveCacheFirst<ParametricSurfaceCurveFlags>>,
+    },
+    /// Skin curve on a support surface.
+    Skin {
+        /// Shared support context.
+        context: IntcurveSupportContext,
+        /// Cache-first fields, when this is not the prefix-first layout.
+        tail: Option<SurfaceCurveCacheFirst<bool>>,
+    },
+}
+
+/// Discriminant of a native surface-curve family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum SurfaceCurveFamily {
+pub enum SurfaceCurveFamilyKind {
     /// Blend edge curve whose construction details live on its blend support.
     Blend,
     /// Curve constrained to a support surface.
@@ -5264,6 +5299,218 @@ pub enum SurfaceCurveFamily {
     Parametric,
     /// Skin curve on a support surface.
     Skin,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SurfaceCurveTailWire {
+    extension: i64,
+    flag: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    second_flag: Option<bool>,
+    #[serde(default)]
+    revision: i64,
+    #[serde(flatten, with = "cache_first_curve_cache_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "CacheFirstCurveCacheSchemaWire"))]
+    cache: RevisionCacheForm<CacheFirstCurveParameterization>,
+    #[serde(default)]
+    support_bounds: [[Option<f64>; 4]; 2],
+    #[serde(default)]
+    solved_range: [Option<f64>; 2],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SurfaceCurveFamilyWire {
+    family: SurfaceCurveFamilyKind,
+    context: IntcurveSupportContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tail: Option<SurfaceCurveTailWire>,
+}
+
+impl SurfaceCurveTail {
+    fn into_wire(self, flag: bool, second_flag: Option<bool>) -> SurfaceCurveTailWire {
+        SurfaceCurveTailWire {
+            extension: self.extension,
+            flag,
+            second_flag,
+            revision: self.revision,
+            cache: self.cache,
+            support_bounds: self.support_bounds,
+            solved_range: self.solved_range,
+        }
+    }
+}
+
+impl SurfaceCurveTailWire {
+    fn into_tail(self) -> SurfaceCurveTail {
+        SurfaceCurveTail {
+            extension: self.extension,
+            revision: self.revision,
+            cache: self.cache,
+            support_bounds: self.support_bounds,
+            solved_range: self.solved_range,
+        }
+    }
+}
+
+impl SurfaceCurveFamily {
+    /// Return the family discriminant.
+    #[must_use]
+    pub const fn kind(&self) -> SurfaceCurveFamilyKind {
+        match self {
+            Self::Blend { .. } => SurfaceCurveFamilyKind::Blend,
+            Self::SurfaceConstrained { .. } => SurfaceCurveFamilyKind::SurfaceConstrained,
+            Self::Parametric { .. } => SurfaceCurveFamilyKind::Parametric,
+            Self::Skin { .. } => SurfaceCurveFamilyKind::Skin,
+        }
+    }
+
+    /// Borrow the shared support context.
+    #[must_use]
+    pub const fn context(&self) -> &IntcurveSupportContext {
+        match self {
+            Self::Blend { context, .. }
+            | Self::SurfaceConstrained { context, .. }
+            | Self::Parametric { context, .. }
+            | Self::Skin { context, .. } => context,
+        }
+    }
+
+    /// Mutably borrow the shared support context.
+    #[must_use]
+    pub fn context_mut(&mut self) -> &mut IntcurveSupportContext {
+        match self {
+            Self::Blend { context, .. }
+            | Self::SurfaceConstrained { context, .. }
+            | Self::Parametric { context, .. }
+            | Self::Skin { context, .. } => context,
+        }
+    }
+
+    fn revision_cache(&self) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization>> {
+        match self {
+            Self::Blend { tail, .. }
+            | Self::SurfaceConstrained { tail, .. }
+            | Self::Skin { tail, .. } => tail.as_ref().map(|form| &form.tail.cache),
+            Self::Parametric { tail, .. } => tail.as_ref().map(|form| &form.tail.cache),
+        }
+    }
+
+    fn revision_cache_mut(
+        &mut self,
+    ) -> Option<&mut RevisionCacheForm<CacheFirstCurveParameterization>> {
+        match self {
+            Self::Blend { tail, .. }
+            | Self::SurfaceConstrained { tail, .. }
+            | Self::Skin { tail, .. } => tail.as_mut().map(|form| &mut form.tail.cache),
+            Self::Parametric { tail, .. } => tail.as_mut().map(|form| &mut form.tail.cache),
+        }
+    }
+
+    /// Return whether two families have the same discriminant and cache-first
+    /// tail, excluding the editable support context.
+    #[must_use]
+    pub fn has_same_form(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Blend { tail: first, .. }, Self::Blend { tail: second, .. })
+            | (
+                Self::SurfaceConstrained { tail: first, .. },
+                Self::SurfaceConstrained { tail: second, .. },
+            )
+            | (Self::Skin { tail: first, .. }, Self::Skin { tail: second, .. }) => first == second,
+            (Self::Parametric { tail: first, .. }, Self::Parametric { tail: second, .. }) => {
+                first == second
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Serialize for SurfaceCurveFamily {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let wire = match self.clone() {
+            Self::Blend { context, tail } => SurfaceCurveFamilyWire {
+                family: SurfaceCurveFamilyKind::Blend,
+                context,
+                tail: tail.map(|value| value.tail.into_wire(value.flags, None)),
+            },
+            Self::SurfaceConstrained { context, tail } => SurfaceCurveFamilyWire {
+                family: SurfaceCurveFamilyKind::SurfaceConstrained,
+                context,
+                tail: tail.map(|value| value.tail.into_wire(value.flags, None)),
+            },
+            Self::Parametric { context, tail } => SurfaceCurveFamilyWire {
+                family: SurfaceCurveFamilyKind::Parametric,
+                context,
+                tail: tail.map(|value| {
+                    value
+                        .tail
+                        .into_wire(value.flags.flag, value.flags.second_flag)
+                }),
+            },
+            Self::Skin { context, tail } => SurfaceCurveFamilyWire {
+                family: SurfaceCurveFamilyKind::Skin,
+                context,
+                tail: tail.map(|value| value.tail.into_wire(value.flags, None)),
+            },
+        };
+        wire.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SurfaceCurveFamily {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = SurfaceCurveFamilyWire::deserialize(deserializer)?;
+        let single_tail = |tail: Option<SurfaceCurveTailWire>| {
+            tail.map(|wire| {
+                if wire.second_flag.is_some() {
+                    return Err(serde::de::Error::custom(
+                        "second_flag is valid only for a parametric surface curve",
+                    ));
+                }
+                let flag = wire.flag;
+                Ok(SurfaceCurveCacheFirst {
+                    tail: wire.into_tail(),
+                    flags: flag,
+                })
+            })
+            .transpose()
+        };
+        match wire.family {
+            SurfaceCurveFamilyKind::Blend => Ok(Self::Blend {
+                context: wire.context,
+                tail: single_tail(wire.tail)?,
+            }),
+            SurfaceCurveFamilyKind::SurfaceConstrained => Ok(Self::SurfaceConstrained {
+                context: wire.context,
+                tail: single_tail(wire.tail)?,
+            }),
+            SurfaceCurveFamilyKind::Parametric => Ok(Self::Parametric {
+                context: wire.context,
+                tail: wire.tail.map(|tail| {
+                    let flags = ParametricSurfaceCurveFlags {
+                        flag: tail.flag,
+                        second_flag: tail.second_flag,
+                    };
+                    SurfaceCurveCacheFirst {
+                        tail: tail.into_tail(),
+                        flags,
+                    }
+                }),
+            }),
+            SurfaceCurveFamilyKind::Skin => Ok(Self::Skin {
+                context: wire.context,
+                tail: single_tail(wire.tail)?,
+            }),
+        }
+    }
 }
 
 /// Native silhouette construction family and its exclusive tail fields.
@@ -5417,13 +5664,10 @@ pub enum ProceduralCurveDefinition {
     },
     /// Surface-related curve whose native subtype has no tail beyond the shared prefix.
     SurfaceCurve {
-        /// Native prefix-only family.
+        /// Native family, support context, and optional cache-first tail.
+        #[serde(flatten)]
+        #[cfg_attr(feature = "schema", schemars(with = "SurfaceCurveFamilyWire"))]
         family: SurfaceCurveFamily,
-        /// Shared surfaces, UV curves, interval, and discontinuities.
-        context: IntcurveSupportContext,
-        /// Cache-first subtype tail, absent from the prefix-first layout.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        tail: Option<SurfaceCurveTail>,
     },
     /// Silhouette of a cast surface in a light direction.
     Silhouette {
@@ -5593,9 +5837,7 @@ pub enum ProceduralCurveDefinition {
 impl ProceduralCurveDefinition {
     fn revision_cache(&self) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization>> {
         match self {
-            Self::SurfaceCurve {
-                tail: Some(tail), ..
-            } => Some(&tail.cache),
+            Self::SurfaceCurve { family } => family.revision_cache(),
             Self::SurfaceOffset {
                 cache_first: Some(form),
                 ..
@@ -5610,9 +5852,7 @@ impl ProceduralCurveDefinition {
         &mut self,
     ) -> Option<&mut RevisionCacheForm<CacheFirstCurveParameterization>> {
         match self {
-            Self::SurfaceCurve {
-                tail: Some(tail), ..
-            } => Some(&mut tail.cache),
+            Self::SurfaceCurve { family } => family.revision_cache_mut(),
             Self::SurfaceOffset {
                 cache_first: Some(form),
                 ..
