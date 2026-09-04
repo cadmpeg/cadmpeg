@@ -1459,24 +1459,28 @@ pub(crate) fn consolidated_jet_pcurve(
     chart: &ConsolidatedCarrierChart<'_>,
 ) -> Option<PcurveGeometry> {
     let points = pcurve
-        .points
+        .sites
         .iter()
-        .copied()
-        .map(|point| chart.point(point))
+        .map(|site| chart.point(site.point))
         .collect::<Vec<_>>();
     let first = pcurve
-        .first_derivatives
+        .sites
         .iter()
-        .copied()
-        .map(|derivative| chart.derivative(derivative))
+        .map(|site| chart.derivative(site.first_derivatives))
         .collect::<Vec<_>>();
     let second = pcurve
-        .second_derivatives
+        .sites
         .iter()
-        .copied()
-        .map(|derivative| chart.derivative(derivative))
+        .map(|site| chart.derivative(site.second_derivatives))
         .collect::<Vec<_>>();
-    quintic_jet_pcurve(pcurve.degree, &pcurve.knots, &points, &first, &second)
+    let knots = pcurve.knots();
+    quintic_jet_pcurve(
+        crate::wire::records::ConsolidatedPcurve::DEGREE,
+        &knots,
+        &points,
+        &first,
+        &second,
+    )
 }
 
 /// Transfer resolved consolidated surface curves, reusing an existing
@@ -2094,9 +2098,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             // chart, which is not the standard partner face's
                             // chart. Recover the isometry between them from the
                             // block's shared 3D loci.
+                            let partner_points = resolved.block.pcurves[partner].points();
                             let Some(chart) = resolved.shared_loci.as_deref().and_then(|loci| {
                                 solve_planar_chart_rechart(
-                                    &resolved.block.pcurves[partner].points,
+                                    &partner_points,
                                     loci,
                                     standard_partner_geometry,
                                 )

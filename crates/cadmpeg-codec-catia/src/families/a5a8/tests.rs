@@ -595,7 +595,7 @@ fn a5_pcurve_parser_reads_compact_support_and_uv_jet() {
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x1234);
     assert_eq!(pcurves[0].extrapolation_sites, 2);
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
+    assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
     assert_eq!(pcurves[0].range, [0.0, 1.0]);
     assert_eq!(pcurves[0].tail, [0x07]);
 
@@ -620,15 +620,15 @@ fn consolidated_pcurve_parser_reads_width2_frame() {
     let pcurves = crate::families::a5a8::records::a5_pcurves(&a6_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x1234);
-    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
+    assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
 }
 
 #[test]
 fn a5_pcurve_parser_accepts_frame_bounded_site_count() {
     let pcurves = crate::families::a5a8::records::a5_pcurves(&a5_pcurve_stream_with_count(4097));
     assert_eq!(pcurves.len(), 1);
-    assert_eq!(pcurves[0].knots.len(), 4097);
-    assert_eq!(pcurves[0].points.len(), 4097);
+    assert_eq!(pcurves[0].knots().len(), 4097);
+    assert_eq!(pcurves[0].points().len(), 4097);
 }
 
 #[test]
