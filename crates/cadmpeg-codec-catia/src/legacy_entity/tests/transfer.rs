@@ -203,7 +203,7 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     invalid_relation_pair.legacy_entity_runs[0].relations[1].expression_offset =
         prelude.byte_offset;
     invalid_relation_pair.legacy_entity_runs[0].relations[1].expression = prelude.value;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_relation_pair
         .store(&mut namespace)
         .expect("store invalid selected relation pair");
@@ -212,7 +212,7 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
     let mut invalid = native;
     invalid.legacy_entity_runs[0].role_selectors[3].name =
         crate::native::CatiaLegacyRoleName::Selector(0);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid
         .store(&mut namespace)
         .expect("store invalid selected role");
@@ -303,7 +303,7 @@ fn decode_retains_legacy_relation_synchronous_states() {
     missing_selected_successor.legacy_entity_runs[0]
         .role_selectors
         .pop();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     missing_selected_successor
         .store(&mut namespace)
         .expect("store selected state without successor role");
@@ -311,7 +311,7 @@ fn decode_retains_legacy_relation_synchronous_states() {
 
     let mut invalid_field_boundary = native.clone();
     invalid_field_boundary.legacy_entity_runs[0].schema_fields[0].boundary_role_byte_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_field_boundary
         .store(&mut namespace)
         .expect("store invalid schema-field boundary");
@@ -319,7 +319,7 @@ fn decode_retains_legacy_relation_synchronous_states() {
 
     let mut missing_bound_field_code = native.clone();
     missing_bound_field_code.legacy_entity_runs[0].role_selectors[0].field_code = None;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     missing_bound_field_code
         .store(&mut namespace)
         .expect("store schema field without its role binding");
@@ -327,7 +327,7 @@ fn decode_retains_legacy_relation_synchronous_states() {
 
     let mut invalid = native;
     invalid.legacy_entity_runs[0].synchronous_states[0].selector += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid
         .store(&mut namespace)
         .expect("store invalid relation update state");

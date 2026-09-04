@@ -65,13 +65,16 @@ fn target_of(plan: &ExportPlan) -> Option<String> {
 #[test]
 fn planning_reports_unrepresentable_content_under_strict_write_options() {
     let mut ir = CadIr::empty();
-    ir.native.namespace_mut("f3d").arenas.insert(
-        "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            "asm-history-0",
-            serde_json::Map::default(),
-        )],
-    );
+    ir.native
+        .namespace_mut("f3d", std::num::NonZeroU32::MIN)
+        .arenas
+        .insert(
+            "asm_histories".into(),
+            vec![cadmpeg_ir::NativeRecord::new(
+                "asm-history-0",
+                serde_json::Map::default(),
+            )],
+        );
     ir.finalize();
     let encoder = StepCodec {
         options: StepWriteOptions {

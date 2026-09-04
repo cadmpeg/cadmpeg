@@ -129,7 +129,9 @@ pub fn transfer_into_ir(
         "admit ASM entities",
     )?;
 
-    let namespace = ir.native.namespace_mut(native_format);
+    let namespace = ir
+        .native
+        .namespace_mut(native_format, std::num::NonZeroU32::MIN);
     namespace.set_version(native_version);
     namespace.set_arena("edge_continuities", &edge_continuities)?;
     namespace.set_arena("edge_ownerships", &edge_ownerships)?;
@@ -196,7 +198,7 @@ mod tests {
             .expect("test root fits policy");
         let mut ir = CadIr::empty();
         ir.native
-            .namespace_mut("test")
+            .namespace_mut("test", std::num::NonZeroU32::MIN)
             .set_arena("body_native_keys", &[HeldRecord { id: "held".into() }])
             .expect("test native record serializes");
         assert!(transfer_into_ir(

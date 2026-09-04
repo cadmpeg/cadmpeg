@@ -124,14 +124,16 @@ mod tests {
         };
         CALLS.store(0, Ordering::SeqCst);
         let mut ir = CadIr::empty();
-        let _ = ir.native.namespace_mut("fcstd");
-        let _ = ir.native.namespace_mut("f3d");
+        let _ = ir.native.namespace_mut("fcstd", std::num::NonZeroU32::MIN);
+        let _ = ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN);
         let _ = catalog.validate(&ir);
         assert_eq!(CALLS.load(Ordering::SeqCst), 2);
 
         CALLS.store(0, Ordering::SeqCst);
         let mut none = CadIr::empty();
-        let _ = none.native.namespace_mut("absent");
+        let _ = none
+            .native
+            .namespace_mut("absent", std::num::NonZeroU32::MIN);
         let _ = catalog.validate(&none);
         assert_eq!(CALLS.load(Ordering::SeqCst), 0);
     }

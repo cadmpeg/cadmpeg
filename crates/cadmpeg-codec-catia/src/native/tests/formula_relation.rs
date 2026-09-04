@@ -57,7 +57,7 @@ fn native_namespace_types_and_validates_formula_relations() {
     );
     let expected_formula = formula.clone();
 
-    let mut version_235_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_235_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_235_namespace)
         .expect("store current formula output reference");
@@ -109,7 +109,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_236_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_236_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_236_namespace)
         .expect("store current formula expression reference");
@@ -146,7 +146,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_249_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_249_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_249_namespace)
         .expect("store current formula reference offsets");
@@ -180,7 +180,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_237_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_237_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_237_namespace)
         .expect("store current formula dependency references");
@@ -220,7 +220,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_245_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_245_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_245_namespace)
         .expect("store current formula dependency offsets");
@@ -251,7 +251,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         Some(expected_formula.clone())
     );
 
-    let mut version_205_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_205_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_205_namespace)
         .expect("store current formula dependency candidates");
@@ -284,7 +284,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .output_entity
         .reference
         .entity_id = 98;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store malformed formula relation");
@@ -301,7 +301,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .expect("complete formula relation")
         .expression_entity
         .payload_offset = u64::MAX;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_offset
         .store(&mut namespace)
         .expect("store malformed formula incidence offset");
@@ -384,7 +384,7 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
         .formula_relation
         .clone()
         .expect("complete formula relation");
-    let mut old_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut old_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut old_namespace)
         .expect("store relation dependencies");
@@ -493,7 +493,7 @@ fn terminal_entity_identity_is_a_null_formula_output() {
     assert!(formula_record.references[2].is_null);
     assert_eq!(formula_record.references[2].target, None);
 
-    let mut version_210_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_210_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_210_namespace)
         .expect("store terminal null references");

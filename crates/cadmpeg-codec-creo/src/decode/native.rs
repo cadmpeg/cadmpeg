@@ -137,7 +137,7 @@ pub(super) fn store_arena<T: Serialize>(
     if records.is_empty() {
         return Ok(());
     }
-    let namespace = ir.native.namespace_mut("creo");
+    let namespace = ir.native.namespace_mut("creo", std::num::NonZeroU32::MIN);
     namespace.set_version(
         std::num::NonZeroU32::new(CREO_NATIVE_VERSION).expect("Creo native version is nonzero"),
     );

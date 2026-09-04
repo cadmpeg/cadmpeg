@@ -25,7 +25,7 @@ pub(crate) fn load_count() -> usize {
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
+use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology,
@@ -1115,13 +1115,7 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
 ];
 
 const F3D_CATALOGUE: Catalogue<'static, F3dNative, (), cadmpeg_ir::NativeNamespace, ()> =
-    Catalogue::new(
-        F3D_FAMILIES,
-        VersionContract {
-            minimum: 0,
-            maximum: u32::MAX,
-        },
-    );
+    Catalogue::new(F3D_FAMILIES, None);
 
 /// Autodesk Fusion records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

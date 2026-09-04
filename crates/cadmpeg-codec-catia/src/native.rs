@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
+use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use crate::catalog;
 use crate::container;
@@ -5726,13 +5726,7 @@ const CATIA_CATALOGUE: Catalogue<
     (),
     cadmpeg_ir::NativeNamespace,
     (),
-> = Catalogue::new(
-    CATIA_FAMILIES,
-    VersionContract {
-        minimum: 0,
-        maximum: u32::MAX,
-    },
-);
+> = Catalogue::new(CATIA_FAMILIES, None);
 
 fn store_projection(
     projection: &CatiaArenaProjection,

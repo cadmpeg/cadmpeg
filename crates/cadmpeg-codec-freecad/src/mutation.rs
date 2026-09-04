@@ -74,7 +74,7 @@ pub(crate) fn replace_entry(
             "Document.xml must be edited through typed property records".into(),
         ));
     }
-    let namespace = ir.native.namespace_mut("fcstd");
+    let namespace = ir.native.namespace_mut("fcstd", std::num::NonZeroU32::MIN);
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let entry = entries
         .iter_mut()
@@ -97,7 +97,7 @@ fn mutate_property(
         FcstdPropertyOwner::Document => native_id("document", "0"),
         FcstdPropertyOwner::Object(name) => native_id("object", name),
     };
-    let namespace = ir.native.namespace_mut("fcstd");
+    let namespace = ir.native.namespace_mut("fcstd", std::num::NonZeroU32::MIN);
     let mut properties = namespace.arena_as::<PropertyRecord>("properties")?;
     let matches = properties
         .iter()

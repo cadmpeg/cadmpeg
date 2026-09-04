@@ -196,7 +196,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     native.feature_input_lanes[0].body_selections[0]
         .body_state_ids
         .push(287);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("body selection")
@@ -206,7 +206,7 @@ fn decode_and_validate_compact_delete_body_selection() {
 
     native.feature_input_lanes[0].body_selections[0].mode =
         Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("body selection")
@@ -216,7 +216,7 @@ fn decode_and_validate_compact_delete_body_selection() {
         Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected);
 
     native.feature_input_lanes[0].body_selections[0].local_body_ids[0] = 288;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("body selection")

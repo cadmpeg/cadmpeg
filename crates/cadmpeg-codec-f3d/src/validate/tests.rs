@@ -182,7 +182,9 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         ..crate::native::F3dNative::default()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
+        .unwrap();
     let findings = crate::validate::validate_native(&ir);
     assert!(
         !findings.iter().any(|finding| {
@@ -198,7 +200,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         .entity_id_offsets
         .push(108);
     duplicate_type_owner
-        .store(ir.native.namespace_mut("f3d"))
+        .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
         .unwrap();
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.entity.as_deref()
@@ -209,7 +211,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     let mut invalid_offsets = native.clone();
     invalid_offsets.design_feature_timelines[0].item_record_index_offsets[0] = 244;
     invalid_offsets
-        .store(ir.native.namespace_mut("f3d"))
+        .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
         .unwrap();
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.entity.as_deref() == Some(invalid_offsets.design_feature_timelines[0].id.as_str())
@@ -217,7 +219,9 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     }));
 
     native.design_feature_timelines[0].item_record_indices[0] = 102;
-    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
+        .unwrap();
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
         finding.entity.as_deref() == Some(native.design_feature_timelines[0].id.as_str())
             && finding.message == "Fusion Design feature timeline has an invalid typed frame"
@@ -1268,7 +1272,9 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     native.design_construction_operand_groups.push(group);
     native.design_construction_operand_identities.push(identity);
     native.design_record_headers.extend([wrapper, following]);
-    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
+        .unwrap();
 
     let invalid_identity = |finding: &cadmpeg_ir::Finding| {
         finding.entity.as_deref() == Some(identity_id.as_str())
@@ -1285,7 +1291,9 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         class_tag: "301".into(),
         byte_offset: 1_315,
     });
-    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN))
+        .unwrap();
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_identity));

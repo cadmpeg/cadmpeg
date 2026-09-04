@@ -1128,7 +1128,7 @@ impl CodecBackend for FcstdCodec {
                 )],
             )?;
         }
-        let namespace = ir.native.namespace_mut("fcstd");
+        let namespace = ir.native.namespace_mut("fcstd", std::num::NonZeroU32::MIN);
         namespace.set_version(
             std::num::NonZeroU32::new(native::VERSION).expect("FreeCAD native version is nonzero"),
         );
@@ -1275,7 +1275,7 @@ impl CodecBackend for FcstdCodec {
             )?;
             let design_census = design::census(&graph.objects, &ir.model.features)?;
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
                 .set_arena("design_census", &design_census)?;
             element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
@@ -1330,16 +1330,16 @@ impl CodecBackend for FcstdCodec {
                 }
             }
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
                 .set_arena("entries", &entry_records)?;
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
                 .set_arena("gui_documents", &gui_graph.documents)?;
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
                 .set_arena("gui_view_providers", &gui_graph.providers)?;
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
                 .set_arena("gui_properties", &gui_graph.properties)?;
             let logical_ledger = container::logical_ledger(
                 &entry_records,
@@ -1350,7 +1350,7 @@ impl CodecBackend for FcstdCodec {
                 &element_maps,
             )?;
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
                 .set_arena("logical_ledger", &logical_ledger)?;
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
             let coverage = container::byte_coverage(
@@ -1360,16 +1360,16 @@ impl CodecBackend for FcstdCodec {
                 physical_byte_len,
             );
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
                 .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
                 .set_arena("element_maps", &element_maps)?;
         } else {
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
             let coverage = container::byte_coverage(&scan.ledger, &[], &[], physical_byte_len);
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
                 .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
         }
         let mut losses = if ctx.container_only() {

@@ -63,7 +63,11 @@ impl std::ops::DerefMut for F3dNativeMut<'_> {
 impl Drop for F3dNativeMut<'_> {
     fn drop(&mut self) {
         self.native
-            .store(self.ir.native.namespace_mut("f3d"))
+            .store(
+                self.ir
+                    .native
+                    .namespace_mut("f3d", std::num::NonZeroU32::MIN),
+            )
             .unwrap();
     }
 }

@@ -81,7 +81,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     stale_records[0].property_records[0].sha256 = "0".repeat(64);
     corrupted
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
         .set_arena("applications", &stale_records)
         .expect("replace application records");
     assert!(crate::validate_native(&corrupted)

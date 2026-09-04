@@ -245,7 +245,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .pop();
     corrupted
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
         .set_arena("entries", &corrupted_entries)
         .expect("replace entries");
     assert!(crate::validate_native(&corrupted)

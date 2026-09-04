@@ -13,7 +13,7 @@ use super::{SldprtNative, SLDPRT_NATIVE_VERSION};
 
 #[test]
 fn version_twelve_adds_generated_surface_identity_arena() {
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     SldprtNative::default()
         .store(&mut namespace)
         .expect("required invariant");
@@ -23,7 +23,7 @@ fn version_twelve_adds_generated_surface_identity_arena() {
         .remove("feature_input_generated_surface_identities");
 
     let migrated = SldprtNative::load(&namespace).expect("required invariant");
-    let mut current = cadmpeg_ir::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     migrated.store(&mut current).expect("required invariant");
 
     assert_eq!(current.version(), SLDPRT_NATIVE_VERSION);
@@ -42,7 +42,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     let original = decoded.ir().native.namespace("sldprt").unwrap();
     let typed = crate::native::SldprtNative::load(original).unwrap();
-    let mut round_trip = cadmpeg_ir::NativeNamespace::default();
+    let mut round_trip = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     typed.store(&mut round_trip).unwrap();
     assert_eq!(
         typed,
@@ -85,12 +85,15 @@ fn native_version_one_migrates_the_body_selection_arena() {
         .feature_input_lanes
         .iter()
         .all(|lane| lane.body_selections.is_empty()));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version(), crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current.arenas.contains_key("feature_input_body_selections"));
 
-    *decoded.ir_mut().native.namespace_mut("sldprt") = legacy;
+    *decoded
+        .ir_mut()
+        .native
+        .namespace_mut("sldprt", std::num::NonZeroU32::MIN) = legacy;
     assert!(crate::validate_native(decoded.ir()).is_empty());
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -118,7 +121,7 @@ fn native_version_two_migrates_the_edge_selection_arena() {
         .feature_input_lanes
         .iter()
         .all(|lane| lane.edge_selections.is_empty()));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version(), crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current.arenas.contains_key("feature_input_edge_selections"));
@@ -140,7 +143,7 @@ fn native_version_three_migrates_the_surface_selection_arena() {
         .feature_input_lanes
         .iter()
         .all(|lane| lane.surface_selections.is_empty()));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version(), crate::native::SLDPRT_NATIVE_VERSION);
     assert!(current
@@ -174,7 +177,7 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
             }) == entity.object_index
         })
     }));
-    let mut current = cadmpeg_ir::NativeNamespace::default();
+    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version(), crate::native::SLDPRT_NATIVE_VERSION);
 
@@ -229,7 +232,12 @@ fn native_store_rejects_mismatched_nested_owners_atomically() {
     native.feature_histories[0].features[0].parent = "missing-history".into();
     let before = decoded.ir().native.namespace("sldprt").unwrap().clone();
     let error = native
-        .store(decoded.ir_mut().native.namespace_mut("sldprt"))
+        .store(
+            decoded
+                .ir_mut()
+                .native
+                .namespace_mut("sldprt", std::num::NonZeroU32::MIN),
+        )
         .unwrap_err();
     assert!(error.to_string().contains("invalid owner"));
     assert_eq!(decoded.ir().native.namespace("sldprt").unwrap(), &before);
@@ -253,7 +261,7 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
         .expect("sketch marker")
         .feature_ref = Some("sldprt:history:feature#missing".into());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -279,7 +287,7 @@ fn native_store_rejects_edited_history_feature_class() {
     let mut native = sldprt_native(decoded.ir());
     native.feature_histories[0].features[0].input_class = Some("moRefPlane_c".into());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -305,7 +313,7 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
     }];
     entity.link_selector = Some(0);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error.to_string().contains("missing local-link target"));
 }
@@ -356,7 +364,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
         }
     }
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native.store(&mut namespace).unwrap();
     let stored = crate::native::SldprtNative::load(&namespace).unwrap();
     assert_eq!(
@@ -382,7 +390,7 @@ fn native_store_rejects_relation_scalar_owner_disagreement() {
         .is_some());
     native.feature_input_lanes[0].relation_bindings[0].feature_ref = None;
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -406,7 +414,7 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
         .scalar_refs
         .push(duplicate);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
@@ -459,7 +467,7 @@ fn native_store_rejects_relation_instance_operand_disagreement() {
     let mut native = sldprt_native(decoded.ir());
     native.feature_input_lanes[0].relation_instances[0].operands[0].entity_index += 1;
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
@@ -488,7 +496,7 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
     native.feature_input_lanes[0].scalars[0].operands[1].entity_ref = Some(wrong_target.clone());
     native.feature_input_lanes[0].relation_instances[0].operands[1].entity_ref = Some(wrong_target);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error.to_string().contains("inconsistent sketch marker"));
 }
@@ -515,6 +523,6 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     assert!(lane.scalars[0].operands[0].entity_ref.is_some());
     lane.sketch_entities[1].local_id = lane.sketch_entities[0].local_id;
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native.store(&mut namespace).unwrap();
 }

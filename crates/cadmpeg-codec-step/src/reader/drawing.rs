@@ -342,7 +342,7 @@ fn add_source_typed_targets(
     if native_targets.is_empty() {
         return;
     }
-    let namespace = ir.native.namespace_mut("step");
+    let namespace = ir.native.namespace_mut("step", std::num::NonZeroU32::MIN);
     namespace
         .arenas
         .entry("drawing_targets".into())

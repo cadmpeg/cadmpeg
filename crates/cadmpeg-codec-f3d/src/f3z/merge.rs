@@ -347,7 +347,7 @@ pub(super) fn extend_native(root: &mut Native, mut component: Native, occurrence
     let Some(mut source) = component.0.remove("f3d") else {
         return;
     };
-    let target = root.namespace_mut("f3d");
+    let target = root.namespace_mut("f3d", std::num::NonZeroU32::MIN);
     for name in crate::native::F3D_ARENA_NAMES
         .iter()
         .copied()

@@ -191,7 +191,7 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
 
     let mut malformed = native.clone();
     malformed.design_objects[0].relations.swap(0, 1);
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store reordered design relations");
@@ -555,7 +555,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .rows[0]
         .cells[0]
         .entity_id += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store malformed parallel reference table");
@@ -572,7 +572,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .rows[0]
         .cells[0]
         .payload_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_offset
         .store(&mut namespace)
         .expect("store malformed parallel-reference cell offset");
@@ -588,7 +588,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .expect("parallel reference table")
         .columns[0]
         .list_payload_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_list_offset
         .store(&mut namespace)
         .expect("store malformed parallel-reference list offset");
@@ -597,7 +597,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    let mut version_256_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_256_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_256_namespace)
         .expect("store pre-column-incidence parallel reference table");
@@ -635,7 +635,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut version_255_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_255_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_255_namespace)
         .expect("store pre-offset parallel reference table");
@@ -666,7 +666,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut previous_namespace)
         .expect("store current parallel reference table");
@@ -685,7 +685,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut version_203_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_203_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_203_namespace)
         .expect("store current parallel reference row matches");
@@ -711,7 +711,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut version_202_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_202_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_202_namespace)
         .expect("store current classified parallel reference columns");
@@ -737,7 +737,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         Some(expected.clone())
     );
 
-    let mut version_201_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_201_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_201_namespace)
         .expect("store current classified parallel reference table");
@@ -782,7 +782,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         cell.entity_id == 5 && cell.is_null && cell.field.is_none() && cell.design_object.is_none()
     }));
 
-    let mut version_210_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_210_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     terminal_null
         .store(&mut version_210_namespace)
         .expect("store terminal null parallel reference cells");
@@ -870,7 +870,7 @@ fn parallel_reference_row_match_requires_distinct_target_fields() {
     assert!(table.rows[1].matching_design_object.is_none());
     assert_eq!(table.rows[1].cells[0].field, table.rows[1].cells[1].field);
 
-    let mut version_204_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut version_204_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut version_204_namespace)
         .expect("store current parallel reference row matches");
@@ -930,7 +930,7 @@ fn native_design_objects_follow_first_field_order() {
         ]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut namespace)
         .expect("store source-ordered design objects");

@@ -2889,7 +2889,11 @@ impl<'a> F3dDecodeSession<'a> {
             );
             report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
             self.admit_model_entities("admit F3D entities")?;
-            self.native.store(self.ir.native.namespace_mut("f3d"))?;
+            self.native.store(
+                self.ir
+                    .native
+                    .namespace_mut("f3d", std::num::NonZeroU32::MIN),
+            )?;
             let annotations =
                 populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns);
             let source_image = preserve_source_image(scan);
@@ -2934,7 +2938,11 @@ impl<'a> F3dDecodeSession<'a> {
 
         report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
         self.admit_model_entities("admit F3D entities")?;
-        self.native.store(self.ir.native.namespace_mut("f3d"))?;
+        self.native.store(
+            self.ir
+                .native
+                .namespace_mut("f3d", std::num::NonZeroU32::MIN),
+        )?;
         let geometry = self.geometry.take().expect("geometry");
         let annotations = populate_annotations(
             &self.ir,

@@ -6,6 +6,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use std::num::NonZeroU32;
+
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
 
@@ -20,10 +22,16 @@ use crate::records::{
 pub const SLDPRT_NATIVE_VERSION: u32 = 13;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
-const SLDPRT_VERSION_CONTRACT: VersionContract = VersionContract {
-    minimum: SLDPRT_MIN_NATIVE_VERSION,
-    maximum: SLDPRT_NATIVE_VERSION,
-};
+const SLDPRT_VERSION_CONTRACT: VersionContract = VersionContract::new(
+    match NonZeroU32::new(SLDPRT_MIN_NATIVE_VERSION) {
+        Some(version) => version,
+        None => panic!("SLDPRT minimum native version is nonzero"),
+    },
+    match NonZeroU32::new(SLDPRT_NATIVE_VERSION) {
+        Some(version) => version,
+        None => panic!("SLDPRT native version is nonzero"),
+    },
+);
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
     SLDPRT_VERSION_CONTRACT.check_version(version).is_ok()
@@ -223,7 +231,7 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
 ];
 
 const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeNamespace, ()> =
-    Catalogue::new(SLDPRT_FAMILIES, SLDPRT_VERSION_CONTRACT);
+    Catalogue::new(SLDPRT_FAMILIES, Some(SLDPRT_VERSION_CONTRACT));
 
 /// SOLIDWORKS records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
