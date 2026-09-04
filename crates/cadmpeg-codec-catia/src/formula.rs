@@ -134,7 +134,7 @@ pub(crate) fn transfer_parameters(
         let Some(expression) = &expression_entity.relation_expression else {
             continue;
         };
-        let Some(signature) = &expression.signature else {
+        let Some(signature) = expression.signature() else {
             continue;
         };
         let mut transferred = Vec::with_capacity(formula.parameter_dependencies.len() + 1);
@@ -325,7 +325,7 @@ pub(crate) fn transfer_parameters(
         let Some(expression) = &expression_entity.relation_expression else {
             continue;
         };
-        let Some(signature) = &expression.signature else {
+        let Some(signature) = expression.signature() else {
             continue;
         };
         let Some(inputs) = instance.inputs.as_ref() else {
@@ -336,7 +336,7 @@ pub(crate) fn transfer_parameters(
             expression_entity,
             output_entity,
             expression,
-            signature,
+            &signature,
             inputs,
             &entities,
         ) else {

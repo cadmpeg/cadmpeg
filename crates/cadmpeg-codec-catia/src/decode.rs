@@ -793,7 +793,7 @@ fn finish_decode(
                     parser,
                     boolean,
                     opened,
-                    typed + usize::from(expression.signature.is_some()),
+                    typed + usize::from(expression.signature().is_some()),
                 )
             },
         );
@@ -1223,7 +1223,7 @@ fn finish_decode(
             entity
                 .relation_expression
                 .as_ref()
-                .is_some_and(|expression| expression.signature.is_some())
+                .is_some_and(|expression| expression.signature().is_some())
         })
         .map(|entity| entity.id.as_str())
         .collect::<HashSet<_>>();
