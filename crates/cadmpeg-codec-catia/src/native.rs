@@ -442,6 +442,17 @@ pub enum CatiaOwnerPacketPayload {
         identity_encodings: [CatiaOwnerIdentityEncoding; 9],
         /// Structurally decoded 62-byte class-specific numeric tail.
         numeric_tail: CatiaOwnerNumericTail,
+        /// Backward-distance identities resolved within this packet's contiguous
+        /// class-`0x5d`/`0x5e` allocation sequence.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        identity_targets: Vec<CatiaOwnerIdentityTarget>,
+        /// Complete carrier/reference/side chart that this packet terminates.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner_chart: Option<CatiaOwnerChartRelation>,
+        /// Closed owner-local four-edge boundary, when all four resolved targets
+        /// form one simple cycle in the bounded record source.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
     },
     /// Count-selected persistent identities followed by a nonempty tail.
     Counted {
@@ -482,6 +493,10 @@ pub struct CatiaOwnerBoundaryCycle {
 /// Exact class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaConsolidatedOwnerPacketWire",
+    into = "CatiaConsolidatedOwnerPacketWire"
+)]
 pub struct CatiaConsolidatedOwnerPacket {
     /// Stable source identity.
     pub id: String,
@@ -493,20 +508,146 @@ pub struct CatiaConsolidatedOwnerPacket {
     pub header_token: u32,
     /// Count-specific reference lane and tail.
     pub payload: CatiaOwnerPacketPayload,
-    /// Backward-distance identities resolved within this packet's contiguous
-    /// class-`0x5d`/`0x5e` allocation sequence.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub identity_targets: Vec<CatiaOwnerIdentityTarget>,
     /// Source-scoped class-`0x5f` face node, when the packet relation closes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face_node: Option<CatiaFaceNodeRelation>,
-    /// Complete carrier/reference/side chart that this packet terminates.
+}
+
+impl CatiaConsolidatedOwnerPacket {
+    #[cfg(test)]
+    pub fn identity_targets(&self) -> &[CatiaOwnerIdentityTarget] {
+        match &self.payload {
+            CatiaOwnerPacketPayload::FixedNine {
+                identity_targets, ..
+            } => identity_targets,
+            CatiaOwnerPacketPayload::Counted { .. } => &[],
+        }
+    }
+
+    #[cfg(test)]
+    pub fn owner_chart(&self) -> Option<&CatiaOwnerChartRelation> {
+        match &self.payload {
+            CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_ref(),
+            CatiaOwnerPacketPayload::Counted { .. } => None,
+        }
+    }
+
+    pub fn owner_chart_mut(&mut self) -> Option<&mut CatiaOwnerChartRelation> {
+        match &mut self.payload {
+            CatiaOwnerPacketPayload::FixedNine { owner_chart, .. } => owner_chart.as_mut(),
+            CatiaOwnerPacketPayload::Counted { .. } => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn boundary_cycle(&self) -> Option<&CatiaOwnerBoundaryCycle> {
+        match &self.payload {
+            CatiaOwnerPacketPayload::FixedNine { boundary_cycle, .. } => boundary_cycle.as_ref(),
+            CatiaOwnerPacketPayload::Counted { .. } => None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaConsolidatedOwnerPacketWire {
+    id: String,
+    byte_offset: u64,
+    source_index: usize,
+    header_token: u32,
+    payload: CatiaOwnerPacketPayload,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    identity_targets: Vec<CatiaOwnerIdentityTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner_chart: Option<CatiaOwnerChartRelation>,
-    /// Closed owner-local four-edge boundary, when all four resolved targets
-    /// form one simple cycle in the bounded record source.
+    face_node: Option<CatiaFaceNodeRelation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
+    owner_chart: Option<CatiaOwnerChartRelation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
+}
+
+impl From<CatiaConsolidatedOwnerPacket> for CatiaConsolidatedOwnerPacketWire {
+    fn from(value: CatiaConsolidatedOwnerPacket) -> Self {
+        let (identity_targets, owner_chart, boundary_cycle, payload) = match value.payload {
+            CatiaOwnerPacketPayload::FixedNine {
+                reference_encoding,
+                references,
+                identity_encodings,
+                numeric_tail,
+                identity_targets,
+                owner_chart,
+                boundary_cycle,
+            } => (
+                identity_targets,
+                owner_chart,
+                boundary_cycle,
+                CatiaOwnerPacketPayload::FixedNine {
+                    reference_encoding,
+                    references,
+                    identity_encodings,
+                    numeric_tail,
+                    identity_targets: Vec::new(),
+                    owner_chart: None,
+                    boundary_cycle: None,
+                },
+            ),
+            payload => (Vec::new(), None, None, payload),
+        };
+        Self {
+            id: value.id,
+            byte_offset: value.byte_offset,
+            source_index: value.source_index,
+            header_token: value.header_token,
+            payload,
+            identity_targets,
+            face_node: value.face_node,
+            owner_chart,
+            boundary_cycle,
+        }
+    }
+}
+
+impl TryFrom<CatiaConsolidatedOwnerPacketWire> for CatiaConsolidatedOwnerPacket {
+    type Error = String;
+
+    fn try_from(wire: CatiaConsolidatedOwnerPacketWire) -> Result<Self, Self::Error> {
+        let payload = match wire.payload {
+            CatiaOwnerPacketPayload::FixedNine {
+                reference_encoding,
+                references,
+                identity_encodings,
+                numeric_tail,
+                ..
+            } => CatiaOwnerPacketPayload::FixedNine {
+                reference_encoding,
+                references,
+                identity_encodings,
+                numeric_tail,
+                identity_targets: wire.identity_targets,
+                owner_chart: wire.owner_chart,
+                boundary_cycle: wire.boundary_cycle,
+            },
+            counted @ CatiaOwnerPacketPayload::Counted { .. } => {
+                if !wire.identity_targets.is_empty()
+                    || wire.owner_chart.is_some()
+                    || wire.boundary_cycle.is_some()
+                {
+                    return Err(
+                        "counted owner packets cannot carry fixed-nine chart or boundary data"
+                            .to_owned(),
+                    );
+                }
+                counted
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            source_index: wire.source_index,
+            header_token: wire.header_token,
+            payload,
+            face_node: wire.face_node,
+        })
+    }
 }
 
 /// One structurally complete consolidated `B:29` cone chart.
@@ -8391,6 +8532,9 @@ fn consolidated_owner_packets(
                         upper: packet.numeric_tail.upper,
                         bounds: packet.numeric_tail.bounds,
                     },
+                    identity_targets: Vec::new(),
+                    owner_chart: None,
+                    boundary_cycle: None,
                 },
             )
         })
@@ -8415,15 +8559,26 @@ fn consolidated_owner_packets(
     packets
         .into_iter()
         .map(
-            |(pos, source_index, header_token, payload)| CatiaConsolidatedOwnerPacket {
+            |(pos, source_index, header_token, mut payload)| {
+                if let CatiaOwnerPacketPayload::FixedNine {
+                    identity_targets: stored_targets,
+                    owner_chart,
+                    boundary_cycle,
+                    ..
+                } = &mut payload
+                {
+                    *stored_targets = identity_targets
+                        .remove(&(source_index, pos))
+                        .unwrap_or_default();
+                    *owner_chart = owner_charts.get(&(source_index, pos)).cloned();
+                    *boundary_cycle = boundary_cycles.get(&(source_index, pos)).copied();
+                }
+                CatiaConsolidatedOwnerPacket {
                 id: format!("catia:consolidated:owner-packet#{pos:010}"),
                 byte_offset: pos as u64,
                 source_index,
                 header_token,
                 payload,
-                identity_targets: identity_targets
-                    .remove(&(source_index, pos))
-                    .unwrap_or_default(),
                 face_node: face_nodes
                     .get(&(source_index, pos))
                     .map(|face_node| CatiaFaceNodeRelation {
@@ -8441,8 +8596,7 @@ fn consolidated_owner_packets(
                     target: face_node.target,
                         terminal: face_node.terminal,
                     }),
-                owner_chart: owner_charts.get(&(source_index, pos)).cloned(),
-                boundary_cycle: boundary_cycles.get(&(source_index, pos)).copied(),
+            }
             },
         )
         .collect()
@@ -8992,7 +9146,7 @@ fn resolve_owner_chart_support_aliases(
         });
     };
     for packet in packets {
-        let Some(chart) = packet.owner_chart.as_mut() else {
+        let Some(chart) = packet.owner_chart_mut() else {
             continue;
         };
         let CatiaOwnerChartBridge::SupportedSurface {

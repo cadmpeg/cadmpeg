@@ -773,7 +773,7 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
         panic!("one consolidated owner packet")
     };
     assert_eq!(packet.source_index, 0);
-    assert!(packet.identity_targets.is_empty());
+    assert!(packet.identity_targets().is_empty());
     let crate::native::CatiaOwnerPacketPayload::FixedNine {
         references,
         identity_encodings,
@@ -842,7 +842,7 @@ fn native_namespace_retains_fixed_owner_allocation_targets() {
     assert_eq!(packet.source_index, 0);
     assert_eq!(
         packet
-            .identity_targets
+            .identity_targets()
             .iter()
             .map(|target| (
                 target.slot,
@@ -872,8 +872,7 @@ fn native_namespace_retains_closed_fixed_owner_boundary_cycle() {
 
     assert_eq!(packet.byte_offset, owner_pos as u64);
     let cycle = packet
-        .boundary_cycle
-        .as_ref()
+        .boundary_cycle()
         .expect("closed fixed-owner boundary cycle");
     assert!(cycle.face_node.is_none());
     assert_eq!(
@@ -895,8 +894,7 @@ fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
         panic!("one consolidated owner packet")
     };
     let cycle = packet
-        .boundary_cycle
-        .as_ref()
+        .boundary_cycle()
         .expect("closed fixed-owner boundary cycle");
     let face_node = cycle
         .face_node
@@ -922,8 +920,7 @@ fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
         panic!("one consolidated owner packet")
     };
     assert!(packet
-        .boundary_cycle
-        .as_ref()
+        .boundary_cycle()
         .expect("cycle survives terminal change")
         .face_node
         .is_none());
@@ -935,8 +932,7 @@ fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
         panic!("one consolidated owner packet")
     };
     assert!(packet
-        .boundary_cycle
-        .as_ref()
+        .boundary_cycle()
         .expect("cycle survives identity change")
         .face_node
         .is_none());
@@ -948,7 +944,7 @@ fn native_namespace_retains_source_closed_owner_chart() {
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
-    let chart = packet.owner_chart.as_ref().expect("owner chart relation");
+    let chart = packet.owner_chart().expect("owner chart relation");
     assert_eq!(chart.carrier, crate::native::CatiaOwnerChartCarrier::B2b);
     assert_eq!(
         chart.side_axis,
@@ -1009,8 +1005,7 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     let chart = native.consolidated_owner_packets[0]
-        .owner_chart
-        .as_ref()
+        .owner_chart()
         .expect("owner chart");
     let crate::native::CatiaOwnerChartBridge::SupportedSurface {
         carrier_surface,
@@ -1067,7 +1062,7 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     assert_eq!(carrier_surface.alias, None);
 
     let mut legacy = native.clone();
-    let Some(chart) = legacy.consolidated_owner_packets[0].owner_chart.as_mut() else {
+    let Some(chart) = legacy.consolidated_owner_packets[0].owner_chart_mut() else {
         panic!("owner chart")
     };
     let crate::native::CatiaOwnerChartBridge::SupportedSurface {
@@ -1091,7 +1086,7 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     crate::native::CatiaNative::load(&namespace).expect("load legacy chart links");
 
     let mut invalid = native;
-    let Some(chart) = invalid.consolidated_owner_packets[0].owner_chart.as_mut() else {
+    let Some(chart) = invalid.consolidated_owner_packets[0].owner_chart_mut() else {
         panic!("owner chart")
     };
     let crate::native::CatiaOwnerChartBridge::SupportedSurface {
@@ -1125,8 +1120,7 @@ fn owner_chart_duplicate_alias_tags_remain_unresolved() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     let chart = native.consolidated_owner_packets[0]
-        .owner_chart
-        .as_ref()
+        .owner_chart()
         .expect("owner chart");
     let crate::native::CatiaOwnerChartBridge::SupportedSurface {
         support_surfaces, ..
