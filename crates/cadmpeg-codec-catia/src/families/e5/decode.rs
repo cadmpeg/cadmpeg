@@ -285,7 +285,9 @@ fn derive_e5_vertices(
     let mut candidates = HashMap::<u32, Vec<Point3>>::new();
     for face in &topology.faces {
         for loop_ in &face.loops {
-            for (&pcurve_ref, &edge_ref) in loop_.pcurves.iter().zip(&loop_.edge_uses) {
+            for member in &loop_.members {
+                let pcurve_ref = member.pcurve;
+                let edge_ref = member.edge_use;
                 let edge = topology.edges.get(&edge_ref)?;
                 let pcurve = topology.pcurves.get(&pcurve_ref)?;
                 let surface_ref = match pcurve {
@@ -357,8 +359,8 @@ pub(crate) fn append_e5_planes(
             .filter(|face| face.surface == plane.record_id)
         {
             for loop_ in &face.loops {
-                for edge_ref in &loop_.edge_uses {
-                    let Some(edge) = topology.edges.get(edge_ref) else {
+                for member in &loop_.members {
+                    let Some(edge) = topology.edges.get(&member.edge_use) else {
                         consistent = false;
                         continue;
                     };
@@ -474,7 +476,9 @@ pub(crate) fn solve_e5_plane_frame(
         .filter(|face| face.surface == surface_ref)
     {
         for loop_ in &face.loops {
-            for (&pcurve_ref, &edge_ref) in loop_.pcurves.iter().zip(&loop_.edge_uses) {
+            for member in &loop_.members {
+                let pcurve_ref = member.pcurve;
+                let edge_ref = member.edge_use;
                 let edge = topology.edges.get(&edge_ref)?;
                 let pcurve = topology.pcurves.get(&pcurve_ref)?;
                 let uv = e5_native_uv_endpoints(pcurve)?;
@@ -1116,15 +1120,12 @@ fn plan_e5_boundary(
             return None;
         };
         for loop_ in &face.loops {
-            if loop_.pcurves.is_empty()
-                || loop_.pcurves.len() != loop_.edge_uses.len()
-                || loop_.resolved_members().is_none()
-            {
+            if loop_.members.is_empty() || loop_.resolved_members().is_none() {
                 return None;
             }
-            for (member_index, (&pcurve_ref, &edge_ref)) in
-                loop_.pcurves.iter().zip(&loop_.edge_uses).enumerate()
-            {
+            for (member_index, member) in loop_.members.iter().enumerate() {
+                let pcurve_ref = member.pcurve;
+                let edge_ref = member.edge_use;
                 let Some(edge) = topology.edges.get(&edge_ref) else {
                     return None;
                 };
@@ -1798,7 +1799,7 @@ fn emit_e5_faces_loops_coedges(
         for (_loop_position, loop_) in face.loops.iter().enumerate() {
             let loop_id = LoopId::mint(format!("catia:e5:loop#{}", loop_.record_id))
                 .expect("identity grammar");
-            let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edge_uses.len())
+            let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.members.len())
                 .map(|index| {
                     CoedgeId::mint(format!("catia:e5:coedge#{}-{index}", loop_.record_id))
                         .expect("identity grammar")
@@ -1814,7 +1815,7 @@ fn emit_e5_faces_loops_coedges(
             let Some(vertex_uses) = members
                 .iter()
                 .map(|member| {
-                    let edge_ref = loop_.edge_uses[member.serialized_index];
+                    let edge_ref = loop_.members[member.serialized_index].edge_use;
                     let edge = topology.edges.get(&edge_ref)?;
                     let endpoint_ref = if member.reversed {
                         edge.start_vertex
@@ -1853,8 +1854,8 @@ fn emit_e5_faces_loops_coedges(
             });
             for member in members {
                 let index = member.serialized_index;
-                let edge_ref = loop_.edge_uses[index];
-                let pcurve_ref = loop_.pcurves[index];
+                let edge_ref = loop_.members[index].edge_use;
+                let pcurve_ref = loop_.members[index].pcurve;
                 let Some(&pcurve_reversed) = pcurve_use_reversed.get(&(loop_.record_id, index))
                 else {
                     return false;
@@ -2718,9 +2719,13 @@ pub(crate) fn e5_ownership_plan(
         .collect::<HashMap<_, _>>();
     for face in &topology.faces {
         let body = *body_by_face.get(&face.record_id)?;
-        for edge in face.loops.iter().flat_map(|loop_| &loop_.edge_uses) {
-            bodies_by_edge.get_mut(edge)?.insert(body);
-            *uses[body].entry(*edge).or_default() += 1;
+        for edge in face
+            .loops
+            .iter()
+            .flat_map(|loop_| loop_.members.iter().map(|member| member.edge_use))
+        {
+            bodies_by_edge.get_mut(&edge)?.insert(body);
+            *uses[body].entry(edge).or_default() += 1;
         }
     }
     if body_by_face.len() != topology.faces.len()
@@ -2749,8 +2754,12 @@ pub(crate) fn e5_ownership_plan(
                 .filter(|face| body_by_face[&face.record_id] == body)
             {
                 let face_index = face_indices[&face.record_id];
-                for edge in face.loops.iter().flat_map(|loop_| &loop_.edge_uses) {
-                    if let Some(other) = first_face_by_edge.insert(*edge, face_index) {
+                for edge in face
+                    .loops
+                    .iter()
+                    .flat_map(|loop_| loop_.members.iter().map(|member| member.edge_use))
+                {
+                    if let Some(other) = first_face_by_edge.insert(edge, face_index) {
                         parents.union(face_index, other);
                     }
                 }
@@ -2810,7 +2819,7 @@ mod route_tests {
 
     use crate::families::e5::graph::{
         E5BoundEntry, E5Bounds, E5CurveSupport, E5CurveSupportKind, E5Edge, E5Face, E5Loop,
-        E5OrientedMember, E5Pcurve, E5PcurveJetSite, E5Topology,
+        E5LoopMember, E5OrientedMember, E5Pcurve, E5PcurveJetSite, E5Topology,
     };
     use crate::families::e5::records::E5Surface;
 
@@ -2825,6 +2834,19 @@ mod route_tests {
     use cadmpeg_ir::AnnotationBuilder;
 
     use std::collections::{BTreeMap, HashMap};
+
+    fn e5_loop_members(pcurves: &[u32], edges: &[u32], reversed: &[bool]) -> Vec<E5LoopMember> {
+        pcurves
+            .iter()
+            .zip(edges)
+            .zip(reversed)
+            .map(|((&pcurve, &edge_use), &reversed)| E5LoopMember {
+                pcurve,
+                edge_use,
+                reversed,
+            })
+            .collect()
+    }
 
     fn jet_pcurve(
         surface: u32,
@@ -2942,9 +2964,7 @@ mod route_tests {
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
-                    pcurves: pcurve_refs,
-                    edge_uses: edge_refs,
-                    reversed: vec![false; segment_count],
+                    members: e5_loop_members(&pcurve_refs, &edge_refs, &vec![false; segment_count]),
                     oriented_members: None,
                     outer: Some(true),
                     orientation_signs: Vec::new(),
@@ -2985,9 +3005,7 @@ mod route_tests {
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
-                    pcurves: vec![20, 21],
-                    edge_uses: vec![10, 11],
-                    reversed: vec![false, false],
+                    members: e5_loop_members(&[20, 21], &[10, 11], &[false, false]),
                     oriented_members: None,
                     outer: Some(true),
                     orientation_signs: Vec::new(),
@@ -3202,9 +3220,7 @@ mod route_tests {
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
-                    pcurves: vec![20],
-                    edge_uses: vec![200],
-                    reversed: vec![false],
+                    members: e5_loop_members(&[20], &[200], &[false]),
                     oriented_members: Some(vec![E5OrientedMember {
                         serialized_index: 0,
                         reversed: false,
@@ -3372,9 +3388,7 @@ mod route_tests {
                     loops: vec![E5Loop {
                         record_id: 2,
                         surface: 100,
-                        pcurves: vec![20],
-                        edge_uses: vec![200],
-                        reversed: vec![false],
+                        members: e5_loop_members(&[20], &[200], &[false]),
                         oriented_members: Some(vec![E5OrientedMember {
                             serialized_index: 0,
                             reversed: false,
@@ -3391,9 +3405,7 @@ mod route_tests {
                     loops: vec![E5Loop {
                         record_id: 4,
                         surface: 100,
-                        pcurves: vec![21],
-                        edge_uses: vec![200],
-                        reversed: vec![false],
+                        members: e5_loop_members(&[21], &[200], &[false]),
                         oriented_members: Some(vec![E5OrientedMember {
                             serialized_index: 0,
                             reversed: false,
@@ -3480,9 +3492,7 @@ mod route_tests {
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
-                    pcurves: vec![30],
-                    edge_uses: vec![20],
-                    reversed: vec![false],
+                    members: e5_loop_members(&[30], &[20], &[false]),
                     oriented_members: Some(vec![crate::families::e5::graph::E5OrientedMember {
                         serialized_index: 0,
                         reversed: false,
@@ -3591,9 +3601,7 @@ mod route_tests {
             loops: vec![E5Loop {
                 record_id: 200 + record_id,
                 surface: 100 + record_id,
-                pcurves: vec![300 + record_id],
-                edge_uses: vec![edge_use],
-                reversed: vec![false],
+                members: e5_loop_members(&[300 + record_id], &[edge_use], &[false]),
                 oriented_members: Some(vec![crate::families::e5::graph::E5OrientedMember {
                     serialized_index: 0,
                     reversed: false,
@@ -4731,9 +4739,7 @@ mod route_tests {
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
-                    pcurves: vec![1, 2],
-                    edge_uses: vec![3, 4],
-                    reversed: vec![false, false],
+                    members: e5_loop_members(&[1, 2], &[3, 4], &[false, false]),
                     oriented_members: None,
                     outer: Some(true),
                     orientation_signs: Vec::new(),
