@@ -124,7 +124,7 @@ pub(crate) fn transfer_native_sketch_entities(
             }) {
                 continue;
             }
-            let Some(native_kind) = geometry_field.class_name.clone() else {
+            let Some(native_kind) = geometry_field.class_name().map(str::to_owned) else {
                 continue;
             };
             ir.model.sketch_entities.push(
@@ -260,9 +260,9 @@ pub(crate) fn transfer_native_sketch_constraints(
                         continue;
                     };
                     if target_record.parent != owner_record.parent
-                        || target_record.class_name.as_deref() != Some("ConstraintDYS")
-                        || target_record.class_entry.is_none()
-                        || target_record.entity_id != Some(reference.entity_id())
+                        || target_record.class_name() != Some("ConstraintDYS")
+                        || target_record.class_entry().is_none()
+                        || target_record.entity_id() != Some(reference.entity_id())
                         || reference.design_object() != target_record.design_object.as_deref()
                     {
                         continue;
@@ -282,8 +282,7 @@ pub(crate) fn transfer_native_sketch_constraints(
                     {
                         continue;
                     }
-                    let Some(target_entity_record_id) = target_record.entity_record.as_deref()
-                    else {
+                    let Some(target_entity_record_id) = target_record.entity_record() else {
                         continue;
                     };
                     if ambiguous_entity_records.contains(target_entity_record_id) {
@@ -296,7 +295,7 @@ pub(crate) fn transfer_native_sketch_constraints(
                     };
                     if target_entity_record.object_graph != target_record.parent
                         || target_entity_record.object_record != target_record.id
-                        || Some(target_entity_record.entity_id) != target_record.entity_id
+                        || Some(target_entity_record.entity_id) != target_record.entity_id()
                     {
                         continue;
                     }
@@ -310,13 +309,13 @@ pub(crate) fn transfer_native_sketch_constraints(
                                 target_record: target_record.id.clone(),
                                 target_entity_record: target_entity_record.id.clone(),
                                 target_class: target_record
-                                    .class_name
-                                    .clone()
-                                    .expect("admitted native sketch constraint class"),
+                                    .class_name()
+                                    .expect("admitted native sketch constraint class")
+                                    .to_owned(),
                                 target_entry: target_record
-                                    .class_entry
-                                    .clone()
-                                    .expect("admitted native sketch constraint entry"),
+                                    .class_entry()
+                                    .expect("admitted native sketch constraint entry")
+                                    .to_owned(),
                                 target_ordinal: target_record.ordinal,
                                 target_byte_offset: target_record.byte_offset,
                                 target_references: target_record.references.clone(),
@@ -503,10 +502,10 @@ fn insert_target_reference_properties(
             properties.insert(format!("{prefix}_target_record"), target.to_string());
             if !ambiguous_object_records.contains(target) {
                 if let Some(target_record) = object_records.get(target) {
-                    if let Some(class_name) = target_record.class_name.as_deref() {
+                    if let Some(class_name) = target_record.class_name() {
                         properties.insert(format!("{prefix}_target_class"), class_name.to_string());
                     }
-                    if let Some(class_entry) = target_record.class_entry.as_deref() {
+                    if let Some(class_entry) = target_record.class_entry() {
                         properties
                             .insert(format!("{prefix}_target_entry"), class_entry.to_string());
                     }
@@ -539,7 +538,7 @@ fn exact_sketch_member_objects<'a>(
             }
             let target_record = object_records.get(target_id).copied()?;
             if target_record.parent != owner_record.parent
-                || target_record.entity_id != Some(reference.entity_id())
+                || target_record.entity_id() != Some(reference.entity_id())
                 || reference.design_object() != target_record.design_object.as_deref()
             {
                 return None;
@@ -571,7 +570,7 @@ fn admitted_sketch_geometry_fields<'a>(
         .iter()
         .filter_map(|field_id| object_records.get(field_id.as_str()).copied())
         .filter(|field| {
-            let Some(entity_record_id) = field.entity_record.as_deref() else {
+            let Some(entity_record_id) = field.entity_record() else {
                 return false;
             };
             let Some(entity_record) = entity_records.get(entity_record_id) else {
@@ -580,15 +579,14 @@ fn admitted_sketch_geometry_fields<'a>(
             field.parent == child_object.parent
                 && field.design_object.as_deref() == Some(child_object.id.as_str())
                 && field.owner_entity_id() == Some(child_object.owner_entity_id)
-                && field.entity_id.is_some()
+                && field.entity_id().is_some()
                 && !ambiguous_entity_records.contains(entity_record_id)
                 && entity_record.object_graph == field.parent
                 && entity_record.object_record == field.id
-                && Some(entity_record.entity_id) == field.entity_id
-                && field.class_entry.is_some()
+                && Some(entity_record.entity_id) == field.entity_id()
+                && field.class_entry().is_some()
                 && field
-                    .class_name
-                    .as_deref()
+                    .class_name()
                     .is_some_and(is_native_sketch_geometry_class)
         })
         .collect()
@@ -752,8 +750,8 @@ fn constraint_binding(
     let range_record = indexes.object_records.get(range_record_id).copied()?;
     if indexes.ambiguous_object_records.contains(range_record_id)
         || range_record.parent != range_entity.object_graph
-        || range_record.entity_id != Some(range_entity.entity_id)
-        || range_record.entity_record.as_deref() != Some(range_entity.id.as_str())
+        || range_record.entity_id() != Some(range_entity.entity_id)
+        || range_record.entity_record() != Some(range_entity.id.as_str())
     {
         return None;
     }
@@ -781,9 +779,9 @@ fn constraint_binding(
         .get(source_record_id.as_str())
         .copied()?;
     if source_record.parent != range_entity.object_graph
-        || source_record.entity_id != Some(source_entity.entity_id())
-        || source_record.entity_record.as_deref() != Some(source_entity_id)
-        || source_entity.class_name() != source_record.class_name.as_deref()
+        || source_record.entity_id() != Some(source_entity.entity_id())
+        || source_record.entity_record() != Some(source_entity_id)
+        || source_entity.class_name() != source_record.class_name()
     {
         return None;
     }
@@ -814,10 +812,10 @@ fn constraint_binding(
     };
     let object_index = u32::try_from(source_record.ordinal).ok()?;
     let native_kind = source_record
-        .class_name
-        .clone()
+        .class_name()
         .filter(|class| !class.is_empty())
-        .unwrap_or_else(|| "record".to_string());
+        .unwrap_or("record")
+        .to_owned();
     Some(ConstraintBinding {
         sketch,
         source_object_record: source_record.id.clone(),
@@ -1009,8 +1007,10 @@ mod tests {
             id: id.to_string(),
             parent: "graph".to_string(),
             design_object: design_object.map(str::to_string),
-            entity_record: Some(entity_record.to_string()),
-            entity_id: Some(entity_id),
+            entity: Some(crate::native::CatiaObjectEntity {
+                record: entity_record.to_string(),
+                id: entity_id,
+            }),
             ordinal: 0,
             byte_offset: 0,
             byte_len: 0,
@@ -1018,12 +1018,12 @@ mod tests {
             head: Vec::new(),
             inline_body: None,
             owner: Some(CatiaObjectOwner::Entity(entity_id)),
-            class_ref: None,
-            class_name: Some(class_name.to_string()),
-            class_entry: Some("entry".to_string()),
-            storage_ref: None,
-            storage_record: None,
-            storage_design_object: None,
+            class: Some(crate::native::CatiaObjectClass {
+                class_ref: 0,
+                class_name: Some(class_name.to_string()),
+                class_entry: Some("entry".to_string()),
+            }),
+            storage: None,
             payload: ObjectPayload {
                 size: 1,
                 fields: vec![PayloadField::Terminator],
@@ -1111,7 +1111,11 @@ mod tests {
                         Some("ConstraintField".to_string()),
                     )),
                 });
-            source_record.storage_ref = Some(10);
+            source_record.storage = Some(crate::native::CatiaObjectStorage {
+                storage_ref: 10,
+                storage_record: None,
+                storage_design_object: None,
+            });
         } else {
             range_entity
                 .constraint_range

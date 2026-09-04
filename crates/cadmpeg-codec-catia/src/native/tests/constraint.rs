@@ -177,9 +177,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
     );
     assert_eq!(
         source_entity.class_name(),
-        unique_native.object_graphs[0].records[1]
-            .class_name
-            .as_deref()
+        unique_native.object_graphs[0].records[1].class_name()
     );
     assert_eq!(
         incoming[0].payload_offset,
@@ -276,9 +274,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
     );
     assert_eq!(
         storage_source_entity.class_name(),
-        storage_native.object_graphs[0].records[1]
-            .class_name
-            .as_deref()
+        storage_native.object_graphs[0].records[1].class_name()
     );
 
     let storage_referenced = CatiaCodec

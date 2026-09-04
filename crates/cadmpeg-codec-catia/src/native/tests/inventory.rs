@@ -244,11 +244,11 @@ fn decode_retains_outer_object_graph_order_and_references() {
     assert_eq!(graph.records.len(), 2);
     assert_eq!(graph.records[0].ordinal, 0);
     assert_eq!(graph.records[0].owner_entity_id(), Some(2));
-    assert_eq!(graph.records[0].class_ref, Some(3));
-    assert_eq!(graph.records[0].storage_ref, Some(4));
+    assert_eq!(graph.records[0].class_ref(), Some(3));
+    assert_eq!(graph.records[0].storage_ref(), Some(4));
     assert_eq!(graph.records[1].ordinal, 1);
     assert_eq!(graph.records[1].owner_entity_id(), Some(2));
-    assert_eq!(graph.records[1].class_ref, Some(4));
+    assert_eq!(graph.records[1].class_ref(), Some(4));
     assert_eq!(native.design_objects.len(), 1);
     let object = &native.design_objects[0];
     assert_eq!(object.parent, graph.id);

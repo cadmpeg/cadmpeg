@@ -705,14 +705,14 @@ impl CatiaNative {
                 .records
                 .iter()
                 .enumerate()
-                .filter_map(|(index, record)| Some((record.entity_id?, index)))
+                .filter_map(|(index, record)| Some((record.entity_id()?, index)))
                 .collect::<HashMap<_, _>>();
             let terminal_null_entity_id = terminal_null_entity_id(&record_indices);
             if record_indices.len()
                 != graph
                     .records
                     .iter()
-                    .filter(|record| record.entity_id.is_some())
+                    .filter(|record| record.entity_id().is_some())
                     .count()
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -735,26 +735,24 @@ impl CatiaNative {
                     .map(|owner| design_object_id(graph.byte_offset, owner));
                 let paired_entity = graph_entities.get(ordinal).copied();
                 let expected_storage = resolved_storage_link(
-                    record.storage_ref,
+                    record.storage_ref(),
                     &record_ids,
                     &record_design_objects,
                     &record_indices,
                 );
                 if usize::try_from(record.ordinal).ok() != Some(ordinal)
                     || record.owner != expected_owner
-                    || (record.class_ref, record.storage_ref)
+                    || (record.class_ref(), record.storage_ref())
                         != (
                             expected_head_roles.class_ref,
                             expected_head_roles.storage_ref,
                         )
                     || record.design_object != expected_design_object
-                    || record.entity_record != paired_entity.map(|entity| entity.id.clone())
-                    || record.entity_id != paired_entity.map(|entity| entity.entity_id)
+                    || record.entity_record() != paired_entity.map(|entity| entity.id.as_str())
+                    || record.entity_id() != paired_entity.map(|entity| entity.entity_id)
                     || paired_entity.is_some_and(|entity| entity.object_record != record.id)
-                    || (
-                        record.storage_record.as_ref(),
-                        record.storage_design_object.as_ref(),
-                    ) != (expected_storage.0.as_ref(), expected_storage.1.as_ref())
+                    || (record.storage_record(), record.storage_design_object())
+                        != (expected_storage.0.as_deref(), expected_storage.1.as_deref())
                     || record.repeated_reference_suffix
                         != object_graph::repeated_reference_suffix(&record.payload)
                     || record.inline_body.as_ref().is_some_and(|body| {
@@ -762,8 +760,8 @@ impl CatiaNative {
                             || body.first() != Some(&record.lead)
                             || !record.head.is_empty()
                             || record.owner.is_some()
-                            || record.class_ref.is_some()
-                            || record.storage_ref.is_some()
+                            || record.class_ref().is_some()
+                            || record.storage_ref().is_some()
                             || record.payload.size != 0
                             || !record.payload.fields.is_empty()
                             || record.subtype != PayloadSubtype::Empty

@@ -109,8 +109,8 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
             .object_graphs
             .iter()
             .flat_map(|graph| &graph.records)
-            .find(|record| record.entity_id == Some(4))
-            .and_then(|record| record.class_name.clone())
+            .find(|record| record.entity_id() == Some(4))
+            .and_then(|record| record.class_name().map(str::to_owned))
     );
 
     let decoded = CatiaCodec
