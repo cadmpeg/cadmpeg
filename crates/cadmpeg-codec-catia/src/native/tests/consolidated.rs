@@ -1180,7 +1180,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     };
     assert_eq!(node.vertex_refs, [139, 142]);
     assert_eq!(
-        node.vertices,
+        node.vertex_identity_ids(),
         [
             "catia:consolidated:vertex-identity#0",
             "catia:consolidated:vertex-identity#1"
@@ -1308,19 +1308,37 @@ fn compact_owner_does_not_type_unresolved_edge_references_as_vertices() {
     assert_eq!(native.consolidated_edge_nodes.len(), 2);
     assert!(native.consolidated_vertex_identities.is_empty());
     assert_ne!(
-        native.consolidated_edge_nodes[0].allocation_owner,
-        native.consolidated_edge_nodes[1].allocation_owner
+        native.consolidated_edge_nodes[0]
+            .allocation
+            .as_ref()
+            .map(|(owner, _)| owner),
+        native.consolidated_edge_nodes[1]
+            .allocation
+            .as_ref()
+            .map(|(owner, _)| owner)
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].allocation_ordinal,
+        native.consolidated_edge_nodes[0]
+            .allocation
+            .as_ref()
+            .map(|(_, ordinal)| *ordinal),
         Some(2)
     );
     assert_eq!(
-        native.consolidated_edge_nodes[1].allocation_ordinal,
+        native.consolidated_edge_nodes[1]
+            .allocation
+            .as_ref()
+            .map(|(_, ordinal)| *ordinal),
         Some(2)
     );
-    assert_eq!(native.consolidated_edge_nodes[0].vertices, ["", ""]);
-    assert_eq!(native.consolidated_edge_nodes[1].vertices, ["", ""]);
+    assert_eq!(
+        native.consolidated_edge_nodes[0].vertex_identity_ids(),
+        ["", ""]
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[1].vertex_identity_ids(),
+        ["", ""]
+    );
 }
 
 #[test]
@@ -1351,8 +1369,8 @@ fn compact_vertex_identity_uses_resolved_endpoint_records() {
         Some([first_vertex_pos, second_vertex_pos])
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].vertices,
-        native.consolidated_edge_nodes[1].vertices
+        native.consolidated_edge_nodes[0].vertex_identity_ids(),
+        native.consolidated_edge_nodes[1].vertex_identity_ids()
     );
     assert_eq!(
         native
@@ -1405,8 +1423,8 @@ fn width_coded_forward_endpoints_merge_by_class18_record_identity() {
         Some([first_endpoint, second_endpoint])
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].vertices,
-        native.consolidated_edge_nodes[1].vertices
+        native.consolidated_edge_nodes[0].vertex_identity_ids(),
+        native.consolidated_edge_nodes[1].vertex_identity_ids()
     );
     assert_eq!(
         native
@@ -1439,8 +1457,8 @@ fn native_namespace_merges_shared_consolidated_vertex_identity() {
         ]
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].vertices[1],
-        native.consolidated_edge_nodes[1].vertices[0]
+        native.consolidated_edge_nodes[0].vertex_identity_ids()[1],
+        native.consolidated_edge_nodes[1].vertex_identity_ids()[0]
     );
 }
 
@@ -1473,8 +1491,8 @@ fn native_vertex_identity_namespace_is_bounded_by_record_source() {
     assert_eq!(repeated[0].source_index, 0);
     assert_eq!(repeated[1].source_index, 1);
     assert_ne!(
-        native.consolidated_edge_nodes[0].vertices[1],
-        native.consolidated_edge_nodes[1].vertices[0]
+        native.consolidated_edge_nodes[0].vertex_identity_ids()[1],
+        native.consolidated_edge_nodes[1].vertex_identity_ids()[0]
     );
 }
 
@@ -1514,39 +1532,33 @@ fn explicit_vertex_encodings_share_one_complete_run_identity_namespace() {
     assert_eq!(native.consolidated_edge_runs.len(), 3);
     assert_eq!(native.consolidated_vertex_identities.len(), 4);
     assert_eq!(
-        native.consolidated_edge_nodes[0]
-            .reference_encodings
-            .unwrap()[1..3],
+        native.consolidated_edge_nodes[0].reference_encodings[1..3],
         [
             crate::native::CatiaAllocationReferenceEncoding::TaggedU8,
             crate::native::CatiaAllocationReferenceEncoding::TaggedU8,
         ]
     );
     assert_eq!(
-        native.consolidated_edge_nodes[1]
-            .reference_encodings
-            .unwrap()[1..3],
+        native.consolidated_edge_nodes[1].reference_encodings[1..3],
         [
             crate::native::CatiaAllocationReferenceEncoding::TaggedU16,
             crate::native::CatiaAllocationReferenceEncoding::TaggedU16,
         ]
     );
     assert_eq!(
-        native.consolidated_edge_nodes[0].vertices[1],
-        native.consolidated_edge_nodes[1].vertices[0]
+        native.consolidated_edge_nodes[0].vertex_identity_ids()[1],
+        native.consolidated_edge_nodes[1].vertex_identity_ids()[0]
     );
     assert_eq!(
-        native.consolidated_edge_nodes[2]
-            .reference_encodings
-            .unwrap()[1..3],
+        native.consolidated_edge_nodes[2].reference_encodings[1..3],
         [
             crate::native::CatiaAllocationReferenceEncoding::Selector2,
             crate::native::CatiaAllocationReferenceEncoding::Selector2,
         ]
     );
     assert_eq!(
-        native.consolidated_edge_nodes[1].vertices[1],
-        native.consolidated_edge_nodes[2].vertices[0]
+        native.consolidated_edge_nodes[1].vertex_identity_ids()[1],
+        native.consolidated_edge_nodes[2].vertex_identity_ids()[0]
     );
 }
 
@@ -1562,14 +1574,14 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     assert_eq!(node.width, 1);
     assert_eq!(node.flag, 0x03);
     assert_eq!(node.header_token, 5);
-    assert_eq!(node.terminal_value, Some(8));
+    assert_eq!(node.terminal_value, 8);
     assert_eq!(
         node.terminal_encoding,
-        Some(crate::native::CatiaAllocationReferenceEncoding::BackwardDistance)
+        crate::native::CatiaAllocationReferenceEncoding::BackwardDistance,
     );
     assert_eq!(node.vertex_refs, [889, 895]);
     assert!(node.uses.is_none());
-    assert_eq!(node.vertices, ["", ""]);
+    assert_eq!(node.vertex_identity_ids(), ["", ""]);
     assert!(native.consolidated_vertex_identities.is_empty());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
