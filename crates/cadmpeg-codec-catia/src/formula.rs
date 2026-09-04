@@ -48,7 +48,7 @@ pub(crate) fn transfer_parameters(
                 entity
                     .relation_program_instance
                     .as_ref()
-                    .and_then(|instance| instance.output_entity.as_ref())
+                    .and_then(|instance| instance.output_entity())
                     .and_then(|output| output.entity.as_deref()),
             );
         for output in outputs {
@@ -313,7 +313,7 @@ pub(crate) fn transfer_parameters(
             continue;
         };
         let Some(output_entity) = instance
-            .output_entity
+            .output_entity()
             .as_ref()
             .and_then(|output| output.entity.as_deref())
             .and_then(|output| entities.get(output))

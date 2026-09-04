@@ -21,10 +21,10 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         .relation_program_instance
         .as_ref()
         .expect("complete instance frame");
-    assert_eq!(
+    assert!(matches!(
         instance.framing,
-        crate::native::CatiaRelationProgramInstanceFraming::Lead12
-    );
+        crate::native::CatiaRelationProgramInstanceFraming::Lead12 { .. }
+    ));
     assert_eq!(instance.program_entity.entity_id, 1);
     assert_eq!(
         instance.program_entity.entity.as_deref(),
@@ -93,8 +93,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         .all(|dependency| dependency.candidates.is_empty()));
     assert!(instance.inputs.is_none());
     let context = instance
-        .lead12_context_entity
-        .as_ref()
+        .lead12_context_entity()
         .expect("lead-12 context entity");
     assert_eq!(context.entity_id, 1);
     assert_eq!(
@@ -102,7 +101,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
         Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(context.class_name.as_deref(), Some("body"));
-    assert!(instance.output_entity.is_none());
+    assert!(instance.output_entity().is_none());
 
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_relation_program_instance(2, 1, 3, 2),
@@ -117,8 +116,7 @@ fn relation_program_instance_requires_the_complete_identity_frame() {
     );
     assert!(instance.relation_expression.is_none());
     let context = instance
-        .lead12_context_entity
-        .as_ref()
+        .lead12_context_entity()
         .expect("lead-12 context entity");
     assert_eq!(context.entity_id, 3);
     assert!(context.entity.is_none());
@@ -154,17 +152,17 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         .as_ref()
         .expect("lead-12 relation-program instance");
     assert_eq!(
-        lead12_instance.output_entity,
-        lead12_instance.lead12_context_entity
+        lead12_instance.output_entity(),
+        lead12_instance.lead12_context_entity()
     );
     assert_eq!(
         lead12_instance
-            .output_entity
+            .output_entity()
             .as_ref()
             .and_then(|output| output.class_name.as_deref()),
         Some("paramout")
     );
-    assert!(lead12_instance.lead54_trailing_entity.is_none());
+    assert!(lead12_instance.lead54_trailing_entity().is_none());
     let lead12_decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_relation_program_instance_class(
@@ -205,7 +203,7 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         .relation_program_instance
         .as_ref()
         .expect("lead-12 body relation-program instance")
-        .output_entity
+        .output_entity()
         .is_none());
 
     let lead54 = crate::native::CatiaNative::decode(
@@ -216,17 +214,17 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         .as_ref()
         .expect("lead-54 relation-program instance");
     assert_eq!(
-        lead54_instance.output_entity,
-        lead54_instance.lead54_trailing_entity
+        lead54_instance.output_entity(),
+        lead54_instance.lead54_trailing_entity()
     );
     assert_eq!(
         lead54_instance
-            .output_entity
+            .output_entity()
             .as_ref()
             .and_then(|output| output.class_name.as_deref()),
         Some("paramout")
     );
-    assert!(lead54_instance.lead12_context_entity.is_none());
+    assert!(lead54_instance.lead12_context_entity().is_none());
 
     let lead54_body = crate::native::CatiaNative::decode(
         &standard_catpart_with_lead54_relation_program_instance_class(1, 1, 1, 2, "body"),
@@ -235,7 +233,7 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         .relation_program_instance
         .as_ref()
         .expect("lead-54 body relation-program instance")
-        .output_entity
+        .output_entity()
         .is_none());
 }
 
@@ -358,7 +356,9 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
     native.entity_records[0].formula_relation = None;
     native.entity_records[0].relation_program_instance =
         Some(crate::native::CatiaRelationProgramInstance {
-            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12,
+            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                context_entity: crate::native::CatiaEntityReference::default(),
+            },
             program_entity: crate::native::CatiaEntityReference::default(),
             repeated_entity: crate::native::CatiaEntityReference::default(),
             reference_incidences: Vec::new(),
@@ -374,9 +374,6 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
                     class_name: Some("param".to_string()),
                 },
             }]),
-            output_entity: None,
-            lead12_context_entity: None,
-            lead54_trailing_entity: None,
         });
 
     let mut ir = CadIr::empty();
@@ -463,7 +460,14 @@ fn complete_relation_program_output_transfers_a_typed_result() {
     native.entity_records[0].formula_relation = None;
     native.entity_records[0].relation_program_instance =
         Some(crate::native::CatiaRelationProgramInstance {
-            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12,
+            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                context_entity: crate::native::CatiaEntityReference {
+                    entity_id: output_entity.entity_id,
+                    is_null: false,
+                    entity: Some(output_entity.id.clone()),
+                    class_name: Some("paramout".to_string()),
+                },
+            },
             program_entity: crate::native::CatiaEntityReference::default(),
             repeated_entity: crate::native::CatiaEntityReference::default(),
             reference_incidences: Vec::new(),
@@ -479,14 +483,6 @@ fn complete_relation_program_output_transfers_a_typed_result() {
                     class_name: Some("param".to_string()),
                 },
             }]),
-            output_entity: Some(crate::native::CatiaEntityReference {
-                entity_id: output_entity.entity_id,
-                is_null: false,
-                entity: Some(output_entity.id.clone()),
-                class_name: Some("paramout".to_string()),
-            }),
-            lead12_context_entity: None,
-            lead54_trailing_entity: None,
         });
 
     let mut ir = CadIr::empty();
@@ -535,14 +531,13 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         .relation_program_instance
         .as_ref()
         .expect("complete lead-54 instance frame");
-    assert_eq!(
+    assert!(matches!(
         instance.framing,
-        crate::native::CatiaRelationProgramInstanceFraming::Lead54
-    );
-    assert!(instance.lead12_context_entity.is_none());
+        crate::native::CatiaRelationProgramInstanceFraming::Lead54 { .. }
+    ));
+    assert!(instance.lead12_context_entity().is_none());
     let trailing = instance
-        .lead54_trailing_entity
-        .as_ref()
+        .lead54_trailing_entity()
         .expect("lead-54 trailing entity");
     assert_eq!(trailing.entity_id, 1);
     assert_eq!(
@@ -550,7 +545,7 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         Some(native.entity_records[0].id.as_str())
     );
     assert_eq!(trailing.class_name.as_deref(), Some("body"));
-    assert!(instance.output_entity.is_none());
+    assert!(instance.output_entity().is_none());
     assert_eq!(
         instance.program_entity.entity.as_deref(),
         Some(native.entity_records[0].id.as_str())
@@ -716,8 +711,7 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     assert_eq!(instance.repeated_entity.entity_id, 3);
     assert!(instance.repeated_entity.entity.is_none());
     let trailing = instance
-        .lead54_trailing_entity
-        .as_ref()
+        .lead54_trailing_entity()
         .expect("lead-54 trailing entity");
     assert_eq!(trailing.entity_id, 3);
     assert!(trailing.entity.is_none());
@@ -1222,7 +1216,7 @@ fn native_load_rederives_relation_program_paramout_outputs_from_older_namespaces
             .relation_program_instance
             .clone()
             .expect("decoded paramout relation-program instance");
-        assert!(expected.output_entity.is_some());
+        assert!(expected.output_entity().is_some());
         let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
         native
             .store(&mut namespace)

@@ -1048,20 +1048,20 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter(|instance| instance.output_entity.is_some())
+        .filter(|instance| instance.output_entity().is_some())
         .count();
     let resolved_relation_program_output_count = native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.output_entity.as_ref())
+        .filter_map(|instance| instance.output_entity())
         .filter(|output| output.entity.is_some())
         .count();
     let null_relation_program_output_count = native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.output_entity.as_ref())
+        .filter_map(|instance| instance.output_entity())
         .filter(|output| output.is_null)
         .count();
     let unresolved_relation_program_output_count = relation_program_output_count
@@ -1104,22 +1104,26 @@ fn finish_decode(
         .filter_map(|record| record.relation_program_instance.as_ref())
         .fold((0, 0), |(lead12, lead54), instance| {
             match instance.framing {
-                crate::native::CatiaRelationProgramInstanceFraming::Lead12 => (lead12 + 1, lead54),
-                crate::native::CatiaRelationProgramInstanceFraming::Lead54 => (lead12, lead54 + 1),
+                crate::native::CatiaRelationProgramInstanceFraming::Lead12 { .. } => {
+                    (lead12 + 1, lead54)
+                }
+                crate::native::CatiaRelationProgramInstanceFraming::Lead54 { .. } => {
+                    (lead12, lead54 + 1)
+                }
             }
         });
     let resolved_lead54_relation_program_trailing_entity_count = native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead54_trailing_entity.as_ref())
+        .filter_map(|instance| instance.lead54_trailing_entity())
         .filter(|trailing| trailing.entity.is_some())
         .count();
     let null_lead54_relation_program_trailing_entity_count = native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead54_trailing_entity.as_ref())
+        .filter_map(|instance| instance.lead54_trailing_entity())
         .filter(|trailing| trailing.is_null)
         .count();
     let unresolved_lead54_relation_program_trailing_entity_count =
@@ -1130,14 +1134,14 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead12_context_entity.as_ref())
+        .filter_map(|instance| instance.lead12_context_entity())
         .filter(|context| context.entity.is_some())
         .count();
     let null_lead12_relation_program_context_entity_count = native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead12_context_entity.as_ref())
+        .filter_map(|instance| instance.lead12_context_entity())
         .filter(|context| context.is_null)
         .count();
     let unresolved_lead12_relation_program_context_entity_count =
@@ -1148,14 +1152,14 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead12_context_entity.as_ref())
+        .filter_map(|instance| instance.lead12_context_entity())
         .filter(|context| context.class_name.is_some())
         .count();
     let lead12_relation_program_paramout_context_entity_count = native
         .entity_records
         .iter()
         .filter_map(|record| record.relation_program_instance.as_ref())
-        .filter_map(|instance| instance.lead12_context_entity.as_ref())
+        .filter_map(|instance| instance.lead12_context_entity())
         .filter(|context| context.class_name.as_deref() == Some("paramout"))
         .count();
     let other_lead12_relation_program_context_class_count =

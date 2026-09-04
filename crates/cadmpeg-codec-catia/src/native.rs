@@ -2011,46 +2011,154 @@ where
 /// One exact compound relation-program instance frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaRelationProgramInstanceWire",
+    into = "CatiaRelationProgramInstanceWire"
+)]
 pub struct CatiaRelationProgramInstance {
-    /// Exact object-head and payload production.
-    #[serde(default)]
+    /// Exact object-head and payload production with the framing-specific incidence.
     pub framing: CatiaRelationProgramInstanceFraming,
     /// Entity incidence carried by the frame's program slot.
-    #[serde(default)]
     pub program_entity: CatiaEntityReference,
     /// Entity identity stored once as an atom and once as a reference.
-    #[serde(default)]
     pub repeated_entity: CatiaEntityReference,
     /// Every reference occurrence in exact payload order, including repeated identities.
+    pub reference_incidences: Vec<CatiaPayloadEntityReference>,
+    /// Selected entity when it carries a complete relation-expression program.
+    pub relation_expression: Option<String>,
+    /// Named parameter records selected by expression-local symbols, in occurrence order.
+    pub parameter_dependencies: Vec<CatiaRelationParameterDependency>,
+    /// Complete declared inputs in signature order; absent when any binding is incomplete.
+    pub inputs: Option<Vec<CatiaRelationProgramInput>>,
+}
+
+impl CatiaRelationProgramInstance {
+    /// Same-graph incidence carried by the `ref(h)` slot of a lead-`12` frame.
+    #[must_use]
+    pub fn lead12_context_entity(&self) -> Option<&CatiaEntityReference> {
+        match &self.framing {
+            CatiaRelationProgramInstanceFraming::Lead12 { context_entity } => Some(context_entity),
+            CatiaRelationProgramInstanceFraming::Lead54 { .. } => None,
+        }
+    }
+
+    /// Trailing same-graph entity incidence carried only by lead-`54`.
+    #[must_use]
+    pub fn lead54_trailing_entity(&self) -> Option<&CatiaEntityReference> {
+        match &self.framing {
+            CatiaRelationProgramInstanceFraming::Lead54 { trailing_entity } => {
+                Some(trailing_entity)
+            }
+            CatiaRelationProgramInstanceFraming::Lead12 { .. } => None,
+        }
+    }
+
+    /// Result entity selected by the framing-specific `paramout` slot.
+    #[must_use]
+    pub fn output_entity(&self) -> Option<&CatiaEntityReference> {
+        let slot = match &self.framing {
+            CatiaRelationProgramInstanceFraming::Lead12 { context_entity } => context_entity,
+            CatiaRelationProgramInstanceFraming::Lead54 { trailing_entity } => trailing_entity,
+        };
+        (slot.class_name.as_deref() == Some("paramout")).then_some(slot)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaRelationProgramInstanceWire {
+    #[serde(default)]
+    framing: CatiaRelationProgramInstanceFramingTag,
+    #[serde(default)]
+    program_entity: CatiaEntityReference,
+    #[serde(default)]
+    repeated_entity: CatiaEntityReference,
     #[serde(
         default,
         skip_serializing_if = "Vec::is_empty",
         deserialize_with = "deserialize_relation_reference_incidences"
     )]
-    pub reference_incidences: Vec<CatiaPayloadEntityReference>,
-    /// Selected entity when it carries a complete relation-expression program.
+    reference_incidences: Vec<CatiaPayloadEntityReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relation_expression: Option<String>,
-    /// Named parameter records selected by expression-local symbols, in occurrence order.
+    relation_expression: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub parameter_dependencies: Vec<CatiaRelationParameterDependency>,
-    /// Complete declared inputs in signature order; absent when any binding is incomplete.
+    parameter_dependencies: Vec<CatiaRelationParameterDependency>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inputs: Option<Vec<CatiaRelationProgramInput>>,
-    /// Result entity selected by the framing-specific `paramout` slot.
-    ///
-    /// Lead-`12` selects its `ref(h)` context slot and lead-`54` selects its
-    /// trailing `d` slot. The slot is a result only when its resolved class is
-    /// `paramout`; the ordinary context and trailing incidences remain
-    /// available in their dedicated fields.
+    inputs: Option<Vec<CatiaRelationProgramInput>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_entity: Option<CatiaEntityReference>,
-    /// Same-graph incidence carried by the `ref(h)` slot of a lead-`12` frame.
+    output_entity: Option<CatiaEntityReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead12_context_entity: Option<CatiaEntityReference>,
-    /// Trailing same-graph entity incidence carried only by lead-`54`.
+    lead12_context_entity: Option<CatiaEntityReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lead54_trailing_entity: Option<CatiaEntityReference>,
+    lead54_trailing_entity: Option<CatiaEntityReference>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+enum CatiaRelationProgramInstanceFramingTag {
+    #[default]
+    Lead12,
+    Lead54,
+}
+
+impl From<CatiaRelationProgramInstance> for CatiaRelationProgramInstanceWire {
+    fn from(value: CatiaRelationProgramInstance) -> Self {
+        let output_entity = value.output_entity().cloned();
+        let (framing, lead12_context_entity, lead54_trailing_entity) = match value.framing {
+            CatiaRelationProgramInstanceFraming::Lead12 { context_entity } => (
+                CatiaRelationProgramInstanceFramingTag::Lead12,
+                Some(context_entity),
+                None,
+            ),
+            CatiaRelationProgramInstanceFraming::Lead54 { trailing_entity } => (
+                CatiaRelationProgramInstanceFramingTag::Lead54,
+                None,
+                Some(trailing_entity),
+            ),
+        };
+        Self {
+            framing,
+            program_entity: value.program_entity,
+            repeated_entity: value.repeated_entity,
+            reference_incidences: value.reference_incidences,
+            relation_expression: value.relation_expression,
+            parameter_dependencies: value.parameter_dependencies,
+            inputs: value.inputs,
+            output_entity,
+            lead12_context_entity,
+            lead54_trailing_entity,
+        }
+    }
+}
+
+impl TryFrom<CatiaRelationProgramInstanceWire> for CatiaRelationProgramInstance {
+    type Error = String;
+
+    fn try_from(wire: CatiaRelationProgramInstanceWire) -> Result<Self, Self::Error> {
+        let framing = match wire.framing {
+            CatiaRelationProgramInstanceFramingTag::Lead12 => {
+                let context_entity = wire.lead12_context_entity.ok_or_else(|| {
+                    "lead-12 relation program requires lead12_context_entity".to_owned()
+                })?;
+                CatiaRelationProgramInstanceFraming::Lead12 { context_entity }
+            }
+            CatiaRelationProgramInstanceFramingTag::Lead54 => {
+                let trailing_entity = wire.lead54_trailing_entity.ok_or_else(|| {
+                    "lead-54 relation program requires lead54_trailing_entity".to_owned()
+                })?;
+                CatiaRelationProgramInstanceFraming::Lead54 { trailing_entity }
+            }
+        };
+        Ok(Self {
+            framing,
+            program_entity: wire.program_entity,
+            repeated_entity: wire.repeated_entity,
+            reference_incidences: wire.reference_incidences,
+            relation_expression: wire.relation_expression,
+            parameter_dependencies: wire.parameter_dependencies,
+            inputs: wire.inputs,
+        })
+    }
 }
 
 /// One exact entity-reference occurrence in an object payload.
@@ -2237,14 +2345,18 @@ pub struct CatiaSchemaConfigurationRowChainLink {
 }
 
 /// Exact framing production for a compound relation-program instance.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CatiaRelationProgramInstanceFraming {
     /// Compact `0x12` object head and its 20-token payload.
-    #[default]
-    Lead12,
+    Lead12 {
+        /// Same-graph incidence carried by the `ref(h)` slot.
+        context_entity: CatiaEntityReference,
+    },
     /// Separator-form `0x54` object head and its 18-token payload.
-    Lead54,
+    Lead54 {
+        /// Trailing same-graph entity incidence.
+        trailing_entity: CatiaEntityReference,
+    },
 }
 
 /// Field order used by a repeated-reference schema preamble.
@@ -3842,47 +3954,42 @@ fn relation_program_instance(
     {
         return None;
     }
-    let (
-        framing,
-        program_entity_id,
-        repeated_reference_entity_id,
-        lead12_context_entity,
-        lead54_trailing_entity,
-    ) = if object.lead == 0x12 && object.storage_ref.is_none() {
-        let (program_entity_id, repeated_reference_entity_id, context_entity_id) =
-            relation_program_instance_lead_12(entity_id, &object.payload.fields)?;
-        (
-            CatiaRelationProgramInstanceFraming::Lead12,
-            program_entity_id,
-            repeated_reference_entity_id,
-            Some(entity_reference(
-                &object.parent,
-                context_entity_id,
-                entity_references.entities,
-                entity_references.classes,
-                entity_references.terminal_nulls,
-            )),
-            None,
-        )
-    } else if object.lead == 0x54 && object.storage_ref.is_some() {
-        let (program_entity_id, repeated_reference_entity_id, trailing_entity_id) =
-            relation_program_instance_lead_54(entity_id, &object.payload.fields)?;
-        (
-            CatiaRelationProgramInstanceFraming::Lead54,
-            program_entity_id,
-            repeated_reference_entity_id,
-            None,
-            Some(entity_reference(
-                &object.parent,
-                trailing_entity_id,
-                entity_references.entities,
-                entity_references.classes,
-                entity_references.terminal_nulls,
-            )),
-        )
-    } else {
-        return None;
-    };
+    let (framing, program_entity_id, repeated_reference_entity_id) =
+        if object.lead == 0x12 && object.storage_ref.is_none() {
+            let (program_entity_id, repeated_reference_entity_id, context_entity_id) =
+                relation_program_instance_lead_12(entity_id, &object.payload.fields)?;
+            (
+                CatiaRelationProgramInstanceFraming::Lead12 {
+                    context_entity: entity_reference(
+                        &object.parent,
+                        context_entity_id,
+                        entity_references.entities,
+                        entity_references.classes,
+                        entity_references.terminal_nulls,
+                    ),
+                },
+                program_entity_id,
+                repeated_reference_entity_id,
+            )
+        } else if object.lead == 0x54 && object.storage_ref.is_some() {
+            let (program_entity_id, repeated_reference_entity_id, trailing_entity_id) =
+                relation_program_instance_lead_54(entity_id, &object.payload.fields)?;
+            (
+                CatiaRelationProgramInstanceFraming::Lead54 {
+                    trailing_entity: entity_reference(
+                        &object.parent,
+                        trailing_entity_id,
+                        entity_references.entities,
+                        entity_references.classes,
+                        entity_references.terminal_nulls,
+                    ),
+                },
+                program_entity_id,
+                repeated_reference_entity_id,
+            )
+        } else {
+            return None;
+        };
     let program_key = (object.parent.clone(), program_entity_id);
     let selected_expression = relation_expressions.get(&program_key);
     let parameter_dependencies = selected_expression
@@ -3914,12 +4021,6 @@ fn relation_program_instance(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let output_entity = match framing {
-        CatiaRelationProgramInstanceFraming::Lead12 => lead12_context_entity.as_ref(),
-        CatiaRelationProgramInstanceFraming::Lead54 => lead54_trailing_entity.as_ref(),
-    }
-    .filter(|reference| reference.class_name.as_deref() == Some("paramout"))
-    .cloned();
     Some(CatiaRelationProgramInstance {
         framing,
         program_entity: entity_reference(
@@ -3940,9 +4041,6 @@ fn relation_program_instance(
         relation_expression: selected_expression.map(|expression| expression.entity.clone()),
         parameter_dependencies,
         inputs,
-        output_entity,
-        lead12_context_entity,
-        lead54_trailing_entity,
     })
 }
 
