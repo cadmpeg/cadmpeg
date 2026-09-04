@@ -340,7 +340,7 @@ pub(crate) fn attach(
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
-    let namespace = ir.native.namespace_mut("nx");
+    let namespace = ir.native.namespace_mut("nx", std::num::NonZeroU32::MIN);
     namespace.ensure_version_at_least(
         std::num::NonZeroU32::new(189).expect("NX native version is nonzero"),
     );

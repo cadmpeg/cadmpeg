@@ -200,10 +200,13 @@ mod tests {
         ));
         let mut fields = Map::new();
         fields.insert("schema_version".to_owned(), Value::String("3".to_owned()));
-        ir.native.namespace_mut("fcstd").arenas.insert(
-            "document".to_owned(),
-            vec![NativeRecord::new("document", fields)],
-        );
+        ir.native
+            .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
+            .arenas
+            .insert(
+                "document".to_owned(),
+                vec![NativeRecord::new("document", fields)],
+            );
         std::fs::write(&path, ir.to_canonical_json().unwrap()).unwrap();
 
         let error = load_artifact(

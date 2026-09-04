@@ -102,7 +102,7 @@ fn native_validation_rejects_orphan_history_records() {
     let orphan = decoded
         .ir_mut()
         .native
-        .namespace_mut("sldprt")
+        .namespace_mut("sldprt", std::num::NonZeroU32::MIN)
         .arenas
         .get_mut("features")
         .unwrap()[0]
@@ -115,7 +115,7 @@ fn native_validation_rejects_orphan_history_records() {
     decoded
         .ir_mut()
         .native
-        .namespace_mut("sldprt")
+        .namespace_mut("sldprt", std::num::NonZeroU32::MIN)
         .arenas
         .get_mut("features")
         .unwrap()[0] = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);

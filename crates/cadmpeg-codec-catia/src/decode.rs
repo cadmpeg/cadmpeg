@@ -3478,7 +3478,7 @@ fn finish_decode(
             appearance_transfer.transferred_packets,
         )));
     }
-    native.store_owned(ir.native.namespace_mut("catia"))?;
+    native.store_owned(ir.native.namespace_mut("catia", std::num::NonZeroU32::MIN))?;
     ctx.admit_entities(
         ir.model.entity_count() as u64,
         &mut admitted_entities,

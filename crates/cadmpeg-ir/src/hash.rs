@@ -160,7 +160,7 @@ fn document_local_sha256_with_source_and_charge<E>(
 /// at once.
 fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<NativeRecord> {
     let mut unreadable = false;
-    let mut projected = NativeNamespace::default();
+    let mut projected = NativeNamespace::new(std::num::NonZeroU32::MIN);
     projected
         .set_arena_from(
             "unknowns",
@@ -342,7 +342,7 @@ mod tests {
 
     fn pinned_native() -> Native {
         let mut native = Native::default();
-        let namespace = native.namespace_mut("pin");
+        let namespace = native.namespace_mut("pin", std::num::NonZeroU32::MIN);
         namespace.set_version(std::num::NonZeroU32::new(3).unwrap());
         namespace
             .arenas
@@ -455,7 +455,7 @@ mod tests {
     fn pinned_document() -> CadIr {
         let mut ir = CadIr::empty();
         ir.native = pinned_native();
-        let namespace = ir.native.namespace_mut("pin");
+        let namespace = ir.native.namespace_mut("pin", std::num::NonZeroU32::MIN);
         namespace.arenas.insert(
             "unknowns".into(),
             vec![
@@ -661,7 +661,7 @@ mod tests {
                 ],
             )
             .unwrap();
-        let namespace = ir.native.namespace_mut("other");
+        let namespace = ir.native.namespace_mut("other", std::num::NonZeroU32::MIN);
         namespace.set_version(std::num::NonZeroU32::new(3).unwrap());
         namespace.arenas.insert(
             "records".into(),

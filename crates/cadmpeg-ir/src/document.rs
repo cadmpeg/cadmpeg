@@ -1327,7 +1327,7 @@ impl CadIr {
 
     /// Return the `format` namespace used for version-1 unknown records.
     fn unknowns_namespace_mut(&mut self, format: &str) -> &mut crate::native::NativeNamespace {
-        self.native.namespace_mut(format)
+        self.native.namespace_mut(format, std::num::NonZeroU32::MIN)
     }
 
     /// Construct an empty current-version document with default tolerances.

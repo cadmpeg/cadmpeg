@@ -240,7 +240,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
         .expect("decode schema 2");
     let (mut ir, _, _) = decoded.into_parts();
     ir.native
-        .namespace_mut("fcstd")
+        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
         .set_arena("document", &[] as &[DocumentFacts])
         .expect("drop the document record");
 

@@ -1320,7 +1320,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> ViewInstall {
             }
         }
     }
-    let namespace = ir.native.namespace_mut("rhino");
+    let namespace = ir.native.namespace_mut("rhino", std::num::NonZeroU32::MIN);
     namespace.ensure_version_at_least(
         std::num::NonZeroU32::new(2).expect("Rhino native version is nonzero"),
     );

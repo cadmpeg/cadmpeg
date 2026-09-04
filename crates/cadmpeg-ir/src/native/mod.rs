@@ -312,12 +312,6 @@ impl NativeNamespace {
     }
 }
 
-impl Default for NativeNamespace {
-    fn default() -> Self {
-        Self::new(NonZeroU32::MIN)
-    }
-}
-
 /// Native records grouped by source-format namespace id.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -330,9 +324,17 @@ impl Native {
         self.0.get(format)
     }
 
-    /// Return or create a source-format namespace.
-    pub fn namespace_mut(&mut self, format: impl Into<String>) -> &mut NativeNamespace {
-        self.0.entry(format.into()).or_default()
+    /// Return or create a source-format namespace at `version`.
+    ///
+    /// An existing namespace keeps the version it already carries.
+    pub fn namespace_mut(
+        &mut self,
+        format: impl Into<String>,
+        version: NonZeroU32,
+    ) -> &mut NativeNamespace {
+        self.0
+            .entry(format.into())
+            .or_insert_with(|| NativeNamespace::new(version))
     }
 
     /// Sort every arena into canonical identity order.

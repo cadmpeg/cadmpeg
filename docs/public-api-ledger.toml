@@ -4103,3 +4103,31 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::CadIr::census"
 reason = "census keys are CensusKey so a caller cannot insert a count under a string the registry does not name"
+
+[[change]]
+commit = "d3cf15248407a1eeec60d3383d9847876d966de1"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::native::catalogue::VersionContract::{minimum,maximum}"
+reason = "the inclusive range is constructed from NonZeroU32 bounds with minimum at most maximum so a reversed or zero bound cannot be stored"
+
+[[change]]
+commit = "d3cf15248407a1eeec60d3383d9847876d966de1"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::native::catalogue::Catalogue::new"
+reason = "unbounded codecs carry no version contract so a 0..=MAX range is not representable"
+
+[[change]]
+commit = "d3cf15248407a1eeec60d3383d9847876d966de1"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::native::NativeNamespace::default"
+reason = "an unset namespace cannot silently become version 1"
+
+[[change]]
+commit = "d3cf15248407a1eeec60d3383d9847876d966de1"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::Native::namespace_mut"
+reason = "creating a namespace requires an explicit nonzero version so get-or-create cannot invent version 1"

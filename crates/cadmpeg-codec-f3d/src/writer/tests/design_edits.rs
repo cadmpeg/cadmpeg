@@ -122,7 +122,13 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         native.act_entities[0].entity_id,
         native.design_material_assignments[0].entity_id
     );
-    native.store(edited.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(
+            edited
+                .native
+                .namespace_mut("f3d", std::num::NonZeroU32::MIN),
+        )
+        .unwrap();
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)

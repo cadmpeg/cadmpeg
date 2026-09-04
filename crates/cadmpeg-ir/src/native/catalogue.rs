@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declarative native-family catalogues and version contracts.
 
+use std::num::NonZeroU32;
+use std::ops::RangeInclusive;
+
 /// Ordered processing phase and annotation function for a native record family.
 pub enum Phase<M, A, N, E> {
     /// Families handled before the first codec semantic island.
@@ -48,12 +51,15 @@ pub struct FamilyRow<M, A, N, E> {
 /// A complete ordered native-family catalogue.
 pub struct Catalogue<'a, M, A, N, E> {
     rows: &'a [FamilyRow<M, A, N, E>],
-    version: VersionContract,
+    version: Option<VersionContract>,
 }
 
 impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
     /// Wraps a statically declared family table.
-    pub const fn new(rows: &'a [FamilyRow<M, A, N, E>], version: VersionContract) -> Self {
+    ///
+    /// `None` is an unbounded codec: every stored nonzero namespace version
+    /// is accepted.
+    pub const fn new(rows: &'a [FamilyRow<M, A, N, E>], version: Option<VersionContract>) -> Self {
         Self { rows, version }
     }
 
@@ -64,7 +70,10 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
 
     /// Checks a native namespace version against this catalogue's contract.
     pub const fn check_version(&self, version: u32) -> Result<(), NativeVersionError> {
-        self.version.check_version(version)
+        match self.version {
+            Some(contract) => contract.check_version(version),
+            None => Ok(()),
+        }
     }
 
     /// Emits every non-empty family through its row function.
@@ -95,23 +104,54 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
     }
 }
 
-/// Inclusive native namespace version range.
+/// Inclusive native namespace version range of nonzero bounds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VersionContract {
-    /// Oldest accepted version.
-    pub minimum: u32,
-    /// Newest accepted version.
-    pub maximum: u32,
+    minimum: NonZeroU32,
+    maximum: NonZeroU32,
 }
 
 impl VersionContract {
+    /// Inclusive range whose lower bound is at most its upper bound.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `minimum` is greater than `maximum`.
+    pub const fn new(minimum: NonZeroU32, maximum: NonZeroU32) -> Self {
+        assert!(
+            minimum.get() <= maximum.get(),
+            "native version contract minimum must not exceed maximum"
+        );
+        Self { minimum, maximum }
+    }
+
+    /// Oldest accepted version.
+    #[must_use]
+    pub const fn minimum(self) -> NonZeroU32 {
+        self.minimum
+    }
+
+    /// Newest accepted version.
+    #[must_use]
+    pub const fn maximum(self) -> NonZeroU32 {
+        self.maximum
+    }
+
+    /// Inclusive accepted range.
+    #[must_use]
+    pub const fn range(self) -> RangeInclusive<NonZeroU32> {
+        self.minimum..=self.maximum
+    }
+
     /// Accepts `version` when it lies inside the inclusive contract.
     pub const fn check_version(self, version: u32) -> Result<(), NativeVersionError> {
-        if version < self.minimum || version > self.maximum {
+        let minimum = self.minimum.get();
+        let maximum = self.maximum.get();
+        if version < minimum || version > maximum {
             Err(NativeVersionError::Unsupported {
                 version,
-                minimum: self.minimum,
-                maximum: self.maximum,
+                minimum,
+                maximum,
             })
         } else {
             Ok(())
@@ -142,10 +182,8 @@ mod tests {
 
     #[test]
     fn version_contract_accepts_only_its_inclusive_range() {
-        let contract = VersionContract {
-            minimum: 4,
-            maximum: 13,
-        };
+        let contract =
+            VersionContract::new(NonZeroU32::new(4).unwrap(), NonZeroU32::new(13).unwrap());
         assert!(contract.check_version(4).is_ok());
         assert!(contract.check_version(13).is_ok());
         assert!(matches!(

@@ -4968,7 +4968,7 @@ pub(crate) fn store(
     if let Some(ctx) = ctx {
         ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     }
-    let namespace = ir.native.namespace_mut("iges");
+    let namespace = ir.native.namespace_mut("iges", std::num::NonZeroU32::MIN);
     namespace.set_version(std::num::NonZeroU32::new(6).expect("IGES native version is nonzero"));
     namespace.set_arena_from("cards", cards)?;
     namespace.set_arena_from("entities", entities)?;

@@ -395,7 +395,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     stale_census[0].neutral = !stale_census[0].neutral;
     corrupted
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
         .set_arena("design_census", &stale_census)
         .expect("replace design census");
     let corrupted_findings = crate::validate_native(&corrupted);

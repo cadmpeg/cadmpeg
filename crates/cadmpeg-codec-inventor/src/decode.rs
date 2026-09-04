@@ -1236,7 +1236,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             .saturating_add(1) as u64,
         "retain Inventor native structural records",
     )?;
-    let namespace = ir.native.namespace_mut("inventor");
+    let namespace = ir
+        .native
+        .namespace_mut("inventor", std::num::NonZeroU32::MIN);
     namespace.set_version(
         std::num::NonZeroU32::new(INVENTOR_NATIVE_VERSION)
             .expect("Inventor native version is nonzero"),

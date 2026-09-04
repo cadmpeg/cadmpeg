@@ -66,7 +66,7 @@ fn projection_caches_end_after_history_consumers() {
         asm_histories: histories.to_vec(),
         ..Default::default()
     };
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native.store(&mut namespace).expect("store native history");
     native = crate::native::F3dNative::load(&namespace).expect("load native history");
     assert!(native.asm_histories[0].projection_finalized);

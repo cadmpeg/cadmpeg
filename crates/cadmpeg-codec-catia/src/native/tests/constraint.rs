@@ -388,7 +388,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .as_mut()
         .expect("complete dimension constraint range")
         .framing = CatiaConstraintRangeFraming::DimensionB8;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint range");
@@ -406,7 +406,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete dimension constraint range")
         .constraint
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint role");
@@ -422,7 +422,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete referenced constraint range")
         .incoming_references[0]
         .payload_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint-range incidence");
@@ -438,7 +438,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete referenced range interval")
         .incoming_references[0]
         .payload_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store malformed range-interval incidence");
@@ -454,7 +454,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete storage-referenced constraint range")
         .incoming_storage_references[0]
         .object_record = unique_native.object_graphs[0].records[0].id.clone();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint-range storage incidence");
@@ -463,7 +463,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     unique_native
         .store(&mut stored)
         .expect("store older constraint-range namespace");
@@ -493,7 +493,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         1
     );
 
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     unique_native
         .store(&mut stored)
         .expect("store older range-interval incidence namespace");
@@ -523,7 +523,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         1
     );
 
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     unique_native
         .store(&mut stored)
         .expect("store older constraint-range source namespace");
@@ -564,7 +564,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
             .source_entity
     );
 
-    let mut stored = cadmpeg_ir::NativeNamespace::default();
+    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     storage_native
         .store(&mut stored)
         .expect("store older constraint-range storage namespace");
@@ -755,7 +755,7 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         2
     );
 
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut previous_namespace)
         .expect("store range-interval namespace");
@@ -775,7 +775,7 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         Some(range.clone())
     );
 
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut previous_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut previous_namespace)
         .expect("store pre-nominal range namespace");
@@ -812,7 +812,7 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         .as_mut()
         .expect("finite Range nominal")
         .bits = 12.0_f64.to_bits();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_nominal
         .store(&mut namespace)
         .expect("store malformed Range nominal");
@@ -828,7 +828,7 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         .expect("complete range interval")
         .interval
         .prefix = RangeIntervalPrefix::Compact { value: 8, width: 1 };
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store malformed range interval");

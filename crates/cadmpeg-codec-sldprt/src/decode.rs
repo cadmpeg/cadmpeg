@@ -2719,7 +2719,7 @@ fn build_geometry_ir(
         admitted_entities,
         "admit SLDPRT entities",
     )?;
-    native.store(ir.native.namespace_mut("sldprt"))?;
+    native.store(ir.native.namespace_mut("sldprt", std::num::NonZeroU32::MIN))?;
     // Stamp baseline before fabricating the read-side configuration snapshot.
     stamp_configuration_baseline(&mut ir);
     snapshot_active_configuration(&mut ir);
@@ -3636,7 +3636,7 @@ fn build_metadata_ir(
         admitted_entities,
         "admit SLDPRT entities",
     )?;
-    native.store(ir.native.namespace_mut("sldprt"))?;
+    native.store(ir.native.namespace_mut("sldprt", std::num::NonZeroU32::MIN))?;
     stamp_sketch_baseline(&mut ir, &native);
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);

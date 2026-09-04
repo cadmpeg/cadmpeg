@@ -1545,13 +1545,16 @@ fn procedural_construction_reduction_is_reported() {
 #[test]
 fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube();
-    ir.native.namespace_mut("f3d").arenas.insert(
-        "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            "asm-history-0",
-            Default::default(),
-        )],
-    );
+    ir.native
+        .namespace_mut("f3d", std::num::NonZeroU32::MIN)
+        .arenas
+        .insert(
+            "asm_histories".into(),
+            vec![cadmpeg_ir::NativeRecord::new(
+                "asm-history-0",
+                Default::default(),
+            )],
+        );
     ir.finalize();
 
     let mut buf = Vec::new();

@@ -41,7 +41,7 @@ fn entity_suffix_values_accept_8193_trailers() {
         }
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut namespace)
         .expect("store 81 93-terminated suffix value");
@@ -226,7 +226,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         panic!("scalar suffix evaluation");
     };
     *opcode_offset = 0;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     stale_evaluation_offset
         .store(&mut namespace)
         .expect("store stale evaluation offset");
@@ -252,7 +252,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         panic!("scalar suffix evaluation");
     };
     *opcode_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_evaluation_offset
         .store(&mut namespace)
         .expect("store malformed evaluation offset");
@@ -317,7 +317,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("complete wide-prefix scalar")
         .prefix_atom_widths[0] = 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_wide_scalar
         .store(&mut namespace)
         .expect("store malformed wide-prefix scalar");
@@ -474,7 +474,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("complete E9 control suffix")
         .payload = CatiaEntitySuffixPayload::ControlE8;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_control_e9
         .store(&mut namespace)
         .expect("store malformed E9 control suffix");
@@ -557,7 +557,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("complete atom suffix")
         .payload = CatiaEntitySuffixPayload::Atom { value: 4 };
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_atom
         .store(&mut namespace)
         .expect("store malformed atom suffix");
@@ -643,7 +643,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("resolved suffix selector")
         .offset = 0;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     stale_schema_selected_atom
         .store(&mut namespace)
         .expect("store stale suffix schema offsets");
@@ -667,7 +667,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("resolved suffix selector")
         .offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_schema_selected_atom
         .store(&mut namespace)
         .expect("store malformed schema-selected atom suffix");
@@ -736,7 +736,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         panic!("schema-selected scalar evaluation");
     };
     *opcode_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_selected_evaluation_offset
         .store(&mut namespace)
         .expect("store malformed selected evaluation offset");
@@ -821,7 +821,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("resolved schema-selected control suffix")
         .value = crate::native::CatiaEntitySuffixSchemaValue::Separator37;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_selected_control
         .store(&mut namespace)
         .expect("store malformed schema-selected control suffix");
@@ -893,7 +893,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         panic!("nested suffix schema selector");
     };
     *offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_nested_offset
         .store(&mut namespace)
         .expect("store malformed nested suffix offset");
@@ -1011,7 +1011,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         evaluation: CatiaEntityEvaluation::Scalar { bits },
         encoding: CatiaEntityEvaluationEncoding::ZeroPaddedScalar,
     };
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_encoding
         .store(&mut namespace)
         .expect("store malformed suffix encoding");
@@ -1026,7 +1026,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         .as_mut()
         .expect("complete suffix value")
         .trailer = CatiaEntitySuffixTrailer::Token814A;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
         .expect("store malformed suffix value");

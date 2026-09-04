@@ -311,7 +311,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         ])
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut namespace)
         .expect("store CATIA zero-entity support run");
@@ -326,7 +326,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("face")
         .loop_terminals[0] = 8;
-    let mut invalid_face_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_face_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_face
         .store(&mut invalid_face_namespace)
         .expect("store invalid CATIA zero-entity face");
@@ -338,7 +338,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("face")
         .loop_terminals[0] = 0;
-    let mut zero_face_terminal_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut zero_face_terminal_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     zero_face_terminal
         .store(&mut zero_face_terminal_namespace)
         .expect("store zero CATIA zero-entity face loop terminal");
@@ -351,7 +352,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .loop_class = 0x50;
-    let mut invalid_loop_roster_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_loop_roster_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_loop_roster
         .store(&mut invalid_loop_roster_namespace)
         .expect("store invalid CATIA zero-entity loop roster");
@@ -363,7 +365,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("face")
         .allocations[0] = 0;
-    let mut invalid_face_allocation_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_face_allocation_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_face_allocation
         .store(&mut invalid_face_allocation_namespace)
         .expect("store invalid CATIA zero-entity face allocation");
@@ -375,7 +378,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("face")
         .terminal_control = 0x04;
-    let mut invalid_face_control_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_face_control_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_face_control
         .store(&mut invalid_face_control_namespace)
         .expect("store invalid CATIA zero-entity face control");
@@ -388,7 +392,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .gap = 0;
-    let mut invalid_loop_gap_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_loop_gap_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_loop_gap
         .store(&mut invalid_loop_gap_namespace)
         .expect("store invalid CATIA zero-entity loop gap");
@@ -396,7 +401,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut invalid_support_slot = native.clone();
     invalid_support_slot.zero_entity_support_runs[0].supports[0].face_local_slot = 0;
-    let mut invalid_support_slot_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_support_slot_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_support_slot
         .store(&mut invalid_support_slot_namespace)
         .expect("store invalid CATIA zero-entity support slot");
@@ -410,7 +416,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .loops[0]
         .forward_senses
         .clear();
-    let mut invalid_loop_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_loop_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_loop
         .store(&mut invalid_loop_namespace)
         .expect("store invalid CATIA zero-entity loop");
@@ -423,7 +429,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .typed_records[0] = "catia:zero-entity:record#2".to_string();
-    let mut invalid_typed_record_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_typed_record_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_typed_record
         .store(&mut invalid_typed_record_namespace)
         .expect("store invalid CATIA zero-entity typed loop reference");
@@ -436,7 +443,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .support_record_ordinals[0] = 1;
-    let mut invalid_binding_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_binding_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_binding
         .store(&mut invalid_binding_namespace)
         .expect("store invalid CATIA zero-entity loop support binding");
@@ -451,7 +458,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         panic!("NURBS support model curve")
     };
     model_curve.set_periodic(true);
-    let mut invalid_model_curve_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_model_curve_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_model_curve
         .store(&mut invalid_model_curve_namespace)
         .expect("store invalid CATIA zero-entity support model curve");
@@ -460,7 +468,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     let mut invalid_model_parameters = native.clone();
     invalid_model_parameters.zero_entity_support_runs[0].supports[0].model_parameters =
         Some([1.0, 1.0]);
-    let mut invalid_model_parameters_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_model_parameters_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_model_parameters
         .store(&mut invalid_model_parameters_namespace)
         .expect("store invalid CATIA zero-entity support model parameters");
@@ -468,7 +477,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut missing_model_midpoint = native.clone();
     missing_model_midpoint.zero_entity_support_runs[0].supports[0].model_midpoint = None;
-    let mut missing_model_midpoint_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut missing_model_midpoint_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     missing_model_midpoint
         .store(&mut missing_model_midpoint_namespace)
         .expect("store CATIA zero-entity support without its model midpoint");
@@ -485,7 +495,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             apex_factor: 1.0,
             axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         });
-    let mut invalid_model_construction_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_model_construction_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_model_construction
         .store(&mut invalid_model_construction_namespace)
         .expect("store invalid CATIA zero-entity support model construction");
@@ -502,7 +513,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         ]);
-    let mut invalid_oriented_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_oriented_endpoint_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_oriented_endpoints
         .store(&mut invalid_oriented_endpoint_namespace)
         .expect("store invalid CATIA zero-entity oriented endpoints");
@@ -527,7 +539,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             ],
             model_midpoint: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         });
-    let mut invalid_endpoint_pair_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_endpoint_pair_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_endpoint_pair
         .store(&mut invalid_endpoint_pair_namespace)
         .expect("store invalid CATIA zero-entity endpoint pair");
@@ -547,7 +560,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
             representative_point: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             maximum_deviation: 0.0,
         });
-    let mut invalid_endpoint_locus_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_endpoint_locus_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_endpoint_locus
         .store(&mut invalid_endpoint_locus_namespace)
         .expect("store invalid CATIA zero-entity endpoint-locus candidate");
@@ -559,7 +573,8 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .as_mut()
         .expect("model endpoints")[0]
         .x = f64::NAN;
-    let mut invalid_model_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_model_endpoint_namespace =
+        cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid_model_endpoint
         .store(&mut invalid_model_endpoint_namespace)
         .expect("store invalid CATIA zero-entity model endpoint");
@@ -567,7 +582,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut invalid = native;
     invalid.zero_entity_support_runs[0].supports[0].uv_endpoints = None;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity support run");
@@ -598,7 +613,7 @@ fn native_namespace_retains_closed_zero_entity_endpoint_tapes() {
         ]]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut namespace)
         .expect("store CATIA zero-entity endpoint tape");
@@ -625,7 +640,7 @@ fn native_namespace_retains_zero_entity_ownership_root() {
         root.shell_byte_offset
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut namespace)
         .expect("store CATIA zero-entity ownership root");
@@ -637,7 +652,7 @@ fn native_namespace_retains_zero_entity_ownership_root() {
 
     let mut invalid = native;
     invalid.zero_entity_ownership_roots[0].face_slots.clear();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity ownership root");
@@ -669,7 +684,7 @@ fn native_namespace_retains_multiple_zero_entity_ownership_candidates() {
         7
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut namespace)
         .expect("store multiple CATIA zero-entity ownership candidates");
@@ -710,7 +725,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
         Some("catia:zero-entity:record#6")
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut namespace)
         .expect("store CATIA zero-entity topology registries");
@@ -722,7 +737,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
 
     let mut invalid = native.clone();
     invalid.zero_entity_edge_strides[0].allocations[0] = 0;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity edge allocation");
@@ -730,7 +745,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
 
     let mut invalid = native.clone();
     invalid.zero_entity_vertex_incidences[0].vertex_record = None;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity vertex owner");
@@ -738,7 +753,7 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
 
     let mut invalid = native;
     invalid.zero_entity_oriented_use_pairs[0].uses[1].allocations[0] += 1;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA zero-entity topology registries");

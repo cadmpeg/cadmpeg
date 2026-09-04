@@ -394,7 +394,11 @@ pub fn write_semantic(
         supported
             .wire_topologies
             .clone_from(&target_native.wire_topologies);
-        supported.store(supported_target.native.namespace_mut("f3d"))?;
+        supported.store(
+            supported_target
+                .native
+                .namespace_mut("f3d", std::num::NonZeroU32::MIN),
+        )?;
     }
     if decode::document_local_sha256(&supported_target) != decode::document_local_sha256(target) {
         return Err(CodecError::NotImplemented(

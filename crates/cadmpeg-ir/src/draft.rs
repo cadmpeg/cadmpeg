@@ -744,10 +744,13 @@ mod tests {
     fn commit_session_rejects_native_identity() {
         let identity = "test:native:record#1";
         let mut ir = CadIr::empty();
-        ir.native.namespace_mut("test").arenas.insert(
-            "records".into(),
-            vec![NativeRecord::new(identity, serde_json::Map::new())],
-        );
+        ir.native
+            .namespace_mut("test", std::num::NonZeroU32::MIN)
+            .arenas
+            .insert(
+                "records".into(),
+                vec![NativeRecord::new(identity, serde_json::Map::new())],
+            );
         let mut session = CommitSession::new(&ir);
 
         assert_eq!(
