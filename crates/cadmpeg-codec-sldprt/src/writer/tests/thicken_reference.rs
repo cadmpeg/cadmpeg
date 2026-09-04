@@ -408,7 +408,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
 #[test]
 fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
     use cadmpeg_ir::features::{
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination,
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination,
     };
     use cadmpeg_ir::math::Vector3;
 
@@ -427,7 +427,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 },
             },
@@ -464,7 +464,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 },
             },
@@ -475,7 +475,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
 
 #[test]
 fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, Termination};
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FeatureDefinition, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -492,7 +492,7 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Unresolved,
+                    termination: LinearTermination::Unresolved,
                     ..
                 },
             },

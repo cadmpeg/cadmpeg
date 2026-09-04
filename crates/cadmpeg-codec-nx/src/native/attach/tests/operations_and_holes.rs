@@ -492,7 +492,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
                 cadmpeg_ir::features::HoleForm::Chamfer,
             ))),
             diameter: None,
-            extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             ..
         }
     ));
@@ -513,7 +513,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
                 cadmpeg_ir::features::HoleForm::Counterbore,
             )),
             exit_kind: None,
-            extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             ..
         }
     ));
@@ -545,7 +545,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
                 cadmpeg_ir::features::HoleForm::Countersink,
             )),
             exit_kind: None,
-            extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
+            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             ..
         }
     ));
@@ -943,7 +943,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved,
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     draft: None,
                     offset: None,
                 },

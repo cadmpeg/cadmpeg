@@ -2066,7 +2066,7 @@ pub(crate) fn bind_feature_face_selections(
                     }
                 };
                 for side in sides {
-                    if let cadmpeg_ir::features::Termination::ToFace { face, .. } =
+                    if let cadmpeg_ir::features::LinearTermination::ToFace { face, .. } =
                         &mut side.termination
                     {
                         bind_face_selection(

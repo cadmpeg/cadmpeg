@@ -30,9 +30,10 @@ use crate::decode::sweep::{
 use crate::decode::uniqueness::unique_feature_profile_definition;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
-    FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
-    Length, PathRef, ProfileRef, RevolutionConstruction, SurfaceBoundary, Termination, ThickenSide,
+    Angle, AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection,
+    ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
+    FeatureId as IrFeatureId, Length, LinearTermination, PathRef, ProfileRef,
+    RevolutionConstruction, SurfaceBoundary, ThickenSide,
 };
 use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
@@ -332,7 +333,7 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
         Some((
             ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(8.0)
                     },
                     draft: None,
@@ -569,7 +570,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(6.0),
                     },
                     ..
@@ -956,7 +957,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         Some(IrFeatureDefinition::Revolve {
             construction: RevolutionConstruction {
                 extent: Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle: Angle(value) },
+                    termination: AngularTermination::Angle { angle: Angle(value) },
                 }),
                 ..
             },
@@ -1052,7 +1053,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
             ExtrudeExtent::OneSided {
                 side:
                     ExtrudeSide {
-                        termination: Termination::Blind { length },
+                        termination: LinearTermination::Blind { length },
                         ..
                     },
             },
@@ -1494,7 +1495,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
             direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(1.0),
                     },
                     draft: None,
@@ -1574,7 +1575,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
         direction: [0.0, 0.0, -1.0],
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(6.5),
                 },
                 draft: None,
@@ -1603,7 +1604,7 @@ fn circular_sweep_projects_profile_direction_and_extent() {
             )),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(6.5),
                     },
                     draft: None,
@@ -1808,7 +1809,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ]),
         Some((
             [1.0, 0.0, 0.0],
-            Termination::Blind {
+            LinearTermination::Blind {
                 length: Length(3.0),
             },
         ))
@@ -1820,7 +1821,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ]),
         Some((
             [-0.0, -1.0, -0.0],
-            Termination::Blind {
+            LinearTermination::Blind {
                 length: Length(1.0),
             },
         ))
@@ -1841,7 +1842,7 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         Some((
             902,
             [0.0, 0.0, 1.0],
-            Termination::Blind {
+            LinearTermination::Blind {
                 length: Length(6.5),
             },
         ))

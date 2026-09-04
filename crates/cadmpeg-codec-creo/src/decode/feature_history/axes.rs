@@ -7,7 +7,7 @@ use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent, Termination,
+    Angle, AngularTermination, FeatureId as IrFeatureId, ProfileRef, RevolutionAxis, RevolveExtent,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
@@ -60,7 +60,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     extent: Option<&RevolveExtent>,
 ) -> Option<RevolutionAxis> {
     let Some(RevolveExtent::OneSided {
-        termination: Termination::Angle {
+        termination: AngularTermination::Angle {
             angle: Angle(angle),
         },
     }) = extent

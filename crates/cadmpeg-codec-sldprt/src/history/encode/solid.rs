@@ -14,7 +14,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, ExtrusionDirectionSource,
     ExtrusionFaceMaker, FaceSelection, HoleBottom, HoleKind, HolePlacement, HoleProfileFilter,
-    HoleSpecification, InnerWireTaper, Length, ProfileRef, Termination,
+    HoleSpecification, InnerWireTaper, Length, LinearTermination, ProfileRef,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -62,7 +62,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let extent_is_unresolved = matches!(
                 extent,
                 ExtrudeExtent::OneSided { side }
-                    if matches!(side.termination, Termination::Unresolved)
+                if matches!(side.termination, LinearTermination::Unresolved)
             );
             if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane)
                 || second_side_draft.is_some()
@@ -164,8 +164,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             };
             match extent {
                 ExtrudeExtent::OneSided { side } => match &side.termination {
-                    Termination::Unresolved => {}
-                    Termination::Blind { length } => {
+                    LinearTermination::Unresolved => {}
+                    LinearTermination::Blind { length } => {
                         if properties.contains_key("EndCondition") || existing.is_none() {
                             properties.insert("EndCondition".into(), "Blind".into());
                         }
@@ -180,19 +180,21 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             ),
                         );
                     }
-                    Termination::ThroughAll => {
+                    LinearTermination::ThroughAll => {
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
-                    Termination::ThroughNext => {
+                    LinearTermination::ThroughNext => {
                         properties.insert("EndCondition".into(), "ThroughNext".into());
                     }
-                    Termination::ToFirst | Termination::ToLast | Termination::ToShape { .. } => {
+                    LinearTermination::ToFirst
+                    | LinearTermination::ToLast
+                    | LinearTermination::ToShape { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses an unsupported extrusion termination",
                             feature.id
                         )));
                     }
-                    Termination::ToFace { face, offset }
+                    LinearTermination::ToFace { face, offset }
                         if face_selection_value(face).is_some() =>
                     {
                         let selection = face_selection_value(face).expect("guarded above");
@@ -202,14 +204,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             parameters.insert("Depth".into(), format_length_mm(offset.0));
                         }
                     }
-                    Termination::ToVertex { vertex }
+                    LinearTermination::ToVertex { vertex }
                         if vertex_selection_value(vertex).is_some() =>
                     {
                         let selection = vertex_selection_value(vertex).expect("guarded above");
                         properties.insert("EndCondition".into(), "ToVertex".into());
                         properties.insert("Vertex".into(), selection);
                     }
-                    Termination::OffsetFromFace { face, offset }
+                    LinearTermination::OffsetFromFace { face, offset }
                         if face_selection_value(face).is_some() =>
                     {
                         let selection = face_selection_value(face).expect("guarded above");
@@ -217,18 +219,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         properties.insert("Face".into(), selection);
                         parameters.insert("Depth".into(), format_length_mm(offset.0));
                     }
-                    Termination::ToFace { .. }
-                    | Termination::ToVertex { .. }
-                    | Termination::OffsetFromFace { .. } => {
+                    LinearTermination::ToFace { .. }
+                    | LinearTermination::ToVertex { .. }
+                    | LinearTermination::OffsetFromFace { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses an unsupported extrusion termination selection",
                             feature.id
                         )));
                     }
-                    Termination::Angle { .. } => return Err(unsupported_extent()),
                 },
                 ExtrudeExtent::Symmetric { side } => match &side.termination {
-                    Termination::Blind { length } => {
+                    LinearTermination::Blind { length } => {
                         properties.insert("EndCondition".into(), "Symmetric".into());
                         parameters.insert("Depth".into(), format_length_mm(length.0));
                     }
@@ -237,14 +238,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ExtrudeExtent::TwoSided { first, second } => {
                     match (&first.termination, &second.termination) {
                         (
-                            Termination::Blind { length: first },
-                            Termination::Blind { length: second },
+                            LinearTermination::Blind { length: first },
+                            LinearTermination::Blind { length: second },
                         ) => {
                             properties.insert("EndCondition".into(), "TwoSided".into());
                             parameters.insert("Depth".into(), format_length_mm(first.0));
                             parameters.insert("Depth2".into(), format_length_mm(second.0));
                         }
-                        (Termination::ThroughAll, Termination::ThroughAll) => {
+                        (LinearTermination::ThroughAll, LinearTermination::ThroughAll) => {
                             properties.insert("EndCondition".into(), "ThroughAllBoth".into());
                         }
                         _ => return Err(unsupported_extent()),
@@ -324,7 +325,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         kind: &HoleKind,
         exit_kind: &Option<HoleKind>,
         diameter: &Option<Length>,
-        extent: &Option<Termination>,
+        extent: &Option<LinearTermination>,
         bottom: &Option<HoleBottom>,
         taper_angle: &Option<Angle>,
         specification: &Option<Box<HoleSpecification>>,
@@ -536,13 +537,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             match extent {
-                Some(Termination::Blind {
+                Some(LinearTermination::Blind {
                     length: Length(depth),
                 }) => {
                     parameters.insert("Depth".into(), format_length_mm(*depth));
                     properties.insert("EndCondition".into(), "Blind".into());
                 }
-                Some(Termination::ThroughAll) => {
+                Some(LinearTermination::ThroughAll) => {
                     parameters.remove("Depth");
                     properties.insert("EndCondition".into(), "ThroughAll".into());
                 }

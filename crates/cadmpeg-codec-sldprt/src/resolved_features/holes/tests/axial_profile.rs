@@ -4,7 +4,7 @@ use super::{lane_with_position_reference, model_hole, native_history, profile_li
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, Termination,
+    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, LinearTermination,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
@@ -52,7 +52,7 @@ fn axial_profile_resolves_counterbore_roles() {
     assert_eq!(construction.diameter, Length(5.5));
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(15.0)
         }
     );
@@ -104,7 +104,7 @@ fn axial_profile_resolves_counterbore_roles() {
         profiled_hole_construction(&profile, &sketch, &entities[..3]).expect("flat-bottom profile");
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(15.0)
         }
     );
@@ -161,7 +161,7 @@ fn axial_profile_resolves_counterdrill_roles() {
     let construction =
         profiled_hole_construction(&profile, &sketch, &entities).expect("exact profile");
     assert_eq!(construction.diameter, Length(2.9));
-    assert_eq!(construction.extent, Termination::ThroughAll);
+    assert_eq!(construction.extent, LinearTermination::ThroughAll);
     assert_eq!(
         construction.kind,
         HoleKind::Counterdrill {
@@ -213,7 +213,7 @@ fn single_diameter_axial_profile_resolves_flat_and_drilled_holes() {
     assert_eq!(flat.diameter, Length(14.5));
     assert_eq!(
         flat.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(15.0)
         }
     );
@@ -313,7 +313,7 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
     assert_eq!(construction.diameter, Length(12.2));
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(42.0)
         }
     );
@@ -363,7 +363,7 @@ fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
     assert_eq!(construction.diameter, Length(12.2));
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(42.0)
         }
     );
@@ -415,7 +415,7 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
     assert_eq!(construction.diameter, Length(4.134));
     assert_eq!(
         construction.extent,
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(5.0)
         }
     );
@@ -501,7 +501,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         let construction =
             profiled_hole_construction(&profile, &sketch, &exact_entities).expect("exact profile");
         assert_eq!(construction.diameter, Length(6.4));
-        assert_eq!(construction.extent, Termination::ThroughAll);
+        assert_eq!(construction.extent, LinearTermination::ThroughAll);
         assert_eq!(
             construction.kind,
             HoleKind::Countersink {
@@ -701,7 +701,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         features[0].definition,
         FeatureDefinition::Hole {
             diameter: Some(Length(9.0)),
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             kind: HoleKind::Counterbore {
                 diameter: Length(15.0),
                 depth: Length(8.6),
@@ -820,7 +820,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         features[0].definition,
         FeatureDefinition::Hole {
             diameter: Some(Length(4.2)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(6.8)
             }),
             ..
@@ -830,7 +830,7 @@ fn ordered_profile_fallback_excludes_claimed_profiles() {
         features[1].definition,
         FeatureDefinition::Hole {
             diameter: Some(Length(6.0)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(14.0)
             }),
             ..

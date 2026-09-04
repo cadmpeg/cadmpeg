@@ -1154,7 +1154,7 @@ fn semantic_writer_applies_neutral_feature_edits() {
         };
         *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
-                termination: cadmpeg_ir::features::Termination::Blind {
+                termination: cadmpeg_ir::features::LinearTermination::Blind {
                     length: cadmpeg_ir::features::Length(18.0),
                 },
                 draft: None,
@@ -1183,7 +1183,7 @@ fn semantic_writer_applies_neutral_feature_edits() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
                         length: cadmpeg_ir::features::Length(18.0),
                     },
                     ..
@@ -1212,7 +1212,7 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
         };
         *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
-                termination: cadmpeg_ir::features::Termination::Blind {
+                termination: cadmpeg_ir::features::LinearTermination::Blind {
                     length: cadmpeg_ir::features::Length(18.0),
                 },
                 draft: None,
@@ -1261,7 +1261,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
         };
         *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
-                termination: cadmpeg_ir::features::Termination::Blind {
+                termination: cadmpeg_ir::features::LinearTermination::Blind {
                     length: cadmpeg_ir::features::Length(50.0),
                 },
                 draft: None,
@@ -1293,7 +1293,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
                         length: cadmpeg_ir::features::Length(50.0),
                     },
                     ..
@@ -1643,7 +1643,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
         };
         *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
             side: cadmpeg_ir::features::ExtrudeSide {
-                termination: cadmpeg_ir::features::Termination::Blind {
+                termination: cadmpeg_ir::features::LinearTermination::Blind {
                     length: cadmpeg_ir::features::Length(50.0),
                 },
                 draft: None,
@@ -1667,7 +1667,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Blind {
+                    termination: cadmpeg_ir::features::LinearTermination::Blind {
                         length: cadmpeg_ir::features::Length(50.0),
                     },
                     ..

@@ -11,7 +11,7 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, Termination};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -30,7 +30,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
             ref placements,
             kind: HoleKind::Simple,
             diameter: Some(Length(6.35)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(12.0),
             }),
             ..
@@ -46,7 +46,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
             panic!("typed hole feature");
         };
         *diameter = Some(Length(8.0));
-        *extent = Some(Termination::Blind {
+        *extent = Some(LinearTermination::Blind {
             length: Length(16.0),
         });
     }
@@ -68,7 +68,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
 #[test]
 fn semantic_writer_retains_partial_native_hole_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, Termination};
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, Length, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -90,7 +90,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         FeatureDefinition::Hole {
             kind: HoleKind::Simple,
             diameter: None,
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             ..
         }
     ));
@@ -102,7 +102,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
                 depth: None,
             },
             diameter: Some(Length(6.0)),
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             ..
         }
     ));
@@ -170,7 +170,9 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
 #[test]
 fn semantic_writer_round_trips_hole_placement() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, HolePlacement, Termination};
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, HolePlacement, LinearTermination,
+    };
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -208,7 +210,7 @@ fn semantic_writer_round_trips_hole_placement() {
             position: Point3::new(4.0, 5.0, 6.0),
             direction: Vector3::new(0.0, 1.0, 0.0),
         }];
-        *extent = Some(Termination::ThroughAll);
+        *extent = Some(LinearTermination::ThroughAll);
     }
 
     let mut encoded = Vec::new();
@@ -232,7 +234,7 @@ fn semantic_writer_round_trips_hole_placement() {
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Native(face)),
             placements,
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             ..
         } if face == "face:13"
             && placements == &[HolePlacement::Directed {
@@ -244,7 +246,7 @@ fn semantic_writer_round_trips_hole_placement() {
 
 #[test]
 fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
-    use cadmpeg_ir::features::{Angle, FeatureDefinition, HoleKind, Length, Termination};
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, HoleKind, Length, LinearTermination};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -266,7 +268,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
                 diameter: Length(10.0),
                 depth: Length(4.0),
             },
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(20.0),
             }),
             ..
@@ -279,7 +281,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
                 diameter: Length(9.0),
                 angle: Angle(value),
             },
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             ..
         } if (*value - 82f64.to_radians()).abs() < 1.0e-12
     ));
@@ -294,7 +296,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             diameter: Length(12.0),
             depth: Length(5.0),
         };
-        *extent = Some(Termination::ThroughAll);
+        *extent = Some(LinearTermination::ThroughAll);
         let FeatureDefinition::Hole { kind, extent, .. } = &mut ir.model.features[1].definition
         else {
             panic!("countersink hole");
@@ -303,7 +305,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             diameter: Length(11.0),
             angle: Angle(90f64.to_radians()),
         };
-        *extent = Some(Termination::Blind {
+        *extent = Some(LinearTermination::Blind {
             length: Length(25.0),
         });
     }

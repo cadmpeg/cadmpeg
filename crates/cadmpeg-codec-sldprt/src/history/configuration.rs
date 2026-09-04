@@ -4,7 +4,7 @@
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::{
     Angle, ConfigurationBodies, DatumPlaneReference, DesignConfiguration, FaceSelection,
-    FeatureDefinition, FeatureId, Length, ParameterValue, Termination,
+    FeatureDefinition, FeatureId, Length, LinearTermination, ParameterValue,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -828,7 +828,7 @@ pub(crate) fn inherit_configuration_hole_semantics(
     }
     if extent
         .as_ref()
-        .is_none_or(|extent| matches!(extent, Termination::Unresolved))
+        .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
     {
         extent.clone_from(base_extent);
     }

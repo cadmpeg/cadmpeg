@@ -1365,8 +1365,10 @@ pub(crate) fn project_compact_surface_selections(
                         side:
                             cadmpeg_ir::features::ExtrudeSide {
                                 termination:
-                                    cadmpeg_ir::features::Termination::ToFace { face, .. }
-                                    | cadmpeg_ir::features::Termination::OffsetFromFace { face, .. },
+                                    cadmpeg_ir::features::LinearTermination::ToFace { face, .. }
+                                    | cadmpeg_ir::features::LinearTermination::OffsetFromFace {
+                                        face, ..
+                                    },
                                 ..
                             },
                     },
@@ -1377,7 +1379,8 @@ pub(crate) fn project_compact_surface_selections(
                     cadmpeg_ir::features::ExtrudeExtent::OneSided {
                         side:
                             cadmpeg_ir::features::ExtrudeSide {
-                                termination: cadmpeg_ir::features::Termination::ToVertex { vertex },
+                                termination:
+                                    cadmpeg_ir::features::LinearTermination::ToVertex { vertex },
                                 ..
                             },
                     },

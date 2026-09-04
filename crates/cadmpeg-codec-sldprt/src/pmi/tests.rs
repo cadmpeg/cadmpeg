@@ -850,7 +850,8 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ProfileRef, Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
+        ProfileRef,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -879,7 +880,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
             profile: ProfileRef::Unresolved(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(25.0)
                     },
                     ..

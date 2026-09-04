@@ -372,7 +372,7 @@ fn decode_evaluates_parameter_dependency_expressions() {
 #[test]
 fn decode_projects_evaluated_equations_into_feature_semantics() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -391,7 +391,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(8.0)
                     },
                     ..
@@ -436,7 +436,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(8.0)
                     },
                     ..
@@ -450,8 +450,8 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
 #[test]
 fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureTreeNodeRole, Length, ParameterValue,
-        Termination,
+        ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureTreeNodeRole, Length,
+        LinearTermination, ParameterValue,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -513,7 +513,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         };
         *extent = ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(12.0),
                 },
                 draft: None,
@@ -576,7 +576,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(12.0)
                     },
                     ..
@@ -859,8 +859,8 @@ fn decode_preserves_configuration_local_parameter_values() {
 #[test]
 fn decode_separates_document_expression_from_evaluated_feature_scalar() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, ParameterValue,
-        Termination,
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, Length, LinearTermination,
+        ParameterValue,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -890,7 +890,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(25.0)
                     },
                     ..

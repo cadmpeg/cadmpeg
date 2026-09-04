@@ -278,7 +278,7 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
 fn neutral_features_resolve_sketch_profile_and_path_operands() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
-        PathRef, ProfileRef, Termination,
+        LinearTermination, PathRef, ProfileRef,
     };
     use crate::sketches::SketchId;
 
@@ -290,7 +290,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(10.0),
                     },
                     draft: None,
@@ -363,7 +363,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition,
-        FeatureId, FeatureSourceContent, ParameterId, ProfileRef, Termination,
+        FeatureId, FeatureSourceContent, LinearTermination, ParameterId, ProfileRef,
     };
     use crate::ids::{BodyId, FaceId};
     use std::collections::BTreeMap;
@@ -391,7 +391,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToFace {
+                    termination: LinearTermination::ToFace {
                         face: FaceSelection::Faces(vec![FaceId(
                             "synthetic:test:face#termination-missing".into(),
                         )]),
@@ -684,31 +684,29 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
 #[test]
 fn feature_extent_magnitudes_are_validated() {
     use crate::features::{
-        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        Length, ProfileRef, Termination,
+        Angle, AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature,
+        FeatureDefinition, FeatureId, Length, LinearTermination, ProfileRef,
+        RevolutionConstruction, RevolveExtent,
     };
 
-    let side = |termination: Termination| ExtrudeSide {
+    let side = |termination: LinearTermination| ExtrudeSide {
         termination,
         draft: None,
         offset: None,
     };
     for extent in [
         ExtrudeExtent::OneSided {
-            side: side(Termination::Blind {
+            side: side(LinearTermination::Blind {
                 length: Length(0.0),
             }),
         },
         ExtrudeExtent::TwoSided {
-            first: side(Termination::Blind {
+            first: side(LinearTermination::Blind {
                 length: Length(1.0),
             }),
-            second: side(Termination::Blind {
+            second: side(LinearTermination::Blind {
                 length: Length(f64::NAN),
             }),
-        },
-        ExtrudeExtent::OneSided {
-            side: side(Termination::Angle { angle: Angle(-1.0) }),
         },
     ] {
         let mut ir = unit_cube();
@@ -744,6 +742,41 @@ fn feature_extent_magnitudes_are_validated() {
             .iter()
             .any(|finding| finding.message == "feature extent magnitude is invalid"));
     }
+
+    let mut ir = unit_cube();
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#invalid-angle".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Revolve {
+            construction: RevolutionConstruction {
+                profile: None,
+                axis: None,
+                extent: Some(RevolveExtent::OneSided {
+                    termination: AngularTermination::Angle { angle: Angle(-1.0) },
+                }),
+                axis_reference: None,
+                solid: None,
+                face_maker_class: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            },
+            op: BooleanOp::NewBody,
+        },
+        native_ref: None,
+    });
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "feature extent magnitude is invalid"));
 }
 
 #[test]
@@ -816,7 +849,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     use crate::features::{
         BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
         DesignConfiguration, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        GeneratedVertexRef, ProfileRef, Termination, VertexSelection,
+        GeneratedVertexRef, LinearTermination, ProfileRef, VertexSelection,
     };
     use std::collections::BTreeMap;
 
@@ -858,7 +891,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::ToVertex {
+                    termination: LinearTermination::ToVertex {
                         vertex: VertexSelection::Generated {
                             vertex: GeneratedVertexRef {
                                 feature: source.clone(),
@@ -940,7 +973,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     let ExtrudeExtent::OneSided { side } = extent else {
         unreachable!()
     };
-    let Termination::ToVertex {
+    let LinearTermination::ToVertex {
         vertex: VertexSelection::Generated { native, .. },
     } = &mut side.termination
     else {
@@ -963,7 +996,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     let ExtrudeExtent::OneSided { side } = extent else {
         unreachable!()
     };
-    side.termination = Termination::Blind {
+    side.termination = LinearTermination::Blind {
         length: crate::features::Length(f64::NAN),
     };
     assert!(validate_neutral(&ir, Vec::new())
@@ -1162,7 +1195,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         BooleanOp, ConfigurationBodies, ConfigurationFeatureState, ConfigurationId,
         DatumPlaneReference, DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
         ExtrudeStart, Feature, FeatureDefinition, FeatureId, GeneratedCurveRef, Length,
-        PatternKind, PatternSeed, ProfileRef, Termination,
+        LinearTermination, PatternKind, PatternSeed, ProfileRef,
     };
     use std::collections::{BTreeMap, HashSet};
 
@@ -1253,7 +1286,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 start: ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: Termination::Blind {
+                        termination: LinearTermination::Blind {
                             length: Length(5.0),
                         },
                         draft: None,
@@ -1432,7 +1465,7 @@ fn resolved_datum_geometry_must_be_finite_and_coherent() {
 fn explicit_extrusion_direction_must_be_nonzero() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
-        ProfileRef, Termination,
+        LinearTermination, ProfileRef,
     };
 
     let mut ir = unit_cube();
@@ -1454,7 +1487,7 @@ fn explicit_extrusion_direction_must_be_nonzero() {
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(1.0),
                     },
                     draft: None,
@@ -1481,11 +1514,11 @@ fn explicit_extrusion_direction_must_be_nonzero() {
 fn extrusion_side_drafts_are_validated() {
     use crate::features::{
         Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        Length, ProfileRef, Termination,
+        Length, LinearTermination, ProfileRef,
     };
 
     let side = |length: f64, draft: Option<Angle>| ExtrudeSide {
-        termination: Termination::Blind {
+        termination: LinearTermination::Blind {
             length: Length(length),
         },
         draft,

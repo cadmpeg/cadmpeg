@@ -551,7 +551,7 @@ fn sketch_constraint_native_ref_must_resolve() {
 fn sketch_feature_ownership_and_order_are_validated() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
-        ProfileRef, Termination,
+        LinearTermination, ProfileRef,
     };
     use crate::sketches::{Sketch, SketchId};
 
@@ -588,7 +588,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(1.0),
                     },
                     draft: None,
@@ -637,7 +637,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
 fn sketch_profile_subselections_are_bounds_checked() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
-        ProfileRef, SketchProfileRegion, Termination,
+        LinearTermination, ProfileRef, SketchProfileRegion,
     };
     use crate::sketches::{Sketch, SketchEntityId, SketchId};
 
@@ -674,7 +674,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(1.0),
                     },
                     draft: None,

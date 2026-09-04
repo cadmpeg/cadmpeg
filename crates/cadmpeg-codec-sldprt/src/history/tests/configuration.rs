@@ -772,7 +772,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
 #[test]
 fn configuration_hole_inherits_shared_construction_and_placement() {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureId, HoleKind, HolePlacement, Length, Termination,
+        FeatureDefinition, FeatureId, HoleKind, HolePlacement, Length, LinearTermination,
     };
 
     let id = FeatureId("test:model:feature#hole".into());
@@ -804,7 +804,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
             },
             exit_kind: None,
             diameter: Some(Length(5.0)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(12.0),
             }),
             bottom: None,
@@ -839,7 +839,9 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
 
 #[test]
 fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
-    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length, Termination};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, HoleKind, HolePlacement, Length, LinearTermination,
+    };
 
     let placement = HolePlacement::Axis {
         origin: cadmpeg_ir::math::Point3::new(9.0, 8.0, 7.0),
@@ -861,7 +863,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         },
         exit_kind: None,
         diameter: Some(Length(5.0)),
-        extent: Some(Termination::Blind {
+        extent: Some(LinearTermination::Blind {
             length: Length(12.0),
         }),
         bottom: None,
@@ -909,7 +911,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
     assert_eq!(diameter, Some(Length(5.0)));
     assert_eq!(
         extent,
-        Some(Termination::Blind {
+        Some(LinearTermination::Blind {
             length: Length(12.0),
         })
     );
@@ -919,7 +921,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
 fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     use cadmpeg_ir::features::{
         ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition, FeatureId,
-        HoleKind, Length, Termination,
+        HoleKind, Length, LinearTermination,
     };
 
     let id = FeatureId("test:model:feature#hole-lane".into());
@@ -939,7 +941,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         },
         exit_kind: None,
         diameter: Some(Length(5.0)),
-        extent: Some(Termination::Blind {
+        extent: Some(LinearTermination::Blind {
             length: Length(12.0),
         }),
         bottom: None,

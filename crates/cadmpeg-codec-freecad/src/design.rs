@@ -7,17 +7,18 @@ use cadmpeg_core::decode::{alloc_filled, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
-    BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp, ChamferSpec,
-    DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource,
-    ExtrusionFaceMaker, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, FuzzyTolerance,
-    GeometryImportFormat, HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle,
-    HoleBottom, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper,
-    Length, ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed,
-    PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
+    AngularTermination, BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset,
+    BinderOffsetJoin, BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp,
+    ChamferSpec, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide,
+    ExtrusionDirectionSource, ExtrusionFaceMaker, Feature, FeatureDefinition, FeatureId,
+    FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat, HelicalSweepConstruction,
+    HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleKind, HoleProfileFilter,
+    HoleSpecification, HoleThreadDepth, InnerWireTaper, Length, LinearTermination, ParameterId,
+    ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternSeed, PatternStage,
+    PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
     RevolutionConstruction, RevolutionFuseOrder, RevolveExtent, RuledCurveOrientation, ScaleCenter,
     ScaleFactors, ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode, SweepOrientation,
-    SweepTransformation, SweepTransition, Termination, ThreadHand,
+    SweepTransformation, SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -3272,11 +3273,11 @@ fn revolution_definition(
         let angle = angle()?;
         if bool_selector(properties, "Symmetric", false)? {
             RevolveExtent::Symmetric {
-                termination: Termination::Angle { angle },
+                termination: AngularTermination::Angle { angle },
             }
         } else {
             RevolveExtent::OneSided {
-                termination: Termination::Angle { angle },
+                termination: AngularTermination::Angle { angle },
             }
         }
     } else {
@@ -3285,22 +3286,22 @@ fn revolution_definition(
                 let angle = angle()?;
                 if bool_selector(properties, "Midplane", false)? {
                     RevolveExtent::Symmetric {
-                        termination: Termination::Angle { angle },
+                        termination: AngularTermination::Angle { angle },
                     }
                 } else {
                     RevolveExtent::OneSided {
-                        termination: Termination::Angle { angle },
+                        termination: AngularTermination::Angle { angle },
                     }
                 }
             }
             1 => RevolveExtent::OneSided {
-                termination: Termination::ThroughAll,
+                termination: AngularTermination::ThroughAll,
             },
             2 => RevolveExtent::OneSided {
-                termination: Termination::ToFirst,
+                termination: AngularTermination::ToFirst,
             },
             3 => RevolveExtent::OneSided {
-                termination: Termination::ToFace {
+                termination: AngularTermination::ToFace {
                     face: cadmpeg_ir::features::FaceSelection::Native(
                         singular_operand(properties, "UpToFace")?.id.clone(),
                     ),
@@ -3308,8 +3309,8 @@ fn revolution_definition(
                 },
             },
             4 => RevolveExtent::TwoSided {
-                first: Termination::Angle { angle: angle()? },
-                second: Termination::Angle {
+                first: AngularTermination::Angle { angle: angle()? },
+                second: AngularTermination::Angle {
                     angle: cadmpeg_ir::features::Angle(
                         scalar_named(properties, "Angle2")
                             .filter(|angle| angle.is_finite() && *angle > 0.0)?
@@ -3670,7 +3671,7 @@ fn extrusion_definition(
             (
                 ExtrudeExtent::Symmetric {
                     side: ExtrudeSide {
-                        termination: Termination::Blind {
+                        termination: LinearTermination::Blind {
                             length: Length((forward != 0.0).then_some(forward.abs())?),
                         },
                         draft: to_draft(forward_draft),
@@ -3701,7 +3702,7 @@ fn extrusion_definition(
                 (Some((length, draft)), None) => (
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
-                            termination: Termination::Blind {
+                            termination: LinearTermination::Blind {
                                 length: Length(length),
                             },
                             draft: to_draft(draft),
@@ -3713,7 +3714,7 @@ fn extrusion_definition(
                 (None, Some((length, draft))) => (
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
-                            termination: Termination::Blind {
+                            termination: LinearTermination::Blind {
                                 length: Length(-length),
                             },
                             draft: to_draft(draft),
@@ -3725,14 +3726,14 @@ fn extrusion_definition(
                 (Some((first, first_draft)), Some((second, second_draft))) => (
                     ExtrudeExtent::TwoSided {
                         first: ExtrudeSide {
-                            termination: Termination::Blind {
+                            termination: LinearTermination::Blind {
                                 length: Length(first),
                             },
                             draft: to_draft(first_draft),
                             offset: None,
                         },
                         second: ExtrudeSide {
-                            termination: Termination::Blind {
+                            termination: LinearTermination::Blind {
                                 length: Length(-second),
                             },
                             draft: to_draft(second_draft),
@@ -3797,21 +3798,21 @@ fn extrusion_definition(
             enumeration_selector(properties, &type_name, 0)?
         };
         match termination_type {
-            0 => Some(Termination::Blind {
+            0 => Some(LinearTermination::Blind {
                 length: Length(
                     scalar_named(properties, &length_name).filter(|value| *value != 0.0)?,
                 ),
             }),
-            1 if kind.contains("Pocket") => Some(Termination::ThroughAll),
-            1 => Some(Termination::ToLast),
-            2 => Some(Termination::ToFirst),
-            3 => Some(Termination::ToFace {
+            1 if kind.contains("Pocket") => Some(LinearTermination::ThroughAll),
+            1 => Some(LinearTermination::ToLast),
+            2 => Some(LinearTermination::ToFirst),
+            3 => Some(LinearTermination::ToFace {
                 face: cadmpeg_ir::features::FaceSelection::Native(
                     singular_operand(properties, &face_name)?.id.clone(),
                 ),
                 offset: None,
             }),
-            5 => Some(Termination::ToShape {
+            5 => Some(LinearTermination::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(
                     singular_operand(properties, &shape_name)?.id.clone(),
                 ),
@@ -4981,10 +4982,10 @@ fn hole_definition(
         _ => return None,
     };
     let extent = match enumeration_selector(properties, "DepthType", 0)? {
-        0 => Termination::Blind {
+        0 => LinearTermination::Blind {
             length: Length(positive("Depth")?),
         },
-        1 => Termination::ThroughAll,
+        1 => LinearTermination::ThroughAll,
         _ => return None,
     };
     let bottom = match enumeration_selector(properties, "DrillPoint", 1)? {

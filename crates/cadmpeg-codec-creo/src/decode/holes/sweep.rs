@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition, Length,
-    ProfileRef, Termination,
+    LinearTermination, ProfileRef,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -224,7 +224,7 @@ pub fn compact_simple_hole_geometry(
         entry_surface_id: None,
         cylinder_ids: vec![cylinder_id],
         direction: frame.axis,
-        extent: Termination::Blind {
+        extent: LinearTermination::Blind {
             length: Length(length),
         },
         geometry: SurfaceGeometry::Cylinder {
@@ -596,7 +596,7 @@ pub fn extrusion_extent_and_direction(
 
 pub fn blind_extrude_side(length: f64) -> ExtrudeSide {
     ExtrudeSide {
-        termination: Termination::Blind {
+        termination: LinearTermination::Blind {
             length: Length(length),
         },
         draft: None,

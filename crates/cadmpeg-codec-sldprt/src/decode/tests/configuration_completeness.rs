@@ -6,8 +6,8 @@ use super::super::*;
 use cadmpeg_ir::features::{
     Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState, ConfigurationId,
     DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement, Length, ParameterId, ParameterValue,
-    PatternKind, PatternSeed, Termination,
+    FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement, Length, LinearTermination,
+    ParameterId, ParameterValue, PatternKind, PatternSeed,
 };
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -263,7 +263,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
             kind: HoleKind::Simple,
             exit_kind: None,
             diameter: Some(Length(4.0)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(12.0),
             }),
             bottom: Some(HoleBottom::Flat),
@@ -339,7 +339,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         FeatureDefinition::Hole {
             placements,
             diameter: Some(Length(4.0)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(12.0)
             }),
             bottom: Some(HoleBottom::Flat),
@@ -363,7 +363,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     };
     placements.clear();
     *diameter = Some(Length(8.0));
-    *extent = Some(Termination::ThroughAll);
+    *extent = Some(LinearTermination::ThroughAll);
     *bottom = None;
     sync_active_configuration_resolutions(&mut ir);
     assert!(matches!(
@@ -371,7 +371,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
         FeatureDefinition::Hole {
             placements,
             diameter: Some(Length(8.0)),
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             bottom: None,
             ..
         } if placements.len() == 1

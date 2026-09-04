@@ -24,7 +24,9 @@ use crate::decode::uniqueness::{
     unique_feature_section_transform, unique_owned_feature_definition,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Angle, ExtrudeExtent, ExtrudeSide, Length, ParameterId, Termination};
+use cadmpeg_ir::features::{
+    Angle, ExtrudeExtent, ExtrudeSide, Length, LinearTermination, ParameterId,
+};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -122,7 +124,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(2.0),
                     },
                     draft: None,

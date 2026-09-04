@@ -1804,7 +1804,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     };
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, HoleKind,
-        Length, Termination,
+        Length, LinearTermination,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1869,7 +1869,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             kind: HoleKind::Simple,
             exit_kind: None,
             diameter: Some(Length(5.0)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(10.0),
             }),
             bottom: None,

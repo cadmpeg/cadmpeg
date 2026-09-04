@@ -43,8 +43,8 @@ use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, Length, ProfileRef,
-    RadiusForm, RadiusSpec, RevolutionConstruction, Termination,
+    FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, Length,
+    LinearTermination, ProfileRef, RadiusForm, RadiusSpec, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{FaceId, SurfaceId};
@@ -338,7 +338,7 @@ pub(in super::super) fn schema_feature_definition(
                         .as_ref()
                         .is_none_or(|diameter| approximately_equal(diameter.0, *drilled_diameter))
                     && extent.as_ref().is_none_or(|extent| {
-                        matches!(extent, Termination::Blind { length }
+                        matches!(extent, LinearTermination::Blind { length }
                         if approximately_equal(length.0, *drilled_depth))
                     })
             });
@@ -384,7 +384,7 @@ pub(in super::super) fn schema_feature_definition(
                 .or_else(|| drilled_dimensions.map(|(diameter, _, _)| Length(diameter)))
                 .or_else(|| stepped_dimensions.map(|(diameter, _, _)| Length(diameter))),
             extent: extent.or_else(|| {
-                drilled_dimensions.map(|(_, _, depth)| Termination::Blind {
+                drilled_dimensions.map(|(_, _, depth)| LinearTermination::Blind {
                     length: Length(depth),
                 })
             }),

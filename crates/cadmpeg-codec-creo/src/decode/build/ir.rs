@@ -8,7 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::VertexSelection;
 use cadmpeg_ir::features::{
-    BodySelection, EdgeSelection, FaceSelection, PathRef, PatternKind, SurfaceBoundary, Termination,
+    AngularTermination, BodySelection, EdgeSelection, FaceSelection, LinearTermination, PathRef,
+    PatternKind, SurfaceBoundary,
 };
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
@@ -126,24 +127,51 @@ pub(in super::super) fn pattern_kind_has_unresolved_operands(pattern: &PatternKi
     }
 }
 
-pub(in super::super) fn termination_has_unresolved_operands(termination: &Termination) -> bool {
+pub(in super::super) fn linear_termination_has_unresolved_operands(
+    termination: &LinearTermination,
+) -> bool {
     match termination {
-        Termination::Unresolved => true,
-        Termination::ToFace { face, .. }
-        | Termination::OffsetFromFace { face, .. }
-        | Termination::ToShape { target: face } => face_selection_has_unresolved_operands(face),
-        Termination::ToVertex { vertex } => {
+        LinearTermination::Unresolved => true,
+        LinearTermination::ToFace { face, .. }
+        | LinearTermination::OffsetFromFace { face, .. }
+        | LinearTermination::ToShape { target: face } => {
+            face_selection_has_unresolved_operands(face)
+        }
+        LinearTermination::ToVertex { vertex } => {
             matches!(
                 vertex,
                 VertexSelection::Unresolved | VertexSelection::Native(_)
             )
         }
-        Termination::Blind { .. }
-        | Termination::ThroughAll
-        | Termination::ThroughNext
-        | Termination::ToFirst
-        | Termination::ToLast
-        | Termination::Angle { .. } => false,
+        LinearTermination::Blind { .. }
+        | LinearTermination::ThroughAll
+        | LinearTermination::ThroughNext
+        | LinearTermination::ToFirst
+        | LinearTermination::ToLast => false,
+    }
+}
+
+pub(in super::super) fn angular_termination_has_unresolved_operands(
+    termination: &AngularTermination,
+) -> bool {
+    match termination {
+        AngularTermination::Unresolved => true,
+        AngularTermination::ToFace { face, .. }
+        | AngularTermination::OffsetFromFace { face, .. }
+        | AngularTermination::ToShape { target: face } => {
+            face_selection_has_unresolved_operands(face)
+        }
+        AngularTermination::ToVertex { vertex } => {
+            matches!(
+                vertex,
+                VertexSelection::Unresolved | VertexSelection::Native(_)
+            )
+        }
+        AngularTermination::ThroughAll
+        | AngularTermination::ThroughNext
+        | AngularTermination::ToFirst
+        | AngularTermination::ToLast
+        | AngularTermination::Angle { .. } => false,
     }
 }
 

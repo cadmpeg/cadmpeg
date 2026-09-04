@@ -5,7 +5,7 @@ use crate::classification::{classify, native_object_class, FeatureClass, NativeC
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, HoleBottom,
-    HoleKind, Length, ProfileRef, Termination, VertexSelection,
+    HoleKind, Length, LinearTermination, ProfileRef, VertexSelection,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -123,70 +123,70 @@ pub(crate) fn project_extrude(
             && !legacy_history_extrusion
             && !implicit_modern_blind =>
         {
-            one_sided(Termination::Unresolved)
+            one_sided(LinearTermination::Unresolved)
         }
         None | Some("Blind") => match length("Depth")
             .or_else(|| legacy_history_extrusion.then(legacy_length).flatten())
             .or_else(sole_length)
         {
-            Some(length) => one_sided(Termination::Blind { length }),
-            None => one_sided(Termination::Unresolved),
+            Some(length) => one_sided(LinearTermination::Blind { length }),
+            None => one_sided(LinearTermination::Unresolved),
         },
         Some("Symmetric") => match length("Depth").or_else(sole_length) {
             Some(length) => ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: Termination::Blind { length },
+                    termination: LinearTermination::Blind { length },
                     draft,
                     offset: None,
                 },
             },
-            None => one_sided(Termination::Unresolved),
+            None => one_sided(LinearTermination::Unresolved),
         },
         Some("TwoSided") => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: length("Depth")?,
                 },
                 draft,
                 offset: None,
             },
             second: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: length("Depth2")?,
                 },
                 draft: None,
                 offset: None,
             },
         },
-        Some("ThroughAll") => one_sided(Termination::ThroughAll),
+        Some("ThroughAll") => one_sided(LinearTermination::ThroughAll),
         Some("ThroughAllBoth") => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
-                termination: Termination::ThroughAll,
+                termination: LinearTermination::ThroughAll,
                 draft,
                 offset: None,
             },
             second: ExtrudeSide {
-                termination: Termination::ThroughAll,
+                termination: LinearTermination::ThroughAll,
                 draft: None,
                 offset: None,
             },
         },
-        Some("ThroughNext") => one_sided(Termination::ThroughNext),
-        Some("ToFace") => one_sided(Termination::ToFace {
+        Some("ThroughNext") => one_sided(LinearTermination::ThroughNext),
+        Some("ToFace") => one_sided(LinearTermination::ToFace {
             face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
             offset: None,
         }),
-        Some("ToVertex") => one_sided(Termination::ToVertex {
+        Some("ToVertex") => one_sided(LinearTermination::ToVertex {
             vertex: VertexSelection::Native(feature.properties.get("Vertex")?.clone()),
         }),
         Some("OffsetFromFace") => match length("Depth").or_else(sole_length) {
-            Some(offset) => one_sided(Termination::OffsetFromFace {
+            Some(offset) => one_sided(LinearTermination::OffsetFromFace {
                 face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
                 offset,
             }),
-            None => one_sided(Termination::Unresolved),
+            None => one_sided(LinearTermination::Unresolved),
         },
-        Some(_) => one_sided(Termination::Unresolved),
+        Some(_) => one_sided(LinearTermination::Unresolved),
     };
     let direction = match feature.properties.get("Direction") {
         Some(value) => cadmpeg_ir::features::ExtrudeDirection::Explicit(parse_vector3(value)?),
@@ -335,7 +335,7 @@ pub(crate) fn project_hole(
                 .as_ref()
                 .is_some_and(|profile| profile.exit_kind.is_some()) =>
         {
-            Some(Termination::ThroughAll)
+            Some(LinearTermination::ThroughAll)
         }
         None | Some("Blind") => feature
             .parameters
@@ -343,8 +343,8 @@ pub(crate) fn project_hole(
             .and_then(|value| parse_positive_length_mm(value))
             .map(Length)
             .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
-            .map(|length| Termination::Blind { length }),
-        Some("ThroughAll") => Some(Termination::ThroughAll),
+            .map(|length| LinearTermination::Blind { length }),
+        Some("ThroughAll") => Some(LinearTermination::ThroughAll),
         Some(_) => None,
     };
     FeatureDefinition::Hole {

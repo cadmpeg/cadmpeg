@@ -4,7 +4,8 @@ use super::{cylinder, lane, model_hole, native_history, profile_reference_plane_
 use std::collections::HashMap;
 
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, HolePlacement, Length, Termination,
+    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, HolePlacement, Length,
+    LinearTermination,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId};
@@ -486,7 +487,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let FeatureDefinition::Hole { extent, bottom, .. } = &mut unplaced.definition else {
         unreachable!();
     };
-    *extent = Some(Termination::Blind {
+    *extent = Some(LinearTermination::Blind {
         length: Length(10.0),
     });
     *bottom = Some(HoleBottom::Flat);
@@ -508,7 +509,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let FeatureDefinition::Hole { extent, .. } = &mut unplaced.definition else {
         unreachable!();
     };
-    *extent = Some(Termination::Blind {
+    *extent = Some(LinearTermination::Blind {
         length: Length(9.0),
     });
     project_hole_topology_axes(std::slice::from_mut(&mut unplaced), &topology);
@@ -530,7 +531,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     *kind = HoleKind::SimpleDrilled {
         drill_point_angle: Angle(2.0),
     };
-    *extent = Some(Termination::Blind {
+    *extent = Some(LinearTermination::Blind {
         length: Length(10.0),
     });
     *bottom = Some(HoleBottom::Angled {
@@ -591,7 +592,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     assert_eq!(diameter, Some(Length(4.0)));
     assert_eq!(
         extent,
-        Some(Termination::Blind {
+        Some(LinearTermination::Blind {
             length: Length(10.0)
         })
     );
@@ -620,7 +621,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     *kind = HoleKind::SimpleDrilled {
         drill_point_angle: Angle(2.0),
     };
-    *extent = Some(Termination::Blind {
+    *extent = Some(LinearTermination::Blind {
         length: Length(10.0),
     });
     *bottom = Some(HoleBottom::Angled {

@@ -31,7 +31,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature,
     FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, GeneratedEdgeRef,
-    GeneratedFaceRef, Length, RadiusSpec, RevolutionAxis, Termination,
+    GeneratedFaceRef, Length, LinearTermination, RadiusSpec, RevolutionAxis,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
@@ -427,7 +427,7 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(8.0),
                     },
                     draft: None,
@@ -514,7 +514,7 @@ fn hole_outline_placement_preserves_stored_plane_order() {
         Some((
             902,
             [0.0, 0.0, 1.0],
-            Termination::Blind {
+            LinearTermination::Blind {
                 length: Length(6.5),
             },
         ))

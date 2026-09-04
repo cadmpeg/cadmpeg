@@ -1882,14 +1882,14 @@ pub(crate) fn bind_extrude_target_faces(
 }
 
 fn bind_extrude_target_face(
-    termination: &mut cadmpeg_ir::features::Termination,
+    termination: &mut cadmpeg_ir::features::LinearTermination,
     sketch_origin: Point3,
     sweep_direction: Vector3,
     resolution: &mut ExtrudeFaceResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{FaceSelection, Termination};
+    use cadmpeg_ir::features::{FaceSelection, LinearTermination};
 
-    let Termination::ToFace {
+    let LinearTermination::ToFace {
         face: FaceSelection::Native(native),
         ..
     } = termination
@@ -1912,11 +1912,11 @@ fn bind_extrude_target_face(
         return;
     };
     let offset = match termination {
-        Termination::ToFace { offset, .. } => *offset,
+        LinearTermination::ToFace { offset, .. } => *offset,
         _ => return,
     };
     if retain_face_operand_resolution(group, resolution.operands, &face) {
-        *termination = Termination::ToFace {
+        *termination = LinearTermination::ToFace {
             face: FaceSelection::Resolved {
                 faces: vec![face],
                 native,

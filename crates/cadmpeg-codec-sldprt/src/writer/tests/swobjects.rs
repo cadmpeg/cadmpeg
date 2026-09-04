@@ -148,7 +148,7 @@ fn semantic_writer_emits_face_records_deterministically() {
 fn encoder_rejects_source_less_unresolved_extrusion_profile() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,
-        ProfileRef, Termination,
+        LinearTermination, ProfileRef,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -170,7 +170,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(10.0),
                     },
                     draft: None,
@@ -200,8 +200,9 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 #[test]
 fn encoder_writes_source_less_line_sketches() {
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        Length, PathRef, ProfileRef, RevolveExtent, Termination,
+        Angle, AngularTermination, BooleanOp, ExtrudeExtent, ExtrudeSide, Feature,
+        FeatureDefinition, FeatureId, Length, LinearTermination, PathRef, ProfileRef,
+        RevolveExtent,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
@@ -349,7 +350,7 @@ fn encoder_writes_source_less_line_sketches() {
                     direction: Vector3::new(0.0, 1.0, 0.0),
                 }),
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle: Angle(1.2) },
+                    termination: AngularTermination::Angle { angle: Angle(1.2) },
                 }),
                 axis_reference: None,
                 solid: Some(true),
@@ -441,7 +442,7 @@ fn encoder_writes_source_less_line_sketches() {
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(12.0),
                     },
                     draft: None,
@@ -574,7 +575,7 @@ fn encoder_writes_source_less_line_sketches() {
             profile: ProfileRef::Sketch(_),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
-                    termination: Termination::Blind {
+                    termination: LinearTermination::Blind {
                         length: Length(12.0)
                     },
                     ..

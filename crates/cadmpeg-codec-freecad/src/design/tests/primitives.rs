@@ -3,7 +3,7 @@
 
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, RevolveExtent, Termination};
+use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureDefinition, RevolveExtent};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -78,7 +78,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)),
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::Angle { angle }
+                    termination: AngularTermination::Angle { angle }
                 }),
                 ..
             },
@@ -856,7 +856,7 @@ fn transfers_non_default_revolution_branches() {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 axis: Some(axis),
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::ToFirst
+                    termination: AngularTermination::ToFirst
                 }),
                 ..
             },
@@ -868,7 +868,7 @@ fn transfers_non_default_revolution_branches() {
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::ToFace { .. }
+                    termination: AngularTermination::ToFace { .. }
                 }),
                 ..
             },
@@ -877,12 +877,12 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("TwoAngles"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { extent: Some(RevolveExtent::TwoSided { first: Termination::Angle { angle: first }, second: Termination::Angle { angle: second } }), .. }, .. }
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { extent: Some(RevolveExtent::TwoSided { first: AngularTermination::Angle { angle: first }, second: AngularTermination::Angle { angle: second } }), .. }, .. }
             if (first.0 - 120_f64.to_radians()).abs() < 1.0e-12 && (second.0 - 30_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("Midplane"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: Termination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), fuse_order: Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst), solid: Some(true), allow_multi_profile_faces: Some(false), .. }, .. }
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), fuse_order: Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst), solid: Some(true), allow_multi_profile_faces: Some(false), .. }, .. }
             if axis.direction.y == -1.0 && reference.ends_with(":ReferenceAxis")
     ));
     assert!(matches!(
@@ -890,7 +890,7 @@ fn transfers_non_default_revolution_branches() {
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
                 extent: Some(RevolveExtent::OneSided {
-                    termination: Termination::ThroughAll
+                    termination: AngularTermination::ThroughAll
                 }),
                 ..
             },
@@ -899,7 +899,7 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("Standalone"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: Termination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), solid: Some(true), face_maker_class: Some(face_maker), .. }, op: BooleanOp::NewBody }
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(RevolveExtent::Symmetric { termination: AngularTermination::Angle { .. } }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), solid: Some(true), face_maker_class: Some(face_maker), .. }, op: BooleanOp::NewBody }
             if axis.direction.z == 1.0 && reference.ends_with(":AxisLink")
                 && face_maker == "Part::FaceMakerUnified"
     ));
@@ -1791,7 +1791,7 @@ fn distinguishes_absent_and_malformed_partdesign_revolution_type() {
                 FeatureDefinition::Revolve {
                     construction: cadmpeg_ir::features::RevolutionConstruction {
                         extent: Some(RevolveExtent::OneSided {
-                            termination: Termination::Angle { .. }
+                            termination: AngularTermination::Angle { .. }
                         }),
                         ..
                     },

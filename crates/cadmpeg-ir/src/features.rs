@@ -1953,7 +1953,7 @@ pub enum FeatureDefinition {
         /// How deep the hole extends, when resolved. Holes travel on one side
         /// only, so the termination law needs no sidedness wrapper.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        extent: Option<Termination>,
+        extent: Option<LinearTermination>,
         /// Shape and depth convention at the blind end of the hole.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bottom: Option<HoleBottom>,
@@ -3502,13 +3502,12 @@ pub enum ExtrudeStart {
     },
 }
 
-/// One-sided termination law of a linear or angular sweep. Sidedness around
-/// the profile plane is stated by the owning feature's extent type, never by
-/// the law itself.
+/// One-sided termination law of a linear sweep. Sidedness around the profile
+/// plane is stated by the owning feature's extent type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Termination {
+pub enum LinearTermination {
     /// Native termination is present structurally but unresolved.
     Unresolved,
     /// Fixed travel distance.
@@ -3516,6 +3515,49 @@ pub enum Termination {
         /// Fixed travel distance.
         length: Length,
     },
+    /// Extends through all material.
+    ThroughAll,
+    /// Extends until it exits the next material region.
+    ThroughNext,
+    /// Extends until the first encountered model face.
+    ToFirst,
+    /// Extends until the last encountered model face.
+    ToLast,
+    /// Extends until it reaches a target face.
+    ToFace {
+        /// Face terminating the operation.
+        face: FaceSelection,
+        /// Signed displacement from the terminating face.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offset: Option<Length>,
+    },
+    /// Extends until it reaches a target vertex.
+    ToVertex {
+        /// Vertex terminating the operation.
+        vertex: VertexSelection,
+    },
+    /// Extends to a fixed offset from a target face.
+    OffsetFromFace {
+        /// Face the termination is measured from.
+        face: FaceSelection,
+        /// Offset distance from the face.
+        offset: Length,
+    },
+    /// Extends until one of the faces in a selected target shape.
+    ToShape {
+        /// Native or resolved target shape selection.
+        target: FaceSelection,
+    },
+}
+
+/// One-sided termination law of an angular sweep. Sidedness around the profile
+/// plane is stated by the owning revolution extent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AngularTermination {
+    /// Native termination is present structurally but unresolved.
+    Unresolved,
     /// Extends through all material.
     ThroughAll,
     /// Extends until it exits the next material region.
@@ -3563,7 +3605,7 @@ pub enum Termination {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ExtrudeSide {
     /// Where this side's travel terminates.
-    pub termination: Termination,
+    pub termination: LinearTermination,
     /// Draft angle applied to this side's walls, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft: Option<Angle>,
@@ -3589,8 +3631,8 @@ pub enum ExtrudeExtent {
         /// Side opposite the extrusion direction.
         second: ExtrudeSide,
     },
-    /// One side mirrored across the profile plane. A blind length or angular
-    /// travel states the total travel split evenly around the plane.
+    /// One side mirrored across the profile plane. A blind length states the
+    /// total travel split evenly around the plane.
     Symmetric {
         /// The mirrored side.
         side: ExtrudeSide,
@@ -3606,20 +3648,20 @@ pub enum RevolveExtent {
     /// Travel on the oriented side only.
     OneSided {
         /// The single traveled side's termination.
-        termination: Termination,
+        termination: AngularTermination,
     },
     /// Independent terminations on each side of the profile plane.
     TwoSided {
         /// Termination along the revolution direction.
-        first: Termination,
+        first: AngularTermination,
         /// Termination opposite the revolution direction.
-        second: Termination,
+        second: AngularTermination,
     },
     /// One termination mirrored across the profile plane. An angular travel
     /// states the total travel split evenly around the plane.
     Symmetric {
         /// The mirrored side's termination.
-        termination: Termination,
+        termination: AngularTermination,
     },
 }
 

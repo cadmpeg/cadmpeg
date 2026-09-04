@@ -33,8 +33,8 @@ use crate::decode::sweep::{
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length, RevolutionAxis,
-    RevolveExtent, Termination,
+    Angle, AngularTermination, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length,
+    RevolutionAxis, RevolveExtent,
 };
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
@@ -462,7 +462,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         },
     ]);
     let full_turn = RevolveExtent::OneSided {
-        termination: Termination::Angle {
+        termination: AngularTermination::Angle {
             angle: Angle(std::f64::consts::TAU),
         },
     };
@@ -515,7 +515,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         })
     );
     let partial = RevolveExtent::OneSided {
-        termination: Termination::Angle { angle: Angle(1.0) },
+        termination: AngularTermination::Angle { angle: Angle(1.0) },
     };
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&partial)).is_none());
     if let SurfaceGeometry::Cone { origin, .. } = &mut ir.model.surfaces[1].geometry {

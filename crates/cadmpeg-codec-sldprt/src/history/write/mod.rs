@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BodySelection, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, FeatureId, ProfileRef, Termination, VertexSelection,
+    FeatureDefinition, FeatureId, LinearTermination, ProfileRef, VertexSelection,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -487,8 +487,8 @@ pub(crate) fn validate_compact_surface_selection_edits(
                         side:
                             ExtrudeSide {
                                 termination:
-                                    Termination::ToFace { face, .. }
-                                    | Termination::OffsetFromFace { face, .. },
+                                    LinearTermination::ToFace { face, .. }
+                                    | LinearTermination::OffsetFromFace { face, .. },
                                 ..
                             },
                     },
@@ -499,7 +499,7 @@ pub(crate) fn validate_compact_surface_selection_edits(
                     ExtrudeExtent::OneSided {
                         side:
                             ExtrudeSide {
-                                termination: Termination::ToVertex { vertex },
+                                termination: LinearTermination::ToVertex { vertex },
                                 ..
                             },
                     },

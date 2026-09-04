@@ -34,7 +34,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 },
             },
@@ -111,7 +111,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         FeatureDefinition::Extrude {
             extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
                 side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::Termination::Unresolved,
+                    termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     ..
                 },
             },
@@ -153,7 +153,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         FeatureDefinition::Hole {
             kind: cadmpeg_ir::features::HoleKind::Simple,
             diameter: None,
-            extent: Some(cadmpeg_ir::features::Termination::Blind {
+            extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
                 length: cadmpeg_ir::features::Length(5.0),
             }),
             ..

@@ -5,7 +5,7 @@ use crate::records::{FeatureHistory, FeatureInputSurfaceSelection};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
     BodySelection, DatumPlaneReference, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, Length, PathRef, PatternKind, ProfileRef, Termination,
+    FeatureDefinition, Length, LinearTermination, PathRef, PatternKind, ProfileRef,
 };
 use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -278,8 +278,8 @@ pub fn bind_topology_selections(
             } => {
                 resolve_profile_ref(profile, &face_ids);
                 for side in extrude_extent_sides_mut(extent) {
-                    if let Termination::ToFace { face, .. }
-                    | Termination::OffsetFromFace { face, .. } = &mut side.termination
+                    if let LinearTermination::ToFace { face, .. }
+                    | LinearTermination::OffsetFromFace { face, .. } = &mut side.termination
                     {
                         resolve_face(face);
                     }

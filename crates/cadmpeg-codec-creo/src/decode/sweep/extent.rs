@@ -11,7 +11,7 @@ use super::planes::{
 };
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
+use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 
@@ -166,7 +166,7 @@ pub(in super::super) fn blind_extrusion_from_carriers(
     Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(length),
                 },
                 draft: None,
@@ -813,7 +813,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(*length),
                 },
                 draft: None,
@@ -870,7 +870,7 @@ pub(in super::super) fn derived_blind_extrusion_span(
     let ExtrudeExtent::OneSided {
         side:
             ExtrudeSide {
-                termination: Termination::Blind { length },
+                termination: LinearTermination::Blind { length },
                 ..
             },
     } = extent

@@ -1088,9 +1088,9 @@ mod tests {
         ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
         CurveProjectionDirectionState, DesignConfiguration, EdgeSelection, ExtrudeDirection,
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FilletGroup, HoleKind,
-        HolePlacement, PathRef, PatternKind, ProfileRef, RadiusSpec, RevolutionConstruction,
-        RibConstruction, RibDraft, SurfaceExtension, SweepMode, SweepSection, Termination,
-        ThickenSide, TrimRegion,
+        HolePlacement, LinearTermination, PathRef, PatternKind, ProfileRef, RadiusSpec,
+        RevolutionConstruction, RibConstruction, RibDraft, SurfaceExtension, SweepMode,
+        SweepSection, ThickenSide, TrimRegion,
     };
     use cadmpeg_ir::ids::{CurveId, FaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1197,7 +1197,7 @@ mod tests {
                 kind: HoleKind::Simple,
                 exit_kind: None,
                 diameter: Some(Length(0.5)),
-                extent: Some(Termination::ThroughAll),
+                extent: Some(LinearTermination::ThroughAll),
                 bottom: None,
                 taper_angle: None,
                 specification: None,
@@ -1264,7 +1264,7 @@ mod tests {
                 start: ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: Termination::Blind {
+                        termination: LinearTermination::Blind {
                             length: Length(1.0),
                         },
                         draft: None,

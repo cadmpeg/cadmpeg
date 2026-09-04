@@ -9,8 +9,8 @@ use crate::records::{
 };
 use cadmpeg_ir::features::{
     Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-    Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue, ProfileRef,
-    RadiusSpec, Termination,
+    Feature, FeatureDefinition, FeatureId, Length, LinearTermination, ParameterId, ParameterValue,
+    ProfileRef, RadiusSpec,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -1055,7 +1055,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
                 start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
-                        termination: Termination::Blind {
+                        termination: LinearTermination::Blind {
                             length: Length(1.0),
                         },
                         draft: None,

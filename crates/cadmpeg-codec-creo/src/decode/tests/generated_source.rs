@@ -38,7 +38,7 @@ use crate::decode::sweep::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, Length, Termination,
+    Angle, FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, Length, LinearTermination,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, ProceduralSurface, ProceduralSurfaceDefinition,
@@ -833,7 +833,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
                 drill_point_angle: Angle(angle),
             },
             diameter: Some(Length(8.4)),
-            extent: Some(Termination::Blind {
+            extent: Some(LinearTermination::Blind {
                 length: Length(25.0),
             }),
             bottom: None,
@@ -1313,7 +1313,7 @@ fn counterbore_boundary_circles_define_the_directed_full_span() {
             65,
             Point3::new(0.0, 2.625, -1.0),
             Vector3::new(0.0, 0.0, 1.0),
-            Termination::Blind {
+            LinearTermination::Blind {
                 length: Length(1.0),
             },
         ))
@@ -1346,7 +1346,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
     let expected = Some((
         Point3::new(0.0, -40.0, -140.0),
         Vector3::new(0.0, 1.0, 0.0),
-        Termination::Blind {
+        LinearTermination::Blind {
             length: Length(57.0),
         },
     ));
@@ -1377,7 +1377,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
         Some((
             Point3::new(265.0, 200.0, -185.0),
             Vector3::new(-1.0, 0.0, 0.0),
-            Termination::Blind {
+            LinearTermination::Blind {
                 length: Length(40.0),
             },
         ))

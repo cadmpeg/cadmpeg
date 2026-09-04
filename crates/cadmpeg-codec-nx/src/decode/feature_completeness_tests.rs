@@ -7,7 +7,7 @@
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
     use cadmpeg_ir::features::{
-        FaceSelection, HoleKind, HolePlacement, Length, ProfileRef, Termination,
+        FaceSelection, HoleKind, HolePlacement, Length, LinearTermination, ProfileRef,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -21,7 +21,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
+        Some(&LinearTermination::ThroughAll),
     ));
     assert!(super::hole_feature_is_incomplete(
         None,
@@ -33,7 +33,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
+        Some(&LinearTermination::ThroughAll),
     ));
     let directed = HolePlacement::Directed {
         position: Point3::new(1.0, 2.0, 3.0),
@@ -46,7 +46,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         std::slice::from_ref(&directed),
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
+        Some(&LinearTermination::ThroughAll),
     ));
     let axis = HolePlacement::Axis {
         origin: Point3::new(1.0, 2.0, 3.0),
@@ -59,13 +59,13 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         std::slice::from_ref(&axis),
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
+        Some(&LinearTermination::ThroughAll),
     ));
     for (placements, exit, extent) in [
         (
             vec![axis.clone()],
             None,
-            Termination::Blind {
+            LinearTermination::Blind {
                 length: Length(10.0),
             },
         ),
@@ -75,12 +75,12 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
                 diameter: Length(7.0),
                 angle: cadmpeg_ir::features::Angle(0.5),
             }),
-            Termination::ThroughAll,
+            LinearTermination::ThroughAll,
         ),
         (
             vec![directed.clone(), directed],
             None,
-            Termination::ThroughAll,
+            LinearTermination::ThroughAll,
         ),
     ] {
         assert!(super::hole_feature_is_incomplete(
@@ -100,7 +100,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
+        Some(&LinearTermination::ThroughAll),
     ));
     assert!(super::hole_feature_is_incomplete(
         None,
@@ -112,7 +112,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         &[],
         (&HoleKind::Simple, None),
         Some(Length(5.0)),
-        Some(&Termination::Unresolved),
+        Some(&LinearTermination::Unresolved),
     ));
     assert!(super::hole_feature_is_incomplete(
         None,
@@ -129,7 +129,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             ))),
         ),
         Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
+        Some(&LinearTermination::ThroughAll),
     ));
     assert!(super::hole_feature_is_incomplete(
         None,
@@ -141,7 +141,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         &[],
         (&HoleKind::Simple, None),
         Some(Length(0.0)),
-        Some(&Termination::ThroughAll),
+        Some(&LinearTermination::ThroughAll),
     ));
     assert!(super::hole_feature_is_incomplete(
         None,
@@ -159,7 +159,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             None,
         ),
         Some(Length(5.0)),
-        Some(&Termination::ThroughAll),
+        Some(&LinearTermination::ThroughAll),
     ));
     for kind in [
         HoleKind::Chamfer {
@@ -196,7 +196,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             &[],
             (&kind, None),
             Some(Length(5.0)),
-            Some(&Termination::ThroughAll),
+            Some(&LinearTermination::ThroughAll),
         ));
     }
 }
@@ -339,10 +339,10 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     use cadmpeg_ir::features::FeatureId;
     use cadmpeg_ir::features::{
         ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection, GeneratedVertexRef, Length,
-        Termination, VertexSelection,
+        LinearTermination, VertexSelection,
     };
 
-    let side = |termination: Termination| ExtrudeSide {
+    let side = |termination: LinearTermination| ExtrudeSide {
         termination,
         draft: None,
         offset: None,
@@ -350,22 +350,22 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
 
     assert!(!super::extrude_extent_is_incomplete(
         &ExtrudeExtent::TwoSided {
-            first: side(Termination::Blind {
+            first: side(LinearTermination::Blind {
                 length: Length(5.0),
             }),
-            second: side(Termination::ThroughAll),
+            second: side(LinearTermination::ThroughAll),
         },
         &[],
     ));
     assert!(super::extrude_extent_is_incomplete(
         &ExtrudeExtent::Symmetric {
-            side: side(Termination::Unresolved),
+            side: side(LinearTermination::Unresolved),
         },
         &[],
     ));
     assert!(super::extrude_extent_is_incomplete(
         &ExtrudeExtent::OneSided {
-            side: side(Termination::Blind {
+            side: side(LinearTermination::Blind {
                 length: Length(f64::NAN),
             }),
         },
@@ -374,34 +374,40 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     assert!(super::extrude_extent_is_incomplete(
         &ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::ThroughAll,
+                termination: LinearTermination::ThroughAll,
                 draft: Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2,)),
                 offset: None,
             },
         },
         &[],
     ));
-    assert!(super::termination_is_incomplete(&Termination::ToFace {
-        face: FaceSelection::Native("nx:face-selection#0".to_string()),
-        offset: None,
-    }));
-    assert!(super::termination_is_incomplete(&Termination::ToShape {
-        target: FaceSelection::Resolved {
-            faces: Vec::new(),
-            native: "nx:face-selection#1".to_string(),
-        },
-    }));
     assert!(super::termination_is_incomplete(
-        &Termination::OffsetFromFace {
+        &LinearTermination::ToFace {
+            face: FaceSelection::Native("nx:face-selection#0".to_string()),
+            offset: None,
+        }
+    ));
+    assert!(super::termination_is_incomplete(
+        &LinearTermination::ToShape {
+            target: FaceSelection::Resolved {
+                faces: Vec::new(),
+                native: "nx:face-selection#1".to_string(),
+            },
+        }
+    ));
+    assert!(super::termination_is_incomplete(
+        &LinearTermination::OffsetFromFace {
             face: FaceSelection::Native("nx:face-selection#2".to_string()),
             offset: Length(1.0),
         }
     ));
-    assert!(super::termination_is_incomplete(&Termination::ToVertex {
-        vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
-    }));
+    assert!(super::termination_is_incomplete(
+        &LinearTermination::ToVertex {
+            vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
+        }
+    ));
     let vertex_feature = FeatureId("test:feature#0".into());
-    let generated_vertex = Termination::ToVertex {
+    let generated_vertex = LinearTermination::ToVertex {
         vertex: VertexSelection::Generated {
             vertex: GeneratedVertexRef {
                 feature: vertex_feature.clone(),
@@ -924,7 +930,7 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
 fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature,
-        FeatureDefinition, FeatureId, FeatureResultTopology, Length, ProfileRef, Termination,
+        FeatureDefinition, FeatureId, FeatureResultTopology, Length, LinearTermination, ProfileRef,
     };
     use cadmpeg_ir::ids::FeatureResultTopologyId;
 
@@ -936,7 +942,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         start,
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(5.0),
                 },
                 draft: None,
@@ -1031,9 +1037,9 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
 #[test]
 fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     use cadmpeg_ir::features::{
-        Angle, BooleanOp, Feature, FeatureDefinition, FeatureId, GeneratedVertexRef, PathRef,
-        ProfileRef, RevolutionAxis, RevolutionConstruction, RevolveExtent, Termination,
-        VertexSelection,
+        Angle, AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureId,
+        GeneratedVertexRef, PathRef, ProfileRef, RevolutionAxis, RevolutionConstruction,
+        RevolveExtent, VertexSelection,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1047,7 +1053,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
             direction: Vector3::new(0.0, 0.0, 1.0),
         }),
         extent: Some(RevolveExtent::OneSided {
-            termination: Termination::Angle { angle: Angle(1.0) },
+            termination: AngularTermination::Angle { angle: Angle(1.0) },
         }),
         axis_reference: None,
         solid: Some(true),
@@ -1099,7 +1105,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     ));
     incomplete = complete.clone();
     incomplete.extent = Some(RevolveExtent::OneSided {
-        termination: Termination::Angle { angle: Angle(0.0) },
+        termination: AngularTermination::Angle { angle: Angle(0.0) },
     });
     assert!(super::revolve_feature_is_incomplete(
         &incomplete,
@@ -1130,7 +1136,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     let source = FeatureId("test:feature#vertex-source".into());
     incomplete = complete.clone();
     incomplete.extent = Some(RevolveExtent::OneSided {
-        termination: Termination::ToVertex {
+        termination: AngularTermination::ToVertex {
             vertex: VertexSelection::Generated {
                 vertex: GeneratedVertexRef {
                     feature: source.clone(),
@@ -1230,7 +1236,7 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
 
 #[test]
 fn nx_hole_completeness_rejects_opaque_supplied_operands() {
-    use cadmpeg_ir::features::{FaceSelection, HoleKind, Length, ProfileRef, Termination};
+    use cadmpeg_ir::features::{FaceSelection, HoleKind, Length, LinearTermination, ProfileRef};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let incomplete = |profile, face| {
@@ -1244,7 +1250,7 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
             &[],
             (&HoleKind::Simple, None),
             Some(Length(1.0)),
-            Some(&Termination::ThroughAll),
+            Some(&LinearTermination::ThroughAll),
         )
     };
 

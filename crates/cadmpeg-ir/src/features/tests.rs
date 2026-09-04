@@ -410,14 +410,15 @@ fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
 #[test]
 fn feature_extents_round_trip_through_json() {
     use crate::features::{
-        Angle, ExtrudeExtent, ExtrudeSide, FaceSelection, Length, RevolveExtent, Termination,
+        Angle, AngularTermination, ExtrudeExtent, ExtrudeSide, FaceSelection, Length,
+        LinearTermination, RevolveExtent,
     };
     use crate::ids::FaceId;
 
     let extents = vec![
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(12.5),
                 },
                 draft: Some(Angle(0.1)),
@@ -426,7 +427,7 @@ fn feature_extents_round_trip_through_json() {
         },
         ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(25.0),
                 },
                 draft: None,
@@ -435,14 +436,14 @@ fn feature_extents_round_trip_through_json() {
         },
         ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
-                termination: Termination::Blind {
+                termination: LinearTermination::Blind {
                     length: Length(10.0),
                 },
                 draft: Some(Angle(0.2)),
                 offset: Some(Length(1.0)),
             },
             second: ExtrudeSide {
-                termination: Termination::ToFace {
+                termination: LinearTermination::ToFace {
                     face: FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
                     offset: None,
                 },
@@ -452,7 +453,7 @@ fn feature_extents_round_trip_through_json() {
         },
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: Termination::ThroughAll,
+                termination: LinearTermination::ThroughAll,
                 draft: None,
                 offset: None,
             },
@@ -466,18 +467,18 @@ fn feature_extents_round_trip_through_json() {
 
     let revolve_extents = vec![
         RevolveExtent::OneSided {
-            termination: Termination::Angle {
+            termination: AngularTermination::Angle {
                 angle: Angle(std::f64::consts::PI),
             },
         },
         RevolveExtent::Symmetric {
-            termination: Termination::Angle {
+            termination: AngularTermination::Angle {
                 angle: Angle(std::f64::consts::FRAC_PI_2),
             },
         },
         RevolveExtent::TwoSided {
-            first: Termination::Angle { angle: Angle(0.25) },
-            second: Termination::Angle { angle: Angle(0.75) },
+            first: AngularTermination::Angle { angle: Angle(0.25) },
+            second: AngularTermination::Angle { angle: Angle(0.75) },
         },
     ];
     let json = serde_json::to_string(&revolve_extents).unwrap();
@@ -485,6 +486,28 @@ fn feature_extents_round_trip_through_json() {
         serde_json::from_str::<Vec<RevolveExtent>>(&json).unwrap(),
         revolve_extents
     );
+}
+
+#[test]
+fn termination_families_preserve_wire_and_reject_cross_family_variants() {
+    use crate::features::{Angle, AngularTermination, Length, LinearTermination};
+
+    let blind_wire = serde_json::json!({"kind": "blind", "length": 12.5});
+    let blind: LinearTermination = serde_json::from_value(blind_wire.clone()).unwrap();
+    assert_eq!(
+        blind,
+        LinearTermination::Blind {
+            length: Length(12.5)
+        }
+    );
+    assert_eq!(serde_json::to_value(blind).unwrap(), blind_wire);
+    assert!(serde_json::from_value::<AngularTermination>(blind_wire).is_err());
+
+    let angle_wire = serde_json::json!({"kind": "angle", "angle": 1.25});
+    let angle: AngularTermination = serde_json::from_value(angle_wire.clone()).unwrap();
+    assert_eq!(angle, AngularTermination::Angle { angle: Angle(1.25) });
+    assert_eq!(serde_json::to_value(angle).unwrap(), angle_wire);
+    assert!(serde_json::from_value::<LinearTermination>(angle_wire).is_err());
 }
 
 #[test]

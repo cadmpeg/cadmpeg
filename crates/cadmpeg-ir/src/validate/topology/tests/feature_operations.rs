@@ -9,8 +9,8 @@ use crate::validate::validate_neutral;
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
         BooleanOp, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FilletGroup, HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, RibConstruction,
-        RibDraft, RibSide, ScaleCenter, ScaleFactors, Termination, ThickenSide, VariableRadius,
+        FilletGroup, HoleKind, Length, LinearTermination, PatternKind, ProfileRef, RadiusSpec,
+        RibConstruction, RibDraft, RibSide, ScaleCenter, ScaleFactors, ThickenSide, VariableRadius,
     };
 
     let definitions = vec![
@@ -67,7 +67,7 @@ fn feature_operation_geometry_is_validated() {
             kind: HoleKind::Simple,
             exit_kind: None,
             diameter: Some(Length(0.0)),
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             bottom: None,
             taper_angle: None,
             specification: None,
@@ -86,7 +86,7 @@ fn feature_operation_geometry_is_validated() {
                 angle: crate::features::Angle(0.5),
             }),
             diameter: Some(Length(5.0)),
-            extent: Some(Termination::ThroughAll),
+            extent: Some(LinearTermination::ThroughAll),
             bottom: None,
             taper_angle: None,
             specification: None,
