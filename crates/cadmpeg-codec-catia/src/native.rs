@@ -4767,12 +4767,58 @@ where
 /// Equal-cardinality reference lists aligned by list-item ordinal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaDesignParallelReferenceTableWire",
+    into = "CatiaDesignParallelReferenceTableWire"
+)]
 pub struct CatiaDesignParallelReferenceTable {
-    /// Source field and list incidences forming the table's columns.
+    columns: Vec<CatiaDesignReferenceColumn>,
+    rows: Vec<CatiaDesignReferenceRow>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaDesignParallelReferenceTableWire {
     #[serde(deserialize_with = "deserialize_design_reference_columns")]
-    pub columns: Vec<CatiaDesignReferenceColumn>,
-    /// Row-aligned reference cells.
-    pub rows: Vec<CatiaDesignReferenceRow>,
+    columns: Vec<CatiaDesignReferenceColumn>,
+    rows: Vec<CatiaDesignReferenceRow>,
+}
+
+impl CatiaDesignParallelReferenceTable {
+    fn new(
+        columns: Vec<CatiaDesignReferenceColumn>,
+        rows: Vec<CatiaDesignReferenceRow>,
+    ) -> Option<Self> {
+        rows.iter()
+            .all(|row| row.cells.len() == columns.len())
+            .then_some(Self { columns, rows })
+    }
+
+    pub(crate) fn columns(&self) -> &[CatiaDesignReferenceColumn] {
+        &self.columns
+    }
+
+    pub(crate) fn rows(&self) -> &[CatiaDesignReferenceRow] {
+        &self.rows
+    }
+}
+
+impl From<CatiaDesignParallelReferenceTable> for CatiaDesignParallelReferenceTableWire {
+    fn from(value: CatiaDesignParallelReferenceTable) -> Self {
+        Self {
+            columns: value.columns,
+            rows: value.rows,
+        }
+    }
+}
+
+impl TryFrom<CatiaDesignParallelReferenceTableWire> for CatiaDesignParallelReferenceTable {
+    type Error = String;
+
+    fn try_from(wire: CatiaDesignParallelReferenceTableWire) -> Result<Self, Self::Error> {
+        Self::new(wire.columns, wire.rows)
+            .ok_or_else(|| "parallel reference row width disagrees with column count".to_owned())
+    }
 }
 
 /// One serialized design object formed by a shared `7C09` owner identity.
@@ -5054,10 +5100,10 @@ fn design_parallel_reference_table(
             }
         })
         .collect();
-    Some(CatiaDesignParallelReferenceTable {
-        columns: columns.into_iter().map(|(column, _)| column).collect(),
+    CatiaDesignParallelReferenceTable::new(
+        columns.into_iter().map(|(column, _)| column).collect(),
         rows,
-    })
+    )
 }
 
 fn design_class(record: &CatiaObjectRecord) -> Option<CatiaDesignClass> {
