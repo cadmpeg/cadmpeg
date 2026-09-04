@@ -8246,8 +8246,46 @@ fn native_object_graph(
         .enumerate()
         .filter_map(|(ordinal, entity)| {
             let object_record = records.get(ordinal)?;
-            let value_fields = value_block::tokenize(&entity.value_payload);
-            let value_packets = entity_table::value_packets(&entity.value_payload, &value_fields);
+            let numeric_pair = entity.numeric_pair();
+            let reference_signature = entity.reference_signature();
+            let (
+                inline_body,
+                definition_len,
+                definition_prefix,
+                definition_suffix,
+                value_len,
+                value_payload,
+                record_suffix,
+            ) = match entity.body {
+                entity_table::EntityBody::Inline(bytes) => (
+                    Some(bytes),
+                    0,
+                    Vec::new(),
+                    Vec::new(),
+                    0,
+                    Vec::new(),
+                    Vec::new(),
+                ),
+                entity_table::EntityBody::Nested {
+                    definition_len,
+                    prefix,
+                    suffix,
+                    value_len,
+                    value_payload,
+                    record_suffix,
+                    ..
+                } => (
+                    None,
+                    definition_len,
+                    prefix,
+                    suffix,
+                    value_len,
+                    value_payload,
+                    record_suffix,
+                ),
+            };
+            let value_fields = value_block::tokenize(&value_payload);
+            let value_packets = entity_table::value_packets(&value_payload, &value_fields);
             Some(CatiaEntityRecord {
                 id: format!("catia:outer:entity-record#{:010}", entity.pos),
                 object_graph: id.clone(),
@@ -8258,14 +8296,14 @@ fn native_object_graph(
                 byte_len: u64::try_from(entity.total_len)
                     .expect("bounded entity-table length fits u64"),
                 lead: entity.lead,
-                inline_body: entity.inline_body,
-                definition_len: entity.definition_len,
-                definition_prefix: entity.definition_prefix,
+                inline_body,
+                definition_len,
+                definition_prefix,
                 definition_schema_selections: Vec::new(),
                 entity_id: entity.entity_id,
-                definition_suffix: entity.definition_suffix,
-                value_len: entity.value_len,
-                value_payload: entity.value_payload,
+                definition_suffix,
+                value_len,
+                value_payload,
                 value_fields,
                 value_schema_selections: Vec::new(),
                 relation_expression: None,
@@ -8279,15 +8317,15 @@ fn native_object_graph(
                 schema_configuration_row_link: None,
                 formula_relation: None,
                 value_packets,
-                numeric_pair: entity.numeric_pair,
-                reference_signature: entity.reference_signature.map(|production| {
+                numeric_pair,
+                reference_signature: reference_signature.map(|production| {
                     CatiaReferenceSignature {
                         production,
                         first_entity: CatiaEntityReference::default(),
                         second_entity: CatiaEntityReference::default(),
                     }
                 }),
-                record_suffix: entity.record_suffix,
+                record_suffix,
                 suffix_value: None,
                 suffix_framing: None,
                 suffix_schema_selection: None,
