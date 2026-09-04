@@ -1158,9 +1158,12 @@ pub fn project_parameter_design_with_edge_identities(
                                 operation: result,
                                 ..
                             } => {
-                                let mut placement = cadmpeg_ir::transform::Transform::identity();
-                                placement.rows[0][3] = *offset_x * 10.0;
-                                placement.rows[1][3] = *offset_y * 10.0;
+                                let placement = cadmpeg_ir::transform::Transform::affine([
+                                    [1.0, 0.0, 0.0, *offset_x * 10.0],
+                                    [0.0, 1.0, 0.0, *offset_y * 10.0],
+                                    [0.0, 0.0, 1.0, 0.0],
+                                ])
+                                .expect("block placement is affine");
                                 FeatureDefinition::Block {
                                     dimensions: Some([
                                         Length(*length * 10.0),

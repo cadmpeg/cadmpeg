@@ -283,14 +283,15 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
     for (index, body) in ir.model.bodies.iter_mut().enumerate() {
-        body.transform = Some(Transform {
-            rows: [
+        body.transform = Some(
+            Transform::from_rows([
                 [1.0, 0.0, 0.0, (index as f64 + 1.0) * 10.0],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
-            ],
-        });
+            ])
+            .expect("affine transform"),
+        );
     }
     ir.model.tessellations = body_ids
         .iter()
@@ -686,14 +687,15 @@ fn encoder_bakes_rigid_body_transform() {
             _ => None,
         })
         .unwrap();
-    ir.model.bodies[0].transform = Some(Transform {
-        rows: [
+    ir.model.bodies[0].transform = Some(
+        Transform::from_rows([
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
             [0.0, 0.0, 1.0, 30.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
     let expected_point = Point3::new(
         -original_point.y + 10.0,
         original_point.x + 20.0,

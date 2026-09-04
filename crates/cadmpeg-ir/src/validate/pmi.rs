@@ -171,16 +171,9 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             PmiDefinition::Presentation {
                 semantics,
-                placement,
+                placement: _,
                 ..
             } => {
-                if placement.is_some_and(|transform| !transform.is_finite()) {
-                    invalid(
-                        findings,
-                        annotation.id.as_str(),
-                        "presentation placement contains a non-finite coefficient",
-                    );
-                }
                 if semantics.iter().any(|id| !ids.contains(id.as_str())) {
                     invalid(
                         findings,

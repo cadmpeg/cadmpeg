@@ -5,12 +5,15 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn translation(x: f64, y: f64, z: f64) -> Transform {
+    Transform::affine([[1.0, 0.0, 0.0, x], [0.0, 1.0, 0.0, y], [0.0, 0.0, 1.0, z]])
+        .expect("translation is affine")
+}
+
 #[test]
 fn neutral_identity_keys_preserve_exact_composed_locations() {
-    let mut positive = Transform::identity();
-    positive.rows[0][3] = 0.5e-12;
-    let mut negative = Transform::identity();
-    negative.rows[0][3] = -0.5e-12;
+    let positive = translation(0.5e-12, 0.0, 0.0);
+    let negative = translation(-0.5e-12, 0.0, 0.0);
 
     assert_ne!(
         OccurrenceKey::new(7, positive),
@@ -25,11 +28,8 @@ fn neutral_identity_keys_preserve_exact_composed_locations() {
         SourceOccurrenceKey::new(7, negative)
     );
 
-    let mut composed = Transform::identity();
-    composed.rows[0][3] = 258.75;
-    composed.rows[2][3] = -1.4e-14;
-    let mut direct = Transform::identity();
-    direct.rows[0][3] = 258.75;
+    let composed = translation(258.75, 0.0, -1.4e-14);
+    let mut direct = translation(258.75, 0.0, 0.0);
 
     assert_ne!(
         OccurrenceKey::new(14, composed),
@@ -40,7 +40,7 @@ fn neutral_identity_keys_preserve_exact_composed_locations() {
         SourceOccurrenceKey::new(14, direct)
     );
 
-    direct.rows[2][3] = 1.0e-8;
+    direct = translation(258.75, 0.0, 1.0e-8);
     assert_ne!(
         OccurrenceKey::new(14, composed),
         OccurrenceKey::new(14, direct)
@@ -52,8 +52,7 @@ fn neutral_identity_keys_preserve_exact_composed_locations() {
 
 #[test]
 fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
-    let mut translated = Transform::identity();
-    translated.rows[0][3] = 10.0;
+    let translated = translation(10.0, 0.0, 0.0);
     let locations = [TextLocation {
         factors: Vec::new(),
         transform: translated,
@@ -1276,8 +1275,8 @@ Co 1001000 +2 1 +2 3 *
         basis.as_ref(),
         cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
     ));
-    assert_eq!(transform.rows[0][0], -2.0);
-    assert_eq!(transform.rows[1][1], 2.0);
+    assert_eq!(transform.rows()[0][0], -2.0);
+    assert_eq!(transform.rows()[1][1], 2.0);
     let origin =
         cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).expect("required invariant");
     assert_eq!([origin.x, origin.y], [10.0, 5.0]);

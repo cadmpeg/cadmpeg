@@ -393,10 +393,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     bounds_err(findings, &s.id.0, "polygonal surface payload is invalid");
                 }
             }
-            SurfaceGeometry::Transformed { basis, transform } => {
-                if !transform.is_affine() {
-                    bounds_err(findings, &s.id.0, "surface transform is not finite affine");
-                }
+            SurfaceGeometry::Transformed {
+                basis,
+                transform: _,
+            } => {
                 if !valid_surface_basis(basis) {
                     bounds_err(findings, &s.id.0, "transformed surface basis is invalid");
                 }
@@ -445,15 +445,6 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         {
             if !distance.is_finite() {
                 bounds_err(findings, &procedural.id.0, "non-finite parallel offset");
-            }
-        }
-        if let ProceduralSurfaceDefinition::Replica { transform, .. } = procedural.definition() {
-            if !transform.is_affine() {
-                bounds_err(
-                    findings,
-                    &procedural.id.0,
-                    "surface replica transform is not finite affine",
-                );
             }
         }
         if let ProceduralSurfaceDefinition::Exact { spline } = procedural.definition() {
@@ -1731,10 +1722,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     bounds_err(findings, &c.id.0, "polyline payload is invalid");
                 }
             }
-            CurveGeometry::Transformed { basis, transform } => {
-                if !transform.is_affine() {
-                    bounds_err(findings, &c.id.0, "curve transform is not finite affine");
-                }
+            CurveGeometry::Transformed {
+                basis,
+                transform: _,
+            } => {
                 if !valid_curve_basis(basis) {
                     bounds_err(findings, &c.id.0, "transformed curve basis is invalid");
                 }
@@ -1873,9 +1864,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                             .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
             }
-            crate::geometry::PcurveGeometry::Transformed { basis, transform } => {
-                transform.is_affine() && pcurve_basis_is_valid(basis)
-            }
+            crate::geometry::PcurveGeometry::Transformed {
+                basis,
+                transform: _,
+            } => pcurve_basis_is_valid(basis),
         };
         if !valid {
             bounds_err(findings, &pcurve.id.0, "pcurve geometry is invalid");
@@ -2270,14 +2262,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
-        if let ProceduralCurveDefinition::Replica { transform, .. } = procedural.definition() {
-            if !transform.is_affine() {
-                bounds_err(
-                    findings,
-                    &procedural.id.0,
-                    "curve replica transform is not finite affine",
-                );
-            }
+        if let ProceduralCurveDefinition::Replica { .. } = procedural.definition() {
             continue;
         }
         if let ProceduralCurveDefinition::VectorOffset {
@@ -2467,9 +2452,10 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
         PcurveGeometry::Offset { basis, distance } => {
             distance.is_finite() && pcurve_basis_is_valid(basis)
         }
-        PcurveGeometry::Transformed { basis, transform } => {
-            transform.is_affine() && pcurve_basis_is_valid(basis)
-        }
+        PcurveGeometry::Transformed {
+            basis,
+            transform: _,
+        } => pcurve_basis_is_valid(basis),
     }
 }
 
@@ -2520,9 +2506,10 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
             knots_nondecreasing(n.u_knots()) && knots_nondecreasing(n.v_knots())
         }
         SurfaceGeometry::Polygonal(surface) => valid_polygonal_surface(surface),
-        SurfaceGeometry::Transformed { basis, transform } => {
-            transform.is_affine() && valid_surface_basis(basis)
-        }
+        SurfaceGeometry::Transformed {
+            basis,
+            transform: _,
+        } => valid_surface_basis(basis),
         SurfaceGeometry::Procedural {
             cache: Some(geometry),
             ..
@@ -2563,9 +2550,10 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
         }
         CurveGeometry::Nurbs(n) => knots_nondecreasing(n.knots()),
         CurveGeometry::Polyline(polyline) => valid_polyline(polyline),
-        CurveGeometry::Transformed { basis, transform } => {
-            transform.is_affine() && valid_curve_basis(basis)
-        }
+        CurveGeometry::Transformed {
+            basis,
+            transform: _,
+        } => valid_curve_basis(basis),
         CurveGeometry::Procedural {
             cache: Some(geometry),
             ..

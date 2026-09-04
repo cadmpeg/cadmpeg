@@ -56,7 +56,7 @@ pub(super) fn placement_transform(
         [x_axis.y, y_axis.y, z_axis.y],
         [x_axis.z, y_axis.z, z_axis.z],
     ];
-    let mut rows = Transform::identity().rows;
+    let mut rows = Transform::identity().rows();
     for row in 0..3 {
         for column in 0..3 {
             rows[row][column] = placement_basis[row][column];
@@ -65,7 +65,7 @@ pub(super) fn placement_transform(
     rows[0][3] = origin.x;
     rows[1][3] = origin.y;
     rows[2][3] = origin.z;
-    Transform { rows }
+    Transform::from_rows(rows).expect("placement is affine")
 }
 
 /// Infer the carrier interval trimmed by each edge's endpoint vertices.
@@ -5019,22 +5019,20 @@ pub(super) fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64;
             *distance *= u_scale;
         }
         PcurveGeometry::Transformed { basis, transform } => {
-            if !u_scale.is_finite()
-                || !v_scale.is_finite()
-                || u_scale == 0.0
-                || v_scale == 0.0
-                || !transform.is_affine()
-            {
+            if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0 {
                 return false;
             }
             // The basis is converted below. Conjugate the replica map so
             // `S * T * x` remains `S * T * S^-1 * (S * x)`.
-            let mut scaled_transform = *transform;
-            scaled_transform.rows[0][1] *= u_scale / v_scale;
-            scaled_transform.rows[0][2] *= u_scale;
-            scaled_transform.rows[1][0] *= v_scale / u_scale;
-            scaled_transform.rows[1][2] *= v_scale;
-            if !scaled_transform.is_affine() || !scale_pcurve_geometry(basis, scales) {
+            let mut rows = transform.rows();
+            rows[0][1] *= u_scale / v_scale;
+            rows[0][2] *= u_scale;
+            rows[1][0] *= v_scale / u_scale;
+            rows[1][2] *= v_scale;
+            let Some(scaled_transform) = Transform2::from_rows(rows) else {
+                return false;
+            };
+            if !scale_pcurve_geometry(basis, scales) {
                 return false;
             }
             *transform = scaled_transform;
@@ -5369,8 +5367,8 @@ fn cartesian_transformation_operator(
     )
     .ok()?;
     let [axis_x, axis_y, axis_z] = base_axis_3d(axis1, axis2, axis3)?;
-    Some(Transform {
-        rows: [
+    Some(
+        Transform::from_rows([
             [
                 axis_x.x * scale,
                 axis_y.x * scale,
@@ -5390,8 +5388,9 @@ fn cartesian_transformation_operator(
                 origin.z,
             ],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    })
+        ])
+        .expect("affine transform"),
+    )
 }
 
 fn cartesian_transformation_operator_2d(
@@ -5424,13 +5423,14 @@ fn cartesian_transformation_operator_2d(
     if !scale.is_finite() || scale <= 0.0 {
         return None;
     }
-    Some(Transform2 {
-        rows: [
+    Some(
+        Transform2::from_rows([
             [axis1.u * scale, axis2.u * scale, origin.u],
             [axis1.v * scale, axis2.v * scale, origin.v],
             [0.0, 0.0, 1.0],
-        ],
-    })
+        ])
+        .expect("affine transform"),
+    )
 }
 
 fn base_axis_2d(axis1: Option<Point2>, axis2: Option<Point2>) -> Option<(Point2, Point2)> {

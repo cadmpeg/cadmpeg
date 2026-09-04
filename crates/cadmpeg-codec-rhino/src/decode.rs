@@ -5201,14 +5201,13 @@ fn hatch_plane_transform(plane: &crate::settings::Plane, scale: f64) -> Transfor
     let x = plane.xaxis.0;
     let y = plane.yaxis.0;
     let z = plane.zaxis.0;
-    Transform {
-        rows: [
-            [x[0] * scale, y[0] * scale, z[0] * scale, origin[0] * scale],
-            [x[1] * scale, y[1] * scale, z[1] * scale, origin[1] * scale],
-            [x[2] * scale, y[2] * scale, z[2] * scale, origin[2] * scale],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    }
+    Transform::from_rows([
+        [x[0] * scale, y[0] * scale, z[0] * scale, origin[0] * scale],
+        [x[1] * scale, y[1] * scale, z[1] * scale, origin[1] * scale],
+        [x[2] * scale, y[2] * scale, z[2] * scale, origin[2] * scale],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform")
 }
 
 fn transform_decoded_curve(

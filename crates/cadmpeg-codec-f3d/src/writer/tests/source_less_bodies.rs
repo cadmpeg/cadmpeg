@@ -24,14 +24,13 @@ use crate::F3dCodec;
 #[test]
 fn generated_source_less_unit_cube_writes_body_transform() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let expected = cadmpeg_ir::transform::Transform {
-        rows: [
-            [0.0, -1.0, 0.0, 20.0],
-            [1.0, 0.0, 0.0, -30.0],
-            [0.0, 0.0, 1.0, 40.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let expected = cadmpeg_ir::transform::Transform::from_rows([
+        [0.0, -1.0, 0.0, 20.0],
+        [1.0, 0.0, 0.0, -30.0],
+        [0.0, 0.0, 1.0, 40.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     source_less.model.bodies[0].transform = Some(expected);
     let mut encoded = Vec::new();
     F3dCodec
@@ -456,14 +455,15 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
         .replace("synthetic:cube:", "synthetic:cube_two:");
     let mut second =
         cadmpeg_ir::document::CadIr::from_json(&second_json).expect("renamed second cube IR");
-    second.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
-        rows: [
+    second.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::from_rows([
             [1.0, 0.0, 0.0, 30.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
     source_less.model.bodies.append(&mut second.model.bodies);
     source_less.model.regions.append(&mut second.model.regions);
     source_less.model.shells.append(&mut second.model.shells);
@@ -500,7 +500,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
         round_trip.ir().model.bodies[1]
             .transform
             .expect("second body transform")
-            .rows[0][3],
+            .rows()[0][3],
         30.0
     );
     let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());

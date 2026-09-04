@@ -78,26 +78,26 @@ fn body_instance_transform_composes_before_existing_body_transform() {
         id: "body".into(),
         kind: BodyKind::General,
         regions: Vec::new(),
-        transform: Some(Transform {
-            rows: [
+        transform: Some(
+            Transform::from_rows([
                 [2.0, 0.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
-            ],
-        }),
+            ])
+            .expect("affine transform"),
+        ),
         name: None,
         color: None,
         visible: None,
     };
-    let instance = Transform {
-        rows: [
-            [1.0, 0.0, 0.0, 10.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let instance = Transform::from_rows([
+        [1.0, 0.0, 0.0, 10.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     compose_body_transform(&mut body, instance);
     assert_eq!(
         body.transform

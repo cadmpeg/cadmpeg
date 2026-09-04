@@ -235,9 +235,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         };
         let (transform, transform_units) = scale
             .and_then(|scale| crate::instances::scale_translation(reference.transform, scale))
-            .map_or((reference.transform.rows, "source_length_unit"), |value| {
-                (value.rows, "millimeter")
-            });
+            .map_or(
+                (reference.transform.rows(), "source_length_unit"),
+                |value| (value.rows(), "millimeter"),
+            );
         let definition = definition_id(reference.definition_id);
         let object_record = format!("rhino:object:record#{source_order:06}");
         let parents = member_definitions

@@ -438,7 +438,7 @@ impl<'a> Builder<'a> {
                 && !self.ir.model.bodies.is_empty()
                 && self.ir.model.bodies.iter().all(|body| {
                     body.transform
-                        .is_none_or(|transform| is_identity(&transform.rows))
+                        .is_none_or(|transform| is_identity(&transform.rows()))
                 })
                 && self
                     .ir
@@ -1187,7 +1187,7 @@ impl<'a> Builder<'a> {
             if !transform.is_proper_rigid() || occurrence.scale != [1.0; 3] {
                 continue;
             }
-            let rows = transform.rows;
+            let rows = transform.rows();
             let to = geometry::placement(
                 &mut self.emitter,
                 cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
@@ -1273,7 +1273,7 @@ impl<'a> Builder<'a> {
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
                 let transform = occurrence.effective_transform();
-                if !is_identity(&transform.rows) || occurrence.scale != [1.0; 3] {
+                if !is_identity(&transform.rows()) || occurrence.scale != [1.0; 3] {
                     self.loss(
                         StepLossCode::RootOccurrencePlacementNotRepresentable,
                         format!(
@@ -1572,10 +1572,10 @@ impl<'a> Builder<'a> {
             .bodies
             .get(body_id.as_str())
             .and_then(|body| body.transform);
-        let Some(transform) = transform.filter(|transform| !is_identity(&transform.rows)) else {
+        let Some(transform) = transform.filter(|transform| !is_identity(&transform.rows())) else {
             return item;
         };
-        if !is_rigid_transform(&transform.rows) {
+        if !is_rigid_transform(&transform.rows()) {
             self.loss(
                 StepLossCode::BodyNonRigidTransform,
                 format!("body '{body_id}' carries a non-rigid transform"),
@@ -1595,7 +1595,7 @@ impl<'a> Builder<'a> {
         let map = self
             .emitter
             .emit("REPRESENTATION_MAP", &format!("{origin},{representation}"));
-        let rows = transform.rows;
+        let rows = transform.rows();
         let target = geometry::placement(
             &mut self.emitter,
             cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
@@ -3284,10 +3284,10 @@ impl<'a> Builder<'a> {
             let (Some(text), Some(placement)) = (text.as_deref(), placement.as_ref()) else {
                 continue;
             };
-            if !annotation.targets.is_empty() || !is_rigid_transform(&placement.rows) {
+            if !annotation.targets.is_empty() || !is_rigid_transform(&placement.rows()) {
                 continue;
             }
-            let rows = placement.rows;
+            let rows = placement.rows();
             let placement = geometry::placement(
                 &mut self.emitter,
                 cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
@@ -4529,5 +4529,6 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
 }
 
 pub(crate) fn is_rigid_transform(rows: &[[f64; 4]; 4]) -> bool {
-    cadmpeg_ir::transform::Transform { rows: *rows }.is_proper_rigid()
+    cadmpeg_ir::transform::Transform::from_rows(*rows)
+        .is_some_and(|transform| transform.is_proper_rigid())
 }

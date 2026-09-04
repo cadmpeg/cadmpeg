@@ -5733,14 +5733,13 @@ fn block_placement(
     let [x_axis, y_axis, z_axis] = ordered.map(|band| band.normal);
     Some((
         body.clone(),
-        Transform {
-            rows: [
-                [x_axis.x, y_axis.x, z_axis.x, origin.x],
-                [x_axis.y, y_axis.y, z_axis.y, origin.y],
-                [x_axis.z, y_axis.z, z_axis.z, origin.z],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        },
+        Transform::from_rows([
+            [x_axis.x, y_axis.x, z_axis.x, origin.x],
+            [x_axis.y, y_axis.y, z_axis.y, origin.y],
+            [x_axis.z, y_axis.z, z_axis.z, origin.z],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     ))
 }
 

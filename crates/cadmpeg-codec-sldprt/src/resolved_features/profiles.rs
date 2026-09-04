@@ -3187,14 +3187,13 @@ mod detached_legacy_sketch_tests {
             .with_construction(true)
             .with_native_ref(Some("line".into())),
         ];
-        let quarter_turn = Transform {
-            rows: [
-                [0.0, -1.0, 0.0, 5.0],
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        };
+        let quarter_turn = Transform::from_rows([
+            [0.0, -1.0, 0.0, 5.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform");
         let assembled_id = SketchId("sldprt:model:sketch#block-profile:test".into());
         let block_sketches = HashMap::from([("23".into(), block_sketch_id)]);
         let instances = [

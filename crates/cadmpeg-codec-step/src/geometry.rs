@@ -77,32 +77,32 @@ pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
 
 fn similarity_transform(transform: &Transform) -> bool {
     if transform
-        .rows
+        .rows()
         .iter()
         .flatten()
         .any(|value| !value.is_finite())
-        || transform.rows[3][0].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || transform.rows[3][1].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || transform.rows[3][2].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || (transform.rows[3][3] - 1.0).abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || transform.rows()[3][0].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || transform.rows()[3][1].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || transform.rows()[3][2].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || (transform.rows()[3][3] - 1.0).abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
     {
         return false;
     }
     let columns = [
         Vector3::new(
-            transform.rows[0][0],
-            transform.rows[1][0],
-            transform.rows[2][0],
+            transform.rows()[0][0],
+            transform.rows()[1][0],
+            transform.rows()[2][0],
         ),
         Vector3::new(
-            transform.rows[0][1],
-            transform.rows[1][1],
-            transform.rows[2][1],
+            transform.rows()[0][1],
+            transform.rows()[1][1],
+            transform.rows()[2][1],
         ),
         Vector3::new(
-            transform.rows[0][2],
-            transform.rows[1][2],
-            transform.rows[2][2],
+            transform.rows()[0][2],
+            transform.rows()[1][2],
+            transform.rows()[2][2],
         ),
     ];
     let scale = columns[0].norm();
@@ -138,11 +138,8 @@ fn direction2(e: &mut Emitter, v: Point2) -> Ref {
 }
 
 fn similarity_transform_2d(transform: &Transform2) -> bool {
-    if !transform.is_affine() {
-        return false;
-    }
-    let first = Point2::new(transform.rows[0][0], transform.rows[1][0]);
-    let second = Point2::new(transform.rows[0][1], transform.rows[1][1]);
+    let first = Point2::new(transform.rows()[0][0], transform.rows()[1][0]);
+    let second = Point2::new(transform.rows()[0][1], transform.rows()[1][1]);
     let scale = first.u.hypot(first.v);
     let tolerance = EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10 * scale.max(1.0);
     scale > EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12
@@ -157,9 +154,12 @@ fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Ref 
 }
 
 fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Ref {
-    let origin = point2(e, Point2::new(transform.rows[0][2], transform.rows[1][2]));
-    let x = Point2::new(transform.rows[0][0], transform.rows[1][0]);
-    let y = Point2::new(transform.rows[0][1], transform.rows[1][1]);
+    let origin = point2(
+        e,
+        Point2::new(transform.rows()[0][2], transform.rows()[1][2]),
+    );
+    let x = Point2::new(transform.rows()[0][0], transform.rows()[1][0]);
+    let y = Point2::new(transform.rows()[0][1], transform.rows()[1][1]);
     let scale = x.u.hypot(x.v);
     let x = direction2(e, x);
     let y = direction2(e, y);
@@ -335,25 +335,25 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
     let origin = point(
         e,
         Point3::new(
-            transform.rows[0][3],
-            transform.rows[1][3],
-            transform.rows[2][3],
+            transform.rows()[0][3],
+            transform.rows()[1][3],
+            transform.rows()[2][3],
         ),
     );
     let x = Vector3::new(
-        transform.rows[0][0],
-        transform.rows[1][0],
-        transform.rows[2][0],
+        transform.rows()[0][0],
+        transform.rows()[1][0],
+        transform.rows()[2][0],
     );
     let y = Vector3::new(
-        transform.rows[0][1],
-        transform.rows[1][1],
-        transform.rows[2][1],
+        transform.rows()[0][1],
+        transform.rows()[1][1],
+        transform.rows()[2][1],
     );
     let z = Vector3::new(
-        transform.rows[0][2],
-        transform.rows[1][2],
-        transform.rows[2][2],
+        transform.rows()[0][2],
+        transform.rows()[1][2],
+        transform.rows()[2][2],
     );
     let scale = x.norm();
     let x = direction(e, x);

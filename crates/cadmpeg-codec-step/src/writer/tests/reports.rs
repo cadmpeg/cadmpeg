@@ -927,9 +927,12 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
             origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
             direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
         }),
-        transform: cadmpeg_ir::transform::Transform2 {
-            rows: [[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 1.0]],
-        },
+        transform: cadmpeg_ir::transform::Transform2::from_rows([
+            [2.0, 0.0, 0.0],
+            [0.0, 3.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     };
 
     let mut output = Vec::new();

@@ -101,25 +101,23 @@ fn rescoping_a_model_entity_preserves_a_non_finite_coordinate() {
 
 #[test]
 fn occurrence_transform_composes_outside_existing_body_transform() {
-    let outer = Transform {
-        rows: [
-            [0.0, -1.0, 0.0, 20.0],
-            [1.0, 0.0, 0.0, 30.0],
-            [0.0, 0.0, 1.0, 40.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
-    let inner = Transform {
-        rows: [
-            [1.0, 0.0, 0.0, 5.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let outer = Transform::from_rows([
+        [0.0, -1.0, 0.0, 20.0],
+        [1.0, 0.0, 0.0, 30.0],
+        [0.0, 0.0, 1.0, 40.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
+    let inner = Transform::from_rows([
+        [1.0, 0.0, 0.0, 5.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
 
     assert_eq!(
-        compose_transforms(outer, inner).rows,
+        compose_transforms(outer, inner).rows(),
         [
             [0.0, -1.0, 0.0, 20.0],
             [1.0, 0.0, 0.0, 35.0],

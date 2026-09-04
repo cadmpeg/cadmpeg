@@ -71,7 +71,8 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     for (rows, apply) in motions {
         let mut moved = cadmpeg_ir::examples::unit_cube();
         prepare(&mut moved);
-        moved.model.bodies[0].transform = Some(Transform { rows });
+        moved.model.bodies[0].transform =
+            Some(Transform::from_rows(rows).expect("affine transform"));
         let mut bytes = Vec::new();
         SldprtCodec
             .plan(EncodeInput::new(&moved, None), TargetRequest::Inherit)

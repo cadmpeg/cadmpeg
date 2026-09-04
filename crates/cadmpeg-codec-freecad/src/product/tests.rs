@@ -120,25 +120,25 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
                 .is_some_and(|id| id.ends_with("Occurrence"))
         })
         .collect::<Vec<_>>();
-    assert_eq!(assembly_occurrence.transform.rows[0][3], 10.0);
+    assert_eq!(assembly_occurrence.transform.rows()[0][3], 10.0);
     assert_eq!(link_occurrences.len(), 2);
     assert_eq!(link_occurrences[0].ordinal, 0);
-    assert_eq!(link_occurrences[0].transform.rows[0][3], 5.0);
-    assert_eq!(link_occurrences[1].transform.rows[0][3], 8.0);
+    assert_eq!(link_occurrences[0].transform.rows()[0][3], 5.0);
+    assert_eq!(link_occurrences[1].transform.rows()[0][3], 8.0);
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
         graph
             .resolved_transform(&link_occurrences[0].id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         115.0
     );
     assert_eq!(
         graph
             .resolved_transform(&link_occurrences[1].id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         118.0
     );
     assert_eq!(link_occurrences[0].scale, [2.0, 3.0, 4.0]);
@@ -894,21 +894,21 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
         occurrence("Inner")
             .linked_prototype
             .expect("linked prototype placement")
-            .rows[0][3],
+            .rows()[0][3],
         5.0
     );
     assert_eq!(
         occurrence("Outer")
             .linked_prototype
             .expect("linked prototype placement")
-            .rows[0][3],
+            .rows()[0][3],
         8.0
     );
     assert_eq!(
         occurrence("Override")
             .linked_prototype
             .expect("linked prototype placement")
-            .rows[0][3],
+            .rows()[0][3],
         0.0
     );
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
@@ -917,21 +917,21 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
         graph
             .resolved_transform(&occurrence("Inner").id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         8.0
     );
     assert_eq!(
         graph
             .resolved_transform(&occurrence("Outer").id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         20.0
     );
     assert_eq!(
         graph
             .resolved_transform(&occurrence("Override").id)
             .unwrap()
-            .rows[0][3],
+            .rows()[0][3],
         14.0
     );
     assert!(crate::validate_native(result.ir()).is_empty());

@@ -388,9 +388,8 @@ fn anisotropic_replica_scaling_conjugates_the_parent_map() {
             origin: Point2::new(1.0, 2.0),
             direction: Point2::new(3.0, 4.0),
         }),
-        transform: Transform2 {
-            rows: [[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]],
-        },
+        transform: Transform2::from_rows([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]])
+            .expect("affine transform"),
     };
     let mut scaled = original.clone();
     assert!(scale_pcurve_geometry(&mut scaled, [2.0, 3.0]));

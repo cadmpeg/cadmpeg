@@ -604,9 +604,12 @@ mod tests {
     }
 
     fn translation(x: f64) -> Transform {
-        let mut transform = Transform::identity();
-        transform.rows[0][3] = x;
-        transform
+        Transform::affine([
+            [1.0, 0.0, 0.0, x],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("translation is affine")
     }
 
     fn occurrence(id: &str, parent: OccurrenceParent, x: f64) -> Occurrence {
@@ -642,7 +645,7 @@ mod tests {
             graph
                 .resolved_transform(&OccurrenceId("child".into()))
                 .expect("resolved child")
-                .rows[0][3],
+                .rows()[0][3],
             13.0
         );
     }

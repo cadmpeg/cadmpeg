@@ -321,12 +321,10 @@ pub(crate) fn transfer_neutral(
                     OccurrenceParent::Occurrence { occurrence }
                 }),
                 ordinal: u32::try_from(index).unwrap_or(u32::MAX),
-                transform: Transform {
-                    rows: local_transform,
-                },
-                linked_prototype: (record.link_transform == Some(true)).then_some(Transform {
-                    rows: prototype_transform,
-                }),
+                transform: Transform::from_rows(local_transform).expect("affine transform"),
+                linked_prototype: (record.link_transform == Some(true)).then_some(
+                    Transform::from_rows(prototype_transform).expect("affine transform"),
+                ),
                 scale,
                 name: Some(record.object.clone()),
                 visible: None,
@@ -430,9 +428,7 @@ pub(crate) fn transfer_neutral(
                 }
             }),
             ordinal: 0,
-            transform: Transform {
-                rows: local_transform,
-            },
+            transform: Transform::from_rows(local_transform).expect("affine transform"),
             linked_prototype: None,
             scale: [1.0; 3],
             name: Some(object.clone()),

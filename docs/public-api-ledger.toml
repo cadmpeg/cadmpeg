@@ -4131,3 +4131,17 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::Native::namespace_mut"
 reason = "creating a namespace requires an explicit nonzero version so get-or-create cannot invent version 1"
+
+[[change]]
+commit = "a72f092a640377a8e713dd974eb3d8d5a36f69a8"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::transform::Transform::rows"
+reason = "an affine transform stores a private matrix built by affine/from_rows so a non-affine bottom row cannot be represented"
+
+[[change]]
+commit = "a72f092a640377a8e713dd974eb3d8d5a36f69a8"
+crate = "cadmpeg-ir"
+kind = "visibility"
+item = "cadmpeg_ir::transform::Transform2::rows"
+reason = "a 2d affine transform stores a private matrix built by affine/from_rows so a non-affine bottom row cannot be represented"

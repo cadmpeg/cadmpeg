@@ -216,13 +216,13 @@ pub(crate) fn transfer_neutral(
                 .placements
                 .iter()
                 .copied()
-                .map(|rows| Transform { rows })
+                .map(|rows| Transform::from_rows(rows).expect("affine transform"))
                 .collect::<Vec<_>>();
             let offsets = record
                 .offsets
                 .iter()
                 .copied()
-                .map(|rows| Transform { rows })
+                .map(|rows| Transform::from_rows(rows).expect("affine transform"))
                 .collect::<Vec<_>>();
             let id = JointId(crate::native::model_id(
                 "joint",
@@ -728,11 +728,11 @@ pub(crate) mod tests {
             connector.operand.container,
             cadmpeg_ir::OperandContainer::Occurrence(_)
         )));
-        assert_eq!(connectors[1].frame.rows[0][3], 2.0);
+        assert_eq!(connectors[1].frame.rows()[0][3], 2.0);
         let offset_frames = joint.offset_frames().collect::<Vec<_>>();
         assert_eq!(offset_frames.len(), 2);
-        assert_eq!(offset_frames[0].rows[0][3], 0.5);
-        assert_eq!(offset_frames[1].rows[0][3], 1.5);
+        assert_eq!(offset_frames[0].rows()[0][3], 0.5);
+        assert_eq!(offset_frames[1].rows()[0][3], 1.5);
         assert!(joint.suppressed);
         assert_eq!(joint.detached(), [true, false]);
         assert!((joint.angle().expect("angle") - 15_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
@@ -794,9 +794,9 @@ pub(crate) mod tests {
             connectors[0].operand.container,
             cadmpeg_ir::OperandContainer::Occurrence(_)
         ));
-        assert_eq!(connectors[0].frame.rows[0][3], 7.0);
-        assert_eq!(connectors[0].frame.rows[1][3], 8.0);
-        assert_eq!(connectors[0].frame.rows[2][3], 9.0);
+        assert_eq!(connectors[0].frame.rows()[0][3], 7.0);
+        assert_eq!(connectors[0].frame.rows()[1][3], 8.0);
+        assert_eq!(connectors[0].frame.rows()[2][3], 9.0);
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }

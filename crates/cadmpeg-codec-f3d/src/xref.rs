@@ -297,7 +297,8 @@ pub fn project_occurrences(table: &XrefTable) -> Vec<Occurrence> {
                 },
                 parent: OccurrenceParent::Root,
                 ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
-                transform: cadmpeg_ir::transform::Transform { rows: transform },
+                transform: cadmpeg_ir::transform::Transform::from_rows(transform)
+                    .expect("affine transform"),
                 linked_prototype: None,
                 scale: [1.0; 3],
                 name: None,

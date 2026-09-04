@@ -5,7 +5,6 @@ use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -187,49 +186,7 @@ fn assign(
 }
 
 fn check_rigid(transform: Transform) -> Result<(), CodecError> {
-    const EPS: f64 = 1.0e-9;
-    if transform
-        .rows
-        .iter()
-        .flatten()
-        .any(|value| !value.is_finite())
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT body transform contains a non-finite value".into(),
-        ));
-    }
-    if transform.rows[3]
-        .iter()
-        .zip([0.0, 0.0, 0.0, 1.0])
-        .any(|(actual, expected)| (*actual - expected).abs() > EPS)
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT body transform is not affine".into(),
-        ));
-    }
-    let rows = [
-        Vector3::new(
-            transform.rows[0][0],
-            transform.rows[0][1],
-            transform.rows[0][2],
-        ),
-        Vector3::new(
-            transform.rows[1][0],
-            transform.rows[1][1],
-            transform.rows[1][2],
-        ),
-        Vector3::new(
-            transform.rows[2][0],
-            transform.rows[2][1],
-            transform.rows[2][2],
-        ),
-    ];
-    if rows.iter().any(|row| (row.norm() - 1.0).abs() > EPS)
-        || rows[0].dot(rows[1]).abs() > EPS
-        || rows[0].dot(rows[2]).abs() > EPS
-        || rows[1].dot(rows[2]).abs() > EPS
-        || (rows[0].dot(rows[1].cross(rows[2])) - 1.0).abs() > EPS
-    {
+    if !transform.is_proper_rigid() {
         return Err(CodecError::NotImplemented(
             "SLDPRT body transform must be a right-handed rigid transform".into(),
         ));

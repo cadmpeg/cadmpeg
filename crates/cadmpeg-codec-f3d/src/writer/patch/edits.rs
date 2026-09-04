@@ -2635,7 +2635,7 @@ pub(crate) fn validate_body_transform_edits(
         let transform = after.transform.ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove F3D body transform: {id}"))
         })?;
-        if !valid_transform(transform) || before.transform.is_none() {
+        if before.transform.is_none() {
             return Err(CodecError::NotImplemented(format!(
                 "F3D body transform {id} must replace an existing finite affine transform"
             )));
@@ -2883,18 +2883,6 @@ pub(crate) fn validate_coedge_sense_edits(
         }
     }
     Ok(edits)
-}
-
-fn valid_transform(transform: Transform) -> bool {
-    transform
-        .rows
-        .iter()
-        .flatten()
-        .all(|value| value.is_finite())
-        && transform.rows[3][0] == 0.0
-        && transform.rows[3][1] == 0.0
-        && transform.rows[3][2] == 0.0
-        && transform.rows[3][3] != 0.0
 }
 
 pub(crate) fn validate_curve_edits(

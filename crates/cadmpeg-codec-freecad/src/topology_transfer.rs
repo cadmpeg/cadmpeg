@@ -1405,13 +1405,12 @@ fn transformed_pcurve_geometry(
     }
     PcurveGeometry::Transformed {
         basis: Box::new(geometry),
-        transform: Transform2 {
-            rows: [
-                [affine.u_scale, 0.0, affine.u_offset],
-                [0.0, affine.v_scale, affine.v_offset],
-                [0.0, 0.0, 1.0],
-            ],
-        },
+        transform: Transform2::from_rows([
+            [affine.u_scale, 0.0, affine.u_offset],
+            [0.0, affine.v_scale, affine.v_offset],
+            [0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     }
 }
 
@@ -1506,19 +1505,19 @@ struct Similarity {
 fn similarity(transform: Transform) -> Result<Similarity, CodecError> {
     let columns = [
         Vector3::new(
-            transform.rows[0][0],
-            transform.rows[1][0],
-            transform.rows[2][0],
+            transform.rows()[0][0],
+            transform.rows()[1][0],
+            transform.rows()[2][0],
         ),
         Vector3::new(
-            transform.rows[0][1],
-            transform.rows[1][1],
-            transform.rows[2][1],
+            transform.rows()[0][1],
+            transform.rows()[1][1],
+            transform.rows()[2][1],
         ),
         Vector3::new(
-            transform.rows[0][2],
-            transform.rows[1][2],
-            transform.rows[2][2],
+            transform.rows()[0][2],
+            transform.rows()[1][2],
+            transform.rows()[2][2],
         ),
     ];
     let scale = columns[0].norm();
@@ -1662,7 +1661,7 @@ fn transform_digest(transform: Transform) -> String {
     // TopLoc_Location equality is exact; neutral identities must not merge
     // source-distinct placements at a decoder tolerance boundary.
     let mut bytes = Vec::with_capacity(16 * 8);
-    for row in transform.rows {
+    for row in transform.rows() {
         for value in row {
             let canonical = if value == 0.0 { 0.0 } else { value };
             bytes.extend_from_slice(&canonical.to_bits().to_le_bytes());
@@ -1676,10 +1675,10 @@ fn is_identity(transform: Transform) -> bool {
 }
 
 fn exact_transforms_equal(left: Transform, right: Transform) -> bool {
-    left.rows
+    left.rows()
         .into_iter()
         .flatten()
-        .zip(right.rows.into_iter().flatten())
+        .zip(right.rows().into_iter().flatten())
         .all(|(left, right)| left == right)
 }
 

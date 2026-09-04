@@ -759,39 +759,37 @@ fn feature_extent_magnitudes_are_validated() {
 fn block_placement_must_be_proper_rigid() {
     use crate::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
 
-    let mut rotated = crate::transform::Transform::identity();
-    rotated.rows[0][0] = 0.0;
-    rotated.rows[0][1] = -1.0;
-    rotated.rows[1][0] = 1.0;
-    rotated.rows[1][1] = 0.0;
+    let rotated = crate::transform::Transform::from_rows([
+        [0.0, -1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     assert!(rotated.is_proper_rigid());
 
     for placement in [
-        {
-            let mut placement = crate::transform::Transform::identity();
-            placement.rows[0][0] = f64::NAN;
-            placement
-        },
-        {
-            let mut placement = crate::transform::Transform::identity();
-            placement.rows[3][0] = 1.0;
-            placement
-        },
-        {
-            let mut placement = crate::transform::Transform::identity();
-            placement.rows[0][0] = 2.0;
-            placement
-        },
-        {
-            let mut placement = crate::transform::Transform::identity();
-            placement.rows[0][1] = 0.25;
-            placement
-        },
-        {
-            let mut placement = crate::transform::Transform::identity();
-            placement.rows[0][0] = -1.0;
-            placement
-        },
+        crate::transform::Transform::from_rows([
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
+        crate::transform::Transform::from_rows([
+            [1.0, 0.25, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
+        crate::transform::Transform::from_rows([
+            [-1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        .expect("affine transform"),
     ] {
         let mut ir = unit_cube();
         ir.model.features.push(Feature {

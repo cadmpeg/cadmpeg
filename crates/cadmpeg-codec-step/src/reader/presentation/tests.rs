@@ -378,9 +378,9 @@ fn complex_presentation_annotation_inherits_text_and_placement() {
     );
     assert_eq!(text.as_deref(), Some("inspect surface"));
     let transform = placement.as_ref().expect("annotation placement");
-    assert_eq!(transform.rows[0][3], 10.0);
-    assert_eq!(transform.rows[1][3], 20.0);
-    assert_eq!(transform.rows[2][3], 30.0);
+    assert_eq!(transform.rows()[0][3], 10.0);
+    assert_eq!(transform.rows()[1][3], 20.0);
+    assert_eq!(transform.rows()[2][3], 30.0);
 }
 
 #[test]
@@ -1509,14 +1509,15 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
 
     let mut transformed = unit_cube();
     transformed.model.bodies[0].visible = Some(false);
-    transformed.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
-        rows: [
+    transformed.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::from_rows([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
-        ],
-    });
+        ])
+        .expect("affine transform"),
+    );
     let transformed_text = export(&transformed);
     assert!(transformed_text.contains("MAPPED_ITEM"));
     assert!(!transformed_text.contains("ADVANCED_BREP_SHAPE_REPRESENTATION"));
@@ -1771,14 +1772,13 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             },
             parent: OccurrenceParent::Occurrence { occurrence: root },
             ordinal: 0,
-            transform: Transform {
-                rows: [
-                    [1.0, 0.0, 0.0, 25.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ],
-            },
+            transform: Transform::from_rows([
+                [1.0, 0.0, 0.0, 25.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+            .expect("affine transform"),
             linked_prototype: None,
             scale: [1.0; 3],
             name: Some("Child occurrence".into()),

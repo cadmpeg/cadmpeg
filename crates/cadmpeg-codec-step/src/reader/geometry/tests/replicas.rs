@@ -309,14 +309,13 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
 
 #[test]
 fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
-    let transform = Transform {
-        rows: [
-            [0.0, -2.0, 0.0, 10.0],
-            [2.0, 0.0, 0.0, 20.0],
-            [0.0, 0.0, 2.0, 30.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let transform = Transform::from_rows([
+        [0.0, -2.0, 0.0, 10.0],
+        [2.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     let curve_geometry = CurveGeometry::Transformed {
         basis: Box::new(CurveGeometry::Line {
             origin: Point3::new(1.0, 2.0, 3.0),
@@ -503,14 +502,13 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
 #13=SURFACE_REPLICA('',#14,#8);
 #14=SURFACE_REPLICA('',#12,#8);",
     );
-    let transform = Transform {
-        rows: [
-            [2.0, 0.0, 0.0, 10.0],
-            [0.0, 2.0, 0.0, 20.0],
-            [0.0, 0.0, 2.0, 30.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
+    let transform = Transform::from_rows([
+        [2.0, 0.0, 0.0, 10.0],
+        [0.0, 2.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .expect("affine transform");
     let base_curve = CurveGeometry::Line {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(1.0, 0.0, 0.0),
@@ -605,9 +603,9 @@ fn cartesian_transformation_operator_derives_optional_axes() {
         for (row, values) in expected.iter().enumerate() {
             for (column, expected) in values.iter().enumerate() {
                 assert!(
-                    (actual.rows[row][column] - expected).abs() < 1.0e-12,
+                    (actual.rows()[row][column] - expected).abs() < 1.0e-12,
                     "matrix coefficient [{row}][{column}] was {}, expected {expected}",
-                    actual.rows[row][column]
+                    actual.rows()[row][column]
                 );
             }
         }
@@ -666,10 +664,10 @@ fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
         panic!("pcurve replica lost its transformation")
     };
     let root_two = 2.0_f64.sqrt();
-    assert!((transform.rows[0][0] - 1.0 / root_two).abs() < 1.0e-12);
-    assert!((transform.rows[0][1] + 1.0 / root_two).abs() < 1.0e-12);
-    assert!((transform.rows[1][0] - 1.0 / root_two).abs() < 1.0e-12);
-    assert!((transform.rows[1][1] - 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows()[0][0] - 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows()[0][1] + 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows()[1][0] - 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows()[1][1] - 1.0 / root_two).abs() < 1.0e-12);
 }
 
 #[test]
