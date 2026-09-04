@@ -360,17 +360,17 @@ fn mesh_edge_ports(
         let Some(_) = row.boundary_pattern() else {
             continue;
         };
-        for occurrence in &occurrences[edge] {
-            let cycle = &cycles[occurrence.face][occurrence.cycle];
-            let (before, segment_count) = row.boundary_span(occurrence.start, cycle.len())?;
-            let after = (before + segment_count) % cycle.len();
+        for run in &occurrences[edge] {
+            let cycle = &cycles[run.face][run.cycle];
+            let before = run.start;
+            let after = run.end(cycle.len());
             let before_node = *corners
-                .entry((occurrence.face, occurrence.cycle, before))
+                .entry((run.face, run.cycle, before))
                 .or_insert_with(|| union.push());
             let after_node = *corners
-                .entry((occurrence.face, occurrence.cycle, after))
+                .entry((run.face, run.cycle, after))
                 .or_insert_with(|| union.push());
-            if occurrence.reversed {
+            if run.reversed {
                 union.union(edge * 2 + 1, before_node);
                 union.union(edge * 2, after_node);
             } else {
@@ -392,14 +392,6 @@ fn mesh_edge_ports(
     Some(ports)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MeshEdgeOccurrence {
-    face: usize,
-    cycle: usize,
-    start: usize,
-    reversed: bool,
-}
-
 /// One exact occurrence of a physical edge row on a trim-mesh boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MeshEdgeRun {
@@ -417,10 +409,16 @@ pub struct MeshEdgeRun {
     pub reversed: bool,
 }
 
+impl MeshEdgeRun {
+    fn end(self, cycle_len: usize) -> usize {
+        (self.start + self.segment_count) % cycle_len
+    }
+}
+
 fn mesh_edge_occurrences(
     edge_rows: &[EdgeRow],
     cycles: &[Vec<Vec<u32>>],
-) -> Option<Vec<Vec<MeshEdgeOccurrence>>> {
+) -> Option<Vec<Vec<MeshEdgeRun>>> {
     let mut locations = HashMap::<u32, Vec<(usize, usize, usize)>>::new();
     for (face, face_cycles) in cycles.iter().enumerate() {
         for (cycle, handles) in face_cycles.iter().enumerate() {
@@ -434,7 +432,8 @@ fn mesh_edge_occurrences(
     }
     edge_rows
         .iter()
-        .map(|row| {
+        .enumerate()
+        .map(|(edge, row)| {
             let Some(pattern) = row.boundary_pattern() else {
                 return Some(Vec::new());
             };
@@ -469,13 +468,19 @@ fn mesh_edge_occurrences(
             }
             let mut occurrences = matches
                 .into_iter()
-                .map(|((face, cycle, start), reversed)| MeshEdgeOccurrence {
-                    face,
-                    cycle,
-                    start,
-                    reversed,
+                .map(|((face, cycle, start), reversed)| {
+                    let cycle_len = cycles[face][cycle].len();
+                    let (start, segment_count) = row.boundary_span(start, cycle_len)?;
+                    Some(MeshEdgeRun {
+                        edge,
+                        face,
+                        cycle,
+                        start,
+                        segment_count,
+                        reversed,
+                    })
                 })
-                .collect::<Vec<_>>();
+                .collect::<Option<Vec<_>>>()?;
             occurrences
                 .sort_by_key(|occurrence| (occurrence.face, occurrence.cycle, occurrence.start));
             Some(occurrences)
@@ -487,7 +492,7 @@ fn mesh_edge_occurrences(
 struct StandardMeshAnalysis {
     edge_rows: Vec<EdgeRow>,
     cycles: Vec<Vec<Vec<u32>>>,
-    occurrences: Vec<Vec<MeshEdgeOccurrence>>,
+    occurrences: Vec<Vec<MeshEdgeRun>>,
     fixed_complete_row_spans: bool,
 }
 
@@ -527,22 +532,12 @@ pub fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
 }
 
 fn mesh_edge_runs(analysis: &StandardMeshAnalysis) -> Option<Vec<MeshEdgeRun>> {
-    let mut runs = Vec::new();
-    for (edge, edge_occurrences) in analysis.occurrences.iter().enumerate() {
-        for occurrence in edge_occurrences {
-            let cycle_len = analysis.cycles[occurrence.face][occurrence.cycle].len();
-            let (start, segment_count) =
-                analysis.edge_rows[edge].boundary_span(occurrence.start, cycle_len)?;
-            runs.push(MeshEdgeRun {
-                edge,
-                face: occurrence.face,
-                cycle: occurrence.cycle,
-                start,
-                segment_count,
-                reversed: occurrence.reversed,
-            });
-        }
-    }
+    let mut runs = analysis
+        .occurrences
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
     runs.sort_by_key(|run| (run.face, run.cycle, run.start, run.edge));
     Some(runs)
 }
@@ -1277,10 +1272,14 @@ pub struct MeshEdgePlacementCandidate {
     pub cycle: usize,
     /// First covered boundary-segment index.
     pub start: usize,
-    /// Boundary-segment index immediately after the covered run.
-    pub end: usize,
     /// Number of consecutive boundary segments covered by the edge.
     pub segment_count: usize,
+}
+
+impl MeshEdgePlacementCandidate {
+    fn end(self, cycle_len: usize) -> usize {
+        (self.start + self.segment_count) % cycle_len
+    }
 }
 
 /// One placement within a complete face assignment, together with the point
@@ -1369,7 +1368,7 @@ fn mesh_face_coverage(
         .map(|face_cycles| {
             alloc_filled(
                 face_cycles.len(),
-                Vec::<(usize, MeshEdgeOccurrence)>::new(),
+                Vec::<MeshEdgeRun>::new(),
                 "catia_mesh_cycle_occurrences",
             )
             .ok()
@@ -1381,12 +1380,12 @@ fn mesh_face_coverage(
         "catia_mesh_face_edges",
     )
     .ok()?;
-    for (edge, values) in occurrences.iter().enumerate() {
+    for values in occurrences {
         for &occurrence in values {
             let face_cycles = occurrences_by_cycle.get_mut(occurrence.face)?;
             let cycle_occurrences = face_cycles.get_mut(occurrence.cycle)?;
-            cycle_occurrences.push((edge, occurrence));
-            present_edges_by_face[occurrence.face].insert(edge);
+            cycle_occurrences.push(occurrence);
+            present_edges_by_face[occurrence.face].insert(occurrence.edge);
         }
     }
     let mut edges_by_face =
@@ -1407,9 +1406,9 @@ fn mesh_face_coverage(
         let mut gaps = Vec::new();
         for (cycle_index, cycle) in face_cycles.iter().enumerate() {
             let mut covered = alloc_filled(cycle.len(), false, "catia_mesh_cycle_coverage").ok()?;
-            for &(edge, occurrence) in &occurrences_by_cycle[face][cycle_index] {
-                let (start, segment_count) =
-                    edge_rows[edge].boundary_span(occurrence.start, cycle.len())?;
+            for occurrence in &occurrences_by_cycle[face][cycle_index] {
+                let start = occurrence.start;
+                let segment_count = occurrence.segment_count;
                 for offset in 0..segment_count {
                     let slot = &mut covered[(start + offset) % cycle.len()];
                     if *slot {
@@ -1767,7 +1766,6 @@ fn standard_mesh_missing_edge_assignment_domains(
                             for placement in &mut placed[gap_placed_start..] {
                                 placement.start = at % self.cycle_lengths[value.cycle];
                                 at = at.checked_add(placement.segment_count)?;
-                                placement.end = at % self.cycle_lengths[value.cycle];
                             }
                         }
                         self.walk(
@@ -1865,8 +1863,6 @@ fn standard_mesh_missing_edge_assignment_domains(
                             face: self.face,
                             cycle: self.gaps[gap].cycle,
                             start: (self.gaps[gap].start + offset)
-                                % self.cycle_lengths[self.gaps[gap].cycle],
-                            end: (self.gaps[gap].start + offset + segment_count)
                                 % self.cycle_lengths[self.gaps[gap].cycle],
                             segment_count,
                         };
@@ -2071,7 +2067,6 @@ fn standard_mesh_missing_edge_assignment_domains(
                         face,
                         cycle: gap.cycle,
                         start: (gap.start + offset) % cycle_lengths[gap.cycle],
-                        end: (gap.start + offset + segment_count) % cycle_lengths[gap.cycle],
                         segment_count,
                     });
                     offset = offset.checked_add(segment_count)?;
@@ -2113,7 +2108,6 @@ fn standard_mesh_missing_edge_assignment_domains(
                             face,
                             cycle: gap.cycle,
                             start: offset,
-                            end: (offset + 1) % gap.length,
                             segment_count: 1,
                         })
                         .collect()
@@ -2155,7 +2149,6 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 face,
                                 cycle: 0,
                                 start: offset,
-                                end: (offset + 1) % gap.length,
                                 segment_count: 1,
                             })
                             .collect()
@@ -2462,7 +2455,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                         MeshBoundaryEdgeCandidate {
                             edge: run.edge,
                             start: run.start,
-                            end: (run.start + run.segment_count) % length,
+                            end: run.end(length),
                             reversed: fixed_direction.then_some(run.reversed),
                         },
                         run.segment_count,
@@ -2497,8 +2490,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                             MeshBoundaryEdgeCandidate {
                                 edge: run.edge,
                                 start: run.start,
-                                end: (run.start + run.segment_count)
-                                    % cycle_lengths[face][run.cycle],
+                                end: run.end(cycle_lengths[face][run.cycle]),
                                 reversed: fixed_direction.then_some(run.reversed),
                             },
                             run.segment_count,
@@ -2509,7 +2501,7 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                             MeshBoundaryEdgeCandidate {
                                 edge: placement.edge,
                                 start: placement.start,
-                                end: placement.end,
+                                end: placement.end(cycle_lengths[face][placement.cycle]),
                                 reversed: None,
                             },
                             placement.segment_count,
@@ -2815,7 +2807,11 @@ fn standard_mesh_assignment_corner_points(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<(Vec<Vec<Vec<MeshEdgePlacementCandidate>>>, MeshCornerPoints)> {
+) -> Option<(
+    Vec<Vec<Vec<MeshEdgePlacementCandidate>>>,
+    MeshCornerPoints,
+    Vec<Vec<usize>>,
+)> {
     let analysis = standard_mesh_analysis(bytes)?;
     let edge_rows = &analysis.edge_rows;
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
@@ -2840,7 +2836,7 @@ fn standard_mesh_assignment_corner_points(
             (
                 run.face,
                 run.cycle,
-                run.start.checked_add(run.segment_count)? % cycle_lengths[run.face][run.cycle],
+                run.end(cycle_lengths[run.face][run.cycle]),
             ),
         ];
         for position in positions {
@@ -2895,7 +2891,7 @@ fn standard_mesh_assignment_corner_points(
             break;
         }
     }
-    Some((assignments, corner_points))
+    Some((assignments, corner_points, cycle_lengths))
 }
 
 /// Retain endpoint constraints on each placement inside each complete face
@@ -2907,7 +2903,7 @@ pub fn standard_mesh_missing_edge_endpoint_assignments(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>> {
-    let (assignments, corner_points) =
+    let (assignments, corner_points, cycle_lengths) =
         standard_mesh_assignment_corner_points(bytes, edge_faces, edge_points)?;
     Some(
         assignments
@@ -2918,30 +2914,33 @@ pub fn standard_mesh_missing_edge_endpoint_assignments(
                         assignment
                             .into_iter()
                             .map(|placement| {
-                                let endpoint_pairs = corner_points
-                                    .get(&(placement.face, placement.cycle, placement.start))
-                                    .zip(corner_points.get(&(
-                                        placement.face,
-                                        placement.cycle,
-                                        placement.end,
-                                    )))
-                                    .map(|(starts, ends)| {
-                                        let mut pairs = starts
-                                            .iter()
-                                            .flat_map(|&start| {
-                                                ends.iter().filter(move |&&end| start != end).map(
-                                                    move |&end| {
-                                                        let mut pair = [start, end];
-                                                        pair.sort_unstable();
-                                                        pair
-                                                    },
-                                                )
-                                            })
-                                            .collect::<Vec<_>>();
-                                        pairs.sort_unstable();
-                                        pairs.dedup();
-                                        pairs
-                                    });
+                                let endpoint_pairs =
+                                    corner_points
+                                        .get(&(placement.face, placement.cycle, placement.start))
+                                        .zip(corner_points.get(&(
+                                            placement.face,
+                                            placement.cycle,
+                                            placement.end(
+                                                cycle_lengths[placement.face][placement.cycle],
+                                            ),
+                                        )))
+                                        .map(|(starts, ends)| {
+                                            let mut pairs = starts
+                                                .iter()
+                                                .flat_map(|&start| {
+                                                    ends.iter()
+                                                        .filter(move |&&end| start != end)
+                                                        .map(move |&end| {
+                                                            let mut pair = [start, end];
+                                                            pair.sort_unstable();
+                                                            pair
+                                                        })
+                                                })
+                                                .collect::<Vec<_>>();
+                                            pairs.sort_unstable();
+                                            pairs.dedup();
+                                            pairs
+                                        });
                                 MeshEdgePlacementEndpointCandidate {
                                     placement,
                                     endpoint_pairs,
