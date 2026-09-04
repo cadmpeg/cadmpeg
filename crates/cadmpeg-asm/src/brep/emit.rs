@@ -31,11 +31,11 @@ use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, NurbsCurve, Pcurve,
-    PcurveGeometry, ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition,
-    RollingBallConstruction, RollingBallRadiusSelector, RollingBallSide, RollingBallThirdSide,
-    Surface, SurfaceGeometry, VariableBlendConstruction, VertexBlendBoundary,
-    VertexBlendBoundaryGeometry, VertexBlendConstruction,
+    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LoftPathCurve,
+    NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface,
+    ProceduralSurfaceDefinition, RollingBallConstruction, RollingBallRadiusSelector,
+    RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry, VariableBlendConstruction,
+    VertexBlendBoundary, VertexBlendBoundaryGeometry, VertexBlendConstruction,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -574,8 +574,10 @@ fn emit_loft_surface(
                                                         source_object: None,
                                                     });
                                                     cadmpeg_ir::geometry::LoftProfileMember {
-                                                        curve,
-                                                        endpoints: member.endpoints,
+                                                        curve: LoftPathCurve {
+                                                            id: curve,
+                                                            endpoints: member.endpoints,
+                                                        },
                                                         form: emit_loft_member_form(
                                                             out,
                                                             member.type_code,
@@ -615,8 +617,10 @@ fn emit_loft_surface(
                                                 parameter: entry.parameter,
                                                 profile,
                                                 path: cadmpeg_ir::geometry::LoftPath {
-                                                    curve: path_curve,
-                                                    endpoints: entry.path.endpoints,
+                                                    curve: path_curve.map(|id| LoftPathCurve {
+                                                        id,
+                                                        endpoints: entry.path.endpoints,
+                                                    }),
                                                     auxiliaries,
                                                     flag: entry.path.flag,
                                                 },
@@ -1074,8 +1078,7 @@ fn emit_law_surface(
                     source_object: None,
                 });
                 cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: id,
-                    endpoints,
+                    curve: LoftPathCurve { id, endpoints },
                     parameters,
                 }
             }
@@ -1198,8 +1201,7 @@ fn emit_skin_surface(
                     source_object: None,
                 });
                 cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: id,
-                    endpoints,
+                    curve: LoftPathCurve { id, endpoints },
                     parameters,
                 }
             }
@@ -1420,8 +1422,7 @@ fn emit_net_surface(
                     source_object: None,
                 });
                 cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: id,
-                    endpoints,
+                    curve: LoftPathCurve { id, endpoints },
                     parameters,
                 }
             }
@@ -1474,8 +1475,10 @@ fn emit_net_surface(
                                                         source_object: None,
                                                     });
                                                     cadmpeg_ir::geometry::LoftProfileMember {
-                                                        curve,
-                                                        endpoints: member.endpoints,
+                                                        curve: LoftPathCurve {
+                                                            id: curve,
+                                                            endpoints: member.endpoints,
+                                                        },
                                                         form: emit_loft_member_form(
                                                             out,
                                                             member.type_code,
@@ -1519,8 +1522,10 @@ fn emit_net_surface(
                                                 parameter: entry.parameter,
                                                 profile,
                                                 path: cadmpeg_ir::geometry::LoftPath {
-                                                    curve: path,
-                                                    endpoints: entry.path.endpoints,
+                                                    curve: path.map(|id| LoftPathCurve {
+                                                        id,
+                                                        endpoints: entry.path.endpoints,
+                                                    }),
                                                     auxiliaries,
                                                     flag: entry.path.flag,
                                                 },
@@ -1627,8 +1632,7 @@ fn emit_sweep_surface(
                     source_object: None,
                 });
                 cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: id,
-                    endpoints,
+                    curve: LoftPathCurve { id, endpoints },
                     parameters,
                 }
             }
@@ -2168,8 +2172,10 @@ fn emit_revision_compound_loft_surface(
                     source_object: None,
                 });
                 cadmpeg_ir::geometry::LoftProfileMember {
-                    curve,
-                    endpoints: member.endpoints,
+                    curve: LoftPathCurve {
+                        id: curve,
+                        endpoints: member.endpoints,
+                    },
                     form: emit_loft_member_form(
                         out,
                         member.type_code,
@@ -2208,8 +2214,10 @@ fn emit_revision_compound_loft_surface(
             })
             .collect();
         cadmpeg_ir::geometry::LoftPath {
-            curve,
-            endpoints: path.endpoints,
+            curve: curve.map(|id| LoftPathCurve {
+                id,
+                endpoints: path.endpoints,
+            }),
             auxiliaries,
             flag: path.flag,
         }
@@ -3309,8 +3317,7 @@ fn emit_law_curve(
                     source_object: None,
                 });
                 cadmpeg_ir::geometry::LawExpression::Edge {
-                    curve: id,
-                    endpoints,
+                    curve: LoftPathCurve { id, endpoints },
                     parameters,
                 }
             }

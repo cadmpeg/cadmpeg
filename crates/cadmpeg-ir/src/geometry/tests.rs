@@ -298,8 +298,10 @@ fn loft_subdata_type_211_has_one_row_and_no_columns() {
 #[test]
 fn loft_member_form_keeps_the_nested_wire_shape() {
     let member = crate::geometry::LoftProfileMember {
-        curve: crate::ids::CurveId("test:curve#loft".into()),
-        endpoints: Some([Some(0.0), Some(1.0)]),
+        curve: crate::geometry::LoftPathCurve {
+            id: crate::ids::CurveId("test:curve#loft".into()),
+            endpoints: Some([Some(0.0), Some(1.0)]),
+        },
         form: crate::geometry::LoftMemberForm::Support {
             type_code: 3,
             surface: Some(crate::ids::SurfaceId("test:surface#loft".into())),
@@ -325,8 +327,10 @@ fn loft_member_form_keeps_the_nested_wire_shape() {
 #[test]
 fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
     let pair = crate::geometry::LoftProfileMember {
-        curve: crate::ids::CurveId("test:curve#loft".into()),
-        endpoints: Some([None, None]),
+        curve: crate::geometry::LoftPathCurve {
+            id: crate::ids::CurveId("test:curve#loft".into()),
+            endpoints: Some([None, None]),
+        },
         form: crate::geometry::LoftMemberForm::PcurvePair {
             pcurve: None,
             secondary_pcurve: None,
@@ -344,8 +348,10 @@ fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
         .contains("pcurve-pair form cannot carry a support surface"));
 
     let mut support_wire = serde_json::to_value(crate::geometry::LoftProfileMember {
-        curve: crate::ids::CurveId("test:curve#loft".into()),
-        endpoints: None,
+        curve: crate::geometry::LoftPathCurve {
+            id: crate::ids::CurveId("test:curve#loft".into()),
+            endpoints: None,
+        },
         form: crate::geometry::LoftMemberForm::Support {
             type_code: 4,
             surface: None,
@@ -364,6 +370,49 @@ fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
     assert!(error
         .to_string()
         .contains("nonzero loft type_code requires data.first_flag"));
+}
+
+#[test]
+fn loft_path_rejects_endpoints_without_a_curve() {
+    let path = crate::geometry::LoftPath {
+        curve: Some(crate::geometry::LoftPathCurve {
+            id: crate::ids::CurveId("test:curve#path".into()),
+            endpoints: Some([Some(0.0), Some(1.0)]),
+        }),
+        auxiliaries: Vec::new(),
+        flag: 4,
+    };
+    let wire = serde_json::to_value(&path).unwrap();
+    assert_eq!(wire["curve"], "test:curve#path");
+    assert_eq!(wire["endpoints"], serde_json::json!([0.0, 1.0]));
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::LoftPath>(wire.clone()).unwrap(),
+        path
+    );
+
+    let mut invalid = wire;
+    invalid.as_object_mut().unwrap().remove("curve");
+    let error = serde_json::from_value::<crate::geometry::LoftPath>(invalid).unwrap_err();
+    assert!(error.to_string().contains("endpoints require a curve"));
+}
+
+#[test]
+fn law_edge_keeps_its_flat_curve_and_endpoints_wire_shape() {
+    let expression = crate::geometry::LawExpression::Edge {
+        curve: crate::geometry::LoftPathCurve {
+            id: crate::ids::CurveId("test:curve#law".into()),
+            endpoints: Some([None, Some(2.0)]),
+        },
+        parameters: [-1.0, 3.0],
+    };
+    let wire = serde_json::to_value(&expression).unwrap();
+    assert_eq!(wire["kind"], "edge");
+    assert_eq!(wire["curve"], "test:curve#law");
+    assert_eq!(wire["endpoints"], serde_json::json!([null, 2.0]));
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::LawExpression>(wire).unwrap(),
+        expression
+    );
 }
 
 fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {

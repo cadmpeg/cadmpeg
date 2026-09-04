@@ -1501,9 +1501,9 @@ fn native_loft_section(
         );
         for member in &entry.profile {
             native_i64(bytes, member.form.type_code());
-            let curve = native_loft_curve_in_range(target, &member.curve, parameter_range)?;
+            let curve = native_loft_curve_in_range(target, &member.curve.id, parameter_range)?;
             native_nurbs_curve(bytes, &curve)?;
-            if let Some(endpoints) = member.endpoints {
+            if let Some(endpoints) = member.curve.endpoints {
                 for value in endpoints {
                     native_optional_f64(bytes, value);
                 }
@@ -1527,7 +1527,7 @@ fn native_loft_section(
                                     "loft references missing surface {surface_id}"
                                 ))
                             })?;
-                        if member.endpoints.is_some() {
+                        if member.curve.endpoints.is_some() {
                             native_embedded_surface_with_bounds(
                                 bytes,
                                 &surface.geometry,
@@ -1554,9 +1554,9 @@ fn native_loft_section(
             native_loft_member_tail(bytes, &member.form)?;
         }
         if let Some(path_curve) = &entry.path.curve {
-            let path = native_loft_curve_in_range(target, path_curve, parameter_range)?;
+            let path = native_loft_curve_in_range(target, &path_curve.id, parameter_range)?;
             native_nurbs_curve(bytes, &path)?;
-            if let Some(endpoints) = entry.path.endpoints {
+            if let Some(endpoints) = path_curve.endpoints {
                 for value in endpoints {
                     native_optional_f64(bytes, value);
                 }
@@ -2284,23 +2284,19 @@ fn native_law_expression(
                 bytes.push(native_bool(*flag));
             }
         }
-        LawExpression::Edge {
-            curve,
-            endpoints,
-            parameters,
-        } => {
+        LawExpression::Edge { curve, parameters } => {
             native_string(bytes, "EDGE")?;
-            let curve = target
+            let carrier = target
                 .model
                 .curves
                 .iter()
-                .find(|candidate| candidate.id == *curve)
+                .find(|candidate| candidate.id == curve.id)
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!("law edge curve {curve} is missing"))
+                    CodecError::malformed(format_args!("law edge curve {} is missing", curve.id))
                 })?;
-            let curve = native_interval_curve(&curve.geometry, *parameters)?;
-            native_nurbs_curve(bytes, &curve)?;
-            if let Some(endpoints) = endpoints {
+            let native_curve = native_interval_curve(&carrier.geometry, *parameters)?;
+            native_nurbs_curve(bytes, &native_curve)?;
+            if let Some(endpoints) = &curve.endpoints {
                 for value in endpoints {
                     native_optional_f64(bytes, *value);
                 }
@@ -3690,9 +3686,9 @@ fn native_revision_cl_scale(
     );
     for member in profile {
         native_i64(bytes, member.form.type_code());
-        let curve = native_loft_curve_in_range(target, &member.curve, None)?;
+        let curve = native_loft_curve_in_range(target, &member.curve.id, None)?;
         native_nurbs_curve(bytes, &curve)?;
-        let endpoints = member.endpoints.ok_or_else(|| {
+        let endpoints = member.curve.endpoints.ok_or_else(|| {
             CodecError::Malformed(
                 "revision compound-loft members require optional endpoints".into(),
             )
@@ -3738,9 +3734,9 @@ fn native_revision_cl_scale(
         native_loft_member_tail(bytes, &member.form)?;
     }
     if let Some(path_curve) = &path.curve {
-        let curve = native_loft_curve_in_range(target, path_curve, None)?;
+        let curve = native_loft_curve_in_range(target, &path_curve.id, None)?;
         native_nurbs_curve(bytes, &curve)?;
-        if let Some(endpoints) = path.endpoints {
+        if let Some(endpoints) = path_curve.endpoints {
             for value in endpoints {
                 native_optional_f64(bytes, value);
             }

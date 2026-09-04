@@ -888,7 +888,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     let LawExpression::Edge { curve, .. } = &construction.formula.variables[2] else {
         unreachable!()
     };
-    let law_edge = curve.clone();
+    let law_edge = curve.id.clone();
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
@@ -926,7 +926,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
             .model
             .curves
             .iter()
-            .find(|candidate| candidate.id == *curve)
+            .find(|candidate| candidate.id == curve.id)
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
             if curve.degree == 1

@@ -528,8 +528,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         .path
                         .curve
                         .iter()
+                        .map(|curve| &curve.id)
                         .chain(entry.path.auxiliaries.iter())
-                        .chain(entry.profile.iter().map(|member| &member.curve))
+                        .chain(entry.profile.iter().map(|member| &member.curve.id))
                     {
                         if ids.curves(&curve.0).is_none() {
                             ref_error(findings, &procedural.id.0, "curve", &curve.0);
@@ -645,8 +646,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(&curve.0).is_none() {
-                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            if ids.curves(&curve.id.0).is_none() {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.id.0);
                             }
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
@@ -697,8 +698,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(&curve.0).is_none() {
-                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            if ids.curves(&curve.id.0).is_none() {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.id.0);
                             }
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
@@ -726,8 +727,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(&curve.0).is_none() {
-                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            if ids.curves(&curve.id.0).is_none() {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.id.0);
                             }
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
@@ -747,8 +748,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         .path
                         .curve
                         .iter()
+                        .map(|curve| &curve.id)
                         .chain(entry.path.auxiliaries.iter())
-                        .chain(entry.profile.iter().map(|member| &member.curve))
+                        .chain(entry.profile.iter().map(|member| &member.curve.id))
                     {
                         if ids.curves(&curve.0).is_none() {
                             ref_error(findings, &procedural.id.0, "curve", &curve.0);
@@ -827,8 +829,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     .iter()
                     .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
                 {
-                    if ids.curves(&member.curve.0).is_none() {
-                        ref_error(findings, &procedural.id.0, "curve", &member.curve.0);
+                    if ids.curves(&member.curve.id.0).is_none() {
+                        ref_error(findings, &procedural.id.0, "curve", &member.curve.id.0);
                     }
                     if let Some(surface) = member.form.surface() {
                         if ids.surfaces(&surface.0).is_none() {
@@ -838,7 +840,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
                 for curve in std::iter::once(&construction.base_path)
                     .chain(construction.entries.iter().map(|entry| &entry.path))
-                    .flat_map(|path| path.curve.iter().chain(path.auxiliaries.iter()))
+                    .flat_map(|path| {
+                        path.curve
+                            .iter()
+                            .map(|curve| &curve.id)
+                            .chain(path.auxiliaries.iter())
+                    })
                     .chain(match &construction.direction {
                         crate::geometry::CompoundLoftDirection::Vector { .. } => None,
                         crate::geometry::CompoundLoftDirection::Curve { curve, .. } => Some(curve),
@@ -908,8 +915,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(&curve.0).is_none() {
-                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            if ids.curves(&curve.id.0).is_none() {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.id.0);
                             }
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
@@ -1123,8 +1130,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            if ids.curves(&curve.0).is_none() {
-                                ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                            if ids.curves(&curve.id.0).is_none() {
+                                ref_error(findings, &procedural.id.0, "curve", &curve.id.0);
                             }
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {

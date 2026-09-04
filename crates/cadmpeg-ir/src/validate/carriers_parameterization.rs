@@ -132,11 +132,11 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Loft { sections, .. } => {
                 for entry in sections.iter().flat_map(|section| &section.entries) {
                     if let Some(curve) = &entry.path.curve {
-                        curves.insert(&curve.0);
+                        curves.insert(&curve.id.0);
                     }
                     curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &entry.profile {
-                        curves.insert(&member.curve.0);
+                        curves.insert(&member.curve.id.0);
                         if let Some(surface) = member.form.surface() {
                             surfaces.insert(&surface.0);
                         }
@@ -224,7 +224,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(&curve.id.0);
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
@@ -265,7 +265,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(&curve.id.0);
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
@@ -290,7 +290,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(&curve.id.0);
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
@@ -306,11 +306,11 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .flat_map(|section| &section.entries)
                 {
                     if let Some(curve) = &entry.path.curve {
-                        curves.insert(&curve.0);
+                        curves.insert(&curve.id.0);
                     }
                     curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &entry.profile {
-                        curves.insert(&member.curve.0);
+                        curves.insert(&member.curve.id.0);
                         if let Some(surface) = member.form.surface() {
                             surfaces.insert(&surface.0);
                         }
@@ -362,7 +362,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .iter()
                     .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
                 {
-                    curves.insert(&member.curve.0);
+                    curves.insert(&member.curve.id.0);
                     if let Some(surface) = member.form.surface() {
                         surfaces.insert(&surface.0);
                     }
@@ -371,7 +371,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .chain(construction.entries.iter().map(|entry| &entry.path))
                 {
                     if let Some(curve) = &path.curve {
-                        curves.insert(&curve.0);
+                        curves.insert(&curve.id.0);
                     }
                     curves.extend(path.auxiliaries.iter().map(|curve| curve.0.as_str()));
                 }
@@ -434,7 +434,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(&curve.id.0);
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
@@ -579,7 +579,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 ) {
                     match expression {
                         crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(&curve.0);
+                            curves.insert(&curve.id.0);
                         }
                         crate::geometry::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {

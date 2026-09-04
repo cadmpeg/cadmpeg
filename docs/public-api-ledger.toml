@@ -3382,3 +3382,24 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::LoftSubdata::{type_code,row_count,column_count,rows}"
 reason = "the discriminator and dimensions are derived from a checked table payload instead of stored independently"
+
+[[change]]
+commit = "6e980786c5320ff05d11b359f7ca42b17e172a06"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::LoftPath::{curve,endpoints}"
+reason = "one optional LoftPathCurve now carries the curve identity and its meaningful-only-when-present endpoints together"
+
+[[change]]
+commit = "6e980786c5320ff05d11b359f7ca42b17e172a06"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::LoftProfileMember::{curve,endpoints}"
+reason = "the required profile curve owns its optional revision endpoints in one LoftPathCurve"
+
+[[change]]
+commit = "6e980786c5320ff05d11b359f7ca42b17e172a06"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::LawExpression::Edge"
+reason = "the edge-law curve and its optional revision endpoints are one LoftPathCurve payload"
