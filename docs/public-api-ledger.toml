@@ -4012,3 +4012,17 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::products::AssemblyJoint::kind"
 reason = "the public joint family is paired_kind or is_grounded so callers cannot observe a grounded paired kind"
+
+[[change]]
+commit = "2a8aa9821defc268aacca1bfea6fc0607e3351bd"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::presentation::PresentationState::kind"
+reason = "document GUI state kind is Camera or Native so an arbitrary string cannot name the camera family"
+
+[[change]]
+commit = "2a8aa9821defc268aacca1bfea6fc0607e3351bd"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::presentation::PresentationDocument::camera"
+reason = "the camera pose is the Camera state's payload and cannot disagree with the state table"

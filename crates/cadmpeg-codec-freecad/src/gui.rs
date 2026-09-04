@@ -11,7 +11,8 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::presentation::{
-    CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
+    CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
+    ViewPresentation,
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
@@ -563,12 +564,19 @@ fn transfer_neutral_presentation(
             id: PresentationId("fcstd:presentation:document#0".into()),
             schema_version: neutral_schema_version,
             active_view: None,
-            camera,
             states: document
                 .states
                 .iter()
                 .map(|state| PresentationState {
-                    kind: state.kind.clone(),
+                    kind: if state.kind == "Camera" {
+                        PresentationStateKind::Camera(camera.clone().unwrap_or(CameraState {
+                            position: None,
+                            orientation: None,
+                            properties: BTreeMap::new(),
+                        }))
+                    } else {
+                        PresentationStateKind::Native(state.kind.clone())
+                    },
                     order: state.order as u32,
                     attributes: state.attributes.clone(),
                     assets: state

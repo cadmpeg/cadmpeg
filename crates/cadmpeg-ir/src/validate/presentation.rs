@@ -30,7 +30,7 @@ pub(super) fn check_presentation(
             .iter()
             .map(|state| state.order)
             .collect::<HashSet<_>>();
-        let camera_valid = document.camera.as_ref().is_none_or(|camera| {
+        let camera_valid = document.camera().is_none_or(|camera| {
             let finite = camera
                 .position
                 .iter()

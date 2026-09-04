@@ -619,7 +619,7 @@ impl_entity_schema!(
     crate::presentation::PresentationDocument,
     PresentationDocument,
     id.0;
-    id, schema_version, active_view, camera, states, native_ref
+    id, schema_version, active_view, states, native_ref
 );
 impl_entity_schema!(
     crate::presentation::ViewPresentation,

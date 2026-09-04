@@ -98,7 +98,8 @@ pub use pmi::{
     PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 pub use presentation::{
-    CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
+    CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
+    ViewPresentation,
 };
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use products::{

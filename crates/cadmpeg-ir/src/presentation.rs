@@ -29,12 +29,70 @@ pub struct CameraState {
     pub properties: BTreeMap<String, String>,
 }
 
+/// Closed set of document GUI state families.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PresentationStateKind {
+    /// Persisted camera pose.
+    Camera(CameraState),
+    /// Any other persisted GUI state element.
+    Native(String),
+}
+
+impl PresentationStateKind {
+    /// Wire spelling of this family.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Camera(_) => "Camera",
+            Self::Native(kind) => kind,
+        }
+    }
+}
+
+impl Serialize for PresentationStateKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for PresentationStateKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(if value == "Camera" {
+            Self::Camera(CameraState {
+                position: None,
+                orientation: None,
+                properties: BTreeMap::new(),
+            })
+        } else {
+            Self::Native(value)
+        })
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for PresentationStateKind {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PresentationStateKind".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        String::json_schema(generator)
+    }
+}
+
 /// Ordered non-provider GUI state such as clipping or section state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PresentationState {
-    /// Persisted state element name.
-    pub kind: String,
+    /// Persisted state element family.
+    pub kind: PresentationStateKind,
     /// Source order among document GUI state elements.
     pub order: u32,
     /// Exact root attributes.
@@ -47,25 +105,105 @@ pub struct PresentationState {
 
 /// Document-wide persisted GUI state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "PresentationDocumentWire", into = "PresentationDocumentWire")]
 pub struct PresentationDocument {
     /// Globally unique presentation identity.
     pub id: PresentationId,
     /// Persisted GUI schema version.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema_version: Option<u32>,
     /// Active view name or identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_view: Option<String>,
-    /// Persisted active camera.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub camera: Option<CameraState>,
     /// Ordered document-level GUI states.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub states: Vec<PresentationState>,
     /// Native GUI document record supplying this state.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct PresentationDocumentWire {
+    id: PresentationId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active_view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    camera: Option<CameraState>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    states: Vec<PresentationState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    native_ref: Option<String>,
+}
+
+impl PresentationDocument {
+    /// Persisted active camera, when a Camera state is present.
+    #[must_use]
+    pub fn camera(&self) -> Option<&CameraState> {
+        self.states.iter().find_map(|state| match &state.kind {
+            PresentationStateKind::Camera(camera) => Some(camera),
+            PresentationStateKind::Native(_) => None,
+        })
+    }
+
+    /// Mutable persisted active camera, when a Camera state is present.
+    pub fn camera_mut(&mut self) -> Option<&mut CameraState> {
+        self.states
+            .iter_mut()
+            .find_map(|state| match &mut state.kind {
+                PresentationStateKind::Camera(camera) => Some(camera),
+                PresentationStateKind::Native(_) => None,
+            })
+    }
+}
+
+impl From<PresentationDocument> for PresentationDocumentWire {
+    fn from(document: PresentationDocument) -> Self {
+        let camera = document.camera().cloned();
+        Self {
+            id: document.id,
+            schema_version: document.schema_version,
+            active_view: document.active_view,
+            camera,
+            states: document.states,
+            native_ref: document.native_ref,
+        }
+    }
+}
+
+impl From<PresentationDocumentWire> for PresentationDocument {
+    fn from(wire: PresentationDocumentWire) -> Self {
+        let mut states = wire.states;
+        if let Some(camera) = wire.camera {
+            if let Some(state) = states
+                .iter_mut()
+                .find(|state| matches!(state.kind, PresentationStateKind::Camera(_)))
+            {
+                state.kind = PresentationStateKind::Camera(camera);
+            }
+        }
+        Self {
+            id: wire.id,
+            schema_version: wire.schema_version,
+            active_view: wire.active_view,
+            states,
+            native_ref: wire.native_ref,
+        }
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for PresentationDocument {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PresentationDocument".into()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        concat!(module_path!(), "::PresentationDocument").into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        PresentationDocumentWire::json_schema(generator)
+    }
 }
 
 /// Presentation state owned by one persisted view provider.
