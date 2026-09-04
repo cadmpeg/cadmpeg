@@ -10,7 +10,7 @@ use crate::families::standard::fbb::{
 #[cfg(test)]
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
-use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
+use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS};
 use crate::solve::UnionFind;
 use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -3365,16 +3365,26 @@ impl PortCandidateSearchMode {
     }
 }
 
+fn port_candidate_key(candidate: &[[usize; 2]]) -> Vec<[usize; 2]> {
+    candidate
+        .iter()
+        .map(|pair| {
+            if pair[0] <= pair[1] {
+                *pair
+            } else {
+                [pair[1], pair[0]]
+            }
+        })
+        .collect()
+}
+
 struct PortCandidateSearch<'a> {
     ports: &'a [[u32; 2]],
     candidates: &'a [Vec<[usize; 2]>],
     port_points: HashMap<u32, usize>,
     point_ports: HashMap<usize, u32>,
     edge_pairs: Vec<Option<[usize; 2]>>,
-    solution: Option<Vec<[usize; 2]>>,
-    solution_key: Option<Vec<[usize; 2]>>,
-    ambiguous: bool,
-    exhausted: bool,
+    outcome: SearchOutcome<Vec<[usize; 2]>>,
     states: usize,
     mode: PortCandidateSearchMode,
 }
@@ -3437,9 +3447,8 @@ impl PortCandidateSearch<'_> {
         // still contain symmetric coordinate assignments. Ambiguity beyond
         // this bound is retained for later paths rather than partially bound.
         const MAX_STATES: usize = 1_024;
-        if self.ambiguous
-            || self.exhausted
-            || (!self.mode.requires_unique() && self.solution.is_some())
+        if self.outcome.is_closed()
+            || (!self.mode.requires_unique() && matches!(self.outcome, SearchOutcome::Solved(_)))
         {
             return;
         }
@@ -3485,32 +3494,15 @@ impl PortCandidateSearch<'_> {
         let Some(edge) = branch else {
             let candidate = self.edge_pairs.iter().copied().collect::<Option<Vec<_>>>();
             if let Some(candidate) = candidate {
-                let key = candidate
-                    .iter()
-                    .map(|pair| {
-                        if pair[0] <= pair[1] {
-                            *pair
-                        } else {
-                            [pair[1], pair[0]]
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                match &self.solution_key {
-                    Some(solution) if self.mode.requires_unique() && *solution != key => {
-                        self.ambiguous = true;
-                    }
-                    None => {
-                        self.solution = Some(candidate);
-                        self.solution_key = Some(key);
-                    }
-                    Some(_) => {}
-                }
+                self.outcome.record_solved(candidate, |previous, next| {
+                    port_candidate_key(previous) == port_candidate_key(next)
+                });
             }
             self.rollback(propagated);
             return;
         };
         if self.states >= MAX_STATES {
-            self.exhausted = true;
+            self.outcome.exhaust();
         } else {
             self.states += 1;
             'candidates: for candidate in 0..self.candidates[edge].len() {
@@ -3518,7 +3510,9 @@ impl PortCandidateSearch<'_> {
                     let inserted = self.assign(edge, points);
                     self.search();
                     self.unassign(edge, inserted);
-                    if !self.mode.requires_unique() && self.solution.is_some() {
+                    if !self.mode.requires_unique()
+                        && matches!(self.outcome, SearchOutcome::Solved(_))
+                    {
                         break 'candidates;
                     }
                 }
@@ -3644,18 +3638,14 @@ fn edge_port_candidate_assignment(
             port_points: HashMap::new(),
             point_ports: HashMap::new(),
             edge_pairs: alloc_filled(component.len(), None, "catia_edge_port_pairs").ok()?,
-            solution: None,
-            solution_key: None,
-            ambiguous: false,
-            exhausted: false,
+            outcome: SearchOutcome::Open,
             states: 0,
             mode,
         };
         search.search();
-        if search.ambiguous || search.exhausted {
+        let SearchOutcome::Solved(component_solution) = search.outcome else {
             return None;
-        }
-        let component_solution = search.solution?;
+        };
         for (&edge, pair) in component.iter().zip(component_solution) {
             solution[edge] = Some(pair);
         }

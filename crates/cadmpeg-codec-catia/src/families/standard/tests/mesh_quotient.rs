@@ -1,4 +1,5 @@
 use super::*;
+use crate::solve::mesh_quotient::SearchOutcome;
 
 #[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
@@ -859,9 +860,7 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
             Some((0, vec![vec![false, false]])),
         ],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
 
@@ -950,9 +949,7 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
             None,
         ],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     assert!(!search.fixed_remaining_faces_are_orientable());
@@ -998,9 +995,7 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![Some((0, vec![vec![false, false]])), None, None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
 
@@ -1053,9 +1048,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient =
@@ -1140,9 +1133,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None; 2],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
@@ -1198,9 +1189,7 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
@@ -1244,9 +1233,7 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
@@ -1285,9 +1272,7 @@ fn remaining_equation_components_require_a_coordinate_matching() {
         edge_has_fixed_direction: Vec::new(),
         selected: Vec::new(),
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
@@ -1326,9 +1311,7 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
@@ -1369,7 +1352,7 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
         edge_has_fixed_direction: Vec::new(),
         selected: Vec::new(),
         visited_states: HashSet::new(),
-        solution: Some((
+        outcome: SearchOutcome::Solved((
             StandardTopology {
                 faces: Vec::new(),
                 edge_rows: Vec::new(),
@@ -1378,8 +1361,6 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
             },
             Vec::new(),
         )),
-        ambiguous: false,
-        exhausted: false,
         face_equation_cache: RefCell::default(),
     };
 
@@ -1403,9 +1384,7 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
         edge_has_fixed_direction: Vec::new(),
         selected: Vec::new(),
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let quotient = MeshQuotient {
@@ -1416,8 +1395,8 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
 
     search.search_with_limit(&quotient, 0);
 
-    assert!(search.exhausted);
-    assert!(search.solution.is_none());
+    assert!(matches!(search.outcome, SearchOutcome::Exhausted));
+    assert!(matches!(search.outcome, SearchOutcome::Open));
 }
 
 #[test]
@@ -1468,9 +1447,7 @@ fn mesh_selection_finishes_the_active_face_component_first() {
         edge_has_fixed_direction: Vec::new(),
         selected,
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let quotient = MeshQuotient {
@@ -1483,8 +1460,8 @@ fn mesh_selection_finishes_the_active_face_component_first() {
 
     search.search_from_state(&quotient, true, &budget, &propagation_budget);
 
-    assert!(!search.exhausted);
-    assert!(search.solution.is_none());
+    assert!(!search.outcome.is_closed());
+    assert!(matches!(search.outcome, SearchOutcome::Open));
 }
 
 #[test]
@@ -1521,9 +1498,7 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let quotient = MeshQuotient {
@@ -1534,7 +1509,7 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
 
     search.search(&quotient);
 
-    assert!(!search.exhausted);
+    assert!(!search.outcome.is_closed());
 }
 
 #[test]
@@ -1582,9 +1557,7 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let quotient = MeshQuotient {
@@ -1595,8 +1568,8 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
 
     search.search(&quotient);
 
-    assert!(!search.exhausted);
-    assert!(search.solution.is_none());
+    assert!(!search.outcome.is_closed());
+    assert!(matches!(search.outcome, SearchOutcome::Open));
 }
 
 #[test]
@@ -1643,9 +1616,7 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
@@ -1696,9 +1667,7 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
@@ -1747,9 +1716,7 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
@@ -1799,9 +1766,7 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
@@ -1855,9 +1820,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
         edge_has_fixed_direction: Vec::new(),
         selected: vec![None],
         visited_states: HashSet::new(),
-        solution: None,
-        ambiguous: false,
-        exhausted: false,
+        outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     let mut quotient = MeshQuotient {
