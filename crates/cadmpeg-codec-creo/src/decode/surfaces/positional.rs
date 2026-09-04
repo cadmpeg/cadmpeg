@@ -114,7 +114,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                     radius,
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("{}:{}", section.name, row.id),
                     name: None,
                     color: None,
@@ -225,7 +225,7 @@ pub(in super::super) fn transfer_positional_tori(
             id,
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("{}:{}", section.name, row.id),
                 name: None,
                 color: None,
@@ -335,7 +335,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 direction: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:surface_directrix#{}", record.surface_id),
                 name: None,
                 color: None,
@@ -356,7 +356,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", record.surface_id),
                 name: None,
                 color: None,
@@ -495,7 +495,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             id: curve_id.clone(),
             geometry: CurveGeometry::Nurbs(directrix),
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:curve#{}", replay.curve_id),
                 name: None,
                 color: None,
@@ -508,7 +508,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", replay.surface_id),
                 name: None,
                 color: None,

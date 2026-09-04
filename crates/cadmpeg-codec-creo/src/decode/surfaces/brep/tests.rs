@@ -722,13 +722,13 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             .iter()
             .map(|point| {
                 let source = point.source_object.as_ref().expect("point provenance");
-                (source.format.clone(), source.object_id.clone())
+                (source.format.as_str(), source.object_id.as_str())
             })
             .collect::<Vec<_>>(),
         vec![
-            ("creo".to_string(), "topology:vertex#1".to_string()),
-            ("creo".to_string(), "topology:vertex#2".to_string()),
-            ("creo".to_string(), "topology:vertex#3".to_string()),
+            ("creo", "topology:vertex#1"),
+            ("creo", "topology:vertex#2"),
+            ("creo", "topology:vertex#3"),
         ]
     );
     assert!(ir.model.vertices.is_empty());

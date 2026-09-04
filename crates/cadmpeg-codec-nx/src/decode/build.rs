@@ -394,7 +394,7 @@ pub(crate) fn try_decode_geometry(
                             cache: None,
                         },
                         source_object: Some(SourceObjectAssociation {
-                            format: "nx".into(),
+                            format: cadmpeg_ir::CodecFormat::Nx,
                             object_id: format!("nx:s{si}:offset-surface-record#{}", offset.xmt),
                             name: None,
                             color: None,
@@ -449,7 +449,7 @@ pub(crate) fn try_decode_geometry(
                     cache: None,
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "nx".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: format!("nx:s{si}:blend-surface-record#{}", blend.xmt),
                     name: None,
                     color: None,
@@ -701,7 +701,7 @@ pub(crate) fn try_decode_geometry(
                     }
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "nx".into(),
+                    format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: format!("nx:s{si}:intersection-record#{}", construction.xmt),
                     name: None,
                     color: None,

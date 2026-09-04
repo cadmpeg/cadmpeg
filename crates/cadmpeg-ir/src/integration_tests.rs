@@ -35,7 +35,7 @@ fn id_strategy() -> impl Strategy<Value = String> {
 
 fn free_carrier(object_id: &str) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "prop".into(),
+        format: crate::CodecFormat::Step,
         object_id: object_id.into(),
         name: None,
         color: None,

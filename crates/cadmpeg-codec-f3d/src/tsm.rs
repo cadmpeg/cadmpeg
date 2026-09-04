@@ -1410,7 +1410,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             faces,
             symmetries,
             source_object: Some(SourceObjectAssociation {
-                format: "f3d".into(),
+                format: cadmpeg_ir::CodecFormat::F3d,
                 object_id: name.into(),
                 name: None,
                 color: None,

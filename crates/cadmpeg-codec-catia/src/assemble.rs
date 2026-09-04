@@ -32,7 +32,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 
 pub(crate) fn cgm_source_key(kind: &str, key: impl std::fmt::Display) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: crate::dialect::FORMAT.to_string(),
+        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
         object_id: format!("cgm-{kind}:{key}"),
         name: None,
         color: None,

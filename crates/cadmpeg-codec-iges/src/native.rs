@@ -4736,7 +4736,7 @@ pub(crate) fn store(
         if let Some(sequence) = curve
             .source_object
             .as_ref()
-            .filter(|source| source.format == "iges")
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
             .and_then(|source| source.object_id.strip_prefix('D'))
             .and_then(|value| value.parse::<u32>().ok())
         {
@@ -4750,7 +4750,7 @@ pub(crate) fn store(
         if let Some(sequence) = surface
             .source_object
             .as_ref()
-            .filter(|source| source.format == "iges")
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
             .and_then(|source| source.object_id.strip_prefix('D'))
             .and_then(|value| value.parse::<u32>().ok())
         {

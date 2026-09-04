@@ -482,7 +482,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     let (data, raw) = source_shaped_plane_brep();
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "plane-brep".to_string(),
         name: Some("plane".to_string()),
         color: None,
@@ -566,7 +566,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     });
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate Brep");
     let association = SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "free-vertex-brep".to_string(),
         name: None,
         color: None,
@@ -619,7 +619,7 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
     raw.c2.slots[1].as_mut().expect("C2 slot").class_uuid = class_uuid([0; 16]);
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "plane-brep".to_string(),
         name: None,
         color: None,
@@ -921,7 +921,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
 
 fn test_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "extrusion".to_string(),
         name: Some("Extrusion".to_string()),
         color: None,

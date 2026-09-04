@@ -7,10 +7,115 @@
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::sync::Arc;
 
 use crate::topology::Color;
+use serde::de::Error as _;
+use std::fmt;
+
+/// Registry codec format id stored on a source-object association.
+///
+/// The variant set is the generated `FORMAT` constants. Serialize as the
+/// registry string. Deserialize rejects any other string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum CodecFormat {
+    /// `acis`
+    Acis,
+    /// `catia`
+    Catia,
+    /// `creo`
+    Creo,
+    /// `f3d`
+    F3d,
+    /// `fcstd`
+    Fcstd,
+    /// `iges`
+    Iges,
+    /// `inventor`
+    Inventor,
+    /// `nx`
+    Nx,
+    /// `parasolid`
+    Parasolid,
+    /// `rhino`
+    Rhino,
+    /// `sat`
+    Sat,
+    /// `sldprt`
+    Sldprt,
+    /// `step`
+    Step,
+}
+
+impl CodecFormat {
+    /// Parse a generated registry format id.
+    #[must_use]
+    pub fn parse(id: &str) -> Option<Self> {
+        Some(match id {
+            "acis" => Self::Acis,
+            "catia" => Self::Catia,
+            "creo" => Self::Creo,
+            "f3d" => Self::F3d,
+            "fcstd" => Self::Fcstd,
+            "iges" => Self::Iges,
+            "inventor" => Self::Inventor,
+            "nx" => Self::Nx,
+            "parasolid" => Self::Parasolid,
+            "rhino" => Self::Rhino,
+            "sat" => Self::Sat,
+            "sldprt" => Self::Sldprt,
+            "step" => Self::Step,
+            _ => return None,
+        })
+    }
+
+    /// The generated registry format id.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Acis => "acis",
+            Self::Catia => "catia",
+            Self::Creo => "creo",
+            Self::F3d => "f3d",
+            Self::Fcstd => "fcstd",
+            Self::Iges => "iges",
+            Self::Inventor => "inventor",
+            Self::Nx => "nx",
+            Self::Parasolid => "parasolid",
+            Self::Rhino => "rhino",
+            Self::Sat => "sat",
+            Self::Sldprt => "sldprt",
+            Self::Step => "step",
+        }
+    }
+
+    /// Construct from a generated `FORMAT` constant.
+    #[must_use]
+    pub fn from_registry(id: &str) -> Self {
+        Self::parse(id).unwrap_or_else(|| panic!("unknown registry format id {id}"))
+    }
+}
+
+impl fmt::Display for CodecFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for CodecFormat {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for CodecFormat {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = String::deserialize(deserializer)?;
+        Self::parse(&id).ok_or_else(|| D::Error::custom(format!("format: unknown codec id {id}")))
+    }
+}
 
 /// Native object identity and effective display metadata for a free carrier.
 ///
@@ -24,7 +129,8 @@ use crate::topology::Color;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceObjectAssociation {
     /// Source format identifier.
-    pub format: String,
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    pub format: CodecFormat,
     /// Native source object identifier.
     pub object_id: String,
     /// Effective source object name, when present.

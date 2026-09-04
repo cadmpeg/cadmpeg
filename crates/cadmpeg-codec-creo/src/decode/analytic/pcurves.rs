@@ -1348,7 +1348,7 @@ pub fn transfer_analytic_pcurve_carriers(
             id: id.clone(),
             geometry: geometry.clone(),
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{curve_id}"),
                 name: None,
                 color: None,

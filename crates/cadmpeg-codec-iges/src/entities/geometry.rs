@@ -1170,7 +1170,7 @@ pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) ->
 
 pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "iges".into(),
+        format: cadmpeg_ir::CodecFormat::Iges,
         object_id: format!("D{}", entry.sequence),
         name: std::str::from_utf8(&entry.label)
             .ok()
