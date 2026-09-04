@@ -2239,7 +2239,7 @@ pub enum CatiaEntitySuffixPayload {
         /// Stored zero-based source-schema ordinal.
         selector: u32,
         /// Typed value following the selector.
-        value: CatiaEntitySuffixSelectedValue,
+        value: CatiaEntitySuffixSchemaValue,
     },
     /// One zero-payload `E8` control state.
     ControlE8,
@@ -2247,37 +2247,6 @@ pub enum CatiaEntitySuffixPayload {
     ControlE9,
     /// One zero-payload `37` separator.
     Separator37,
-}
-
-/// Typed value following a source-schema selector in an entity-record suffix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub enum CatiaEntitySuffixSelectedValue {
-    /// One canonical one-byte atom.
-    Atom {
-        /// Decoded atom value.
-        value: u32,
-    },
-    /// One direct unset or finite scalar evaluation.
-    Evaluation {
-        /// Byte offset of the evaluation opcode within the record suffix.
-        #[serde(default)]
-        opcode_offset: u64,
-        /// Decoded evaluation.
-        evaluation: CatiaEntityEvaluation,
-    },
-    /// One zero-payload `E8` control state.
-    ControlE8,
-    /// One zero-payload `37` separator.
-    Separator37,
-    /// One further source-schema selector.
-    SchemaSelector {
-        /// Byte offset of the selector marker within the record suffix.
-        #[serde(default)]
-        offset: u64,
-        /// Stored zero-based source-schema ordinal.
-        ordinal: u32,
-    },
 }
 
 /// Exact trailer framing of one complete entity-record suffix value.
@@ -2411,14 +2380,14 @@ pub enum CatiaEntitySuffixSchemaValue {
         offset: u64,
         /// Stored zero-based source-schema ordinal.
         ordinal: u32,
-        /// Selected catalog entry when the ordinal is in range.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        entry: Option<String>,
-        /// UTF-8 source-schema name stored by the selected entry.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        name: Option<String>,
+        /// Catalog class selected by `ordinal`.
+        #[serde(flatten)]
+        resolution: Option<CatiaDesignClass>,
     },
 }
+
+/// Unresolved suffix payload value. Same shape as [`CatiaEntitySuffixSchemaValue`].
+pub type CatiaEntitySuffixSelectedValue = CatiaEntitySuffixSchemaValue;
 
 /// One complete named parameter-value record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4982,27 +4951,31 @@ fn entity_suffix_schema_selection(
         .ok()
         .and_then(|ordinal| catalog?.entries.get(ordinal))?;
     let value = match value {
-        CatiaEntitySuffixSelectedValue::Atom { value } => {
+        CatiaEntitySuffixSchemaValue::Atom { value } => {
             CatiaEntitySuffixSchemaValue::Atom { value: *value }
         }
-        CatiaEntitySuffixSelectedValue::Evaluation {
+        CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset,
             evaluation,
         } => CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset: *opcode_offset,
             evaluation: evaluation.clone(),
         },
-        CatiaEntitySuffixSelectedValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
-        CatiaEntitySuffixSelectedValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
-        CatiaEntitySuffixSelectedValue::SchemaSelector { offset, ordinal } => {
+        CatiaEntitySuffixSchemaValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
+        CatiaEntitySuffixSchemaValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
+        CatiaEntitySuffixSchemaValue::SchemaSelector {
+            offset, ordinal, ..
+        } => {
             let selected = usize::try_from(*ordinal)
                 .ok()
                 .and_then(|ordinal| catalog?.entries.get(ordinal));
             CatiaEntitySuffixSchemaValue::SchemaSelector {
                 offset: *offset,
                 ordinal: *ordinal,
-                entry: selected.map(|entry| entry.id.clone()),
-                name: selected.map(|entry| entry.value.clone()),
+                resolution: selected.map(|entry| CatiaDesignClass {
+                    entry: entry.id.clone(),
+                    name: entry.value.clone(),
+                }),
             }
         }
     };
@@ -5556,6 +5529,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
                 CatiaEntitySuffixSelectedValue::SchemaSelector {
                     offset: u64::try_from(value_offset).ok()?,
                     ordinal: View::u32_le_at(suffix, value_offset + 1)?,
+                    resolution: None,
                 },
                 value_offset + 5,
             ),

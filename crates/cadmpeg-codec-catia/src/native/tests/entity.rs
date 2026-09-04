@@ -995,8 +995,10 @@ fn native_namespace_binds_two_definition_value_chains() {
         Some(&CatiaEntitySuffixSchemaValue::SchemaSelector {
             offset: 8,
             ordinal: 5,
-            entry: Some(nested_native.catalogs[0].entries[5].id.clone()),
-            name: Some("Real".to_string()),
+            resolution: Some(crate::native::CatiaDesignClass {
+                entry: nested_native.catalogs[0].entries[5].id.clone(),
+                name: "Real".to_string(),
+            }),
         })
     );
 }

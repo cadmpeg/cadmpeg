@@ -862,6 +862,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             value: crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector {
                 offset: 8,
                 ordinal: 5,
+                resolution: None,
             },
             ..
         }
@@ -874,9 +875,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .value,
         crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector {
             ordinal: 5,
-            ref name,
+            resolution: Some(crate::native::CatiaDesignClass { ref name, .. }),
             ..
-        } if name.as_deref() == Some("#1_ /2")
+        } if name == "#1_ /2"
     ));
     let mut malformed_nested_offset = selected_schema;
     let crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector { offset, .. } =
