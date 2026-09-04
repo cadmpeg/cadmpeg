@@ -2214,18 +2214,18 @@ fn try_decode_standard_population(
     ] {
         report.coverage.record(
             key,
-            usize::from(topology_diagnostics.mesh_rejection == Some(rejection)),
+            usize::from(
+                topology_diagnostics.mesh_failure
+                    == Some(mesh_quotient::MeshCandidateFailure::Rejected(rejection)),
+            ),
         );
     }
-    let endpoint_incidence_rejection =
-        topology_diagnostics
-            .mesh_rejection
-            .and_then(|rejection| match rejection {
-                mesh_quotient::MeshCandidateRejection::EndpointIncidence(rejection) => {
-                    Some(rejection)
-                }
-                _ => None,
-            });
+    let endpoint_incidence_rejection = match topology_diagnostics.mesh_failure {
+        Some(mesh_quotient::MeshCandidateFailure::Rejected(
+            mesh_quotient::MeshCandidateRejection::EndpointIncidence(rejection),
+        )) => Some(rejection),
+        _ => None,
+    };
     report.coverage.record(
         crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT,
         usize::from(endpoint_incidence_rejection.is_some()),
@@ -2292,7 +2292,10 @@ fn try_decode_standard_population(
     ] {
         report.coverage.record(
             key,
-            usize::from(topology_diagnostics.mesh_ambiguity == Some(ambiguity)),
+            usize::from(
+                topology_diagnostics.mesh_failure
+                    == Some(mesh_quotient::MeshCandidateFailure::Ambiguous(ambiguity)),
+            ),
         );
     }
     for (key, exhaustion) in [
@@ -2311,7 +2314,10 @@ fn try_decode_standard_population(
     ] {
         report.coverage.record(
             key,
-            usize::from(topology_diagnostics.mesh_exhaustion == Some(exhaustion)),
+            usize::from(
+                topology_diagnostics.mesh_failure
+                    == Some(mesh_quotient::MeshCandidateFailure::Exhausted(exhaustion)),
+            ),
         );
     }
     report.coverage.record(
@@ -2380,9 +2386,7 @@ struct StandardTopologyDiagnostics {
     singleton_endpoint_domains: usize,
     multiple_endpoint_domains: usize,
     endpoint_domain_choices: usize,
-    mesh_rejection: Option<mesh_quotient::MeshCandidateRejection>,
-    mesh_ambiguity: Option<mesh_quotient::MeshCandidateAmbiguity>,
-    mesh_exhaustion: Option<mesh_quotient::MeshCandidateExhaustion>,
+    mesh_failure: Option<mesh_quotient::MeshCandidateFailure>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4750,15 +4754,18 @@ fn attach_standard_topology(
                 Some((topology, assignment))
             }
             mesh_quotient::MeshCandidateSolve::Rejected(rejection) => {
-                diagnostics.mesh_rejection = Some(rejection);
+                diagnostics.mesh_failure =
+                    Some(mesh_quotient::MeshCandidateFailure::Rejected(rejection));
                 None
             }
             mesh_quotient::MeshCandidateSolve::Ambiguous(ambiguity) => {
-                diagnostics.mesh_ambiguity = Some(ambiguity);
+                diagnostics.mesh_failure =
+                    Some(mesh_quotient::MeshCandidateFailure::Ambiguous(ambiguity));
                 None
             }
             mesh_quotient::MeshCandidateSolve::Exhausted(exhaustion) => {
-                diagnostics.mesh_exhaustion = Some(exhaustion);
+                diagnostics.mesh_failure =
+                    Some(mesh_quotient::MeshCandidateFailure::Exhausted(exhaustion));
                 mesh_search_exhausted = true;
                 None
             }
@@ -4800,7 +4807,10 @@ fn attach_standard_topology(
     } else {
         return Err(if mesh_search_exhausted || work_budget.exhausted() {
             StandardTopologyFailure::TopologySearchExhausted
-        } else if diagnostics.mesh_ambiguity.is_some() {
+        } else if matches!(
+            diagnostics.mesh_failure,
+            Some(mesh_quotient::MeshCandidateFailure::Ambiguous(_))
+        ) {
             StandardTopologyFailure::AmbiguousTopologySolution
         } else {
             StandardTopologyFailure::NoTopologySolution
