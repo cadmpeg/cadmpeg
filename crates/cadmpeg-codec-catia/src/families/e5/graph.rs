@@ -259,13 +259,19 @@ impl E5Pcurve {
 pub struct E5Body {
     /// This class-`0x01` body's stream-assigned `record_id`.
     pub record_id: u32,
-    /// `record_id`s of every class-`0x00` face in the body, in root-record
-    /// order.
-    pub faces: Vec<u32>,
-    /// Root sign-tape entries aligned with [`Self::faces`].
-    pub face_orientation_signs: Vec<i16>,
+    /// Faces in root-record order, each with its sign-tape entry.
+    pub faces: Vec<E5BodyFace>,
     /// Final two root sign-tape entries after the face-aligned population.
     pub extra_orientation_signs: [i16; 2],
+}
+
+/// One face of a class-`0x01` body together with its root sign-tape entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct E5BodyFace {
+    /// `record_id` of the class-`0x00` face.
+    pub face: u32,
+    /// Root sign-tape entry for this face (`+1` or `-1`).
+    pub orientation_sign: i16,
 }
 
 /// A resolved class-`0x00` advanced-face record: its surface, loops, and
@@ -577,7 +583,7 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
     if !bodies.is_empty() {
         let roster: Vec<u32> = bodies
             .iter()
-            .flat_map(|body| body.faces.iter().copied())
+            .flat_map(|body| body.faces.iter().map(|member| member.face))
             .collect();
         let roster_set: HashSet<u32> = roster.iter().copied().collect();
         let face_set: HashSet<u32> = faces.iter().map(|face| face.record_id).collect();
@@ -1304,11 +1310,18 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             {
                 return None;
             }
+            let extra_orientation_signs = signs[faces.len()..].try_into().ok()?;
             Some(E5Body {
                 record_id: record.id,
-                faces,
-                face_orientation_signs: signs[..signs.len() - 2].to_vec(),
-                extra_orientation_signs: signs[signs.len() - 2..].try_into().ok()?,
+                faces: faces
+                    .into_iter()
+                    .zip(signs)
+                    .map(|(face, orientation_sign)| E5BodyFace {
+                        face,
+                        orientation_sign,
+                    })
+                    .collect(),
+                extra_orientation_signs,
             })
         })
         .collect()

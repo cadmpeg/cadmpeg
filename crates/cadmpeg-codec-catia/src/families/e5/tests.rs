@@ -221,8 +221,22 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         topology.faces[1].loops[0].orientation_signs,
         [vec![1; 12], vec![0]].concat()
     );
-    assert_eq!(topology.bodies[0].faces, vec![600, 601]);
-    assert_eq!(topology.bodies[0].face_orientation_signs, vec![1, 1]);
+    assert_eq!(
+        topology.bodies[0]
+            .faces
+            .iter()
+            .map(|member| member.face)
+            .collect::<Vec<_>>(),
+        vec![600, 601]
+    );
+    assert_eq!(
+        topology.bodies[0]
+            .faces
+            .iter()
+            .map(|member| member.orientation_sign)
+            .collect::<Vec<_>>(),
+        vec![1, 1]
+    );
     assert_eq!(topology.bodies[0].extra_orientation_signs, [1, 1]);
     assert_eq!(topology.pcurves.len(), 7);
     assert!(matches!(

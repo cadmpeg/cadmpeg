@@ -1463,7 +1463,12 @@ fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Op
         topology
             .bodies
             .iter()
-            .map(|body| (Some(body.record_id), body.faces.clone()))
+            .map(|body| {
+                (
+                    Some(body.record_id),
+                    body.faces.iter().map(|member| member.face).collect(),
+                )
+            })
             .collect()
     };
     let Some(ownership) = e5_ownership_plan(topology, &body_faces) else {
