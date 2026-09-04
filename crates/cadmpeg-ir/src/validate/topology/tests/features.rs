@@ -415,7 +415,6 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         definition: FeatureDefinition::Native {
             kind: "Marker".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         },
         native_ref: None,
     });
@@ -462,7 +461,6 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         },
         native_ref: None,
     });
@@ -514,7 +512,6 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         },
         native_ref: None,
     });
@@ -574,7 +571,6 @@ fn document_parameters_can_feed_feature_parameters() {
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         },
         native_ref: None,
     });
@@ -1570,7 +1566,6 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         definition: FeatureDefinition::Native {
             kind: "producer".into(),
             parameters: BTreeMap::default(),
-            properties: BTreeMap::default(),
         },
         native_ref: None,
     });

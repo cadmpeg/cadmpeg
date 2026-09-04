@@ -109,8 +109,10 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         FeatureDefinition::RegularPolygonCurve { .. } => "Polygon",
         FeatureDefinition::PlanarPatch { .. } => "Plane",
         FeatureDefinition::FaceFromShapes { .. } => "Face",
-        FeatureDefinition::Native { kind, .. } if extrude_op(kind).is_some() => "Extrusion",
-        FeatureDefinition::Native { kind, .. } if valid_xml_name(kind) => kind,
+        FeatureDefinition::Native { kind, .. } if extrude_op(kind.as_str()).is_some() => {
+            "Extrusion"
+        }
+        FeatureDefinition::Native { kind, .. } if valid_xml_name(kind.as_str()) => kind.as_str(),
         FeatureDefinition::Native { .. } => "Feature",
         FeatureDefinition::DatumPointUnresolved
         | FeatureDefinition::DatumCoordinateSystemUnresolved

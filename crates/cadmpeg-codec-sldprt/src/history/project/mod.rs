@@ -1105,9 +1105,8 @@ pub(crate) fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> Paramet
 
 pub(crate) fn native_definition(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Native {
-        kind: feature.kind.clone(),
+        kind: feature.kind.clone().into(),
         parameters: feature.parameters.clone(),
-        properties: feature.properties.clone(),
     }
 }
 

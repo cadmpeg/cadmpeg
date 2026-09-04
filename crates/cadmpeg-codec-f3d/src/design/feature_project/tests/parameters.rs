@@ -304,12 +304,25 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     assert_eq!(features[0].suppressed, Some(true));
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Native { kind, parameters, properties }
-            if kind == "Extrude"
-                && parameters.get("d12").map(String::as_str) == Some("60 mm")
-                && properties.get("reference:0").map(String::as_str) == Some("44")
-                && properties.get("reference:1").map(String::as_str) == Some("44")
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Extrude,
+            parameters,
+        } if parameters.get("d12").map(String::as_str) == Some("60 mm")
     ));
+    assert_eq!(
+        features[0]
+            .source_properties
+            .get("reference:0")
+            .map(String::as_str),
+        Some("44")
+    );
+    assert_eq!(
+        features[0]
+            .source_properties
+            .get("reference:1")
+            .map(String::as_str),
+        Some("44")
+    );
     assert_eq!(parameters[0].owner.as_ref(), Some(&features[0].id));
     assert_eq!(parameters[0].ordinal, 2);
     assert_eq!(

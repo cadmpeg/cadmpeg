@@ -1707,7 +1707,6 @@ mod tests {
             operation: Box::new(FeatureDefinition::Native {
                 kind: "Boolean".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             }),
             refine: false,
             fuzzy_tolerance: FuzzyTolerance::Explicit(2.0),

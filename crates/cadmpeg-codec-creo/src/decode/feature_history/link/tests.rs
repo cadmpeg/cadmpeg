@@ -56,9 +56,8 @@ fn feature(id: &str) -> Feature {
         id.into(),
         0,
         IrFeatureDefinition::Native {
-            kind: "test".to_string(),
+            kind: "test".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         },
     )
 }

@@ -469,7 +469,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
 
     assert!(matches!(
         schema_feature_definition(&scan, &CadIr::empty(), 942, 942, "Surface"),
-        IrFeatureDefinition::Native { kind, .. } if kind == "Surface"
+        IrFeatureDefinition::Native { kind, .. } if kind.as_str() == "Surface"
     ));
 }
 

@@ -431,7 +431,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             FeatureDefinition::Native {
                 kind: "Extrude".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
         ),
     ];

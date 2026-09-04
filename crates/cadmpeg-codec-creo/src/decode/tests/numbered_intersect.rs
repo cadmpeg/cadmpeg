@@ -1294,9 +1294,8 @@ fn mixed_current_and_generated_edges_remain_native() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: IrFeatureDefinition::Native {
-            kind: "producer".to_string(),
+            kind: "producer".into(),
             parameters: std::collections::BTreeMap::new(),
-            properties: std::collections::BTreeMap::new(),
         },
         native_ref: None,
     });

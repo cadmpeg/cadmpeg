@@ -855,16 +855,11 @@ fn native_operation_definition(
         },
         "EdgeFillet" => FeatureDefinition::FilletUnresolved,
         _ => FeatureDefinition::Native {
-            kind: kind.to_string(),
+            kind: kind.into(),
             parameters: BTreeMap::new(),
-            properties: properties.clone(),
         },
     };
-    if matches!(definition, FeatureDefinition::Native { .. }) {
-        (definition, BTreeMap::new())
-    } else {
-        (definition, properties)
-    }
+    (definition, properties)
 }
 
 /// Exact source properties and records retained for one native operation.

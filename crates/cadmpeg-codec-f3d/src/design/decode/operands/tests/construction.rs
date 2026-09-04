@@ -780,7 +780,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     assert!(matches!(
         features[0].definition,
-        FeatureDefinition::Native { ref kind, .. } if kind == "DeleteFace"
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::DeleteFace,
+            ..
+        }
     ));
 
     let mut surface_scope = delete_scope.clone();
@@ -855,7 +858,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     assert!(matches!(
         features[0].definition,
-        FeatureDefinition::Native { ref kind, .. } if kind == "SurfaceDeleteFace"
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::SurfaceDeleteFace,
+            ..
+        }
     ));
 
     for (class_tag, paired_class_tag, base_frame, base_kind) in [
@@ -904,7 +910,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     assert!(matches!(
         features[0].definition,
-        FeatureDefinition::Native { ref kind, .. } if kind == "SurfaceDeleteFace"
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::SurfaceDeleteFace,
+            ..
+        }
     ));
 
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
@@ -943,7 +952,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     assert!(matches!(
         features[0].definition,
-        FeatureDefinition::Native { ref kind, .. } if kind == "DeleteFace"
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::DeleteFace,
+            ..
+        }
     ));
 
     let mut remove_scope = scope.clone();

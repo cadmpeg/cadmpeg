@@ -547,7 +547,7 @@ pub(crate) fn transfer_curve_expression_features(
                 clockwise: helix.clockwise,
             }),
             None => IrFeatureDefinition::Native {
-                kind: "CurveFromEquation".to_string(),
+                kind: "CurveFromEquation".into(),
                 parameters: BTreeMap::from([
                     ("entity_id".to_string(), record.entity_id.to_string()),
                     (
@@ -555,7 +555,6 @@ pub(crate) fn transfer_curve_expression_features(
                         record.assignments.len().to_string(),
                     ),
                 ]),
-                properties: BTreeMap::new(),
             },
         };
         ir.model.features.push(Feature {

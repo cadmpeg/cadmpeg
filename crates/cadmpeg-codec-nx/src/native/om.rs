@@ -5400,7 +5400,6 @@ mod tests {
         operation_owned.model.features[0].definition =
             cadmpeg_ir::features::FeatureDefinition::Native {
                 kind: "TEST_OPERATION".into(),
-                properties: BTreeMap::default(),
                 parameters: BTreeMap::default(),
             };
         assert_eq!(

@@ -2491,7 +2491,6 @@ mod tests {
                 FeatureDefinition::Native {
                     kind: "Sketch".into(),
                     parameters: BTreeMap::new(),
-                    properties: BTreeMap::new(),
                 },
             ),
             neutral_feature("pattern", "LPattern6", 2, Vec::new(), pattern_definition),

@@ -126,16 +126,14 @@ pub(crate) fn transfer(
             }
         } else if is_body(&object.type_name) {
             body_definition(&owned, &feature_ids).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             })
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if is_sketch(&object.type_name) {
@@ -155,32 +153,28 @@ pub(crate) fn transfer(
         } else if object.type_name == "PartDesign::FeatureBase" {
             feature_base_definition(&owned, &feature_ids).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if is_imported_geometry(&object.type_name) {
             imported_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if is_part_construction_geometry(&object.type_name) {
             part_construction_geometry_definition(&object.type_name, &owned, entries)
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 })
         } else if is_primitive(&object.type_name) {
             primitive_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if is_boolean(&object.type_name) {
@@ -191,24 +185,21 @@ pub(crate) fn transfer(
                         .flatten()
                 })
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 })
         } else if is_loft(&object.type_name) {
             loft_definition(&object.type_name, &owned, &sketch_ids)
                 .or_else(|| cached_shape_definition(&owned))
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 })
         } else if is_sweep(&object.type_name) {
             sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if is_helical_sweep(&object.type_name) {
@@ -221,24 +212,21 @@ pub(crate) fn transfer(
                 &properties_by_owner,
             )
             .unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             })
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
             parametric_helix_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if is_binder(&object.type_name) {
             binder_definition(&object.type_name, &owned, &feature_ids).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if is_pattern(&object.type_name) {
@@ -252,22 +240,19 @@ pub(crate) fn transfer(
                 entries,
             )
             .unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             })
         } else if object.type_name == "Part::Scale" {
             scale_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             })
         } else if is_hole(&object.type_name) {
             hole_definition(&object.id, &owned, &sketch_ids, program_version).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if is_extrusion(&object.type_name) {
@@ -299,16 +284,14 @@ pub(crate) fn transfer(
                 &ir.model.sketches,
             )
             .unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             })
         } else if is_revolution(&object.type_name) {
             revolution_definition(&object.type_name, &object.id, &owned, &sketch_ids)
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 })
         } else if matches!(
             object.type_name.as_str(),
@@ -316,17 +299,15 @@ pub(crate) fn transfer(
         ) {
             thickness_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if matches!(object.type_name.as_str(), "Part::Offset" | "Part::Offset2D") {
             offset_shape_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if matches!(
@@ -335,71 +316,61 @@ pub(crate) fn transfer(
         ) {
             derived_shape_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if object.type_name == "Part::RuledSurface" {
             ruled_surface_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             })
         } else if object.type_name == "Part::Section" {
             section_shape_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             })
         } else if object.type_name == "Part::Mirroring" {
             mirror_shape_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             })
         } else if object.type_name == "Part::ProjectOnSurface" {
             project_on_surface_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             })
         } else if object.type_name == "PartDesign::Draft" {
             draft_definition(&owned, objects, &properties_by_owner).unwrap_or_else(|| {
                 FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 }
             })
         } else if is_fillet(&object.type_name) {
             fillet_definition(&object.type_name, &owned, entries)
                 .or_else(|| cached_shape_definition(&owned))
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 })
         } else if is_chamfer(&object.type_name) {
             chamfer_definition(&object.type_name, &owned, entries, program_version)
                 .or_else(|| cached_shape_definition(&owned))
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: object.type_name.clone(),
+                    kind: object.type_name.clone().into(),
                     parameters: native_parameters(&owned),
-                    properties: BTreeMap::new(),
                 })
         } else {
             FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             }
         };
         if cycle_affected.contains(object.id.as_str()) {
             definition = FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
             };
         }
         let semantic_dependencies = match &definition {
@@ -513,14 +484,13 @@ pub(crate) fn transfer(
             .find(|feature| feature.native_ref.as_deref() == Some(object.id.as_str()))
         {
             feature.definition = FeatureDefinition::Native {
-                kind: object.type_name.clone(),
+                kind: object.type_name.clone().into(),
                 parameters: native_parameters(
                     properties_by_owner
                         .get(object.id.as_str())
                         .map(Vec::as_slice)
                         .unwrap_or_default(),
                 ),
-                properties: BTreeMap::new(),
             };
             feature.dependencies.clear();
         }
@@ -749,9 +719,8 @@ fn post_processed_definition(
             fuzzy_tolerance,
         },
         PostProcessControlState::Malformed => FeatureDefinition::Native {
-            kind: kind.to_owned(),
+            kind: kind.to_owned().into(),
             parameters: native_parameters(properties),
-            properties: BTreeMap::new(),
         },
     }
 }

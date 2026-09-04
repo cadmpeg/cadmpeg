@@ -619,7 +619,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         name: Some("Equation".into()),
         suppressed: Some(false),
         dependencies: Vec::new(),
-        source_properties: std::collections::BTreeMap::new(),
+        source_properties: BTreeMap::from([("EquationSet".into(), "Global".into())]),
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),
@@ -627,7 +627,6 @@ fn encoder_writes_source_less_neutral_parameters() {
         definition: FeatureDefinition::Native {
             kind: "EquationDriven".into(),
             parameters: BTreeMap::from([("Pitch".into(), "D1@Sketch1 * 2".into())]),
-            properties: BTreeMap::from([("EquationSet".into(), "Global".into())]),
         },
         native_ref: None,
     });
@@ -658,11 +657,13 @@ fn encoder_writes_source_less_neutral_parameters() {
         decoded.ir().model.parameters[0].expression,
         "D1@Sketch1 * 2"
     );
-    assert!(matches!(
-        &decoded.ir().model.features[0].definition,
-        FeatureDefinition::Native { properties, .. }
-            if properties.get("EquationSet").map(String::as_str) == Some("Global")
-    ));
+    assert_eq!(
+        decoded.ir().model.features[0]
+            .source_properties
+            .get("EquationSet")
+            .map(String::as_str),
+        Some("Global")
+    );
 }
 
 #[test]

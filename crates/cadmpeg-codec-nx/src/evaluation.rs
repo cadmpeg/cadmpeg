@@ -271,12 +271,12 @@ fn rederived_body_census(
                 }
             }
             FeatureDefinition::Native { kind, .. }
-                if kind == "DELETE"
+                if kind.as_str() == "DELETE"
                     && !feature
                         .source_properties
                         .contains_key("primary_body_object_index") => {}
             FeatureDefinition::Native { kind, .. }
-                if kind == "FSET" && feature.outputs.is_empty() => {}
+                if kind.as_str() == "FSET" && feature.outputs.is_empty() => {}
             FeatureDefinition::Block {
                 dimensions: Some(dimensions),
                 placement: Some(placement),
@@ -596,9 +596,9 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
         ) || matches!(
             &feature.definition,
             FeatureDefinition::Native { kind, .. }
-                if (kind == "DELETE"
+                if (kind.as_str() == "DELETE"
                     && !feature.source_properties.contains_key("primary_body_object_index"))
-                    || kind == "FSET"
+                    || kind.as_str() == "FSET"
         ))
 }
 
@@ -2778,9 +2778,8 @@ mod tests {
             "fset",
             1,
             FeatureDefinition::Native {
-                kind: "FSET".to_string(),
+                kind: "FSET".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
         );
         fset.suppressed = None;
@@ -2877,9 +2876,8 @@ mod tests {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
-                kind: "DELETE".to_string(),
+                kind: "DELETE".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
             native_ref: None,
         };

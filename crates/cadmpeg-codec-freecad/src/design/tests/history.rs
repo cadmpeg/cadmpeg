@@ -123,7 +123,7 @@ fn rejects_noncanonical_feature_base_carriers() {
         .expect("feature base");
     assert!(matches!(
         &feature.definition,
-        FeatureDefinition::Native { kind, .. } if kind == "PartDesign::FeatureBase"
+        FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::FeatureBase"
     ));
     assert_eq!(result.report().losses.len(), 1);
     assert!(result
@@ -301,7 +301,7 @@ fn rejects_ambiguous_body_history_carriers() {
                 .find(|feature| feature.name.as_deref() == Some(name))
                 .map(|feature| &feature.definition)
                 .expect("body feature"),
-            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Body"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Body"
         ));
     }
     assert_eq!(result.report().losses.len(), 2);

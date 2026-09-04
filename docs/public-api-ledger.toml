@@ -3683,3 +3683,17 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane"
 reason = "a datum reference without a face identity carries one resolved support frame"
+
+[[change]]
+commit = "a6901037db3c5a52b3092786dd5329398ccb69fd"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::FeatureDefinition::Native::kind"
+reason = "Fusion native feature families matched by behavior are typed while other source-native names retain their exact spelling"
+
+[[change]]
+commit = "a6901037db3c5a52b3092786dd5329398ccb69fd"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::features::FeatureDefinition::Native::properties"
+reason = "source-native attributes have one owner in Feature::source_properties instead of a second independently mutable map"

@@ -1357,9 +1357,8 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
-            kind: "Prism_ThickThin1".to_string(),
+            kind: "Prism_ThickThin1".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         },
         native_ref: Some("native-feature".to_string()),
     });

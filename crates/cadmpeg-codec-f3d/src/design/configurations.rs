@@ -894,7 +894,6 @@ mod tests {
             definition: FeatureDefinition::Native {
                 kind: "Fillet".into(),
                 parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
             },
             native_ref: None,
         };

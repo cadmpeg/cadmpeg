@@ -574,13 +574,13 @@ pub(crate) fn project(
         name,
         suppressed: Some(false),
         dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
+        source_properties: properties,
         source_tag: Some("RhinoMorphControl".to_string()),
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
-            kind: "morph_control".to_string(),
+            kind: "morph_control".into(),
             parameters: {
                 let mut parameters = BTreeMap::from([
                     ("variant".to_string(), variant.to_string()),
@@ -607,7 +607,6 @@ pub(crate) fn project(
                 }));
                 parameters
             },
-            properties,
         },
         native_ref: Some(native_ref),
     }

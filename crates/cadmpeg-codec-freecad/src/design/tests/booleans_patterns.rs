@@ -190,7 +190,7 @@ fn distinguishes_absent_and_malformed_partdesign_boolean_type() {
         if expected_native {
             assert!(matches!(
                 definition,
-                FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Boolean"
+                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Boolean"
             ));
         } else {
             assert!(matches!(
@@ -541,7 +541,7 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
             };
             assert!(matches!(
                 definition(&result, target),
-                FeatureDefinition::Native { kind: actual, .. } if actual == kind
+                FeatureDefinition::Native { kind: actual, .. } if actual.as_str() == kind
             ));
             assert_eq!(result.report().losses.len(), 1);
             assert!(result.report().losses.iter().all(|loss| {
@@ -784,7 +784,7 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
         assert!(
             matches!(
                 actual,
-                FeatureDefinition::Native { kind: actual, .. } if actual == kind
+                FeatureDefinition::Native { kind: actual, .. } if actual.as_str() == kind
             ),
             "{name}: {actual:?}"
         );
@@ -1244,7 +1244,7 @@ fn rejects_ambiguous_axis_and_plane_reference_carriers() {
     for name in ["MultipleTargets", "MultipleSelectors"] {
         assert!(matches!(
             definition(name),
-            FeatureDefinition::Native { kind, .. } if kind == "PartDesign::PolarPattern"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::PolarPattern"
         ));
     }
     assert!(matches!(

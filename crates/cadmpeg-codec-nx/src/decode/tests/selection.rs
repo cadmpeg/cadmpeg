@@ -1058,9 +1058,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Native {
-                kind: kind.to_string(),
+                kind: kind.into(),
                 parameters: Default::default(),
-                properties: Default::default(),
             },
             native_ref: None,
         });
@@ -1307,7 +1306,6 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             definition: FeatureDefinition::Native {
                 kind: "DELETE".into(),
                 parameters: Default::default(),
-                properties: Default::default(),
             },
             native_ref: None,
         },
@@ -1386,7 +1384,6 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             definition: FeatureDefinition::Native {
                 kind: "DELETE".into(),
                 parameters: Default::default(),
-                properties: Default::default(),
             },
             native_ref: None,
         },

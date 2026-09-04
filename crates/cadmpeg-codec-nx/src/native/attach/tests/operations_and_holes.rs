@@ -891,7 +891,6 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition::Native {
             kind: "BLEND".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         }
     );
     assert_eq!(
@@ -899,7 +898,6 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition::Native {
             kind: "FACE_BLEND".into(),
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
         }
     );
     for kind in ["CPROJ", "CPROJ_CMB"] {

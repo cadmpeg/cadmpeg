@@ -1071,7 +1071,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
     assert!(matches!(
         &feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
-            if kind == "Native Feature"
+            if kind.as_str() == "Native Feature"
     ));
     assert_eq!(
         feature

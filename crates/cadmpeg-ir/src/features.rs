@@ -1143,6 +1143,103 @@ impl DatumPointConstruction {
     }
 }
 
+/// Source-native feature family retained without neutral construction semantics.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum NativeFeatureKind {
+    /// Fusion reference-image operation.
+    Canvas,
+    /// Fusion decal operation.
+    Decal,
+    /// Fusion draft operation.
+    Draft,
+    /// Fusion edge-fillet operation.
+    Fillet,
+    /// Fusion chamfer operation.
+    Chamfer,
+    /// Fusion extrusion operation.
+    Extrude,
+    /// Fusion direct face deletion.
+    DeleteFace,
+    /// Fusion surface face deletion.
+    SurfaceDeleteFace,
+    /// Source-native family without typed neutral handling.
+    Other(String),
+}
+
+impl NativeFeatureKind {
+    /// Stable source spelling carried on the CADIR wire.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Canvas => "Canvas",
+            Self::Decal => "Decal",
+            Self::Draft => "Draft",
+            Self::Fillet => "Fillet",
+            Self::Chamfer => "Chamfer",
+            Self::Extrude => "Extrude",
+            Self::DeleteFace => "DeleteFace",
+            Self::SurfaceDeleteFace => "SurfaceDeleteFace",
+            Self::Other(value) => value,
+        }
+    }
+}
+
+impl From<String> for NativeFeatureKind {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "Canvas" => Self::Canvas,
+            "Decal" => Self::Decal,
+            "Draft" => Self::Draft,
+            "Fillet" => Self::Fillet,
+            "Chamfer" => Self::Chamfer,
+            "Extrude" => Self::Extrude,
+            "DeleteFace" => Self::DeleteFace,
+            "SurfaceDeleteFace" => Self::SurfaceDeleteFace,
+            _ => Self::Other(value),
+        }
+    }
+}
+
+impl From<&str> for NativeFeatureKind {
+    fn from(value: &str) -> Self {
+        value.to_owned().into()
+    }
+}
+
+impl std::fmt::Display for NativeFeatureKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl Serialize for NativeFeatureKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for NativeFeatureKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(String::deserialize(deserializer)?.into())
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for NativeFeatureKind {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "NativeFeatureKind".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        String::json_schema(generator)
+    }
+}
+
 /// Neutral construction semantics, with an explicit native escape hatch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2211,13 +2308,10 @@ pub enum FeatureDefinition {
     /// Source-native operation without neutral semantics.
     Native {
         /// Native feature-type tag (e.g. `"Extrude"`, `"Fillet"`).
-        kind: String,
+        kind: NativeFeatureKind,
         /// Source parametric input values keyed by parameter name.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         parameters: BTreeMap<String, String>,
-        /// Source operation attributes that are not dimensional parameters.
-        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-        properties: BTreeMap<String, String>,
     },
 }
 

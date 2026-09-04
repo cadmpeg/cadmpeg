@@ -728,7 +728,6 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         definition: cadmpeg_ir::features::FeatureDefinition::Native {
             kind: "Form".into(),
             parameters: Default::default(),
-            properties: Default::default(),
         },
         native_ref: Some(scope.id.clone()),
     }];
@@ -809,7 +808,6 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         definition: cadmpeg_ir::features::FeatureDefinition::Native {
             kind: "Form".into(),
             parameters: Default::default(),
-            properties: Default::default(),
         },
         native_ref: Some(scope.id.clone()),
     }];

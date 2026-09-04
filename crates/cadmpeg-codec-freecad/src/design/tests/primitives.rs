@@ -254,18 +254,18 @@ fn distinguishes_absent_and_malformed_dress_up_flags() {
             if target == "UseAllEdges" {
                 assert!(matches!(
                     definition(&result, "Fillet"),
-                    FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Fillet"
+                    FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Fillet"
                 ));
                 assert!(matches!(
                     definition(&result, "Chamfer"),
-                    FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Chamfer"
+                    FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Chamfer"
                 ));
                 assert_eq!(result.report().losses.len(), 2);
             } else {
                 assert_fillet(definition(&result, "Fillet"), true);
                 assert!(matches!(
                     definition(&result, "Chamfer"),
-                    FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Chamfer"
+                    FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Chamfer"
                 ));
                 assert_eq!(result.report().losses.len(), 1);
             }
@@ -385,7 +385,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult| {
         assert!(matches!(
             definition(result),
-            FeatureDefinition::Native { kind, .. } if kind == "Part::Extrusion"
+            FeatureDefinition::Native { kind, .. } if kind.as_str() == "Part::Extrusion"
         ));
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
@@ -574,7 +574,7 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
     };
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str| {
         assert!(
-            matches!(definition(result, name), FeatureDefinition::Native { kind: value, .. } if value == kind)
+            matches!(definition(result, name), FeatureDefinition::Native { kind: value, .. } if value.as_str() == kind)
         );
         assert_eq!(result.report().losses.len(), 1);
         assert!(result.report().losses.iter().all(|loss| {
@@ -1397,7 +1397,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
     let assert_native = |result: &cadmpeg_ir::codec::DecodeResult, name: &str, kind: &str| {
         let actual = definition(result, name);
         assert!(
-            matches!(actual, FeatureDefinition::Native { kind: value, .. } if value == kind),
+            matches!(actual, FeatureDefinition::Native { kind: value, .. } if value.as_str() == kind),
             "{name} expected native {kind}, got {actual:?}"
         );
         assert_eq!(result.report().losses.len(), 1);
@@ -1758,7 +1758,7 @@ fn distinguishes_absent_and_malformed_partdesign_revolution_type() {
         if expected_native {
             assert!(matches!(
                 definition,
-                FeatureDefinition::Native { kind, .. } if kind == "PartDesign::Revolution"
+                FeatureDefinition::Native { kind, .. } if kind.as_str() == "PartDesign::Revolution"
             ));
         } else {
             assert!(matches!(

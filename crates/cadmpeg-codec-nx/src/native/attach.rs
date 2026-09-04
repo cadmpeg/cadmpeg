@@ -5955,9 +5955,8 @@ fn non_boolean_feature_definition_with_parameters(
     let hole_template = unique_simple_hole_template(payload_strings);
     if matches!(kind, "BLEND" | "FACE_BLEND") {
         return FeatureDefinition::Native {
-            kind: kind.to_string(),
+            kind: kind.into(),
             parameters: native_parameters,
-            properties: BTreeMap::new(),
         };
     }
     if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
@@ -6230,9 +6229,8 @@ fn non_boolean_feature_definition_with_parameters(
             approximate: None,
         },
         _ => FeatureDefinition::Native {
-            kind: kind.to_string(),
+            kind: kind.into(),
             parameters: native_parameters,
-            properties: BTreeMap::new(),
         },
     }
 }

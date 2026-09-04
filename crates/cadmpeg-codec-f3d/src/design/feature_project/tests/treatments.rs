@@ -474,8 +474,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Native { kind, parameters, .. }
-            if kind == "Fillet" && parameters.len() == 2
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Fillet,
+            parameters,
+        } if parameters.len() == 2
     ));
 
     let (features, _) = project_parameter_design(
@@ -490,8 +492,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Native { kind, parameters, .. }
-            if kind == "Fillet" && parameters.len() == 1
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Fillet,
+            parameters,
+        } if parameters.len() == 1
     ));
 
     let (features, _) = project_parameter_design(
@@ -514,8 +518,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Native { kind, parameters, .. }
-            if kind == "Chamfer" && parameters.len() == 3
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
+            parameters,
+        } if parameters.len() == 3
     ));
 
     let (features, _) = project_parameter_design(
@@ -533,8 +539,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     );
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Native { kind, parameters, .. }
-            if kind == "Chamfer" && parameters.len() == 2
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Chamfer,
+            parameters,
+        } if parameters.len() == 2
     ));
 
     let construction_group =
@@ -792,7 +800,10 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     let (features, _) = project(&selection);
     assert!(matches!(
         &features[0].definition,
-        FeatureDefinition::Native { kind, .. } if kind == "Draft"
+        FeatureDefinition::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
+            ..
+        }
     ));
 }
 

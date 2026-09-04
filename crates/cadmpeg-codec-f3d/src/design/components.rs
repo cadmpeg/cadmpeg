@@ -400,7 +400,6 @@ mod tests {
             FeatureDefinition::Native {
                 kind: "DerivedInstance".into(),
                 parameters: std::collections::BTreeMap::new(),
-                properties: std::collections::BTreeMap::new(),
             },
         );
         feature.native_ref = Some(scope.id.clone());

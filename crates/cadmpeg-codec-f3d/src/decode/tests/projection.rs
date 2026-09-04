@@ -98,7 +98,6 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         definition: FeatureDefinition::Native {
             kind: "Base Mesh Feature".into(),
             parameters: std::collections::BTreeMap::new(),
-            properties: std::collections::BTreeMap::new(),
         },
         native_ref: Some(scope_id.into()),
     }];
@@ -197,7 +196,6 @@ fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
     let native = |kind: &str| cadmpeg_ir::features::FeatureDefinition::Native {
         kind: kind.into(),
         parameters: std::collections::BTreeMap::new(),
-        properties: std::collections::BTreeMap::new(),
     };
 
     assert!(!feature_definition_is_incomplete(&native("Canvas")));
@@ -943,7 +941,6 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         definition: FeatureDefinition::Native {
             kind: kind.into(),
             parameters: std::collections::BTreeMap::new(),
-            properties: std::collections::BTreeMap::new(),
         },
         native_ref: None,
     };
