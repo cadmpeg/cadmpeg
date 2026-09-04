@@ -8,8 +8,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
-    DatumReference, DatumTargetForm, DimensionKind, GeometricToleranceKind, LimitsAndFits,
-    PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
+    LimitsAndFits, PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::transform::Transform;
@@ -253,7 +253,9 @@ pub(super) fn decode(
                 _ => kind,
             };
         }
-        let nominal = characteristic_values.get(&id).copied();
+        let Some(nominal) = characteristic_values.get(&id).copied() else {
+            continue;
+        };
         let aspect_ids = record
             .partials
             .iter()
@@ -270,9 +272,7 @@ pub(super) fn decode(
             PmiDefinition::Dimension {
                 dimension: kind,
                 nominal,
-                lower_deviation: None,
-                upper_deviation: None,
-                limits_and_fits: None,
+                tolerance: None,
             },
         );
         typed.insert(id);
@@ -365,25 +365,34 @@ pub(super) fn decode(
                 .parameters()
                 .get(1)
                 .and_then(|value| measure(value, exchange, &mut measurements));
-            if let PmiDefinition::Dimension {
-                lower_deviation,
-                upper_deviation,
-                ..
-            } = &mut ir.model.pmi[index].definition
-            {
-                *lower_deviation = lower;
-                *upper_deviation = upper;
+            if let (Some(lower), Some(upper)) = (lower, upper) {
+                if set_dimension_tolerance(
+                    &mut ir.model.pmi[index].definition,
+                    DimensionTolerance::PlusMinus { lower, upper },
+                ) {
+                    typed.insert(id);
+                    typed.extend(refs);
+                } else {
+                    warnings.push(format!(
+                        "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
+                    ));
+                }
+            } else {
+                warnings.push(format!(
+                    "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
+                ));
             }
-            typed.insert(id);
-            typed.extend(refs);
         } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
-            if let PmiDefinition::Dimension {
-                limits_and_fits, ..
-            } = &mut ir.model.pmi[index].definition
-            {
-                *limits_and_fits = Some(fit);
+            if set_dimension_tolerance(
+                &mut ir.model.pmi[index].definition,
+                DimensionTolerance::Fit(fit),
+            ) {
+                typed.extend([id, fit_id]);
+            } else {
+                warnings.push(format!(
+                    "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
+                ));
             }
-            typed.extend([id, fit_id]);
         } else {
             warnings.push(format!(
                 "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
@@ -692,6 +701,17 @@ pub(super) fn decode(
         losses,
         notes: Vec::new(),
     }
+}
+
+fn set_dimension_tolerance(definition: &mut PmiDefinition, value: DimensionTolerance) -> bool {
+    let PmiDefinition::Dimension { tolerance, .. } = definition else {
+        return false;
+    };
+    if tolerance.is_some() {
+        return false;
+    }
+    *tolerance = Some(value);
+    true
 }
 
 fn mark_characteristic_representations(

@@ -207,10 +207,22 @@ pub struct LimitsAndFits {
     pub source: String,
 }
 
+/// Tolerance carried by a semantic dimension.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DimensionTolerance {
+    /// Signed lower and upper deviations from the nominal value.
+    PlusMinus {
+        /// Signed lower deviation from nominal.
+        lower: PmiValue,
+        /// Signed upper deviation from nominal.
+        upper: PmiValue,
+    },
+    /// ISO limits-and-fits tolerance class.
+    Fit(LimitsAndFits),
+}
+
 /// Semantic or presentation PMI payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PmiDefinition {
     /// Datum identification attached to a datum feature.
     Datum {
@@ -229,7 +241,6 @@ pub enum PmiDefinition {
         /// Target identifier shown with the datum target.
         identification: String,
         /// Shape aspects that provide the datum-target basis.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         basis: Vec<PmiTarget>,
     },
     /// Geometric tolerance, zone units, modifiers, and optional datum system.
@@ -238,19 +249,14 @@ pub enum PmiDefinition {
         tolerance: GeometricToleranceKind,
         /// Tolerance-zone magnitude.
         magnitude: PmiValue,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         /// Explicit tolerance-zone unit size.
         defined_unit: Option<PmiValue>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         /// Explicit area-unit shape for the tolerance zone.
         defined_area_unit: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         /// Second unit for rectangular, cylindrical, or spherical zones.
         defined_area_second_unit: Option<PmiValue>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         /// Referenced datum-system annotation.
         datum_system: Option<PmiId>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         /// Source-defined geometric-tolerance modifiers.
         modifiers: Vec<String>,
     },
@@ -258,31 +264,240 @@ pub enum PmiDefinition {
     Dimension {
         /// Dimensional characteristic.
         dimension: DimensionKind,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         /// Nominal value.
-        nominal: Option<PmiValue>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        /// Signed lower deviation from nominal.
-        lower_deviation: Option<PmiValue>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        /// Signed upper deviation from nominal.
-        upper_deviation: Option<PmiValue>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        /// Limits-and-fits tolerance class.
-        limits_and_fits: Option<LimitsAndFits>,
+        nominal: PmiValue,
+        /// Optional plus/minus or limits-and-fits tolerance.
+        tolerance: Option<DimensionTolerance>,
     },
     /// Graphical annotation retained independently of semantic PMI.
     Presentation {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         /// Decoded annotation text.
         text: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         /// Model-space graphical placement.
         placement: Option<Transform>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         /// Semantic annotations depicted by this presentation.
         semantics: Vec<PmiId>,
     },
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum PmiDefinitionWire {
+    Datum {
+        identification: String,
+    },
+    DatumSystem {
+        references: Vec<DatumReference>,
+    },
+    DatumTarget {
+        form: DatumTargetForm,
+        identification: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        basis: Vec<PmiTarget>,
+    },
+    GeometricTolerance {
+        tolerance: GeometricToleranceKind,
+        magnitude: PmiValue,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        defined_unit: Option<PmiValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        defined_area_unit: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        defined_area_second_unit: Option<PmiValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        datum_system: Option<PmiId>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        modifiers: Vec<String>,
+    },
+    Dimension {
+        dimension: DimensionKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        nominal: Option<PmiValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        lower_deviation: Option<PmiValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        upper_deviation: Option<PmiValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limits_and_fits: Option<LimitsAndFits>,
+    },
+    Presentation {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        placement: Option<Transform>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        semantics: Vec<PmiId>,
+    },
+}
+
+impl From<PmiDefinition> for PmiDefinitionWire {
+    fn from(value: PmiDefinition) -> Self {
+        match value {
+            PmiDefinition::Datum { identification } => Self::Datum { identification },
+            PmiDefinition::DatumSystem { references } => Self::DatumSystem { references },
+            PmiDefinition::DatumTarget {
+                form,
+                identification,
+                basis,
+            } => Self::DatumTarget {
+                form,
+                identification,
+                basis,
+            },
+            PmiDefinition::GeometricTolerance {
+                tolerance,
+                magnitude,
+                defined_unit,
+                defined_area_unit,
+                defined_area_second_unit,
+                datum_system,
+                modifiers,
+            } => Self::GeometricTolerance {
+                tolerance,
+                magnitude,
+                defined_unit,
+                defined_area_unit,
+                defined_area_second_unit,
+                datum_system,
+                modifiers,
+            },
+            PmiDefinition::Dimension {
+                dimension,
+                nominal,
+                tolerance,
+            } => {
+                let (lower_deviation, upper_deviation, limits_and_fits) = match tolerance {
+                    None => (None, None, None),
+                    Some(DimensionTolerance::PlusMinus { lower, upper }) => {
+                        (Some(lower), Some(upper), None)
+                    }
+                    Some(DimensionTolerance::Fit(fit)) => (None, None, Some(fit)),
+                };
+                Self::Dimension {
+                    dimension,
+                    nominal: Some(nominal),
+                    lower_deviation,
+                    upper_deviation,
+                    limits_and_fits,
+                }
+            }
+            PmiDefinition::Presentation {
+                text,
+                placement,
+                semantics,
+            } => Self::Presentation {
+                text,
+                placement,
+                semantics,
+            },
+        }
+    }
+}
+
+impl TryFrom<PmiDefinitionWire> for PmiDefinition {
+    type Error = String;
+
+    fn try_from(value: PmiDefinitionWire) -> Result<Self, Self::Error> {
+        Ok(match value {
+            PmiDefinitionWire::Datum { identification } => Self::Datum { identification },
+            PmiDefinitionWire::DatumSystem { references } => Self::DatumSystem { references },
+            PmiDefinitionWire::DatumTarget {
+                form,
+                identification,
+                basis,
+            } => Self::DatumTarget {
+                form,
+                identification,
+                basis,
+            },
+            PmiDefinitionWire::GeometricTolerance {
+                tolerance,
+                magnitude,
+                defined_unit,
+                defined_area_unit,
+                defined_area_second_unit,
+                datum_system,
+                modifiers,
+            } => Self::GeometricTolerance {
+                tolerance,
+                magnitude,
+                defined_unit,
+                defined_area_unit,
+                defined_area_second_unit,
+                datum_system,
+                modifiers,
+            },
+            PmiDefinitionWire::Dimension {
+                dimension,
+                nominal,
+                lower_deviation,
+                upper_deviation,
+                limits_and_fits,
+            } => {
+                let nominal = nominal
+                    .ok_or_else(|| "PmiDefinition.dimension.nominal is required".to_string())?;
+                let tolerance = match (lower_deviation, upper_deviation, limits_and_fits) {
+                    (None, None, None) => None,
+                    (Some(lower), Some(upper), None) => {
+                        Some(DimensionTolerance::PlusMinus { lower, upper })
+                    }
+                    (None, None, Some(fit)) => Some(DimensionTolerance::Fit(fit)),
+                    _ => {
+                        return Err(
+                            "PmiDefinition.dimension tolerance must contain both deviations or one limits_and_fits value"
+                                .to_string(),
+                        )
+                    }
+                };
+                Self::Dimension {
+                    dimension,
+                    nominal,
+                    tolerance,
+                }
+            }
+            PmiDefinitionWire::Presentation {
+                text,
+                placement,
+                semantics,
+            } => Self::Presentation {
+                text,
+                placement,
+                semantics,
+            },
+        })
+    }
+}
+
+impl Serialize for PmiDefinition {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        PmiDefinitionWire::from(self.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PmiDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        PmiDefinitionWire::deserialize(deserializer)?
+            .try_into()
+            .map_err(D::Error::custom)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for PmiDefinition {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PmiDefinition".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        PmiDefinitionWire::json_schema(generator)
+    }
 }
 
 /// One document-level PMI annotation.
@@ -359,6 +574,69 @@ mod tests {
     }
 
     #[test]
+    fn dimension_wire_keeps_the_flat_tolerance_fields() {
+        let definition = PmiDefinition::Dimension {
+            dimension: DimensionKind::Size,
+            nominal: PmiValue {
+                value: 12.0,
+                quantity: PmiQuantity::Length,
+            },
+            tolerance: Some(DimensionTolerance::PlusMinus {
+                lower: PmiValue {
+                    value: -0.1,
+                    quantity: PmiQuantity::Length,
+                },
+                upper: PmiValue {
+                    value: 0.2,
+                    quantity: PmiQuantity::Length,
+                },
+            }),
+        };
+
+        let value = serde_json::to_value(&definition).unwrap();
+        assert_eq!(value["kind"], "dimension");
+        assert_eq!(value["nominal"]["value"], 12.0);
+        assert_eq!(value["lower_deviation"]["value"], -0.1);
+        assert_eq!(value["upper_deviation"]["value"], 0.2);
+        assert!(value.get("tolerance").is_none());
+        assert_eq!(
+            serde_json::from_value::<PmiDefinition>(value).unwrap(),
+            definition
+        );
+    }
+
+    #[test]
+    fn dimension_wire_rejects_partial_semantic_dimensions() {
+        for value in [
+            serde_json::json!({
+                "kind": "dimension",
+                "dimension": "size"
+            }),
+            serde_json::json!({
+                "kind": "dimension",
+                "dimension": "size",
+                "nominal": {"value": 12.0, "quantity": "length"},
+                "lower_deviation": {"value": -0.1, "quantity": "length"}
+            }),
+            serde_json::json!({
+                "kind": "dimension",
+                "dimension": "size",
+                "nominal": {"value": 12.0, "quantity": "length"},
+                "lower_deviation": {"value": -0.1, "quantity": "length"},
+                "upper_deviation": {"value": 0.2, "quantity": "length"},
+                "limits_and_fits": {
+                    "form_variance": "H",
+                    "zone_variance": "",
+                    "grade": "7",
+                    "source": "ISO 286"
+                }
+            }),
+        ] {
+            assert!(serde_json::from_value::<PmiDefinition>(value).is_err());
+        }
+    }
+
+    #[test]
     fn curve_target_resolves_against_the_curve_arena() {
         let mut ir = crate::examples::unit_cube();
         let curve = ir.model.curves[0].id.clone();
@@ -369,10 +647,11 @@ mod tests {
             targets: vec![PmiTarget::Curve { curve }],
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
-                nominal: None,
-                lower_deviation: None,
-                upper_deviation: None,
-                limits_and_fits: None,
+                nominal: PmiValue {
+                    value: 1.0,
+                    quantity: PmiQuantity::Length,
+                },
+                tolerance: None,
             },
         });
         ir.finalize();
@@ -413,10 +692,11 @@ mod tests {
             targets: Vec::new(),
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
-                nominal: None,
-                lower_deviation: None,
-                upper_deviation: None,
-                limits_and_fits: None,
+                nominal: PmiValue {
+                    value: 1.0,
+                    quantity: PmiQuantity::Length,
+                },
+                tolerance: None,
             },
         });
         ir.model.pmi.push(PmiAnnotation {

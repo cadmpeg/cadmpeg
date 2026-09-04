@@ -13,7 +13,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::pmi::{
-    DatumTargetForm, DimensionKind, GeometricToleranceKind, PmiDefinition, PmiQuantity, PmiTarget,
+    DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
+    PmiQuantity, PmiTarget,
 };
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
@@ -3085,9 +3086,7 @@ impl<'a> Builder<'a> {
                 PmiDefinition::Dimension {
                     dimension,
                     nominal,
-                    lower_deviation,
-                    upper_deviation,
-                    limits_and_fits,
+                    tolerance,
                 } => {
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
                     let name = annotation.name.as_deref().unwrap_or("");
@@ -3119,18 +3118,16 @@ impl<'a> Builder<'a> {
                         _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
-                    if let Some(value) = nominal {
-                        let measure = self.emit_pmi_measure_representation_item(*value, name);
-                        let representation = self.emitter.emit(
-                            "SHAPE_DIMENSION_REPRESENTATION",
-                            &format!("'',({measure}),{context}"),
-                        );
-                        self.emitter.emit(
-                            "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION",
-                            &format!("{characteristic},{representation}"),
-                        );
-                    }
-                    if let (Some(lower), Some(upper)) = (lower_deviation, upper_deviation) {
+                    let measure = self.emit_pmi_measure_representation_item(*nominal, name);
+                    let representation = self.emitter.emit(
+                        "SHAPE_DIMENSION_REPRESENTATION",
+                        &format!("'',({measure}),{context}"),
+                    );
+                    self.emitter.emit(
+                        "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION",
+                        &format!("{characteristic},{representation}"),
+                    );
+                    if let Some(DimensionTolerance::PlusMinus { lower, upper }) = tolerance {
                         let lower = self.emit_pmi_measure(*lower);
                         let upper = self.emit_pmi_measure(*upper);
                         let tolerance = self
@@ -3141,7 +3138,7 @@ impl<'a> Builder<'a> {
                             &format!("{tolerance},{characteristic}"),
                         );
                     }
-                    if let Some(fit) = limits_and_fits {
+                    if let Some(DimensionTolerance::Fit(fit)) = tolerance {
                         let fit = self.emitter.emit(
                             "LIMITS_AND_FITS",
                             &format!(
@@ -3156,9 +3153,7 @@ impl<'a> Builder<'a> {
                             .emit("PLUS_MINUS_TOLERANCE", &format!("{fit},{characteristic}"));
                     }
                     annotation_refs.insert(annotation.id.clone(), characteristic);
-                    let deviations_exact = lower_deviation.is_some() == upper_deviation.is_some();
-                    self.written_pmi +=
-                        usize::from(targets_exact(annotation) && deviations_exact && kind_exact);
+                    self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
                 }
                 PmiDefinition::GeometricTolerance {
                     tolerance,

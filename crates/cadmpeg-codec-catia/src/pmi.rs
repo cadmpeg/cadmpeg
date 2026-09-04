@@ -5,7 +5,9 @@ use std::collections::HashSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{format_identity, PmiId};
-use cadmpeg_ir::pmi::{DimensionKind, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue};
+use cadmpeg_ir::pmi::{
+    DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue,
+};
 
 use crate::entity_table::{RangeInterval, RangeIntervalSlot};
 use crate::native::{CatiaEntityRecord, CatiaNative, CatiaRangeInterval};
@@ -112,10 +114,11 @@ fn range_only_dimension_definition(
     };
     Some(PmiDefinition::Dimension {
         dimension,
-        nominal: Some(nominal),
-        lower_deviation: Some(lower_deviation),
-        upper_deviation: Some(upper_deviation),
-        limits_and_fits: None,
+        nominal,
+        tolerance: Some(DimensionTolerance::PlusMinus {
+            lower: lower_deviation,
+            upper: upper_deviation,
+        }),
     })
 }
 
@@ -331,14 +334,17 @@ mod tests {
                 PmiDefinition::Dimension {
                     dimension,
                     nominal,
-                    lower_deviation,
-                    upper_deviation,
+                    tolerance:
+                        Some(DimensionTolerance::PlusMinus {
+                            lower: lower_deviation,
+                            upper: upper_deviation,
+                        }),
                     ..
                 } => (
                     dimension,
-                    nominal.expect("finite nominal").value,
-                    lower_deviation.expect("finite lower deviation").value,
-                    upper_deviation.expect("finite upper deviation").value,
+                    nominal.value,
+                    lower_deviation.value,
+                    upper_deviation.value,
                 ),
                 _ => panic!("dimension annotation"),
             })

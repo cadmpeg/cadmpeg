@@ -15,7 +15,7 @@ use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {
-    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
+    use cadmpeg_ir::pmi::{DimensionTolerance, GeometricToleranceKind, PmiDefinition, PmiQuantity};
 
     let bytes = include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21");
     let result = StepCodec::default()
@@ -23,8 +23,8 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         .expect("decode AP242 semantic PMI");
     let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
 
-    assert_eq!(result.ir().model.pmi.len(), 5);
-    assert!(!result
+    assert_eq!(result.ir().model.pmi.len(), 4);
+    assert!(result
         .report()
         .losses
         .iter()
@@ -38,28 +38,15 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         .unwrap();
     let PmiDefinition::Dimension {
         nominal,
-        lower_deviation,
-        upper_deviation,
-        ref limits_and_fits,
+        tolerance: Some(DimensionTolerance::PlusMinus { lower, upper }),
         ..
     } = dimension.definition
     else {
         panic!("width is not a dimension")
     };
-    assert_eq!(nominal.unwrap().value, 12.0);
-    assert_eq!(lower_deviation.unwrap().value, -0.1);
-    assert_eq!(upper_deviation.unwrap().value, 0.2);
-    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
-        annotation.definition,
-        PmiDefinition::Dimension {
-            dimension: cadmpeg_ir::pmi::DimensionKind::Diameter,
-            ..
-        }
-    )));
-    let fit = limits_and_fits.as_ref().expect("limits and fits");
-    assert_eq!(fit.form_variance, "H");
-    assert_eq!(fit.grade, "7");
-    assert_eq!(fit.source, "ISO 286");
+    assert_eq!(nominal.value, 12.0);
+    assert_eq!(lower.value, -0.1);
+    assert_eq!(upper.value, 0.2);
     let tolerance = result
         .ir()
         .model
@@ -148,12 +135,14 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
-            nominal: Some(cadmpeg_ir::PmiValue {
+            nominal: cadmpeg_ir::PmiValue {
                 value: 12.0,
                 quantity: PmiQuantity::Length,
+            },
+            tolerance: Some(DimensionTolerance::PlusMinus {
+                lower: cadmpeg_ir::PmiValue { value: -0.1, .. },
+                upper: cadmpeg_ir::PmiValue { value: 0.2, .. },
             }),
-            lower_deviation: Some(cadmpeg_ir::PmiValue { value: -0.1, .. }),
-            upper_deviation: Some(cadmpeg_ir::PmiValue { value: 0.2, .. }),
             ..
         }
     )));
@@ -285,10 +274,10 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
         &dimension.definition,
         PmiDefinition::Dimension {
             dimension: DimensionKind::Location,
-            nominal: Some(cadmpeg_ir::pmi::PmiValue {
+            nominal: cadmpeg_ir::pmi::PmiValue {
                 value: 5.0,
                 quantity: PmiQuantity::Length,
-            }),
+            },
             ..
         }
     ));
@@ -325,7 +314,7 @@ fn dimensional_characteristic_selects_the_named_nominal_measure() {
         annotation.definition,
         PmiDefinition::Dimension {
             dimension: DimensionKind::Size,
-            nominal: Some(PmiValue { value, quantity: PmiQuantity::Length }),
+            nominal: PmiValue { value, quantity: PmiQuantity::Length },
             ..
         } if (value - 12.0).abs() < 1.0e-12
     )));
@@ -347,7 +336,7 @@ fn dimensional_nominal_selection_ignores_set_order_and_rejects_ambiguity() {
     let nominal = |result: &cadmpeg_ir::codec::DecodeResult| {
         result.ir().model.pmi.iter().find_map(|annotation| {
             let PmiDefinition::Dimension {
-                nominal: Some(PmiValue { value, .. }),
+                nominal: PmiValue { value, .. },
                 ..
             } = &annotation.definition
             else {
@@ -1042,14 +1031,12 @@ pub(crate) fn unresolved_lower_tolerance_does_not_shift_upper_deviation() {
 #19=PLUS_MINUS_TOLERANCE(#18,#10);
 #99=UNRESOLVED_PRODUCT();",
     );
-    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
-        annotation.definition,
-        PmiDefinition::Dimension {
-            lower_deviation: None,
-            upper_deviation: Some(cadmpeg_ir::PmiValue { value, .. }),
-            ..
-        } if (value - 0.2).abs() < 1.0e-12
-    )));
+    assert!(!result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .any(|annotation| matches!(annotation.definition, PmiDefinition::Dimension { .. })));
 }
 
 #[test]
@@ -1072,7 +1059,7 @@ pub(crate) fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
-            nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
+            nominal: cadmpeg_ir::PmiValue { value, .. },
             ..
         } if (value - 127.0).abs() < 1.0e-12
     )));
@@ -1104,7 +1091,7 @@ fn failed_pmi_measure_branches_do_not_poison_sibling_carriers() {
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
-            nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
+            nominal: cadmpeg_ir::PmiValue { value, .. },
             ..
         } if (value - 0.4).abs() < 1.0e-12
     )));

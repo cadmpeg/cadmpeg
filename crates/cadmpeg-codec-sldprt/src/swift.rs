@@ -9,8 +9,8 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId, VertexId};
 use cadmpeg_ir::pmi::{
-    DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
-    PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation,
+    PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
 
@@ -237,13 +237,8 @@ pub(crate) fn annotations(
     let Some((stream, root, rendered_dimensions)) = scan_root(scan) else {
         return Vec::new();
     };
-    let mut projected = project_with_topology(&root, topology);
-    enrich_implicit_nominals_with_context(
-        &root,
-        &rendered_dimensions,
-        &mut projected,
-        pattern_hole_nominals,
-    );
+    let projected =
+        project_with_topology(&root, topology, &rendered_dimensions, pattern_hole_nominals);
     for (reference, entity) in root
         .annotations
         .references
@@ -615,12 +610,33 @@ fn peek_pstr<'a>(cursor: &View<'a>) -> Option<&'a str> {
 
 #[cfg(test)]
 fn project(root: &Entity) -> Vec<PmiAnnotation> {
-    project_with_topology(root, None)
+    project_with_topology(root, None, &[], None)
+}
+
+#[cfg(test)]
+fn enrich_implicit_nominals(
+    root: &Entity,
+    rendered: &[RenderedDimension],
+    annotations: &mut Vec<PmiAnnotation>,
+) {
+    *annotations = project_with_topology(root, None, rendered, None);
+}
+
+#[cfg(test)]
+fn enrich_implicit_nominals_with_context(
+    root: &Entity,
+    rendered: &[RenderedDimension],
+    annotations: &mut Vec<PmiAnnotation>,
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
+) {
+    *annotations = project_with_topology(root, None, rendered, pattern_hole_nominals);
 }
 
 fn project_with_topology(
     root: &Entity,
     topology: Option<&TopologyIdentityIndex>,
+    rendered: &[RenderedDimension],
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
 ) -> Vec<PmiAnnotation> {
     if root.annotations.references.len() != root.annotations.entities.len() {
         return Vec::new();
@@ -688,9 +704,15 @@ fn project_with_topology(
                     projected.push(lower_tier);
                 }
             }
-        } else if let Some(annotation) =
-            project_dimension(reference, entity, &feature_index, topology)
-        {
+        } else if let Some(annotation) = project_dimension(
+            root,
+            reference,
+            entity,
+            &feature_index,
+            topology,
+            rendered,
+            pattern_hole_nominals,
+        ) {
             projected.push(annotation);
         }
     }
@@ -784,22 +806,37 @@ fn project_lower_profile_tier(
 }
 
 fn project_dimension(
+    root: &Entity,
     reference: &Reference,
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
+    rendered: &[RenderedDimension],
+    pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
 ) -> Option<PmiAnnotation> {
     let dimension = dimension_kind(short_class(&entity.class))?;
     let quantity = dimension_quantity(&dimension);
-    let nominal = finite(entity.doubles.get("Nominal").copied()?).filter(|value| {
-        *value != 0.0
-            || entity
-                .integers
-                .get("Dimension")
-                .is_some_and(|dimension| *dimension != 0)
-    });
-    let lower_deviation = deviation(entity, nominal, "LowerLimit", "MinusTolerance");
-    let upper_deviation = deviation(entity, nominal, "UpperLimit", "PlusTolerance");
+    let nominal = finite(entity.doubles.get("Nominal").copied()?)
+        .filter(|value| {
+            *value != 0.0
+                || entity
+                    .integers
+                    .get("Dimension")
+                    .is_some_and(|dimension| *dimension != 0)
+        })
+        .or_else(|| {
+            implicit_dimension_nominal(root, entity, feature_index, rendered, pattern_hole_nominals)
+        })?;
+    let tolerance = match (
+        deviation(entity, Some(nominal), "LowerLimit", "MinusTolerance"),
+        deviation(entity, Some(nominal), "UpperLimit", "PlusTolerance"),
+    ) {
+        (Some(lower), Some(upper)) => Some(DimensionTolerance::PlusMinus {
+            lower: pmi_value(lower, quantity),
+            upper: pmi_value(upper, quantity),
+        }),
+        _ => None,
+    };
     Some(PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
@@ -807,137 +844,66 @@ fn project_dimension(
         targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::Dimension {
             dimension,
-            nominal: nominal.map(|value| pmi_value(value, quantity)),
-            lower_deviation: lower_deviation.map(|value| pmi_value(value, quantity)),
-            upper_deviation: upper_deviation.map(|value| pmi_value(value, quantity)),
-            limits_and_fits: None,
+            nominal: pmi_value(nominal, quantity),
+            tolerance,
         },
     })
 }
 
-#[cfg(test)]
-fn enrich_implicit_nominals(
+fn implicit_dimension_nominal(
     root: &Entity,
+    entity: &Entity,
+    feature_index: &BTreeMap<&str, &Entity>,
     rendered: &[RenderedDimension],
-    annotations: &mut [PmiAnnotation],
-) {
-    enrich_implicit_nominals_with_context(root, rendered, annotations, None);
-}
-
-fn enrich_implicit_nominals_with_context(
-    root: &Entity,
-    rendered: &[RenderedDimension],
-    annotations: &mut [PmiAnnotation],
     pattern_hole_nominals: Option<&BTreeMap<String, f64>>,
-) {
-    let feature_index = feature_index(root);
-    for (reference, entity) in root
-        .annotations
-        .references
-        .iter()
-        .zip(&root.annotations.entities)
-    {
-        if suppressed(entity) {
-            continue;
+) -> Option<f64> {
+    let source = match short_class(&entity.class) {
+        "GdtDiameter" => diameter_nominal(root, entity, feature_index, pattern_hole_nominals),
+        "GdtDepth" => depth_nominal(root, entity, feature_index),
+        "GdtWidth" => {
+            width_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
         }
-        let (dimension_kind, source) = match short_class(&entity.class) {
-            "GdtDiameter" => (
-                DimensionKind::Diameter,
-                diameter_nominal(root, entity, &feature_index, pattern_hole_nominals),
-            ),
-            "GdtDepth" => (
-                DimensionKind::Size,
-                depth_nominal(root, entity, &feature_index),
-            ),
-            "GdtWidth" => (
-                DimensionKind::Size,
-                width_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
-            ),
-            "GdtRadius" => (
-                DimensionKind::Radius,
-                radius_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
-            ),
-            "GdtLength" => (
-                DimensionKind::Size,
-                length_from_applied_geometry(entity, &feature_index).map(ImplicitNominal::Exact),
-            ),
-            "GdtDistanceBetween" => (
-                DimensionKind::Location,
-                directional_distance(entity, &feature_index).map(ImplicitNominal::Exact),
-            ),
-            "GdtCounterBore" => (
-                DimensionKind::Size,
-                counterbore_from_direct_geometry(entity, &feature_index)
-                    .map(ImplicitNominal::Exact),
-            ),
-            "GdtCounterSinkDiameter" => (
-                DimensionKind::Size,
-                countersink_diameter_from_direct_geometry(entity, &feature_index)
-                    .map(ImplicitNominal::Exact),
-            ),
-            "GdtCounterSinkAngle" => (
-                DimensionKind::Angular,
-                countersink_angle_from_direct_geometry(entity, &feature_index)
-                    .map(ImplicitNominal::Exact),
-            ),
-            _ => continue,
-        };
-        let Some(source) = source else {
-            continue;
-        };
-        let nominal = match source {
-            ImplicitNominal::Exact(value) => Some(value),
-            ImplicitNominal::Rendered { kind, geometry } => entity
-                .integers
-                .get("BlockToleranceDecimalPlaces")
-                .copied()
-                .and_then(|value| u32::try_from(value).ok())
-                .filter(|value| *value <= 9)
-                .and_then(|decimal_places| {
-                    rendered_nominal(geometry, decimal_places, kind, rendered)
-                }),
-            ImplicitNominal::RenderedOrExact {
-                kind,
-                geometry,
-                exact,
-            } => entity
-                .integers
-                .get("BlockToleranceDecimalPlaces")
-                .copied()
-                .and_then(|value| u32::try_from(value).ok())
-                .filter(|value| *value <= 9)
-                .and_then(|decimal_places| {
-                    rendered_nominal(geometry, decimal_places, kind, rendered)
-                })
-                .or(Some(exact)),
-        };
-        let Some(nominal) = nominal else {
-            continue;
-        };
-        let Some(annotation) = annotations
-            .iter_mut()
-            .find(|annotation| annotation.id == pmi_id(&reference.id))
-        else {
-            continue;
-        };
-        let PmiDefinition::Dimension {
-            dimension,
-            nominal: slot,
-            lower_deviation,
-            upper_deviation,
-            ..
-        } = &mut annotation.definition
-        else {
-            continue;
-        };
-        if dimension == &dimension_kind && slot.is_none() {
-            let quantity = dimension_quantity(&dimension_kind);
-            *slot = Some(pmi_value(nominal, quantity));
-            *lower_deviation = deviation(entity, Some(nominal), "LowerLimit", "MinusTolerance")
-                .map(|value| pmi_value(value, quantity));
-            *upper_deviation = deviation(entity, Some(nominal), "UpperLimit", "PlusTolerance")
-                .map(|value| pmi_value(value, quantity));
+        "GdtRadius" => {
+            radius_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
         }
+        "GdtLength" => {
+            length_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
+        }
+        "GdtDistanceBetween" => {
+            directional_distance(entity, feature_index).map(ImplicitNominal::Exact)
+        }
+        "GdtCounterBore" => {
+            counterbore_from_direct_geometry(entity, feature_index).map(ImplicitNominal::Exact)
+        }
+        "GdtCounterSinkDiameter" => {
+            countersink_diameter_from_direct_geometry(entity, feature_index)
+                .map(ImplicitNominal::Exact)
+        }
+        "GdtCounterSinkAngle" => countersink_angle_from_direct_geometry(entity, feature_index)
+            .map(ImplicitNominal::Exact),
+        _ => None,
+    }?;
+    match source {
+        ImplicitNominal::Exact(value) => Some(value),
+        ImplicitNominal::Rendered { kind, geometry } => entity
+            .integers
+            .get("BlockToleranceDecimalPlaces")
+            .copied()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value <= 9)
+            .and_then(|decimal_places| rendered_nominal(geometry, decimal_places, kind, rendered)),
+        ImplicitNominal::RenderedOrExact {
+            kind,
+            geometry,
+            exact,
+        } => entity
+            .integers
+            .get("BlockToleranceDecimalPlaces")
+            .copied()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value <= 9)
+            .and_then(|decimal_places| rendered_nominal(geometry, decimal_places, kind, rendered))
+            .or(Some(exact)),
     }
 }
 
@@ -2540,7 +2506,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(6.1468)));
+        assert_eq!(*nominal, length(6.1468));
 
         let mut ambiguous = features.clone();
         ambiguous.push(neutral_feature(
@@ -2613,7 +2579,7 @@ mod tests {
                 face: FaceId("sldprt:brep:face#42".into()),
             }),
         );
-        let projected = project_with_topology(&root, Some(&index));
+        let projected = project_with_topology(&root, Some(&index), &[], None);
         let first = projected.first().expect("projected datum");
         assert_eq!(
             first.targets,
@@ -2636,7 +2602,7 @@ mod tests {
             .entity
             .strings
             .insert("CadIdentifier".into(), "125:99".into());
-        let projected = project_with_topology(&root, Some(&index));
+        let projected = project_with_topology(&root, Some(&index), &[], None);
         let first = projected.first().expect("projected datum");
         assert_eq!(
             first.targets,
@@ -2957,22 +2923,9 @@ mod tests {
         assert_eq!(datum_reference.precedence.get(), 1);
         assert_eq!(datum_reference.modifiers, ["least_material_requirement"]);
 
-        let diameter = annotations
+        assert!(!annotations
             .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
-            .expect("diameter annotation");
-        let PmiDefinition::Dimension {
-            nominal,
-            lower_deviation,
-            upper_deviation,
-            ..
-        } = &diameter.definition
-        else {
-            panic!("diameter definition");
-        };
-        assert_eq!(*nominal, None, "zero is an omitted nominal sentinel");
-        assert_eq!(*lower_deviation, Some(length(-0.1)));
-        assert_eq!(*upper_deviation, Some(length(0.2)));
+            .any(|annotation| annotation.name.as_deref() == Some("Diameter 1")));
 
         let angle = annotations
             .iter()
@@ -2983,10 +2936,10 @@ mod tests {
         };
         assert_eq!(
             *nominal,
-            Some(PmiValue {
+            PmiValue {
                 value: 0.0,
                 quantity: PmiQuantity::Angle,
-            })
+            }
         );
     }
 
@@ -3265,22 +3218,19 @@ mod tests {
             .expect("diameter annotation");
         let PmiDefinition::Dimension {
             nominal,
-            lower_deviation,
-            upper_deviation,
+            tolerance:
+                Some(DimensionTolerance::PlusMinus {
+                    lower: lower_deviation,
+                    upper: upper_deviation,
+                }),
             ..
         } = &diameter.definition
         else {
             panic!("dimension definition");
         };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 3.962_4)));
-        assert!(lower_deviation
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, -0.162_4)));
-        assert!(upper_deviation
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 0.137_6)));
+        assert!(approximately_equal(nominal.value, 3.962_4));
+        assert!(approximately_equal(lower_deviation.value, -0.162_4));
+        assert!(approximately_equal(upper_deviation.value, 0.137_6));
 
         root.annotations
             .entities
@@ -3297,9 +3247,7 @@ mod tests {
         let PmiDefinition::Dimension { nominal, .. } = &diameter.definition else {
             panic!("dimension definition");
         };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 3.962_4)));
+        assert!(approximately_equal(nominal.value, 3.962_4));
     }
 
     #[test]
@@ -3322,14 +3270,9 @@ mod tests {
             }],
             &mut annotations,
         );
-        let diameter = annotations
+        assert!(!annotations
             .iter()
-            .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
-            .expect("diameter annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &diameter.definition else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
+            .any(|annotation| annotation.name.as_deref() == Some("Diameter 1")));
     }
 
     #[test]
@@ -3354,7 +3297,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(5.0)));
+        assert_eq!(*nominal, length(5.0));
     }
 
     #[test]
@@ -3391,15 +3334,9 @@ mod tests {
             }],
             &mut annotations,
         );
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        assert!(!annotations
             .iter()
-            .find(|annotation| annotation.id == pmi_id("A30"))
-            .expect("empty-pattern diameter")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
+            .any(|annotation| annotation.id == pmi_id("A30")));
     }
 
     #[test]
@@ -3439,7 +3376,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(6.0)));
+        assert_eq!(*nominal, length(6.0));
     }
 
     #[test]
@@ -3471,15 +3408,9 @@ mod tests {
 
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        assert!(!annotations
             .iter()
-            .find(|annotation| annotation.id == pmi_id("A30"))
-            .expect("pattern diameter")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
+            .any(|annotation| annotation.id == pmi_id("A30")));
     }
 
     #[test]
@@ -3496,7 +3427,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(35.0)));
+        assert_eq!(*nominal, length(35.0));
 
         *root.features.entities.get_mut(1).expect("direct sphere") =
             feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 15.875);
@@ -3521,7 +3452,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(31.75)));
+        assert_eq!(*nominal, length(31.75));
     }
 
     #[test]
@@ -3572,8 +3503,11 @@ mod tests {
         enrich_implicit_nominals(&root, &[], &mut annotations);
         let PmiDefinition::Dimension {
             nominal,
-            lower_deviation,
-            upper_deviation,
+            tolerance:
+                Some(DimensionTolerance::PlusMinus {
+                    lower: lower_deviation,
+                    upper: upper_deviation,
+                }),
             ..
         } = &annotations
             .iter()
@@ -3583,23 +3517,17 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(20.0)));
-        assert_eq!(*lower_deviation, Some(length(-0.5)));
-        assert_eq!(*upper_deviation, Some(length(0.5)));
+        assert_eq!(*nominal, length(20.0));
+        assert_eq!(*lower_deviation, length(-0.5));
+        assert_eq!(*upper_deviation, length(0.5));
 
         *root.features.entities.last_mut().expect("second plane") =
             plane_at([8.0, 9.0, 25.0], [1.0, 0.0, 0.0]);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        assert!(!annotations
             .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("location dimension")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
+            .any(|annotation| annotation.id == pmi_id("A50")));
     }
 
     #[test]
@@ -3640,7 +3568,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(75.0)));
+        assert_eq!(*nominal, length(75.0));
     }
 
     #[test]
@@ -3714,7 +3642,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(25.4)));
+        assert_eq!(*nominal, length(25.4));
 
         root.features
             .entities
@@ -3726,15 +3654,9 @@ mod tests {
             .insert("Width".into(), 7.0);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        assert!(!annotations
             .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("slot length location")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
+            .any(|annotation| annotation.id == pmi_id("A50")));
     }
 
     #[test]
@@ -3778,9 +3700,7 @@ mod tests {
         let PmiDefinition::Dimension { nominal, .. } = &depth.definition else {
             panic!("dimension definition");
         };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 7.62)));
+        assert!(approximately_equal(nominal.value, 7.62));
     }
 
     #[test]
@@ -3809,9 +3729,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 14.2875)));
+        assert!(approximately_equal(nominal.value, 14.2875));
 
         root.annotations
             .entities
@@ -3836,7 +3754,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(12.0)));
+        assert_eq!(*nominal, length(12.0));
     }
 
     #[test]
@@ -3880,7 +3798,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert_eq!(*nominal, Some(length(12.7)));
+        assert_eq!(*nominal, length(12.7));
 
         root.features
             .entities
@@ -3892,15 +3810,9 @@ mod tests {
             .insert("Z".into(), 1.0);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        assert!(!annotations
             .iter()
-            .find(|annotation| annotation.id == pmi_id("AD"))
-            .expect("counterbore depth")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
+            .any(|annotation| annotation.id == pmi_id("AD")));
     }
 
     #[test]
@@ -3967,22 +3879,19 @@ mod tests {
             .expect("width annotation");
         let PmiDefinition::Dimension {
             nominal,
-            lower_deviation,
-            upper_deviation,
+            tolerance:
+                Some(DimensionTolerance::PlusMinus {
+                    lower: lower_deviation,
+                    upper: upper_deviation,
+                }),
             ..
         } = &width.definition
         else {
             panic!("dimension definition");
         };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 12.7)));
-        assert!(lower_deviation
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, -0.2)));
-        assert!(upper_deviation
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 0.2)));
+        assert!(approximately_equal(nominal.value, 12.7));
+        assert!(approximately_equal(lower_deviation.value, -0.2));
+        assert!(approximately_equal(upper_deviation.value, 0.2));
         let length = annotations
             .iter()
             .find(|annotation| annotation.name.as_deref() == Some("Length 1"))
@@ -3990,9 +3899,7 @@ mod tests {
         let PmiDefinition::Dimension { nominal, .. } = &length.definition else {
             panic!("dimension definition");
         };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 38.1)));
+        assert!(approximately_equal(nominal.value, 38.1));
     }
 
     #[test]
@@ -4055,9 +3962,8 @@ mod tests {
             else {
                 panic!("dimension definition");
             };
-            assert!(nominal.as_ref().is_some_and(|value| {
-                value.quantity == quantity && approximately_equal(value.value, expected)
-            }));
+            assert_eq!(nominal.quantity, quantity);
+            assert!(approximately_equal(nominal.value, expected));
         }
     }
 
@@ -4113,9 +4019,7 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 9.525)));
+        assert!(approximately_equal(nominal.value, 9.525));
 
         root.features
             .entities
@@ -4127,15 +4031,9 @@ mod tests {
             .insert("Width".into(), 6.35);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        assert!(!annotations
             .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("width annotation")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
+            .any(|annotation| annotation.id == pmi_id("A50")));
     }
 
     #[test]
@@ -4188,7 +4086,11 @@ mod tests {
         enrich_implicit_nominals(&root, &[], &mut annotations);
         let PmiDefinition::Dimension {
             nominal,
-            upper_deviation,
+            tolerance:
+                Some(DimensionTolerance::PlusMinus {
+                    upper: upper_deviation,
+                    ..
+                }),
             ..
         } = &annotations
             .iter()
@@ -4198,10 +4100,8 @@ mod tests {
         else {
             panic!("dimension definition");
         };
-        assert!(nominal
-            .as_ref()
-            .is_some_and(|value| approximately_equal(value.value, 3.175)));
-        assert_eq!(*upper_deviation, Some(length(0.0)));
+        assert!(approximately_equal(nominal.value, 3.175));
+        assert_eq!(*upper_deviation, length(0.0));
 
         *root.features.entities.get_mut(2).expect("second member") =
             feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 4.0);
@@ -4220,15 +4120,9 @@ mod tests {
             .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        assert!(!annotations
             .iter()
-            .find(|annotation| annotation.id == pmi_id("A50"))
-            .expect("radius annotation")
-            .definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(*nominal, None);
+            .any(|annotation| annotation.id == pmi_id("A50")));
     }
 
     #[test]

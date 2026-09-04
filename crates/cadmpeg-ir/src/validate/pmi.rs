@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::document::CadIr;
-use crate::pmi::{PmiDefinition, PmiTarget};
+use crate::pmi::{DimensionTolerance, PmiDefinition, PmiTarget};
 use crate::report::{Check, Finding, Severity};
 
 pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -153,16 +153,15 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
             }
             PmiDefinition::Dimension {
-                nominal,
-                lower_deviation,
-                upper_deviation,
-                ..
+                nominal, tolerance, ..
             } => {
-                if [nominal, lower_deviation, upper_deviation]
-                    .into_iter()
-                    .flatten()
-                    .any(|value| !value.value.is_finite())
-                {
+                let non_finite = !nominal.value.is_finite()
+                    || matches!(
+                        tolerance,
+                        Some(DimensionTolerance::PlusMinus { lower, upper })
+                            if !lower.value.is_finite() || !upper.value.is_finite()
+                    );
+                if non_finite {
                     invalid(
                         findings,
                         annotation.id.as_str(),
