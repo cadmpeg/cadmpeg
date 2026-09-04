@@ -132,13 +132,12 @@ pub(super) fn validate_consolidated_circles(
     for (index, circle) in circles.iter().enumerate() {
         let full_circle =
             crate::families::b2::records::circle_range_is_full_turn(circle.radius, circle.range);
-        let compact_len = usize::from(circle.layout).checked_sub(5 * size_of::<f64>() + 9);
+        let compact_len = usize::from(u8::from(circle.layout)).checked_sub(5 * size_of::<f64>() + 9);
         let record_id_fits_layout = matches!(
             (compact_len, circle.record_id),
             (Some(1), 0..=63) | (Some(2), 0..=255) | (Some(3), 0..=65_535)
         );
         if circle.id != format!("catia:consolidated:circle#{index}")
-            || !(0x32..=0x34).contains(&circle.layout)
             || !record_id_fits_layout
             || circle
                 .center_pair

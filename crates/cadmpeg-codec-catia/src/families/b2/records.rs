@@ -1942,8 +1942,8 @@ pub(crate) fn point_distance(a: Point3, b: Point3) -> f64 {
 pub struct B2Circle {
     /// Record byte offset.
     pub pos: usize,
-    /// Payload-layout discriminator (`0x32..=0x34`).
-    pub layout: u8,
+    /// Payload-layout discriminator.
+    pub layout: crate::native::CatiaCircleLayout,
     /// Compact persistent record identifier.
     pub record_id: u32,
     /// Frame token following the record length.
@@ -3149,9 +3149,12 @@ pub(crate) fn b2_circles_from_records(
     let mut out = Vec::new();
     for frame in b_family_frames_from_records(records, 0x19) {
         let pos = frame.pos;
-        if !(0x32..=0x34).contains(&(frame.end - frame.payload)) {
+        let Some(layout) = u8::try_from(frame.end - frame.payload)
+            .ok()
+            .and_then(|layout| crate::native::CatiaCircleLayout::try_from(layout).ok())
+        else {
             continue;
-        }
+        };
         let Ok(frame_token) = u8::try_from(frame.header_token) else {
             continue;
         };
@@ -3179,7 +3182,7 @@ pub(crate) fn b2_circles_from_records(
         {
             out.push(B2Circle {
                 pos,
-                layout: (frame.end - frame.payload) as u8,
+                layout,
                 record_id,
                 frame_token,
                 center_pair: [c1, c2],

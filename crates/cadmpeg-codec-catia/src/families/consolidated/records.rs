@@ -1697,7 +1697,7 @@ mod tests {
         let span = 1e-200_f64;
         let circle = B2Circle {
             pos: 0,
-            layout: 0x32,
+            layout: crate::native::CatiaCircleLayout::Identity6Bit,
             record_id: 1,
             frame_token: 0,
             center_pair: [0.0; 2],
