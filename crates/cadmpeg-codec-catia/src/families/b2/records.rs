@@ -2228,8 +2228,8 @@ pub struct B2Cone {
 pub struct B2Revolution {
     /// Record byte offset.
     pub pos: usize,
-    /// Reference-token dialect (`0x08` or `0x0a`).
-    pub reference_token: u8,
+    /// Reference-token dialect.
+    pub reference_token: crate::native::CatiaRevolutionReferenceToken,
     /// Stored profile allocation identity.
     pub profile_allocation_id: u16,
     /// Axis-frame origin.
@@ -2570,8 +2570,12 @@ pub(crate) fn b2_revolutions_from_records(
     let mut out = Vec::new();
     for frame in b_family_frames_from_records(records, 0x2d) {
         let p = frame.payload;
+        let Ok(reference_token) = data.get(p).copied().ok_or(()).and_then(|token| {
+            crate::native::CatiaRevolutionReferenceToken::try_from(token).map_err(|_| ())
+        }) else {
+            continue;
+        };
         if frame.end - p != 0xae
-            || !matches!(data.get(p), Some(0x08 | 0x0a))
             || data.get(p + 131..p + 133) != Some(&[0x05, 0x05])
             || f64_le(data, p + 141) != Some(1.0)
             || f64_le(data, p + 149) != Some(1.0)
@@ -2638,7 +2642,7 @@ pub(crate) fn b2_revolutions_from_records(
         }
         out.push(B2Revolution {
             pos: frame.pos,
-            reference_token: data[p],
+            reference_token,
             profile_allocation_id,
             origin: axis_frame[0..3].try_into().expect("three origin values"),
             direction_x,

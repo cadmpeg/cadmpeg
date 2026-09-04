@@ -1339,6 +1339,38 @@ pub struct CatiaConsolidatedLineProfile {
     pub range: [f64; 2],
 }
 
+/// Reference-token dialect of a consolidated surface of revolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CatiaRevolutionReferenceToken {
+    /// Compact object-reference token `0x08`.
+    Compact,
+    /// Wide object-reference token `0x0a`.
+    Wide,
+}
+
+impl From<CatiaRevolutionReferenceToken> for u8 {
+    fn from(value: CatiaRevolutionReferenceToken) -> Self {
+        match value {
+            CatiaRevolutionReferenceToken::Compact => 0x08,
+            CatiaRevolutionReferenceToken::Wide => 0x0a,
+        }
+    }
+}
+
+impl TryFrom<u8> for CatiaRevolutionReferenceToken {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x08 => Ok(Self::Compact),
+            0x0a => Ok(Self::Wide),
+            other => Err(format!("reference_token {other:#x} is not 0x08 or 0x0a")),
+        }
+    }
+}
+
 /// One structurally complete consolidated `B:2d` surface-of-revolution record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1347,8 +1379,8 @@ pub struct CatiaConsolidatedRevolution {
     pub id: String,
     /// Byte offset of the framed record.
     pub byte_offset: u64,
-    /// Reference-token dialect (`0x08` or `0x0a`).
-    pub reference_token: u8,
+    /// Reference-token dialect.
+    pub reference_token: CatiaRevolutionReferenceToken,
     /// Unresolved consolidated allocation identity of the profile curve.
     pub profile_allocation_id: u16,
     /// Axis-frame origin.

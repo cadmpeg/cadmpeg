@@ -547,7 +547,10 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     let [revolution] = native.consolidated_revolutions.as_slice() else {
         panic!("one consolidated revolution carrier")
     };
-    assert_eq!(revolution.reference_token, 0x0a);
+    assert_eq!(
+        revolution.reference_token,
+        crate::native::CatiaRevolutionReferenceToken::Wide
+    );
     assert_eq!(revolution.profile_allocation_id, 0x1234);
     assert_eq!(revolution.origin, [1.0, 2.0, 3.0]);
     assert_eq!(revolution.direction_x, [1.0, 0.0, 0.0]);
