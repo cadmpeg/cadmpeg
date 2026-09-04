@@ -7169,14 +7169,46 @@ pub struct CatiaZeroEntityEndpointPairCandidate {
     pub model_midpoint: cadmpeg_ir::math::Point3,
 }
 
+/// Start or end of an oriented endpoint pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CatiaZeroEntityEndpointIndex {
+    /// First oriented endpoint.
+    Start,
+    /// Second oriented endpoint.
+    End,
+}
+
+impl From<CatiaZeroEntityEndpointIndex> for u8 {
+    fn from(value: CatiaZeroEntityEndpointIndex) -> Self {
+        match value {
+            CatiaZeroEntityEndpointIndex::Start => 0,
+            CatiaZeroEntityEndpointIndex::End => 1,
+        }
+    }
+}
+
+impl TryFrom<u8> for CatiaZeroEntityEndpointIndex {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Start),
+            1 => Ok(Self::End),
+            other => Err(format!("endpoint_index {other} is not start or end")),
+        }
+    }
+}
+
 /// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaZeroEntityEndpointPairEndpoint {
     /// Derived endpoint-pair candidate.
     pub endpoint_pair: String,
-    /// Zero-based endpoint index in that candidate's oriented endpoint pair.
-    pub endpoint_index: u8,
+    /// Start or end of that candidate's oriented endpoint pair.
+    pub endpoint_index: CatiaZeroEntityEndpointIndex,
 }
 
 /// One geometric endpoint-locus candidate established by a complete endpoint clique.
@@ -8458,7 +8490,10 @@ fn zero_entity_endpoint_locus_candidates(
                 .map(
                     |(pair, endpoint_index)| CatiaZeroEntityEndpointPairEndpoint {
                         endpoint_pair: endpoint_pairs[pair].id.clone(),
-                        endpoint_index,
+                        endpoint_index: match endpoint_index {
+                            0 => CatiaZeroEntityEndpointIndex::Start,
+                            _ => CatiaZeroEntityEndpointIndex::End,
+                        },
                     },
                 )
                 .collect(),
