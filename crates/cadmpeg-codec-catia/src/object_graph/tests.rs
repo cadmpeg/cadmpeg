@@ -188,7 +188,7 @@ fn object_graph_lists_retain_direct_fixed_width_references() {
         }]
     ));
     assert_eq!(
-        native.object_graphs[0].records[0].references[0].entity_id,
+        native.object_graphs[0].records[0].references[0].entity_id(),
         2
     );
 }
@@ -937,22 +937,22 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
     assert_eq!(
         native.object_graphs[0].records[0].references,
         [
-            crate::native::CatiaObjectRecordReference {
-                entity_id: 2,
-                payload_offset: 5,
-                source: crate::native::CatiaObjectRecordReferenceSource::Field,
-                is_null: false,
-                target: Some(native.object_graphs[0].records[1].id.clone()),
-                design_object: native.object_graphs[0].records[1].design_object.clone(),
-            },
-            crate::native::CatiaObjectRecordReference {
-                entity_id: 0x89ab_cdef,
-                payload_offset: 10,
-                source: crate::native::CatiaObjectRecordReferenceSource::Field,
-                is_null: false,
-                target: None,
-                design_object: None,
-            },
+            crate::native::CatiaObjectRecordReference::from_parts(
+                2,
+                5,
+                crate::native::CatiaObjectRecordReferenceSource::Field,
+                false,
+                Some(native.object_graphs[0].records[1].id.clone()),
+                native.object_graphs[0].records[1].design_object.clone(),
+            ),
+            crate::native::CatiaObjectRecordReference::from_parts(
+                0x89ab_cdef,
+                10,
+                crate::native::CatiaObjectRecordReferenceSource::Field,
+                false,
+                None,
+                None,
+            ),
         ]
     );
 }

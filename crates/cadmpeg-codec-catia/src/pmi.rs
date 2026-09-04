@@ -101,7 +101,7 @@ fn range_only_dimension_definition(
         return None;
     };
     let source = owner.source_entity.as_ref()?;
-    if source.is_null || source.entity.is_none() {
+    if source.is_null() || source.entity().is_none() {
         return None;
     }
     let dimension = match definition.name.as_deref()? {
@@ -284,12 +284,12 @@ mod tests {
         };
         range.incoming_references = vec![CatiaEntityIncomingReference {
             object_record: "catia:object#owner".to_string(),
-            source_entity: Some(CatiaEntityReference {
-                entity_id: 2,
-                is_null: false,
-                entity: Some("catia:entity#owner".to_string()),
-                class_name: None,
-            }),
+            source_entity: Some(CatiaEntityReference::from_parts(
+                2,
+                false,
+                Some("catia:entity#owner".to_string()),
+                None,
+            )),
             payload_offset: 7,
             source: CatiaObjectRecordReferenceSource::Field,
         }];
@@ -384,15 +384,15 @@ mod tests {
             .incoming_references
             .push(second_owner);
         let mut unresolved_owner = range_only_entity("FeatureRSUR");
-        unresolved_owner
+        let unresolved_source = unresolved_owner
             .range_interval
             .as_mut()
             .expect("Range interval")
             .incoming_references[0]
             .source_entity
             .as_mut()
-            .expect("source entity")
-            .entity = None;
+            .expect("source entity");
+        *unresolved_source = unresolved_source.clone().without_entity();
         let mut unset_deviation = range_only_entity("DiameterThread");
         unset_deviation
             .range_interval

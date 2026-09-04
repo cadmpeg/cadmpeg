@@ -42,14 +42,14 @@ pub(crate) fn transfer_parameters(
         let outputs = entity
             .formula_relation
             .as_ref()
-            .and_then(|relation| relation.output_entity.reference.entity.as_deref())
+            .and_then(|relation| relation.output_entity.reference.entity())
             .into_iter()
             .chain(
                 entity
                     .relation_program_instance
                     .as_ref()
                     .and_then(|instance| instance.output_entity())
-                    .and_then(|output| output.entity.as_deref()),
+                    .and_then(|output| output.entity()),
             );
         for output in outputs {
             *formula_definition_counts
@@ -85,8 +85,7 @@ pub(crate) fn transfer_parameters(
         for input in inputs {
             let Some(entity) = input
                 .entity
-                .entity
-                .as_deref()
+                .entity()
                 .and_then(|entity| entities.get(entity))
             else {
                 continue;
@@ -127,8 +126,7 @@ pub(crate) fn transfer_parameters(
         let Some(expression_entity) = formula
             .expression_entity
             .reference
-            .entity
-            .as_deref()
+            .entity()
             .and_then(|expression| entities.get(expression))
         else {
             continue;
@@ -165,8 +163,7 @@ pub(crate) fn transfer_parameters(
                 continue;
             };
             let Some(entity) = parameter
-                .entity
-                .as_deref()
+                .entity()
                 .and_then(|parameter| entities.get(parameter))
             else {
                 all_inputs_complete = false;
@@ -239,8 +236,7 @@ pub(crate) fn transfer_parameters(
         if let Some(output) = formula
             .output_entity
             .reference
-            .entity
-            .as_deref()
+            .entity()
             .filter(|_| transferable_expression.is_some())
             .and_then(|id| entities.get(id))
         {
@@ -314,8 +310,7 @@ pub(crate) fn transfer_parameters(
         };
         let Some(output_entity) = instance
             .output_entity()
-            .as_ref()
-            .and_then(|output| output.entity.as_deref())
+            .and_then(|output| output.entity())
             .and_then(|output| entities.get(output))
         else {
             continue;
@@ -1218,11 +1213,7 @@ fn relation_program_output_candidate(
     let mut type_bindings = BTreeMap::new();
     let mut all_inputs_complete = true;
     for input in inputs {
-        let input_entity = input
-            .entity
-            .entity
-            .as_deref()
-            .and_then(|id| entities.get(id))?;
+        let input_entity = input.entity.entity().and_then(|id| entities.get(id))?;
         let candidate =
             typed_entity_parameter_candidate_for_source(input_entity, &input.value_type)?;
         if dependencies.contains(&candidate.parameter.id) {

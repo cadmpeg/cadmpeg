@@ -259,16 +259,16 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .as_ref()
         .expect("complete reference signature");
     assert_eq!(signature.production.first_reference, 3);
-    assert_eq!(signature.first_entity.entity_id, 3);
+    assert_eq!(signature.first_entity.entity_id(), 3);
     assert_eq!(
-        signature.first_entity.entity.as_deref(),
+        signature.first_entity.entity(),
         Some(native.entity_records[2].id.as_str())
     );
-    assert!(!signature.first_entity.is_null);
+    assert!(!signature.first_entity.is_null());
     assert_eq!(signature.production.second_reference, 4);
-    assert_eq!(signature.second_entity.entity_id, 4);
-    assert!(signature.second_entity.entity.is_none());
-    assert!(signature.second_entity.is_null);
+    assert_eq!(signature.second_entity.entity_id(), 4);
+    assert!(signature.second_entity.entity().is_none());
+    assert!(signature.second_entity.is_null());
     assert_eq!(signature.production.second_reference_offset, 17);
     assert_eq!(signature.production.signature, "2(E)");
     assert_eq!(signature.production.signature_offset, 12);
@@ -509,12 +509,18 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     );
 
     let mut malformed = native;
+    let second_entity = malformed.entity_records[0]
+        .reference_signature
+        .as_ref()
+        .expect("complete reference signature")
+        .second_entity
+        .clone();
+    let next_entity_id = second_entity.entity_id() + 1;
     malformed.entity_records[0]
         .reference_signature
         .as_mut()
         .expect("complete reference signature")
-        .second_entity
-        .entity_id += 1;
+        .second_entity = second_entity.with_entity_id(next_entity_id);
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed
         .store(&mut namespace)
@@ -1124,22 +1130,22 @@ fn typed_definition_chain_values_transfer_as_parameters() {
     native.entity_records[0].relation_program_instance =
         Some(crate::native::CatiaRelationProgramInstance {
             framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
-                context_entity: crate::native::CatiaEntityReference::default(),
+                context_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
             },
-            program_entity: crate::native::CatiaEntityReference::default(),
-            repeated_entity: crate::native::CatiaEntityReference::default(),
+            program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+            repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
             reference_incidences: Vec::new(),
             relation_expression: None,
             parameter_dependencies: Vec::new(),
             inputs: Some(vec![crate::native::CatiaRelationProgramInput {
                 parameter: "#1_".to_string(),
                 value_type: "Real".to_string(),
-                entity: crate::native::CatiaEntityReference {
-                    entity_id: parameter_entity.entity_id,
-                    is_null: false,
-                    entity: Some(parameter_entity.id.clone()),
-                    class_name: Some("param".to_string()),
-                },
+                entity: crate::native::CatiaEntityReference::from_parts(
+                    parameter_entity.entity_id,
+                    false,
+                    Some(parameter_entity.id.clone()),
+                    Some("param".to_string()),
+                ),
             }]),
         });
     let mut relation_ir = CadIr::empty();
