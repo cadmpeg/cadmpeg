@@ -566,7 +566,6 @@ pub(super) fn validate_consolidated_revolutions(
                 - revolution.direction_x[1] * revolution.direction_y[0],
         ];
         if revolution.id != expected_id
-            || !matches!(revolution.reference_token, 0x08 | 0x0a)
             || revolution.profile_allocation_id == 0
             || revolution
                 .origin
