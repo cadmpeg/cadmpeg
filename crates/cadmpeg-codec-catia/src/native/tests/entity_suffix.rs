@@ -27,9 +27,9 @@ fn entity_suffix_values_accept_8193_trailers() {
         &suffix,
     ));
     let suffix_value = native.entity_records[0]
-        .suffix_value
-        .as_ref()
-        .expect("81 93-terminated suffix value");
+        .suffix_value()
+        .expect("81 93-terminated suffix value")
+        .clone();
     assert_eq!(suffix_value.prefix_code, 0xd8);
     assert_eq!(suffix_value.trailer, CatiaEntitySuffixTrailer::Token8193);
     assert_eq!(
@@ -57,7 +57,7 @@ fn entity_suffix_values_accept_8193_trailers() {
     let migrated = crate::native::CatiaNative::load(&namespace)
         .expect("migrate 81 93-terminated suffix value");
     assert_eq!(
-        migrated.entity_records[0].suffix_value.as_ref(),
+        migrated.entity_records[0].suffix_value().cloned(),
         Some(suffix_value)
     );
 }
@@ -79,8 +79,7 @@ fn entity_suffix_values_accept_8192_trailers() {
         &suffix,
     ));
     let suffix_value = native.entity_records[0]
-        .suffix_value
-        .as_ref()
+        .suffix_value()
         .expect("81 92-terminated suffix value");
     assert_eq!(suffix_value.prefix_code, 0xdf);
     assert_eq!(suffix_value.trailer, CatiaEntitySuffixTrailer::Token8192);
@@ -202,7 +201,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
 
     assert_eq!(native.entity_records[0].parameter_value, None);
     assert_eq!(
-        native.entity_records[0].suffix_value,
+        native.entity_records[0].suffix_value().cloned(),
         Some(CatiaEntitySuffixValue {
             prefix_atoms: [4, 22, 2],
             prefix_atom_widths: [1, 1, 1],
@@ -218,8 +217,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     let mut stale_evaluation_offset = native.clone();
     let CatiaEntitySuffixPayload::Evaluation { opcode_offset, .. } = &mut stale_evaluation_offset
         .entity_records[0]
-        .suffix_value
-        .as_mut()
+        .suffix_value_mut()
         .expect("complete scalar suffix")
         .payload
     else {
@@ -237,15 +235,14 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate suffix evaluation offset");
     assert_eq!(
-        migrated.entity_records[0].suffix_value,
-        native.entity_records[0].suffix_value
+        migrated.entity_records[0].suffix_value(),
+        native.entity_records[0].suffix_value()
     );
 
     let mut malformed_evaluation_offset = native.clone();
     let CatiaEntitySuffixPayload::Evaluation { opcode_offset, .. } =
         &mut malformed_evaluation_offset.entity_records[0]
-            .suffix_value
-            .as_mut()
+            .suffix_value_mut()
             .expect("complete scalar suffix")
             .payload
     else {
@@ -286,7 +283,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     .expect("load wide-prefix scalar suffix");
     assert_eq!(
         wide_scalar.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete wide-prefix scalar")
             .prefix_atoms,
@@ -294,7 +291,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     );
     assert_eq!(
         wide_scalar.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete wide-prefix scalar")
             .prefix_atom_widths,
@@ -302,7 +299,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     );
     assert!(matches!(
         wide_scalar.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete wide-prefix scalar")
             .payload,
@@ -313,8 +310,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     ));
     let mut malformed_wide_scalar = wide_scalar;
     malformed_wide_scalar.entity_records[0]
-        .suffix_value
-        .as_mut()
+        .suffix_value_mut()
         .expect("complete wide-prefix scalar")
         .prefix_atom_widths[0] = 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -332,7 +328,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ]));
     assert!(matches!(
         wide_control.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete wide-prefix control"),
         CatiaEntitySuffixValue {
@@ -347,7 +343,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0xd1, 0x53, 0xd1,
         ]));
-    assert_eq!(truncated_wide_prefix.entity_records[0].suffix_value, None);
+    assert_eq!(truncated_wide_prefix.entity_records[0].suffix_value(), None);
 
     let unset = CatiaCodec
         .decode(
@@ -373,19 +369,19 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     let incomplete = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
         0x84, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x49, 0x00,
     ]));
-    assert_eq!(incomplete.entity_records[0].suffix_value, None);
+    assert_eq!(incomplete.entity_records[0].suffix_value(), None);
 
     let unknown_trailer =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x84, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x50,
         ]));
-    assert_eq!(unknown_trailer.entity_records[0].suffix_value, None);
+    assert_eq!(unknown_trailer.entity_records[0].suffix_value(), None);
 
     let invalid_prefix =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x7f, 0x96, 0x82, 0xad, 0xe7, 0x81, 0x49,
         ]));
-    assert_eq!(invalid_prefix.entity_records[0].suffix_value, None);
+    assert_eq!(invalid_prefix.entity_records[0].suffix_value(), None);
 
     let control = CatiaCodec
         .decode(
@@ -419,7 +415,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     .expect("load generic control suffix");
     assert!(matches!(
         control.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete control suffix")
             .payload,
@@ -462,7 +458,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     .expect("load E9 control suffix");
     assert!(matches!(
         control_e9.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete E9 control suffix")
             .payload,
@@ -470,8 +466,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     ));
     let mut malformed_control_e9 = control_e9.clone();
     malformed_control_e9.entity_records[0]
-        .suffix_value
-        .as_mut()
+        .suffix_value_mut()
         .expect("complete E9 control suffix")
         .payload = CatiaEntitySuffixPayload::ControlE8;
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -486,13 +481,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x84, 0x88, 0x82, 0xf0, 0xe9, 0x81, 0x4a, 0x00,
         ]));
-    assert_eq!(malformed_control_e9.entity_records[0].suffix_value, None);
+    assert_eq!(malformed_control_e9.entity_records[0].suffix_value(), None);
 
     let malformed_control =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x84, 0x96, 0x81, 0xa6, 0xe8, 0x81,
         ]));
-    assert_eq!(malformed_control.entity_records[0].suffix_value, None);
+    assert_eq!(malformed_control.entity_records[0].suffix_value(), None);
 
     let separator = CatiaCodec
         .decode(
@@ -514,7 +509,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     .expect("load generic separator suffix");
     assert!(matches!(
         separator.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete separator suffix")
             .payload,
@@ -525,7 +520,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x84, 0x93, 0x81, 0xa1, 0x37, 0x81, 0x49, 0,
         ]));
-    assert_eq!(malformed_separator.entity_records[0].suffix_value, None);
+    assert_eq!(malformed_separator.entity_records[0].suffix_value(), None);
 
     let atom = CatiaCodec
         .decode(
@@ -545,7 +540,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .expect("load generic atom suffix");
     assert!(matches!(
         atom.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete atom suffix")
             .payload,
@@ -553,8 +548,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     ));
     let mut malformed_atom = atom;
     malformed_atom.entity_records[0]
-        .suffix_value
-        .as_mut()
+        .suffix_value_mut()
         .expect("complete atom suffix")
         .payload = CatiaEntitySuffixPayload::Atom { value: 4 };
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -570,7 +564,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
             0x81, 0x92, 0x81, 0xb3, 0xd1,
         ]));
-    assert_eq!(truncated_compact_atom.entity_records[0].suffix_value, None);
+    assert_eq!(
+        truncated_compact_atom.entity_records[0].suffix_value(),
+        None
+    );
 
     let schema_selected_atom = CatiaCodec
         .decode(
@@ -602,7 +599,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     .expect("load schema-selected atom suffix");
     assert!(matches!(
         schema_selected_atom.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete schema-selected atom suffix")
             .payload,
@@ -629,8 +626,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     if let CatiaEntitySuffixPayload::SchemaSelected {
         selector_offset, ..
     } = &mut stale_schema_selected_atom.entity_records[0]
-        .suffix_value
-        .as_mut()
+        .suffix_value_mut()
         .expect("complete schema-selected atom suffix")
         .payload
     {
@@ -653,8 +649,8 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     let migrated =
         crate::native::CatiaNative::load(&namespace).expect("migrate suffix schema offsets");
     assert_eq!(
-        migrated.entity_records[0].suffix_value,
-        schema_selected_atom.entity_records[0].suffix_value
+        migrated.entity_records[0].suffix_value(),
+        schema_selected_atom.entity_records[0].suffix_value()
     );
     assert_eq!(
         migrated.entity_records[0].suffix_schema_selection,
@@ -793,7 +789,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     .expect("load schema-selected control suffix");
     assert!(matches!(
         selected_control.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete schema-selected control suffix")
             .payload,
@@ -834,7 +830,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             0x84, 0x88, 0x81, 0x32, 4, 0, 0, 0, 0xe8, 0x81, 0x49, 0x00,
         ]));
     assert_eq!(
-        malformed_selected_control.entity_records[0].suffix_value,
+        malformed_selected_control.entity_records[0].suffix_value(),
         None
     );
 
@@ -857,7 +853,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         ]));
     assert!(matches!(
         selected_schema.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete nested suffix selector")
             .payload,
@@ -908,7 +904,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         &standard_catpart_with_parameter_value(&nonfinite_selected_scalar),
     );
     assert_eq!(
-        nonfinite_selected_scalar.entity_records[0].suffix_value,
+        nonfinite_selected_scalar.entity_records[0].suffix_value(),
         None
     );
 
@@ -917,7 +913,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             0x81, 0x92, 0x82, 0x32, 0xcf, 0, 0, 0, 0x81, 0, 0, 0,
         ]));
     assert_eq!(
-        malformed_schema_selected_atom.entity_records[0].suffix_value,
+        malformed_schema_selected_atom.entity_records[0].suffix_value(),
         None
     );
 
@@ -927,7 +923,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&bare_scalar));
     assert_eq!(
         bare_scalar.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete bare scalar suffix")
             .trailer,
@@ -939,7 +935,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     ]));
     assert!(matches!(
         bare_unset.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete bare unset suffix")
             .payload,
@@ -955,8 +951,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     let nested_scalar =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&nested_scalar));
     let nested_value = nested_scalar.entity_records[0]
-        .suffix_value
-        .as_ref()
+        .suffix_value()
         .expect("complete zero-padded scalar suffix");
     assert_eq!(
         nested_value.payload,
@@ -973,7 +968,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     let nonfinite_nested = crate::native::CatiaNative::decode(
         &standard_catpart_with_parameter_value(&nonfinite_nested),
     );
-    assert_eq!(nonfinite_nested.entity_records[0].suffix_value, None);
+    assert_eq!(nonfinite_nested.entity_records[0].suffix_value(), None);
 
     let mut zero_frame_scalar = vec![0x84, 0x96, 0x82, 0x55, 0xe6];
     zero_frame_scalar.extend_from_slice(&(-26.703_618_806_753_155_f64).to_bits().to_le_bytes());
@@ -984,7 +979,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     );
     assert_eq!(
         zero_frame_scalar.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete zero-frame scalar suffix")
             .trailer,
@@ -999,12 +994,11 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     let malformed_zero_frame = crate::native::CatiaNative::decode(
         &standard_catpart_with_parameter_value(&malformed_zero_frame),
     );
-    assert_eq!(malformed_zero_frame.entity_records[0].suffix_value, None);
+    assert_eq!(malformed_zero_frame.entity_records[0].suffix_value(), None);
 
     let mut malformed_encoding = native.clone();
     malformed_encoding.entity_records[0]
-        .suffix_value
-        .as_mut()
+        .suffix_value_mut()
         .expect("complete suffix value")
         .payload = CatiaEntitySuffixPayload::Evaluation {
         opcode_offset: 4,
@@ -1022,8 +1016,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
 
     let mut malformed = native;
     malformed.entity_records[0]
-        .suffix_value
-        .as_mut()
+        .suffix_value_mut()
         .expect("complete suffix value")
         .trailer = CatiaEntitySuffixTrailer::Token814A;
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);

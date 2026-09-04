@@ -272,8 +272,19 @@ fn native_load_rejects_noncanonical_entity_frame_lengths() {
         crate::native::CatiaNative::decode(&sequential_entity_backed_object_graph(&records));
 
     for mutate in [
-        |record: &mut crate::native::CatiaEntityRecord| record.definition_len += 1,
-        |record: &mut crate::native::CatiaEntityRecord| record.value_len += 1,
+        |record: &mut crate::native::CatiaEntityRecord| {
+            if let crate::native::CatiaEntityRecordBody::Nested { definition_len, .. } =
+                &mut record.body
+            {
+                *definition_len += 1;
+            }
+        },
+        |record: &mut crate::native::CatiaEntityRecord| {
+            if let crate::native::CatiaEntityRecordBody::Nested { value_len, .. } = &mut record.body
+            {
+                *value_len += 1;
+            }
+        },
         |record: &mut crate::native::CatiaEntityRecord| record.byte_len += 1,
     ] as [fn(&mut crate::native::CatiaEntityRecord); 3]
     {

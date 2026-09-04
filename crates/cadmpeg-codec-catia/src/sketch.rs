@@ -973,8 +973,8 @@ mod tests {
     use crate::design_feature::DesignFeatureTransfer;
     use crate::native::{
         CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntityIncomingReference,
-        CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReference,
-        CatiaObjectRecordReferenceSource,
+        CatiaEntityRecordBody, CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner,
+        CatiaObjectRecordReference, CatiaObjectRecordReferenceSource,
     };
     use crate::object_graph::{ObjectPayload, PayloadField, PayloadSubtype};
 
@@ -1044,15 +1044,9 @@ mod tests {
             byte_offset: 0,
             byte_len: 0,
             lead: 0,
-            inline_body: None,
-            definition_len: 0,
-            definition_prefix: Vec::new(),
+            body: CatiaEntityRecordBody::empty_nested(),
             definition_schema_selections: Vec::new(),
             entity_id,
-            definition_suffix: Vec::new(),
-            value_len: 0,
-            value_payload: Vec::new(),
-            value_fields: Vec::new(),
             value_schema_selections: Vec::new(),
             relation_expression: None,
             parameter_value: None,
@@ -1067,9 +1061,7 @@ mod tests {
             value_packets: Vec::new(),
             numeric_pair: None,
             reference_signature: None,
-            record_suffix: Vec::new(),
-            suffix_value: None,
-            suffix_framing: None,
+            suffix: None,
             suffix_schema_selection: None,
         }
     }

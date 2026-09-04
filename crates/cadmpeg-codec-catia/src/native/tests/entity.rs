@@ -36,7 +36,7 @@ fn inline_entity_and_object_records_pair_by_extent_and_cardinality() {
         .find(|record| record.object_graph == graph.id)
         .expect("paired inline entity");
     assert_eq!(
-        record.inline_body.as_deref(),
+        record.inline_body().as_deref(),
         Some(&[0x03, 0xea, 1, 0, 0, 0][..])
     );
     assert_eq!(record.object_record, graph.records[0].id);
@@ -587,7 +587,7 @@ fn native_namespace_tokenizes_and_validates_complete_entity_values() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(
-        native.entity_records[0].value_fields,
+        native.entity_records[0].value_fields(),
         [
             crate::value_block::ValueField::SchemaSelector {
                 ordinal: 4,
@@ -604,17 +604,6 @@ fn native_namespace_tokenizes_and_validates_complete_entity_values() {
             crate::value_block::ValueField::Terminator { offset: 17 },
         ]
     );
-
-    let mut malformed = native;
-    malformed.entity_records[0].value_fields.pop();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed entity-value view");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
 }
 
 #[test]
@@ -704,7 +693,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         CatiaEntityEvaluation::Scalar { bits: scalar }
     );
     assert_eq!(
-        native.entity_records[0].suffix_value,
+        native.entity_records[0].suffix_value().cloned(),
         Some(CatiaEntitySuffixValue {
             prefix_atoms: [5, 22, 2],
             prefix_atom_widths: [1, 1, 1],
@@ -734,8 +723,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
     let mut stale_offsets = native.clone();
     let CatiaEntitySuffixPayload::Evaluation { opcode_offset, .. } = &mut stale_offsets
         .entity_records[0]
-        .suffix_value
-        .as_mut()
+        .suffix_value_mut()
         .expect("complete named parameter suffix")
         .payload
     else {
@@ -1467,7 +1455,7 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
 
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&suffix));
-    assert!(native.entity_records[0].suffix_value.is_none());
+    assert!(native.entity_records[0].suffix_value().is_none());
     assert!(native.entity_records[0].parameter_value.is_none());
 
     let control = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
@@ -1475,7 +1463,7 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
     ]));
     assert!(matches!(
         control.entity_records[0]
-            .suffix_value
+            .suffix_value()
             .as_ref()
             .expect("complete control suffix")
             .payload,
