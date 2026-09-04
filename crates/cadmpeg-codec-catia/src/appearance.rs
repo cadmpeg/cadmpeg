@@ -85,7 +85,7 @@ pub(crate) fn transfer(
                     };
                     Some(SourcedPacket {
                         packet,
-                        source_id: format!("{}:field#{offset:010}:{ordinal:06}", block.id),
+                        source_id: format!("{}:field#{offset:010}:{ordinal:06}", block.id).into(),
                     })
                 })
         })
@@ -300,7 +300,7 @@ fn insert_binding_record(
     id: String,
 ) {
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id,
+        id: id.into(),
         target,
         appearance: appearance.clone(),
         source_entity_id: None,
@@ -424,7 +424,7 @@ mod tests {
             AppearanceTarget::Body(_)
         ));
         assert_eq!(
-            ir.model.appearance_bindings[0].id,
+            ir.model.appearance_bindings[0].id.as_str(),
             "catia:appearance:binding#0:d11a1fff"
         );
 
@@ -516,9 +516,10 @@ mod tests {
             .appearance_bindings
             .first()
             .expect("source binding");
-        assert_eq!(binding.id.matches('#').count(), 1);
+        assert_eq!(binding.id.as_str().matches('#').count(), 1);
         assert!(binding
             .id
+            .as_str()
             .starts_with("catia:appearance:source-binding#source-"));
         assert!(matches!(
             &binding.target,

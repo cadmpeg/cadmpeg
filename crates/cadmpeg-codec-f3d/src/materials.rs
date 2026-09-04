@@ -619,7 +619,8 @@ pub fn decode_with_body_bindings<'a>(
             id: format!(
                 "f3d:appearance:body#{}:{}",
                 over.entity_suffix, over.visual_guid
-            ),
+            )
+            .into(),
             target: AppearanceTarget::Body(over.body.clone()),
             appearance: appearance.id.clone(),
             source_entity_id: None,
@@ -1465,7 +1466,8 @@ fn bind_bodies(
             id: format!(
                 "f3d:appearance:binding#{}:{}",
                 assignment.entity_id, assignment.visual_guid
-            ),
+            )
+            .into(),
             target: AppearanceTarget::Body(body),
             appearance: appearance.id.clone(),
             source_entity_id: Some(assignment.entity_id.clone()),

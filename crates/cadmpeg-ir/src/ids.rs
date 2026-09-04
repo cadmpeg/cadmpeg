@@ -264,6 +264,10 @@ id_type!(
     AppearanceId
 );
 id_type!(
+    /// Identifies an [`crate::appearance::AppearanceBinding`] assignment.
+    AppearanceBindingId
+);
+id_type!(
     /// Identifies a linked [`crate::attributes::SourceAttribute`] record.
     AttributeId
 );

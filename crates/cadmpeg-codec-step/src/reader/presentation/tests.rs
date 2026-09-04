@@ -1597,7 +1597,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#face".to_string(),
+        id: "test:appearance-binding#face".into(),
         target: AppearanceTarget::Face(face),
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,
@@ -1646,7 +1646,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#vertex".to_string(),
+        id: "test:appearance-binding#vertex".into(),
         target: AppearanceTarget::Vertex(vertex),
         appearance: AppearanceId("test:appearance#vertex".to_string()),
         source_entity_id: None,
@@ -1880,7 +1880,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#face".to_string(),
+        id: "test:appearance-binding#face".into(),
         target: AppearanceTarget::Face(face),
         appearance: AppearanceId("test:appearance#black".to_string()),
         source_entity_id: None,

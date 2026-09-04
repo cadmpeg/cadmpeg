@@ -551,7 +551,7 @@ pub(super) fn project(
         body.color = Some(color);
         body.visible = Some(blank == 0);
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("iges:model:appearance-binding#body-D{sequence}"),
+            id: format!("iges:model:appearance-binding#body-D{sequence}").into(),
             target: AppearanceTarget::Body(body_id),
             appearance: appearance_id,
             source_entity_id: None,
@@ -585,7 +585,7 @@ pub(super) fn project(
         };
         face.color = Some(color);
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: format!("iges:model:appearance-binding#face-D{sequence}"),
+            id: format!("iges:model:appearance-binding#face-D{sequence}").into(),
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: None,

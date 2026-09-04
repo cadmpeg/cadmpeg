@@ -208,8 +208,8 @@ pub(crate) struct Builder<'a> {
     occurrence_step_refs: HashMap<String, Ref>,
     tessellation_step_refs: HashMap<String, Ref>,
     pmi_step_refs: HashMap<String, Ref>,
-    written_appearance_bindings: BTreeSet<String>,
-    conflicted_appearance_bindings: BTreeSet<String>,
+    written_appearance_bindings: BTreeSet<cadmpeg_ir::ids::AppearanceBindingId>,
+    conflicted_appearance_bindings: BTreeSet<cadmpeg_ir::ids::AppearanceBindingId>,
     appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<String>>,
     hidden_appearance_items: Vec<Ref>,
     hidden_presentation_layer_items: Vec<Ref>,
@@ -222,8 +222,8 @@ pub(crate) struct Builder<'a> {
     missing_wire_shells: BTreeSet<(String, String)>,
     hidden_bodies_without_items: BTreeSet<String>,
     hidden_presentation_layers_without_items: BTreeSet<String>,
-    dangling_appearance_bindings: BTreeSet<(String, String)>,
-    colorless_appearance_bindings: BTreeSet<(String, String)>,
+    dangling_appearance_bindings: BTreeSet<(cadmpeg_ir::ids::AppearanceBindingId, String)>,
+    colorless_appearance_bindings: BTreeSet<(cadmpeg_ir::ids::AppearanceBindingId, String)>,
     written_pmi: usize,
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
@@ -601,7 +601,7 @@ impl<'a> Builder<'a> {
             }
         }
         self.conflicted_appearance_bindings
-            .extend(conflicted_binding_ids);
+            .extend(conflicted_binding_ids.into_iter().map(Into::into));
         self.appearance_binding_target_conflicts
             .extend(target_conflicts);
         for body in &ir.model.bodies {
@@ -671,13 +671,19 @@ impl<'a> Builder<'a> {
             }
             if own.is_some() {
                 if let Some(binding_ids) = face_binding_ids.get(face_id.as_str()) {
-                    self.written_appearance_bindings
-                        .extend(binding_ids.iter().map(|id| (*id).to_string()));
+                    self.written_appearance_bindings.extend(
+                        binding_ids
+                            .iter()
+                            .map(|id| cadmpeg_ir::ids::AppearanceBindingId::from(*id)),
+                    );
                 }
             } else if let Some(body_id) = body {
                 if let Some(binding_ids) = body_binding_ids.get(body_id) {
-                    self.written_appearance_bindings
-                        .extend(binding_ids.iter().map(|id| (*id).to_string()));
+                    self.written_appearance_bindings.extend(
+                        binding_ids
+                            .iter()
+                            .map(|id| cadmpeg_ir::ids::AppearanceBindingId::from(*id)),
+                    );
                 }
             }
             let name = spec
@@ -762,8 +768,11 @@ impl<'a> Builder<'a> {
                 continue;
             }
             if let Some(binding_ids) = body_binding_ids.get(*body_id) {
-                self.written_appearance_bindings
-                    .extend(binding_ids.iter().map(|id| (*id).to_string()));
+                self.written_appearance_bindings.extend(
+                    binding_ids
+                        .iter()
+                        .map(|id| cadmpeg_ir::ids::AppearanceBindingId::from(*id)),
+                );
             }
             let name = spec
                 .appearance

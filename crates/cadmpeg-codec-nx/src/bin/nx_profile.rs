@@ -1108,7 +1108,7 @@ mod tests {
             textures: Vec::new(),
         });
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: "binding".to_string(),
+            id: "binding".into(),
             target: AppearanceTarget::Body(body.id.clone()),
             appearance: appearance_id,
             source_entity_id: None,
@@ -1191,7 +1191,7 @@ mod tests {
         });
         let target = AppearanceTarget::Body(body.id.clone());
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: "binding-1".to_string(),
+            id: "binding-1".into(),
             target: target.clone(),
             appearance: appearance_id.clone(),
             source_entity_id: None,
@@ -1208,7 +1208,7 @@ mod tests {
             a: 1.0,
         });
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: "binding-2".to_string(),
+            id: "binding-2".into(),
             target: target.clone(),
             appearance: appearance_id,
             source_entity_id: None,
