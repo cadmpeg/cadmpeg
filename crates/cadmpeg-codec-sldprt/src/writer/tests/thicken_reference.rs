@@ -442,7 +442,10 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
         else {
             panic!("typed extrusion");
         };
-        *direction = ExtrudeDirection::Explicit(Vector3::new(0.0, 1.0, 0.0));
+        *direction = ExtrudeDirection::Explicit {
+            vector: Vector3::new(0.0, 1.0, 0.0),
+            source: None,
+        };
     }
 
     let mut encoded = Vec::new();

@@ -556,12 +556,14 @@ pub(in super::super) fn schema_feature_definition(
             profile,
             direction: direction.map_or(
                 cadmpeg_ir::features::ExtrudeDirection::ProfileNormal,
-                cadmpeg_ir::features::ExtrudeDirection::Explicit,
+                |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                    vector,
+                    source: None,
+                },
             ),
             start: cadmpeg_ir::features::ExtrudeStart::default(),
             extent,
             op,
-            direction_source: None,
             solid: sweep_solid(output_kind),
             face_maker: None,
             inner_wire_taper: None,

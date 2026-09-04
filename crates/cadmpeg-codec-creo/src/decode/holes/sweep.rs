@@ -381,15 +381,13 @@ pub fn circular_sweep_feature_definition(
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
         profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(Vector3::new(
-            sweep.direction[0],
-            sweep.direction[1],
-            sweep.direction[2],
-        )),
+        direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            vector: Vector3::new(sweep.direction[0], sweep.direction[1], sweep.direction[2]),
+            source: None,
+        },
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: sweep.extent.clone(),
         op,
-        direction_source: None,
         solid,
         face_maker: None,
         inner_wire_taper: None,

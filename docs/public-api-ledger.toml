@@ -3641,3 +3641,24 @@ crate = "cadmpeg-ir"
 kind = "addition"
 item = "cadmpeg_ir::features::RevolveConstruction::{new,is_resolved,profile,profile_mut,set_profile,axis,axis_mut,set_axis,extent,extent_mut,set_extent,solid,set_solid,face_maker,fuse_order,allow_multi_profile_faces}"
 reason = "checked construction and mutation preserve the resolved or partial revolution state"
+
+[[change]]
+commit = "2d9478befe21368ec890a6e770b8f6a0a686e79b"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::features::FeatureDefinition::Extrude::direction_source"
+reason = "a persisted direction source cannot exist independently of an explicit extrusion vector"
+
+[[change]]
+commit = "2d9478befe21368ec890a6e770b8f6a0a686e79b"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::features::ExtrudeDirection::Explicit"
+reason = "the explicit direction variant owns its vector and optional persisted source"
+
+[[change]]
+commit = "2d9478befe21368ec890a6e770b8f6a0a686e79b"
+crate = "cadmpeg-ir"
+kind = "deletion"
+item = "cadmpeg_ir::features::ExtrudeDirection::is_profile_normal"
+reason = "wire omission is handled by the private direction wire form and no semantic caller needs this predicate"

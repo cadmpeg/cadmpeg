@@ -1583,7 +1583,6 @@ mod tests {
                     },
                 },
                 op: BooleanOp::NewBody,
-                direction_source: None,
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,

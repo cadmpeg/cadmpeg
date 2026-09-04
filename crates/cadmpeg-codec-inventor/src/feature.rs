@@ -1193,11 +1193,13 @@ fn project_extrusion(
                 sketch: sketch_id,
                 selections,
             },
-            direction: ExtrudeDirection::Explicit(direction),
+            direction: ExtrudeDirection::Explicit {
+                vector: direction,
+                source: Some(ExtrusionDirectionSource::Custom),
+            },
             start: ExtrudeStart::ProfilePlane,
             extent,
             op,
-            direction_source: Some(ExtrusionDirectionSource::Custom),
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
@@ -2344,7 +2346,10 @@ mod tests {
         assert!(matches!(
             projected.definition,
             FeatureDefinition::Extrude {
-                direction: ExtrudeDirection::Explicit(Vector3 { z: -1.0, .. }),
+                direction: ExtrudeDirection::Explicit {
+                    vector: Vector3 { z: -1.0, .. },
+                    ..
+                },
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {

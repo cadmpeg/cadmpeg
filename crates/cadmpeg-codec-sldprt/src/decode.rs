@@ -1233,7 +1233,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 start,
                 extent,
                 op,
-                direction_source,
                 ..
             } => {
                 incomplete_profile(profile)
@@ -1247,8 +1246,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                         | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. } => false,
                     }
                     || matches!(
-                        direction_source,
-                        Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference })
+                        direction,
+                        cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                            source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::Edge { reference }),
+                            ..
+                        }
                             if incomplete_path(reference)
                     )
                     || incomplete_extrude_extent(extent)

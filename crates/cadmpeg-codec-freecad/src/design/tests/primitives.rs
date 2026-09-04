@@ -411,7 +411,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
             "Solid" => assert_eq!(*solid, Some(false)),
             "Reversed" => assert!(matches!(
                 direction,
-                cadmpeg_ir::features::ExtrudeDirection::Explicit(vector)
+                cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. }
                     if vector.z == 1.0
             )),
             "Symmetric" => assert!(matches!(
@@ -452,7 +452,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
             "Solid" => assert_eq!(*solid, Some(true)),
             "Reversed" => assert!(matches!(
                 direction,
-                cadmpeg_ir::features::ExtrudeDirection::Explicit(vector)
+                cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. }
                     if vector.z == -1.0
             )),
             "Symmetric" => assert!(matches!(

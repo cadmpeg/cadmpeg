@@ -1266,7 +1266,6 @@ mod tests {
                     },
                 },
                 op,
-                direction_source: None,
                 solid: Some(true),
                 face_maker: None,
                 inner_wire_taper: None,

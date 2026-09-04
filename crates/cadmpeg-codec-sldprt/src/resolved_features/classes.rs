@@ -794,7 +794,6 @@ mod idless_history_binding_tests {
                         },
                     },
                     op: BooleanOp::Join,
-                    direction_source: None,
                     solid: Some(true),
                     face_maker: None,
                     inner_wire_taper: None,
