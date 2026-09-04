@@ -353,10 +353,33 @@ pub struct B2OwnerChart {
     pub carrier: B2OwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
     pub bridge: B2OwnerChartBridge,
-    /// Axis held constant by selectors `0x05` and `0x09`.
-    pub side_axis: B2OwnerChartSideAxis,
-    /// Ordered selector records `0x05`, `0x09`, `0x0d`, and `0x11`.
-    pub parameter_points: [B2ParameterPoint; 4],
+    /// Selector record with prefix `0x05`.
+    pub selector_05: B2ParameterPoint,
+    /// Selector record with prefix `0x09`.
+    pub selector_09: B2ParameterPoint,
+    /// Selector record with prefix `0x0d`.
+    pub selector_0d: B2ParameterPoint,
+    /// Selector record with prefix `0x11`.
+    pub selector_11: B2ParameterPoint,
+}
+
+impl B2OwnerChart {
+    pub fn side_axis(&self) -> B2OwnerChartSideAxis {
+        if self.carrier == B2OwnerChartCarrier::B28 {
+            B2OwnerChartSideAxis::FirstParameter
+        } else {
+            B2OwnerChartSideAxis::SecondParameter
+        }
+    }
+
+    pub fn parameter_points(&self) -> [&B2ParameterPoint; 4] {
+        [
+            &self.selector_05,
+            &self.selector_09,
+            &self.selector_0d,
+            &self.selector_11,
+        ]
+    }
 }
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
@@ -1086,18 +1109,17 @@ pub(crate) fn b2_owner_charts_from_records(
             {
                 return None;
             }
+            let [selector_05, selector_09, selector_0d, selector_11] = points;
             Some(B2OwnerChart {
                 owner_pos: owner.pos,
                 source_index: owner.source_index,
                 carrier_pos: carrier.range.start,
                 carrier: carrier_kind,
                 bridge,
-                side_axis: if carrier_kind == B2OwnerChartCarrier::B28 {
-                    B2OwnerChartSideAxis::FirstParameter
-                } else {
-                    B2OwnerChartSideAxis::SecondParameter
-                },
-                parameter_points: points,
+                selector_05,
+                selector_09,
+                selector_0d,
+                selector_11,
             })
         })
         .collect()
