@@ -516,7 +516,7 @@ impl_entity_schema!(crate::topology::Point, Point, id.0; id, position, source_ob
 impl_entity_schema!(crate::geometry::Surface, Surface, id.0; id, geometry, source_object);
 impl_entity_schema!(crate::geometry::Curve, Curve, id.0; id, geometry, source_object);
 impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id.0; id, scheme, vertices, edges, faces, symmetries, source_object);
-impl_entity_schema!(crate::geometry::Pcurve, Pcurve, id.0; id, geometry, wrapper_reversed, native_tail_flags, parameter_range, fit_tolerance);
+impl_entity_schema!(crate::geometry::Pcurve, Pcurve, id.0; id, geometry, metadata);
 impl EntitySchema for crate::geometry::ProceduralSurface {
     const KIND: EntityKind = EntityKind::ProceduralSurface;
 

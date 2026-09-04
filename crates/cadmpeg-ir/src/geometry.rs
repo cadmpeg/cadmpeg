@@ -6727,16 +6727,118 @@ pub struct Pcurve {
     pub id: PcurveId,
     /// Parameter-space shape.
     pub geometry: PcurveGeometry,
-    /// Inline `exp_par_cur` parameterization reversal; absent on ref-form pcurves.
+    /// Source parameterization metadata.
+    #[serde(flatten)]
+    pub metadata: PcurveMetadata,
+}
+
+impl Pcurve {
+    /// Native wrapper reversal, when the source stores one.
+    pub fn wrapper_reversed(&self) -> Option<bool> {
+        self.metadata.wrapper_reversed()
+    }
+
+    /// Four ASM booleans following an inline subtype scope.
+    pub fn native_tail_flags(&self) -> Option<[bool; 4]> {
+        self.metadata.native_tail_flags()
+    }
+
+    /// Directed native parameter interval on which this pcurve is evaluated.
+    pub fn parameter_range(&self) -> Option<[f64; 2]> {
+        self.metadata.parameter_range()
+    }
+
+    /// Parameter-space fit tolerance following a solved UV cache.
+    pub fn fit_tolerance(&self) -> Option<f64> {
+        self.metadata.fit_tolerance()
+    }
+}
+
+/// Source-specific pcurve parameterization metadata.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum PcurveMetadata {
+    /// An ASM inline `exp_par_cur` record and its complete native tail.
+    AsmInline(PcurveInlineForm),
+    /// Metadata that does not assert the ASM inline-record contract.
+    General(PcurveGeneralForm),
+}
+
+impl PcurveMetadata {
+    /// Build metadata without an ASM inline-record claim.
+    pub fn general(
+        wrapper_reversed: Option<bool>,
+        parameter_range: Option<[f64; 2]>,
+        fit_tolerance: Option<f64>,
+    ) -> Self {
+        Self::General(PcurveGeneralForm {
+            wrapper_reversed,
+            parameter_range,
+            fit_tolerance,
+        })
+    }
+
+    /// Native wrapper reversal, when the source stores one.
+    pub fn wrapper_reversed(&self) -> Option<bool> {
+        match self {
+            Self::AsmInline(inline) => Some(inline.wrapper_reversed),
+            Self::General(general) => general.wrapper_reversed,
+        }
+    }
+
+    /// Four ASM booleans following an inline subtype scope.
+    pub fn native_tail_flags(&self) -> Option<[bool; 4]> {
+        match self {
+            Self::AsmInline(inline) => Some(inline.native_tail_flags),
+            Self::General(_) => None,
+        }
+    }
+
+    /// Directed native parameter interval on which this pcurve is evaluated.
+    pub fn parameter_range(&self) -> Option<[f64; 2]> {
+        match self {
+            Self::AsmInline(inline) => Some(inline.parameter_range),
+            Self::General(general) => general.parameter_range,
+        }
+    }
+
+    /// Parameter-space fit tolerance following a solved UV cache.
+    pub fn fit_tolerance(&self) -> Option<f64> {
+        match self {
+            Self::AsmInline(inline) => Some(inline.fit_tolerance),
+            Self::General(general) => general.fit_tolerance,
+        }
+    }
+}
+
+/// The fields carried together by an ASM inline `exp_par_cur` record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct PcurveInlineForm {
+    /// Parameterization wrapper reversal.
+    pub wrapper_reversed: bool,
+    /// Four native booleans following the inline subtype scope.
+    pub native_tail_flags: [bool; 4],
+    /// Directed native parameter interval.
+    pub parameter_range: [f64; 2],
+    /// Parameter-space fit tolerance following the solved UV cache.
+    pub fit_tolerance: f64,
+}
+
+/// Pcurve metadata with no ASM inline-record contract.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct PcurveGeneralForm {
+    /// Source wrapper reversal, when stored independently of an ASM tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrapper_reversed: Option<bool>,
-    /// Four native booleans following the inline subtype scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub native_tail_flags: Option<[bool; 4]>,
-    /// Directed native parameter interval on which this pcurve is evaluated.
+    /// Directed native parameter interval.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_range: Option<[f64; 2]>,
-    /// Parameter-space fit tolerance following the solved UV cache.
+    /// Parameter-space fit tolerance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fit_tolerance: Option<f64>,
 }

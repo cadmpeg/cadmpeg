@@ -6,7 +6,7 @@ use crate::document::CadIr;
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, Pcurve,
-    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    PcurveGeometry, PcurveMetadata, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
@@ -192,10 +192,7 @@ fn untrimmed_surface_curve() -> CadIr {
             y_axis: Point2::new(0.0, 1.0),
             radius: 1.0,
         },
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: None,
-        fit_tolerance: None,
+        metadata: PcurveMetadata::general(None, None, None),
     });
     ir.model.coedges.push(Coedge {
         id: "coedge".into(),
@@ -332,7 +329,10 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         y_axis: Point2::new(0.0, 1.0),
         radius: 1.0,
     };
-    ir.model.pcurves[0].parameter_range = Some([0.0, std::f64::consts::PI]);
+    let PcurveMetadata::General(metadata) = &mut ir.model.pcurves[0].metadata else {
+        panic!("fixture uses general pcurve metadata")
+    };
+    metadata.parameter_range = Some([0.0, std::f64::consts::PI]);
 
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(&ir, &mut findings);
@@ -391,10 +391,7 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
             weights: None,
             periodic: false,
         },
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: None,
-        fit_tolerance: None,
+        metadata: PcurveMetadata::general(None, None, None),
     };
     assert_eq!(pcurve_parameter_domain(&pcurve.geometry), Some([0.0, 1.0]));
     assert!(pcurve_parameter_ranges(&pcurve, None, None).is_none());
@@ -455,10 +452,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
             origin: Point2::new(1.0, 0.0),
             direction: Point2::new(0.0, 1.0),
         },
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: None,
-        fit_tolerance: None,
+        metadata: PcurveMetadata::general(None, None, None),
     };
     let context = SurfacePcurveContext {
         index: &index,
@@ -689,10 +683,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 weights: None,
                 periodic: false,
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: None,
-            fit_tolerance,
+            metadata: PcurveMetadata::general(None, None, fit_tolerance),
         });
         let coedge = ir
             .model
@@ -753,10 +744,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             weights: None,
             periodic: false,
         },
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: None,
-        fit_tolerance: None,
+        metadata: PcurveMetadata::general(None, None, None),
     });
     let coedge = procedural
         .model
@@ -846,10 +834,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 weights: None,
                 periodic: false,
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: None,
-            fit_tolerance: None,
+            metadata: PcurveMetadata::general(None, None, None),
         });
     let coedge = negative_parameterization
         .model
@@ -873,14 +858,14 @@ fn pcurve_surface_mismatch_is_flagged() {
         negative.findings
     );
 
-    negative_parameterization
+    let pcurve_use = &mut negative_parameterization
         .model
         .coedges
         .iter_mut()
         .find(|coedge| coedge.id == ranged_coedge_id)
         .expect("ranged coedge")
-        .pcurves[0]
-        .parameter_range = Some([-11.0, 0.0]);
+        .pcurves[0];
+    pcurve_use.parameter_range = Some([-11.0, 0.0]);
     let invalid_range = validate_neutral(&negative_parameterization, Vec::new());
     assert!(invalid_range.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain && finding.message.contains("coedge pcurve range")

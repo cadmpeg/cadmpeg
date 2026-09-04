@@ -32,10 +32,11 @@ use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LoftPathCurve,
-    NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface,
-    ProceduralSurfaceDefinition, RollingBallConstruction, RollingBallRadiusSelector,
-    RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry, VariableBlendConstruction,
-    VertexBlendBoundary, VertexBlendBoundaryGeometry, VertexBlendConstruction,
+    NurbsCurve, Pcurve, PcurveGeometry, PcurveInlineForm, PcurveMetadata, ProceduralCurve,
+    ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
+    RollingBallRadiusSelector, RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry,
+    VariableBlendConstruction, VertexBlendBoundary, VertexBlendBoundaryGeometry,
+    VertexBlendConstruction,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -3461,27 +3462,45 @@ pub(crate) fn emit_pcurves(
         let i = r.index as i64;
         if kept_pcurves.contains(&i) {
             if let Some(geometry) = pcurve_geo.remove(&i) {
+                let wrapper_reversed = match r.chunk(4) {
+                    Some(Token::True) if matches!(r.chunk(3), Some(Token::Long(0))) => Some(true),
+                    Some(Token::False) if matches!(r.chunk(3), Some(Token::Long(0))) => Some(false),
+                    _ => None,
+                };
+                let native_tail_flags = pcurve_inline_tail_flags(r);
+                let parameter_range = pcurve_parameter_range(r);
+                let fit_tolerance = match (r.chunk(3), r.chunk(4)) {
+                    (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
+                        nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
+                            .and_then(nurbs::pcurve::pcurve_fit_tolerance)
+                    }
+                    _ => None,
+                };
+                let metadata = match (
+                    wrapper_reversed,
+                    native_tail_flags,
+                    parameter_range,
+                    fit_tolerance,
+                ) {
+                    (
+                        Some(wrapper_reversed),
+                        Some(native_tail_flags),
+                        Some(parameter_range),
+                        Some(fit_tolerance),
+                    ) => PcurveMetadata::AsmInline(PcurveInlineForm {
+                        wrapper_reversed,
+                        native_tail_flags,
+                        parameter_range,
+                        fit_tolerance,
+                    }),
+                    (wrapper_reversed, _, parameter_range, fit_tolerance) => {
+                        PcurveMetadata::general(wrapper_reversed, parameter_range, fit_tolerance)
+                    }
+                };
                 out.pcurves.push(Pcurve {
                     id: PcurveId(id(format, i)),
                     geometry,
-                    wrapper_reversed: match r.chunk(4) {
-                        Some(Token::True) if matches!(r.chunk(3), Some(Token::Long(0))) => {
-                            Some(true)
-                        }
-                        Some(Token::False) if matches!(r.chunk(3), Some(Token::Long(0))) => {
-                            Some(false)
-                        }
-                        _ => None,
-                    },
-                    native_tail_flags: pcurve_inline_tail_flags(r),
-                    parameter_range: pcurve_parameter_range(r),
-                    fit_tolerance: match (r.chunk(3), r.chunk(4)) {
-                        (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
-                            nurbs::toks::payload_subtype_toks(r, 5, "exp_par_cur")
-                                .and_then(nurbs::pcurve::pcurve_fit_tolerance)
-                        }
-                        _ => None,
-                    },
+                    metadata,
                 });
             }
         }

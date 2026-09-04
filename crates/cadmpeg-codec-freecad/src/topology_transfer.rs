@@ -259,10 +259,11 @@ impl<'a> Builder<'a> {
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(shape.index, representation_index, false),
                     geometry: primary_geometry,
-                    wrapper_reversed: None,
-                    native_tail_flags: None,
-                    parameter_range: primary_range,
-                    fit_tolerance: None,
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                        None,
+                        primary_range,
+                        None,
+                    ),
                 });
                 if let Some(secondary) = representation.secondary {
                     let secondary_geometry = transformed_pcurve_geometry(
@@ -276,10 +277,11 @@ impl<'a> Builder<'a> {
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(shape.index, representation_index, true),
                         geometry: secondary_geometry,
-                        wrapper_reversed: None,
-                        native_tail_flags: None,
-                        parameter_range: secondary_range,
-                        fit_tolerance: None,
+                        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                            None,
+                            secondary_range,
+                            None,
+                        ),
                     });
                 }
             }

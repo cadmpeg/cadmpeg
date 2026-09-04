@@ -62,6 +62,59 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
 }
 
 #[test]
+fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
+    let pcurve = crate::geometry::Pcurve {
+        id: crate::ids::PcurveId("test:pcurve#inline".into()),
+        geometry: crate::geometry::PcurveGeometry::Line {
+            origin: crate::math::Point2::new(1.0, 2.0),
+            direction: crate::math::Point2::new(3.0, 4.0),
+        },
+        metadata: crate::geometry::PcurveMetadata::AsmInline(crate::geometry::PcurveInlineForm {
+            wrapper_reversed: false,
+            native_tail_flags: [true, false, true, false],
+            parameter_range: [-1.0, 2.0],
+            fit_tolerance: 0.001,
+        }),
+    };
+    let value = serde_json::to_value(&pcurve).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "id": "test:pcurve#inline",
+            "geometry": {
+                "kind": "line",
+                "origin": [1.0, 2.0],
+                "direction": [3.0, 4.0]
+            },
+            "wrapper_reversed": false,
+            "native_tail_flags": [true, false, true, false],
+            "parameter_range": [-1.0, 2.0],
+            "fit_tolerance": 0.001
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::Pcurve>(value).unwrap(),
+        pcurve
+    );
+}
+
+#[test]
+fn incomplete_asm_inline_pcurve_metadata_is_rejected() {
+    let result = serde_json::from_value::<crate::geometry::Pcurve>(serde_json::json!({
+        "id": "test:pcurve#incomplete",
+        "geometry": {
+            "kind": "line",
+            "origin": [1.0, 2.0],
+            "direction": [3.0, 4.0]
+        },
+        "wrapper_reversed": false,
+        "native_tail_flags": [true, false, true, false],
+        "parameter_range": [-1.0, 2.0]
+    }));
+    assert!(result.is_err());
+}
+
+#[test]
 fn g2_full_support_keeps_the_flat_wire_shape() {
     let shape = crate::geometry::G2BlendFirstShape::Full {
         support: Some(crate::geometry::G2BlendFullSupport {

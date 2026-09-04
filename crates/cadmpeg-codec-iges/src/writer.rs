@@ -1790,7 +1790,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                     })
         });
         let is_pcurve_carrier = ir.model.pcurves.iter().any(|pcurve| {
-            pcurve.parameter_range.is_some_and(|range| {
+            pcurve.parameter_range().is_some_and(|range| {
                 curve_matches_pcurve(&curve.geometry, range, pcurve)
                     && edge
                         .param_range
@@ -1863,7 +1863,7 @@ fn curve_matches_pcurve(curve: &CurveGeometry, range: [f64; 2], pcurve: &Pcurve)
             _ => false,
         }
         && pcurve
-            .parameter_range
+            .parameter_range()
             .is_some_and(|candidate| same_range(candidate, range))
 }
 
@@ -2482,13 +2482,13 @@ fn validate_trimmed_sheet_topology(
                                 coedge.id, pcurve_use.pcurve
                             ))
                         })?;
-                    if pcurve.wrapper_reversed.is_some() || pcurve.native_tail_flags.is_some() {
+                    if pcurve.wrapper_reversed().is_some() || pcurve.native_tail_flags().is_some() {
                         return Err(CodecError::NotImplemented(format!(
                             "IGES semantic writer does not encode pcurve wrapper metadata {}",
                             pcurve.id
                         )));
                     }
-                    let Some(parameter_range) = pcurve.parameter_range else {
+                    let Some(parameter_range) = pcurve.parameter_range() else {
                         return Err(CodecError::NotImplemented(format!(
                             "IGES semantic writer requires a parameter range for pcurve {}",
                             pcurve.id
@@ -3335,7 +3335,7 @@ fn source_pcurve(ir: &CadIr, pcurve: &Pcurve) -> Result<Pcurve, CodecError> {
 
 fn oriented_pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     let pcurve = source_pcurve(ir, pcurve)?;
-    let range = pcurve.parameter_range.ok_or_else(|| {
+    let range = pcurve.parameter_range().ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
             pcurve.id
@@ -3423,7 +3423,7 @@ fn reverse_nurbs(
 
 fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     let pcurve = source_pcurve(ir, pcurve)?;
-    let range = pcurve.parameter_range.ok_or_else(|| {
+    let range = pcurve.parameter_range().ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for pcurve {}",
             pcurve.id
@@ -3552,7 +3552,7 @@ fn validate_brep_pcurve_uses(
                     orientation.owner, pcurve_use.pcurve
                 ))
             })?;
-        let range = pcurve.parameter_range.ok_or_else(|| {
+        let range = pcurve.parameter_range().ok_or_else(|| {
             CodecError::NotImplemented(format!(
                 "IGES B-rep {} requires a parameter range for pcurve {}",
                 orientation.owner, pcurve.id
@@ -3567,7 +3567,7 @@ fn validate_brep_pcurve_uses(
                 orientation.owner, pcurve_use.pcurve
             )));
         }
-        if pcurve.wrapper_reversed.is_some() || pcurve.native_tail_flags.is_some() {
+        if pcurve.wrapper_reversed().is_some() || pcurve.native_tail_flags().is_some() {
             return Err(CodecError::NotImplemented(format!(
                 "IGES B-rep {} does not encode pcurve wrapper metadata {}",
                 orientation.owner, pcurve.id
@@ -3639,7 +3639,7 @@ impl PcurveOrientationContext<'_> {
                         self.owner, pcurve_use.pcurve
                     ))
                 })?;
-            let range = pcurve.parameter_range.ok_or_else(|| {
+            let range = pcurve.parameter_range().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES {} requires a parameter range for pcurve {}",
                     self.owner, pcurve.id

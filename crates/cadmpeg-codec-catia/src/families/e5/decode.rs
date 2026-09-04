@@ -1614,10 +1614,7 @@ fn emit_e5_pcurves(
         ir.model.pcurves.push(Pcurve {
             id,
             geometry: geometry.clone(),
-            wrapper_reversed: None,
-            parameter_range: Some(*range),
-            fit_tolerance: None,
-            native_tail_flags: None,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some(*range), None),
         });
     }
 }

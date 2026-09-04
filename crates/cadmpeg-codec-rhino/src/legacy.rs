@@ -1687,10 +1687,11 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                         weights: trim.pcurve.weights,
                         periodic: trim.pcurve.periodic,
                     },
-                    wrapper_reversed: None,
-                    native_tail_flags: None,
-                    parameter_range: Some(pcurve_domain),
-                    fit_tolerance: (trim.tolerance_2d > 0.0).then_some(trim.tolerance_2d),
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                        None,
+                        Some(pcurve_domain),
+                        (trim.tolerance_2d > 0.0).then_some(trim.tolerance_2d),
+                    ),
                 });
                 let coedge_id: cadmpeg_ir::ids::CoedgeId = format!(
                     "rhino:object:coedge#{suffix}.face-{face_index}-{loop_index}-{trim_index}"

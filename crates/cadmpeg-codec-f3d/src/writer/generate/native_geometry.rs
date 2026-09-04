@@ -6368,17 +6368,19 @@ fn native_embedded_cone(
 }
 
 pub(crate) fn pcurve_uses_ref_form(pcurve: &Pcurve) -> Result<bool, CodecError> {
-    match (
-        pcurve.wrapper_reversed,
-        pcurve.native_tail_flags,
-        pcurve.fit_tolerance,
-    ) {
-        (None, None, None) => Ok(true),
-        (Some(_), Some(_), Some(_)) => Ok(false),
-        _ => Err(CodecError::malformed(format_args!(
-            "pcurve {} mixes inline and ref-form native fields",
-            pcurve.id
-        ))),
+    match &pcurve.metadata {
+        cadmpeg_ir::geometry::PcurveMetadata::AsmInline(_) => Ok(false),
+        cadmpeg_ir::geometry::PcurveMetadata::General(metadata)
+            if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance.is_none() =>
+        {
+            Ok(true)
+        }
+        cadmpeg_ir::geometry::PcurveMetadata::General(_) => {
+            Err(CodecError::malformed(format_args!(
+                "pcurve {} has non-ASM wrapper or tolerance metadata",
+                pcurve.id
+            )))
+        }
     }
 }
 
@@ -6388,36 +6390,45 @@ pub(crate) fn native_pcurve(
     companion_ref: Option<i64>,
     support: &SurfaceGeometry,
 ) -> Result<(), CodecError> {
-    if pcurve_uses_ref_form(pcurve)? {
-        let companion_ref = companion_ref.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "ref-form pcurve {} has no companion record",
-                pcurve.id
-            ))
-        })?;
-        let range = pcurve.parameter_range.ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "ref-form pcurve {} has no parameter range",
-                pcurve.id
-            ))
-        })?;
-        native_ident(bytes, "pcurve")?;
-        native_ref(bytes, -1);
-        native_i64(bytes, -1);
-        native_ref(bytes, -1);
-        native_i64(bytes, 2);
-        native_ref(bytes, companion_ref);
-        native_f64(bytes, range[0]);
-        native_f64(bytes, range[1]);
-        return Ok(());
-    }
+    let inline = match &pcurve.metadata {
+        cadmpeg_ir::geometry::PcurveMetadata::General(metadata) => {
+            if metadata.wrapper_reversed.is_some() || metadata.fit_tolerance.is_some() {
+                return Err(CodecError::malformed(format_args!(
+                    "pcurve {} has non-ASM wrapper or tolerance metadata",
+                    pcurve.id
+                )));
+            }
+            let companion_ref = companion_ref.ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "ref-form pcurve {} has no companion record",
+                    pcurve.id
+                ))
+            })?;
+            let range = metadata.parameter_range.ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "ref-form pcurve {} has no parameter range",
+                    pcurve.id
+                ))
+            })?;
+            native_ident(bytes, "pcurve")?;
+            native_ref(bytes, -1);
+            native_i64(bytes, -1);
+            native_ref(bytes, -1);
+            native_i64(bytes, 2);
+            native_ref(bytes, companion_ref);
+            native_f64(bytes, range[0]);
+            native_f64(bytes, range[1]);
+            return Ok(());
+        }
+        cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) => inline,
+    };
     if companion_ref.is_some() {
         return Err(CodecError::malformed(format_args!(
             "inline pcurve {} unexpectedly has a companion record",
             pcurve.id
         )));
     }
-    let range = pcurve.parameter_range.unwrap_or([0.0, 1.0]);
+    let range = inline.parameter_range;
     let native_geometry = native_support_pcurve_for_range(support, &pcurve.geometry, range)?;
     let NativePcurveGeometry {
         degree,
@@ -6442,7 +6453,7 @@ pub(crate) fn native_pcurve(
     native_i64(bytes, -1);
     native_ref(bytes, -1);
     native_i64(bytes, 0);
-    bytes.push(native_bool(pcurve.wrapper_reversed.unwrap_or(false)));
+    bytes.push(native_bool(inline.wrapper_reversed));
     bytes.push(0x0f);
     native_ident(bytes, "exp_par_cur")?;
     native_ident(bytes, if weights.is_some() { "nurbs" } else { "nubs" })?;
@@ -6462,17 +6473,11 @@ pub(crate) fn native_pcurve(
             native_f64(bytes, weights[index]);
         }
     }
-    native_f64(bytes, pcurve.fit_tolerance.unwrap_or(0.0));
+    native_f64(bytes, inline.fit_tolerance);
     bytes.push(0x10);
-    for flag in pcurve.native_tail_flags.unwrap_or([true; 4]) {
+    for flag in inline.native_tail_flags {
         bytes.push(native_bool(flag));
     }
-    let range = pcurve.parameter_range.unwrap_or_else(|| {
-        [
-            knots.first().copied().unwrap_or(0.0),
-            knots.last().copied().unwrap_or(0.0),
-        ]
-    });
     native_f64(bytes, range[0]);
     native_f64(bytes, range[1]);
     Ok(())
@@ -6489,7 +6494,7 @@ pub(crate) fn native_ref_pcurve_companion(
             pcurve.id
         )));
     }
-    let range = pcurve.parameter_range.ok_or_else(|| {
+    let range = pcurve.parameter_range().ok_or_else(|| {
         CodecError::malformed(format_args!(
             "ref-form pcurve {} has no parameter range",
             pcurve.id

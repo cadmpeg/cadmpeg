@@ -824,12 +824,15 @@ fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
     };
 
     let complete = decode(synthetic_geometry_with_pcurve_smbh());
-    assert_eq!(complete.native_tail_flags, Some([true, false, true, false]));
-    assert_eq!(complete.parameter_range, Some([-1.0, 2.0]));
+    assert_eq!(
+        complete.native_tail_flags(),
+        Some([true, false, true, false])
+    );
+    assert_eq!(complete.parameter_range(), Some([-1.0, 2.0]));
 
     let short = decode(synthetic_geometry_with_short_pcurve_tail_smbh());
-    assert_eq!(short.native_tail_flags, None);
-    assert_eq!(short.parameter_range, Some([-1.0, 2.0]));
+    assert_eq!(short.native_tail_flags(), None);
+    assert_eq!(short.parameter_range(), Some([-1.0, 2.0]));
 }
 
 #[test]
@@ -842,7 +845,7 @@ fn generated_inline_pcurve_fit_tolerance_is_scoped() {
             &DecodeOptions::default(),
         )
         .expect("generated inline pcurve decode");
-    assert_eq!(result.ir().model.pcurves[0].fit_tolerance, Some(0.001));
+    assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), Some(0.001));
 }
 
 #[test]
@@ -919,10 +922,10 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
         .expect("generated pcurve decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let pcurve = &mut edited.model.pcurves[0];
-    assert_eq!(pcurve.wrapper_reversed, Some(false));
-    assert_eq!(pcurve.native_tail_flags, Some([true, false, true, false]));
-    assert_eq!(pcurve.parameter_range, Some([-1.0, 2.0]));
-    assert_eq!(pcurve.fit_tolerance, Some(0.001));
+    assert_eq!(pcurve.wrapper_reversed(), Some(false));
+    assert_eq!(pcurve.native_tail_flags(), Some([true, false, true, false]));
+    assert_eq!(pcurve.parameter_range(), Some([-1.0, 2.0]));
+    assert_eq!(pcurve.fit_tolerance(), Some(0.001));
     let cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
         degree,
         knots,
@@ -938,10 +941,13 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     *degree = 2;
     *knots = vec![-1.0, -1.0, -1.0, 2.0, 2.0];
     *periodic = true;
-    pcurve.wrapper_reversed = Some(true);
-    pcurve.native_tail_flags = Some([false, true, false, true]);
-    pcurve.parameter_range = Some([-2.0, 3.0]);
-    pcurve.fit_tolerance = Some(0.0025);
+    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
+        panic!("decoded fixture uses ASM inline pcurve metadata")
+    };
+    inline.wrapper_reversed = true;
+    inline.native_tail_flags = [false, true, false, true];
+    inline.parameter_range = [-2.0, 3.0];
+    inline.fit_tolerance = 0.0025;
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -967,7 +973,10 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
         panic!("expected NURBS pcurve")
     };
     control_points[0].u = -0.75;
-    pcurve.fit_tolerance = Some(0.0025);
+    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
+        panic!("decoded fixture uses ASM inline pcurve metadata")
+    };
+    inline.fit_tolerance = 0.0025;
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1015,9 +1024,9 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         .expect("generated ref-form pcurve decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let pcurve = &mut edited.model.pcurves[0];
-    assert_eq!(pcurve.wrapper_reversed, None);
-    assert_eq!(pcurve.fit_tolerance, None);
-    assert_eq!(pcurve.parameter_range, Some([-2.0, 4.0]));
+    assert_eq!(pcurve.wrapper_reversed(), None);
+    assert_eq!(pcurve.fit_tolerance(), None);
+    assert_eq!(pcurve.parameter_range(), Some([-2.0, 4.0]));
     let cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
         control_points,
         knots,
@@ -1029,7 +1038,10 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     control_points[0].u = -0.75;
     control_points[1].v = 3.5;
     *knots = vec![-1.0, -1.0, 2.0, 2.0];
-    pcurve.parameter_range = Some([-3.0, 5.0]);
+    let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
+        panic!("decoded fixture uses general pcurve metadata")
+    };
+    metadata.parameter_range = Some([-3.0, 5.0]);
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1052,10 +1064,10 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         .expect("source-less ref-form pcurve round trip");
     let actual = &source_less_round_trip.ir().model.pcurves[0];
     assert_eq!(actual.geometry, expected.geometry);
-    assert_eq!(actual.wrapper_reversed, expected.wrapper_reversed);
-    assert_eq!(actual.native_tail_flags, expected.native_tail_flags);
-    assert_eq!(actual.parameter_range, expected.parameter_range);
-    assert_eq!(actual.fit_tolerance, expected.fit_tolerance);
+    assert_eq!(actual.wrapper_reversed(), expected.wrapper_reversed());
+    assert_eq!(actual.native_tail_flags(), expected.native_tail_flags());
+    assert_eq!(actual.parameter_range(), expected.parameter_range());
+    assert_eq!(actual.fit_tolerance(), expected.fit_tolerance());
     assert!(source_less_round_trip
         .ir()
         .model
@@ -1066,9 +1078,16 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let mut mixed = edited;
     let mut inline = mixed.model.pcurves[0].clone();
     inline.id = cadmpeg_ir::ids::PcurveId("generated:mixed-inline-pcurve#0".into());
-    inline.wrapper_reversed = Some(false);
-    inline.native_tail_flags = Some([true, false, true, false]);
-    inline.fit_tolerance = Some(0.002);
+    let Some(parameter_range) = inline.parameter_range() else {
+        panic!("ref-form fixture carries a parameter range")
+    };
+    inline.metadata =
+        cadmpeg_ir::geometry::PcurveMetadata::AsmInline(cadmpeg_ir::geometry::PcurveInlineForm {
+            wrapper_reversed: false,
+            native_tail_flags: [true, false, true, false],
+            parameter_range,
+            fit_tolerance: 0.002,
+        });
     mixed.model.coedges[1].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: inline.id.clone(),
         isoparametric: None,
@@ -1089,13 +1108,13 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         .model
         .pcurves
         .iter()
-        .any(|pcurve| pcurve.wrapper_reversed.is_none()));
+        .any(|pcurve| pcurve.wrapper_reversed().is_none()));
     assert!(mixed_round_trip
         .ir()
         .model
         .pcurves
         .iter()
-        .any(|pcurve| pcurve.wrapper_reversed == Some(false)));
+        .any(|pcurve| pcurve.wrapper_reversed() == Some(false)));
     assert!(mixed_round_trip
         .ir()
         .model

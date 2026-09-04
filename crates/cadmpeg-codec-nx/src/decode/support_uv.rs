@@ -2183,10 +2183,11 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         ir.model.pcurves.push(Pcurve {
             id: pcurve_id.clone(),
             geometry,
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some(parameter_range),
-            fit_tolerance,
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some(parameter_range),
+                fit_tolerance,
+            ),
         });
         if let Some(coedge) = ir
             .model

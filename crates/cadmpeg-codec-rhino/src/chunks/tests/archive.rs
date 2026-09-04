@@ -652,7 +652,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert!(model
         .pcurves
         .iter()
-        .all(|pcurve| pcurve.fit_tolerance == Some(0.04)));
+        .all(|pcurve| pcurve.fit_tolerance() == Some(0.04)));
     assert_eq!(
         result
             .ir()

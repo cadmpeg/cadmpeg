@@ -2257,10 +2257,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     ir.model.pcurves.push(Pcurve {
                         id: pcurve_id.clone(),
                         geometry,
-                        wrapper_reversed: None,
-                        native_tail_flags: None,
-                        parameter_range: Some(resolved.block.parameters.range),
-                        fit_tolerance: None,
+                        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                            None,
+                            Some(resolved.block.parameters.range),
+                            None,
+                        ),
                     });
                     ir.model.coedges[coedge_index]
                         .pcurves

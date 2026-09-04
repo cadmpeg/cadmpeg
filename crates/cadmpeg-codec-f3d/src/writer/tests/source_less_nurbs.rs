@@ -205,20 +205,20 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
     assert_eq!(round_trip.ir().model.pcurves.len(), 1);
     assert_eq!(round_trip.ir().model.pcurves[0].geometry, expected.geometry);
     assert_eq!(
-        round_trip.ir().model.pcurves[0].wrapper_reversed,
-        expected.wrapper_reversed
+        round_trip.ir().model.pcurves[0].wrapper_reversed(),
+        expected.wrapper_reversed()
     );
     assert_eq!(
-        round_trip.ir().model.pcurves[0].native_tail_flags,
-        expected.native_tail_flags
+        round_trip.ir().model.pcurves[0].native_tail_flags(),
+        expected.native_tail_flags()
     );
     assert_eq!(
-        round_trip.ir().model.pcurves[0].parameter_range,
-        expected.parameter_range
+        round_trip.ir().model.pcurves[0].parameter_range(),
+        expected.parameter_range()
     );
     assert_eq!(
-        round_trip.ir().model.pcurves[0].fit_tolerance,
-        expected.fit_tolerance
+        round_trip.ir().model.pcurves[0].fit_tolerance(),
+        expected.fit_tolerance()
     );
     assert_eq!(
         round_trip
@@ -261,7 +261,10 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
         origin: Point2::new(2.0, -1.0),
         direction: Point2::new(0.5, 2.0),
     };
-    pcurve.parameter_range = Some([-2.0, 3.0]);
+    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline(inline) = &mut pcurve.metadata else {
+        panic!("decoded fixture uses ASM inline pcurve metadata")
+    };
+    inline.parameter_range = [-2.0, 3.0];
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -272,7 +275,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less line pcurve round trip");
     assert_eq!(
-        round_trip.ir().model.pcurves[0].parameter_range,
+        round_trip.ir().model.pcurves[0].parameter_range(),
         Some([-2.0, 3.0])
     );
     assert_eq!(
@@ -316,10 +319,10 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     assert_eq!(round_trip.ir().model.pcurves.len(), 1);
     let actual = &round_trip.ir().model.pcurves[0];
     assert_eq!(actual.geometry, expected.geometry);
-    assert_eq!(actual.wrapper_reversed, expected.wrapper_reversed);
-    assert_eq!(actual.native_tail_flags, expected.native_tail_flags);
-    assert_eq!(actual.parameter_range, expected.parameter_range);
-    assert_eq!(actual.fit_tolerance, expected.fit_tolerance);
+    assert_eq!(actual.wrapper_reversed(), expected.wrapper_reversed());
+    assert_eq!(actual.native_tail_flags(), expected.native_tail_flags());
+    assert_eq!(actual.parameter_range(), expected.parameter_range());
+    assert_eq!(actual.fit_tolerance(), expected.fit_tolerance());
 }
 
 #[test]

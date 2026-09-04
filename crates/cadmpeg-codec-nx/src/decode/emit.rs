@@ -272,7 +272,7 @@ pub(super) fn emit_topology(
                     let pcurve = ir.model.pcurves.get(*pcurve_index)?;
                     let surface = pcurve_supports.get(&curve_xmt?)?.clone();
                     let parameter_range = pcurve
-                        .parameter_range
+                        .parameter_range()
                         .or(param_range)
                         .or_else(|| pcurve_parameter_range(&pcurve.geometry))?;
                     let parameter_range = ordered_parameter_range(parameter_range)?;
@@ -280,7 +280,7 @@ pub(super) fn emit_topology(
                         surface,
                         pcurve.geometry.clone(),
                         parameter_range,
-                        pcurve.fit_tolerance,
+                        pcurve.fit_tolerance(),
                     ))
                 });
             if let Some((surface, pcurve, parameter_range, _fit_tolerance)) = lifted {
@@ -570,7 +570,7 @@ pub(super) fn emit_topology(
                     .copied()
                     .and_then(ordered_parameter_range);
                 let parameter_range = use_range
-                    .or(carrier.parameter_range)
+                    .or(carrier.parameter_range())
                     .or_else(|| pcurve_parameter_range(&carrier.geometry));
                 let endpoints = pcurve_endpoint_witness_with_index_and_budget(
                     &index,
@@ -578,7 +578,7 @@ pub(super) fn emit_topology(
                     support,
                     &carrier.geometry,
                     parameter_range,
-                    carrier.fit_tolerance,
+                    carrier.fit_tolerance(),
                     adaptive_geometry_budget,
                 )?;
                 let curve = index.edges(edge.0.as_str())?.curve.as_ref()?;
@@ -706,10 +706,11 @@ pub(super) fn emit_topology(
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry,
-                    wrapper_reversed: None,
-                    native_tail_flags: None,
-                    parameter_range: Some(parameter_range),
-                    fit_tolerance,
+                    metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                        None,
+                        Some(parameter_range),
+                        fit_tolerance,
+                    ),
                 });
                 pcurve = Some(pcurve_id);
             }

@@ -727,10 +727,11 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line { origin, direction },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some(domain),
-            fit_tolerance: Some(0.001),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some(domain),
+                Some(0.001),
+            ),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -812,10 +813,11 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line { origin, direction },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some(domain),
-            fit_tolerance: Some(0.001),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some(domain),
+                Some(0.001),
+            ),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -875,10 +877,11 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line { origin, direction },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some(domain),
-            fit_tolerance: Some(0.0001),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some(domain),
+                Some(0.0001),
+            ),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,

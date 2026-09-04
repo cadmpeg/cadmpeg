@@ -173,10 +173,11 @@ fn project_pcurve_uses(
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: Some(range),
-                fit_tolerance,
+                metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                    None,
+                    Some(range),
+                    fit_tolerance,
+                ),
             });
             PcurveUse {
                 pcurve: id,

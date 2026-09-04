@@ -1056,10 +1056,11 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 origin: Point2::new(0.0, 0.0),
                 direction: Point2::new(1.0, 0.0),
             },
-            wrapper_reversed: None,
-            native_tail_flags: None,
-            parameter_range: Some([0.0, 10.0]),
-            fit_tolerance: Some(0.02),
+            metadata: cadmpeg_ir::geometry::PcurveMetadata::general(
+                None,
+                Some([0.0, 10.0]),
+                Some(0.02),
+            ),
         });
         ir.model.faces.push(Face {
             id: faces[index].clone(),
@@ -1122,7 +1123,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         }
     ));
     for pcurve in &mut ir.model.pcurves {
-        pcurve.fit_tolerance = Some(0.01);
+        let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
+            panic!("fixture uses general pcurve metadata")
+        };
+        metadata.fit_tolerance = Some(0.01);
     }
     super::complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
@@ -1224,7 +1228,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         coedge.pcurves[0].parameter_range = Some(range);
     }
     for pcurve in &mut ir.model.pcurves {
-        pcurve.parameter_range = Some(range);
+        let cadmpeg_ir::geometry::PcurveMetadata::General(metadata) = &mut pcurve.metadata else {
+            panic!("fixture uses general pcurve metadata")
+        };
+        metadata.parameter_range = Some(range);
         pcurve.geometry = PcurveGeometry::Ellipse {
             center: Point2::new(5.0, 0.0),
             x_axis: Point2::new(1.0, 0.0),

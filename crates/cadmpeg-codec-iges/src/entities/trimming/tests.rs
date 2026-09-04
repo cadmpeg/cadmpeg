@@ -1366,7 +1366,7 @@ fn decode_sews_boundary_roundoff_with_declared_coordinate_significance() {
         .model
         .pcurves
         .iter()
-        .all(|pcurve| pcurve.fit_tolerance.is_none()));
+        .all(|pcurve| pcurve.fit_tolerance().is_none()));
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

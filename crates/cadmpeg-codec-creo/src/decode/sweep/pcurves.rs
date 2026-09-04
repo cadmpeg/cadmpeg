@@ -56,10 +56,7 @@ pub(in super::super) fn add_extrusion_pcurve(
     ir.model.pcurves.push(Pcurve {
         id: id.clone(),
         geometry,
-        wrapper_reversed: None,
-        native_tail_flags: None,
-        parameter_range: Some(parameter_range),
-        fit_tolerance: None,
+        metadata: cadmpeg_ir::geometry::PcurveMetadata::general(None, Some(parameter_range), None),
     });
     id
 }

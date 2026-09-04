@@ -526,7 +526,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert_eq!(model.points[1].position.x, 25.4);
     assert_eq!(model.vertices[0].tolerance, Some(0.254));
     assert_eq!(model.edges[0].tolerance, Some(0.254));
-    assert_eq!(model.pcurves[0].fit_tolerance, Some(0.02));
+    assert_eq!(model.pcurves[0].fit_tolerance(), Some(0.02));
     let PcurveGeometry::Nurbs { control_points, .. } = &model.pcurves[0].geometry else {
         panic!("line C2 must be a NURBS pcurve");
     };
