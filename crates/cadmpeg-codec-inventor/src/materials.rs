@@ -55,9 +55,7 @@ pub(crate) fn project_catalog(instances: &[ProteinInstanceRecords]) -> MaterialC
                 }
                 for guid in &property.connections {
                     if let Some(texture) = textures.get(guid) {
-                        let mut texture = texture.clone();
-                        texture.slot.clone_from(id);
-                        connected.push(texture);
+                        connected.push(texture.clone().into_ref(id.clone()));
                     }
                 }
             }
@@ -120,7 +118,31 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
         })
 }
 
-fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> {
+#[derive(Clone, PartialEq)]
+struct TextureAsset {
+    asset_guid: String,
+    schema: String,
+    paths: Vec<String>,
+    urn: Option<String>,
+    mapping: TextureMap2d,
+    bump: Option<BumpMap>,
+}
+
+impl TextureAsset {
+    fn into_ref(self, slot: String) -> TextureRef {
+        TextureRef {
+            asset_guid: self.asset_guid,
+            slot,
+            schema: self.schema,
+            paths: self.paths,
+            urn: self.urn,
+            mapping: self.mapping,
+            bump: self.bump,
+        }
+    }
+}
+
+fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureAsset> {
     if !matches!(
         record.schema.as_str(),
         "UnifiedBitmapSchema" | "BumpMapSchema"
@@ -149,9 +171,8 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> 
                 _ => None,
             })
     });
-    Some(TextureRef {
+    Some(TextureAsset {
         asset_guid: record.guid.clone(),
-        slot: String::new(),
         schema: record.schema.clone(),
         paths,
         urn,

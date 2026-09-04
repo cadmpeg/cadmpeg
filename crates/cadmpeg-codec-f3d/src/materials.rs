@@ -685,9 +685,7 @@ fn appearances_from_schema_records(
                 }
                 for guid in &property.connections {
                     if let Some(texture) = textures.get(guid) {
-                        let mut texture = texture.clone();
-                        texture.slot.clone_from(id);
-                        connected.push(texture);
+                        connected.push(texture.clone().into_ref(id.clone()));
                     }
                 }
             }
@@ -774,7 +772,31 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
         })
 }
 
-fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureRef>, usize) {
+#[derive(Clone, PartialEq)]
+struct TextureAsset {
+    asset_guid: String,
+    schema: String,
+    paths: Vec<String>,
+    urn: Option<String>,
+    mapping: TextureMap2d,
+    bump: Option<BumpMap>,
+}
+
+impl TextureAsset {
+    fn into_ref(self, slot: String) -> TextureRef {
+        TextureRef {
+            asset_guid: self.asset_guid,
+            slot,
+            schema: self.schema,
+            paths: self.paths,
+            urn: self.urn,
+            mapping: self.mapping,
+            bump: self.bump,
+        }
+    }
+}
+
+fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureAsset>, usize) {
     if !matches!(
         record.schema.as_str(),
         "UnifiedBitmapSchema" | "BumpMapSchema"
@@ -832,9 +854,8 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureRef>
         depth: distance("bumpmap_Depth", 0.0),
         normal_scale: float_property(record, "bumpmap_NormalScale").unwrap_or(1.0),
     });
-    let texture = TextureRef {
+    let texture = TextureAsset {
         asset_guid: record.guid.clone(),
-        slot: String::new(),
         schema: record.schema.clone(),
         paths,
         urn,
