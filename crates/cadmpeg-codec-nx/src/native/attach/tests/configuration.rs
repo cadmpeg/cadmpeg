@@ -1156,7 +1156,6 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
                 side: ExtrudeSide {
                     termination: LinearTermination::Unresolved,
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::NewBody,

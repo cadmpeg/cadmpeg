@@ -600,7 +600,6 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             side: cadmpeg_ir::features::ExtrudeSide {
                 termination,
                 draft: None,
-                offset: None,
             },
         },
         op: BooleanOp::NewBody,

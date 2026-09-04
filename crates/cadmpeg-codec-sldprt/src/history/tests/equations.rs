@@ -517,7 +517,6 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
                     length: Length(12.0),
                 },
                 draft: None,
-                offset: None,
             },
         };
         let depth = ir

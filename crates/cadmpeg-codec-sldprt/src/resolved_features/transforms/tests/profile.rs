@@ -1053,7 +1053,6 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
                             length: Length(1.0),
                         },
                         draft: None,
-                        offset: None,
                     },
                 },
                 op: BooleanOp::Join,

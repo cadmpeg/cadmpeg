@@ -8065,29 +8065,19 @@ pub(crate) fn project_extrude(
     }
     let extent = match shape {
         ExtentShape::OneSided(termination) => ExtrudeExtent::OneSided {
-            side: ExtrudeSide {
-                termination,
-                draft,
-                offset: None,
-            },
+            side: ExtrudeSide { termination, draft },
         },
         ExtentShape::Symmetric(termination) => ExtrudeExtent::Symmetric {
-            side: ExtrudeSide {
-                termination,
-                draft,
-                offset: None,
-            },
+            side: ExtrudeSide { termination, draft },
         },
         ExtentShape::TwoSided { first, second } => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: first,
                 draft,
-                offset: None,
             },
             second: ExtrudeSide {
                 termination: second,
                 draft: second_draft,
-                offset: None,
             },
         },
     };

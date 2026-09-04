@@ -315,7 +315,6 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     let side = |termination: LinearTermination| ExtrudeSide {
         termination,
         draft: None,
-        offset: None,
     };
 
     assert!(!super::extrude_extent_is_incomplete(
@@ -346,7 +345,6 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
             side: ExtrudeSide {
                 termination: LinearTermination::ThroughAll,
                 draft: Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2,)),
-                offset: None,
             },
         },
         &[],
@@ -911,7 +909,6 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
                     length: Length(5.0),
                 },
                 draft: None,
-                offset: None,
             },
         },
         op: BooleanOp::NewBody,

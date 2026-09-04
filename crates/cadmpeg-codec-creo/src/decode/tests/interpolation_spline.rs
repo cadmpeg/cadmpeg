@@ -337,7 +337,6 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
                         length: Length(8.0)
                     },
                     draft: None,
-                    offset: None,
                 }
             },
             [0.0, -1.0, 0.0]
@@ -1498,7 +1497,6 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
                         length: Length(1.0),
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::NewBody,
@@ -1577,7 +1575,6 @@ fn circular_sweep_projects_profile_direction_and_extent() {
                     length: Length(6.5),
                 },
                 draft: None,
-                offset: None,
             },
         },
         geometry: SurfaceGeometry::Cylinder {
@@ -1607,7 +1604,6 @@ fn circular_sweep_projects_profile_direction_and_extent() {
                         length: Length(6.5),
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::Join,

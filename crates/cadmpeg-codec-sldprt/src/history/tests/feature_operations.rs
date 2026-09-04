@@ -1023,7 +1023,6 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
                     length: cadmpeg_ir::features::Length(25.0),
                 },
                 draft: None,
-                offset: None,
             }
         }
     );

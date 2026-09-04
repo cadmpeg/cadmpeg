@@ -39,7 +39,6 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
                     length: Length(2.0),
                 },
                 draft: None,
-                offset: None,
             },
         },
         [0.0, 0.0, 1.0],

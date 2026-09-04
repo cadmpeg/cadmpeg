@@ -411,7 +411,6 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
                     length: Length(length),
                 },
                 draft: None,
-                offset: None,
             },
         },
         direction,

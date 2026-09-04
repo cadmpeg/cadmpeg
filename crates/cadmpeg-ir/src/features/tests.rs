@@ -421,7 +421,6 @@ fn feature_extents_round_trip_through_json() {
                     length: Length(12.5),
                 },
                 draft: Some(Angle(0.1)),
-                offset: None,
             },
         },
         ExtrudeExtent::Symmetric {
@@ -430,7 +429,6 @@ fn feature_extents_round_trip_through_json() {
                     length: Length(25.0),
                 },
                 draft: None,
-                offset: None,
             },
         },
         ExtrudeExtent::TwoSided {
@@ -439,22 +437,19 @@ fn feature_extents_round_trip_through_json() {
                     length: Length(10.0),
                 },
                 draft: Some(Angle(0.2)),
-                offset: Some(Length(1.0)),
             },
             second: ExtrudeSide {
                 termination: LinearTermination::ToFace {
                     face: FaceSelection::Faces(vec![FaceId("synthetic:test:face#0".into())]),
-                    offset: None,
+                    offset: Some(Length(-2.0)),
                 },
                 draft: None,
-                offset: Some(Length(-2.0)),
             },
         },
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::ThroughAll,
                 draft: None,
-                offset: None,
             },
         },
     ];

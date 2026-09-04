@@ -965,7 +965,6 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
                 side: cadmpeg_ir::features::ExtrudeSide {
                     termination: cadmpeg_ir::features::LinearTermination::Unresolved,
                     draft: None,
-                    offset: None,
                 },
             },
             op: BooleanOp::Unresolved,

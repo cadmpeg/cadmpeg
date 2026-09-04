@@ -189,7 +189,6 @@ pub(crate) fn extrude_extent_is_incomplete(
             || side.draft.is_some_and(|angle| {
                 !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
             })
-            || side.offset.is_some_and(|offset| !offset.0.is_finite())
     };
     match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {

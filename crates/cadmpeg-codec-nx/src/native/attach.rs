@@ -4967,7 +4967,6 @@ fn extrude_feature_definition(
             side: ExtrudeSide {
                 termination: LinearTermination::Unresolved,
                 draft: None,
-                offset: None,
             },
         },
         op,

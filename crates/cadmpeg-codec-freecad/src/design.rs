@@ -3661,7 +3661,6 @@ fn extrusion_definition(
                             length: Length((forward != 0.0).then_some(forward.abs())?),
                         },
                         draft: to_draft(forward_draft),
-                        offset: None,
                     },
                 },
                 false,
@@ -3692,7 +3691,6 @@ fn extrusion_definition(
                                 length: Length(length),
                             },
                             draft: to_draft(draft),
-                            offset: None,
                         },
                     },
                     false,
@@ -3704,7 +3702,6 @@ fn extrusion_definition(
                                 length: Length(-length),
                             },
                             draft: to_draft(draft),
-                            offset: None,
                         },
                     },
                     true,
@@ -3716,14 +3713,12 @@ fn extrusion_definition(
                                 length: Length(first),
                             },
                             draft: to_draft(first_draft),
-                            offset: None,
                         },
                         second: ExtrudeSide {
                             termination: LinearTermination::Blind {
                                 length: Length(-second),
                             },
                             draft: to_draft(second_draft),
-                            offset: None,
                         },
                     },
                     false,
@@ -3777,12 +3772,18 @@ fn extrusion_definition(
         let suffix = if side == 1 { "" } else { "2" };
         let type_name = format!("Type{suffix}");
         let length_name = format!("Length{suffix}");
+        let offset_name = format!("Offset{suffix}");
         let face_name = format!("UpToFace{suffix}");
         let shape_name = format!("UpToShape{suffix}");
         let termination_type = if legacy_two_lengths {
             0
         } else {
             enumeration_selector(properties, &type_name, 0)?
+        };
+        let offset = if property(properties, &offset_name).is_some() {
+            Some(Length(scalar_named(properties, &offset_name)?))
+        } else {
+            None
         };
         match termination_type {
             0 => Some(LinearTermination::Blind {
@@ -3797,7 +3798,7 @@ fn extrusion_definition(
                 face: cadmpeg_ir::features::FaceSelection::Native(
                     singular_operand(properties, &face_name)?.id.clone(),
                 ),
-                offset: None,
+                offset,
             }),
             5 => Some(LinearTermination::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(
@@ -3816,50 +3817,36 @@ fn extrusion_definition(
     } else {
         0
     };
-    // First-side draft and offset apply to every extent shape. `TaperAngle2`
-    // and `Offset2` describe a second, independent side and are read only when
+    // `TaperAngle2` describes a second, independent side and is read only when
     // the extent actually carries one (`SideType` 1 / two-sided). A symmetric
-    // (Midplane) pad mirrors side one, so it has no second side to receive
-    // them; the native properties remain retained but map nowhere in the IR.
+    // (Midplane) pad mirrors side one, so it has no second side to receive it;
+    // the native property remains retained but maps nowhere in the IR.
     let first_draft = scalar_named(properties, "TaperAngle")
         .filter(|angle| *angle != 0.0)
         .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
-    let first_offset = if property(properties, "Offset").is_some() {
-        Some(Length(scalar_named(properties, "Offset")?))
-    } else {
-        None
-    };
     let extent = match side_type {
         0 => ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: termination(1)?,
                 draft: first_draft,
-                offset: first_offset,
             },
         },
         1 => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: termination(1)?,
                 draft: first_draft,
-                offset: first_offset,
             },
             second: ExtrudeSide {
                 termination: termination(2)?,
                 draft: scalar_named(properties, "TaperAngle2")
                     .filter(|angle| *angle != 0.0)
                     .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians())),
-                offset: if property(properties, "Offset2").is_some() {
-                    Some(Length(scalar_named(properties, "Offset2")?))
-                } else {
-                    None
-                },
             },
         },
         2 => ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
                 termination: termination(1)?,
                 draft: first_draft,
-                offset: first_offset,
             },
         },
         _ => return None,

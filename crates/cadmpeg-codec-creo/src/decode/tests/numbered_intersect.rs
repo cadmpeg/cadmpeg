@@ -431,7 +431,6 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
                         length: Length(8.0),
                     },
                     draft: None,
-                    offset: None,
                 },
             },
             [0.0, 0.0, 1.0],
