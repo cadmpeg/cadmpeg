@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Inventor-native structural records.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
 use crate::pmdc::PmDcReference;
 use crate::presentation::RenderingStyleExtension;
@@ -49,6 +51,14 @@ pub(crate) struct SegmentRegistryRecord {
     pub(crate) node_count: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RevisionPayloadForm {
+    None,
+    Short,
+    Long,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct RevisionRecord {
     pub(crate) id: String,
@@ -56,7 +66,7 @@ pub(crate) struct RevisionRecord {
     pub(crate) revision_id: String,
     pub(crate) flags: u32,
     pub(crate) kind: u16,
-    pub(crate) payload_form: String,
+    pub(crate) payload_form: RevisionPayloadForm,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,6 +87,103 @@ pub(crate) struct PropertySetRecord {
     pub(crate) section_count: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PropertyValueKind {
+    Empty,
+    Signed,
+    Unsigned,
+    Float,
+    Bool,
+    Filetime,
+    String,
+    Guid,
+    Binary { len: usize },
+    Clipboard { format: u32, len: usize },
+    Vector { len: usize },
+    Dictionary,
+    Unknown,
+}
+
+impl Display for PropertyValueKind {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => formatter.write_str("empty"),
+            Self::Signed => formatter.write_str("signed"),
+            Self::Unsigned => formatter.write_str("unsigned"),
+            Self::Float => formatter.write_str("float"),
+            Self::Bool => formatter.write_str("bool"),
+            Self::Filetime => formatter.write_str("filetime"),
+            Self::String => formatter.write_str("string"),
+            Self::Guid => formatter.write_str("guid"),
+            Self::Binary { len } => write!(formatter, "binary:{len}"),
+            Self::Clipboard { format, len } => write!(formatter, "clipboard:{format}:{len}"),
+            Self::Vector { len } => write!(formatter, "vector:{len}"),
+            Self::Dictionary => formatter.write_str("dictionary"),
+            Self::Unknown => formatter.write_str("unknown"),
+        }
+    }
+}
+
+impl FromStr for PropertyValueKind {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text {
+            "empty" => Ok(Self::Empty),
+            "signed" => Ok(Self::Signed),
+            "unsigned" => Ok(Self::Unsigned),
+            "float" => Ok(Self::Float),
+            "bool" => Ok(Self::Bool),
+            "filetime" => Ok(Self::Filetime),
+            "string" => Ok(Self::String),
+            "guid" => Ok(Self::Guid),
+            "dictionary" => Ok(Self::Dictionary),
+            "unknown" => Ok(Self::Unknown),
+            text => {
+                if let Some(len) = text.strip_prefix("binary:") {
+                    let len = len
+                        .parse()
+                        .map_err(|_| format!("property value_kind {text}"))?;
+                    return Ok(Self::Binary { len });
+                }
+                if let Some(rest) = text.strip_prefix("clipboard:") {
+                    let (format, len) = rest
+                        .split_once(':')
+                        .ok_or_else(|| format!("property value_kind {text}"))?;
+                    let format = format
+                        .parse()
+                        .map_err(|_| format!("property value_kind {text}"))?;
+                    let len = len
+                        .parse()
+                        .map_err(|_| format!("property value_kind {text}"))?;
+                    return Ok(Self::Clipboard { format, len });
+                }
+                if let Some(len) = text.strip_prefix("vector:") {
+                    let len = len
+                        .parse()
+                        .map_err(|_| format!("property value_kind {text}"))?;
+                    return Ok(Self::Vector { len });
+                }
+                Err(format!("property value_kind {text}"))
+            }
+        }
+    }
+}
+
+impl Serialize for PropertyValueKind {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for PropertyValueKind {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PropertyRecord {
     pub(crate) id: String,
@@ -86,7 +193,7 @@ pub(crate) struct PropertyRecord {
     pub(crate) property_id: u32,
     pub(crate) name: Option<String>,
     pub(crate) type_code: Option<u16>,
-    pub(crate) value_kind: String,
+    pub(crate) value_kind: PropertyValueKind,
     pub(crate) scalar_value: Option<String>,
     pub(crate) raw_len: u64,
     pub(crate) raw_sha256: String,
@@ -1014,11 +1121,18 @@ pub(crate) struct SegmentPairRecord {
     pub(crate) bulk_directory_id: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum UnpairedMember {
+    Bulk,
+    Metadata,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct UnpairedSegmentRecord {
     pub(crate) id: String,
     pub(crate) token: String,
-    pub(crate) missing_member: String,
+    pub(crate) missing_member: UnpairedMember,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1062,11 +1176,48 @@ pub(crate) struct MetaTypeRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "SegmentMetaIssueRecordWire",
+    into = "SegmentMetaIssueRecordWire"
+)]
 pub(crate) struct SegmentMetaIssueRecord {
     pub(crate) id: String,
     pub(crate) token: String,
-    pub(crate) status: String,
     pub(crate) detail: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SegmentMetaIssueRecordWire {
+    id: String,
+    token: String,
+    status: String,
+    detail: String,
+}
+
+impl From<SegmentMetaIssueRecord> for SegmentMetaIssueRecordWire {
+    fn from(value: SegmentMetaIssueRecord) -> Self {
+        Self {
+            id: value.id,
+            token: value.token,
+            status: "malformed".into(),
+            detail: value.detail,
+        }
+    }
+}
+
+impl TryFrom<SegmentMetaIssueRecordWire> for SegmentMetaIssueRecord {
+    type Error = String;
+
+    fn try_from(wire: SegmentMetaIssueRecordWire) -> Result<Self, Self::Error> {
+        if wire.status != "malformed" {
+            return Err(format!("segment meta issue status {}", wire.status));
+        }
+        Ok(Self {
+            id: wire.id,
+            token: wire.token,
+            detail: wire.detail,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

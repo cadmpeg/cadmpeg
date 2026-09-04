@@ -29,12 +29,13 @@ use crate::native::{
     ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
     PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
     PmGraphicsStyleCollectionRecord, PresentationRecordIssueRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
-    ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord, RevisionRecord, RseRecordRecord,
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
-    UfrxModelStateParameterRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord,
-    UfrxRepresentationRecord, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
+    ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord,
+    RevisionPayloadForm, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
+    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateParameterRecord,
+    UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord,
+    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -579,11 +580,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 flags: entry.flags,
                 kind: entry.kind,
                 payload_form: match entry.payload {
-                    RevisionPayload::None => "none",
-                    RevisionPayload::Short { .. } => "short",
-                    RevisionPayload::Long { .. } => "long",
-                }
-                .into(),
+                    RevisionPayload::None => RevisionPayloadForm::None,
+                    RevisionPayload::Short { .. } => RevisionPayloadForm::Short,
+                    RevisionPayload::Long { .. } => RevisionPayloadForm::Long,
+                },
             })
             .collect(),
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
@@ -705,9 +705,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .segments
         .iter()
         .filter_map(|segment| {
-            let (status, detail) = match &segment.meta {
+            let detail = match &segment.meta {
                 SegmentMetaState::Parsed(_) => return None,
-                SegmentMetaState::Malformed { detail, .. } => ("malformed", detail.clone()),
+                SegmentMetaState::Malformed { detail, .. } => detail.clone(),
             };
             Some(SegmentMetaIssueRecord {
                 id: format!(
@@ -715,7 +715,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     segment.pair.token.as_str()
                 ),
                 token: segment.pair.token.as_str().into(),
-                status: status.into(),
                 detail,
             })
         })
@@ -816,7 +815,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map(|token| UnpairedSegmentRecord {
             id: format!("inventor:rse:unpaired-metadata#{}", token.as_str()),
             token: token.as_str().into(),
-            missing_member: "bulk".into(),
+            missing_member: UnpairedMember::Bulk,
         })
         .chain(
             container
@@ -826,7 +825,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 .map(|token| UnpairedSegmentRecord {
                     id: format!("inventor:rse:unpaired-bulk#{}", token.as_str()),
                     token: token.as_str().into(),
-                    missing_member: "metadata".into(),
+                    missing_member: UnpairedMember::Metadata,
                 }),
         )
         .collect::<Vec<_>>();
@@ -2035,23 +2034,26 @@ fn built_in_property_name(set_name: &str, id: u32) -> Option<&'static str> {
     }
 }
 
-fn property_value_kind(value: &PropertyValue<'_>) -> String {
+fn property_value_kind(value: &PropertyValue<'_>) -> PropertyValueKind {
     match value {
-        PropertyValue::Empty => "empty".into(),
-        PropertyValue::Signed(_) => "signed".into(),
-        PropertyValue::Unsigned(_) => "unsigned".into(),
-        PropertyValue::Float(_) => "float".into(),
-        PropertyValue::Bool(_) => "bool".into(),
-        PropertyValue::Filetime(_) => "filetime".into(),
-        PropertyValue::String(_) => "string".into(),
-        PropertyValue::Guid(_) => "guid".into(),
-        PropertyValue::Binary(data) => format!("binary:{}", data.window().len()),
-        PropertyValue::Clipboard { format, data } => {
-            format!("clipboard:{format}:{}", data.window().len())
-        }
-        PropertyValue::Vector(values) => format!("vector:{}", values.len()),
-        PropertyValue::Dictionary => "dictionary".into(),
-        PropertyValue::Unknown => "unknown".into(),
+        PropertyValue::Empty => PropertyValueKind::Empty,
+        PropertyValue::Signed(_) => PropertyValueKind::Signed,
+        PropertyValue::Unsigned(_) => PropertyValueKind::Unsigned,
+        PropertyValue::Float(_) => PropertyValueKind::Float,
+        PropertyValue::Bool(_) => PropertyValueKind::Bool,
+        PropertyValue::Filetime(_) => PropertyValueKind::Filetime,
+        PropertyValue::String(_) => PropertyValueKind::String,
+        PropertyValue::Guid(_) => PropertyValueKind::Guid,
+        PropertyValue::Binary(data) => PropertyValueKind::Binary {
+            len: data.window().len(),
+        },
+        PropertyValue::Clipboard { format, data } => PropertyValueKind::Clipboard {
+            format: *format,
+            len: data.window().len(),
+        },
+        PropertyValue::Vector(values) => PropertyValueKind::Vector { len: values.len() },
+        PropertyValue::Dictionary => PropertyValueKind::Dictionary,
+        PropertyValue::Unknown => PropertyValueKind::Unknown,
     }
 }
 
