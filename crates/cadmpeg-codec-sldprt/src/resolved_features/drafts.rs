@@ -635,7 +635,6 @@ mod tests {
             ordinal: 0,
             name: Some("Draft1".into()),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Draft".into()),

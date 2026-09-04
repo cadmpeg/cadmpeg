@@ -163,6 +163,22 @@ pub(crate) fn sketch_alias_base_name(name: &str) -> Option<&str> {
 /// explicit dependency before its consumer. Native history ordinals retain the
 /// independent Keywords serialization order.
 pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Feature]) -> bool {
+    let tree_parent_by_child = features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::TreeNode { children, .. } =
+                &feature.definition
+            else {
+                return None;
+            };
+            Some(
+                children
+                    .iter()
+                    .map(|child| (child.clone(), feature.id.clone())),
+            )
+        })
+        .flatten()
+        .collect::<HashMap<_, _>>();
     let by_id = features
         .iter()
         .enumerate()
@@ -187,7 +203,7 @@ pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Fea
             .dependencies
             .iter()
             .collect::<std::collections::HashSet<_>>();
-        if let Some(parent) = &feature.parent {
+        if let Some(parent) = tree_parent_by_child.get(&feature.id) {
             predecessors.insert(parent);
         }
         for predecessor in predecessors {
@@ -234,6 +250,15 @@ pub fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) -> bool
         .enumerate()
         .map(|(index, feature)| (feature.id.clone(), index))
         .collect::<HashMap<_, _>>();
+    for feature in &ir.model.features {
+        let Some(parent) = ir.model.feature_parent(&feature.id) else {
+            continue;
+        };
+        let target = &mut ordering_graph[by_id[&feature.id]];
+        if !target.dependencies.contains(parent) {
+            target.dependencies.push(parent.clone());
+        }
+    }
     for configuration in &ir.model.configurations {
         for (feature_id, state) in &configuration.feature_states {
             let Some(&index) = by_id.get(feature_id) else {

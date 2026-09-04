@@ -157,7 +157,6 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         ordinal: 0,
         name: Some("Extrude".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -327,7 +326,6 @@ fn encoder_writes_source_less_line_sketches() {
         ordinal: 0,
         name: Some("Profile".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -411,7 +409,6 @@ fn encoder_writes_source_less_line_sketches() {
             ordinal: index as u64 + 2,
             name: Some(format!("Profile op {index}")),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
@@ -422,12 +419,12 @@ fn encoder_writes_source_less_line_sketches() {
             native_ref: None,
         });
     }
+    let extrude_feature_id = FeatureId("synthetic:test:feature#extrude".into());
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#extrude".into()),
+        id: extrude_feature_id.clone(),
         ordinal: 1,
         name: Some("Boss".into()),
         suppressed: Some(false),
-        parent: Some(sketch_feature_id),
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -459,6 +456,9 @@ fn encoder_writes_source_less_line_sketches() {
         },
         native_ref: None,
     });
+    ir.model
+        .set_feature_regeneration_parent(extrude_feature_id, sketch_feature_id)
+        .unwrap();
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -706,7 +706,6 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,

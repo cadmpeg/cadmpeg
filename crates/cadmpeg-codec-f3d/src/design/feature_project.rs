@@ -1485,7 +1485,6 @@ pub fn project_parameter_design_with_edge_identities(
                     ) && scope.history_state_id.is_none()
                         && scope.previous_history_state_id.is_none(),
                 ),
-                parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some(scope.kind.clone()),

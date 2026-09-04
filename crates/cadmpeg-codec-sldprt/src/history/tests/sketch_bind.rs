@@ -347,7 +347,6 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             ordinal: 0,
             name: Some(name.into()),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: Some("Sketch".into()),

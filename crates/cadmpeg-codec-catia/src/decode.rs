@@ -3200,11 +3200,7 @@ fn finish_decode(
         (crate::coverage::TRANSFERRED_FEATURE_COUNT, ir.model.features.len()),
         (
             crate::coverage::TRANSFERRED_FEATURE_PARENT_COUNT,
-            ir.model
-                .features
-                .iter()
-                .filter(|feature| feature.parent.is_some())
-                .count(),
+            design_feature_transfer.feature_parent_count(&ir, &native),
         ),
         (
             crate::coverage::TRANSFERRED_PARAMETER_COUNT,

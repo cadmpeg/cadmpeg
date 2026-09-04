@@ -49,8 +49,33 @@ const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
     "BlockDefinition",
 ];
 
-pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::features::Feature> {
-    let mut features = histories
+pub(crate) struct FeatureProjection {
+    pub(crate) features: Vec<cadmpeg_ir::features::Feature>,
+    regeneration_parents: Vec<(FeatureId, FeatureId)>,
+}
+
+impl FeatureProjection {
+    pub(crate) fn install(self, model: &mut cadmpeg_ir::document::Model) {
+        model.features = self.features;
+        for (child, parent) in self.regeneration_parents {
+            if model
+                .set_feature_regeneration_parent(child, parent)
+                .is_err()
+            {
+                continue;
+            }
+        }
+    }
+
+    pub(crate) fn into_model(self) -> cadmpeg_ir::document::Model {
+        let mut model = cadmpeg_ir::document::Model::default();
+        self.install(&mut model);
+        model
+    }
+}
+
+pub(crate) fn project_feature_model(histories: &[FeatureHistory]) -> FeatureProjection {
+    let (mut features, parents): (Vec<_>, Vec<_>) = histories
         .iter()
         .flat_map(|history| {
             let source_bindings = unique_source_bindings(history);
@@ -99,16 +124,8 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                 .features
                 .iter()
                 .filter(|feature| !is_history_metadata_record(feature, &history.features))
-                .map(move |feature| cadmpeg_ir::features::Feature {
-                    id: neutral_feature_id(&feature.id),
-                    ordinal: source_ordered
-                        .then(|| feature.source_id.as_deref()?.parse::<u64>().ok())
-                        .flatten()
-                        .filter(|source| *source > 0)
-                        .unwrap_or(u64::from(feature.ordinal)),
-                    name: (!feature.name.is_empty()).then(|| feature.name.clone()),
-                    suppressed: Some(feature.suppressed),
-                    parent: feature
+                .map(move |feature| {
+                    let parent = feature
                         .tree_parent
                         .as_deref()
                         .and_then(|parent| by_native.get(parent).cloned())
@@ -117,27 +134,71 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                                 .parent_source_id
                                 .as_deref()
                                 .and_then(|source| by_source.get(source).cloned())
-                        }),
-                    dependencies: project_feature_dependencies(feature, &by_source),
-                    source_properties: feature.properties.clone(),
-                    source_tag: Some(feature.xml_tag.clone()),
-                    source_text: feature.text.clone(),
-                    source_content: project_feature_content(feature, &by_native),
-                    outputs: Vec::new(),
-                    definition: project_definition(
-                        feature,
-                        &by_source,
-                        &native_by_source,
-                        &features_by_source,
-                        &history.features,
-                    ),
-                    native_ref: Some(feature.id.clone()),
+                        });
+                    (
+                        cadmpeg_ir::features::Feature {
+                            id: neutral_feature_id(&feature.id),
+                            ordinal: source_ordered
+                                .then(|| feature.source_id.as_deref()?.parse::<u64>().ok())
+                                .flatten()
+                                .filter(|source| *source > 0)
+                                .unwrap_or(u64::from(feature.ordinal)),
+                            name: (!feature.name.is_empty()).then(|| feature.name.clone()),
+                            suppressed: Some(feature.suppressed),
+                            dependencies: project_feature_dependencies(feature, &by_source),
+                            source_properties: feature.properties.clone(),
+                            source_tag: Some(feature.xml_tag.clone()),
+                            source_text: feature.text.clone(),
+                            source_content: project_feature_content(feature, &by_native),
+                            outputs: Vec::new(),
+                            definition: project_definition(
+                                feature,
+                                &by_source,
+                                &native_by_source,
+                                &features_by_source,
+                                &history.features,
+                            ),
+                            native_ref: Some(feature.id.clone()),
+                        },
+                        parent,
+                    )
                 })
         })
-        .collect::<Vec<_>>();
+        .unzip();
+    let tree_nodes = features
+        .iter()
+        .filter(|feature| matches!(feature.definition, FeatureDefinition::TreeNode { .. }))
+        .map(|feature| feature.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let mut regeneration_parents = Vec::new();
+    for (child_index, parent) in parents.into_iter().enumerate() {
+        let Some(parent) = parent else {
+            continue;
+        };
+        let child = features[child_index].id.clone();
+        if !tree_nodes.contains(&parent) {
+            regeneration_parents.push((child, parent));
+            continue;
+        }
+        let Some(parent) = features.iter_mut().find(|feature| feature.id == parent) else {
+            continue;
+        };
+        if let FeatureDefinition::TreeNode { children, .. } = &mut parent.definition {
+            if !children.contains(&child) {
+                children.push(child);
+            }
+        }
+    }
     bind_offset_plane_references(&mut features);
     bind_native_construction_features(&mut features, histories);
-    features
+    FeatureProjection {
+        features,
+        regeneration_parents,
+    }
+}
+
+pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::features::Feature> {
+    project_feature_model(histories).features
 }
 
 /// Project standalone history notes into the semantic-annotation arena.

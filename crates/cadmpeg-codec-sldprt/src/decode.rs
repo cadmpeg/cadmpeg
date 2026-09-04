@@ -796,7 +796,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
         .iter()
         .filter(|state| {
             let feature = state.feature;
-            let parent_incoherent = feature.parent.as_ref().is_some_and(|parent| {
+            let parent_incoherent = ir.model.feature_parent(&feature.id).is_some_and(|parent| {
                 feature_positions
                     .get(parent)
                     .is_none_or(|ordinal| *ordinal >= feature.ordinal)
@@ -858,7 +858,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     !children.insert(child)
                         || features_by_id.get(child).is_none_or(|child| {
                             child.ordinal <= feature.ordinal
-                                || child.parent.as_ref() != Some(&feature.id)
+                                || ir.model.feature_parent(&child.id) != Some(&feature.id)
                         })
                 }
             })
@@ -3672,7 +3672,7 @@ fn project_design_history(
         crate::history::HistoryEnrichment::Read,
     );
     ir.model.semantic_annotations = crate::history::project_semantic_notes(&semantic_projection);
-    ir.model.features = crate::history::project_features(&semantic_projection);
+    crate::history::project_feature_model(&semantic_projection).install(&mut ir.model);
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &semantic_projection,
@@ -3707,7 +3707,7 @@ fn project_design_history(
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_local_sha256".into(),
-            crate::history::feature_hash(&ir.model.features),
+            crate::history::feature_hash(&ir.model),
         );
         source.attributes.insert(
             "sldprt_native_history_sha256".into(),
@@ -4163,7 +4163,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
 }
 
 fn stamp_feature_baseline(ir: &mut CadIr) {
-    let hash = crate::history::feature_hash(&ir.model.features);
+    let hash = crate::history::feature_hash(&ir.model);
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -4407,25 +4407,29 @@ fn stamp_local_digests(ir: &mut CadIr) {
 pub(crate) fn brep_local_sha256(ir: &CadIr) -> String {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
-    let partition = cadmpeg_ir::document::Model {
-        bodies: ir.model.bodies.clone(),
-        regions: ir.model.regions.clone(),
-        shells: ir.model.shells.clone(),
-        faces: ir.model.faces.clone(),
-        loops: ir.model.loops.clone(),
-        coedges: ir.model.coedges.clone(),
-        edges: ir.model.edges.clone(),
-        vertices: ir.model.vertices.clone(),
-        points: ir.model.points.clone(),
-        surfaces: ir.model.surfaces.clone(),
-        curves: ir.model.curves.clone(),
-        pcurves: ir.model.pcurves.clone(),
-        procedural_surfaces: ir.model.procedural_surfaces.clone(),
-        procedural_curves: ir.model.procedural_curves.clone(),
-        appearances: ir.model.appearances.clone(),
-        appearance_bindings: ir.model.appearance_bindings.clone(),
-        ..Default::default()
-    };
+    let mut partition = cadmpeg_ir::document::Model::default();
+    partition.bodies.clone_from(&ir.model.bodies);
+    partition.regions.clone_from(&ir.model.regions);
+    partition.shells.clone_from(&ir.model.shells);
+    partition.faces.clone_from(&ir.model.faces);
+    partition.loops.clone_from(&ir.model.loops);
+    partition.coedges.clone_from(&ir.model.coedges);
+    partition.edges.clone_from(&ir.model.edges);
+    partition.vertices.clone_from(&ir.model.vertices);
+    partition.points.clone_from(&ir.model.points);
+    partition.surfaces.clone_from(&ir.model.surfaces);
+    partition.curves.clone_from(&ir.model.curves);
+    partition.pcurves.clone_from(&ir.model.pcurves);
+    partition
+        .procedural_surfaces
+        .clone_from(&ir.model.procedural_surfaces);
+    partition
+        .procedural_curves
+        .clone_from(&ir.model.procedural_curves);
+    partition.appearances.clone_from(&ir.model.appearances);
+    partition
+        .appearance_bindings
+        .clone_from(&ir.model.appearance_bindings);
     brep_partition_sha256(ir.tolerances, partition).0
 }
 
@@ -4446,25 +4450,25 @@ fn brep_local_sha256_in_place(ir: &mut CadIr) -> String {
         .iter()
         .map(|body| (body.name.clone(), body.color))
         .collect::<Vec<_>>();
-    let partition = cadmpeg_ir::document::Model {
-        bodies: take(&mut ir.model.bodies),
-        regions: take(&mut ir.model.regions),
-        shells: take(&mut ir.model.shells),
-        faces: take(&mut ir.model.faces),
-        loops: take(&mut ir.model.loops),
-        coedges: take(&mut ir.model.coedges),
-        edges: take(&mut ir.model.edges),
-        vertices: take(&mut ir.model.vertices),
-        points: take(&mut ir.model.points),
-        surfaces: take(&mut ir.model.surfaces),
-        curves: take(&mut ir.model.curves),
-        pcurves: take(&mut ir.model.pcurves),
-        procedural_surfaces: take(&mut ir.model.procedural_surfaces),
-        procedural_curves: take(&mut ir.model.procedural_curves),
-        appearances: ir.model.appearances.clone(),
-        appearance_bindings: ir.model.appearance_bindings.clone(),
-        ..Default::default()
-    };
+    let mut partition = cadmpeg_ir::document::Model::default();
+    partition.bodies = take(&mut ir.model.bodies);
+    partition.regions = take(&mut ir.model.regions);
+    partition.shells = take(&mut ir.model.shells);
+    partition.faces = take(&mut ir.model.faces);
+    partition.loops = take(&mut ir.model.loops);
+    partition.coedges = take(&mut ir.model.coedges);
+    partition.edges = take(&mut ir.model.edges);
+    partition.vertices = take(&mut ir.model.vertices);
+    partition.points = take(&mut ir.model.points);
+    partition.surfaces = take(&mut ir.model.surfaces);
+    partition.curves = take(&mut ir.model.curves);
+    partition.pcurves = take(&mut ir.model.pcurves);
+    partition.procedural_surfaces = take(&mut ir.model.procedural_surfaces);
+    partition.procedural_curves = take(&mut ir.model.procedural_curves);
+    partition.appearances.clone_from(&ir.model.appearances);
+    partition
+        .appearance_bindings
+        .clone_from(&ir.model.appearance_bindings);
     let (hash, mut partition) = brep_partition_sha256(ir.tolerances, partition);
     ir.model.bodies = take(&mut partition.bodies);
     for (body, (name, color)) in ir.model.bodies.iter_mut().zip(saved_body_display) {

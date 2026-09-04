@@ -346,7 +346,6 @@ fn feature_operation_geometry_is_validated() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,

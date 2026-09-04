@@ -3494,3 +3494,24 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::features::FeatureDefinition::FilledSurface::{continuity,boundary_continuities}"
 reason = "one optional FilledSurfaceContinuity now carries either a uniform condition or a guaranteed non-empty component sequence"
+
+[[change]]
+commit = "fe1668784e9c444bb092b6b074502bf0d57f7255"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::Feature::parent"
+reason = "tree ownership is derived from TreeNode child lists and non-tree regeneration ancestry is stored once by the owning Model"
+
+[[change]]
+commit = "fe1668784e9c444bb092b6b074502bf0d57f7255"
+crate = "cadmpeg-ir"
+kind = "addition"
+item = "cadmpeg_ir::document::Model::{feature_parent,feature_tree_parent,set_feature_regeneration_parent}"
+reason = "callers obtain parent relationships from their single owning representation"
+
+[[change]]
+commit = "fe1668784e9c444bb092b6b074502bf0d57f7255"
+crate = "cadmpeg-ir"
+kind = "struct"
+item = "cadmpeg_ir::document::Model"
+reason = "private regeneration ancestry prevents callers from constructing a parent relation that contradicts TreeNode child ownership"

@@ -1053,7 +1053,13 @@ fn custom_properties_are_document_attributes_not_model_features() {
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),
     });
-    sync_neutral_features(&[], &[], &[], &mut native).expect("required invariant");
+    sync_neutral_features(
+        &cadmpeg_ir::document::Model::default(),
+        &[],
+        &[],
+        &mut native,
+    )
+    .expect("required invariant");
     assert_eq!(
         native.expect("required invariant").feature_histories[0]
             .features

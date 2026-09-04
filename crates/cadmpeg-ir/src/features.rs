@@ -643,44 +643,31 @@ pub struct Angle(pub f64);
 ///
 /// Prefer [`Feature::new`] for invariant-bearing construction. There is no
 /// public [`Default`]: an empty id with an arbitrary definition is illegal.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Feature {
     /// Globally unique feature id.
     pub id: FeatureId,
     /// Stable construction order within the source history.
     pub ordinal: u64,
     /// Source display name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Whether evaluation of this feature is disabled.
-    #[serde(default)]
     pub suppressed: Option<bool>,
-    /// Containing or logically preceding feature, when represented by the source.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent: Option<FeatureId>,
     /// Earlier features consumed during regeneration, in source operand order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<FeatureId>,
     /// Source operation attributes not consumed by the neutral definition.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub source_properties: BTreeMap<String, String>,
     /// Source XML element name for the operation record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_tag: Option<String>,
     /// Text payload of a source leaf operation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_text: Option<String>,
     /// Ordered source text, parameter, and child-feature content.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_content: Vec<FeatureSourceContent>,
     /// Bodies produced or modified by the feature.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outputs: Vec<BodyId>,
     /// Neutral construction semantics.
     pub definition: FeatureDefinition,
     /// Identifier of the full-fidelity record in a native namespace.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
 }
 
@@ -692,7 +679,6 @@ impl Feature {
             ordinal,
             name: None,
             suppressed: None,
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -702,6 +688,141 @@ impl Feature {
             definition,
             native_ref: None,
         }
+    }
+}
+
+#[derive(Serialize)]
+pub(crate) struct FeatureWriteWire<'a> {
+    id: &'a FeatureId,
+    ordinal: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: &'a Option<String>,
+    suppressed: &'a Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent: Option<&'a FeatureId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dependencies: &'a Vec<FeatureId>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    source_properties: &'a BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_tag: &'a Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_text: &'a Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    source_content: &'a Vec<FeatureSourceContent>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    outputs: &'a Vec<BodyId>,
+    definition: &'a FeatureDefinition,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_ref: &'a Option<String>,
+}
+
+impl<'a> FeatureWriteWire<'a> {
+    pub(crate) fn new(feature: &'a Feature, parent: Option<&'a FeatureId>) -> Self {
+        Self {
+            id: &feature.id,
+            ordinal: feature.ordinal,
+            name: &feature.name,
+            suppressed: &feature.suppressed,
+            parent,
+            dependencies: &feature.dependencies,
+            source_properties: &feature.source_properties,
+            source_tag: &feature.source_tag,
+            source_text: &feature.source_text,
+            source_content: &feature.source_content,
+            outputs: &feature.outputs,
+            definition: &feature.definition,
+            native_ref: &feature.native_ref,
+        }
+    }
+
+    pub(crate) fn standalone(feature: &'a Feature) -> Self {
+        Self::new(feature, None)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub(crate) struct FeatureReadWire {
+    id: FeatureId,
+    ordinal: u64,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    suppressed: Option<bool>,
+    #[serde(default)]
+    parent: Option<FeatureId>,
+    #[serde(default)]
+    dependencies: Vec<FeatureId>,
+    #[serde(default)]
+    source_properties: BTreeMap<String, String>,
+    #[serde(default)]
+    source_tag: Option<String>,
+    #[serde(default)]
+    source_text: Option<String>,
+    #[serde(default)]
+    source_content: Vec<FeatureSourceContent>,
+    #[serde(default)]
+    outputs: Vec<BodyId>,
+    definition: FeatureDefinition,
+    #[serde(default)]
+    native_ref: Option<String>,
+}
+
+impl FeatureReadWire {
+    pub(crate) fn into_parts(self) -> (Feature, Option<FeatureId>) {
+        (
+            Feature {
+                id: self.id,
+                ordinal: self.ordinal,
+                name: self.name,
+                suppressed: self.suppressed,
+                dependencies: self.dependencies,
+                source_properties: self.source_properties,
+                source_tag: self.source_tag,
+                source_text: self.source_text,
+                source_content: self.source_content,
+                outputs: self.outputs,
+                definition: self.definition,
+                native_ref: self.native_ref,
+            },
+            self.parent,
+        )
+    }
+}
+
+impl Serialize for Feature {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        FeatureWriteWire::standalone(self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Feature {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let (feature, parent) = FeatureReadWire::deserialize(deserializer)?.into_parts();
+        if parent.is_some() {
+            return Err(serde::de::Error::custom(
+                "a feature parent requires its owning model",
+            ));
+        }
+        Ok(feature)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for Feature {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Feature".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        FeatureReadWire::json_schema(generator)
     }
 }
 

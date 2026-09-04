@@ -68,7 +68,6 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,

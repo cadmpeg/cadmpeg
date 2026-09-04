@@ -1580,7 +1580,6 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,

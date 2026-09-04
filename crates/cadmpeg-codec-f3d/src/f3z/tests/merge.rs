@@ -11,7 +11,6 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         ordinal,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -29,20 +28,16 @@ fn feature(id: &str, ordinal: u64) -> Feature {
 
 #[test]
 fn component_feature_history_follows_the_parent_without_losing_relative_order() {
-    let parent = Model {
-        features: vec![
-            feature("f3d:feature#parent-0", 4),
-            feature("f3d:feature#parent-1", 8),
-        ],
-        ..Model::default()
-    };
-    let mut component = Model {
-        features: vec![
-            feature("f3d:feature#component-0", 10),
-            feature("f3d:feature#component-1", 12),
-        ],
-        ..Model::default()
-    };
+    let mut parent = Model::default();
+    parent.features = vec![
+        feature("f3d:feature#parent-0", 4),
+        feature("f3d:feature#parent-1", 8),
+    ];
+    let mut component = Model::default();
+    component.features = vec![
+        feature("f3d:feature#component-0", 10),
+        feature("f3d:feature#component-1", 12),
+    ];
 
     append_feature_history(&parent, &mut component).unwrap();
 
@@ -58,14 +53,10 @@ fn component_feature_history_follows_the_parent_without_losing_relative_order() 
 
 #[test]
 fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
-    let parent = Model {
-        features: vec![feature("f3d:feature#parent", u64::MAX)],
-        ..Model::default()
-    };
-    let mut component = Model {
-        features: vec![feature("f3d:feature#component", 0)],
-        ..Model::default()
-    };
+    let mut parent = Model::default();
+    parent.features = vec![feature("f3d:feature#parent", u64::MAX)];
+    let mut component = Model::default();
+    component.features = vec![feature("f3d:feature#component", 0)];
 
     let error = append_feature_history(&parent, &mut component).unwrap_err();
 
@@ -139,23 +130,21 @@ fn occurrence_transform_composes_outside_existing_body_transform() {
 #[test]
 fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     let mut merged = Model::default();
-    let component = Model {
-        bodies: vec![Body {
-            id: BodyId("f3d:brep:entity#1".into()),
-            kind: BodyKind::Solid,
-            regions: vec![RegionId("f3d:brep:entity#2".into())],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        }],
-        regions: vec![Region {
-            id: RegionId("f3d:brep:entity#2".into()),
-            body: BodyId("f3d:brep:entity#1".into()),
-            shells: Vec::new(),
-        }],
-        ..Model::default()
-    };
+    let mut component = Model::default();
+    component.bodies = vec![Body {
+        id: BodyId("f3d:brep:entity#1".into()),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId("f3d:brep:entity#2".into())],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    }];
+    component.regions = vec![Region {
+        id: RegionId("f3d:brep:entity#2".into()),
+        body: BodyId("f3d:brep:entity#1".into()),
+        shells: Vec::new(),
+    }];
     for ordinal in 0..2 {
         let occurrence = format!("role/occurrence-{ordinal}");
         let mut scope = OccurrenceScope {

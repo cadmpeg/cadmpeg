@@ -97,6 +97,76 @@ fn current_json_without_configurations_defaults_to_empty() {
 }
 
 #[test]
+fn feature_parent_wire_is_derived_from_its_single_owner() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+
+    let parent_id = FeatureId("test:model:feature#parent".into());
+    let child_id = FeatureId("test:model:feature#child".into());
+    let parent = Feature::new(
+        parent_id.clone(),
+        0,
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+            children: vec![child_id.clone()],
+            active_child: Some(child_id.clone()),
+        },
+    );
+    let child = Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry);
+    let mut model = Model::default();
+    model.features = vec![parent, child];
+
+    let value = serde_json::to_value(&model).unwrap();
+    assert_eq!(value["features"][1]["parent"], parent_id.0);
+    assert_eq!(
+        value["features"][0]["definition"]["children"][0],
+        child_id.0
+    );
+    assert_eq!(serde_json::from_value::<Model>(value).unwrap(), model);
+
+    let mut regeneration = Model::default();
+    regeneration.features = vec![
+        Feature::new(parent_id.clone(), 0, FeatureDefinition::StoredGeometry),
+        Feature::new(child_id.clone(), 1, FeatureDefinition::StoredGeometry),
+    ];
+    regeneration
+        .set_feature_regeneration_parent(child_id, parent_id.clone())
+        .unwrap();
+    let value = serde_json::to_value(&regeneration).unwrap();
+    assert_eq!(value["features"][1]["parent"], parent_id.0);
+    assert_eq!(
+        serde_json::from_value::<Model>(value).unwrap(),
+        regeneration
+    );
+}
+
+#[test]
+fn feature_parent_wire_rejects_disagreement_with_tree_children() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+
+    let first_id = FeatureId("test:model:feature#first".into());
+    let second_id = FeatureId("test:model:feature#second".into());
+    let child_id = FeatureId("test:model:feature#child".into());
+    let mut model = Model::default();
+    model.features = vec![
+        Feature::new(
+            first_id,
+            0,
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: vec![child_id.clone()],
+                active_child: None,
+            },
+        ),
+        Feature::new(second_id.clone(), 1, FeatureDefinition::StoredGeometry),
+        Feature::new(child_id, 2, FeatureDefinition::StoredGeometry),
+    ];
+    let mut value = serde_json::to_value(model).unwrap();
+    value["features"][2]["parent"] = serde_json::Value::String(second_id.0);
+
+    assert!(serde_json::from_value::<Model>(value).is_err());
+}
+
+#[test]
 fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let mut ir = CadIr::empty();
     let surface = SurfaceId("test:surface#cache".into());

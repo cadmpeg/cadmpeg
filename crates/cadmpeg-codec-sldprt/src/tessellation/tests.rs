@@ -516,30 +516,29 @@ fn add_cylindrical_patch_face(
 }
 
 fn model_with_body() -> cadmpeg_ir::document::Model {
-    cadmpeg_ir::document::Model {
-        bodies: vec![Body {
-            id: BodyId("body".into()),
-            kind: BodyKind::Solid,
-            regions: vec![RegionId("region".into())],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        }],
-        regions: vec![Region {
-            id: RegionId("region".into()),
-            body: BodyId("body".into()),
-            shells: vec![ShellId("shell".into())],
-        }],
-        shells: vec![Shell {
-            id: ShellId("shell".into()),
-            region: RegionId("region".into()),
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        }],
-        ..Default::default()
-    }
+    let mut model = cadmpeg_ir::document::Model::default();
+    model.bodies = vec![Body {
+        id: BodyId("body".into()),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId("region".into())],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    }];
+    model.regions = vec![Region {
+        id: RegionId("region".into()),
+        body: BodyId("body".into()),
+        shells: vec![ShellId("shell".into())],
+    }];
+    model.shells = vec![Shell {
+        id: ShellId("shell".into()),
+        region: RegionId("region".into()),
+        faces: Vec::new(),
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    }];
+    model
 }
 
 fn persistent_mesh(id: &str) -> Tessellation {

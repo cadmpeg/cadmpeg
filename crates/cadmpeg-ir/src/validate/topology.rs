@@ -2306,18 +2306,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 entity: Some(feature.id.0.clone()),
             });
         }
-        if let Some(parent) = &feature.parent {
-            match features.get(parent.0.as_str()) {
-                None => ref_error(findings, &feature.id.0, "parent feature", &parent.0),
-                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!("parent feature `{}` does not precede its child", parent.0),
-                    entity: Some(feature.id.0.clone()),
-                }),
-                Some(_) => {}
-            }
-        }
         let mut dependencies = HashSet::new();
         for dependency in &feature.dependencies {
             if !dependencies.insert(dependency) {
@@ -4217,17 +4205,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             message: format!("tree node repeats child `{}`", child.0),
                             entity: Some(feature.id.0.clone()),
                         }),
-                        Some(child_record) if child_record.parent.as_ref() != Some(&feature.id) => {
-                            findings.push(Finding {
-                                check: Check::ReferentialIntegrity,
-                                severity: Severity::Error,
-                                message: format!(
-                                    "tree child `{}` does not name its owning parent",
-                                    child.0
-                                ),
-                                entity: Some(feature.id.0.clone()),
-                            });
-                        }
                         Some(_) => {}
                     }
                 }

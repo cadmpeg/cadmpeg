@@ -1288,7 +1288,6 @@ fn mixed_current_and_generated_edges_remain_native() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,

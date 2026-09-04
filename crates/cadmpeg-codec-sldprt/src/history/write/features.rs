@@ -124,11 +124,12 @@ pub(crate) fn generated_feature_source_ids(
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
 pub fn sync_neutral_features(
-    features: &[cadmpeg_ir::features::Feature],
+    model: &cadmpeg_ir::document::Model,
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
+    let features = &model.features;
     if features.is_empty() {
         if let Some(native) = native {
             for history in &mut native.feature_histories {
@@ -301,7 +302,6 @@ pub fn sync_neutral_features(
         .iter()
         .map(|body| (body.id.clone(), body.id.0.clone()))
         .collect::<HashMap<_, _>>();
-
     for feature in features {
         if feature
             .source_tag
@@ -371,13 +371,11 @@ pub fn sync_neutral_features(
         }
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;
-        let parent_source_id = feature
-            .parent
-            .as_ref()
+        let parent_source_id = model
+            .feature_parent(&feature.id)
             .and_then(|parent| structural_parent_sources.get(parent).cloned().flatten());
-        let tree_parent = feature
-            .parent
-            .as_ref()
+        let tree_parent = model
+            .feature_parent(&feature.id)
             .and_then(|parent| record_ids.get(parent).cloned());
         if let Some(existing) = existing.as_mut() {
             if let Some(tag) = &feature.source_tag {

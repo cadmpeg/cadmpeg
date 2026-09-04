@@ -1478,7 +1478,6 @@ mod source_less_lane_tests {
             ordinal: 0,
             name: Some("Sketch".into()),
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::default(),
             source_tag: None,

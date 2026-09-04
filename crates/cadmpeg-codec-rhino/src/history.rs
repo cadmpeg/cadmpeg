@@ -1405,7 +1405,6 @@ pub(crate) fn project(
             ordinal: u64::try_from(index).expect("history source order fits u64"),
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies,
             source_properties: BTreeMap::new(),
             source_tag: Some("HistoryRecord".to_string()),

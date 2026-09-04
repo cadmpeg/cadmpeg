@@ -846,7 +846,6 @@ pub(in super::super) fn transfer_sketches(
                 ordinal: ir.model.features.len() as u64,
                 name: None,
                 suppressed: Some(false),
-                parent: None,
                 dependencies: Vec::new(),
                 source_properties: BTreeMap::new(),
                 source_tag: Some("section".to_string()),

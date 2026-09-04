@@ -527,7 +527,6 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,

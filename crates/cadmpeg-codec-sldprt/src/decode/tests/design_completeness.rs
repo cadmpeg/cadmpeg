@@ -22,7 +22,6 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -90,7 +89,6 @@ fn design_completeness_audits_direct_body_and_shape_families() {
             ordinal,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies,
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -268,7 +266,6 @@ fn design_completeness_audits_typed_construction_families() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -298,7 +295,6 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies,
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -409,7 +405,6 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -486,7 +481,6 @@ fn design_completeness_recurses_through_pattern_operands() {
             ordinal,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -571,7 +565,6 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -689,7 +682,6 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -718,7 +710,6 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -860,7 +851,6 @@ fn hole_completeness_checks_optional_operands_when_present() {
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
-            parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
             source_tag: None,
@@ -890,7 +880,6 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         ordinal: 0,
         name: Some("Boss-Extrude1".into()),
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1049,12 +1038,11 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
     let first = FeatureId("first".into());
     let second = FeatureId("second".into());
     let missing = FeatureId("missing".into());
-    let feature = |id, ordinal, parent, dependencies| Feature {
+    let feature = |id, ordinal, dependencies| Feature {
         id,
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent,
         dependencies,
         source_properties: BTreeMap::new(),
         source_tag: None,
@@ -1070,16 +1058,11 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
     };
     ir.model
         .features
-        .push(feature(first.clone(), 0, None, vec![second.clone()]));
+        .push(feature(first.clone(), 0, vec![second.clone()]));
+    ir.model.features.push(feature(second, 1, vec![first]));
     ir.model
         .features
-        .push(feature(second, 1, Some(first.clone()), vec![first]));
-    ir.model.features.push(feature(
-        FeatureId("third".into()),
-        1,
-        Some(missing),
-        Vec::new(),
-    ));
+        .push(feature(FeatureId("third".into()), 1, vec![missing]));
     ir.model.features[0].source_content = vec![
         FeatureSourceContent::Feature(FeatureId("second".into())),
         FeatureSourceContent::Feature(FeatureId("second".into())),
@@ -1114,7 +1097,6 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),
         source_tag: None,
