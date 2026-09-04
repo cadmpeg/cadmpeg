@@ -30,12 +30,11 @@ use crate::native::{
     PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
     PmGraphicsStyleCollectionRecord, PresentationRecordIssueRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
-    ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
-    RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
-    SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UfrxModelStateParameterRecord, UfrxModelStateRecord,
-    UfrxOccurrenceRecord, UfrxRecord, UfrxRepresentationRecord, UnpairedSegmentRecord,
-    VersionTupleRecord, INVENTOR_NATIVE_VERSION,
+    ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord, RevisionRecord, RseRecordRecord,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
+    UfrxModelStateParameterRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord,
+    UfrxRepresentationRecord, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -222,35 +221,23 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     }
     let (protein, protein_entries) = match &container.protein {
         ProteinState::Absent => (
-            ProteinRecord {
+            ProteinRecord::Absent {
                 id: "inventor:protein:state#root".into(),
-                state: ProteinRecordState::Absent,
-                directory_id: None,
-                declared_len: None,
-                entry_count: 0,
-                detail: None,
             },
             Vec::new(),
         ),
         ProteinState::Empty { stream } => (
-            ProteinRecord {
+            ProteinRecord::Empty {
                 id: "inventor:protein:state#root".into(),
-                state: ProteinRecordState::Empty,
-                directory_id: Some(stream.directory_id()),
-                declared_len: Some(0),
-                entry_count: 0,
-                detail: None,
+                directory_id: stream.directory_id(),
             },
             Vec::new(),
         ),
         ProteinState::Malformed { stream, detail } => (
-            ProteinRecord {
+            ProteinRecord::Malformed {
                 id: "inventor:protein:state#root".into(),
-                state: ProteinRecordState::Malformed,
-                directory_id: Some(stream.directory_id()),
-                declared_len: None,
-                entry_count: 0,
-                detail: Some(detail.clone()),
+                directory_id: stream.directory_id(),
+                detail: detail.clone(),
             },
             Vec::new(),
         ),
@@ -271,13 +258,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 })
                 .collect::<Vec<_>>();
             (
-                ProteinRecord {
+                ProteinRecord::Package {
                     id: "inventor:protein:state#root".into(),
-                    state: ProteinRecordState::Package,
-                    directory_id: Some(package.stream.directory_id()),
-                    declared_len: Some(package.declared_len),
+                    directory_id: package.stream.directory_id(),
+                    declared_len: std::num::NonZeroU32::new(package.declared_len)
+                        .expect("a Protein package declares a nonempty length"),
                     entry_count: entries.len() as u64,
-                    detail: None,
                 },
                 entries,
             )
