@@ -539,8 +539,9 @@ fn emit_offset_surface(
             u_sense: None,
             v_sense: None,
             support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
+            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+            ),
         },
         None,
     ));

@@ -1733,28 +1733,12 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Offset {
-            distance,
-            extension_flags,
-            revision_form,
-            ..
-        } = procedural.definition()
-        {
-            // A revision-gated offset stores its four-boolean carrier run in
-            // the revision form and has no ASM extension tail of its own.
-            let flags_shape_ok = if let Some(form) = revision_form {
-                extension_flags.is_empty() && form.flags.len() == 4
-            } else {
-                matches!(
-                    extension_flags.as_slice(),
-                    [] | [false] | [true, _] | [true, _, _]
-                )
-            };
-            if !distance.is_finite() || !flags_shape_ok {
+        if let ProceduralSurfaceDefinition::Offset { distance, .. } = procedural.definition() {
+            if !distance.is_finite() {
                 bounds_err(
                     findings,
                     &procedural.id.0,
-                    "offset spline surface distance or extension flags are invalid",
+                    "offset spline surface distance is invalid",
                 );
             }
         }

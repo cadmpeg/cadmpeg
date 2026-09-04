@@ -415,8 +415,9 @@ pub(crate) fn try_decode_geometry(
                     u_sense: None,
                     v_sense: None,
                     support_extension: Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear),
-                    extension_flags: Vec::new(),
-                    revision_form: None,
+                    extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                    ),
                 },
                 cache_fit_tolerance,
                 None,

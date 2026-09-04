@@ -949,8 +949,9 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
             u_sense: Some(0),
             v_sense: Some(0),
             support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
+            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+            ),
         },
         Some(0.0),
         None,
@@ -1661,8 +1662,9 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             u_sense: Some(0),
             v_sense: Some(0),
             support_extension: None,
-            extension_flags: Vec::new(),
-            revision_form: None,
+            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+            ),
         },
         None,
     ));

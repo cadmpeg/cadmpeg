@@ -702,7 +702,7 @@ fn decode_standard_transfers_exact_offset_construction() {
         distance,
         u_sense,
         v_sense,
-        extension_flags,
+        extension,
         ..
     } = procedural.definition()
     else {
@@ -716,7 +716,12 @@ fn decode_standard_transfers_exact_offset_construction() {
         .any(|surface| surface.id == *support));
     assert_eq!(*distance, 2.5);
     assert_eq!([*u_sense, *v_sense], [None, None]);
-    assert!(extension_flags.is_empty());
+    assert_eq!(
+        *extension,
+        cadmpeg_ir::geometry::OffsetExtension::Legacy(
+            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+        )
+    );
     let Some(bounds) = procedural.record_bounds else {
         panic!("offset parameter bounds");
     };

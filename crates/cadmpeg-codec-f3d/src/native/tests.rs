@@ -829,19 +829,17 @@ fn generated_revision_offset_surface_round_trips() {
     let ProceduralSurfaceDefinition::Offset {
         u_sense,
         v_sense,
-        extension_flags,
-        revision_form,
+        extension,
         ..
     } = &result.ir().model.procedural_surfaces[0].definition()
     else {
         panic!("expected offset surface construction")
     };
     assert_eq!((*u_sense, *v_sense), (None, None));
-    assert!(extension_flags.is_empty());
-    assert_eq!(
-        revision_form.as_ref().expect("revision form").flags,
-        [false, true, false, false]
-    );
+    let cadmpeg_ir::geometry::OffsetExtension::Revision(form) = extension else {
+        panic!("expected revision offset extension")
+    };
+    assert_eq!(form.flags, [false, true, false, false]);
 }
 
 #[test]
@@ -873,12 +871,14 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
     let procedural = &result.ir().model.procedural_surfaces[0];
     // Cache form 2 stores no fit tolerance.
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { revision_form, .. } =
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { extension, .. } =
         procedural.definition()
     else {
         panic!("expected offset surface construction")
     };
-    let form = revision_form.as_ref().expect("revision form");
+    let cadmpeg_ir::geometry::OffsetExtension::Revision(form) = extension else {
+        panic!("expected revision form")
+    };
     assert_eq!(form.cache.selector(), 2);
     let parameterization = form
         .cache

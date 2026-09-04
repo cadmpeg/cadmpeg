@@ -92,9 +92,10 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                 distance: -0.75,
                 u_sense: None,
                 v_sense: None,
-                extension_flags: Vec::new(),
                 support_extension: None,
-                revision_form: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
             },
             None,
         ));
@@ -218,9 +219,10 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             distance: 0.75,
             u_sense: None,
             v_sense: None,
-            extension_flags: Vec::new(),
             support_extension: None,
-            revision_form: None,
+            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+            ),
         },
         None,
     ));
@@ -263,9 +265,10 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             distance: 0.5,
             u_sense: None,
             v_sense: None,
-            extension_flags: Vec::new(),
             support_extension: None,
-            revision_form: None,
+            extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+            ),
         },
         None,
     ));
@@ -1507,9 +1510,10 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                 distance: 0.0,
                 u_sense: None,
                 v_sense: None,
-                extension_flags: Vec::new(),
                 support_extension: None,
-                revision_form: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
             },
             None,
         ));
@@ -1971,9 +1975,10 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 distance: 30.0,
                 u_sense: Some(0),
                 v_sense: Some(0),
-                extension_flags: Vec::new(),
                 support_extension: None,
-                revision_form: None,
+                extension: cadmpeg_ir::geometry::OffsetExtension::Legacy(
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent,
+                ),
             },
             None,
         ));

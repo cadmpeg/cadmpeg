@@ -3753,3 +3753,17 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::pmi::PmiDefinition::Dimension"
 reason = "a semantic dimension requires its nominal value and carries at most one complete plus-minus or limits-and-fits tolerance"
+
+[[change]]
+commit = "459336a11bf46d2327287415129e4021c250d138"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset"
+reason = "legacy extension flags and the revision-gated form are mutually exclusive and now share one enum payload"
+
+[[change]]
+commit = "459336a11bf46d2327287415129e4021c250d138"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::RevisionSurfaceForm::flags"
+reason = "the flag carrier is generic so offset revision forms require exactly four booleans while other surface families retain their distinct wire arities"

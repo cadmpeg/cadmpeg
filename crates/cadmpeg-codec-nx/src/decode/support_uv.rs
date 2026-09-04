@@ -1818,7 +1818,7 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
                 u_sense: first_u_sense,
                 v_sense: first_v_sense,
                 support_extension: first_support_extension,
-                extension_flags: first_extensions,
+                extension: first_extension,
                 ..
             }),
             Some(ProceduralSurfaceDefinition::Offset {
@@ -1827,7 +1827,7 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
                 u_sense: second_u_sense,
                 v_sense: second_v_sense,
                 support_extension: second_support_extension,
-                extension_flags: second_extensions,
+                extension: second_extension,
                 ..
             }),
         ) = (
@@ -1845,7 +1845,7 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
             && first_u_sense == second_u_sense
             && first_v_sense == second_v_sense
             && first_support_extension == second_support_extension
-            && first_extensions == second_extensions
+            && first_extension == second_extension
             && equivalent(index, first_support, second_support, visited)
     }
 
