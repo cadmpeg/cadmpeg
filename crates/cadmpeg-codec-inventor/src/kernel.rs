@@ -58,7 +58,6 @@ pub(crate) struct ActiveCarrier<'a> {
 #[derive(Debug)]
 pub(crate) enum ActiveCarrierState<'a> {
     NotApplicable,
-    NotExpanded,
     Selected(ActiveCarrier<'a>),
     Unavailable(String),
 }
@@ -154,9 +153,8 @@ pub(crate) fn select_active_carrier<'a>(
         return ActiveCarrierState::Unavailable("PmBRep bulk stream is unavailable".into());
     };
     let table = match &bulk.records {
-        RecordFrameState::NotExpanded => return ActiveCarrierState::NotExpanded,
-        RecordFrameState::Framed(table) => table,
-        RecordFrameState::Unavailable(_) => {
+        Some(RecordFrameState::Framed(table)) => table,
+        Some(RecordFrameState::Unavailable(_)) | None => {
             return ActiveCarrierState::Unavailable("PmBRep record table is unavailable".into());
         }
     };
