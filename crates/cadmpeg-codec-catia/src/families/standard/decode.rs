@@ -2534,9 +2534,10 @@ pub(crate) enum StandardRollingBallSource {
 }
 
 #[derive(Clone, PartialEq)]
-pub(crate) struct StandardSurfaceEvidence {
-    geometry: Option<SurfaceGeometry>,
-    procedure: Option<StandardSurfaceProcedure>,
+pub(crate) enum StandardSurfaceEvidence {
+    Geometry(SurfaceGeometry),
+    Procedure(StandardSurfaceProcedure),
+    Both(SurfaceGeometry, StandardSurfaceProcedure),
 }
 
 impl StandardSurfaceEvidence {
@@ -2544,26 +2545,33 @@ impl StandardSurfaceEvidence {
         geometry: Option<SurfaceGeometry>,
         procedure: Option<StandardSurfaceProcedure>,
     ) -> Option<Self> {
-        if geometry.is_none() && procedure.is_none() {
-            return None;
+        match (geometry, procedure) {
+            (Some(geometry), None) => Some(Self::Geometry(geometry)),
+            (None, Some(procedure)) => Some(Self::Procedure(procedure)),
+            (Some(geometry), Some(procedure)) => Some(Self::Both(geometry, procedure)),
+            (None, None) => None,
         }
-        Some(Self {
-            geometry,
-            procedure,
-        })
     }
 
     fn geometry(geometry: SurfaceGeometry) -> Self {
-        Self {
-            geometry: Some(geometry),
-            procedure: None,
-        }
+        Self::Geometry(geometry)
     }
 
     fn procedure(procedure: StandardSurfaceProcedure) -> Self {
-        Self {
-            geometry: None,
-            procedure: Some(procedure),
+        Self::Procedure(procedure)
+    }
+
+    fn geometry_ref(&self) -> Option<&SurfaceGeometry> {
+        match self {
+            Self::Geometry(geometry) | Self::Both(geometry, _) => Some(geometry),
+            Self::Procedure(_) => None,
+        }
+    }
+
+    fn procedure_ref(&self) -> Option<&StandardSurfaceProcedure> {
+        match self {
+            Self::Procedure(procedure) | Self::Both(_, procedure) => Some(procedure),
+            Self::Geometry(_) => None,
         }
     }
 }
@@ -2863,12 +2871,12 @@ pub(crate) fn standard_object_evidence_from_streams(
     StandardObjectEvidence {
         surface_geometries: surface_candidates
             .iter()
-            .filter_map(|(&tag, evidence)| Some((tag, evidence.as_ref()?.geometry.clone()?)))
+            .filter_map(|(&tag, evidence)| Some((tag, evidence.as_ref()?.geometry_ref()?.clone())))
             .collect(),
         procedural_surfaces: surface_candidates
             .into_iter()
             .filter_map(|(tag, evidence)| {
-                let procedure = evidence?.procedure?;
+                let procedure = evidence?.procedure_ref()?.clone();
                 let valid = match &procedure {
                     StandardSurfaceProcedure::Offset {
                         support_object_id,
@@ -2958,10 +2966,14 @@ fn merge_standard_surface_evidence(
             let Some(stored_evidence) = stored.take() else {
                 return;
             };
-            let (stored_geometry, stored_procedure) =
-                (stored_evidence.geometry, stored_evidence.procedure);
-            let (incoming_geometry, incoming_procedure) =
-                (incoming.geometry.clone(), incoming.procedure.clone());
+            let (stored_geometry, stored_procedure) = (
+                stored_evidence.geometry_ref().cloned(),
+                stored_evidence.procedure_ref().cloned(),
+            );
+            let (incoming_geometry, incoming_procedure) = (
+                incoming.geometry_ref().cloned(),
+                incoming.procedure_ref().cloned(),
+            );
             let EvidencePart::Merged(geometry) =
                 merge_standard_evidence_part(stored_geometry, incoming_geometry)
             else {
@@ -2972,10 +2984,7 @@ fn merge_standard_surface_evidence(
             else {
                 return;
             };
-            *stored = Some(StandardSurfaceEvidence {
-                geometry,
-                procedure,
-            });
+            *stored = StandardSurfaceEvidence::from_parts(geometry, procedure);
         })
         .or_insert(Some(evidence));
 }
@@ -3000,7 +3009,7 @@ fn merge_standard_procedure_supports(
     candidates: &mut HashMap<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>,
     evidence: &StandardSurfaceEvidence,
 ) {
-    let Some(procedure) = evidence.procedure.as_ref() else {
+    let Some(procedure) = evidence.procedure_ref() else {
         return;
     };
     match procedure {

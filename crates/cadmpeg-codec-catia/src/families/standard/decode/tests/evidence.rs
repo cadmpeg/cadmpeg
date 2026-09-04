@@ -206,10 +206,13 @@ fn targeted_surface_evidence_retains_revolution_construction() {
     };
 
     let evidence = standard_surface_evidence(&graph, 10).expect("revolution evidence");
-    let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure.as_ref() else {
+    let Some(StandardSurfaceProcedure::Revolution(revolution)) = evidence.procedure_ref() else {
         panic!("surface-of-revolution evidence must retain its construction");
     };
-    assert!(matches!(evidence.geometry, Some(SurfaceGeometry::Nurbs(_))));
+    assert!(matches!(
+        evidence.geometry_ref(),
+        Some(SurfaceGeometry::Nurbs(_))
+    ));
     assert_eq!(revolution.angular_interval, angular_range);
     assert_eq!(revolution.parameter_interval, [-1.0, 1.0]);
     assert_eq!(revolution.directrix.control_points().len(), 2);
