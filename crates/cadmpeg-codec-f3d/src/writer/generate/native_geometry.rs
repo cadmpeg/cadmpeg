@@ -4889,7 +4889,7 @@ pub(crate) fn native_procedural_curve(
                 for value in parameter_range {
                     native_f64(bytes, *value);
                 }
-                native_string(bytes, role)?;
+                native_string(bytes, role.as_str())?;
                 native_nurbs_curve(bytes, solved_cache)?;
                 write_cache_fit_tolerance(bytes);
                 bytes.push(0x10);
@@ -5281,8 +5281,7 @@ pub(crate) fn native_procedural_curve(
         source,
         parameter_range,
         offset,
-        labels: [labels_0, labels_1, ..],
-        codes,
+        roles,
     } = procedural.definition()
     {
         let source = target
@@ -5307,10 +5306,10 @@ pub(crate) fn native_procedural_curve(
                 offset.z / LEN_TO_MM,
             ],
         );
-        native_string(bytes, labels_0)?;
-        native_i64(bytes, codes[0]);
-        native_string(bytes, labels_1)?;
-        native_i64(bytes, codes[1]);
+        native_string(bytes, "source")?;
+        native_i64(bytes, roles.source_code);
+        native_string(bytes, "offset")?;
+        native_i64(bytes, roles.offset_code);
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);
         bytes.push(0x10);

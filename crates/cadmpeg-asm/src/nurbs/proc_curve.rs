@@ -30,7 +30,12 @@ use cadmpeg_ir::math::{Point3, Vector3};
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
 
 /// Source curve and tail fields decoded from an `offset_int_cur` construction.
-pub type VectorOffsetDefinition = (NurbsCurve, [f64; 2], Vector3, [String; 2], [i64; 2]);
+pub type VectorOffsetDefinition = (
+    NurbsCurve,
+    [f64; 2],
+    Vector3,
+    cadmpeg_ir::geometry::VectorOffsetRoles,
+);
 
 /// Parent curve and retained range decoded from a `subset_int_cur` construction.
 pub type SubsetDefinition = (NurbsCurve, [f64; 2]);
@@ -2238,7 +2243,7 @@ fn embedded_projection(toks: &[Token]) -> Option<EmbeddedProjection> {
         cadmpeg_ir::geometry::ProjectionTail::Ranged {
             flag,
             parameter_range: [cur.take_range_value()?, cur.take_range_value()?],
-            role: cur.take_str()?.to_string(),
+            role: cadmpeg_ir::geometry::ProjectionRole::parse(cur.take_str()?)?,
         }
     };
     Some(EmbeddedProjection {
@@ -3131,10 +3136,13 @@ fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
     }
     let parameter_range = [cur.take_f64()?, cur.take_f64()?];
     let offset = cur.take_vector3()?;
-    let first_label = cur.take_str()?.to_string();
+    let first_label = cur.take_str()?;
     let first_code = cur.take_long()?;
-    let second_label = cur.take_str()?.to_string();
+    let second_label = cur.take_str()?;
     let second_code = cur.take_long()?;
+    if first_label != "source" || second_label != "offset" {
+        return None;
+    }
     Some((
         source,
         parameter_range,
@@ -3143,8 +3151,10 @@ fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
             offset[1] * LEN_TO_MM,
             offset[2] * LEN_TO_MM,
         ),
-        [first_label, second_label],
-        [first_code, second_code],
+        cadmpeg_ir::geometry::VectorOffsetRoles {
+            source_code: first_code,
+            offset_code: second_code,
+        },
     ))
 }
 

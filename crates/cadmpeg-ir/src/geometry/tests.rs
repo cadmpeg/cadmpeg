@@ -557,3 +557,54 @@ fn spring_layout_rejects_split_support_state() {
         .to_string()
         .contains("spring support side 0 requires exactly one"));
 }
+
+#[test]
+fn projection_role_keeps_the_native_string_wire_shape() {
+    let tail = crate::geometry::ProjectionTail::Ranged {
+        flag: true,
+        parameter_range: [-1.0, 2.0],
+        role: crate::geometry::ProjectionRole::Surf2,
+    };
+    let wire = serde_json::to_value(&tail).unwrap();
+    assert_eq!(wire["role"], "surf2");
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::ProjectionTail>(wire).unwrap(),
+        tail
+    );
+    let error = serde_json::from_value::<crate::geometry::ProjectionTail>(serde_json::json!({
+        "kind": "ranged",
+        "flag": true,
+        "parameter_range": [-1.0, 2.0],
+        "role": "other"
+    }))
+    .unwrap_err();
+    assert!(error.to_string().contains("projection role field"));
+}
+
+#[test]
+fn vector_offset_roles_keep_the_fixed_flat_wire_shape() {
+    let definition = crate::geometry::ProceduralCurveDefinition::VectorOffset {
+        source: crate::ids::CurveId("test:curve#source".into()),
+        parameter_range: [-1.0, 2.0],
+        offset: crate::math::Vector3::new(3.0, 4.0, 5.0),
+        roles: crate::geometry::VectorOffsetRoles {
+            source_code: 7,
+            offset_code: 9,
+        },
+    };
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(wire["labels"], serde_json::json!(["source", "offset"]));
+    assert_eq!(wire["codes"], serde_json::json!([7, 9]));
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        definition
+    );
+
+    let mut invalid = wire;
+    invalid["labels"] = serde_json::json!(["offset", "source"]);
+    let error =
+        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(invalid).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("vector-offset labels must be [\"source\", \"offset\"]"));
+}
