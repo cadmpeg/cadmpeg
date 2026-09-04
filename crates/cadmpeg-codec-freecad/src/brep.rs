@@ -3819,7 +3819,7 @@ pub(crate) fn transfer_text_curves(
                 |property| property.owner.clone(),
             );
         let association = SourceObjectAssociation {
-            format: "fcstd".into(),
+            format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id,
             name: None,
             color: None,
@@ -3993,7 +3993,7 @@ pub(crate) fn transfer_text_surfaces(
                 |property| property.owner.clone(),
             );
         let association = SourceObjectAssociation {
-            format: "fcstd".into(),
+            format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id,
             name: None,
             color: None,
@@ -4911,7 +4911,7 @@ pub(crate) mod tests {
             radius: 0.0,
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
-            format: "fcstd".into(),
+            format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id: "object".into(),
             name: None,
             color: None,
@@ -4947,7 +4947,7 @@ pub(crate) mod tests {
             }),
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
-            format: "fcstd".into(),
+            format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id: "fcstd:native:object#Surface".into(),
             name: None,
             color: None,

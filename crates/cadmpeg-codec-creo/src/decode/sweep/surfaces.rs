@@ -273,7 +273,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 id: curve_id,
                 geometry: CurveGeometry::Nurbs(placed_section_nurbs(transform, &nurbs)),
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("FeatDefs:saved_spline#{suffix}"),
                     name: None,
                     color: None,
@@ -496,7 +496,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{surface_id}"),
                     name: None,
                     color: None,
@@ -552,7 +552,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{native_surface_id}"),
                     name: None,
                     color: None,
@@ -623,7 +623,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Nurbs(directrix.clone()),
                     source_object: Some(SourceObjectAssociation {
-                        format: "creo".to_string(),
+                        format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: format!("FeatDefs:saved_spline#{suffix}"),
                         name: None,
                         color: None,
@@ -662,7 +662,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Nurbs(surface),
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{native_surface_id}"),
                     name: None,
                     color: None,

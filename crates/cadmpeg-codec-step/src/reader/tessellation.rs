@@ -376,7 +376,7 @@ pub(super) fn decode(
                 surface
                     .source_object
                     .get_or_insert_with(|| SourceObjectAssociation {
-                        format: crate::dialect::FORMAT.into(),
+                        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
                         object_id: format!("#{id}"),
                         name: None,
                         color: None,
@@ -416,7 +416,7 @@ pub(super) fn decode(
                     || unresolved_items.contains(&id)
                     || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1))
                 .then(|| SourceObjectAssociation {
-                    format: crate::dialect::FORMAT.into(),
+                    format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
                     object_id: format!("#{id}"),
                     name: None,
                     color: None,

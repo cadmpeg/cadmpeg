@@ -734,7 +734,7 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
         .source_object
         .as_ref()
         .expect("geometric-set owner");
-    assert_eq!(source.format, "step");
+    assert_eq!(source.format, cadmpeg_ir::CodecFormat::Step);
     assert_eq!(source.object_id, "#9");
     assert_eq!(source.name, None);
 

@@ -146,11 +146,11 @@ fn check_source(
     findings: &mut Vec<Finding>,
 ) {
     let Some(source) = source else { return };
-    if source.format.is_empty() || source.object_id.is_empty() {
+    if source.object_id.is_empty() {
         bounds_err(
             findings,
             owner,
-            "source association format and object_id must not be empty",
+            "source association object_id must not be empty",
         );
     }
     if source.color.is_some_and(|color| {

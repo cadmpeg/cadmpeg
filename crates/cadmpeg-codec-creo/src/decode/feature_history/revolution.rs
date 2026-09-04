@@ -190,7 +190,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 id: surface_id,
                 geometry: surface,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: native_surface.map_or_else(
                         || {
                             format!(
@@ -249,7 +249,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     id: surface_id,
                     geometry: surface,
                     source_object: Some(SourceObjectAssociation {
-                        format: "creo".to_string(),
+                        format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: format!("VisibGeom:{native_surface}"),
                         name: None,
                         color: None,
@@ -322,7 +322,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Nurbs(surface),
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{native_surface}"),
                     name: None,
                     color: None,
@@ -435,7 +435,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             id,
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id,
                 name: None,
                 color: None,
@@ -512,7 +512,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             id,
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id,
                 name: None,
                 color: None,

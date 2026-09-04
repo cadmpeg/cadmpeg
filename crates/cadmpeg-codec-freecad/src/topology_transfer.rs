@@ -203,7 +203,7 @@ impl<'a> Builder<'a> {
 
     fn source_association(&self) -> SourceObjectAssociation {
         SourceObjectAssociation {
-            format: "fcstd".into(),
+            format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id: self.source_object.clone(),
             name: None,
             color: None,
@@ -316,7 +316,7 @@ impl<'a> Builder<'a> {
                 .expect("decoded triangulation is a valid tessellation")
                 .with_chordal_deflection(Some(triangulation.deflection))
                 .with_source_object(Some(SourceObjectAssociation {
-                    format: "fcstd".into(),
+                    format: cadmpeg_ir::CodecFormat::Fcstd,
                     object_id: self.source_object.clone(),
                     name: None,
                     color: None,
@@ -1127,7 +1127,7 @@ impl<'a> Builder<'a> {
             id: point_id.clone(),
             position: transform.apply_point(point),
             source_object: Some(SourceObjectAssociation {
-                format: "fcstd".into(),
+                format: cadmpeg_ir::CodecFormat::Fcstd,
                 object_id: self.source_object.clone(),
                 name: None,
                 color: None,

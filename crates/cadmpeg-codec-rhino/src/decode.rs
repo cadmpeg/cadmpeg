@@ -4448,7 +4448,7 @@ pub(crate) fn embedded_brep_json(
         crate::brep::BrepParse::SemanticInvalid { .. } => return None,
     };
     let association = SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "embedded-history-brep".to_string(),
         name: None,
         color: None,
@@ -5365,7 +5365,7 @@ fn source_association(
     parent_visible: Option<bool>,
 ) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "rhino".to_string(),
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: identity.object_id.to_string(),
         name: (!identity.name.is_empty()).then(|| identity.name.clone()),
         color: identity.effective_color.map(color).or(parent_color),

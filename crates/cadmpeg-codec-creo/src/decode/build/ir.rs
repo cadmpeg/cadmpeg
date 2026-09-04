@@ -228,7 +228,7 @@ fn transfer_reference_lines(
                 direction: Vector3::new(direction[0], direction[1], direction[2]),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("MdlRefInfo:{family}:{native_identity}"),
                 name: None,
                 color: None,
@@ -282,7 +282,7 @@ fn transfer_reference_circles(
                 radius: circle.radius,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("MdlRefInfo:arc_z:{native_identity}"),
                 name: None,
                 color: None,
@@ -336,7 +336,7 @@ fn transfer_reference_ellipses(
                 minor_radius: ellipse.minor_radius,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("MdlRefInfo:conic:{native_identity}"),
                 name: None,
                 color: None,
@@ -432,7 +432,7 @@ fn transfer_datum_plane_surfaces(
                 )),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("ActDatums:{}", plane.id),
                 name: None,
                 color: None,
@@ -488,7 +488,7 @@ fn transfer_placed_plane_surfaces_into_ir(
                 u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{surface_id}"),
                 name: None,
                 color: None,

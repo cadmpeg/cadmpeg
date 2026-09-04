@@ -132,7 +132,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
                 radius: frame.radius,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("ActDatums:{}", datum.id),
                 name: None,
                 color: None,
@@ -235,7 +235,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                 radius: cylinder.radius,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("AllFeatur:{}:{}", feature_id, row.id),
                 name: None,
                 color: None,
@@ -309,7 +309,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
                 radius: *radius,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("AllFeatur:{rowless_id}"),
                 name: None,
                 color: None,
@@ -365,7 +365,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{cylinder_id}"),
                     name: None,
                     color: None,
@@ -474,7 +474,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 id,
                 geometry: geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{cylinder_id}"),
                     name: None,
                     color: None,
@@ -1155,7 +1155,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                 radius: frame.radius,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", record.surface_id),
                 name: None,
                 color: None,
@@ -1354,7 +1354,7 @@ pub(in super::super) fn transfer_positional_cones(
                 half_angle: frame.half_angle,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", record.surface_id),
                 name: None,
                 color: None,
@@ -1409,7 +1409,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 id,
                 geometry: sweep.geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{cylinder_id}"),
                     name: None,
                     color: None,
@@ -1462,7 +1462,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                 u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("Xsections:{}", frame.surface_id),
                 name: None,
                 color: None,
@@ -1498,7 +1498,7 @@ pub(in super::super) fn transfer_cross_section_planes(
                 u_axis: Vector3::new(plane.u_axis[0], plane.u_axis[1], plane.u_axis[2]),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("Xsections:{}", plane.surface_id),
                 name: None,
                 color: None,

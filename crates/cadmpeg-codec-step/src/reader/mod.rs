@@ -908,7 +908,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
 
 fn direct_carrier_association(id: u64) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: crate::dialect::FORMAT.into(),
+        format: cadmpeg_ir::CodecFormat::from_registry(crate::dialect::FORMAT),
         object_id: format!("#{id}"),
         name: None,
         color: None,

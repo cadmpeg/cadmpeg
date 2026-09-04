@@ -1434,7 +1434,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         },
         source_object: Some(SourceObjectAssociation {
-            format: "creo".to_string(),
+            format: cadmpeg_ir::CodecFormat::Creo,
             object_id: format!("VisibGeom:{native_id}"),
             name: None,
             color: None,
@@ -1496,7 +1496,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     };
     let rows = vec![row(41, 0x05), row(42, 0x13), row(43, 0x05), row(43, 0x05)];
     let source = |native_id| SourceObjectAssociation {
-        format: "creo".to_string(),
+        format: cadmpeg_ir::CodecFormat::Creo,
         object_id: format!("VisibGeom:{native_id}"),
         name: None,
         color: None,

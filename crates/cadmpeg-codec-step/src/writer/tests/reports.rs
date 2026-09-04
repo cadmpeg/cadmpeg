@@ -1224,7 +1224,7 @@ fn edge_without_curve_is_reported_and_omitted() {
 #[test]
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
-        format: "test".into(),
+        format: cadmpeg_ir::CodecFormat::Step,
         object_id: "object-0".into(),
         name: None,
         color: None,

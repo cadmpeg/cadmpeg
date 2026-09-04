@@ -314,7 +314,7 @@ fn source_association_is_a_free_carrier_root() {
         id: CurveId("synthetic:source:curve#0".into()),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: Some(SourceObjectAssociation {
-            format: "rhino".into(),
+            format: crate::CodecFormat::Rhino,
             object_id: "00000000-0000-0000-0000-000000000000".into(),
             name: Some("curve".into()),
             color: None,
@@ -336,7 +336,7 @@ fn source_association_rejects_out_of_range_color() {
         id: CurveId("synthetic:source:curve#color".into()),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: Some(SourceObjectAssociation {
-            format: "rhino".into(),
+            format: crate::CodecFormat::Rhino,
             object_id: "object".into(),
             name: None,
             color: Some(Color {

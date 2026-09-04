@@ -4166,3 +4166,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::topology::Loop::boundary_role"
 reason = "loop outer/inner classification is stored on the owning face so a loop cannot disagree with face membership"
+
+[[change]]
+commit = "1ec9cbd83e551890069287dbbc24f97ac05ad431"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::provenance::SourceObjectAssociation::format"
+reason = "source-object format is a generated codec id so an arbitrary string cannot name the source format"

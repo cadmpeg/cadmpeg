@@ -166,7 +166,7 @@ pub fn transfer_topology_bound_planes(
                 u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", row.id),
                 name: None,
                 color: None,
@@ -220,7 +220,7 @@ pub fn retain_unresolved_surface_carriers(
                     record: geometry_section_record(scan, row.offset),
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("{}{}", namespace.source_prefix(), row.id),
                     name: None,
                     color: None,
@@ -255,7 +255,7 @@ pub fn retain_unresolved_surface_carriers(
                 record: geometry_section_record(scan, row.offset),
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", row.id),
                 name: None,
                 color: None,

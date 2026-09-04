@@ -396,7 +396,7 @@ pub(super) fn transfer_fc05_cap_circles(
                     radius: circle.radius_mm,
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{}", circle.curve_id),
                     name: None,
                     color: None,
@@ -433,7 +433,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 radius: circle.radius_mm,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{cylinder_id}"),
                 name: None,
                 color: None,

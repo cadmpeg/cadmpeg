@@ -147,7 +147,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             id: id.clone(),
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", row.id),
                 name: None,
                 color: None,
@@ -270,7 +270,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             id: id.clone(),
             geometry,
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", row.id),
                 name: None,
                 color: None,

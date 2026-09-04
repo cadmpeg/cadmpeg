@@ -116,7 +116,7 @@ fn validate_value_root(
 
 fn association(property: &PropertyRecord) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: "fcstd".into(),
+        format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: property.owner.clone(),
         name: Some(property.name.clone()),
         color: None,

@@ -1417,7 +1417,7 @@ pub(in super::super) fn transfer_native_brep(
             id: point_id,
             position: Point3::new(position[0], position[1], position[2]),
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("topology:vertex#{vertex_id}"),
                 name: None,
                 color: None,
@@ -1583,7 +1583,7 @@ pub(in super::super) fn transfer_native_brep(
                     record: geometry_section_record(scan, offset),
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{curve_id}"),
                     name: None,
                     color: None,
@@ -1782,7 +1782,7 @@ pub(in super::super) fn transfer_native_brep(
                         record: geometry_section_record(scan, face_offset),
                     },
                     source_object: Some(SourceObjectAssociation {
-                        format: "creo".to_string(),
+                        format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: format!("VisibGeom:{face_id}"),
                         name: None,
                         color: None,
@@ -2056,7 +2056,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 radius: pair.radius_mm,
             },
             source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
+                format: cadmpeg_ir::CodecFormat::Creo,
                 object_id: format!("VisibGeom:{}", pair.surface_id),
                 name: None,
                 color: None,
@@ -2114,7 +2114,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     radius: pair.radius_mm,
                 },
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!("VisibGeom:{curve_id}"),
                     name: None,
                     color: None,

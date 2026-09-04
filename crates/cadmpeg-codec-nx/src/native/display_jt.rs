@@ -3851,7 +3851,7 @@ pub(crate) fn display_jt_tessellations(
                 )
                 .ok()?
                 .with_source_object(Some(SourceObjectAssociation {
-                    format: "nx".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: shape_node.id.clone(),
                     name: None,
                     color,

@@ -721,7 +721,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
@@ -767,7 +767,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
@@ -814,7 +814,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: format!(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
@@ -846,7 +846,7 @@ pub(super) fn transfer_section_entities(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
+                    format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: external_id.map_or_else(
                         || format!("FeatDefs:saved_entity#{internal_id}"),
                         |external_id| {
