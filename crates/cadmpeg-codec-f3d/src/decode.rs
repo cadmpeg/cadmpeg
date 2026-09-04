@@ -4234,7 +4234,7 @@ fn extend_related_design_records(
             native
                 .design_record_headers
                 .push(crate::records::DesignRecordHeader {
-                    id: format!("{stream}:design-record-header#{}", scope.byte_offset),
+                    id: format!("{stream}:design-record-header#{}", scope.byte_offset).into(),
                     record_index: scope.record_index,
                     class_tag: scope.class_tag.clone(),
                     byte_offset: scope.byte_offset,
@@ -4248,7 +4248,8 @@ fn extend_related_design_records(
                         id: format!(
                             "{stream}:design-record-header#{}",
                             operation.relation_byte_offset
-                        ),
+                        )
+                        .into(),
                         record_index: operation.relation_record_index,
                         class_tag: operation.relation_class_tag.clone(),
                         byte_offset: operation.relation_byte_offset,
@@ -5297,7 +5298,8 @@ pub(crate) fn resolve_face_appearance_bindings(
                     &assignment.face_guid,
                     &assignment.visual_guid,
                     face,
-                ),
+                )
+                .into(),
                 target,
                 appearance: appearance.clone(),
                 source_entity_id: None,

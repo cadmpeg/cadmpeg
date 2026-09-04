@@ -1069,7 +1069,7 @@ pub(crate) fn validate_act_appearance_bindings(
             && after
                 .source_entity_id
                 .as_deref()
-                .is_none_or(|source| !after.id.contains(source))
+                .is_none_or(|source| !after.id.as_str().contains(source))
         {
             return Err(CodecError::malformed(format_args!(
                 "F3D appearance binding id does not contain its changed source entity: {}",

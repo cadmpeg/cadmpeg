@@ -242,7 +242,8 @@ fn project_default_bindings(
             id: format!(
                 "inventor:presentation:body-default#{}",
                 &sha256_hex(body.0.as_bytes())[..16]
-            ),
+            )
+            .into(),
             target: AppearanceTarget::Body(body.clone()),
             appearance: appearance.clone(),
             source_entity_id: Some(format!(
@@ -367,7 +368,8 @@ fn project_face_bindings(
             id: format!(
                 "inventor:presentation:face-override#{}",
                 &sha256_hex(face_id.0.as_bytes())[..16]
-            ),
+            )
+            .into(),
             target: AppearanceTarget::Face(face_id.clone()),
             appearance: appearance_id,
             source_entity_id: Some(format!(

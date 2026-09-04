@@ -498,7 +498,7 @@ fn transfer_schema_one(
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
-                id: format!("fcstd:appearance:binding#{name}:{index}"),
+                id: format!("fcstd:appearance:binding#{name}:{index}").into(),
                 target: AppearanceTarget::Body(body),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
@@ -815,7 +815,7 @@ fn transfer_edge_appearance(
     });
     for (index, edge) in edges.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#edge:{provider_name}:{index}"),
+            id: format!("fcstd:appearance:binding#edge:{provider_name}:{index}").into(),
             target: AppearanceTarget::Edge(edge),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -868,7 +868,7 @@ fn transfer_vertex_appearance(
     });
     for (index, vertex) in vertices.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#vertex:{provider_name}:{index}"),
+            id: format!("fcstd:appearance:binding#vertex:{provider_name}:{index}").into(),
             target: AppearanceTarget::Vertex(vertex),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -3535,7 +3535,8 @@ fn transfer_shape_appearances(
                         id: format!(
                             "fcstd:appearance:binding#shape-material:{}:{body_index}",
                             provider.name
-                        ),
+                        )
+                        .into(),
                         target: AppearanceTarget::Body(body.clone()),
                         appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
@@ -3707,7 +3708,8 @@ fn bind_material_faces(
         };
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
-            id: format!("fcstd:appearance:binding#shape-material:{provider_name}:{binding_index}"),
+            id: format!("fcstd:appearance:binding#shape-material:{provider_name}:{binding_index}")
+                .into(),
             target: AppearanceTarget::Face(face),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
@@ -3859,7 +3861,8 @@ fn transfer_topology_colors(
                     "fcstd:appearance:binding#{lower}:{provider_name}:{}:{}",
                     index + 1,
                     crate::native::id_key(topology_id)
-                ),
+                )
+                .into(),
                 target,
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),

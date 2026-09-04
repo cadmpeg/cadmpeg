@@ -449,7 +449,7 @@ fn attach_rm_appearances(
         annotations.derived(&binding_id, "target");
         annotations.derived(&binding_id, "appearance");
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: binding_id,
+            id: binding_id.into(),
             target: AppearanceTarget::Source {
                 source_id: binding.source_id.clone(),
             },
@@ -499,7 +499,7 @@ fn attach_rm_appearances(
         annotations.derived(&binding_id, "target");
         annotations.derived(&binding_id, "appearance");
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: binding_id,
+            id: binding_id.into(),
             target: AppearanceTarget::Face(FaceId(binding.face_id.clone())),
             appearance: appearance_id,
             source_entity_id: Some(binding.face_id),

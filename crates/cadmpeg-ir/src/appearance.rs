@@ -149,7 +149,7 @@ pub enum AppearanceTarget {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AppearanceBinding {
     /// Globally unique deterministic assignment identity.
-    pub id: String,
+    pub id: crate::ids::AppearanceBindingId,
     /// Assigned topology entity.
     pub target: AppearanceTarget,
     /// Referenced appearance asset.

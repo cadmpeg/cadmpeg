@@ -421,7 +421,8 @@ pub(super) fn decode(
                     id: StepIdentity::presentation(
                         "binding",
                         format!("{style_id}:{ordinal}-{target_ordinal}"),
-                    ),
+                    )
+                    .into(),
                     target,
                     appearance: appearance_id.clone(),
                     source_entity_id: Some(format!("#{style_id}")),

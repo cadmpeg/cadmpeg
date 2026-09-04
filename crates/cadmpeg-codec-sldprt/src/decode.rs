@@ -2773,10 +2773,10 @@ fn build_geometry_ir(
                 .model
                 .appearance_bindings
                 .iter()
-                .any(|binding| binding.id == binding_id)
+                .any(|binding| binding.id.as_str() == binding_id)
             {
                 ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: binding_id,
+                    id: binding_id.into(),
                     target: AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(target)),
                     appearance: id,
                     source_entity_id: Some(face_color.face_attr.to_string()),
@@ -2880,7 +2880,8 @@ fn build_geometry_ir(
                         "sldprt:appearance:binding#display:{}:{}",
                         display.ordinal(),
                         display_face.table_index
-                    ),
+                    )
+                    .into(),
                     target: AppearanceTarget::Tessellation(id.clone()),
                     appearance,
                     source_entity_id: Some(format!(
