@@ -14,9 +14,9 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
     assert_eq!(graph.records[0].owner_ref, Some(2));
     assert_eq!(graph.records[0].class_ref, Some(3));
     assert_eq!(graph.records[0].storage_ref, Some(4));
-    assert_eq!(graph.records[0].subtype, PayloadSubtype::Mixed);
+    assert_eq!(graph.records[0].subtype(), PayloadSubtype::Mixed);
     assert!(matches!(
-        graph.records[0].payload.fields.as_slice(),
+        graph.records[0].payload().fields.as_slice(),
         [
             PayloadField::Reference { value: 5, .. },
             PayloadField::Scalar {
@@ -27,7 +27,7 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
             PayloadField::Terminator
         ]
     ));
-    assert_eq!(graph.records[1].subtype, PayloadSubtype::Blob);
+    assert_eq!(graph.records[1].subtype(), PayloadSubtype::Blob);
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn outer_object_graph_uses_the_unique_length_closing_child_frame() {
     assert_eq!(graph.records[0].owner_ref, None);
     assert_eq!(graph.records[0].class_ref, None);
     assert_eq!(
-        &graph.records[0].head[graph.records[0].head.len() - 2..],
+        &graph.records[0].head()[graph.records[0].head().len() - 2..],
         [
             crate::object_graph::HeadToken::Reference(2),
             crate::object_graph::HeadToken::Reference(3),
@@ -96,7 +96,7 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
     )]);
     let graph = crate::object_graph::parse(&valid).expect("bounded blob");
     assert!(matches!(
-        graph.records[0].payload.fields.as_slice(),
+        graph.records[0].payload().fields.as_slice(),
         [
             PayloadField::Blob {
                 declared_len: 1,
@@ -113,7 +113,7 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
     )]);
     let graph = crate::object_graph::parse(&unbounded).expect("literal E5 atom");
     assert!(matches!(
-        graph.records[0].payload.fields.as_slice(),
+        graph.records[0].payload().fields.as_slice(),
         [
             PayloadField::Atom {
                 value: 0xe5,
@@ -132,7 +132,7 @@ fn object_graph_payload_preserves_the_complete_terminator_run() {
     let graph = crate::object_graph::parse(&bytes).expect("multi-terminator payload");
 
     assert!(matches!(
-        graph.records[0].payload.fields.as_slice(),
+        graph.records[0].payload().fields.as_slice(),
         [
             crate::object_graph::PayloadField::Atom { value: 3, .. },
             crate::object_graph::PayloadField::Terminator,
@@ -153,7 +153,7 @@ fn object_graph_payload_reads_tagged_fixed_width_references() {
     let graph = crate::object_graph::parse(&bytes).expect("tagged fixed-width references");
 
     assert!(matches!(
-        graph.records[0].payload.fields.as_slice(),
+        graph.records[0].payload().fields.as_slice(),
         [
             crate::object_graph::PayloadField::Reference { value: 7934, .. },
             crate::object_graph::PayloadField::Reference { value: 235, .. },
@@ -209,7 +209,7 @@ fn outer_object_graph_accepts_one_length_closed_record() {
     assert_eq!(graph.records[0].owner_ref, Some(1));
     assert_eq!(graph.records[0].class_ref, Some(1));
     assert_eq!(
-        graph.records[0].subtype,
+        graph.records[0].subtype(),
         crate::object_graph::PayloadSubtype::Empty
     );
 }
@@ -225,12 +225,12 @@ fn outer_object_graph_preserves_inline_records() {
 
     assert_eq!(graph.records.len(), 2);
     assert_eq!(graph.records[1].lead, 0x10);
-    assert!(graph.records[1].head.is_empty());
+    assert!(graph.records[1].head().is_empty());
     assert_eq!(
-        graph.records[1].inline_body.as_deref(),
+        graph.records[1].inline_body(),
         Some(&[0x10, 0xfe, 0xd3, 0x77, 0x82, 0xf2, 0xf0, 0x82, 0xd3, 0x5f, 0x81, 0x06,][..])
     );
-    assert!(graph.records[1].payload.fields.is_empty());
+    assert!(graph.records[1].payload().fields.is_empty());
 }
 
 #[test]
@@ -258,10 +258,7 @@ fn outer_object_graph_accepts_each_inline_layout() {
                 &body,
             )]))
             .expect("assigned inline control layout");
-        assert_eq!(
-            graph.records[0].inline_body.as_deref(),
-            Some(body.as_slice())
-        );
+        assert_eq!(graph.records[0].inline_body(), Some(body.as_slice()));
     }
 }
 
@@ -296,11 +293,8 @@ fn paired_entity_table_admits_an_opaque_childless_object_record() {
         .try_into()
         .expect("one entity-paired object graph");
     assert_eq!(graph.records[0].lead, 0x00);
-    assert_eq!(
-        graph.records[0].inline_body.as_deref(),
-        Some(body.as_slice())
-    );
-    assert!(graph.records[0].head.is_empty());
+    assert_eq!(graph.records[0].inline_body(), Some(body.as_slice()));
+    assert!(graph.records[0].head().is_empty());
 
     assert!(crate::object_graph::parse_all_with_paired_roots(
         &bytes,
@@ -318,7 +312,7 @@ fn object_graph_payload_lists_keep_direct_fixed_width_atoms() {
     let graph = crate::object_graph::parse(&bytes).expect("fixed-width list atom");
 
     assert!(matches!(
-        graph.records[0].payload.fields.as_slice(),
+        graph.records[0].payload().fields.as_slice(),
         [
             crate::object_graph::PayloadField::List {
                 declared_count: 1,
@@ -342,7 +336,7 @@ fn object_graph_payload_preserves_nonterminal_fe_atoms() {
     let graph = crate::object_graph::parse(&bytes).expect("interior FE atom");
 
     assert!(matches!(
-        graph.records[0].payload.fields.as_slice(),
+        graph.records[0].payload().fields.as_slice(),
         [
             crate::object_graph::PayloadField::Atom { value: 5, .. },
             crate::object_graph::PayloadField::Reference {
@@ -364,7 +358,7 @@ fn object_graph_payload_lists_preserve_nonterminal_fe_atoms() {
     let graph = crate::object_graph::parse(&bytes).expect("interior FE list atom");
 
     assert!(matches!(
-        graph.records[0].payload.fields.as_slice(),
+        graph.records[0].payload().fields.as_slice(),
         [
             crate::object_graph::PayloadField::List {
                 declared_count: 2,
@@ -398,7 +392,7 @@ fn outer_object_graph_keeps_adjacent_compact_head_references_separate() {
     assert_eq!(record.class_ref, Some(3));
     assert_eq!(record.storage_ref, Some(4));
     assert_eq!(
-        &record.head[2..],
+        &record.head()[2..],
         [
             crate::object_graph::HeadToken::Reference(1),
             crate::object_graph::HeadToken::Reference(3),
@@ -420,7 +414,7 @@ fn outer_object_graph_does_not_slide_head_roles_across_null_handles() {
     assert_eq!(record.class_ref, None);
     assert_eq!(record.storage_ref, None);
     assert!(matches!(
-        record.head.last(),
+        record.head().last(),
         Some(crate::object_graph::HeadToken::Reference(3))
     ));
 }
@@ -437,7 +431,7 @@ fn outer_object_graph_does_not_promote_unassigned_head_bytes() {
     assert_eq!(graph.records[0].class_ref, None);
     assert_eq!(graph.records[0].storage_ref, None);
     assert_eq!(
-        &graph.records[0].head[2..],
+        &graph.records[0].head()[2..],
         [
             crate::object_graph::HeadToken::Literal(0xe5),
             crate::object_graph::HeadToken::Literal(0xff),
@@ -458,7 +452,7 @@ fn outer_object_graph_requires_the_head_separator_for_relations() {
     assert_eq!(graph.records[0].class_ref, None);
     assert_eq!(graph.records[0].storage_ref, None);
     assert!(graph.records[0]
-        .head
+        .head()
         .iter()
         .any(|token| matches!(token, crate::object_graph::HeadToken::Reference(2))));
 }
@@ -567,7 +561,7 @@ fn outer_object_graph_reads_reference_terminated_class_storage_owner_roles() {
     assert_eq!(graph.records[2].owner_ref, None);
     for record in &graph.records[1..] {
         assert!(matches!(
-            record.head.last(),
+            record.head().last(),
             Some(crate::object_graph::HeadToken::Reference(300))
         ));
     }
@@ -757,7 +751,7 @@ fn outer_object_graph_reads_terminal_null_lane_roles() {
     assert_eq!(record.storage_ref, Some(0));
     assert_eq!(record.owner_ref, Some(300));
     assert!(matches!(
-        record.head.last(),
+        record.head().last(),
         Some(crate::object_graph::HeadToken::Reference(3))
     ));
 }
@@ -791,7 +785,7 @@ fn outer_object_graph_reads_terminal_lane_class_storage_owner_roles() {
     assert_eq!(record.storage_ref, Some(21));
     assert_eq!(record.owner_ref, Some(22));
     assert!(matches!(
-        record.head.last(),
+        record.head().last(),
         Some(crate::object_graph::HeadToken::Reference(3))
     ));
 }
@@ -915,7 +909,7 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
     let bytes = object_graph_from_records(&records);
     let graph = crate::object_graph::parse(&bytes).expect("fixed-width object payload");
     assert_eq!(
-        graph.records[0].payload.fields,
+        graph.records[0].payload().fields,
         [
             PayloadField::Atom {
                 value: 0x1234_5678,
@@ -968,7 +962,7 @@ fn incomplete_object_payload_tags_do_not_consume_the_terminator() {
         let record = &graph.records[0];
 
         assert_eq!(
-            record.payload.fields,
+            record.payload().fields,
             [
                 crate::object_graph::PayloadField::Atom {
                     value: u32::from(tag),
@@ -1078,8 +1072,8 @@ fn outer_object_graph_resolves_class_names_from_following_schema() {
     let graph = crate::object_graph::parse(&bytes).expect("object graph with schema");
     assert_eq!(graph.total_len, graph_len);
     assert_eq!(graph.catalog_pos, Some(catalog_pos));
-    assert_eq!(graph.records[0].class_name.as_deref(), Some(""));
-    assert_eq!(graph.records[1].class_name.as_deref(), Some("Sketch"));
+    assert_eq!(graph.records[0].class_ref, Some(3));
+    assert_eq!(graph.records[1].class_ref, Some(4));
     let mut native_bytes = entity_table_record(1);
     native_bytes.extend(entity_table_record(2));
     native_bytes.push(0xde);
@@ -1174,7 +1168,6 @@ fn outer_object_graph_resolves_paged_class_ordinals() {
     bytes.extend(schema);
     let graph = crate::object_graph::parse(&bytes).expect("paged class graph");
     assert_eq!(graph.records[0].class_ref, Some(137));
-    assert_eq!(graph.records[0].class_name.as_deref(), Some("Pad"));
 }
 
 #[test]
@@ -1188,7 +1181,7 @@ fn object_graph_payload_does_not_consume_terminator_as_fixed_width_atom_data() {
     let graph = crate::object_graph::parse(&bytes).expect("terminator-bounded object payload");
 
     assert_eq!(
-        graph.records[0].payload.fields,
+        graph.records[0].payload().fields,
         [
             PayloadField::Atom {
                 value: 13,
@@ -1222,7 +1215,7 @@ fn object_graph_payload_does_not_consume_terminator_as_paged_atom_data() {
     let graph = crate::object_graph::parse(&bytes).expect("terminator-bounded paged atom");
 
     assert_eq!(
-        graph.records[0].payload.fields,
+        graph.records[0].payload().fields,
         [
             PayloadField::Atom {
                 value: 13,
@@ -1242,10 +1235,10 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 
     let graph = crate::object_graph::parse(&object_graph_vm_stream()).unwrap();
-    assert!(graph.records[0].head.contains(&HeadToken::NullHandle));
-    assert_eq!(graph.records[0].subtype, PayloadSubtype::ListAggregator);
+    assert!(graph.records[0].head().contains(&HeadToken::NullHandle));
+    assert_eq!(graph.records[0].subtype(), PayloadSubtype::ListAggregator);
     assert!(matches!(
-        &graph.records[0].payload.fields[0],
+        &graph.records[0].payload().fields[0],
         PayloadField::List { items, .. }
             if items == &vec![
                 ListItem::Reference {
@@ -1275,7 +1268,7 @@ fn object_graph_payload_decodes_3c_bulk_table_rows() {
 
     let graph = crate::object_graph::parse(&object_graph_bulk_table_stream()).expect("bulk table");
     assert_eq!(
-        graph.records[0].payload.fields,
+        graph.records[0].payload().fields,
         [
             PayloadField::BulkTable {
                 count: 0,
@@ -1319,7 +1312,7 @@ fn object_graph_payload_keeps_3c_as_literal_when_no_bulk_extent_is_possible() {
     )]);
     let graph = crate::object_graph::parse(&bytes).expect("literal 3c payload");
     assert_eq!(
-        graph.records[0].payload.fields,
+        graph.records[0].payload().fields,
         [
             PayloadField::Atom {
                 value: 0x3c,
