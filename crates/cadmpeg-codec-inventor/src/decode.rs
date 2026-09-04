@@ -211,8 +211,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                             fmtid: hex(&section.fmtid),
                             property_id: property.id,
                             name: property_name,
-                            type_code: property.type_code,
-                            value_kind: property_value_kind(&property.value),
+                            value_kind: property_value_kind(&property.value, property.type_code),
                             scalar_value,
                             raw_len: property.raw.window().len() as u64,
                             raw_sha256: sha256_hex(property.raw.window()),
@@ -2034,26 +2033,34 @@ fn built_in_property_name(set_name: &str, id: u32) -> Option<&'static str> {
     }
 }
 
-fn property_value_kind(value: &PropertyValue<'_>) -> PropertyValueKind {
+fn property_value_kind(value: &PropertyValue<'_>, type_code: Option<u16>) -> PropertyValueKind {
+    let Some(type_code) = type_code else {
+        return PropertyValueKind::Dictionary;
+    };
     match value {
-        PropertyValue::Empty => PropertyValueKind::Empty,
-        PropertyValue::Signed(_) => PropertyValueKind::Signed,
-        PropertyValue::Unsigned(_) => PropertyValueKind::Unsigned,
-        PropertyValue::Float(_) => PropertyValueKind::Float,
-        PropertyValue::Bool(_) => PropertyValueKind::Bool,
-        PropertyValue::Filetime(_) => PropertyValueKind::Filetime,
-        PropertyValue::String(_) => PropertyValueKind::String,
-        PropertyValue::Guid(_) => PropertyValueKind::Guid,
+        PropertyValue::Empty => PropertyValueKind::Empty { type_code },
+        PropertyValue::Signed(_) => PropertyValueKind::Signed { type_code },
+        PropertyValue::Unsigned(_) => PropertyValueKind::Unsigned { type_code },
+        PropertyValue::Float(_) => PropertyValueKind::Float { type_code },
+        PropertyValue::Bool(_) => PropertyValueKind::Bool { type_code },
+        PropertyValue::Filetime(_) => PropertyValueKind::Filetime { type_code },
+        PropertyValue::String(_) => PropertyValueKind::String { type_code },
+        PropertyValue::Guid(_) => PropertyValueKind::Guid { type_code },
         PropertyValue::Binary(data) => PropertyValueKind::Binary {
+            type_code,
             len: data.window().len(),
         },
         PropertyValue::Clipboard { format, data } => PropertyValueKind::Clipboard {
+            type_code,
             format: *format,
             len: data.window().len(),
         },
-        PropertyValue::Vector(values) => PropertyValueKind::Vector { len: values.len() },
+        PropertyValue::Vector(values) => PropertyValueKind::Vector {
+            type_code,
+            len: values.len(),
+        },
         PropertyValue::Dictionary => PropertyValueKind::Dictionary,
-        PropertyValue::Unknown => PropertyValueKind::Unknown,
+        PropertyValue::Unknown => PropertyValueKind::Unknown { type_code },
     }
 }
 
