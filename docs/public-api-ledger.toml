@@ -3466,3 +3466,24 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::features::FeatureDefinition::Hole::placements"
 reason = "an optional placement collection distinguishes unresolved placement from resolved hole locations"
+
+[[change]]
+commit = "cbe1c6041fee07dc19ae570d3829fc15796971c2"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::FeatureDefinition::Hole::{kind,specification}"
+reason = "one HoleConstruction variant now owns either an ordinary form with an optional standard specification or source-native thread geometry"
+
+[[change]]
+commit = "cbe1c6041fee07dc19ae570d3829fc15796971c2"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::features::HoleKind::Threaded"
+reason = "native thread geometry moved to HoleConstruction::NativeThread so it cannot coexist with a second standard thread specification"
+
+[[change]]
+commit = "cbe1c6041fee07dc19ae570d3829fc15796971c2"
+crate = "cadmpeg-ir"
+kind = "struct"
+item = "cadmpeg_ir::features::HoleSpecification"
+reason = "clearance and threaded specifications are enum variants that carry only their applicable fit or thread geometry fields"

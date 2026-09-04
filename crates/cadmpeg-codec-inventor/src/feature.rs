@@ -1443,13 +1443,15 @@ fn project_hole(
                     ),
                     direction,
                 }]),
-                kind,
+                construction: cadmpeg_ir::features::HoleConstruction::Form {
+                    kind,
+                    specification: None,
+                },
                 exit_kind: None,
                 diameter: Some(diameter),
                 extent: Some(extent),
                 bottom: None,
                 taper_angle: None,
-                specification: None,
                 allow_multi_profile_faces: None,
             },
             native_ref: Some(source.id.clone()),
@@ -2488,10 +2490,13 @@ mod tests {
             projected.definition,
             FeatureDefinition::Hole {
                 placements,
-                kind: HoleKind::CounterboreDrilled {
-                    diameter: Length(9.0),
-                    depth: Length(3.0),
-                    drill_point_angle: Angle(2.0)
+                construction: cadmpeg_ir::features::HoleConstruction::Form {
+                    kind: HoleKind::CounterboreDrilled {
+                        diameter: Length(9.0),
+                        depth: Length(3.0),
+                        drill_point_angle: Angle(2.0)
+                    },
+                    ..
                 },
                 diameter: Some(Length(5.0)),
                 extent: Some(LinearTermination::ThroughAll),

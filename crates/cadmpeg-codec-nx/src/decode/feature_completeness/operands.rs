@@ -98,18 +98,6 @@ pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Len
                 || !positive_feature_length(*depth)
                 || !valid_angle(*drill_point_angle)
         }
-        HoleKind::Threaded {
-            major_diameter,
-            thread_depth,
-            pitch,
-            drill_point_angle,
-        } => {
-            !positive_feature_length(*major_diameter)
-                || !positive_feature_length(*thread_depth)
-                || pitch.is_some_and(|pitch| !positive_feature_length(pitch))
-                || !valid_angle(*drill_point_angle)
-                || bore_diameter.is_none_or(|diameter| major_diameter.0 <= diameter.0)
-        }
         HoleKind::Counterdrill {
             diameter,
             entry_diameter,
@@ -144,20 +132,30 @@ pub(crate) fn hole_auxiliary_semantics_are_incomplete(
         })
         || taper_angle.is_some_and(|angle| !valid_angle(angle))
         || specification.is_some_and(|specification| {
-            specification.standard.trim().is_empty()
-                || specification
-                    .pitch
-                    .is_some_and(|pitch| !positive_feature_length(pitch))
-                || specification
-                    .major_diameter
-                    .is_some_and(|diameter| !positive_feature_length(diameter))
-                || specification
-                    .clearance
-                    .is_some_and(|clearance| !clearance.0.is_finite())
+            let (standard, pitch, major_diameter, clearance, depth) = match specification {
+                cadmpeg_ir::features::HoleSpecification::Clearance {
+                    standard,
+                    clearance,
+                    depth,
+                    ..
+                } => (standard, None, None, clearance, depth),
+                cadmpeg_ir::features::HoleSpecification::Threaded {
+                    standard,
+                    pitch,
+                    major_diameter,
+                    clearance,
+                    depth,
+                    ..
+                } => (standard, *pitch, *major_diameter, clearance, depth),
+            };
+            standard.trim().is_empty()
+                || pitch.is_some_and(|pitch| !positive_feature_length(pitch))
+                || major_diameter.is_some_and(|diameter| !positive_feature_length(diameter))
+                || clearance.is_some_and(|clearance| !clearance.0.is_finite())
                 || matches!(
-                    specification.depth,
+                    depth,
                     cadmpeg_ir::features::HoleThreadDepth::Blind { depth }
-                        if !positive_feature_length(depth)
+                        if !positive_feature_length(*depth)
                 )
         })
 }

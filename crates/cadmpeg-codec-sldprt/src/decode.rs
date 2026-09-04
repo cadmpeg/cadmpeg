@@ -1616,7 +1616,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 profile,
                 face,
                 placements,
-                kind,
+                construction,
                 exit_kind,
                 diameter,
                 extent,
@@ -1628,7 +1628,11 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                 profile.as_ref().is_some_and(incomplete_profile)
                     || face.as_ref().is_some_and(incomplete_face_selection)
                     || placements.is_none()
-                    || kind.is_unresolved()
+                    || matches!(
+                        construction,
+                        cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                            if kind.is_unresolved()
+                    )
                     || exit_kind_is_unresolved
                     || diameter.is_none()
                     || extent
@@ -3918,7 +3922,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Hole {
                 placements,
-                kind,
+                construction,
                 diameter,
                 extent,
                 bottom,
@@ -3931,7 +3935,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
             Some((
                 feature.id.clone(),
                 placements.clone(),
-                *kind,
+                construction.clone(),
                 *diameter,
                 extent.clone(),
                 *bottom,
@@ -3943,7 +3947,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
     for (
         feature,
         resolved_placements,
-        resolved_kind,
+        resolved_construction,
         resolved_diameter,
         resolved_extent,
         resolved_bottom,
@@ -3958,7 +3962,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
         }
         let cadmpeg_ir::features::FeatureDefinition::Hole {
             placements,
-            kind,
+            construction,
             diameter,
             extent,
             bottom,
@@ -3975,19 +3979,37 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) {
             || extent.as_ref().is_none_or(|extent| {
                 matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved)
             })
-            || kind.is_unresolved();
+            || matches!(
+                construction,
+                cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                    if kind.is_unresolved()
+            );
         let resolved_complete = resolved_diameter.is_some()
             && resolved_extent.as_ref().is_some_and(|extent| {
                 !matches!(extent, cadmpeg_ir::features::LinearTermination::Unresolved)
             })
             && !matches!(
-                resolved_kind,
-                cadmpeg_ir::features::HoleKind::Unresolved(_)
-                    | cadmpeg_ir::features::HoleKind::PartialCounterbore { .. }
-                    | cadmpeg_ir::features::HoleKind::PartialCountersink { .. }
+                &resolved_construction,
+                cadmpeg_ir::features::HoleConstruction::Form {
+                    kind: cadmpeg_ir::features::HoleKind::Unresolved(_)
+                        | cadmpeg_ir::features::HoleKind::PartialCounterbore { .. }
+                        | cadmpeg_ir::features::HoleKind::PartialCountersink { .. },
+                    ..
+                }
             );
         if incomplete && resolved_complete {
-            *kind = resolved_kind;
+            match (&mut *construction, resolved_construction) {
+                (
+                    cadmpeg_ir::features::HoleConstruction::Form { kind, .. },
+                    cadmpeg_ir::features::HoleConstruction::Form {
+                        kind: resolved_kind,
+                        ..
+                    },
+                ) => *kind = resolved_kind,
+                (construction, resolved_construction) => {
+                    *construction = resolved_construction;
+                }
+            }
             *diameter = resolved_diameter;
             *extent = resolved_extent;
             *bottom = resolved_bottom;

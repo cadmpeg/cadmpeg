@@ -484,9 +484,12 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         cadmpeg_ir::features::FeatureDefinition::Hole {
             face: None,
             placements: None,
-            kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
-                cadmpeg_ir::features::HoleForm::Chamfer,
-            )),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
+                    cadmpeg_ir::features::HoleForm::Chamfer,
+                )),
+                ..
+            },
             exit_kind: Some(cadmpeg_ir::features::HoleKind::Unresolved(Some(
                 cadmpeg_ir::features::HoleForm::Chamfer,
             ))),
@@ -508,9 +511,12 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             None,
         ),
         cadmpeg_ir::features::FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
-                cadmpeg_ir::features::HoleForm::Counterbore,
-            )),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
+                    cadmpeg_ir::features::HoleForm::Counterbore,
+                )),
+                ..
+            },
             exit_kind: None,
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             ..
@@ -525,7 +531,10 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             None,
         ),
         cadmpeg_ir::features::FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                ..
+            },
             exit_kind: None,
             extent: None,
             ..
@@ -540,9 +549,12 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             None,
         ),
         cadmpeg_ir::features::FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
-                cadmpeg_ir::features::HoleForm::Countersink,
-            )),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
+                    cadmpeg_ir::features::HoleForm::Countersink,
+                )),
+                ..
+            },
             exit_kind: None,
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),
             ..
@@ -564,7 +576,10 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
                 None,
             ),
             cadmpeg_ir::features::FeatureDefinition::Hole {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
+                construction: cadmpeg_ir::features::HoleConstruction::Form {
+                    kind: cadmpeg_ir::features::HoleKind::Simple,
+                    ..
+                },
                 exit_kind: None,
                 extent: None,
                 ..
@@ -837,7 +852,10 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     assert!(matches!(
         super::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),
         FeatureDefinition::Hole {
-            kind: HoleKind::Unresolved(None),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Unresolved(None),
+                ..
+            },
             ..
         }
     ));
@@ -851,7 +869,10 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         ),
         FeatureDefinition::Hole {
             diameter: Some(cadmpeg_ir::features::Length(8.0)),
-            kind: HoleKind::Unresolved(None),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Unresolved(None),
+                ..
+            },
             ..
         }
     ));

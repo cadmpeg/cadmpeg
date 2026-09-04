@@ -255,7 +255,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     assert!(matches!(
         definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: Some(Length(4.0)),
             extent: Some(LinearTermination::Blind { length: Length(3.0) }),
             placements,
@@ -582,9 +585,12 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     assert!(matches!(
         definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Counterbore {
-                diameter: Length(8.0),
-                depth: Length(2.0),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Counterbore {
+                    diameter: Length(8.0),
+                    depth: Length(2.0),
+                },
+                ..
             },
             diameter: Some(Length(4.0)),
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll),

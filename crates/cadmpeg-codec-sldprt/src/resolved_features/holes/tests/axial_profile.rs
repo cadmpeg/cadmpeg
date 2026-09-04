@@ -702,9 +702,12 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
         FeatureDefinition::Hole {
             diameter: Some(Length(9.0)),
             extent: Some(LinearTermination::ThroughAll),
-            kind: HoleKind::Counterbore {
-                diameter: Length(15.0),
-                depth: Length(8.6),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Counterbore {
+                    diameter: Length(15.0),
+                    depth: Length(8.6),
+                },
+                ..
             },
             ..
         }

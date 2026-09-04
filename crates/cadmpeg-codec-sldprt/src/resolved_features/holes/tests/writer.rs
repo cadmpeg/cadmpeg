@@ -28,7 +28,10 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         FeatureDefinition::Hole {
             face: None,
             ref placements,
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: Some(Length(6.35)),
             extent: Some(LinearTermination::Blind {
                 length: Length(12.0),
@@ -88,7 +91,10 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: None,
             extent: Some(LinearTermination::ThroughAll),
             ..
@@ -97,9 +103,12 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::PartialCounterbore {
-                diameter: Some(Length(10.0)),
-                depth: None,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::PartialCounterbore {
+                    diameter: Some(Length(10.0)),
+                    depth: None,
+                },
+                ..
             },
             diameter: Some(Length(6.0)),
             extent: Some(LinearTermination::ThroughAll),
@@ -110,7 +119,10 @@ fn semantic_writer_retains_partial_native_hole_construction() {
         &decoded.ir().model.features[2].definition,
         FeatureDefinition::Hole {
             ref placements,
-            kind: HoleKind::Unresolved(None),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Unresolved(None),
+                ..
+            },
             diameter: Some(Length(5.0)),
             extent: None,
             ..
@@ -133,8 +145,12 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     }
     let mut detached = decoded.ir().clone();
     detached.model.features[2].native_ref = None;
-    let FeatureDefinition::Hole { kind, .. } = &mut detached.model.features[2].definition else {
+    let FeatureDefinition::Hole { construction, .. } = &mut detached.model.features[2].definition
+    else {
         panic!("partial hole");
+    };
+    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+        panic!("ordinary hole form");
     };
     *kind = HoleKind::Simple;
     let error = crate::test_support::plan_inherited_write(
@@ -266,9 +282,12 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
     assert!(matches!(
         &decoded.ir().model.features[0].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Counterbore {
-                diameter: Length(10.0),
-                depth: Length(4.0),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Counterbore {
+                    diameter: Length(10.0),
+                    depth: Length(4.0),
+                },
+                ..
             },
             extent: Some(LinearTermination::Blind {
                 length: Length(20.0),
@@ -279,9 +298,12 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
     assert!(matches!(
         &decoded.ir().model.features[1].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Countersink {
-                diameter: Length(9.0),
-                angle: Angle(value),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Countersink {
+                    diameter: Length(9.0),
+                    angle: Angle(value),
+                },
+                ..
             },
             extent: Some(LinearTermination::ThroughAll),
             ..
@@ -290,18 +312,32 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
 
     {
         let mut ir = decoded.ir_mut();
-        let FeatureDefinition::Hole { kind, extent, .. } = &mut ir.model.features[0].definition
+        let FeatureDefinition::Hole {
+            construction,
+            extent,
+            ..
+        } = &mut ir.model.features[0].definition
         else {
             panic!("counterbore hole");
+        };
+        let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+            panic!("ordinary hole form");
         };
         *kind = HoleKind::Counterbore {
             diameter: Length(12.0),
             depth: Length(5.0),
         };
         *extent = Some(LinearTermination::ThroughAll);
-        let FeatureDefinition::Hole { kind, extent, .. } = &mut ir.model.features[1].definition
+        let FeatureDefinition::Hole {
+            construction,
+            extent,
+            ..
+        } = &mut ir.model.features[1].definition
         else {
             panic!("countersink hole");
+        };
+        let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+            panic!("ordinary hole form");
         };
         *kind = HoleKind::Countersink {
             diameter: Length(11.0),

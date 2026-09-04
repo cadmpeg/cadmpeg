@@ -151,7 +151,10 @@ fn decode_degrades_nonpositive_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[4].definition,
         FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                ..
+            },
             diameter: None,
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
                 length: cadmpeg_ir::features::Length(5.0),

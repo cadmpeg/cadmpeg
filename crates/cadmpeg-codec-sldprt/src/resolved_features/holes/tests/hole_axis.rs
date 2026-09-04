@@ -286,10 +286,15 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     let mut placed = model_hole();
     placed.id = FeatureId("placed".into());
     let FeatureDefinition::Hole {
-        placements, kind, ..
+        placements,
+        construction,
+        ..
     } = &mut placed.definition
     else {
         unreachable!();
+    };
+    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+        panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
         diameter: Length(6.0),
@@ -303,8 +308,11 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         });
     let mut unplaced = model_hole();
     unplaced.id = FeatureId("unplaced".into());
-    let FeatureDefinition::Hole { kind, .. } = &mut unplaced.definition else {
+    let FeatureDefinition::Hole { construction, .. } = &mut unplaced.definition else {
         unreachable!();
+    };
+    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+        panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
         diameter: Length(6.0),
@@ -524,13 +532,16 @@ fn hole_topology_uses_exact_cylinder_spans() {
 
     let mut drilled = model_hole();
     let FeatureDefinition::Hole {
-        kind,
+        construction,
         extent,
         bottom,
         ..
     } = &mut drilled.definition
     else {
         unreachable!();
+    };
+    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+        panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
         drill_point_angle: Angle(2.0),
@@ -616,13 +627,16 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     horizontal.id = FeatureId("horizontal".into());
     let FeatureDefinition::Hole {
         placements,
-        kind,
+        construction,
         extent,
         bottom,
         ..
     } = &mut horizontal.definition
     else {
         unreachable!();
+    };
+    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+        panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
         drill_point_angle: Angle(2.0),

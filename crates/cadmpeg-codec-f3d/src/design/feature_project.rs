@@ -7215,13 +7215,15 @@ fn project_hole(
         profile_filter: None,
         face: Some(face),
         placements,
-        kind,
+        construction: cadmpeg_ir::features::HoleConstruction::Form {
+            kind,
+            specification: None,
+        },
         exit_kind: None,
         diameter: Some(diameter),
         extent: Some(LinearTermination::Blind { length: depth }),
         bottom,
         taper_angle: None,
-        specification: None,
         allow_multi_profile_faces: None,
     })
 }

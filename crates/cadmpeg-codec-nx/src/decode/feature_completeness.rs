@@ -404,33 +404,67 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
         profile_filter,
         face,
         placements,
-        kind,
+        construction,
         exit_kind,
         diameter,
         extent,
         bottom,
         taper_angle,
-        specification,
         ..
     } = &feature.definition
     else {
         return true;
     };
-    hole_feature_is_incomplete(
-        profile.as_ref(),
-        face.as_ref(),
-        placements.as_deref(),
-        (kind, exit_kind.as_ref()),
-        *diameter,
-        extent.as_ref(),
-    ) || hole_auxiliary_semantics_are_incomplete(
-        profile_filter.as_ref(),
-        bottom.as_ref(),
-        *taper_angle,
-        specification.as_deref(),
-    ) || extent
-        .as_ref()
-        .is_some_and(|extent| termination_dependency_is_incomplete(extent, &feature.dependencies))
+    let (construction_incomplete, specification) = match construction {
+        cadmpeg_ir::features::HoleConstruction::Form {
+            kind,
+            specification,
+        } => (
+            hole_feature_is_incomplete(
+                profile.as_ref(),
+                face.as_ref(),
+                placements.as_deref(),
+                (kind, exit_kind.as_ref()),
+                *diameter,
+                extent.as_ref(),
+            ),
+            specification.as_deref(),
+        ),
+        cadmpeg_ir::features::HoleConstruction::NativeThread {
+            major_diameter,
+            thread_depth,
+            pitch,
+            drill_point_angle,
+        } => {
+            let kind = cadmpeg_ir::features::HoleKind::SimpleDrilled {
+                drill_point_angle: *drill_point_angle,
+            };
+            (
+                hole_feature_is_incomplete(
+                    profile.as_ref(),
+                    face.as_ref(),
+                    placements.as_deref(),
+                    (&kind, exit_kind.as_ref()),
+                    *diameter,
+                    extent.as_ref(),
+                ) || !positive_feature_length(*major_diameter)
+                    || !positive_feature_length(*thread_depth)
+                    || pitch.is_some_and(|pitch| !positive_feature_length(pitch))
+                    || diameter.is_none_or(|diameter| major_diameter.0 <= diameter.0),
+                None,
+            )
+        }
+    };
+    construction_incomplete
+        || hole_auxiliary_semantics_are_incomplete(
+            profile_filter.as_ref(),
+            bottom.as_ref(),
+            *taper_angle,
+            specification,
+        )
+        || extent.as_ref().is_some_and(|extent| {
+            termination_dependency_is_incomplete(extent, &feature.dependencies)
+        })
         || profile
             .as_ref()
             .is_some_and(|profile| profile_dependency_is_incomplete(profile, &feature.dependencies))

@@ -779,6 +779,90 @@ fn unresolved_hole_and_flex_wire_forms_reject_cross_family_payloads() {
 }
 
 #[test]
+fn hole_construction_forms_preserve_the_flat_wire_layout() {
+    use crate::features::{FeatureDefinition, HoleConstruction, HoleKind, HoleSpecification};
+
+    let standard = serde_json::json!({
+        "definition": "hole",
+        "kind": "simple",
+        "specification": {
+            "standard": "ISO metric",
+            "designation": "M8",
+            "fit": "normal",
+            "threaded": false,
+            "modeled": false,
+            "cosmetic": false,
+            "hand": "right",
+            "depth": {"kind": "hole_depth"}
+        }
+    });
+    let definition: FeatureDefinition = serde_json::from_value(standard.clone()).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Hole {
+            construction: HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                specification: Some(specification),
+            },
+            ..
+        } if matches!(specification.as_ref(), HoleSpecification::Clearance { .. })
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), standard);
+
+    let native_thread = serde_json::json!({
+        "definition": "hole",
+        "kind": "threaded",
+        "major_diameter": 8.0,
+        "thread_depth": 12.0,
+        "pitch": 1.25,
+        "drill_point_angle": 2.0
+    });
+    let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Hole {
+            construction: HoleConstruction::NativeThread { .. },
+            ..
+        }
+    ));
+    assert_eq!(serde_json::to_value(definition).unwrap(), native_thread);
+}
+
+#[test]
+fn hole_wire_rejects_cross_form_thread_fields() {
+    use crate::features::{FeatureDefinition, HoleSpecification};
+
+    let specification = |threaded| {
+        serde_json::json!({
+            "standard": "ISO metric",
+            "threaded": threaded,
+            "modeled": false,
+            "cosmetic": false,
+            "hand": "right",
+            "depth": {"kind": "hole_depth"}
+        })
+    };
+
+    let mut clearance_with_class = specification(false);
+    clearance_with_class["class"] = serde_json::json!("6H");
+    assert!(serde_json::from_value::<HoleSpecification>(clearance_with_class).is_err());
+
+    let mut thread_with_fit = specification(true);
+    thread_with_fit["fit"] = serde_json::json!("normal");
+    assert!(serde_json::from_value::<HoleSpecification>(thread_with_fit).is_err());
+
+    let mut native_with_standard = serde_json::json!({
+        "definition": "hole",
+        "kind": "threaded",
+        "major_diameter": 8.0,
+        "thread_depth": 12.0,
+        "drill_point_angle": 2.0
+    });
+    native_with_standard["specification"] = specification(true);
+    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard).is_err());
+}
+
+#[test]
 fn scale_factor_forms_preserve_the_legacy_wire_layout() {
     use crate::features::ScaleFactors;
 

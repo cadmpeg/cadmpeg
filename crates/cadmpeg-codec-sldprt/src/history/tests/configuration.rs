@@ -796,10 +796,10 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
                 origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             }]),
-            kind: HoleKind::Counterbore {
+            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
                 diameter: Length(8.0),
                 depth: Length(4.0),
-            },
+            }),
             exit_kind: None,
             diameter: Some(Length(5.0)),
             extent: Some(LinearTermination::Blind {
@@ -807,7 +807,6 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
             }),
             bottom: None,
             taper_angle: None,
-            specification: None,
             allow_multi_profile_faces: None,
         },
         native_ref: None,
@@ -818,13 +817,12 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         profile_filter: None,
         face: None,
         placements: None,
-        kind: HoleKind::Simple,
+        construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
         exit_kind: None,
         diameter: None,
         extent: None,
         bottom: None,
         taper_angle: None,
-        specification: None,
         allow_multi_profile_faces: None,
     };
 
@@ -851,10 +849,10 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
             origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         }]),
-        kind: HoleKind::Counterbore {
+        construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
             diameter: Length(8.0),
             depth: Length(4.0),
-        },
+        }),
         exit_kind: None,
         diameter: Some(Length(5.0)),
         extent: Some(LinearTermination::Blind {
@@ -862,7 +860,6 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         }),
         bottom: None,
         taper_angle: None,
-        specification: None,
         allow_multi_profile_faces: None,
     };
     let mut local = FeatureDefinition::Hole {
@@ -870,13 +867,12 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         profile_filter: None,
         face: None,
         placements: Some(vec![placement.clone()]),
-        kind: HoleKind::Simple,
+        construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
         exit_kind: None,
         diameter: None,
         extent: None,
         bottom: None,
         taper_angle: None,
-        specification: None,
         allow_multi_profile_faces: None,
     };
 
@@ -884,7 +880,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
 
     let FeatureDefinition::Hole {
         placements,
-        kind,
+        construction,
         diameter,
         extent,
         ..
@@ -893,13 +889,16 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         panic!("hole definition changed variant");
     };
     assert_eq!(placements, Some(vec![placement]));
-    assert_eq!(
-        kind,
-        HoleKind::Counterbore {
-            diameter: Length(8.0),
-            depth: Length(4.0),
+    assert!(matches!(
+        construction,
+        cadmpeg_ir::features::HoleConstruction::Form {
+            kind: HoleKind::Counterbore {
+                diameter: Length(8.0),
+                depth: Length(4.0),
+            },
+            ..
         }
-    );
+    ));
     assert_eq!(diameter, Some(Length(5.0)));
     assert_eq!(
         extent,
@@ -925,10 +924,10 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
             origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
         }]),
-        kind: HoleKind::Counterbore {
+        construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
             diameter: Length(8.0),
             depth: Length(4.0),
-        },
+        }),
         exit_kind: None,
         diameter: Some(Length(5.0)),
         extent: Some(LinearTermination::Blind {
@@ -936,7 +935,6 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         }),
         bottom: None,
         taper_angle: None,
-        specification: None,
         allow_multi_profile_faces: None,
     };
     let local_definition = FeatureDefinition::Hole {
@@ -944,13 +942,12 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         profile_filter: None,
         face: None,
         placements: None,
-        kind: HoleKind::Simple,
+        construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
         exit_kind: None,
         diameter: None,
         extent: None,
         bottom: None,
         taper_angle: None,
-        specification: None,
         allow_multi_profile_faces: None,
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -994,11 +991,15 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         &ir.model.configurations[0].feature_states[&id].definition,
         FeatureDefinition::Hole {
             placements,
-            kind: HoleKind::Simple,
+            construction,
             diameter: None,
             extent: None,
             ..
         } if placements.is_none()
+            && matches!(construction, cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            })
     ));
 }
 

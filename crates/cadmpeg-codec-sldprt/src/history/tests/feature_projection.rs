@@ -307,10 +307,13 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(5.5));
     assert_eq!(construction.depth, Some(Length(12.0)));
     assert!(matches!(
-        construction.kind,
-        HoleKind::CounterboreDrilled {
-            diameter: Length(9.0),
-            depth: Length(5.7),
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::Form {
+            kind: HoleKind::CounterboreDrilled {
+                diameter: Length(9.0),
+                depth: Length(5.7),
+                ..
+            },
             ..
         }
     ));
@@ -326,8 +329,8 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(4.2));
     assert_eq!(construction.depth, Some(Length(12.4)));
     assert!(matches!(
-        construction.kind,
-        HoleKind::Threaded {
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::NativeThread {
             major_diameter: Length(5.0),
             thread_depth: Length(10.0),
             pitch: None,
@@ -347,8 +350,8 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(8.43));
     assert_eq!(construction.depth, Some(Length(11.62)));
     assert!(matches!(
-        construction.kind,
-        HoleKind::Threaded {
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::NativeThread {
             major_diameter: Length(10.29),
             thread_depth: Length(6.92),
             pitch: None,
@@ -377,11 +380,11 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(4.5));
     assert_eq!(construction.depth, Some(Length(10.0)));
     assert_eq!(
-        construction.kind,
-        HoleKind::Counterbore {
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
             diameter: Length(8.0),
-            depth: Length(4.6),
-        }
+            depth: Length(4.6)
+        })
     );
     assert_eq!(
         construction.exit_kind,
@@ -404,13 +407,13 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.diameter, Length(5.5));
     assert_eq!(construction.depth, Some(Length(12.4)));
     assert_eq!(
-        construction.kind,
-        HoleKind::Counterdrill {
+        construction.construction,
+        cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterdrill {
             diameter: Length(9.95),
             entry_diameter: Some(Length(10.05)),
             depth: Length(5.4),
             angle: Angle(std::f64::consts::FRAC_PI_2),
-        }
+        })
     );
     assert_eq!(
         construction.bottom,
@@ -483,8 +486,8 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         std::slice::from_ref(&canonical),
     );
     let FeatureDefinition::Hole {
-        kind:
-            HoleKind::Threaded {
+        construction:
+            cadmpeg_ir::features::HoleConstruction::NativeThread {
                 major_diameter,
                 thread_depth,
                 ..
@@ -1240,7 +1243,10 @@ fn hole_wizard_rejects_unsupported_countersink_child_schema() {
     assert!(matches!(
         projected[0].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                ..
+            },
             diameter: None,
             extent: None,
             ..
@@ -1286,8 +1292,11 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
     assert!(matches!(
         projected[0].definition,
         FeatureDefinition::Hole {
-            kind: HoleKind::SimpleDrilled {
-                drill_point_angle: Angle(drill_point_angle),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: HoleKind::SimpleDrilled {
+                    drill_point_angle: Angle(drill_point_angle),
+                },
+                ..
             },
             diameter: Some(Length(4.2)),
             extent: Some(LinearTermination::Blind {

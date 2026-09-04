@@ -363,29 +363,34 @@ pub(in super::super) fn schema_feature_definition(
             profile_filter: None,
             face,
             placements: (!placements.is_empty()).then_some(placements),
-            kind: match (
-                drilled_dimensions,
-                simple_form,
-                stepped_form,
-                stepped_dimensions,
-            ) {
-                (Some((_, drill_point_angle, _)), false, None, None) => HoleKind::SimpleDrilled {
-                    drill_point_angle: Angle(drill_point_angle),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: match (
+                    drilled_dimensions,
+                    simple_form,
+                    stepped_form,
+                    stepped_dimensions,
+                ) {
+                    (Some((_, drill_point_angle, _)), false, None, None) => {
+                        HoleKind::SimpleDrilled {
+                            drill_point_angle: Angle(drill_point_angle),
+                        }
+                    }
+                    (None, true, None, None) => HoleKind::Simple,
+                    (None, false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
+                        HoleKind::Counterbore {
+                            diameter: Length(diameter),
+                            depth: Length(depth),
+                        }
+                    }
+                    (_, _, Some(HoleForm::Counterbore), dimensions) if dimensions.is_some() => {
+                        HoleKind::PartialCounterbore {
+                            diameter: dimensions.map(|(_, diameter, _)| Length(diameter)),
+                            depth: dimensions.map(|(_, _, depth)| Length(depth)),
+                        }
+                    }
+                    (_, _, form, _) => HoleKind::Unresolved(form),
                 },
-                (None, true, None, None) => HoleKind::Simple,
-                (None, false, Some(HoleForm::Counterbore), Some((_, diameter, depth))) => {
-                    HoleKind::Counterbore {
-                        diameter: Length(diameter),
-                        depth: Length(depth),
-                    }
-                }
-                (_, _, Some(HoleForm::Counterbore), dimensions) if dimensions.is_some() => {
-                    HoleKind::PartialCounterbore {
-                        diameter: dimensions.map(|(_, diameter, _)| Length(diameter)),
-                        depth: dimensions.map(|(_, _, depth)| Length(depth)),
-                    }
-                }
-                (_, _, form, _) => HoleKind::Unresolved(form),
+                specification: None,
             },
             exit_kind: None,
             diameter: diameter
@@ -398,7 +403,6 @@ pub(in super::super) fn schema_feature_definition(
             }),
             bottom,
             taper_angle: None,
-            specification: None,
             allow_multi_profile_faces: None,
         };
     }

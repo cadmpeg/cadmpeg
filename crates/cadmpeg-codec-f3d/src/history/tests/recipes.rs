@@ -1867,7 +1867,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
                 position: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),
             }]),
-            kind: HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
             exit_kind: None,
             diameter: Some(Length(5.0)),
             extent: Some(LinearTermination::Blind {
@@ -1875,7 +1875,6 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             }),
             bottom: None,
             taper_angle: None,
-            specification: None,
             allow_multi_profile_faces: None,
         },
     );

@@ -201,7 +201,7 @@ pub(in super::super) fn collect_feature_coverage(
                 profile,
                 face,
                 placements,
-                kind,
+                construction,
                 exit_kind,
                 diameter,
                 extent,
@@ -224,8 +224,11 @@ pub(in super::super) fn collect_feature_coverage(
                         )
                     })
                 });
-                let unresolved_kind =
-                    kind.is_unresolved() || exit_kind.as_ref().is_some_and(HoleKind::is_unresolved);
+                let unresolved_kind = matches!(
+                    construction,
+                    cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                        if kind.is_unresolved()
+                ) || exit_kind.as_ref().is_some_and(HoleKind::is_unresolved);
                 let unresolved_diameter = diameter.is_none();
                 let incomplete_termination = extent
                     .as_ref()

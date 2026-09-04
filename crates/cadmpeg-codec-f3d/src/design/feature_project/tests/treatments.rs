@@ -306,7 +306,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
             placements: Some(placements),
-            kind: cadmpeg_ir::features::HoleKind::Simple,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                ..
+            },
             diameter: Some(Length(4.0)),
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind { length: Length(10.0) }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
@@ -337,7 +340,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::SimpleDrilled { drill_point_angle },
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::SimpleDrilled { drill_point_angle },
+                ..
+            },
             bottom: None,
             ..
         } if drill_point_angle.0 == 118.0_f64.to_radians()
@@ -367,10 +373,13 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::CounterboreDrilled {
-                diameter: Length(8.0),
-                depth: Length(3.0),
-                drill_point_angle,
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::CounterboreDrilled {
+                    diameter: Length(8.0),
+                    depth: Length(3.0),
+                    drill_point_angle,
+                },
+                ..
             },
             bottom: None,
             ..
@@ -397,9 +406,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Hole {
-            kind: cadmpeg_ir::features::HoleKind::Counterbore {
-                diameter: Length(8.0),
-                depth: Length(3.0),
+            construction: cadmpeg_ir::features::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::HoleKind::Counterbore {
+                    diameter: Length(8.0),
+                    depth: Length(3.0),
+                },
+                ..
             },
             bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
             ..

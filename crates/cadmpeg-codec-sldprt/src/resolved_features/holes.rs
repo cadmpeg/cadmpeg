@@ -1077,27 +1077,32 @@ pub(crate) fn project_profiled_hole_constructions(
     let mut ownership_histories = enriched_histories.clone();
     enrich_history_hole_constructions(&mut ownership_histories, lanes);
     let histories = enriched_histories.as_slice();
-    let incomplete =
-        |diameter: &Option<Length>, extent: &Option<LinearTermination>, kind: &HoleKind| {
-            diameter.is_none()
-                || extent
-                    .as_ref()
-                    .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
-                || kind.is_unresolved()
-        };
+    let incomplete = |diameter: &Option<Length>,
+                      extent: &Option<LinearTermination>,
+                      construction: &cadmpeg_ir::features::HoleConstruction| {
+        diameter.is_none()
+            || extent
+                .as_ref()
+                .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved))
+            || matches!(
+                construction,
+                cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                    if kind.is_unresolved()
+            )
+    };
     let complete_native_holes = features
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Hole {
                 diameter,
                 extent,
-                kind,
+                construction,
                 ..
             } = &feature.definition
             else {
                 return None;
             };
-            if incomplete(diameter, extent, kind) {
+            if incomplete(diameter, extent, construction) {
                 return None;
             }
             feature.native_ref.clone()
@@ -1137,13 +1142,13 @@ pub(crate) fn project_profiled_hole_constructions(
         let FeatureDefinition::Hole {
             diameter,
             extent,
-            kind,
+            construction,
             ..
         } = &feature.definition
         else {
             continue;
         };
-        if !incomplete(diameter, extent, kind) {
+        if !incomplete(diameter, extent, construction) {
             continue;
         }
         let Some(history_index) = feature
@@ -1243,7 +1248,7 @@ pub(crate) fn project_profiled_hole_constructions(
         let FeatureDefinition::Hole {
             diameter,
             extent,
-            kind,
+            construction: hole_construction,
             bottom,
             taper_angle,
             ..
@@ -1251,7 +1256,7 @@ pub(crate) fn project_profiled_hole_constructions(
         else {
             continue;
         };
-        if !incomplete(diameter, extent, kind) {
+        if !incomplete(diameter, extent, hole_construction) {
             continue;
         }
         let Some((history_index, native)) = feature.native_ref.as_deref().and_then(|native| {
@@ -1297,7 +1302,15 @@ pub(crate) fn project_profiled_hole_constructions(
         };
         *diameter = Some(construction.diameter);
         *extent = Some(construction.extent);
-        *kind = construction.kind;
+        match hole_construction {
+            cadmpeg_ir::features::HoleConstruction::Form { kind, .. } => {
+                *kind = construction.kind;
+            }
+            cadmpeg_ir::features::HoleConstruction::NativeThread { .. } => {
+                *hole_construction =
+                    cadmpeg_ir::features::HoleConstruction::form(construction.kind);
+            }
+        }
         *bottom = construction.bottom;
         *taper_angle = construction.taper_angle;
     }
@@ -2147,7 +2160,11 @@ fn project_flat_blind_topology_axes(
         .filter_map(|(index, feature)| match feature.definition {
             FeatureDefinition::Hole {
                 placements: ref hole_placements,
-                kind: HoleKind::Simple,
+                construction:
+                    cadmpeg_ir::features::HoleConstruction::Form {
+                        kind: HoleKind::Simple,
+                        ..
+                    },
                 diameter: Some(Length(diameter)),
                 extent:
                     Some(LinearTermination::Blind {
@@ -2207,9 +2224,13 @@ fn project_drilled_hole_topology_axes(
         .filter_map(|(index, feature)| match feature.definition {
             FeatureDefinition::Hole {
                 placements: ref hole_placements,
-                kind:
-                    HoleKind::SimpleDrilled {
-                        drill_point_angle: Angle(drill_point_angle),
+                construction:
+                    cadmpeg_ir::features::HoleConstruction::Form {
+                        kind:
+                            HoleKind::SimpleDrilled {
+                                drill_point_angle: Angle(drill_point_angle),
+                            },
+                        ..
                     },
                 diameter: Some(Length(diameter)),
                 extent:
@@ -2319,9 +2340,13 @@ fn expand_seeded_drilled_hole_topology_axes(
         }
         let FeatureDefinition::Hole {
             placements,
-            kind:
-                HoleKind::SimpleDrilled {
-                    drill_point_angle: Angle(drill_point_angle),
+            construction:
+                cadmpeg_ir::features::HoleConstruction::Form {
+                    kind:
+                        HoleKind::SimpleDrilled {
+                            drill_point_angle: Angle(drill_point_angle),
+                        },
+                    ..
                 },
             diameter: Some(Length(diameter)),
             extent:
@@ -2529,13 +2554,17 @@ fn counterbore_topology_candidates(
 ) -> Option<Vec<HolePlacement>> {
     let FeatureDefinition::Hole {
         diameter: Some(Length(diameter)),
-        kind:
-            HoleKind::Counterbore {
-                diameter: Length(counterbore_diameter),
-                ..
-            }
-            | HoleKind::CounterboreDrilled {
-                diameter: Length(counterbore_diameter),
+        construction:
+            cadmpeg_ir::features::HoleConstruction::Form {
+                kind:
+                    HoleKind::Counterbore {
+                        diameter: Length(counterbore_diameter),
+                        ..
+                    }
+                    | HoleKind::CounterboreDrilled {
+                        diameter: Length(counterbore_diameter),
+                        ..
+                    },
                 ..
             },
         ..
@@ -2569,13 +2598,12 @@ fn counterbore_topology_candidates(
 
 fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -> bool {
     let FeatureDefinition::Hole {
-        kind: left_kind,
+        construction: left_construction,
         exit_kind: left_exit_kind,
         diameter: left_diameter,
         extent: left_extent,
         bottom: left_bottom,
         taper_angle: left_taper_angle,
-        specification: left_specification,
         allow_multi_profile_faces: left_allow_multi_profile_faces,
         ..
     } = left
@@ -2583,26 +2611,24 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
         return false;
     };
     let FeatureDefinition::Hole {
-        kind: right_kind,
+        construction: right_construction,
         exit_kind: right_exit_kind,
         diameter: right_diameter,
         extent: right_extent,
         bottom: right_bottom,
         taper_angle: right_taper_angle,
-        specification: right_specification,
         allow_multi_profile_faces: right_allow_multi_profile_faces,
         ..
     } = right
     else {
         return false;
     };
-    left_kind == right_kind
+    left_construction == right_construction
         && left_exit_kind == right_exit_kind
         && left_diameter == right_diameter
         && left_extent == right_extent
         && left_bottom == right_bottom
         && left_taper_angle == right_taper_angle
-        && left_specification == right_specification
         && left_allow_multi_profile_faces == right_allow_multi_profile_faces
 }
 
