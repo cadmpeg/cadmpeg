@@ -3850,7 +3850,12 @@ fn encode_native_revision_g2_blend(
     for radius in construction.radii {
         native_f64(bytes, radius / LEN_TO_MM);
     }
-    native_enum(bytes, construction.radius_selector);
+    match construction.radius_selector {
+        cadmpeg_ir::geometry::RollingBallRadiusSelector::None => native_enum(bytes, -1),
+        cadmpeg_ir::geometry::RollingBallRadiusSelector::Value { value } => {
+            native_enum(bytes, value.get())
+        }
+    }
     for range in [construction.u_range, construction.v_range] {
         for endpoint in range {
             native_optional_f64(bytes, endpoint);

@@ -3809,3 +3809,24 @@ crate = "cadmpeg-asm"
 kind = "signature"
 item = "cadmpeg_asm::nurbs::proc_curve::surface_curve_patch_layout"
 reason = "layout selection takes the family discriminant because the invariant-bearing family now also owns decoded payload data"
+
+[[change]]
+commit = "02270c20ec5bfe2de7b15d151ec01e61af92ab1c"
+crate = "cadmpeg-ir"
+kind = "enum"
+item = "cadmpeg_ir::geometry::RollingBallRadiusSelector"
+reason = "the selector is generic over the native explicit-value lane so both floating and integer blend layouts use one absence-bearing enum"
+
+[[change]]
+commit = "02270c20ec5bfe2de7b15d151ec01e61af92ab1c"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::RevisionG2BlendConstruction::radius_selector"
+reason = "the native -1 absence sentinel is now an enum variant and explicit integer values exclude the sentinel"
+
+[[change]]
+commit = "02270c20ec5bfe2de7b15d151ec01e61af92ab1c"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionG2Blend::radius_selector"
+reason = "ASM parsing canonicalizes the native -1 sentinel before the decoded construction can be built"
