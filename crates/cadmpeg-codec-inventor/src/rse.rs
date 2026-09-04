@@ -285,14 +285,37 @@ pub(crate) enum ParsedState<T> {
 }
 
 #[derive(Debug)]
+pub(crate) enum DatabaseState {
+    Parsed(RseDatabase),
+    Unframed { schema: RseSchema, detail: String },
+    Unreadable(String),
+}
+
+#[derive(Debug)]
 pub(crate) struct DatabaseDescriptor {
     pub(crate) band: StorageBand,
     pub(crate) stream: CompoundStreamId,
-    /// The schema this `RSeDb` stream declared, or `None` when the stream did
-    /// not read that far. Present for every declared schema, including schema
-    /// 31, when its body leaves `state` as [`ParsedState::Unavailable`].
-    pub(crate) declared_schema: Option<RseSchema>,
-    pub(crate) state: ParsedState<RseDatabase>,
+    pub(crate) state: DatabaseState,
+}
+
+impl DatabaseDescriptor {
+    pub(crate) fn declared_schema(&self) -> Option<RseSchema> {
+        match &self.state {
+            DatabaseState::Parsed(database) => Some(database.schema),
+            DatabaseState::Unframed { schema, .. } => Some(*schema),
+            DatabaseState::Unreadable(_) => None,
+        }
+    }
+
+    pub(crate) fn issue_detail(&self) -> Option<String> {
+        match &self.state {
+            DatabaseState::Parsed(_) => None,
+            DatabaseState::Unframed { schema, detail } => {
+                Some(DatabaseHeader::unframed_detail(*schema, detail))
+            }
+            DatabaseState::Unreadable(detail) => Some(detail.clone()),
+        }
+    }
 }
 
 /// `RSe` paths established from the compound directory.
@@ -343,29 +366,22 @@ impl<'a> RseInventory<'a> {
         databases.sort_by_key(|(band, _)| *band);
         let mut database_descriptors = Vec::with_capacity(databases.len());
         for (band, stream_id) in databases {
-            let (declared_schema, state) = match snapshot.stream_by_id(stream_id) {
+            let state = match snapshot.stream_by_id(stream_id) {
                 Some(stream) => match snapshot
                     .open(ctx, stream)
                     .and_then(|view| parse_database(ctx, view.window()))
                 {
-                    Ok(DatabaseHeader::Supported(database)) => {
-                        (Some(database.schema), ParsedState::Parsed(database))
+                    Ok(DatabaseHeader::Supported(database)) => DatabaseState::Parsed(database),
+                    Ok(DatabaseHeader::Unframed { schema, detail }) => {
+                        DatabaseState::Unframed { schema, detail }
                     }
-                    Ok(DatabaseHeader::Unframed { schema, detail }) => (
-                        Some(schema),
-                        ParsedState::Unavailable(DatabaseHeader::unframed_detail(schema, &detail)),
-                    ),
-                    Err(error) => (None, ParsedState::Unavailable(crate::issue_detail(error)?)),
+                    Err(error) => DatabaseState::Unreadable(crate::issue_detail(error)?),
                 },
-                None => (
-                    None,
-                    ParsedState::Unavailable("RSe database stream handle is absent".into()),
-                ),
+                None => DatabaseState::Unreadable("RSe database stream handle is absent".into()),
             };
             database_descriptors.push(DatabaseDescriptor {
                 band,
                 stream: stream_id,
-                declared_schema,
                 state,
             });
         }

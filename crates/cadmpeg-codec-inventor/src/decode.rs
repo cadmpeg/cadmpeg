@@ -38,7 +38,9 @@ use crate::native::{
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
-use crate::rse::{DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState};
+use crate::rse::{
+    DatabaseState, DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState,
+};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let container = InventorContainer::open(ctx, root)?;
@@ -519,7 +521,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .databases
         .iter()
         .filter_map(|descriptor| {
-            let ParsedState::Parsed(database) = &descriptor.state else {
+            let DatabaseState::Parsed(database) = &descriptor.state else {
                 return None;
             };
             Some(DatabaseRecord {
@@ -540,13 +542,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .databases
         .iter()
         .filter_map(|descriptor| {
-            let ParsedState::Unavailable(detail) = &descriptor.state else {
-                return None;
-            };
             Some(DatabaseIssueRecord {
                 id: format!("inventor:rse:database-issue#v{}", descriptor.band.value()),
                 band: descriptor.band.value(),
-                detail: detail.clone(),
+                detail: descriptor.issue_detail()?,
             })
         })
         .collect::<Vec<_>>();

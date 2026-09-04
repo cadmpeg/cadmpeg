@@ -51,7 +51,8 @@
 //! `database::parse_database`, `database::parse_registry`,
 //! `database::parse_revisions`, and `rse::parse_meta_stream` apply the schema-31
 //! and version-8 grammars to every stream, whatever it declared. A stream those
-//! grammars cannot frame degrades to `ParsedState::Unavailable` or
+//! grammars cannot frame degrades to `DatabaseState::Unframed` /
+//! `DatabaseState::Unreadable`, `ParsedState::Unavailable`, or
 //! `SegmentMetaState::Malformed` with its own issue record, which is a
 //! structural outcome. So the loss message here states a grammar that was
 //! actually applied, and a foreign declaration that parses is still unverified:
@@ -70,7 +71,7 @@ use crate::container::InventorContainer;
 use crate::database::RseSchema;
 use crate::kernel::{ActiveCarrierState, KernelFamily};
 use crate::loss::InventorLossCode;
-use crate::rse::{MetaStreamDeclaration, ParsedState};
+use crate::rse::{DatabaseDescriptor, DatabaseState, MetaStreamDeclaration};
 
 include!("dialect/registry_ids.rs");
 
@@ -155,7 +156,7 @@ impl DialectRecovery {
             .rse
             .databases
             .iter()
-            .filter_map(|descriptor| descriptor.declared_schema)
+            .filter_map(DatabaseDescriptor::declared_schema)
             .collect::<Vec<_>>();
         schemas.sort_unstable_by_key(|schema| schema.value());
         schemas.dedup();
@@ -163,8 +164,10 @@ impl DialectRecovery {
             .rse
             .databases
             .iter()
-            .filter(|descriptor| matches!(descriptor.state, ParsedState::Unavailable(_)))
-            .filter_map(|descriptor| descriptor.declared_schema)
+            .filter_map(|descriptor| match &descriptor.state {
+                DatabaseState::Unframed { schema, .. } => Some(*schema),
+                DatabaseState::Parsed(_) | DatabaseState::Unreadable(_) => None,
+            })
             .collect::<Vec<_>>();
         unframed_schemas.sort_unstable_by_key(|schema| schema.value());
         unframed_schemas.dedup();
