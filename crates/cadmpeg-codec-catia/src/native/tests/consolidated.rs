@@ -346,7 +346,10 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     let [circle] = native.consolidated_circles.as_slice() else {
         panic!("one consolidated circle")
     };
-    assert_eq!(circle.layout, 0x34);
+    assert_eq!(
+        circle.layout,
+        crate::native::CatiaCircleLayout::Identity16Bit
+    );
     assert_eq!(circle.record_id, 0x1234);
     assert_eq!(circle.frame_token, 0x05);
     assert_eq!(circle.center_pair, [4.0, -2.0]);

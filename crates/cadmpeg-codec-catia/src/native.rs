@@ -709,6 +709,42 @@ pub struct CatiaConsolidatedCone {
     pub angular_domain: [f64; 2],
 }
 
+/// Payload-layout discriminator of a consolidated arc-length circle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub enum CatiaCircleLayout {
+    /// Identity packed in six bits (`0x32`).
+    Identity6Bit,
+    /// Identity packed in one byte (`0x33`).
+    Identity8Bit,
+    /// Identity packed in two bytes (`0x34`).
+    Identity16Bit,
+}
+
+impl From<CatiaCircleLayout> for u8 {
+    fn from(value: CatiaCircleLayout) -> Self {
+        match value {
+            CatiaCircleLayout::Identity6Bit => 0x32,
+            CatiaCircleLayout::Identity8Bit => 0x33,
+            CatiaCircleLayout::Identity16Bit => 0x34,
+        }
+    }
+}
+
+impl TryFrom<u8> for CatiaCircleLayout {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x32 => Ok(Self::Identity6Bit),
+            0x33 => Ok(Self::Identity8Bit),
+            0x34 => Ok(Self::Identity16Bit),
+            other => Err(format!("layout {other:#x} is not 0x32..=0x34")),
+        }
+    }
+}
+
 /// One complete consolidated `B:19` arc-length circle support.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -717,8 +753,8 @@ pub struct CatiaConsolidatedCircle {
     pub id: String,
     /// Byte offset of the framed record.
     pub byte_offset: u64,
-    /// Payload-layout discriminator (`0x32..=0x34`).
-    pub layout: u8,
+    /// Payload-layout discriminator.
+    pub layout: CatiaCircleLayout,
     /// Compact persistent record identity.
     pub record_id: u32,
     /// Width-coded frame token.
