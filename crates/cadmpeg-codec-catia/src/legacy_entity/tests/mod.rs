@@ -426,14 +426,13 @@ fn pairs_expression_and_typed_signature_roles() {
     assert_eq!(
         relation
             .signature
-            .output
-            .as_ref()
+            .output()
             .expect("VoidType signature has an output")
             .parameter,
         "#2_"
     );
     assert_eq!(relation.signature.inputs[0].parameter, "#1_");
-    assert_eq!(relation.signature.result_type, "VoidType");
+    assert_eq!(relation.signature.result_type(), "VoidType");
 }
 
 #[test]

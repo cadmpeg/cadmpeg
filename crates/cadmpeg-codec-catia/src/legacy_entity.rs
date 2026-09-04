@@ -121,15 +121,41 @@ pub struct LegacyRelationParameter {
     pub value_type: String,
 }
 
+/// Result of a complete legacy relation signature.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LegacyRelationResult {
+    /// `VoidType` result with a named output parameter.
+    Void {
+        /// Output parameter for the void relation.
+        output: LegacyRelationParameter,
+    },
+    /// Non-void result type with no output parameter.
+    Typed(String),
+}
+
 /// Parsed roles in a complete legacy relation signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyRelationSignature {
     /// Ordered input parameters.
     pub inputs: Vec<LegacyRelationParameter>,
-    /// Output parameter for a `VoidType` relation.
-    pub output: Option<LegacyRelationParameter>,
-    /// Source result type.
-    pub result_type: String,
+    /// Result type and optional void output.
+    pub result: LegacyRelationResult,
+}
+
+impl LegacyRelationSignature {
+    pub(crate) fn output(&self) -> Option<&LegacyRelationParameter> {
+        match &self.result {
+            LegacyRelationResult::Void { output } => Some(output),
+            LegacyRelationResult::Typed(_) => None,
+        }
+    }
+
+    pub(crate) fn result_type(&self) -> &str {
+        match &self.result {
+            LegacyRelationResult::Void { .. } => "VoidType",
+            LegacyRelationResult::Typed(result_type) => result_type,
+        }
+    }
 }
 
 /// Paired expression and type-signature fields owned by one identity.
@@ -1024,14 +1050,14 @@ pub fn parse_relation_signature(source: &str) -> Option<LegacyRelationSignature>
             }
         }
     }
-    if (result_type == "VoidType") != output.is_some() {
+    let result = if result_type == "VoidType" {
+        LegacyRelationResult::Void { output: output? }
+    } else if output.is_none() {
+        LegacyRelationResult::Typed(result_type.to_string())
+    } else {
         return None;
-    }
-    Some(LegacyRelationSignature {
-        inputs,
-        output,
-        result_type: result_type.to_string(),
-    })
+    };
+    Some(LegacyRelationSignature { inputs, result })
 }
 
 fn parse_text_fields(
