@@ -19,18 +19,17 @@ use crate::sketch::{
 };
 
 use crate::native::{
-    ActiveCarrierRecord, ActiveCarrierRecordState, AssemblyOccurrenceRecord,
-    AssemblyPlacementRecord, AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord,
-    EmbeddedReferenceRecord, ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord,
-    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
-    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord,
-    PresentationRecordIssueRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRecordState,
-    ProteinRejectionRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UfrxModelStateRecord,
-    UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState, UnpairedSegmentRecord,
-    INVENTOR_NATIVE_VERSION,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
+    AssemblyRecordIssueRecord, DatabaseIssueRecord, DatabaseRecord, EmbeddedReferenceRecord,
+    ExternalReferenceRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
+    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
+    PmGraphicsStyleCollectionRecord, PresentationRecordIssueRecord, PropertyRecord,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, ProteinAssetRecord,
+    ProteinEntryRecord, ProteinRecord, ProteinRecordState, ProteinRejectionRecord, RevisionRecord,
+    RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
+    SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
+    StructuralIssueRecord, UfrxModelStateRecord, UfrxOccurrenceRecord, UfrxRecord, UfrxRecordState,
+    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::pmdc::PmDcReferenceList;
 
@@ -1297,61 +1296,23 @@ fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
         return;
     }
     let carrier = &data.active_carrier[0];
-    let selected_fields = carrier.segment_token.is_some()
-        && carrier.record_ordinal.is_some()
-        && carrier.segment_version_major.is_some()
-        && matches!(carrier.family.as_deref(), Some("asm" | "acis"))
-        && carrier.header_state.is_some()
-        && carrier.header_kind.is_some()
-        && carrier.header_value.is_some()
-        && carrier.schema.is_some()
-        && carrier.carrier_len.is_some_and(|length| length != 0)
-        && carrier.carrier_offset.is_some()
-        && carrier.carrier_sha256.is_some()
-        && carrier.selected_key.is_some()
-        && carrier.enabled.is_some()
-        && carrier.delta_state.is_some()
-        && carrier.history_reference.is_some()
-        && carrier.detail.is_none();
-    let empty_fields = carrier.segment_token.is_none()
-        && carrier.record_ordinal.is_none()
-        && carrier.segment_version_major.is_none()
-        && carrier.family.is_none()
-        && carrier.header_state.is_none()
-        && carrier.header_kind.is_none()
-        && carrier.header_value.is_none()
-        && carrier.schema.is_none()
-        && carrier.carrier_len.is_none()
-        && carrier.carrier_offset.is_none()
-        && carrier.carrier_sha256.is_none()
-        && carrier.selected_key.is_none()
-        && carrier.enabled.is_none()
-        && carrier.delta_state.is_none()
-        && carrier.history_reference.is_none();
-    let valid = match carrier.state {
-        ActiveCarrierRecordState::Selected => selected_fields,
-        ActiveCarrierRecordState::NotApplicable => empty_fields && carrier.detail.is_none(),
-        ActiveCarrierRecordState::NotExpanded => empty_fields && carrier.detail.is_none(),
-        ActiveCarrierRecordState::Unavailable => empty_fields && carrier.detail.is_some(),
-    };
-    if !valid {
-        findings.push(finding(
-            Check::NativeLinks,
-            "Inventor active-carrier state fields are inconsistent".into(),
-            Some(carrier.id.clone()),
-        ));
-    }
-    if carrier.state == ActiveCarrierRecordState::Selected {
+    if let ActiveCarrierRecord::Selected {
+        id,
+        segment_token,
+        record_ordinal,
+        ..
+    } = carrier
+    {
         let resolves = data.records.iter().any(|record| {
-            Some(record.token.as_str()) == carrier.segment_token.as_deref()
-                && Some(record.ordinal) == carrier.record_ordinal
+            record.token.as_str() == segment_token
+                && record.ordinal == *record_ordinal
                 && record.type_id == "5c5945f6d5113313100060a6bba647b5"
         });
         if !resolves {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor active carrier does not resolve to its typed RSe record".into(),
-                Some(carrier.id.clone()),
+                Some(id.clone()),
             ));
         }
     }

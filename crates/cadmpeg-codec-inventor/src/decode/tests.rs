@@ -174,10 +174,10 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         .arena_as::<crate::native::ActiveCarrierRecord>("active_carrier")
         .expect("active carrier arena exists");
     assert_eq!(active.len(), 1);
-    assert_eq!(
-        active[0].state,
-        crate::native::ActiveCarrierRecordState::Selected
-    );
+    assert!(matches!(
+        active[0],
+        crate::native::ActiveCarrierRecord::Selected { .. }
+    ));
     assert!(crate::validate_native(decoded.ir()).is_empty());
 }
 
