@@ -45,7 +45,6 @@ pub(super) fn validate_consolidated_class5b5c_records(
         if record.id != format!("catia:consolidated:class5b5c-record#{index}")
             || !matches!(record.width, 1..=3)
             || !matches!(record.flag, 0x03 | 0x13 | 0x83)
-            || !matches!(record.class, 0x5b | 0x5c)
             || expected_len != Some(record.byte_len)
             || !source_order_valid
         {
