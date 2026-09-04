@@ -1054,30 +1054,16 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             id: coedge_id.clone(),
             owner_loop: loop_id,
             edge: edge_id,
-            next: coedge_id.clone(),
-            previous: coedge_id.clone(),
             radial_next: coedge_id.clone(),
             sense: cadmpeg_ir::topology::Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
         });
-    let ring = source_less.model.loops[0]
+    source_less.model.loops[0]
         .ring_mut()
-        .map(|(coedges, _)| {
-            coedges.push(coedge_id);
-            coedges.clone()
-        })
-        .expect("source-less fixture loop is a ring");
-    for (index, id) in ring.iter().enumerate() {
-        let coedge = source_less
-            .model
-            .coedges
-            .iter_mut()
-            .find(|coedge| coedge.id == *id)
-            .unwrap();
-        coedge.next = ring[(index + 1) % ring.len()].clone();
-        coedge.previous = ring[(index + ring.len() - 1) % ring.len()].clone();
-    }
+        .expect("source-less fixture loop is a ring")
+        .0
+        .push(coedge_id);
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1451,8 +1437,6 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
             id: coedges[index].clone(),
             owner_loop: loops[index].clone(),
             edge: edges[index].clone(),
-            next: coedges[index].clone(),
-            previous: coedges[index].clone(),
             radial_next: coedges[index].clone(),
             sense: if index == 0 {
                 Sense::Forward
@@ -1525,11 +1509,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == loop_.coedges()[0])
-                .is_some_and(|coedge| {
-                    coedge.next == coedge.id
-                        && coedge.previous == coedge.id
-                        && coedge.radial_next == coedge.id
-                })
+                .is_some_and(|coedge| coedge.radial_next == coedge.id)
     }));
 }
 

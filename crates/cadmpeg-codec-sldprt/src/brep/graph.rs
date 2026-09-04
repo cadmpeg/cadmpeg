@@ -177,8 +177,6 @@ impl Brep {
             coedge.id.0 = qualify(&coedge.id.as_str());
             coedge.owner_loop.0 = qualify(&coedge.owner_loop.0);
             coedge.edge.0 = qualify(&coedge.edge.0);
-            coedge.next.0 = qualify(&coedge.next.0);
-            coedge.previous.0 = qualify(&coedge.previous.0);
             coedge.radial_next.0 = qualify(&coedge.radial_next.0);
             for use_ in &mut coedge.pcurves {
                 use_.pcurve.0 = qualify(&use_.pcurve.0);
@@ -1464,12 +1462,9 @@ fn decode_graph(
             if !kept_loops.contains(loop_attr) {
                 continue;
             }
-            let k = ring.len();
-            for (i, &ce_attr) in ring.iter().enumerate() {
+            for &ce_attr in ring {
                 let ce = &t.coedges[&ce_attr];
                 let edge_attr = *ce.refs.get(6).unwrap_or(&0);
-                let next = ring[(i + 1) % k];
-                let prev = ring[(i + k - 1) % k];
                 let twin = *ce.refs.get(5).unwrap_or(&0);
                 let partner = t
                     .coedges
@@ -1544,8 +1539,6 @@ fn decode_graph(
                     id: CoedgeId::mint(id_coedge(ce_attr)).expect("identity grammar"),
                     owner_loop: LoopId::mint(id_loop(*loop_attr)).expect("identity grammar"),
                     edge: EdgeId::mint(id_edge(edge_attr)).expect("identity grammar"),
-                    next: CoedgeId::mint(id_coedge(next)).expect("identity grammar"),
-                    previous: CoedgeId::mint(id_coedge(prev)).expect("identity grammar"),
                     radial_next: partner.unwrap_or_else(|| {
                         CoedgeId::mint(id_coedge(ce_attr)).expect("identity grammar")
                     }),
@@ -4923,8 +4916,6 @@ fn synthesize_cylinder_seams(
             id: seam_a.clone(),
             owner_loop: loop_a.clone(),
             edge: edge_id.clone(),
-            next: circle_b.clone(),
-            previous: circle_a.clone(),
             radial_next: seam_b.clone(),
             sense: Sense::Forward,
             use_curve: None,
@@ -4935,20 +4926,15 @@ fn synthesize_cylinder_seams(
             id: seam_b.clone(),
             owner_loop: loop_a.clone(),
             edge: edge_id,
-            next: circle_a.clone(),
-            previous: circle_b.clone(),
             radial_next: seam_a.clone(),
             sense: Sense::Reversed,
             use_curve: None,
             pcurves: Vec::new(),
         });
         let ring = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
-        for (index, id) in ring.iter().enumerate() {
+        for id in &ring {
             if let Some(coedge_index) = coedge_indices.get(id) {
-                let coedge = &mut out.coedges[*coedge_index];
-                coedge.owner_loop = loop_a.clone();
-                coedge.previous = ring[(index + 3) % 4].clone();
-                coedge.next = ring[(index + 1) % 4].clone();
+                out.coedges[*coedge_index].owner_loop = loop_a.clone();
             }
         }
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_a) {
@@ -5253,8 +5239,6 @@ fn synthesize_sphere_seams(
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
-            next: ring[0].clone(),
-            previous: ring[2].clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
             use_curve: None,
@@ -5264,13 +5248,6 @@ fn synthesize_sphere_seams(
                 parameter_range: Some([0.0, std::f64::consts::TAU]),
             }],
         });
-        for (index, id) in ring.iter().enumerate() {
-            if let Some(coedge_index) = coedge_indices.get(id) {
-                let coedge = &mut out.coedges[*coedge_index];
-                coedge.next = ring[(index + 1) % ring.len()].clone();
-                coedge.previous = ring[(index + ring.len() - 1) % ring.len()].clone();
-            }
-        }
         if let Some(lp) = out.loops.iter_mut().find(|lp| lp.id == loop_id) {
             if let Some((coedges, _)) = lp.ring_mut() {
                 *coedges = ring;
@@ -5849,8 +5826,6 @@ mod tests {
             id: CoedgeId::mint(id).expect("identity grammar"),
             owner_loop: LoopId::mint(lp).expect("identity grammar"),
             edge: EdgeId::mint("edge").expect("identity grammar"),
-            next: CoedgeId::mint(id).expect("identity grammar"),
-            previous: CoedgeId::mint(id).expect("identity grammar"),
             radial_next: CoedgeId::mint(radial).expect("identity grammar"),
             sense,
             use_curve: None,
@@ -6514,8 +6489,6 @@ mod tests {
                 id: coedge_id,
                 owner_loop: loop_id,
                 edge: edge_id.clone(),
-                next: cadmpeg_ir::ids::CoedgeId::mint("coedge").expect("identity grammar"),
-                previous: cadmpeg_ir::ids::CoedgeId::mint("coedge").expect("identity grammar"),
                 radial_next: cadmpeg_ir::ids::CoedgeId::mint("coedge").expect("identity grammar"),
                 sense: Sense::Forward,
                 pcurves: Vec::new(),

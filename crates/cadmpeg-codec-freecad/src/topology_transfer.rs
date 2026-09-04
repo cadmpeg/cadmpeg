@@ -854,8 +854,6 @@ impl<'a> Builder<'a> {
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge,
-                    next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
                     radial_next: id,
                     sense: sense(is_reversed(edge_use.orientation) ^ wire_reversed),
                     use_curve: None,

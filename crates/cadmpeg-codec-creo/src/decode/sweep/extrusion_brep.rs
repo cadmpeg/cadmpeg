@@ -446,8 +446,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     id,
                     owner_loop: bottom_loop.clone(),
                     edge: bottom_edges[edge_index].clone(),
-                    next: bottom_coedges[(ring_index + 1) % count].clone(),
-                    previous: bottom_coedges[(ring_index + count - 1) % count].clone(),
                     radial_next: CoedgeId::mint(format!(
                         "{prefix}:coedge:{profile_index}:{edge_index}:side-bottom"
                     ))
@@ -476,8 +474,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     id,
                     owner_loop: top_loop.clone(),
                     edge: top_edges[ring_index].clone(),
-                    next: top_coedges[(ring_index + 1) % count].clone(),
-                    previous: top_coedges[(ring_index + count - 1) % count].clone(),
                     radial_next: CoedgeId::mint(format!(
                         "{prefix}:coedge:{profile_index}:{ring_index}:side-top"
                     ))
@@ -580,8 +576,6 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         id: coedges[use_index].clone(),
                         owner_loop: loop_id.clone(),
                         edge: edge_uses[use_index].0.clone(),
-                        next: coedges[(use_index + 1) % 4].clone(),
-                        previous: coedges[(use_index + 3) % 4].clone(),
                         radial_next,
                         sense: edge_uses[use_index].1,
                         pcurves: vec![PcurveUse {

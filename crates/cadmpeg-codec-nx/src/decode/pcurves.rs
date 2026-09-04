@@ -3626,8 +3626,6 @@ mod tests {
             id: coedge_id,
             owner_loop: loop_id.clone(),
             edge: edge_id.clone(),
-            next: CoedgeId::mint("nx:s0:fin#0").expect("identity grammar"),
-            previous: CoedgeId::mint("nx:s0:fin#0").expect("identity grammar"),
             radial_next: CoedgeId::mint("nx:s0:fin#0").expect("identity grammar"),
             sense: Sense::Forward,
             pcurves: vec![PcurveUse {

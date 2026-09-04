@@ -2524,11 +2524,12 @@ pub(crate) fn brep_body(
         } else {
             &edge.end
         };
+        let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge);
         for value in [
             0,
             loops[&coedge.owner_loop],
-            coedges[&coedge.previous],
-            coedges[&coedge.next],
+            coedges[&previous],
+            coedges[&next],
             vertices[start],
             coedges[&coedge.radial_next],
             edges[&coedge.edge],

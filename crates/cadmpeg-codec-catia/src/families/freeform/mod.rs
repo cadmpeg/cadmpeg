@@ -3100,8 +3100,6 @@ mod tests {
                 id: coedge_id.clone(),
                 owner_loop: loop_id,
                 edge: EdgeId::mint("standard-edge".to_string()).expect("identity grammar"),
-                next: coedge_id.clone(),
-                previous: coedge_id.clone(),
                 radial_next: CoedgeId::mint(format!("coedge#{}", 1 - side))
                     .expect("identity grammar"),
                 sense: if side == 0 {

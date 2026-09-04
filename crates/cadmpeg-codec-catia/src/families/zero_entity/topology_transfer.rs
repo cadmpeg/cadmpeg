@@ -672,9 +672,6 @@ pub(crate) fn transfer_closed_face_topology(
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_ids[edge_index].clone(),
-                    next: coedge_ids[(member_index + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(member_index + coedge_ids.len() - 1) % coedge_ids.len()]
-                        .clone(),
                     radial_next: coedge_id.clone(),
                     sense,
                     pcurves,

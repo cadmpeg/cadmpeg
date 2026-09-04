@@ -281,8 +281,6 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         id: coedge_id.clone(),
         owner_loop: loop_id.clone(),
         edge: edge_id.clone(),
-        next: coedge_id.clone(),
-        previous: coedge_id.clone(),
         radial_next: coedge_id,
         sense: Sense::Forward,
         pcurves: Vec::new(),

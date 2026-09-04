@@ -1115,8 +1115,6 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             id: coedges[index].clone(),
             owner_loop: loops[index].clone(),
             edge: edge.clone(),
-            next: coedges[index].clone(),
-            previous: coedges[index].clone(),
             radial_next: coedges[1 - index].clone(),
             sense: Sense::Forward,
             pcurves: vec![PcurveUse {

@@ -1289,8 +1289,10 @@ fn encode_face_topology_smbh(
                 coedge.id
             )));
         }
-        let next = coedge_ordinals.get(&coedge.next).copied();
-        let previous = coedge_ordinals.get(&coedge.previous).copied();
+        let (next_id, previous_id) =
+            cadmpeg_ir::topology::coedge_ring_neighbors(&model.loops, coedge);
+        let next = coedge_ordinals.get(&next_id).copied();
+        let previous = coedge_ordinals.get(&previous_id).copied();
         let radial = coedge_ordinals.get(&coedge.radial_next).copied();
         let edge = edge_ordinals.get(&coedge.edge).copied();
         let owner = loop_ordinals.get(&coedge.owner_loop).copied();

@@ -2250,8 +2250,6 @@ fn build_one(
                             id: cid,
                             owner_loop: lid.clone(),
                             edge: edge_id.clone(),
-                            next: CoedgeId::mint(String::new()).expect("identity grammar"),
-                            previous: CoedgeId::mint(String::new()).expect("identity grammar"),
                             radial_next: CoedgeId::mint(String::new()).expect("identity grammar"),
                             sense: if (canonical_start, canonical_end) == (start_point, end_point) {
                                 Sense::Forward
@@ -2263,12 +2261,6 @@ fn build_one(
                         });
                         radial.entry(edge_id).or_default().push(coedges.len() - 1);
                         typed.insert(loop_step);
-                    }
-                    let n = coedge_ids.len();
-                    let start = coedges.len() - n;
-                    for i in 0..n {
-                        coedges[start + i].next = coedge_ids[(i + 1) % n].clone();
-                        coedges[start + i].previous = coedge_ids[(i + n - 1) % n].clone();
                     }
                     loops.push(Loop {
                         id: lid.clone(),
@@ -2448,8 +2440,6 @@ fn build_one(
                         id: cid,
                         owner_loop: lid.clone(),
                         edge: scoped_edge_id(o.edge, id, shell_step, scope_edges, scope_root),
-                        next: CoedgeId::mint(String::new()).expect("identity grammar"),
-                        previous: CoedgeId::mint(String::new()).expect("identity grammar"),
                         radial_next: CoedgeId::mint(String::new()).expect("identity grammar"),
                         sense: if (o.forward == edge.same) == bound_forward {
                             Sense::Forward
@@ -2482,12 +2472,6 @@ fn build_one(
                     if let Some(parent) = edge.parent {
                         typed.insert(parent);
                     }
-                }
-                let n = coedge_ids.len();
-                let start = coedges.len() - n;
-                for i in 0..n {
-                    coedges[start + i].next = coedge_ids[(i + 1) % n].clone();
-                    coedges[start + i].previous = coedge_ids[(i + n - 1) % n].clone();
                 }
                 loops.push(Loop {
                     id: lid.clone(),

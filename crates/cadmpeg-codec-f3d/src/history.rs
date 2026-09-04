@@ -8688,12 +8688,14 @@ pub(crate) fn historical_topology(
             .coedges
             .iter()
             .map(|coedge| {
+                let (next, previous) =
+                    cadmpeg_ir::topology::coedge_ring_neighbors(&brep.loops, coedge);
                 Some(AsmHistoricalCoedge {
                     coedge: entity_ref(&coedge.id.as_str())?,
                     owner_loop: entity_ref(&coedge.owner_loop.0)?,
                     edge: entity_ref(&coedge.edge.0)?,
-                    next: entity_ref(&coedge.next.0)?,
-                    previous: entity_ref(&coedge.previous.0)?,
+                    next: entity_ref(next.as_str())?,
+                    previous: entity_ref(previous.as_str())?,
                     radial_next: entity_ref(&coedge.radial_next.0)?,
                 })
             })

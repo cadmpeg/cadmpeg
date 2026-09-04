@@ -550,7 +550,7 @@ pub(super) fn emit_faces(
                     vertex_uses,
                 },
             });
-            for (position, &member) in member_order.iter().enumerate() {
+            for &member in member_order {
                 let edge = loop_.edges[member];
                 let reversed = senses[member];
                 let id = coedge_ids_by_member[member].clone();
@@ -578,9 +578,6 @@ pub(super) fn emit_faces(
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id_map[&edge].clone(),
-                    next: coedge_ids[(position + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(position + coedge_ids.len() - 1) % coedge_ids.len()]
-                        .clone(),
                     radial_next: id,
                     sense: if reversed {
                         Sense::Reversed

@@ -438,8 +438,6 @@ fn hole_topology_uses_exact_cylinder_spans() {
         id: CoedgeId::mint("coedge").expect("identity grammar"),
         owner_loop: loop_.id.clone(),
         edge: EdgeId::mint("edge").expect("identity grammar"),
-        next: CoedgeId::mint("coedge").expect("identity grammar"),
-        previous: CoedgeId::mint("coedge").expect("identity grammar"),
         radial_next: CoedgeId::mint("coedge").expect("identity grammar"),
         sense: Sense::Forward,
         pcurves: Vec::new(),

@@ -71,8 +71,6 @@ fn edgeless_doc() -> CadIr {
         id: CoedgeId::mint("ce0").expect("identity grammar"),
         owner_loop: LoopId::mint("lp0").expect("identity grammar"),
         edge: EdgeId::mint("e0").expect("identity grammar"),
-        next: CoedgeId::mint("ce0").expect("identity grammar"),
-        previous: CoedgeId::mint("ce0").expect("identity grammar"),
         radial_next: CoedgeId::mint("ce0").expect("identity grammar"),
         sense: Sense::Forward,
         pcurves: Vec::new(),

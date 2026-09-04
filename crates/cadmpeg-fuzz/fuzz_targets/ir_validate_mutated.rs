@@ -43,10 +43,10 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         2 => {
-            // Break coedge ring topology
-            if ir.model.coedges.len() >= 2 {
-                ir.model.coedges[0].next = ir.model.coedges[1].id.clone();
-                ir.model.coedges[1].previous = ir.model.coedges[0].id.clone();
+            if let Some(loop_) = ir.model.loops.iter_mut().find_map(|loop_| loop_.ring_mut()) {
+                if loop_.0.len() >= 2 {
+                    loop_.0.swap(0, 1);
+                }
             }
         }
         3 => {

@@ -172,8 +172,6 @@ pub(super) fn sketch_brep(
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
                 edge: edge_id,
-                next: coedge_id.clone(),
-                previous: coedge_id.clone(),
                 radial_next: coedge_id,
                 sense: if entity_use.reversed {
                     Sense::Reversed
@@ -183,19 +181,6 @@ pub(super) fn sketch_brep(
                 use_curve: None,
                 pcurves: Vec::new(),
             });
-        }
-        let count = coedge_ids.len();
-        for (index, coedge) in ir
-            .model
-            .coedges
-            .iter_mut()
-            .rev()
-            .take(count)
-            .rev()
-            .enumerate()
-        {
-            coedge.next = coedge_ids[(index + 1) % count].clone();
-            coedge.previous = coedge_ids[(index + count - 1) % count].clone();
         }
         ir.model.loops.push(Loop {
             id: loop_id,
@@ -243,8 +228,6 @@ pub(super) fn sketch_brep(
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
-            next: coedge_id.clone(),
-            previous: coedge_id.clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
             use_curve: None,

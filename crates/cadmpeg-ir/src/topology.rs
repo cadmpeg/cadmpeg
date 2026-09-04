@@ -14,7 +14,9 @@ use crate::math::Point3;
 use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 /// RGBA color, components in `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -271,6 +273,34 @@ impl Loop {
             .chain(anchored.iter().map(|use_| &use_.vertex))
     }
 
+    /// Next coedge in this ring after `id`.
+    #[must_use]
+    pub fn next_coedge(&self, id: &CoedgeId) -> Option<&CoedgeId> {
+        let ring = self.coedges();
+        let index = ring.iter().position(|coedge| coedge == id)?;
+        ring.get((index + 1) % ring.len())
+    }
+
+    /// Previous coedge in this ring before `id`.
+    #[must_use]
+    pub fn previous_coedge(&self, id: &CoedgeId) -> Option<&CoedgeId> {
+        let ring = self.coedges();
+        let index = ring.iter().position(|coedge| coedge == id)?;
+        ring.get((index + ring.len() - 1) % ring.len())
+    }
+
+    /// Ring neighbors of `coedge` when this loop owns it.
+    #[must_use]
+    pub fn ring_neighbors_of(&self, coedge: &Coedge) -> Option<(CoedgeId, CoedgeId)> {
+        if self.id != coedge.owner_loop {
+            return None;
+        }
+        Some((
+            self.next_coedge(&coedge.id)?.clone(),
+            self.previous_coedge(&coedge.id)?.clone(),
+        ))
+    }
+
     /// Iterates over every parameter-space image attached to a boundary vertex.
     pub fn vertex_pcurves(&self) -> impl Iterator<Item = &PcurveUse> {
         let (singular, anchored) = match &self.boundary {
@@ -438,9 +468,9 @@ mod loop_boundary_wire {
 
 /// One use of an edge by a loop.
 ///
-/// Coedges form a loop ring through `next` and `previous`, and a radial ring
-/// around their shared edge through `radial_next`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Coedges form a loop ring through the owning [`Loop`] coedge order, and a
+/// radial ring around their shared edge through `radial_next`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Coedge {
     /// Arena id.
@@ -449,10 +479,6 @@ pub struct Coedge {
     pub owner_loop: LoopId,
     /// Underlying edge.
     pub edge: EdgeId,
-    /// Next coedge in the loop ring.
-    pub next: CoedgeId,
-    /// Previous coedge in the loop ring.
-    pub previous: CoedgeId,
     /// Next coedge around the edge; self-reference denotes a laminar boundary.
     pub radial_next: CoedgeId,
     /// Direction relative to the edge curve.
@@ -464,6 +490,83 @@ pub struct Coedge {
     #[serde(flatten, with = "coedge_use_curve_wire")]
     #[cfg_attr(feature = "schema", schemars(with = "CoedgeUseCurveSchemaWire"))]
     pub use_curve: Option<CoedgeUseCurve>,
+}
+
+thread_local! {
+    static COEDGE_RING_NEIGHBORS: RefCell<HashMap<CoedgeId, (CoedgeId, CoedgeId)>> =
+        RefCell::new(HashMap::new());
+}
+
+pub(crate) fn install_coedge_ring_neighbors(loops: &[Loop], coedges: &[Coedge]) {
+    let mut neighbors = HashMap::with_capacity(coedges.len());
+    for coedge in coedges {
+        let pair = loops
+            .iter()
+            .find(|loop_| loop_.id == coedge.owner_loop)
+            .and_then(|loop_| {
+                Some((
+                    loop_.next_coedge(&coedge.id)?.clone(),
+                    loop_.previous_coedge(&coedge.id)?.clone(),
+                ))
+            })
+            .unwrap_or_else(|| (coedge.id.clone(), coedge.id.clone()));
+        neighbors.insert(coedge.id.clone(), pair);
+    }
+    COEDGE_RING_NEIGHBORS.with(|slot| *slot.borrow_mut() = neighbors);
+}
+
+/// Next and previous coedge ids from the owning loop ring.
+#[must_use]
+pub fn coedge_ring_neighbors(loops: &[Loop], coedge: &Coedge) -> (CoedgeId, CoedgeId) {
+    loops
+        .iter()
+        .find_map(|loop_| loop_.ring_neighbors_of(coedge))
+        .unwrap_or_else(|| (coedge.id.clone(), coedge.id.clone()))
+}
+
+pub(crate) fn clear_coedge_ring_neighbors() {
+    COEDGE_RING_NEIGHBORS.with(|slot| slot.borrow_mut().clear());
+}
+
+#[derive(Serialize)]
+struct CoedgeWriteWire<'a> {
+    id: &'a CoedgeId,
+    owner_loop: &'a LoopId,
+    edge: &'a EdgeId,
+    next: CoedgeId,
+    previous: CoedgeId,
+    radial_next: &'a CoedgeId,
+    sense: Sense,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pcurves: &'a Vec<PcurveUse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    use_curve: Option<&'a CurveId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    use_curve_parameter_range: Option<[f64; 2]>,
+}
+
+impl Serialize for Coedge {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (next, previous) = COEDGE_RING_NEIGHBORS.with(|slot| {
+            slot.borrow()
+                .get(&self.id)
+                .cloned()
+                .unwrap_or_else(|| (self.id.clone(), self.id.clone()))
+        });
+        CoedgeWriteWire {
+            id: &self.id,
+            owner_loop: &self.owner_loop,
+            edge: &self.edge,
+            next,
+            previous,
+            radial_next: &self.radial_next,
+            sense: self.sense,
+            pcurves: &self.pcurves,
+            use_curve: self.use_curve.as_ref().map(|value| &value.curve),
+            use_curve_parameter_range: self.use_curve.as_ref().map(|value| value.parameter_range),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// A coedge-local curve and its loop-traversal interval.
@@ -498,6 +601,10 @@ mod coedge_use_curve_wire {
         use_curve_parameter_range: Option<[f64; 2]>,
     }
 
+    #[allow(
+        dead_code,
+        reason = "Coedge serializes use-curve fields on CoedgeWriteWire"
+    )]
     pub fn serialize<S>(value: &Option<CoedgeUseCurve>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

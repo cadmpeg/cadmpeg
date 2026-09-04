@@ -198,8 +198,6 @@ fn untrimmed_surface_curve() -> CadIr {
         id: "coedge".into(),
         owner_loop: "loop".into(),
         edge: "edge".into(),
-        next: "coedge".into(),
-        previous: "coedge".into(),
         radial_next: "coedge".into(),
         sense: Sense::Forward,
         pcurves: vec![PcurveUse {

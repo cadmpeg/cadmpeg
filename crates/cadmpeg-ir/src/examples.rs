@@ -166,14 +166,10 @@ pub fn unit_cube() -> CadIr {
             .collect();
 
         for (i, (edge_index, forward)) in ring.iter().enumerate() {
-            let next = &coedge_ids[(i + 1) % ring.len()];
-            let prev = &coedge_ids[(i + ring.len() - 1) % ring.len()];
             ir.model.coedges.push(Coedge {
                 id: CoedgeId(coedge_ids[i].clone()),
                 owner_loop: loop_id.clone().into(),
                 edge: EdgeId(format!("synthetic:cube:edge#{edge_index}")),
-                next: CoedgeId(next.clone()),
-                previous: CoedgeId(prev.clone()),
                 radial_next: CoedgeId(coedge_ids[i].clone()),
                 sense: if *forward {
                     Sense::Forward

@@ -3685,8 +3685,6 @@ fn stage_extrusion_caps(
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
                 edge: edge_id.clone(),
-                next: coedge_id.clone(),
-                previous: coedge_id.clone(),
                 radial_next: coedge_id.clone(),
                 sense: Sense::Forward,
                 pcurves: vec![cadmpeg_ir::topology::PcurveUse {
@@ -4227,7 +4225,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         let id: cadmpeg_ir::ids::LoopId = format!("rhino:object:loop#{key}.slot-{index}").into();
         let face_id = face_ids[loop_record.face as usize].clone();
         let mut coedges = Vec::with_capacity(loop_record.trims.len());
-        let coedge_start = staged.draft.model_mut().coedges.len();
         for trim_index in &loop_record.trims {
             let trim = &raw.trims[*trim_index as usize];
             let coedge_id: cadmpeg_ir::ids::CoedgeId =
@@ -4261,8 +4258,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 id: coedge_id.clone(),
                 owner_loop: id.clone(),
                 edge: edge_id,
-                next: coedge_id.clone(),
-                previous: coedge_id.clone(),
                 radial_next: coedge_id.clone(),
                 sense: coedge_sense(
                     trim.reversed_3d != 0,
@@ -4279,12 +4274,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                 use_curve: None,
             });
             coedges.push(coedge_id);
-        }
-        for offset in 0..coedges.len() {
-            let next = coedges[(offset + 1) % coedges.len()].clone();
-            let previous = coedges[(offset + coedges.len() - 1) % coedges.len()].clone();
-            staged.draft.model_mut().coedges[coedge_start + offset].next = next;
-            staged.draft.model_mut().coedges[coedge_start + offset].previous = previous;
         }
         staged.draft.model_mut().loops.push(Loop {
             id: id.clone(),

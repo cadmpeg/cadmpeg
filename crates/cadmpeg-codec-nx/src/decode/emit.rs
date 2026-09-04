@@ -660,11 +660,11 @@ pub(super) fn emit_topology(
         };
         let id = fin_ids.get(&node.xmt).cloned().expect("filtered above");
         annotate_node(annotations, &id, source_stream, node, "FIN");
-        let next = fin_ids
+        let _next = fin_ids
             .get(&fields.forward)
             .cloned()
             .expect("validated FIN ring resolves forward link");
-        let previous = fin_ids
+        let _previous = fin_ids
             .get(&fields.backward)
             .cloned()
             .expect("validated FIN ring resolves backward link");
@@ -730,8 +730,6 @@ pub(super) fn emit_topology(
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge,
-            next,
-            previous,
             radial_next,
             sense: sense(Some(fields.sense)),
             pcurves: pcurve
