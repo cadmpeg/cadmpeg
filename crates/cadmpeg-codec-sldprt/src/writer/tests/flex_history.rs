@@ -897,9 +897,8 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
 #[test]
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{
-        Angle, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, FaceMotion, FaceSelection,
-        Feature, FeatureDefinition, FeatureId, HoleKind, Length, LinearTermination, PatternKind,
-        RadiusSpec,
+        Angle, BodySelection, ChamferSpec, EdgeSelection, FaceMotion, FaceSelection, Feature,
+        FeatureDefinition, FeatureId, HoleKind, Length, LinearTermination, PatternKind, RadiusSpec,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::BTreeMap;
@@ -984,7 +983,7 @@ fn encoder_writes_source_less_native_features() {
                 native: "body-a".into(),
             },
             tools: BodySelection::Native("body-b,body-c".into()),
-            op: BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         },
         FeatureDefinition::DeleteFace {

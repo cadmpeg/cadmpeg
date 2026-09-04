@@ -891,7 +891,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
             sections,
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: cadmpeg_ir::features::BooleanOp::Cut,
+                op: cadmpeg_ir::features::BooleanKind::Cut,
             },
             orientation: Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
                 tangent: true,

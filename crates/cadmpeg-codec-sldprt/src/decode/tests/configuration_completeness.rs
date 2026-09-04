@@ -4,7 +4,7 @@
 
 use super::super::*;
 use cadmpeg_ir::features::{
-    Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState, ConfigurationId,
+    Angle, BodyRetentionMode, BodySelection, ConfigurationFeatureState, ConfigurationId,
     DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
     FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement, Length, LinearTermination,
     ParameterId, ParameterValue, PatternKind, PatternSeed,
@@ -120,7 +120,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             FeatureDefinition::Combine {
                 target: BodySelection::Native("target".into()),
                 tools: BodySelection::Native("tools".into()),
-                op: BooleanOp::Unresolved,
+                op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
             },
         ),

@@ -363,7 +363,7 @@ fn encoder_writes_source_less_line_sketches() {
             sections: Vec::new(),
             path: Some(path.clone()),
             mode: cadmpeg_ir::features::SweepMode::Solid {
-                op: BooleanOp::Join,
+                op: cadmpeg_ir::features::BooleanKind::Join,
             },
             orientation: None,
             transition: None,

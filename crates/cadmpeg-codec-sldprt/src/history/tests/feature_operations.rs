@@ -315,8 +315,8 @@ fn decode_dispatches_typed_features_by_xml_family() {
 }
 
 #[test]
-fn decode_projects_compact_combine_with_unresolved_semantics() {
-    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+fn decode_retains_compact_combine_with_unresolved_semantics_as_native() {
+    use cadmpeg_ir::features::FeatureDefinition;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -335,12 +335,7 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
-            op: BooleanOp::Unresolved,
-            keep_tools: false,
-        }
+        FeatureDefinition::Native { .. }
     ));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed compact combine".into());
@@ -356,12 +351,7 @@ fn decode_projects_compact_combine_with_unresolved_semantics() {
         .unwrap();
     assert!(matches!(
         regenerated.ir().model.features[0].definition,
-        FeatureDefinition::Combine {
-            target: BodySelection::Unresolved,
-            tools: BodySelection::Unresolved,
-            op: BooleanOp::Unresolved,
-            keep_tools: false,
-        }
+        FeatureDefinition::Native { .. }
     ));
 }
 
@@ -535,7 +525,7 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
 
 #[test]
 fn decode_projects_compact_solid_sweep_join_operation() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, SweepMode};
+    use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
 
     let mut source = sldprt_with_body(&triangle_body());
     add_solidworks_version(&mut source, 17_000);
@@ -564,7 +554,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
         decoded.ir().model.features[0].definition,
         FeatureDefinition::Sweep {
             mode: SweepMode::Solid {
-                op: BooleanOp::Join
+                op: cadmpeg_ir::features::BooleanKind::Join
             },
             ..
         }
@@ -574,7 +564,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
         decoded.ir().model.configurations[0].feature_states[feature_id].definition,
         FeatureDefinition::Sweep {
             mode: SweepMode::Solid {
-                op: BooleanOp::Join
+                op: cadmpeg_ir::features::BooleanKind::Join
             },
             ..
         }

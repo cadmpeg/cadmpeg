@@ -229,19 +229,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none()
-                && matches!(
-                    mode,
-                    SweepMode::Solid {
-                        op: BooleanOp::Unresolved
-                    }
-                )
-            {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} has an unresolved boolean operation",
-                    feature.id
-                )));
-            }
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
@@ -275,13 +262,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 properties.insert("Path".into(), path);
             }
             match mode {
-                SweepMode::Solid { op } if *op != BooleanOp::Unresolved => {
+                SweepMode::Solid { op } => {
                     properties.insert(
                         "Operation".into(),
-                        resolved_boolean_op(*op, &feature.id)?.into(),
+                        resolved_boolean_op((*op).into(), &feature.id)?.into(),
                     );
                 }
-                SweepMode::Solid { .. } => {}
+                SweepMode::NewBody => {
+                    properties.insert("Operation".into(), "NewBody".into());
+                }
                 SweepMode::Surface => {
                     properties.remove("Operation");
                 }
@@ -292,7 +281,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || {
                         match mode {
                             SweepMode::Surface => "Surface-Sweep",
-                            SweepMode::Solid { .. } | SweepMode::Unresolved => "Sweep",
+                            SweepMode::NewBody
+                            | SweepMode::Solid { .. }
+                            | SweepMode::Unresolved => "Sweep",
                         }
                         .into()
                     },

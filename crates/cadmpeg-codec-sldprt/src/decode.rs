@@ -1168,12 +1168,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                     cadmpeg_ir::features::CoilPlacement::Native { .. }
                 ) || match result {
                     cadmpeg_ir::features::CoilResult::NewBody => false,
-                    cadmpeg_ir::features::CoilResult::Boolean {
-                        operation,
-                        targets,
-                    } => {
-                        *operation == BooleanOp::Unresolved
-                            || incomplete_body_selection(targets)
+                    cadmpeg_ir::features::CoilResult::Boolean { targets, .. } => {
+                        incomplete_body_selection(targets)
                     }
                 }
             }
@@ -1282,7 +1278,6 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                             if incomplete_path(path)
                     )
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved)
-                    || matches!(mode, cadmpeg_ir::features::SweepMode::Solid { op } if *op == BooleanOp::Unresolved)
             }
             FeatureDefinition::HelicalSweep { construction, op } => {
                 incomplete_profile(&construction.profile) || *op == BooleanOp::Unresolved
@@ -1538,12 +1533,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                         cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
                     ) && outward.is_none())
             }
-            FeatureDefinition::Combine {
-                target, tools, op, ..
-            } => {
-                incomplete_body_selection(target)
-                    || incomplete_body_selection(tools)
-                    || *op == BooleanOp::Unresolved
+            FeatureDefinition::Combine { target, tools, .. } => {
+                incomplete_body_selection(target) || incomplete_body_selection(tools)
             }
             FeatureDefinition::BoundaryFill { tools, cells } => {
                 incomplete_body_selection(tools)

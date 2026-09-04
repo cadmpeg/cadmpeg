@@ -172,15 +172,13 @@ pub(crate) fn project_sweep(
     } else if feature_input_class(feature, NativeClassKind::Sweep)
         || feature_input_class(feature, NativeClassKind::SweepCut)
     {
-        SweepMode::Solid {
-            op: feature_sweep_operation(feature),
-        }
+        sweep_mode(feature_sweep_operation(feature))
     } else if let Some(op) = feature
         .properties
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
     {
-        SweepMode::Solid { op }
+        sweep_mode(op)
     } else {
         SweepMode::Unresolved
     };
@@ -218,6 +216,22 @@ pub(crate) fn project_sweep(
         scale,
         allow_multi_profile_faces: None,
     })
+}
+
+fn sweep_mode(op: BooleanOp) -> SweepMode {
+    match op {
+        BooleanOp::Unresolved => SweepMode::Unresolved,
+        BooleanOp::NewBody => SweepMode::NewBody,
+        BooleanOp::Join => SweepMode::Solid {
+            op: cadmpeg_ir::features::BooleanKind::Join,
+        },
+        BooleanOp::Cut => SweepMode::Solid {
+            op: cadmpeg_ir::features::BooleanKind::Cut,
+        },
+        BooleanOp::Intersect => SweepMode::Solid {
+            op: cadmpeg_ir::features::BooleanKind::Intersect,
+        },
+    }
 }
 
 pub(crate) fn feature_sweep_operation(feature: &Feature) -> BooleanOp {

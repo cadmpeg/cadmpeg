@@ -3,7 +3,7 @@
 
 use crate::test_support::*;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, Length};
+use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -44,7 +44,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
     assert!(matches!(
         feature("Cut").definition,
         cadmpeg_ir::features::FeatureDefinition::Combine {
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::BooleanKind::Cut,
             ..
         }
     ));
@@ -65,7 +65,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
     else {
         panic!("multi-fuse");
     };
-    assert_eq!(*op, cadmpeg_ir::features::BooleanOp::Join);
+    assert_eq!(*op, cadmpeg_ir::features::BooleanKind::Join);
     assert!(!keep_tools);
     assert!(matches!(
         target,
@@ -113,7 +113,7 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
         cadmpeg_ir::features::FeatureDefinition::Combine {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
         } if target.ends_with(":Group:link:2")
             && tools.ends_with(":Group:links:0..2")
@@ -123,7 +123,7 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
         cadmpeg_ir::features::FeatureDefinition::Combine {
             target: cadmpeg_ir::features::BodySelection::Native(target),
             tools: cadmpeg_ir::features::BodySelection::Native(tools),
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
         } if target.ends_with(":BaseFeature") && tools.ends_with(":Group")
     ));
@@ -196,7 +196,7 @@ fn distinguishes_absent_and_malformed_partdesign_boolean_type() {
             assert!(matches!(
                 definition,
                 FeatureDefinition::Combine {
-                    op: BooleanOp::Join,
+                    op: cadmpeg_ir::features::BooleanKind::Join,
                     ..
                 }
             ));

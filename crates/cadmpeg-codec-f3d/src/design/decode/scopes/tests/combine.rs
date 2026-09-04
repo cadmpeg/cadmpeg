@@ -381,7 +381,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
                 "Design1/BulkStream.dat:design-record#92".into(),
                 "Design1/BulkStream.dat:design-record#94".into(),
             ]),
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: true,
         })
     );

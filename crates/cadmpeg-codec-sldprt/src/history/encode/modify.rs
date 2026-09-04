@@ -14,9 +14,9 @@ use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class, is_chamfer, is_fillet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferGroup, ChamferSpec,
-    EdgeSelection, FaceMotion, FaceSelection, FilletGroup, FlexMode, Length, RadiusSpec,
-    ScaleCenter, ScaleFactors,
+    AxisAngle, BodyRetentionMode, BodySelection, ChamferGroup, ChamferSpec, EdgeSelection,
+    FaceMotion, FaceSelection, FilletGroup, FlexMode, Length, RadiusSpec, ScaleCenter,
+    ScaleFactors,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -332,7 +332,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         target: &BodySelection,
         tools: &BodySelection,
-        op: &BooleanOp,
+        op: &cadmpeg_ir::features::BooleanKind,
         keep_tools: &bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -341,8 +341,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if existing.is_some_and(|record| {
                 !feature_family(record, "Combine")
                     && !feature_input_class(record, NativeClassKind::Combine)
-            }) || *op == BooleanOp::NewBody
-                || *keep_tools
+            }) || *keep_tools
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported combine semantics",
@@ -350,9 +349,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             if existing.is_none()
-                && (body_selection_value(target).is_none()
-                    || body_selection_value(tools).is_none()
-                    || *op == BooleanOp::Unresolved)
+                && (body_selection_value(target).is_none() || body_selection_value(tools).is_none())
             {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has unresolved combine semantics",
@@ -366,12 +363,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(tools) = body_selection_value(tools) {
                 properties.insert("Tools".into(), tools);
             }
-            if *op != BooleanOp::Unresolved {
-                properties.insert(
-                    "Operation".into(),
-                    resolved_boolean_op(*op, &feature.id)?.into(),
-                );
-            }
+            properties.insert(
+                "Operation".into(),
+                resolved_boolean_op((*op).into(), &feature.id)?.into(),
+            );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Combine".into(), |record| record.kind.clone()),
                 parameters: existing

@@ -307,9 +307,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             section: crate::features::SweepSection::Profile(ProfileRef::Sketch(sketch.clone())),
             sections: Vec::new(),
             path: Some(PathRef::Sketch(sketch.clone())),
-            mode: crate::features::SweepMode::Solid {
-                op: BooleanOp::NewBody,
-            },
+            mode: crate::features::SweepMode::NewBody,
             orientation: None,
             transition: None,
             transformation: None,
@@ -993,7 +991,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
 
 #[test]
 fn body_combine_requires_exactly_one_resolved_target() {
-    use crate::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
+    use crate::features::{BodySelection, BooleanKind, Feature, FeatureDefinition, FeatureId};
     use crate::ids::BodyId;
 
     let mut ir = unit_cube();
@@ -1015,7 +1013,7 @@ fn body_combine_requires_exactly_one_resolved_target() {
                 BodyId("synthetic:test:body#other-target".into()),
             ]),
             tools: BodySelection::Bodies(vec![body]),
-            op: BooleanOp::Join,
+            op: BooleanKind::Join,
             keep_tools: false,
         },
         native_ref: None,
