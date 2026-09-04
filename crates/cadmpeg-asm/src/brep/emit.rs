@@ -106,7 +106,7 @@ fn emit_carrier_surface(
         return;
     };
     out.surfaces.push(Surface {
-        id: SurfaceId(id(format, i)),
+        id: SurfaceId::mint(id(format, i)).expect("identity grammar"),
         geometry,
         source_object: None,
     });
@@ -132,9 +132,10 @@ fn emit_carrier_surface(
                     .into_iter()
                     .enumerate()
                     .map(|(component, geometry)| {
-                        let id = SurfaceId(format!(
+                        let id = SurfaceId::mint(format!(
                             "{format}:brep:procedural_surface#{i}:component{component}"
-                        ));
+                        ))
+                        .expect("identity grammar");
                         out.surfaces.push(Surface {
                             id: id.clone(),
                             geometry,
@@ -152,9 +153,10 @@ fn emit_carrier_surface(
                 support,
                 parameter_ranges,
             } => {
-                let support_id = SurfaceId(format!(
+                let support_id = SurfaceId::mint(format!(
                     "{format}:brep:procedural_surface#{i}:sub_surface:support"
-                ));
+                ))
+                .expect("identity grammar");
                 out.surfaces.push(Surface {
                     id: support_id.clone(),
                     geometry: support,
@@ -173,14 +175,17 @@ fn emit_carrier_surface(
                 taper,
                 revision_form,
             } => {
-                let support_id = SurfaceId(format!("{format}:brep:procedural_surface#{i}:support"));
+                let support_id =
+                    SurfaceId::mint(format!("{format}:brep:procedural_surface#{i}:support"))
+                        .expect("identity grammar");
                 out.surfaces.push(Surface {
                     id: support_id.clone(),
                     geometry: support,
                     source_object: None,
                 });
                 let reference_id =
-                    CurveId(format!("{format}:brep:procedural_surface#{i}:reference"));
+                    CurveId::mint(format!("{format}:brep:procedural_surface#{i}:reference"))
+                        .expect("identity grammar");
                 out.curves.push(Curve {
                     id: reference_id.clone(),
                     geometry: CurveGeometry::Nurbs(reference),
@@ -221,8 +226,12 @@ fn emit_carrier_surface(
                 emit_g2_blend_surface(out, i, embedded, format)
             }
             DecodedProceduralSurfaceDefinition::Ruled { first, second } => {
-                let first_id = CurveId(format!("{format}:brep:procedural_surface#{i}:profile0"));
-                let second_id = CurveId(format!("{format}:brep:procedural_surface#{i}:profile1"));
+                let first_id =
+                    CurveId::mint(format!("{format}:brep:procedural_surface#{i}:profile0"))
+                        .expect("identity grammar");
+                let second_id =
+                    CurveId::mint(format!("{format}:brep:procedural_surface#{i}:profile1"))
+                        .expect("identity grammar");
                 out.curves.push(Curve {
                     id: first_id.clone(),
                     geometry: CurveGeometry::Nurbs(first),
@@ -244,8 +253,12 @@ fn emit_carrier_surface(
                 basepoint,
                 revision_form,
             } => {
-                let first_id = CurveId(format!("{format}:brep:procedural_surface#{i}:curve0"));
-                let second_id = CurveId(format!("{format}:brep:procedural_surface#{i}:curve1"));
+                let first_id =
+                    CurveId::mint(format!("{format}:brep:procedural_surface#{i}:curve0"))
+                        .expect("identity grammar");
+                let second_id =
+                    CurveId::mint(format!("{format}:brep:procedural_surface#{i}:curve1"))
+                        .expect("identity grammar");
                 out.curves.push(Curve {
                     id: first_id.clone(),
                     geometry: first,
@@ -272,7 +285,8 @@ fn emit_carrier_surface(
                 revision_form,
             } => {
                 let directrix_id =
-                    CurveId(format!("{format}:brep:procedural_surface#{i}:directrix"));
+                    CurveId::mint(format!("{format}:brep:procedural_surface#{i}:directrix"))
+                        .expect("identity grammar");
                 out.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: directrix,
@@ -296,7 +310,9 @@ fn emit_carrier_surface(
                 v_sense,
                 extension,
             } => {
-                let support_id = SurfaceId(format!("{format}:brep:procedural_surface#{i}:support"));
+                let support_id =
+                    SurfaceId::mint(format!("{format}:brep:procedural_surface#{i}:support"))
+                        .expect("identity grammar");
                 out.surfaces.push(Surface {
                     id: support_id.clone(),
                     geometry: support,
@@ -319,7 +335,8 @@ fn emit_carrier_surface(
                 revision_form,
             } => {
                 let directrix_id =
-                    CurveId(format!("{format}:brep:procedural_surface#{i}:directrix"));
+                    CurveId::mint(format!("{format}:brep:procedural_surface#{i}:directrix"))
+                        .expect("identity grammar");
                 out.curves.push(Curve {
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Nurbs(directrix),
@@ -368,16 +385,20 @@ fn emit_carrier_surface(
             procedural.cache_fit_tolerance,
             nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
         ) {
-            out.procedural_surfaces
-                .push((SurfaceId(id(format, i)), procedural));
+            out.procedural_surfaces.push((
+                SurfaceId::mint(id(format, i)).expect("identity grammar"),
+                procedural,
+            ));
         }
     } else if cached_unknown_procedural_surfaces.contains(&i) {
         out.procedural_surfaces.push((
-            SurfaceId(id(format, i)),
+            SurfaceId::mint(id(format, i)).expect("identity grammar"),
             ProceduralSurface::new(
                 format!("{format}:brep:procedural_surface#{i}").into(),
                 ProceduralSurfaceDefinition::Unknown {
-                    record: Some(UnknownId(unknown_record_id(r, format))),
+                    record: Some(
+                        UnknownId::mint(unknown_record_id(r, format)).expect("identity grammar"),
+                    ),
                 },
                 None,
             ),
@@ -394,9 +415,10 @@ fn emit_deformable_surface(
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
     let embedded = *embedded;
-    let support = SurfaceId(format!(
+    let support = SurfaceId::mint(format!(
         "{format}:brep:procedural_surface#{i}:deformable:support"
-    ));
+    ))
+    .expect("identity grammar");
     let revision_form = embedded.revision_form;
     out.surfaces.push(Surface {
         id: support.clone(),
@@ -418,17 +440,19 @@ fn emit_deformable_surface(
             flags,
             parameter_triples,
         } => {
-            let secondary_surface = SurfaceId(format!(
+            let secondary_surface = SurfaceId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:deformable:secondary"
-            ));
+            ))
+            .expect("identity grammar");
             out.surfaces.push(Surface {
                 id: secondary_surface.clone(),
                 geometry: surface,
                 source_object: None,
             });
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:deformable:curve"
-            ));
+            ))
+            .expect("identity grammar");
             out.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
@@ -463,17 +487,19 @@ fn emit_deformable_surface(
             frames,
             trailing_value,
         } => {
-            let secondary_surface = SurfaceId(format!(
+            let secondary_surface = SurfaceId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:deformable:secondary"
-            ));
+            ))
+            .expect("identity grammar");
             out.surfaces.push(Surface {
                 id: secondary_surface.clone(),
                 geometry: surface,
                 source_object: None,
             });
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:deformable:curve"
-            ));
+            ))
+            .expect("identity grammar");
             out.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
@@ -527,7 +553,7 @@ fn emit_loft_member_form(
     match first_flag {
         Some(first_flag) => {
             let surface = surface.map(|geometry| {
-                let surface = SurfaceId(support_id);
+                let surface = SurfaceId::mint(support_id).expect("identity grammar");
                 out.surfaces.push(Surface {
                     id: surface.clone(),
                     geometry,
@@ -568,9 +594,9 @@ fn emit_loft_surface(
                                         |(entry_index, entry)| {
                                             let profile = entry.profile.into_iter().enumerate().map(
                                                 |(member_index, member)| {
-                                                    let curve = CurveId(format!(
+                                                    let curve = CurveId::mint(format!(
                                                         "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:profile:{member_index}"
-                                                    ));
+                                                    )).expect("identity grammar");
                                                     out.curves.push(Curve {
                                                         id: curve.clone(),
                                                         geometry: CurveGeometry::Nurbs(member.curve),
@@ -593,9 +619,9 @@ fn emit_loft_surface(
                                                 },
                                             ).collect();
                                             let path_curve = entry.path.curve.map(|geometry| {
-                                                let path_curve = CurveId(format!(
+                                                let path_curve = CurveId::mint(format!(
                                                     "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:path"
-                                                ));
+                                                )).expect("identity grammar");
                                                 out.curves.push(Curve {
                                                     id: path_curve.clone(),
                                                     geometry: CurveGeometry::Nurbs(geometry),
@@ -605,9 +631,9 @@ fn emit_loft_surface(
                                             });
                                             let auxiliaries = entry.path.auxiliaries.into_iter().enumerate().map(
                                                 |(auxiliary_index, geometry)| {
-                                                    let id = CurveId(format!(
+                                                    let id = CurveId::mint(format!(
                                                         "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:auxiliary:{auxiliary_index}"
-                                                    ));
+                                                    )).expect("identity grammar");
                                                     out.curves.push(Curve {
                                                         id: id.clone(),
                                                         geometry: CurveGeometry::Nurbs(geometry),
@@ -656,18 +682,18 @@ fn emit_compound_loft_surface(
                                     .into_iter()
                                     .enumerate()
                                     .map(|(member_index, member)| {
-                                        let curve = CurveId(format!(
+                                        let curve = CurveId::mint(format!(
                                             "{format}:brep:procedural_surface#{i}:cloft:{name}:member:{member_index}:curve"
-                                        ));
+                                        )).expect("identity grammar");
                                         out.curves.push(Curve {
                                             id: curve.clone(),
                                             geometry: CurveGeometry::Nurbs(member.curve),
                                             source_object: None,
                                         });
                                         let surface = member.data.surface.map(|geometry| {
-                                                let surface = SurfaceId(format!(
+                                                let surface = SurfaceId::mint(format!(
                                                     "{format}:brep:procedural_surface#{i}:cloft:{name}:member:{member_index}:surface"
-                                                ));
+                                                )).expect("identity grammar");
                                                 out.surfaces.push(Surface {
                                                     id: surface.clone(),
                                                     geometry,
@@ -697,9 +723,10 @@ fn emit_compound_loft_surface(
                                         }
                                     })
                                     .collect();
-        let path = CurveId(format!(
+        let path = CurveId::mint(format!(
             "{format}:brep:procedural_surface#{i}:cloft:{name}:path"
-        ));
+        ))
+        .expect("identity grammar");
         out.curves.push(Curve {
             id: path.clone(),
             geometry: CurveGeometry::Nurbs(scale.path),
@@ -710,9 +737,10 @@ fn emit_compound_loft_surface(
             .into_iter()
             .enumerate()
             .map(|(index, geometry)| {
-                let id = CurveId(format!(
+                let id = CurveId::mint(format!(
                     "{format}:brep:procedural_surface#{i}:cloft:{name}:auxiliary:{index}"
-                ));
+                ))
+                .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(geometry),
@@ -750,9 +778,10 @@ fn emit_compound_loft_surface(
             parameter_range,
             curve,
         } => {
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:cloft:tail6:curve"
-            ));
+            ))
+            .expect("identity grammar");
             out.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
@@ -796,9 +825,10 @@ fn emit_compound_loft_surface(
                     cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
                 }
                 EmbeddedCompoundLoftDirection::Curve { selector, curve } => {
-                    let id = CurveId(format!(
+                    let id = CurveId::mint(format!(
                         "{format}:brep:procedural_surface#{i}:cloft:tail0:direction"
-                    ));
+                    ))
+                    .expect("identity grammar");
                     out.curves.push(Curve {
                         id: id.clone(),
                         geometry: CurveGeometry::Nurbs(curve),
@@ -841,18 +871,18 @@ fn emit_scaled_compound_loft_surface(
                                     .into_iter()
                                     .enumerate()
                                     .map(|(member_index, member)| {
-                                        let curve = CurveId(format!(
+                                        let curve = CurveId::mint(format!(
                                             "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:curve"
-                                        ));
+                                        )).expect("identity grammar");
                                         out.curves.push(Curve {
                                             id: curve.clone(),
                                             geometry: CurveGeometry::Nurbs(member.curve),
                                             source_object: None,
                                         });
                                         let surface = member.data.surface.map(|geometry| {
-                                                let surface = SurfaceId(format!(
+                                                let surface = SurfaceId::mint(format!(
                                                     "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:surface"
-                                                ));
+                                                )).expect("identity grammar");
                                                 out.surfaces.push(Surface {
                                                     id: surface.clone(),
                                                     geometry,
@@ -882,9 +912,10 @@ fn emit_scaled_compound_loft_surface(
                                         }
                                     })
                                     .collect();
-        let path = CurveId(format!(
+        let path = CurveId::mint(format!(
             "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}:path"
-        ));
+        ))
+        .expect("identity grammar");
         out.curves.push(Curve {
             id: path.clone(),
             geometry: CurveGeometry::Nurbs(scale.path),
@@ -895,9 +926,10 @@ fn emit_scaled_compound_loft_surface(
             .into_iter()
             .enumerate()
             .map(|(index, geometry)| {
-                let id = CurveId(format!(
+                let id = CurveId::mint(format!(
                     "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}:auxiliary:{index}"
-                ));
+                ))
+                .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(geometry),
@@ -928,9 +960,10 @@ fn emit_scaled_compound_loft_surface(
             cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
         }
         EmbeddedCompoundLoftDirection::Curve { selector, curve } => {
-            let id = CurveId(format!(
+            let id = CurveId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}"
-            ));
+            ))
+            .expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
@@ -961,9 +994,10 @@ fn emit_scaled_compound_loft_surface(
             singularity,
             curve,
         } => {
-            let id = CurveId(format!(
+            let id = CurveId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:scaled_cloft:branch:curve"
-            ));
+            ))
+            .expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
@@ -986,9 +1020,10 @@ fn emit_scaled_compound_loft_surface(
             direction: map_direction(&mut *out, "branch:direction", direction),
         },
     };
-    let tail_curve = CurveId(format!(
+    let tail_curve = CurveId::mint(format!(
         "{format}:brep:procedural_surface#{i}:scaled_cloft:tail:curve"
-    ));
+    ))
+    .expect("identity grammar");
     out.curves.push(Curve {
         id: tail_curve.clone(),
         geometry: CurveGeometry::Nurbs(embedded.tail_curve),
@@ -1072,9 +1107,10 @@ fn emit_law_surface(
                 endpoints,
                 parameters,
             } => {
-                let id = CurveId(format!(
+                let id = CurveId::mint(format!(
                     "{format}:brep:procedural_surface#{owner}:law:{path}:edge"
-                ));
+                ))
+                .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(curve),
@@ -1187,9 +1223,10 @@ fn emit_skin_surface(
                 endpoints,
                 parameters,
             } => {
-                let id = CurveId(format!(
+                let id = CurveId::mint(format!(
                     "{format}:brep:procedural_surface#{owner}:skin:law:{path}:edge"
-                ));
+                ))
+                .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(curve),
@@ -1240,15 +1277,18 @@ fn emit_skin_surface(
             secondary_curve,
             second_tail,
         } => {
-            let curve_id = CurveId(format!("{format}:brep:procedural_surface#{i}:skin:curve"));
+            let curve_id =
+                CurveId::mint(format!("{format}:brep:procedural_surface#{i}:skin:curve"))
+                    .expect("identity grammar");
             out.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
                 source_object: None,
             });
-            let secondary_id = CurveId(format!(
+            let secondary_id = CurveId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:skin:secondary"
-            ));
+            ))
+            .expect("identity grammar");
             out.curves.push(Curve {
                 id: secondary_id.clone(),
                 geometry: CurveGeometry::Nurbs(secondary_curve),
@@ -1271,18 +1311,20 @@ fn emit_skin_surface(
                 .into_iter()
                 .enumerate()
                 .map(|(index, profile)| {
-                    let curve = CurveId(format!(
+                    let curve = CurveId::mint(format!(
                         "{format}:brep:procedural_surface#{i}:skin:profile:{index}:curve"
-                    ));
+                    ))
+                    .expect("identity grammar");
                     out.curves.push(Curve {
                         id: curve.clone(),
                         geometry: CurveGeometry::Nurbs(profile.curve),
                         source_object: None,
                     });
                     let surface = profile.data.surface.map(|geometry| {
-                        let surface = SurfaceId(format!(
+                        let surface = SurfaceId::mint(format!(
                             "{format}:brep:procedural_surface#{i}:skin:profile:{index}:surface"
-                        ));
+                        ))
+                        .expect("identity grammar");
                         out.surfaces.push(Surface {
                             id: surface.clone(),
                             geometry,
@@ -1309,7 +1351,8 @@ fn emit_skin_surface(
                     }
                 })
                 .collect();
-            let path_id = CurveId(format!("{format}:brep:procedural_surface#{i}:skin:path"));
+            let path_id = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:skin:path"))
+                .expect("identity grammar");
             out.curves.push(Curve {
                 id: path_id.clone(),
                 geometry: CurveGeometry::Nurbs(path),
@@ -1322,9 +1365,10 @@ fn emit_skin_surface(
             }
         }
     };
-    let parameter_curve = CurveId(format!(
+    let parameter_curve = CurveId::mint(format!(
         "{format}:brep:procedural_surface#{i}:skin:parameter_curve"
-    ));
+    ))
+    .expect("identity grammar");
     out.curves.push(Curve {
         id: parameter_curve.clone(),
         geometry: CurveGeometry::Nurbs(embedded.parameter_curve),
@@ -1399,9 +1443,10 @@ fn emit_net_surface(
                 endpoints,
                 parameters,
             } => {
-                let id = CurveId(format!(
+                let id = CurveId::mint(format!(
                     "{format}:brep:procedural_surface#{owner}:net:law:{path}:edge"
-                ));
+                ))
+                .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(curve),
@@ -1452,9 +1497,9 @@ fn emit_net_surface(
                                                 .into_iter()
                                                 .enumerate()
                                                 .map(|(member_index, member)| {
-                                                    let curve = CurveId(format!(
+                                                    let curve = CurveId::mint(format!(
                                                         "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:curve"
-                                                    ));
+                                                    )).expect("identity grammar");
                                                     out.curves.push(Curve {
                                                         id: curve.clone(),
                                                         geometry: CurveGeometry::Nurbs(member.curve),
@@ -1477,9 +1522,9 @@ fn emit_net_surface(
                                                 })
                                                 .collect();
                                             let path = entry.path.curve.map(|geometry| {
-                                                let path = CurveId(format!(
+                                                let path = CurveId::mint(format!(
                                                     "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:path"
-                                                ));
+                                                )).expect("identity grammar");
                                                 out.curves.push(Curve {
                                                     id: path.clone(),
                                                     geometry: CurveGeometry::Nurbs(geometry),
@@ -1493,9 +1538,9 @@ fn emit_net_surface(
                                                 .into_iter()
                                                 .enumerate()
                                                 .map(|(index, geometry)| {
-                                                    let id = CurveId(format!(
+                                                    let id = CurveId::mint(format!(
                                                         "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:auxiliary:{index}"
-                                                    ));
+                                                    )).expect("identity grammar");
                                                     out.curves.push(Curve {
                                                         id: id.clone(),
                                                         geometry: CurveGeometry::Nurbs(geometry),
@@ -1601,9 +1646,10 @@ fn emit_sweep_surface(
                 endpoints,
                 parameters,
             } => {
-                let id = CurveId(format!(
+                let id = CurveId::mint(format!(
                     "{format}:brep:procedural_surface#{owner}:sweep:law:{path}:edge"
-                ));
+                ))
+                .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(curve),
@@ -1734,7 +1780,8 @@ fn emit_sweep_surface(
             trailing_flags,
         } => {
             let guide_curve_id =
-                CurveId(format!("{format}:brep:procedural_surface#{i}:sweep:guide"));
+                CurveId::mint(format!("{format}:brep:procedural_surface#{i}:sweep:guide"))
+                    .expect("identity grammar");
             out.curves.push(Curve {
                 id: guide_curve_id.clone(),
                 geometry: CurveGeometry::Nurbs(guide_curve),
@@ -1778,18 +1825,20 @@ fn emit_sweep_surface(
             support_flag,
             legacy_flag,
         } => {
-            let support_surface_id = SurfaceId(format!(
+            let support_surface_id = SurfaceId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:sweep:support"
-            ));
+            ))
+            .expect("identity grammar");
             out.surfaces.push(Surface {
                 id: support_surface_id.clone(),
                 geometry: support_surface,
                 source_object: None,
             });
             let auxiliary_curve = auxiliary_curve.map(|geometry| {
-                let id = CurveId(format!(
+                let id = CurveId::mint(format!(
                     "{format}:brep:procedural_surface#{i}:sweep:auxiliary"
-                ));
+                ))
+                .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(geometry),
@@ -1876,15 +1925,17 @@ fn emit_sweep_surface(
             )
         }
     };
-    let profile = CurveId(format!(
+    let profile = CurveId::mint(format!(
         "{format}:brep:procedural_surface#{i}:sweep:profile"
-    ));
+    ))
+    .expect("identity grammar");
     out.curves.push(Curve {
         id: profile.clone(),
         geometry: CurveGeometry::Nurbs(profile_geometry),
         source_object: None,
     });
-    let spine = CurveId(format!("{format}:brep:procedural_surface#{i}:sweep:spine"));
+    let spine = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:sweep:spine"))
+        .expect("identity grammar");
     out.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Nurbs(spine_geometry),
@@ -1911,17 +1962,19 @@ fn emit_g2_blend_surface(
 ) -> ProceduralSurfaceDefinition {
     let embedded = *embedded;
     let mut add_side = |name: &str, side: EmbeddedG2Side| {
-        let surface = SurfaceId(format!(
+        let surface = SurfaceId::mint(format!(
             "{format}:brep:procedural_surface#{i}:g2:{name}:surface"
-        ));
+        ))
+        .expect("identity grammar");
         out.surfaces.push(Surface {
             id: surface.clone(),
             geometry: side.surface,
             source_object: None,
         });
-        let curve = CurveId(format!(
+        let curve = CurveId::mint(format!(
             "{format}:brep:procedural_surface#{i}:g2:{name}:curve"
-        ));
+        ))
+        .expect("identity grammar");
         out.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Nurbs(side.curve),
@@ -1943,9 +1996,10 @@ fn emit_g2_blend_surface(
     let first_shape = match embedded.first_shape {
         EmbeddedG2FirstShape::Full { surface, tolerance } => {
             let support = surface.zip(tolerance).map(|(geometry, tolerance)| {
-                let id = SurfaceId(format!(
+                let id = SurfaceId::mint(format!(
                     "{format}:brep:procedural_surface#{i}:g2:first_exact"
-                ));
+                ))
+                .expect("identity grammar");
                 out.surfaces.push(Surface {
                     id: id.clone(),
                     geometry: SurfaceGeometry::Nurbs(geometry),
@@ -1970,15 +2024,17 @@ fn emit_g2_blend_surface(
             pcurve: pcurve.map(NurbsPcurve::into_geometry),
         },
     };
-    let second_exact_surface = SurfaceId(format!(
+    let second_exact_surface = SurfaceId::mint(format!(
         "{format}:brep:procedural_surface#{i}:g2:second_exact"
-    ));
+    ))
+    .expect("identity grammar");
     out.surfaces.push(Surface {
         id: second_exact_surface.clone(),
         geometry: SurfaceGeometry::Nurbs(embedded.second_exact_surface),
         source_object: None,
     });
-    let center_curve = CurveId(format!("{format}:brep:procedural_surface#{i}:g2:center"));
+    let center_curve = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:g2:center"))
+        .expect("identity grammar");
     out.curves.push(Curve {
         id: center_curve.clone(),
         geometry: CurveGeometry::Nurbs(embedded.center_curve),
@@ -2011,7 +2067,7 @@ fn emit_variable_blend_surface(
     for (side_index, side) in construction.sides.into_iter().enumerate() {
         let prefix = format!("{format}:brep:procedural_surface#{i}:variable_side{side_index}");
         let surface = side.surface.map(|geometry| {
-            let id = SurfaceId(format!("{prefix}:surface"));
+            let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -2020,7 +2076,7 @@ fn emit_variable_blend_surface(
             id
         });
         let curve = side.curve.map(|geometry| {
-            let id = CurveId(format!("{prefix}:curve"));
+            let id = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
                 geometry,
@@ -2045,9 +2101,10 @@ fn emit_variable_blend_surface(
         .try_into()
         .expect("invariant: variable blend has two sides");
     let mut add_curve = |suffix: &str, geometry: CurveGeometry| {
-        let id = CurveId(format!(
+        let id = CurveId::mint(format!(
             "{format}:brep:procedural_surface#{i}:variable_{suffix}"
-        ));
+        ))
+        .expect("identity grammar");
         out.curves.push(Curve {
             id: id.clone(),
             geometry,
@@ -2107,7 +2164,8 @@ fn emit_revision_compound_loft_surface(
             .into_iter()
             .enumerate()
             .map(|(member_index, member)| {
-                let curve = CurveId(format!("{scope}:profile:{member_index}"));
+                let curve = CurveId::mint(format!("{scope}:profile:{member_index}"))
+                    .expect("identity grammar");
                 out.curves.push(Curve {
                     id: curve.clone(),
                     geometry: CurveGeometry::Nurbs(member.curve),
@@ -2133,7 +2191,7 @@ fn emit_revision_compound_loft_surface(
                         out: &mut AsmBrep|
      -> cadmpeg_ir::geometry::LoftPath {
         let curve = path.curve.map(|geometry| {
-            let id = CurveId(format!("{scope}:path"));
+            let id = CurveId::mint(format!("{scope}:path")).expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Nurbs(geometry),
@@ -2146,7 +2204,8 @@ fn emit_revision_compound_loft_surface(
             .into_iter()
             .enumerate()
             .map(|(auxiliary_index, geometry)| {
-                let id = CurveId(format!("{scope}:auxiliary:{auxiliary_index}"));
+                let id = CurveId::mint(format!("{scope}:auxiliary:{auxiliary_index}"))
+                    .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(geometry),
@@ -2185,9 +2244,10 @@ fn emit_revision_compound_loft_surface(
             cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
         }
         EmbeddedCompoundLoftDirection::Curve { selector, curve } => {
-            let id = CurveId(format!(
+            let id = CurveId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:cloft:direction"
-            ));
+            ))
+            .expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Nurbs(curve),
@@ -2200,9 +2260,10 @@ fn emit_revision_compound_loft_surface(
         }
     };
     let trailing_curve = construction.trailing_curve.map(|geometry| {
-        let id = CurveId(format!(
+        let id = CurveId::mint(format!(
             "{format}:brep:procedural_surface#{i}:cloft:trailing"
-        ));
+        ))
+        .expect("identity grammar");
         out.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Nurbs(geometry),
@@ -2239,7 +2300,7 @@ fn emit_revision_g2_blend_surface(
     for (side_index, side) in construction.sides.into_iter().enumerate() {
         let prefix = format!("{format}:brep:procedural_surface#{i}:g2_side{side_index}");
         let surface = side.surface.map(|geometry| {
-            let id = SurfaceId(format!("{prefix}:surface"));
+            let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -2248,7 +2309,7 @@ fn emit_revision_g2_blend_surface(
             id
         });
         let curve = side.curve.map(|geometry| {
-            let id = CurveId(format!("{prefix}:curve"));
+            let id = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
             out.curves.push(Curve {
                 id: id.clone(),
                 geometry,
@@ -2272,7 +2333,8 @@ fn emit_revision_g2_blend_surface(
     let [first, second]: [RollingBallSide; 2] = sides
         .try_into()
         .expect("invariant: revision g2 blend has two sides");
-    let center_id = CurveId(format!("{format}:brep:procedural_surface#{i}:g2_center"));
+    let center_id = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:g2_center"))
+        .expect("identity grammar");
     out.curves.push(Curve {
         id: center_id.clone(),
         geometry: construction.center,
@@ -2320,7 +2382,7 @@ fn emit_vertex_blend_surface(
                 parameters,
                 sense,
             } => {
-                let id = CurveId(format!("{prefix}:curve"));
+                let id = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: curve,
@@ -2345,7 +2407,7 @@ fn emit_vertex_blend_surface(
                 sense,
                 fit_tolerance,
             } => {
-                let id = SurfaceId(format!("{prefix}:surface"));
+                let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
                 out.surfaces.push(Surface {
                     id: id.clone(),
                     geometry: surface,
@@ -2365,7 +2427,7 @@ fn emit_vertex_blend_surface(
                 curve,
                 curve_endpoints,
             } => {
-                let id = CurveId(format!("{prefix}:curve"));
+                let id = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: curve,
@@ -2412,9 +2474,10 @@ fn emit_blend_surface(
     let mut resolved_supports = [None, None];
     for (side, support) in supports.into_iter().enumerate() {
         if let Some(support) = support {
-            let support_id = SurfaceId(format!(
+            let support_id = SurfaceId::mint(format!(
                 "{format}:brep:procedural_surface#{i}:support{side}"
-            ));
+            ))
+            .expect("identity grammar");
             out.surfaces.push(Surface {
                 id: support_id.clone(),
                 geometry: support,
@@ -2427,7 +2490,8 @@ fn emit_blend_surface(
         }
     }
     let spine = spine.map(|spine| {
-        let spine_id = CurveId(format!("{format}:brep:procedural_surface#{i}:spine"));
+        let spine_id = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:spine"))
+            .expect("identity grammar");
         out.curves.push(Curve {
             id: spine_id.clone(),
             geometry: CurveGeometry::Nurbs(spine),
@@ -2440,7 +2504,7 @@ fn emit_blend_surface(
         for (side_index, side) in native.sides.into_iter().enumerate() {
             let prefix = format!("{format}:brep:procedural_surface#{i}:native_side{side_index}");
             let surface = side.surface.map(|geometry| {
-                let id = SurfaceId(format!("{prefix}:surface"));
+                let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
                 out.surfaces.push(Surface {
                     id: id.clone(),
                     geometry,
@@ -2455,7 +2519,7 @@ fn emit_blend_surface(
                 id
             });
             let curve = side.curve.map(|geometry| {
-                let id = CurveId(format!("{prefix}:curve"));
+                let id = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry,
@@ -2479,7 +2543,8 @@ fn emit_blend_surface(
         let [first, second]: [RollingBallSide; 2] = resolved_sides
             .try_into()
             .expect("invariant: native rolling-ball has two sides");
-        let slice = CurveId(format!("{format}:brep:procedural_surface#{i}:native_slice"));
+        let slice = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:native_slice"))
+            .expect("identity grammar");
         out.curves.push(Curve {
             id: slice.clone(),
             geometry: native.slice,
@@ -2487,13 +2552,13 @@ fn emit_blend_surface(
         });
         let third = native.third.map(|side| {
             let prefix = format!("{format}:brep:procedural_surface#{i}:native_third");
-            let surface = SurfaceId(format!("{prefix}:surface"));
+            let surface = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
             out.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry: side.surface,
                 source_object: None,
             });
-            let curve = CurveId(format!("{prefix}:curve"));
+            let curve = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
             out.curves.push(Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Nurbs(side.curve),
@@ -2575,7 +2640,7 @@ fn emit_carrier_curve(
             let mut reversed = geometry.clone();
             reverse_curve_geometry(&mut reversed);
             out.curves.push(Curve {
-                id: CurveId(format!("{}:reversed", id(format, i))),
+                id: CurveId::mint(format!("{}:reversed", id(format, i))).expect("identity grammar"),
                 geometry: reversed,
                 source_object: None,
             });
@@ -2584,13 +2649,14 @@ fn emit_carrier_curve(
         }
     }
     out.curves.push(Curve {
-        id: CurveId(id(format, i)),
+        id: CurveId::mint(id(format, i)).expect("identity grammar"),
         geometry,
         source_object: None,
     });
     if let Some(procedural) = procedural_curve_defs.remove(&i) {
         let definition = if let Some((source, parameter_range, offset, roles)) = procedural.2 {
-            let source_id = CurveId(format!("{format}:brep:procedural_curve#{i}:source"));
+            let source_id = CurveId::mint(format!("{format}:brep:procedural_curve#{i}:source"))
+                .expect("identity grammar");
             out.curves.push(Curve {
                 id: source_id.clone(),
                 geometry: CurveGeometry::Nurbs(source),
@@ -2603,7 +2669,8 @@ fn emit_carrier_curve(
                 roles,
             }
         } else if let Some((source, parameter_range)) = procedural.3 {
-            let source_id = CurveId(format!("{format}:brep:procedural_curve#{i}:source"));
+            let source_id = CurveId::mint(format!("{format}:brep:procedural_curve#{i}:source"))
+                .expect("identity grammar");
             out.curves.push(Curve {
                 id: source_id.clone(),
                 geometry: CurveGeometry::Nurbs(source),
@@ -2621,7 +2688,10 @@ fn emit_carrier_curve(
                 .enumerate()
                 .map(|(side, geometry)| {
                     let geometry = geometry?;
-                    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+                    let id = SurfaceId::mint(format!(
+                        "{format}:brep:procedural_curve#{i}:support{side}"
+                    ))
+                    .expect("identity grammar");
                     out.surfaces.push(Surface {
                         id: id.clone(),
                         geometry,
@@ -2655,7 +2725,10 @@ fn emit_carrier_curve(
                 .enumerate()
                 .map(|(side, geometry)| {
                     let geometry = geometry?;
-                    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+                    let id = SurfaceId::mint(format!(
+                        "{format}:brep:procedural_curve#{i}:support{side}"
+                    ))
+                    .expect("identity grammar");
                     out.surfaces.push(Surface {
                         id: id.clone(),
                         geometry,
@@ -2687,7 +2760,10 @@ fn emit_carrier_curve(
                 .into_iter()
                 .enumerate()
                 .map(|(side, geometry)| {
-                    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+                    let id = SurfaceId::mint(format!(
+                        "{format}:brep:procedural_curve#{i}:support{side}"
+                    ))
+                    .expect("identity grammar");
                     out.surfaces.push(Surface {
                         id: id.clone(),
                         geometry,
@@ -2733,9 +2809,10 @@ fn emit_carrier_curve(
                 .enumerate()
                 .map(|(side, geometry)| {
                     geometry.map(|geometry| {
-                        let id = SurfaceId(format!(
+                        let id = SurfaceId::mint(format!(
                             "{format}:brep:procedural_curve#{i}:deformable_support{side}"
-                        ));
+                        ))
+                        .expect("identity grammar");
                         out.surfaces.push(Surface {
                             id: id.clone(),
                             geometry,
@@ -2752,9 +2829,10 @@ fn emit_carrier_curve(
                 .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
             let source = match embedded.source {
                 crate::nurbs::proc_curve::EmbeddedDeformableSource::Curve(geometry) => {
-                    let curve = CurveId(format!(
+                    let curve = CurveId::mint(format!(
                         "{format}:brep:procedural_curve#{i}:deformable_source"
-                    ));
+                    ))
+                    .expect("identity grammar");
                     out.curves.push(Curve {
                         id: curve.clone(),
                         geometry: CurveGeometry::Nurbs(geometry),
@@ -2825,9 +2903,10 @@ fn emit_carrier_curve(
                 .into_iter()
                 .enumerate()
                 .map(|(component, curve)| {
-                    let id = CurveId(format!(
+                    let id = CurveId::mint(format!(
                         "{format}:brep:procedural_curve#{i}:component#{component}"
-                    ));
+                    ))
+                    .expect("identity grammar");
                     out.curves.push(Curve {
                         id: id.clone(),
                         geometry: CurveGeometry::Nurbs(curve),
@@ -2854,12 +2933,14 @@ fn emit_carrier_curve(
             definition,
             procedural.15,
         ) {
-            out.procedural_curves
-                .push((CurveId(id(format, i)), procedural));
+            out.procedural_curves.push((
+                CurveId::mint(id(format, i)).expect("identity grammar"),
+                procedural,
+            ));
         }
     } else if let Some((_native_kind, definition)) = cacheless_procedural_curve_defs.remove(&i) {
         out.procedural_curves.push((
-            CurveId(id(format, i)),
+            CurveId::mint(id(format, i)).expect("identity grammar"),
             ProceduralCurve::new(
                 format!("{format}:brep:procedural_curve#{i}").into(),
                 definition,
@@ -2881,7 +2962,9 @@ fn emit_surface_curve_family(
             .enumerate()
             .map(|(side, geometry)| {
                 let geometry = geometry?;
-                let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+                let id =
+                    SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+                        .expect("identity grammar");
                 out.surfaces.push(Surface {
                     id: id.clone(),
                     geometry,
@@ -2946,7 +3029,8 @@ fn emit_silhouette_curve(
         .enumerate()
         .map(|(side, geometry)| {
             let geometry = geometry?;
-            let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+            let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+                .expect("identity grammar");
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -2961,7 +3045,8 @@ fn emit_silhouette_curve(
         .context
         .pcurves
         .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
-    let cast_surface = SurfaceId(format!("{format}:brep:procedural_curve#{i}:cast_surface"));
+    let cast_surface = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:cast_surface"))
+        .expect("identity grammar");
     out.surfaces.push(Surface {
         id: cast_surface.clone(),
         geometry: embedded.cast_surface,
@@ -2996,7 +3081,8 @@ fn emit_surface_offset_curve(
         .enumerate()
         .map(|(side, geometry)| {
             let geometry = geometry?;
-            let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+            let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+                .expect("identity grammar");
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -3011,7 +3097,8 @@ fn emit_surface_offset_curve(
         .context
         .pcurves
         .map(|pcurve| pcurve.map(NurbsPcurve::into_geometry));
-    let base = CurveId(format!("{format}:brep:procedural_curve#{i}:base"));
+    let base = CurveId::mint(format!("{format}:brep:procedural_curve#{i}:base"))
+        .expect("identity grammar");
     out.curves.push(Curve {
         id: base.clone(),
         geometry: CurveGeometry::Nurbs(embedded.base),
@@ -3047,7 +3134,8 @@ fn emit_spring_surface(
     side: usize,
     geometry: SurfaceGeometry,
 ) -> SurfaceId {
-    let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+    let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+        .expect("identity grammar");
     out.surfaces.push(Surface {
         id: id.clone(),
         geometry,
@@ -3149,7 +3237,8 @@ fn emit_projection_curve(
         .into_iter()
         .enumerate()
         .map(|(side, geometry)| {
-            let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+            let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+                .expect("identity grammar");
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -3161,7 +3250,8 @@ fn emit_projection_curve(
         .try_into()
         .expect("two fixed support sides");
     let pcurves = embedded.pcurves.map(|pcurve| Some(pcurve.into_geometry()));
-    let source = CurveId(format!("{format}:brep:procedural_curve#{i}:source"));
+    let source = CurveId::mint(format!("{format}:brep:procedural_curve#{i}:source"))
+        .expect("identity grammar");
     out.curves.push(Curve {
         id: source.clone(),
         geometry: CurveGeometry::Nurbs(embedded.source),
@@ -3230,7 +3320,9 @@ fn emit_law_curve(
                 endpoints,
                 parameters,
             } => {
-                let id = CurveId(format!("{format}:brep:procedural_curve#{owner}:law:{path}"));
+                let id =
+                    CurveId::mint(format!("{format}:brep:procedural_curve#{owner}:law:{path}"))
+                        .expect("identity grammar");
                 out.curves.push(Curve {
                     id: id.clone(),
                     geometry: CurveGeometry::Nurbs(curve),
@@ -3273,7 +3365,8 @@ fn emit_law_curve(
         .enumerate()
         .map(|(side, geometry)| {
             let geometry = geometry?;
-            let id = SurfaceId(format!("{format}:brep:procedural_curve#{i}:support{side}"));
+            let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+                .expect("identity grammar");
             out.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
@@ -3342,9 +3435,12 @@ pub(crate) fn emit_carrier_records(
                 // Topology-known face on an undecoded surface: emit an opaque
                 // carrier linking to the preserved record bytes, marked Unknown.
                 out.surfaces.push(Surface {
-                    id: SurfaceId(id(format, i)),
+                    id: SurfaceId::mint(id(format, i)).expect("identity grammar"),
                     geometry: SurfaceGeometry::Unknown {
-                        record: Some(UnknownId(unknown_record_id(r, format))),
+                        record: Some(
+                            UnknownId::mint(unknown_record_id(r, format))
+                                .expect("identity grammar"),
+                        ),
                     },
                     source_object: None,
                 });
@@ -3417,7 +3513,7 @@ pub(crate) fn emit_pcurves(
                     }
                 };
                 out.pcurves.push(Pcurve {
-                    id: PcurveId(id(format, i)),
+                    id: PcurveId::mint(id(format, i)).expect("identity grammar"),
                     geometry,
                     metadata,
                 });
@@ -3443,7 +3539,7 @@ pub(crate) fn emit_points(
             let c = collect_carrier(r);
             if let Some(p) = c.positions.first() {
                 out.points.push(Point {
-                    id: PointId(id(format, i)),
+                    id: PointId::mint(id(format, i)).expect("identity grammar"),
                     position: scale_point(*p),
                     source_object: None,
                 });
@@ -3471,8 +3567,8 @@ pub(crate) fn emit_vertices(
             if let Some(pi) = vertex_point_ref(r) {
                 if kept_points.contains(&pi) {
                     out.vertices.push(Vertex {
-                        id: VertexId(id(format, i)),
-                        point: PointId(id(format, pi)),
+                        id: VertexId::mint(id(format, i)).expect("identity grammar"),
+                        point: PointId::mint(id(format, pi)).expect("identity grammar"),
                         // The last of the three f64 tolerance slots is the
                         // evaluated tolerance. A negative value is the unset
                         // sentinel, a marker rather than a length: the
@@ -3501,7 +3597,7 @@ pub(crate) fn emit_vertices(
                         {
                             out.tolerant_vertex_tails.push(TolerantVertexTail {
                                 id: format!("{format}:asm:tolerant-vertex-tail#{i}"),
-                                vertex: VertexId(id(format, i)),
+                                vertex: VertexId::mint(id(format, i)).expect("identity grammar"),
                                 record_index: r.index as u32,
                                 leading_tolerances: [*first, *second],
                                 evaluated_unset: matches!(
@@ -3525,9 +3621,10 @@ pub(crate) fn emit_vertices(
                     ) {
                         out.vertex_ownerships.push(VertexOwnership {
                             id: format!("{format}:asm:vertex-ownership#{i}"),
-                            vertex: VertexId(id(format, i)),
+                            vertex: VertexId::mint(id(format, i)).expect("identity grammar"),
                             record_index: r.index as u32,
-                            owning_edge: EdgeId(id(format, owning_edge)),
+                            owning_edge: EdgeId::mint(id(format, owning_edge))
+                                .expect("identity grammar"),
                             endpoint_index: *endpoint_index as u8,
                         });
                     }
@@ -3556,9 +3653,9 @@ pub(crate) fn emit_edges(
     } = reach;
     let reversed_curve_id = |c: i64| {
         if reversed_curve_refs.contains(&c) && forward_curve_refs.contains(&c) {
-            CurveId(format!("{}:reversed", id(format, c)))
+            CurveId::mint(format!("{}:reversed", id(format, c))).expect("identity grammar")
         } else {
-            CurveId(id(format, c))
+            CurveId::mint(id(format, c)).expect("identity grammar")
         }
     };
     for r in records {
@@ -3615,7 +3712,7 @@ pub(crate) fn emit_edges(
             // link differs when the curve is shared across senses.
             let curve = curve.map(|c| match sense_at(r, 9) {
                 Sense::Reversed => reversed_curve_id(c),
-                Sense::Forward => CurveId(id(format, c)),
+                Sense::Forward => CurveId::mint(id(format, c)).expect("identity grammar"),
             });
             // The tedge tail carries the model-space tolerance, then the
             // per-entity serializer revision stamp, then a trailing LONG
@@ -3635,17 +3732,17 @@ pub(crate) fn emit_edges(
                 _ => None,
             };
             out.edges.push(Edge {
-                id: EdgeId(id(format, i)),
+                id: EdgeId::mint(id(format, i)).expect("identity grammar"),
                 curve,
-                start: VertexId(id(format, start)),
-                end: VertexId(id(format, end)),
+                start: VertexId::mint(id(format, start)).expect("identity grammar"),
+                end: VertexId::mint(id(format, end)).expect("identity grammar"),
                 param_range,
                 tolerance: tolerant_tail.map(|(tolerance, _, _)| tolerance * LEN_TO_MM),
             });
             if let Some((_, entity_revision, trailing_field)) = tolerant_tail {
                 out.tolerant_edge_tails.push(TolerantEdgeTail {
                     id: format!("{format}:asm:tolerant-edge-tail#{i}"),
-                    edge: EdgeId(id(format, i)),
+                    edge: EdgeId::mint(id(format, i)).expect("identity grammar"),
                     record_index: r.index as u32,
                     entity_revision,
                     trailing_field,
@@ -3653,14 +3750,16 @@ pub(crate) fn emit_edges(
             }
             out.edge_ownerships.push(EdgeOwnership {
                 id: format!("{format}:asm:edge-ownership#{i}"),
-                edge: EdgeId(id(format, i)),
+                edge: EdgeId::mint(id(format, i)).expect("identity grammar"),
                 record_index: r.index as u32,
-                owner_coedge: r.ref_at(7).map(|owner| CoedgeId(id(format, owner))),
+                owner_coedge: r
+                    .ref_at(7)
+                    .map(|owner| CoedgeId::mint(id(format, owner)).expect("identity grammar")),
             });
             if let Some(Token::Str(continuity)) = r.chunk(10) {
                 out.edge_continuities.push(EdgeContinuity {
                     id: format!("{format}:asm:edge-continuity#{i}"),
-                    edge: EdgeId(id(format, i)),
+                    edge: EdgeId::mint(id(format, i)).expect("identity grammar"),
                     record_index: r.index as u32,
                     sense: sense_at(r, 9),
                     continuity: continuity.clone(),
@@ -3744,7 +3843,8 @@ pub(crate) fn emit_coedges(
                 if *curve_reversed {
                     reverse_nurbs_curve(&mut curve);
                 }
-                let curve_id = CurveId(format!("{format}:brep:tolerant-coedge-curve#{i}"));
+                let curve_id = CurveId::mint(format!("{format}:brep:tolerant-coedge-curve#{i}"))
+                    .expect("identity grammar");
                 out.curves.push(Curve {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Nurbs(curve),
@@ -3753,18 +3853,20 @@ pub(crate) fn emit_coedges(
                 Some((curve_id, parameter_range.unwrap_or(*range)))
             });
             out.coedges.push(Coedge {
-                id: CoedgeId(id(format, i)),
-                owner_loop: LoopId(id(format, owner)),
-                edge: EdgeId(id(format, edge)),
-                next: CoedgeId(id(format, next)),
-                previous: CoedgeId(id(format, prev)),
-                radial_next: partner
-                    .map_or_else(|| CoedgeId(id(format, i)), |p| CoedgeId(id(format, p))),
+                id: CoedgeId::mint(id(format, i)).expect("identity grammar"),
+                owner_loop: LoopId::mint(id(format, owner)).expect("identity grammar"),
+                edge: EdgeId::mint(id(format, edge)).expect("identity grammar"),
+                next: CoedgeId::mint(id(format, next)).expect("identity grammar"),
+                previous: CoedgeId::mint(id(format, prev)).expect("identity grammar"),
+                radial_next: partner.map_or_else(
+                    || CoedgeId::mint(id(format, i)).expect("identity grammar"),
+                    |p| CoedgeId::mint(id(format, p)).expect("identity grammar"),
+                ),
                 sense: sense_at(r, 7),
                 pcurves: coedge_pcurve_ref(r)
                     .filter(|p| kept_pcurves.contains(p))
                     .map(|p| cadmpeg_ir::topology::PcurveUse {
-                        pcurve: PcurveId(id(format, p)),
+                        pcurve: PcurveId::mint(id(format, p)).expect("identity grammar"),
                         isoparametric: None,
                         parameter_range: pcurve_parameter_ranges.get(&i).copied(),
                     })
@@ -3781,7 +3883,7 @@ pub(crate) fn emit_coedges(
                 out.tolerant_coedge_parameters
                     .push(TolerantCoedgeParameters {
                         id: format!("{format}:asm:tolerant-coedge-parameters#{i}"),
-                        coedge: CoedgeId(id(format, i)),
+                        coedge: CoedgeId::mint(id(format, i)).expect("identity grammar"),
                         record_index: r.index as u32,
                         parameter_range,
                         extension,
@@ -3810,8 +3912,8 @@ pub(crate) fn emit_loops(
             let Some(owner) = r.ref_at(5) else { continue };
             let coedges = ring_coedges(r, by_index, kept_coedges, format);
             out.loops.push(Loop {
-                id: LoopId(id(format, i)),
-                face: FaceId(id(format, owner)),
+                id: LoopId::mint(id(format, i)).expect("identity grammar"),
+                face: FaceId::mint(id(format, owner)).expect("identity grammar"),
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                     coedges,
@@ -3865,9 +3967,9 @@ pub(crate) fn emit_faces(
                 };
             }
             out.faces.push(Face {
-                id: FaceId(id(format, i)),
-                shell: ShellId(id(format, owner)),
-                surface: SurfaceId(id(format, surface)),
+                id: FaceId::mint(id(format, i)).expect("identity grammar"),
+                shell: ShellId::mint(id(format, owner)).expect("identity grammar"),
+                surface: SurfaceId::mint(id(format, surface)).expect("identity grammar"),
                 sense,
                 loops,
                 name: attribute_name(r),
@@ -3881,14 +3983,14 @@ pub(crate) fn emit_faces(
             };
             out.face_sidedness.push(FaceSidedness {
                 id: format!("{format}:asm:face-sidedness#{i}"),
-                face: FaceId(id(format, i)),
+                face: FaceId::mint(id(format, i)).expect("identity grammar"),
                 record_index: r.index as u32,
                 native_sense,
                 normalized_sense: sense,
                 containment,
             });
             if let Some(Token::Long(key)) = r.chunk(1) {
-                let face_id = FaceId(id(format, i));
+                let face_id = FaceId::mint(id(format, i)).expect("identity grammar");
                 out.face_native_keys.push(FaceNativeKey {
                     id: format!("{format}:asm:face-native-key#{i}"),
                     face: face_id.clone(),
@@ -3933,20 +4035,22 @@ pub(crate) fn emit_containers(
                 let Some(owner) = r.ref_at(7) else { continue };
                 let faces = shell_faces(r, by_index, kept_faces, format);
                 out.shells.push(Shell {
-                    id: ShellId(id(format, i)),
-                    region: RegionId(id(format, owner)),
+                    id: ShellId::mint(id(format, i)).expect("identity grammar"),
+                    region: RegionId::mint(id(format, owner)).expect("identity grammar"),
                     faces,
                     wire_edges: wire_edges_by_shell
                         .get(&i)
                         .into_iter()
                         .flatten()
-                        .map(|edge| EdgeId(id(format, *edge)))
+                        .map(|edge| EdgeId::mint(id(format, *edge)).expect("identity grammar"))
                         .collect(),
                     free_vertices: free_vertices_by_shell
                         .get(&i)
                         .into_iter()
                         .flatten()
-                        .map(|vertex| VertexId(id(format, *vertex)))
+                        .map(|vertex| {
+                            VertexId::mint(id(format, *vertex)).expect("identity grammar")
+                        })
                         .collect(),
                 });
             }
@@ -3956,14 +4060,14 @@ pub(crate) fn emit_containers(
                 let Some(owner) = r.ref_at(5) else { continue };
                 let shells = shell_chain(r, by_index, format);
                 out.regions.push(Region {
-                    id: RegionId(id(format, i)),
-                    body: BodyId(id(format, owner)),
+                    id: RegionId::mint(id(format, i)).expect("identity grammar"),
+                    body: BodyId::mint(id(format, owner)).expect("identity grammar"),
                     shells,
                 });
             }
             "body" => {
                 let regions = region_chain(r, by_index, format);
-                let body_id = BodyId(id(format, i));
+                let body_id = BodyId::mint(id(format, i)).expect("identity grammar");
                 if let Some(Token::Long(key)) = r.chunk(1) {
                     out.body_native_keys.push(BodyNativeKey {
                         id: format!("{format}:asm:body-native-key#{i}"),
@@ -4014,9 +4118,12 @@ pub(crate) fn emit_containers(
         }
     }
     for &edge in saved_free_edges {
-        let body_id = BodyId(format!("{format}:brep:saved-edge-body#{edge}"));
-        let region_id = RegionId(format!("{format}:brep:saved-edge-region#{edge}"));
-        let shell_id = ShellId(format!("{format}:brep:saved-edge-shell#{edge}"));
+        let body_id = BodyId::mint(format!("{format}:brep:saved-edge-body#{edge}"))
+            .expect("identity grammar");
+        let region_id = RegionId::mint(format!("{format}:brep:saved-edge-region#{edge}"))
+            .expect("identity grammar");
+        let shell_id = ShellId::mint(format!("{format}:brep:saved-edge-shell#{edge}"))
+            .expect("identity grammar");
         out.bodies.push(Body {
             id: body_id.clone(),
             kind: cadmpeg_ir::topology::BodyKind::Wire,
@@ -4035,7 +4142,7 @@ pub(crate) fn emit_containers(
             id: shell_id,
             region: region_id,
             faces: Vec::new(),
-            wire_edges: vec![EdgeId(id(format, edge))],
+            wire_edges: vec![EdgeId::mint(id(format, edge)).expect("identity grammar")],
             free_vertices: Vec::new(),
         });
     }
@@ -4059,7 +4166,7 @@ pub(crate) fn project_subshell_faces(
             .and_then(|index| by_index.get(&index))
             .and_then(|record| record.ref_at(5));
         if let Some(shell) = native_owner.and_then(|owner| subshell_shells.get(&owner)) {
-            face.shell = ShellId(id(format, *shell));
+            face.shell = ShellId::mint(id(format, *shell)).expect("identity grammar");
         }
     }
 }
@@ -4092,7 +4199,9 @@ pub(crate) fn emit_attributes(
                     .iter()
                     .any(|entity| entity.id.0 == id(format, index)) =>
             {
-                Some(AttributeTarget::Body(BodyId(id(format, index))))
+                Some(AttributeTarget::Body(
+                    BodyId::mint(id(format, index)).expect("identity grammar"),
+                ))
             }
             "shell"
                 if out
@@ -4100,7 +4209,9 @@ pub(crate) fn emit_attributes(
                     .iter()
                     .any(|entity| entity.id.0 == id(format, index)) =>
             {
-                Some(AttributeTarget::Shell(ShellId(id(format, index))))
+                Some(AttributeTarget::Shell(
+                    ShellId::mint(id(format, index)).expect("identity grammar"),
+                ))
             }
             // ASM-227 names a region's topological owner `lump`, while
             // ASM-231 names the same record `region`. The neutral model has
@@ -4111,20 +4222,22 @@ pub(crate) fn emit_attributes(
                 .iter()
                 .find(|entity| entity.id.0 == id(format, index))
                 .map(|entity| AttributeTarget::Body(entity.body.clone())),
-            "face" if kept_faces.contains(&index) => {
-                Some(AttributeTarget::Face(FaceId(id(format, index))))
-            }
-            "loop" if kept_loops.contains(&index) => {
-                Some(AttributeTarget::Loop(LoopId(id(format, index))))
-            }
-            "coedge" | "tcoedge" if kept_coedges.contains(&index) => {
-                Some(AttributeTarget::Coedge(CoedgeId(id(format, index))))
-            }
-            "edge" | "tedge" if kept_edges.contains(&index) => {
-                Some(AttributeTarget::Edge(EdgeId(id(format, index))))
-            }
+            "face" if kept_faces.contains(&index) => Some(AttributeTarget::Face(
+                FaceId::mint(id(format, index)).expect("identity grammar"),
+            )),
+            "loop" if kept_loops.contains(&index) => Some(AttributeTarget::Loop(
+                LoopId::mint(id(format, index)).expect("identity grammar"),
+            )),
+            "coedge" | "tcoedge" if kept_coedges.contains(&index) => Some(AttributeTarget::Coedge(
+                CoedgeId::mint(id(format, index)).expect("identity grammar"),
+            )),
+            "edge" | "tedge" if kept_edges.contains(&index) => Some(AttributeTarget::Edge(
+                EdgeId::mint(id(format, index)).expect("identity grammar"),
+            )),
             "vertex" | "tvertex" if kept_vertices.contains(&index) => {
-                Some(AttributeTarget::Vertex(VertexId(id(format, index))))
+                Some(AttributeTarget::Vertex(
+                    VertexId::mint(id(format, index)).expect("identity grammar"),
+                ))
             }
             _ => None,
         };
@@ -4175,7 +4288,7 @@ pub(crate) fn emit_passthrough_unknowns(
         let i = r.index as i64;
         if undecoded_carriers.contains(&i) || cached_unknown_procedural_surfaces.contains(&i) {
             out.unknowns.push(UnknownRecord::retained(
-                UnknownId(unknown_record_id(r, format)),
+                UnknownId::mint(unknown_record_id(r, format)).expect("identity grammar"),
                 r.offset as u64,
                 bytes[r.offset..(r.offset + r.len).min(bytes.len())].to_vec(),
                 Vec::new(),
@@ -4245,28 +4358,28 @@ pub(crate) fn emit_annotation_records(
     let curve_geometries = out
         .curves
         .iter()
-        .map(|curve| (curve.id.0.as_str(), &curve.geometry))
+        .map(|curve| (curve.id.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
     let emitted_ids = out
         .bodies
         .iter()
-        .map(|entity| entity.id.0.as_str())
-        .chain(out.regions.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.shells.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.faces.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.loops.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.coedges.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.edges.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.vertices.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.points.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.surfaces.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.curves.iter().map(|entity| entity.id.0.as_str()))
-        .chain(out.pcurves.iter().map(|entity| entity.id.0.as_str()))
+        .map(|entity| entity.id.as_str())
+        .chain(out.regions.iter().map(|entity| entity.id.as_str()))
+        .chain(out.shells.iter().map(|entity| entity.id.as_str()))
+        .chain(out.faces.iter().map(|entity| entity.id.as_str()))
+        .chain(out.loops.iter().map(|entity| entity.id.as_str()))
+        .chain(out.coedges.iter().map(|entity| entity.id.as_str()))
+        .chain(out.edges.iter().map(|entity| entity.id.as_str()))
+        .chain(out.vertices.iter().map(|entity| entity.id.as_str()))
+        .chain(out.points.iter().map(|entity| entity.id.as_str()))
+        .chain(out.surfaces.iter().map(|entity| entity.id.as_str()))
+        .chain(out.curves.iter().map(|entity| entity.id.as_str()))
+        .chain(out.pcurves.iter().map(|entity| entity.id.as_str()))
         .collect::<HashSet<_>>();
     let attribute_ids = out
         .attributes
         .iter()
-        .map(|attribute| attribute.id.0.as_str())
+        .map(|attribute| attribute.id.as_str())
         .collect::<HashSet<_>>();
     let unknown_ids = out
         .unknowns
@@ -4276,11 +4389,11 @@ pub(crate) fn emit_annotation_records(
     let procedural_ids = out
         .procedural_surfaces
         .iter()
-        .map(|(_, entity)| entity.id.0.as_str())
+        .map(|(_, entity)| entity.id.as_str())
         .chain(
             out.procedural_curves
                 .iter()
-                .map(|(_, entity)| entity.id.0.as_str()),
+                .map(|(_, entity)| entity.id.as_str()),
         )
         .collect::<HashSet<_>>();
     for record in records {
@@ -4375,11 +4488,11 @@ pub(crate) fn emit_annotation_records(
     for (entity_id, tag) in out
         .surfaces
         .iter()
-        .map(|entity| (entity.id.0.as_str(), "procedural_support"))
+        .map(|entity| (entity.id.as_str(), "procedural_support"))
         .chain(
             out.curves
                 .iter()
-                .map(|entity| (entity.id.0.as_str(), "procedural_curve_child")),
+                .map(|entity| (entity.id.as_str(), "procedural_curve_child")),
         )
     {
         if !entity_id.starts_with(&procedural_surface_prefix) {

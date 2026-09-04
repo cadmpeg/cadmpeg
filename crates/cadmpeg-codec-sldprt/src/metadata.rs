@@ -290,10 +290,11 @@ fn attribute(
     values: Vec<AttributeValue>,
     annotations: &mut Annotations,
 ) -> SourceAttribute {
-    let id = AttributeId(format!(
+    let id = AttributeId::mint(format!(
         "sldprt:metadata:{name}#{}:{offset}",
         section.ordinal()
-    ));
+    ))
+    .expect("identity grammar");
     crate::annotations::note(
         annotations,
         id.0.clone(),

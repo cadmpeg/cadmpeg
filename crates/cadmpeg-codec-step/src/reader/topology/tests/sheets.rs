@@ -212,7 +212,7 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
                 implicit_outer: false,
                 ..
             } if support.as_str() == "step:data:surface#28"
-                && boundaries.as_slice() == [cadmpeg_ir::ids::CurveId("step:data:curve#34".into())]
+                && boundaries.as_slice() == [cadmpeg_ir::ids::CurveId::mint("step:data:curve#34").expect("identity grammar")]
         )));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

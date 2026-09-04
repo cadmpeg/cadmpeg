@@ -733,7 +733,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
-            id: CurveId("creo:visibgeom:curve#10".to_string()),
+            id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Circle {
                 center: Point3::new(0.0, 0.0, 4.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -743,7 +743,7 @@ mod tests {
             source_object: None,
         });
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("creo:visibgeom:surface#6".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -774,7 +774,11 @@ mod tests {
             .model
             .curves
             .iter()
-            .find(|curve| curve.id == CurveId("creo:visibgeom:curve#12".to_string()))
+            .find(|curve| {
+                curve.id
+                    == CurveId::mint("creo:visibgeom:curve#12".to_string())
+                        .expect("identity grammar")
+            })
             .expect("plane-cylinder intersection curve");
         let CurveGeometry::Circle {
             center,

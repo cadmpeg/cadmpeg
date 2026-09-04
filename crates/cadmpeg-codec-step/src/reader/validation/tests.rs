@@ -70,7 +70,7 @@ fn direct_area_and_volume_unit_subtypes_scale_validation_measures() {
         assert!(
             !unknowns
                 .iter()
-                .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                .any(|record| record.id.as_str().ends_with(&format!("#{id}"))),
             "validation unit carrier #{id} was not typed"
         );
     }

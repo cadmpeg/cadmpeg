@@ -603,7 +603,8 @@ pub(crate) fn resolved_surface_geometry(
     surface_id: u32,
 ) -> Option<SurfaceGeometry> {
     let surface = graph.surfaces.get(&surface_id)?;
-    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    let payload =
+        UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
     let geometry = surfaces::neutral_surface(surface, graph, surface_id, &payload).geometry;
     (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
 }
@@ -634,7 +635,8 @@ pub(crate) fn resolved_revolution_surface(
     surface_id: u32,
 ) -> Option<ResolvedRevolutionSurface> {
     let surface = graph.surfaces.get(&surface_id)?;
-    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    let payload =
+        UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
     let SurfacePlan {
         geometry,
         procedure,
@@ -753,7 +755,8 @@ pub(crate) fn resolved_surface_procedural_definition(
     surface_id: u32,
 ) -> Option<(u32, ProceduralSurfaceDefinition)> {
     let surface = graph.surfaces.get(&surface_id)?;
-    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    let payload =
+        UnknownId::mint("catia:payload:unknown#b5-surface".to_string()).expect("identity grammar");
     match surfaces::neutral_surface(surface, graph, surface_id, &payload).procedure? {
         SurfaceProcedure::RollingBall {
             carrier_object_id,

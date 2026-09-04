@@ -133,7 +133,8 @@ fn chamfer_uses_transferred_model_plane_carrier() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#31".to_string()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
+            .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -270,7 +271,8 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#10".to_string()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#10".to_string())
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cone {
                 origin: cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
@@ -282,7 +284,8 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#31".to_string()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -345,7 +348,8 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
 
     for (id, x) in [(3, -9.0), (4, -8.0)] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
                 origin: cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
                 normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -466,7 +470,8 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#7".to_string()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -476,7 +481,8 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("creo:visibgeom:surface#7".to_string()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#7".to_string())
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -538,7 +544,8 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for id in [3, 4] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -596,7 +603,8 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for (id, radius) in [(3, 0.5), (4, 0.5)] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),

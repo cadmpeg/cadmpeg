@@ -672,11 +672,11 @@ pub(crate) fn bind_mirror_surface_planes(
     }
     let faces_by_id = faces
         .iter()
-        .map(|face| (face.id.0.as_str(), face))
+        .map(|face| (face.id.as_str(), face))
         .collect::<HashMap<_, _>>();
     let surfaces_by_id = surfaces
         .iter()
-        .map(|surface| (surface.id.0.as_str(), surface))
+        .map(|surface| (surface.id.as_str(), surface))
         .collect::<HashMap<_, _>>();
 
     for feature in features {

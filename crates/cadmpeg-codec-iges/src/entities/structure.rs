@@ -1707,17 +1707,19 @@ fn plane_face_draft(
     boundary_edges: Vec<Edge>,
     resolution: f64,
 ) -> ModelDraft {
-    let body_id = BodyId(format!("iges:model:body#{stem}"));
-    let region_id = RegionId(format!("iges:model:region#{stem}"));
-    let shell_id = ShellId(format!("iges:model:shell#{stem}"));
-    let face_id = FaceId(format!("iges:model:face#{stem}"));
+    let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
+    let region_id = RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
+    let shell_id = ShellId::mint(format!("iges:model:shell#{stem}")).expect("identity grammar");
+    let face_id = FaceId::mint(format!("iges:model:face#{stem}")).expect("identity grammar");
     let mut candidate = ModelDraft::new();
     let mut loop_ids = Vec::with_capacity(boundary_edges.len());
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
         let edge_id = edge.id.clone();
         candidate.model_mut().edges.push(edge);
-        let loop_id = LoopId(format!("iges:model:loop#{stem}:{boundary_index}"));
-        let coedge_id = CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}"));
+        let loop_id = LoopId::mint(format!("iges:model:loop#{stem}:{boundary_index}"))
+            .expect("identity grammar");
+        let coedge_id = CoedgeId::mint(format!("iges:model:coedge#{stem}:{boundary_index}"))
+            .expect("identity grammar");
         candidate.model_mut().coedges.push(Coedge {
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
@@ -1747,7 +1749,8 @@ fn plane_face_draft(
     candidate.model_mut().faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
-        surface: SurfaceId(format!("iges:model:surface#D{surface_sequence}")),
+        surface: SurfaceId::mint(format!("iges:model:surface#D{surface_sequence}"))
+            .expect("identity grammar"),
         sense: Sense::Forward,
         loops: loop_ids,
         name: None,
@@ -1848,10 +1851,11 @@ fn legacy_single_parent_face(
         }
         let mut edge = plane_boundary_edge(&index, plane, boundary_sequence, entries, resolution)
             .map_err(PlaneBoundaryError::legacy_message)?;
-        let edge_id = EdgeId(format!(
+        let edge_id = EdgeId::mint(format!(
             "iges:model:edge#legacy-single-parent-D{}-{boundary_index}",
             entry.sequence
-        ));
+        ))
+        .expect("identity grammar");
         edge.id = edge_id.clone();
         edge.end = edge.start.clone();
         boundary_edges.push(edge);
@@ -2544,7 +2548,9 @@ pub(super) fn project(
                 global.minimum_resolution_mm(),
             ) {
                 Ok(mut edge) => {
-                    edge.id = EdgeId(format!("iges:model:edge#bounded-plane-D{}", entry.sequence));
+                    edge.id =
+                        EdgeId::mint(format!("iges:model:edge#bounded-plane-D{}", entry.sequence))
+                            .expect("identity grammar");
                     edge.end = edge.start.clone();
                     let stem = format!("bounded-plane-D{}", entry.sequence);
                     let candidate = plane_face_draft(

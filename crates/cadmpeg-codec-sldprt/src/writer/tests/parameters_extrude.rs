@@ -950,7 +950,7 @@ fn semantic_writer_round_trips_feature_output_scope() {
         .unwrap();
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].properties["Scope"],
-        regenerated.ir().model.bodies[1].id.0
+        regenerated.ir().model.bodies[1].id.as_str()
     );
     assert_eq!(
         regenerated.ir().model.features[0].outputs,

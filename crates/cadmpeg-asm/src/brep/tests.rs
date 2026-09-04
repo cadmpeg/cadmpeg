@@ -428,7 +428,10 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     assert_eq!(brep.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Wire);
     assert_eq!(brep.regions.len(), 1);
     assert_eq!(brep.shells.len(), 1);
-    assert_eq!(brep.shells[0].wire_edges, vec![EdgeId(id(FORMAT, 1))]);
+    assert_eq!(
+        brep.shells[0].wire_edges,
+        vec![EdgeId::mint(id(FORMAT, 1)).expect("identity grammar")]
+    );
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.vertices.len(), 2);
     assert_eq!(brep.points.len(), 2);
@@ -472,7 +475,7 @@ fn nested_attributes_inherit_their_topology_owner() {
     let parent = current_attribute(7, 3);
     let child = legacy_attribute(8, 7);
     let records = HashMap::from([(7, &parent), (8, &child)]);
-    let expected = AttributeTarget::Edge(EdgeId("edge".into()));
+    let expected = AttributeTarget::Edge(EdgeId::mint("edge").expect("identity grammar"));
     let targets = HashMap::from([(3, expected.clone())]);
 
     assert_eq!(
@@ -588,7 +591,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     let mut source = Vec::new();
     collect_attributes(
         &entity,
-        &AttributeTarget::Face(FaceId("face".into())),
+        &AttributeTarget::Face(FaceId::mint("face").expect("identity grammar")),
         &by_index,
         &mut emitted,
         &mut source,
@@ -676,7 +679,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let mut source = Vec::new();
     collect_attributes(
         &entity,
-        &AttributeTarget::Face(FaceId("face".into())),
+        &AttributeTarget::Face(FaceId::mint("face").expect("identity grammar")),
         &by_index,
         &mut emitted,
         &mut source,
@@ -725,15 +728,15 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     ];
     let mut brep = AsmBrep {
         shells: vec![Shell {
-            id: ShellId(id(FORMAT, 3)),
-            region: RegionId("region".into()),
+            id: ShellId::mint(id(FORMAT, 3)).expect("identity grammar"),
+            region: RegionId::mint("region").expect("identity grammar"),
             faces: Vec::new(),
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         }],
         loops: vec![Loop {
-            id: LoopId(id(FORMAT, 4)),
-            face: FaceId("face".into()),
+            id: LoopId::mint(id(FORMAT, 4)).expect("identity grammar"),
+            face: FaceId::mint("face").expect("identity grammar"),
             boundary_role: LoopBoundaryRole::Unspecified,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
                 coedges: Vec::new(),
@@ -755,14 +758,10 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT),
         HashSet::from([1, 2])
     );
-    assert!(brep
-        .attributes
-        .iter()
-        .any(|attribute| attribute.target == AttributeTarget::Shell(ShellId(id(FORMAT, 3)))));
-    assert!(brep
-        .attributes
-        .iter()
-        .any(|attribute| attribute.target == AttributeTarget::Loop(LoopId(id(FORMAT, 4)))));
+    assert!(brep.attributes.iter().any(|attribute| attribute.target
+        == AttributeTarget::Shell(ShellId::mint(id(FORMAT, 3)).expect("identity grammar"))));
+    assert!(brep.attributes.iter().any(|attribute| attribute.target
+        == AttributeTarget::Loop(LoopId::mint(id(FORMAT, 4)).expect("identity grammar"))));
 }
 
 #[test]
@@ -816,19 +815,19 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         .iter()
         .map(|record| (record.index as i64, record))
         .collect();
-    let body_id = BodyId(id(FORMAT, 1));
+    let body_id = BodyId::mint(id(FORMAT, 1)).expect("identity grammar");
     let mut brep = AsmBrep {
         bodies: vec![Body {
             id: body_id.clone(),
             kind: BodyKind::Sheet,
-            regions: vec![RegionId(id(FORMAT, 2))],
+            regions: vec![RegionId::mint(id(FORMAT, 2)).expect("identity grammar")],
             transform: None,
             name: None,
             color: None,
             visible: None,
         }],
         regions: vec![Region {
-            id: RegionId(id(FORMAT, 2)),
+            id: RegionId::mint(id(FORMAT, 2)).expect("identity grammar"),
             body: body_id.clone(),
             shells: Vec::new(),
         }],
@@ -847,7 +846,8 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     assert_eq!(
         brep.attributes,
         vec![SourceAttribute {
-            id: cadmpeg_ir::ids::AttributeId("f3d:brep:attribute#3".into()),
+            id: cadmpeg_ir::ids::AttributeId::mint("f3d:brep:attribute#3")
+                .expect("identity grammar"),
             target: AttributeTarget::Body(body_id),
             name: "name_attrib-gen-attrib".into(),
             values: vec![
@@ -906,8 +906,8 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     assert_eq!(
         shell_faces(&records[1], &by_index, &kept, FORMAT),
         vec![
-            FaceId("f3d:brep:entity#4".into()),
-            FaceId("f3d:brep:entity#5".into())
+            FaceId::mint("f3d:brep:entity#4").expect("identity grammar"),
+            FaceId::mint("f3d:brep:entity#5").expect("identity grammar")
         ]
     );
     assert_eq!(

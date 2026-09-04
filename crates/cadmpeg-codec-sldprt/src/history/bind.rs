@@ -293,14 +293,14 @@ pub(crate) fn face_owner_bodies(
 ) -> HashMap<String, cadmpeg_ir::ids::BodyId> {
     let region_bodies = regions
         .iter()
-        .map(|region| (region.id.0.as_str(), &region.body))
+        .map(|region| (region.id.as_str(), &region.body))
         .collect::<HashMap<_, _>>();
     let shell_bodies = shells
         .iter()
         .filter_map(|shell| {
             region_bodies
                 .get(shell.region.0.as_str())
-                .map(|body| (shell.id.0.as_str(), (*body).clone()))
+                .map(|body| (shell.id.as_str(), (*body).clone()))
         })
         .collect::<HashMap<_, _>>();
     faces
@@ -361,7 +361,7 @@ pub fn derive_feature_outputs(
             .iter_mut()
             .filter(|feature| feature.native_ref.as_deref() == Some(native_ref))
         {
-            let body = cadmpeg_ir::ids::BodyId(body.clone());
+            let body = cadmpeg_ir::ids::BodyId::mint(body.clone()).expect("identity grammar");
             if !feature.outputs.contains(&body) {
                 feature.outputs.push(body);
             }

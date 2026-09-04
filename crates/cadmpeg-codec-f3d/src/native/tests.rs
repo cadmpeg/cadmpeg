@@ -379,7 +379,8 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     }));
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    let generated_curve_id = cadmpeg_ir::ids::CurveId("generated:tolerant-use-curve#0".into());
+    let generated_curve_id =
+        cadmpeg_ir::ids::CurveId::mint("generated:tolerant-use-curve#0").expect("identity grammar");
     source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: generated_curve_id.clone(),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(expected.clone()),

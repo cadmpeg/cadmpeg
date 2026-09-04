@@ -62,7 +62,7 @@ fn resolved_body_binding(
         entity_suffix_offset: asm_key_offset + 8,
         blob_name: blob_name.into(),
         blob_name_offset: asm_key_offset + 32,
-        body: Some(cadmpeg_ir::ids::BodyId(body.into())),
+        body: Some(cadmpeg_ir::ids::BodyId::mint(body).expect("identity grammar")),
     }
 }
 
@@ -243,12 +243,13 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         "BREP.first.smbh",
         "f3d:brep/first/brep:entity#1",
     );
-    let second_body = cadmpeg_ir::ids::BodyId("f3d:brep/second/brep:entity#1".into());
+    let second_body =
+        cadmpeg_ir::ids::BodyId::mint("f3d:brep/second/brep:entity#1").expect("identity grammar");
     let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", &second_body.0);
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#second".into()),
+        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:appearance#second").expect("identity grammar"),
         name: None,
         asset_guid: Some(visual_guid.into()),
         library_id: None,
@@ -296,7 +297,8 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
 fn presetless_assignment_matches_only_its_visual_guid() {
     let appearance_guid = "11111111-2222-3333-4444-555555555555";
     let mut appearance = cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#catalog".into()),
+        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:appearance#catalog")
+            .expect("identity grammar"),
         name: None,
         asset_guid: Some(appearance_guid.into()),
         library_id: None,
@@ -352,7 +354,7 @@ fn complete_visual_token_selects_one_revision_record() {
     let base_token = "11111111-2222-3333-4444-555555555555";
     let revised_token = "11111111-2222-3333-4444-555555555555_Post2015";
     let appearance = |id: &str, token: &str| cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId(id.into()),
+        id: cadmpeg_ir::ids::AppearanceId::mint(id).expect("identity grammar"),
         name: None,
         asset_guid: Some(token.into()),
         library_id: None,
@@ -387,7 +389,7 @@ fn complete_visual_token_selects_one_revision_record() {
 #[test]
 fn visual_preset_fallback_requires_one_record() {
     let appearance = |id: &str| cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId(id.into()),
+        id: cadmpeg_ir::ids::AppearanceId::mint(id).expect("identity grammar"),
         name: Some("Prism-017".into()),
         asset_guid: None,
         library_id: None,
@@ -1391,9 +1393,9 @@ fn decode_transfers_generated_sketch_curve_link() {
         .unwrap();
     assert_eq!(
         link.target,
-        cadmpeg_ir::attributes::AttributeTarget::Coedge(cadmpeg_ir::ids::CoedgeId(
-            "f3d:brep:entity#7".into()
-        ))
+        cadmpeg_ir::attributes::AttributeTarget::Coedge(
+            cadmpeg_ir::ids::CoedgeId::mint("f3d:brep:entity#7").expect("identity grammar")
+        )
     );
     assert_eq!(link.sketch_curve_id, 113);
     assert_eq!(link.sense, Some(1));
@@ -1916,7 +1918,8 @@ fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
 
 fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
     cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId(format!("f3d:design:appearance#{guid}")),
+        id: cadmpeg_ir::ids::AppearanceId::mint(format!("f3d:design:appearance#{guid}"))
+            .expect("identity grammar"),
         name: Some("Prism-Opaque".to_owned()),
         asset_guid: Some(guid.to_owned()),
         library_id: None,
@@ -1981,9 +1984,10 @@ fn appearance_loss_clears_when_an_assignment_resolves() {
     let appearance = opaque_appearance("2F0E19C1-0000-4000-8000-000000000001");
     ir.model.appearance_bindings = vec![cadmpeg_ir::appearance::AppearanceBinding {
         id: "f3d:appearance:body#0_1:2F0E19C1-0000-4000-8000-000000000001".into(),
-        target: cadmpeg_ir::appearance::AppearanceTarget::Body(cadmpeg_ir::ids::BodyId(
-            "f3d:brep/a.smbh/brep:entity#1".to_owned(),
-        )),
+        target: cadmpeg_ir::appearance::AppearanceTarget::Body(
+            cadmpeg_ir::ids::BodyId::mint("f3d:brep/a.smbh/brep:entity#1".to_owned())
+                .expect("identity grammar"),
+        ),
         appearance: appearance.id.clone(),
         source_entity_id: None,
         object_type: None,

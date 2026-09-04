@@ -176,7 +176,7 @@ pub(super) fn append_generated_sketch_markers(
             let local_id = u16::try_from(next_id).map_err(|_| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
-                    sketch.id.0
+                    sketch.id.as_str()
                 ))
             })?;
             append_coordinate_marker(
@@ -267,7 +267,7 @@ pub(super) fn append_generated_sketch_markers(
             let relation_id = u16::try_from(next_id).map_err(|_| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
-                    sketch.id.0
+                    sketch.id.as_str()
                 ))
             })?;
             append_coordinate_marker_link(payload, owner, relation_id)?;
@@ -467,7 +467,7 @@ pub(super) fn append_generated_sketch_markers(
             (Some(cadmpeg_ir::features::ParameterValue::Length(_)), "sgAnglDim") => {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT angular dimension {} has a length value",
-                    parameter.id.0
+                    parameter.id.as_str()
                 )));
             }
             (Some(cadmpeg_ir::features::ParameterValue::Angle(value)), "sgAnglDim") => value.0,
@@ -475,7 +475,7 @@ pub(super) fn append_generated_sketch_markers(
             _ => {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT dimension parameter {} has no compatible evaluated value",
-                    parameter.id.0
+                    parameter.id.as_str()
                 )));
             }
         };
@@ -512,7 +512,7 @@ fn generated_dimension<'a>(
     {
         return Some(Err(cadmpeg_core::CodecError::NotImplemented(format!(
             "source-less SLDPRT display-only relation parameter {} has no native scalar encoding",
-            parameter.id.0
+            parameter.id.as_str()
         ))));
     }
     let unsupported = || {
@@ -701,7 +701,7 @@ fn generated_operand_address(
     u16::try_from(ordinal).map_err(|_| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "source-less SLDPRT sketch {} exceeds the dimension operand space",
-            sketch.id.0
+            sketch.id.as_str()
         ))
     })
 }

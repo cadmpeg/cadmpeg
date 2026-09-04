@@ -574,7 +574,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     let mut ir = unit_cube();
     let face = ir.model.faces[0].id.clone();
     let vertex = ir.model.vertices[0].id.clone();
-    let inner = LoopId("zzzz:test:loop#inner".into());
+    let inner = LoopId::mint("zzzz:test:loop#inner").expect("identity grammar");
     ir.model.loops.push(Loop {
         id: inner.clone(),
         face: face.clone(),
@@ -655,7 +655,8 @@ fn duplicate_face_outer_bounds_reject_the_containing_topology_in_any_order() {
     for duplicate_first in [false, true] {
         let mut ir = unit_cube();
         let face = ir.model.faces[0].id.clone();
-        let duplicate = LoopId("synthetic:test:loop#duplicate-outer".into());
+        let duplicate =
+            LoopId::mint("synthetic:test:loop#duplicate-outer").expect("identity grammar");
         ir.model.loops.push(Loop {
             id: duplicate.clone(),
             face,
@@ -694,7 +695,7 @@ fn duplicate_face_outer_bounds_reject_the_containing_topology_in_any_order() {
             .native_unknowns("step")
             .expect("STEP unknown arena")
             .iter()
-            .any(|record| record.id.0.contains("advanced_face")));
+            .any(|record| record.id.as_str().contains("advanced_face")));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
 }

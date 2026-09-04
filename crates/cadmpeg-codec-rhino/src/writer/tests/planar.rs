@@ -284,12 +284,12 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         Point3::new(0.0, 2.0, 0.0),
     ]);
     ir.model.points.push(Point {
-        id: PointId("cadir:model:point#free".into()),
+        id: PointId::mint("cadir:model:point#free").expect("identity grammar"),
         position: Point3::new(5.0, 6.0, 7.0),
         source_object: None,
     });
     ir.model.curves.push(Curve {
-        id: CurveId("cadir:model:curve#free".into()),
+        id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(5.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -299,7 +299,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("cadir:model:surface#free".into()),
+        id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 3.0),
             normal: Vector3::new(0.0, 0.0, 1.0),

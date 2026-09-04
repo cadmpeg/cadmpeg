@@ -70,7 +70,8 @@ pub fn transfer_topology_bound_planes(
         .into_iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)
     {
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         let points = solved_vertices
             .iter()
             .filter_map(|(vertex_id, point)| {
@@ -90,7 +91,8 @@ pub fn transfer_topology_bound_planes(
                 unique_curve_ids
                     .contains(&half_edge.curve_id)
                     .then_some(())?;
-                let id = CurveId(format!("creo:visibgeom:curve#{}", half_edge.curve_id));
+                let id = CurveId::mint(format!("creo:visibgeom:curve#{}", half_edge.curve_id))
+                    .expect("identity grammar");
                 let curve = exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id))?;
                 Some(&curve.geometry)
             })
@@ -191,7 +193,8 @@ pub fn retain_unresolved_surface_carriers(
         ),
     ] {
         for row in crate::surface::uniquely_identified_rows(rows) {
-            let id = SurfaceId(format!("{}{}", namespace.ir_prefix(), row.id));
+            let id = SurfaceId::mint(format!("{}{}", namespace.ir_prefix(), row.id))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -233,7 +236,8 @@ pub fn retain_unresolved_surface_carriers(
         }
     }
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let id =
+            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
@@ -353,7 +357,7 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
             .id
             .0
             .strip_prefix("creo:visibgeom:surface#")
-            .or_else(|| surface.id.0.strip_prefix("creo:novisgeom:surface#"))
+            .or_else(|| surface.id.as_str().strip_prefix("creo:novisgeom:surface#"))
             .and_then(|id| id.parse().ok())
         else {
             continue;
@@ -489,7 +493,10 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
         .find(|section| {
             offset >= section.offset && offset < section.offset.saturating_add(section.length)
         })
-        .map(|section| UnknownId(format!("creo:{}:section#{}", section.name, section.offset)))
+        .map(|section| {
+            UnknownId::mint(format!("creo:{}:section#{}", section.name, section.offset))
+                .expect("identity grammar")
+        })
 }
 
 #[cfg(test)]

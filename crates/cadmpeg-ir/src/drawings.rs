@@ -12,6 +12,13 @@ use std::collections::BTreeMap;
 /// Stable identity of one neutral drawing entity.
 pub struct DrawingId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
 
+impl DrawingId {
+    /// Borrow the underlying id string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Semantic role of a drawing entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

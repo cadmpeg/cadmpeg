@@ -22,7 +22,7 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 fn source_less_points_round_trip_across_target_versions() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId("point:a".into()),
+        id: PointId::mint("point:a").expect("identity grammar"),
         position: Point3::new(1.25, -2.5, 3.75),
         source_object: None,
     });
@@ -63,7 +63,7 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear = 2.0;
     ir.model.points.push(Point {
-        id: PointId("point:coarse-tolerance".into()),
+        id: PointId::mint("point:coarse-tolerance").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -116,7 +116,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
 fn rejection_occurs_before_output() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId("curve:a".into()),
+        id: cadmpeg_ir::ids::CurveId::mint("curve:a").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Degenerate {
             point: Point3::new(0.0, 0.0, 0.0),
         },
@@ -137,7 +137,7 @@ fn rejection_occurs_before_output() {
 fn source_less_circle_round_trips_with_its_frame() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId("curve:circle".into()),
+        id: cadmpeg_ir::ids::CurveId::mint("curve:circle").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Circle {
             center: Point3::new(1.0, 2.0, 3.0),
             axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -180,7 +180,7 @@ fn source_less_circle_round_trips_with_its_frame() {
 fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId("curve:nurbs".into()),
+        id: cadmpeg_ir::ids::CurveId::mint("curve:nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 2,
@@ -241,7 +241,7 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
 fn free_plane_and_rational_nurbs_surface_round_trip() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId("surface:plane".into()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("surface:plane").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin: Point3::new(1.0, 2.0, 3.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -250,7 +250,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         source_object: None,
     });
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-        id: cadmpeg_ir::ids::SurfaceId("surface:nurbs".into()),
+        id: cadmpeg_ir::ids::SurfaceId::mint("surface:nurbs").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsSurface::new(
                 1,
@@ -537,12 +537,12 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
     let region_id: cadmpeg_ir::ids::RegionId = "cadir:model:region#cloud".into();
     let shell_id: cadmpeg_ir::ids::ShellId = "cadir:model:shell#cloud".into();
     let vertex_ids = [
-        cadmpeg_ir::ids::VertexId("cadir:model:vertex#cloud.0".into()),
-        cadmpeg_ir::ids::VertexId("cadir:model:vertex#cloud.1".into()),
+        cadmpeg_ir::ids::VertexId::mint("cadir:model:vertex#cloud.0").expect("identity grammar"),
+        cadmpeg_ir::ids::VertexId::mint("cadir:model:vertex#cloud.1").expect("identity grammar"),
     ];
     let point_ids = [
-        cadmpeg_ir::ids::PointId("cadir:model:point#cloud.0".into()),
-        cadmpeg_ir::ids::PointId("cadir:model:point#cloud.1".into()),
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.0").expect("identity grammar"),
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#cloud.1").expect("identity grammar"),
     ];
     ir.model.bodies.push(cadmpeg_ir::topology::Body {
         id: body_id.clone(),
@@ -608,7 +608,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
 fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#retained".into()),
+        id: PointId::mint("cadir:model:point#retained").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -648,7 +648,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
 fn unsupported_retained_native_records_are_refused_before_output() {
     let mut source = CadIr::empty();
     source.model.points.push(Point {
-        id: PointId("cadir:model:point#retained".into()),
+        id: PointId::mint("cadir:model:point#retained").expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });
@@ -692,7 +692,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
 fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
-        id: cadmpeg_ir::ids::CurveId("cadir:model:curve#periodic".into()),
+        id: cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic").expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 2,

@@ -51,12 +51,16 @@ fn f3z_archive_merges_identity_occurrences() {
     );
     let prefix = format!("f3d:xref/{XREF_ROLE}/");
     let body = &decoded.ir().model.bodies[0];
-    assert!(body.id.0.starts_with(&prefix), "{}", body.id.0);
+    assert!(
+        body.id.as_str().starts_with(&prefix),
+        "{}",
+        body.id.as_str()
+    );
     for shell_owner in &decoded.ir().model.shells {
         assert!(
-            shell_owner.id.0.starts_with(&prefix),
+            shell_owner.id.as_str().starts_with(&prefix),
             "occurrence graph must stay internally consistent: {}",
-            shell_owner.id.0
+            shell_owner.id.as_str()
         );
     }
     assert!(decoded
@@ -199,7 +203,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
     assert_eq!(merged_unknowns.len(), component_unknowns.len());
     assert!(merged_unknowns
         .iter()
-        .all(|record| record.id.0.starts_with(&prefix)));
+        .all(|record| record.id.as_str().starts_with(&prefix)));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(
         !validation
@@ -312,7 +316,7 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
         .notes
         .iter()
         .any(|note| note.contains("merged 2 external occurrence")));
-    let body_id = &decoded.ir().model.bodies[0].id.0;
+    let body_id = &decoded.ir().model.bodies[0].id.as_str();
     assert!(body_id.contains(&format!(
         "xref/{XREF_ROLE}/occurrence-0/xref/{CHILD_ROLE}/occurrence-0/"
     )));

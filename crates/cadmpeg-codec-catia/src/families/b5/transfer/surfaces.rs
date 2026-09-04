@@ -462,7 +462,7 @@ pub(super) fn emit_surfaces(
         .map(|object_id| {
             (
                 *object_id,
-                SurfaceId(format!("catia:b5:surface#{object_id}")),
+                SurfaceId::mint(format!("catia:b5:surface#{object_id}")).expect("identity grammar"),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -518,7 +518,8 @@ pub(super) fn emit_surfaces(
                 emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion);
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
-                let directrix_id = CurveId(format!("catia:b5:profile#{object_id}"));
+                let directrix_id = CurveId::mint(format!("catia:b5:profile#{object_id}"))
+                    .expect("identity grammar");
                 annotate(
                     annotations,
                     &directrix_id,
@@ -533,7 +534,8 @@ pub(super) fn emit_surfaces(
                     source_object: None,
                 });
                 let procedural_id =
-                    ProceduralSurfaceId(format!("catia:b5:procedural-surface#{object_id}"));
+                    ProceduralSurfaceId::mint(format!("catia:b5:procedural-surface#{object_id}"))
+                        .expect("identity grammar");
                 annotate(
                     annotations,
                     &procedural_id,
@@ -567,7 +569,8 @@ pub(super) fn emit_surfaces(
                 .is_some_and(|id| !graph.offset_surfaces.contains_key(&id)) =>
             {
                 let procedural_id =
-                    ProceduralSurfaceId(format!("catia:b5:rolling-ball#{object_id}"));
+                    ProceduralSurfaceId::mint(format!("catia:b5:rolling-ball#{object_id}"))
+                        .expect("identity grammar");
                 let carrier_tag = format!("result_carrier:{carrier_object_id:08x}");
                 annotate(
                     annotations,
@@ -597,7 +600,8 @@ pub(super) fn emit_surfaces(
         ) else {
             continue;
         };
-        let procedural_id = ProceduralSurfaceId(format!("catia:b5:offset#{object_id}"));
+        let procedural_id = ProceduralSurfaceId::mint(format!("catia:b5:offset#{object_id}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &procedural_id,
@@ -643,10 +647,11 @@ fn emit_extrusion_procedure(
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
 ) {
-    let directrix_id = CurveId(format!(
+    let directrix_id = CurveId::mint(format!(
         "catia:b5:extrusion-directrix#{}",
         extrusion.directrix_object_id
-    ));
+    ))
+    .expect("identity grammar");
     match extrusion.directrix {
         super::ResolvedExtrusionDirectrix::Intersection {
             supports,
@@ -671,10 +676,11 @@ fn emit_extrusion_procedure(
                 geometry: CurveGeometry::Unknown { record: None },
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
             });
-            let procedure_id = ProceduralCurveId(format!(
+            let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:b5:extrusion-directrix-procedure#{}",
                 extrusion.directrix_object_id
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &procedure_id,
@@ -721,9 +727,10 @@ fn emit_extrusion_procedure(
             distance,
             direction,
         } => {
-            let source_id = CurveId(format!(
+            let source_id = CurveId::mint(format!(
                 "catia:b5:extrusion-directrix-source#{source_object_id}"
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &source_id,
@@ -748,10 +755,11 @@ fn emit_extrusion_procedure(
                 geometry: CurveGeometry::Unknown { record: None },
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
             });
-            let procedure_id = ProceduralCurveId(format!(
+            let procedure_id = ProceduralCurveId::mint(format!(
                 "catia:b5:extrusion-directrix-procedure#{}",
                 extrusion.directrix_object_id
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &procedure_id,
@@ -778,7 +786,8 @@ fn emit_extrusion_procedure(
             );
         }
     }
-    let procedure_id = ProceduralSurfaceId(format!("catia:b5:extrusion#{surface_object_id}"));
+    let procedure_id = ProceduralSurfaceId::mint(format!("catia:b5:extrusion#{surface_object_id}"))
+        .expect("identity grammar");
     annotate(
         annotations,
         &procedure_id,
@@ -815,8 +824,14 @@ mod tests {
     #[test]
     fn extrusion_emits_exact_two_support_intersection() {
         let support_ids = HashMap::from([
-            (10, SurfaceId("support-10".to_string())),
-            (20, SurfaceId("support-20".to_string())),
+            (
+                10,
+                SurfaceId::mint("support-10".to_string()).expect("identity grammar"),
+            ),
+            (
+                20,
+                SurfaceId::mint("support-20".to_string()).expect("identity grammar"),
+            ),
         ]);
         let pcurve = |x| PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::new(
@@ -868,7 +883,7 @@ mod tests {
             &mut ir,
             &mut AnnotationBuilder::new(),
             &support_ids,
-            SurfaceId("result-30".to_string()),
+            SurfaceId::mint("result-30".to_string()).expect("identity grammar"),
             30,
             extrusion,
         );

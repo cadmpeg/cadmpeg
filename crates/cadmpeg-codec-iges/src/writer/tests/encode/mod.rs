@@ -195,7 +195,7 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
     for (version, name) in [(IgesVersion::V5_1, "5.1"), (IgesVersion::V5_2, "5.2")] {
         let mut ir = CadIr::empty();
         ir.model.points.push(Point {
-            id: PointId(format!("point#{name}")),
+            id: PointId::mint(format!("point#{name}")).expect("identity grammar"),
             source_object: None,
             position: Point3::new(4.0, 5.0, 6.0),
         });
@@ -228,7 +228,7 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
     for (version, name) in [(IgesVersion::V4_0, "4.0"), (IgesVersion::V5_0, "5.0")] {
         let mut ir = CadIr::empty();
         ir.model.points.push(Point {
-            id: PointId(format!("point#{name}")),
+            id: PointId::mint(format!("point#{name}")).expect("identity grammar"),
             source_object: None,
             position: Point3::new(4.0, 5.0, 6.0),
         });
@@ -261,7 +261,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("surface#{version:?}")),
+            id: SurfaceId::mint(format!("surface#{version:?}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(4.0, 5.0, 6.0),
                 normal: Vector3::new(1.0, 0.0, 0.0),
@@ -367,7 +367,7 @@ fn encode_does_not_replay_a_source_with_the_wrong_version() {
 fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId("point#1".into()),
+        id: PointId::mint("point#1").expect("identity grammar"),
         source_object: None,
         position: Point3::new(4.0, 5.0, 6.0),
     });
@@ -574,7 +574,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("surface#plane".into()),
+            id: SurfaceId::mint("surface#plane").expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(4.0, 5.0, 6.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -583,7 +583,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("surface#nurbs".into()),
+            id: SurfaceId::mint("surface#nurbs").expect("identity grammar"),
             geometry: SurfaceGeometry::Nurbs(
                 NurbsSurface::new(
                     1,
@@ -623,7 +623,9 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == SurfaceId("iges:model:surface#D9".into()))
+        .find(|surface| {
+            surface.id == SurfaceId::mint("iges:model:surface#D9").expect("identity grammar")
+        })
         .unwrap();
     let SurfaceGeometry::Plane {
         origin,
@@ -710,7 +712,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("surface#cylinder".into()),
+            id: SurfaceId::mint("surface#cylinder").expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -720,7 +722,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("surface#cone".into()),
+            id: SurfaceId::mint("surface#cone").expect("identity grammar"),
             geometry: SurfaceGeometry::Cone {
                 origin: Point3::new(-1.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -732,7 +734,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("surface#sphere".into()),
+            id: SurfaceId::mint("surface#sphere").expect("identity grammar"),
             geometry: SurfaceGeometry::Sphere {
                 center: Point3::new(0.0, 4.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -742,7 +744,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("surface#torus".into()),
+            id: SurfaceId::mint("surface#torus").expect("identity grammar"),
             geometry: SurfaceGeometry::Torus {
                 center: Point3::new(0.0, 0.0, 5.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -774,7 +776,7 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.surfaces.push(Surface {
-        id: SurfaceId("surface#free-sphere".into()),
+        id: SurfaceId::mint("surface#free-sphere").expect("identity grammar"),
         geometry: SurfaceGeometry::Sphere {
             center: Point3::new(10.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -815,12 +817,12 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
 
 #[test]
 fn encode_regenerates_a_single_face_trimmed_sheet() {
-    let surface_id = SurfaceId("surface#sheet".into());
-    let body_id = BodyId("body#sheet".into());
-    let region_id = RegionId("region#sheet".into());
-    let shell_id = ShellId("shell#sheet".into());
-    let face_id = FaceId("face#sheet".into());
-    let loop_id = LoopId("loop#sheet".into());
+    let surface_id = SurfaceId::mint("surface#sheet").expect("identity grammar");
+    let body_id = BodyId::mint("body#sheet").expect("identity grammar");
+    let region_id = RegionId::mint("region#sheet").expect("identity grammar");
+    let shell_id = ShellId::mint("shell#sheet").expect("identity grammar");
+    let face_id = FaceId::mint("face#sheet").expect("identity grammar");
+    let loop_id = LoopId::mint("loop#sheet").expect("identity grammar");
     let positions = [
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
@@ -828,22 +830,22 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         Point3::new(0.0, 1.0, 0.0),
     ];
     let point_ids = (0..4)
-        .map(|index| PointId(format!("point#sheet:{index}")))
+        .map(|index| PointId::mint(format!("point#sheet:{index}")).expect("identity grammar"))
         .collect::<Vec<_>>();
     let vertex_ids = (0..4)
-        .map(|index| VertexId(format!("vertex#sheet:{index}")))
+        .map(|index| VertexId::mint(format!("vertex#sheet:{index}")).expect("identity grammar"))
         .collect::<Vec<_>>();
     let edge_ids = (0..4)
-        .map(|index| EdgeId(format!("edge#sheet:{index}")))
+        .map(|index| EdgeId::mint(format!("edge#sheet:{index}")).expect("identity grammar"))
         .collect::<Vec<_>>();
     let curve_ids = (0..4)
-        .map(|index| CurveId(format!("curve#sheet:{index}")))
+        .map(|index| CurveId::mint(format!("curve#sheet:{index}")).expect("identity grammar"))
         .collect::<Vec<_>>();
     let coedge_ids = (0..4)
-        .map(|index| CoedgeId(format!("coedge#sheet:{index}")))
+        .map(|index| CoedgeId::mint(format!("coedge#sheet:{index}")).expect("identity grammar"))
         .collect::<Vec<_>>();
     let pcurve_ids = (0..4)
-        .map(|index| PcurveId(format!("pcurve#sheet:{index}")))
+        .map(|index| PcurveId::mint(format!("pcurve#sheet:{index}")).expect("identity grammar"))
         .collect::<Vec<_>>();
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
@@ -916,7 +918,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         }];
         if index == 0 {
             let midpoint = pcurve_end;
-            let split_pcurve_id = PcurveId("pcurve#sheet:split".into());
+            let split_pcurve_id = PcurveId::mint("pcurve#sheet:split").expect("identity grammar");
             ir.model.pcurves.push(Pcurve {
                 id: split_pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs {
@@ -987,7 +989,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ir.model.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: vec![RegionId("region#sheet".into())],
+        regions: vec![RegionId::mint("region#sheet").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
@@ -1458,7 +1460,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
         .unwrap();
     let start_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, start).unwrap();
     let end_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, end).unwrap();
-    let pcurve_id = PcurveId("pcurve#brep:source-less".into());
+    let pcurve_id = PcurveId::mint("pcurve#brep:source-less").expect("identity grammar");
     decoded.ir_mut().model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: PcurveGeometry::Nurbs {

@@ -392,7 +392,8 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
     };
     let surfaces = [10, 11]
         .map(|face| Surface {
-            id: SurfaceId(format!("creo:visibgeom:surface#{face}")),
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{face}"))
+                .expect("identity grammar"),
             geometry: surface_geometry.clone(),
             source_object: None,
         })

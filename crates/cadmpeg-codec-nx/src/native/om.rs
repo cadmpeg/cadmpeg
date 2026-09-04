@@ -5340,9 +5340,15 @@ mod tests {
         );
 
         assert_eq!(ir.model.features.len(), 2);
-        assert_eq!(ir.model.features[0].id.0, "table-b:feature#equations");
+        assert_eq!(
+            ir.model.features[0].id.as_str(),
+            "table-b:feature#equations"
+        );
         assert_eq!(ir.model.features[0].ordinal, 0);
-        assert_eq!(ir.model.features[1].id.0, "table-a:feature#equations");
+        assert_eq!(
+            ir.model.features[1].id.as_str(),
+            "table-a:feature#equations"
+        );
         assert_eq!(ir.model.features[1].ordinal, 1);
         assert_eq!(
             ir.model

@@ -599,7 +599,8 @@ pub fn solve_topological_vertices(
         let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
             continue;
         };
-        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        let id =
+            CurveId::mint(format!("creo:visibgeom:curve#{}", row.id)).expect("identity grammar");
         if !nurbs_endpoint_witnesses.contains(&id) {
             continue;
         }
@@ -618,7 +619,8 @@ pub fn solve_topological_vertices(
     let analytic_curves = topology_rows
         .into_iter()
         .filter_map(|row| {
-            let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+            let id = CurveId::mint(format!("creo:visibgeom:curve#{}", row.id))
+                .expect("identity grammar");
             let geometry = &unique_model_curve(ir, &id)?.geometry;
             let evaluable = matches!(
                 geometry,
@@ -681,7 +683,7 @@ mod tests {
 
     #[test]
     fn unique_model_curve_rejects_duplicate_ids() {
-        let id = CurveId("creo:visibgeom:curve#7".to_string());
+        let id = CurveId::mint("creo:visibgeom:curve#7".to_string()).expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.curves.extend([
             Curve {

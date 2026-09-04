@@ -3859,11 +3859,12 @@ pub(crate) fn transfer_text_curves(
             instance_path: Vec::new(),
         };
         for (index, curve) in curves.iter().enumerate() {
-            let id = CurveId(native::model_id(
+            let id = CurveId::mint(native::model_id(
                 "curve",
                 &payload.id,
                 (index + 1).to_string(),
-            ));
+            ))
+            .expect("identity grammar");
             append_text_curve(curve, id, &association, &mut transfer);
         }
     }
@@ -3940,7 +3941,7 @@ pub(crate) fn append_text_curve(
             parameter_range,
             basis,
         } => {
-            let basis_id = CurveId(format!("{}:basis", id.0));
+            let basis_id = CurveId::mint(format!("{}:basis", id.0)).expect("identity grammar");
             let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer);
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 &basis_geometry,
@@ -3950,7 +3951,8 @@ pub(crate) fn append_text_curve(
             transfer.procedural.push((
                 id.clone(),
                 ProceduralCurve::new(
-                    ProceduralCurveId(format!("{}:construction", id.0)),
+                    ProceduralCurveId::mint(format!("{}:construction", id.0))
+                        .expect("identity grammar"),
                     ProceduralCurveDefinition::Subset {
                         source: basis_id,
                         parameter_range,
@@ -3965,12 +3967,13 @@ pub(crate) fn append_text_curve(
             direction,
             basis,
         } => {
-            let basis_id = CurveId(format!("{}:basis", id.0));
+            let basis_id = CurveId::mint(format!("{}:basis", id.0)).expect("identity grammar");
             append_text_curve(basis, basis_id.clone(), association, transfer);
             transfer.procedural.push((
                 id.clone(),
                 ProceduralCurve::new(
-                    ProceduralCurveId(format!("{}:construction", id.0)),
+                    ProceduralCurveId::mint(format!("{}:construction", id.0))
+                        .expect("identity grammar"),
                     ProceduralCurveDefinition::Offset {
                         source: basis_id,
                         distance: *distance,
@@ -4032,11 +4035,12 @@ pub(crate) fn transfer_text_surfaces(
         for (index, surface) in surfaces.iter().enumerate() {
             append_text_surface(
                 surface,
-                SurfaceId(native::model_id(
+                SurfaceId::mint(native::model_id(
                     "surface",
                     &payload.id,
                     (index + 1).to_string(),
-                )),
+                ))
+                .expect("identity grammar"),
                 &association,
                 curve_transfer,
                 &mut transfer,
@@ -4122,12 +4126,14 @@ pub(crate) fn append_text_surface(
             direction,
             directrix,
         } => {
-            let directrix_id = CurveId(format!("{}:directrix", id.0));
+            let directrix_id =
+                CurveId::mint(format!("{}:directrix", id.0)).expect("identity grammar");
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    ProceduralSurfaceId::mint(format!("{}:construction", id.0))
+                        .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Extrusion {
                         directrix: directrix_id,
                         parameter_interval: None,
@@ -4145,12 +4151,14 @@ pub(crate) fn append_text_surface(
             axis_direction,
             directrix,
         } => {
-            let directrix_id = CurveId(format!("{}:directrix", id.0));
+            let directrix_id =
+                CurveId::mint(format!("{}:directrix", id.0)).expect("identity grammar");
             append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    ProceduralSurfaceId::mint(format!("{}:construction", id.0))
+                        .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Revolution {
                         directrix: directrix_id,
                         axis_origin: *axis_origin,
@@ -4179,7 +4187,7 @@ pub(crate) fn append_text_surface(
                     value.mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
                 }),
             ];
-            let basis_id = SurfaceId(format!("{}:basis", id.0));
+            let basis_id = SurfaceId::mint(format!("{}:basis", id.0)).expect("identity grammar");
             let basis_geometry = append_text_surface(
                 basis,
                 basis_id.clone(),
@@ -4190,7 +4198,8 @@ pub(crate) fn append_text_surface(
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    ProceduralSurfaceId::mint(format!("{}:construction", id.0))
+                        .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Subset {
                         support: basis_id,
                         parameter_ranges,
@@ -4203,7 +4212,7 @@ pub(crate) fn append_text_surface(
             basis_geometry
         }
         TextSurface::Offset { distance, basis } => {
-            let basis_id = SurfaceId(format!("{}:basis", id.0));
+            let basis_id = SurfaceId::mint(format!("{}:basis", id.0)).expect("identity grammar");
             append_text_surface(
                 basis,
                 basis_id.clone(),
@@ -4214,7 +4223,8 @@ pub(crate) fn append_text_surface(
             transfer.procedural.push((
                 id.clone(),
                 ProceduralSurface::new(
-                    ProceduralSurfaceId(format!("{}:construction", id.0)),
+                    ProceduralSurfaceId::mint(format!("{}:construction", id.0))
+                        .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Offset {
                         support: basis_id,
                         distance: *distance,
@@ -4944,7 +4954,7 @@ pub(crate) mod tests {
 
         let geometry = crate::brep::append_text_curve(
             &curve,
-            cadmpeg_ir::ids::CurveId("curve".into()),
+            cadmpeg_ir::ids::CurveId::mint("curve").expect("identity grammar"),
             &association,
             &mut transfer,
         );
@@ -4980,7 +4990,8 @@ pub(crate) mod tests {
         let mut surfaces = crate::brep::SurfaceTransfer::default();
         crate::brep::append_text_surface(
             &surface,
-            cadmpeg_ir::ids::SurfaceId("fcstd:model:surface#revolution".into()),
+            cadmpeg_ir::ids::SurfaceId::mint("fcstd:model:surface#revolution")
+                .expect("identity grammar"),
             &association,
             &mut curves,
             &mut surfaces,

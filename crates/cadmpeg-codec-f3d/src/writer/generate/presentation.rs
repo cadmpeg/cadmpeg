@@ -347,10 +347,12 @@ mod tests {
     fn node_guids_for_order(reverse: bool) -> std::collections::BTreeMap<u64, String> {
         let mut target = cadmpeg_ir::examples::unit_cube();
         let mut first = target.model.bodies[0].clone();
-        first.id = cadmpeg_ir::ids::BodyId("synthetic:stable-body:a".into());
+        first.id =
+            cadmpeg_ir::ids::BodyId::mint("synthetic:stable-body:a").expect("identity grammar");
         first.visible = Some(false);
         let mut second = first.clone();
-        second.id = cadmpeg_ir::ids::BodyId("synthetic:stable-body:b".into());
+        second.id =
+            cadmpeg_ir::ids::BodyId::mint("synthetic:stable-body:b").expect("identity grammar");
         second.visible = Some(true);
         target.model.bodies = if reverse {
             vec![second.clone(), first.clone()]

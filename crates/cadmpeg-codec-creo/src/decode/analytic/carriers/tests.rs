@@ -11,7 +11,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
     Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry,
         source_object: None,
     }
@@ -417,7 +417,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
     });
 
     let curve = Curve {
-        id: CurveId("creo:visibgeom:curve#11".to_string()),
+        id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(2.0, 3.0, 4.0),
             axis: Vector3::new(0.0, 0.0, 1.0),

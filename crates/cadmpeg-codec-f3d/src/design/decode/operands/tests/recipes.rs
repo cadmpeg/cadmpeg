@@ -124,7 +124,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("same-stream".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("same-stream").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: String::new(),
                 design_references: vec![2265],
@@ -132,7 +134,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(FaceId("other-selector".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("other-selector").expect("identity grammar"),
+                ),
                 selector: 2,
                 token: String::new(),
                 design_references: vec![2265, 2266],
@@ -140,7 +144,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("other-stream".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("other-stream").expect("identity grammar"),
+                ),
                 selector: 0,
                 token: String::new(),
                 design_references: vec![2265],
@@ -152,8 +158,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     assert_eq!(
         operand.references[0].candidate_faces,
         [
-            FaceId("other-selector".into()),
-            FaceId("same-stream".into())
+            FaceId::mint("other-selector").expect("identity grammar"),
+            FaceId::mint("same-stream").expect("identity grammar")
         ]
     );
 
@@ -204,7 +210,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("same-stream".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("same-stream").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: String::new(),
                 design_references: vec![2265],
@@ -212,7 +220,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(FaceId("other-selector".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("other-selector").expect("identity grammar"),
+                ),
                 selector: 2,
                 token: String::new(),
                 design_references: vec![2265, 2266],
@@ -223,7 +233,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
     assert_eq!(
         combine_operand.references[0].candidate_faces,
-        [FaceId("same-stream".into())]
+        [FaceId::mint("same-stream").expect("identity grammar")]
     );
 
     let mut nested = Vec::new();
@@ -880,15 +890,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         face_rules,
         cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
             if edges == &[
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:17".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:18".into()
-                ),
-                cadmpeg_ir::ids::HistoricalEdgeId(
-                    "f3d:history-input:edge#6:fillet:8:19".into()
-                ),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:17").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:18").expect("identity grammar"),
+                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:8:19").expect("identity grammar"),
             ]
     ));
     let mut chain_group = terminal_group.clone();
@@ -1220,9 +1224,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(matches!(
         surface_selection,
         cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
-            if edges == &[cadmpeg_ir::ids::HistoricalEdgeId(
-                "f3d:history-input:edge#13:surface-patch:8:17".into()
-            )]
+            if edges == &[cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#13:surface-patch:8:17").expect("identity grammar")]
     ));
     surface_patch_operand.resolved_edge_slot = None;
     assert!(matches!(
@@ -1261,7 +1263,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[
             PersistentSubentityTag {
                 id: "f3d:asm:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "3".into(),
                 design_references: vec![303],
@@ -1269,7 +1273,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#xref".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "3".into(),
                 design_references: vec![303],
@@ -1279,7 +1285,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     assert_eq!(
         edge_operand.candidate_faces,
-        [FaceId("f3d:brep:entity#50".into())]
+        [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")]
     );
     let mut local_recipe = recipe.clone();
     local_recipe.record_index = -1335;
@@ -1288,7 +1294,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&local_recipe),
         &[PersistentSubentityTag {
             id: "f3d:asm:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+            target: AttributeTarget::Face(
+                FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+            ),
             selector: 1,
             token: "3".into(),
             design_references: vec![303],
@@ -1534,7 +1542,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "3".into(),
                 design_references: vec![303],
@@ -1542,7 +1552,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#51".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#51").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "4".into(),
                 design_references: vec![303],
@@ -1550,7 +1562,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             },
             PersistentSubentityTag {
                 id: "f3d:xref/other/occurrence-0/design:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#xref".into())),
+                target: AttributeTarget::Face(
+                    FaceId::mint("f3d:brep:entity#xref").expect("identity grammar"),
+                ),
                 selector: 1,
                 token: "3".into(),
                 design_references: vec![303],
@@ -1561,13 +1575,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         operand.candidate_faces,
         [
-            FaceId("f3d:brep:entity#50".into()),
-            FaceId("f3d:brep:entity#51".into())
+            FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+            FaceId::mint("f3d:brep:entity#51").expect("identity grammar")
         ]
     );
     assert_eq!(
         operand.unreferenced_candidate_faces,
-        [FaceId("f3d:brep:entity#51".into())]
+        [FaceId::mint("f3d:brep:entity#51").expect("identity grammar")]
     );
     let mut direct_face = operand.clone();
     direct_face.recipe_kind = ConstructionRecipeKind::Face;
@@ -1578,7 +1592,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         token_offset: 1_202,
         design_reference: 303,
         design_reference_offset: 1_203,
-        candidate_faces: vec![FaceId("f3d:brep:entity#50".into())],
+        candidate_faces: vec![FaceId::mint("f3d:brep:entity#50").expect("identity grammar")],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -1622,16 +1636,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&direct_face)),
         Some(FaceSelection::Resolved { faces, native })
-            if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
+            if faces == [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")] && native == group.id
     ));
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&operand)),
         Some(FaceSelection::Resolved { faces, native })
-            if faces == [FaceId("f3d:brep:entity#51".into())] && native == group.id
+            if faces == [FaceId::mint("f3d:brep:entity#51").expect("identity grammar")] && native == group.id
     ));
     operand
         .unreferenced_candidate_faces
-        .push(FaceId("f3d:brep:entity#50".into()));
+        .push(FaceId::mint("f3d:brep:entity#50").expect("identity grammar"));
     assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
     operand.recipe_program = vec![0, -1, 1];
     operand.recipe_kind = ConstructionRecipeKind::BoundedFace;
@@ -1671,7 +1685,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ));
     operand.recipe_nodes[0].recipe_structure = None;
     assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
-    operand.preceding_candidate_faces = vec![FaceId("f3d:brep:entity#50".into())];
+    operand.preceding_candidate_faces =
+        vec![FaceId::mint("f3d:brep:entity#50").expect("identity grammar")];
     assert_eq!(
         crate::design::face_resolve::resolve_face_operand_history_candidates(&operand),
         Some(50)
@@ -1680,15 +1695,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&operand)),
         Some(FaceSelection::Resolved { faces, native })
-            if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
+            if faces == [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")] && native == group.id
     ));
     let mut namespaced_slot = operand.clone();
-    namespaced_slot.candidate_faces = vec![FaceId("f3d:brep/example.smbh/brep:entity#50".into())];
+    namespaced_slot.candidate_faces =
+        vec![FaceId::mint("f3d:brep/example.smbh/brep:entity#50").expect("identity grammar")];
     namespaced_slot.unreferenced_candidate_faces.clear();
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&namespaced_slot)),
         Some(FaceSelection::Resolved { faces, native })
-            if faces == [FaceId("f3d:brep/example.smbh/brep:entity#50".into())]
+            if faces == [FaceId::mint("f3d:brep/example.smbh/brep:entity#50").expect("identity grammar")]
                 && native == group.id
     ));
     namespaced_slot.resolved_face_slots = vec![51];
@@ -1710,13 +1726,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(crate::design::face_resolve::retain_face_operand_resolution(
         &group,
         std::slice::from_mut(&mut operand),
-        &FaceId("f3d:brep:entity#50".into()),
+        &FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
     ));
     assert_eq!(operand.resolved_face_slots, [50]);
     operand.resolved_face_slots.clear();
     operand.alternate_selector_candidate_faces = vec![
-        FaceId("f3d:brep:entity#50".into()),
-        FaceId("f3d:brep:entity#51".into()),
+        FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
+        FaceId::mint("f3d:brep:entity#51").expect("identity grammar"),
     ];
     assert!(matches!(
         resolved_face_group(&group, std::slice::from_ref(&operand)),
@@ -1730,7 +1746,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         !crate::design::face_resolve::retain_face_operand_resolution(
             &group,
             &mut ambiguous,
-            &FaceId("f3d:brep:entity#50".into()),
+            &FaceId::mint("f3d:brep:entity#50").expect("identity grammar"),
         )
     );
 
@@ -1778,7 +1794,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .rsplit_once('#')
         .and_then(|(_, slot)| slot.parse::<i64>().ok())
         .expect("nested bounded-face slot");
-    split_context.changed_candidate_faces = vec![FaceId("f3d:brep:entity#999".into())];
+    split_context.changed_candidate_faces =
+        vec![FaceId::mint("f3d:brep:entity#999").expect("identity grammar")];
     assert_eq!(
         crate::design::face_resolve::resolve_face_operand_history_candidates(&split_context),
         None
@@ -1802,7 +1819,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 && native == split_group.id
     ));
     let mut candidate_context = split_context.clone();
-    candidate_context.candidate_faces = vec![FaceId("f3d:brep:entity#50".into())];
+    candidate_context.candidate_faces =
+        vec![FaceId::mint("f3d:brep:entity#50").expect("identity grammar")];
     candidate_context.unreferenced_candidate_faces = candidate_context.candidate_faces.clone();
     candidate_context.preceding_candidate_faces = candidate_context.candidate_faces.clone();
     candidate_context

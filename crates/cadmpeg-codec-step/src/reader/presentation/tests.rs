@@ -410,7 +410,7 @@ fn composite_presentation_text_does_not_depend_on_set_order() {
         assert!(
             unknowns
                 .iter()
-                .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                .any(|record| record.id.as_str().ends_with(&format!("#{id}"))),
             "ambiguous text carrier #{id} was not retained"
         );
     }
@@ -443,14 +443,16 @@ fn presentation_graph_search_does_not_hide_unmodeled_tessellated_carriers() {
         .native_unknowns("step")
         .expect("STEP unknown records");
     assert!(
-        unknowns.iter().any(|record| record.id.0.ends_with("#11")),
+        unknowns
+            .iter()
+            .any(|record| record.id.as_str().ends_with("#11")),
         "unmodeled tessellated wrapper #11 was not retained"
     );
     for id in [12, 13] {
         assert!(
             !unknowns
                 .iter()
-                .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                .any(|record| record.id.as_str().ends_with(&format!("#{id}"))),
             "decoded tessellated curve carrier #{id} was retained as opaque"
         );
     }
@@ -1157,7 +1159,7 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .all(|record| record.id.0 != "step:data:styled_item#6"));
+        .all(|record| record.id.as_str() != "step:data:styled_item#6"));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -1355,7 +1357,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     ir.model.regions.push(region);
     ir.model.bodies[0].visible = Some(false);
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#body".into()),
+        id: LayerId::mint("test:layer#body").expect("identity grammar"),
         name: "all body regions".into(),
         description: None,
         visible: None,
@@ -1579,7 +1581,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     let mut ir = unit_cube();
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId("test:appearance#black".to_string()),
+        id: AppearanceId::mint("test:appearance#black".to_string()).expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -1599,7 +1601,8 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".into(),
         target: AppearanceTarget::Face(face),
-        appearance: AppearanceId("test:appearance#black".to_string()),
+        appearance: AppearanceId::mint("test:appearance#black".to_string())
+            .expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1628,7 +1631,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     let mut ir = unit_cube();
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId("test:appearance#vertex".to_string()),
+        id: AppearanceId::mint("test:appearance#vertex".to_string()).expect("identity grammar"),
         name: Some("vertex green".to_string()),
         asset_guid: None,
         library_id: None,
@@ -1648,7 +1651,8 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#vertex".into(),
         target: AppearanceTarget::Vertex(vertex),
-        appearance: AppearanceId("test:appearance#vertex".to_string()),
+        appearance: AppearanceId::mint("test:appearance#vertex".to_string())
+            .expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1683,7 +1687,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     let mut ir = unit_cube();
     let point = ir.model.points[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#point".to_string()),
+        id: LayerId::mint("test:layer#point".to_string()).expect("identity grammar"),
         name: "point layer".to_string(),
         description: Some("standalone points".to_string()),
         visible: None,
@@ -1715,8 +1719,9 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
 
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
-    let parent_product = ProductDefinitionId("test:product#parent".into());
-    let child_product = ProductDefinitionId("test:product#child".into());
+    let parent_product =
+        ProductDefinitionId::mint("test:product#parent").expect("identity grammar");
+    let child_product = ProductDefinitionId::mint("test:product#child").expect("identity grammar");
     ir.model.product_definitions.extend([
         ProductDefinition {
             id: parent_product.clone(),
@@ -1741,8 +1746,8 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             native_ref: None,
         },
     ]);
-    let root = OccurrenceId("test:occurrence#root".into());
-    let child = OccurrenceId("test:occurrence#child".into());
+    let root = OccurrenceId::mint("test:occurrence#root").expect("identity grammar");
+    let child = OccurrenceId::mint("test:occurrence#child").expect("identity grammar");
     ir.model.occurrences.extend([
         Occurrence {
             id: root.clone(),
@@ -1782,7 +1787,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             native_ref: None,
         },
     ]);
-    let annotation = PmiId("test:pmi#note".into());
+    let annotation = PmiId::mint("test:pmi#note").expect("identity grammar");
     ir.model.pmi.push(PmiAnnotation {
         id: annotation.clone(),
         name: Some("inspection note".into()),
@@ -1795,7 +1800,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         },
     });
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId("test:layer#mixed".into()),
+        id: LayerId::mint("test:layer#mixed").expect("identity grammar"),
         name: "mixed layer".into(),
         description: None,
         visible: None,
@@ -1862,7 +1867,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Black override on a single face, via an appearance binding.
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId("test:appearance#black".to_string()),
+        id: AppearanceId::mint("test:appearance#black".to_string()).expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -1882,7 +1887,8 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".into(),
         target: AppearanceTarget::Face(face),
-        appearance: AppearanceId("test:appearance#black".to_string()),
+        appearance: AppearanceId::mint("test:appearance#black".to_string())
+            .expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
         visible: None,

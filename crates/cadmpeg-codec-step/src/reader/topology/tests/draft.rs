@@ -19,7 +19,7 @@ fn surface_draft(id: &str) -> ModelDraft {
     let mut draft = ModelDraft::new();
     draft
         .insert(Surface {
-            id: SurfaceId(id.into()),
+            id: SurfaceId::mint(id).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -62,7 +62,8 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
 
 #[test]
 fn trimmed_pcurve_fit_uses_declared_endpoints() {
-    let surface_id = SurfaceId("step:data:surface#trimmed-endpoints".into());
+    let surface_id =
+        SurfaceId::mint("step:data:surface#trimmed-endpoints").expect("identity grammar");
     let surface_geometry = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
@@ -106,7 +107,8 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
 
 #[test]
 fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
-    let surface_id = SurfaceId("step:data:surface#bounded-search-witness".into());
+    let surface_id =
+        SurfaceId::mint("step:data:surface#bounded-search-witness").expect("identity grammar");
     let surface_geometry = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
@@ -614,7 +616,7 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 #[test]
 fn shared_surface_carrier_is_staged_once() {
     let surface = Surface {
-        id: SurfaceId("step:data:surface#shared".into()),
+        id: SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -622,8 +624,8 @@ fn shared_surface_carrier_is_staged_once() {
         },
         source_object: None,
     };
-    let body_id = BodyId("step:data:body#shared-surface".into());
-    let region_id = RegionId("step:data:region#shared-surface".into());
+    let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
+    let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(
         HashSet::new(),
         Vec::new(),

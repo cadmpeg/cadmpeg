@@ -1884,11 +1884,11 @@ pub(crate) fn project_generated_hole_axes(
         .collect::<HashMap<_, _>>();
     let faces_by_id = faces
         .iter()
-        .map(|face| (face.id.0.as_str(), face))
+        .map(|face| (face.id.as_str(), face))
         .collect::<HashMap<_, _>>();
     let surfaces_by_id = surfaces
         .iter()
-        .map(|surface| (surface.id.0.as_str(), surface))
+        .map(|surface| (surface.id.as_str(), surface))
         .collect::<HashMap<_, _>>();
 
     for feature in features {

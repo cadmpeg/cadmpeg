@@ -1403,7 +1403,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .unwrap_or(name);
     Ok(ParsedCage {
         surface: SubdSurface {
-            id: SubdId(format!("f3d:tspline:subd#{source_key}")),
+            id: SubdId::mint(format!("f3d:tspline:subd#{source_key}")).expect("identity grammar"),
             scheme: SubdScheme::CatmullClark,
             vertices,
             edges,

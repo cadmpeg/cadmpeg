@@ -1406,7 +1406,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         .id
                         .0
                         .rsplit_once('#')
-                        .map_or(feature.id.0.as_str(), |(_, key)| key);
+                        .map_or(feature.id.as_str(), |(_, key)| key);
                     for (index, ((parameter, _), radius)) in
                         radial_dimensions.iter().copied().zip(radii).enumerate()
                     {
@@ -1839,7 +1839,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 .id
                 .0
                 .rsplit_once('#')
-                .map_or(feature.id.0.as_str(), |(_, key)| key);
+                .map_or(feature.id.as_str(), |(_, key)| key);
             let entity_id = SketchEntityId(format!(
                 "sldprt:model:sketch-entity#marker-circle:{}:{}",
                 feature_key, parameter.ordinal

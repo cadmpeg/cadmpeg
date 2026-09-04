@@ -73,7 +73,7 @@ pub(in super::super) fn feature_edge_selection(
     let result_edge_ids = feature_result_edge_ids_by_feature(&scan.curves.topology_rows);
     let edges = ids
         .iter()
-        .map(|id| EdgeId(format!("creo:visibgeom:edge#{id}")))
+        .map(|id| EdgeId::mint(format!("creo:visibgeom:edge#{id}")).expect("identity grammar"))
         .collect::<Vec<_>>();
     let unique = edges.iter().collect::<BTreeSet<_>>().len() == edges.len();
     if unique

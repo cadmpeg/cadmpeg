@@ -56,7 +56,7 @@ fn generated_f3d_rewrites_body_transform() {
 
 #[test]
 fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
-    let body = cadmpeg_ir::ids::BodyId("f3d:brep:entity#1".into());
+    let body = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").expect("identity grammar");
     let mut baseline = crate::native::F3dNative::default();
     baseline
         .body_native_keys

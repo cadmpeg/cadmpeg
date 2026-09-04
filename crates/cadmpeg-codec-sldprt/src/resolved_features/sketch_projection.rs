@@ -166,7 +166,7 @@ fn project_brep(
                     );
                     entities.push(
                         SketchEntity::new(id.clone(), sketch_id.clone(), geometry)
-                            .with_native_ref(Some(format!("{stream_ordinal}:{}", edge.id.0)))
+                            .with_native_ref(Some(format!("{stream_ordinal}:{}", edge.id.as_str())))
                             .with_geometry_ref(
                                 edge.curve
                                     .as_ref()
@@ -223,7 +223,7 @@ fn project_brep(
                         position: project_point(*position, *origin, *u_axis, v_axis),
                     },
                 )
-                .with_native_ref(Some(format!("{stream_ordinal}:{}", vertex.id.0)))
+                .with_native_ref(Some(format!("{stream_ordinal}:{}", vertex.id.as_str())))
                 .with_endpoint_refs(vec![format!("{stream_ordinal}:{}", vertex.point.0)]),
             );
         }

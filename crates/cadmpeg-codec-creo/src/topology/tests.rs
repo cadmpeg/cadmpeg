@@ -510,8 +510,10 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(
         edges,
         &[
-            cadmpeg_ir::ids::EdgeId("creo:visibgeom:edge#10".to_string()),
-            cadmpeg_ir::ids::EdgeId("creo:visibgeom:edge#11".to_string()),
+            cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#10".to_string())
+                .expect("identity grammar"),
+            cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#11".to_string())
+                .expect("identity grammar"),
         ]
     );
     assert_eq!(native, "creo:allfeatur:edgs_affected#4:10,11");

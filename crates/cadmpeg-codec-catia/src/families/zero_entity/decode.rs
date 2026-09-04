@@ -120,7 +120,8 @@ fn append_oriented_wire_curve(
     procedural: Option<(ProceduralCurveDefinition, Option<f64>)>,
 ) {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
-        let construction_id = ProceduralCurveId(format!("{}-construction", curve_id.0));
+        let construction_id = ProceduralCurveId::mint(format!("{}-construction", curve_id.0))
+            .expect("identity grammar");
         annotate(
             annotations,
             &construction_id,
@@ -216,9 +217,12 @@ fn transfer_closed_wire_loops(
                 "{}-{}-{}",
                 run.carrier_record_ordinal, face.record_ordinal, loop_record.record_ordinal
             );
-            let body_id = BodyId(format!("catia:zero-entity:wire-body#{identity}"));
-            let region_id = RegionId(format!("catia:zero-entity:wire-region#{identity}"));
-            let shell_id = ShellId(format!("catia:zero-entity:wire-shell#{identity}"));
+            let body_id = BodyId::mint(format!("catia:zero-entity:wire-body#{identity}"))
+                .expect("identity grammar");
+            let region_id = RegionId::mint(format!("catia:zero-entity:wire-region#{identity}"))
+                .expect("identity grammar");
+            let shell_id = ShellId::mint(format!("catia:zero-entity:wire-shell#{identity}"))
+                .expect("identity grammar");
             if !root_owns_support_runs {
                 annotate(
                     annotations,
@@ -248,9 +252,12 @@ fn transfer_closed_wire_loops(
 
             let mut vertex_ids = Vec::with_capacity(member_count);
             for (index, (_, _, [start, _], _, _)) in members.iter().enumerate() {
-                let point_id = PointId(format!("catia:zero-entity:wire-point#{identity}-{index}"));
+                let point_id =
+                    PointId::mint(format!("catia:zero-entity:wire-point#{identity}-{index}"))
+                        .expect("identity grammar");
                 let vertex_id =
-                    VertexId(format!("catia:zero-entity:wire-vertex#{identity}-{index}"));
+                    VertexId::mint(format!("catia:zero-entity:wire-vertex#{identity}-{index}"))
+                        .expect("identity grammar");
                 annotate(
                     annotations,
                     &point_id,
@@ -288,7 +295,9 @@ fn transfer_closed_wire_loops(
             let mut edge_ids = Vec::with_capacity(member_count);
             for (index, (support, curve, _, forward, parameter_range)) in members.iter().enumerate()
             {
-                let edge_id = EdgeId(format!("catia:zero-entity:wire-edge#{identity}-{index}"));
+                let edge_id =
+                    EdgeId::mint(format!("catia:zero-entity:wire-edge#{identity}-{index}"))
+                        .expect("identity grammar");
                 let (curve_id, param_range) = if let Some(parameters) = *parameter_range {
                     let oriented_range = if *forward {
                         parameters
@@ -435,9 +444,10 @@ fn transfer_closed_wire_loops(
                                     (curve.clone(), None)
                                 }
                             } else {
-                                let oriented_curve_id = CurveId(format!(
+                                let oriented_curve_id = CurveId::mint(format!(
                                     "catia:zero-entity:wire-curve#{identity}-{index}"
-                                ));
+                                ))
+                                .expect("identity grammar");
                                 append_oriented_wire_curve(
                                     ir,
                                     annotations,
@@ -528,9 +538,12 @@ fn transfer_closed_wire_loops(
             return counts;
         };
         let identity = root.body_record_ordinal;
-        let body_id = BodyId(format!("catia:zero-entity:owned-wire-body#{identity}"));
-        let region_id = RegionId(format!("catia:zero-entity:owned-wire-region#{identity}"));
-        let shell_id = ShellId(format!("catia:zero-entity:owned-wire-shell#{identity}"));
+        let body_id = BodyId::mint(format!("catia:zero-entity:owned-wire-body#{identity}"))
+            .expect("identity grammar");
+        let region_id = RegionId::mint(format!("catia:zero-entity:owned-wire-region#{identity}"))
+            .expect("identity grammar");
+        let shell_id = ShellId::mint(format!("catia:zero-entity:owned-wire-shell#{identity}"))
+            .expect("identity grammar");
         annotate(
             annotations,
             &body_id,
@@ -615,7 +628,8 @@ pub(crate) fn try_decode_zero_entity(
 
     let mut surface_ids_by_position = HashMap::new();
     for (index, surface) in surfaces.into_iter().enumerate() {
-        let id = SurfaceId(format!("catia:zero-entity:surf#{index}"));
+        let id =
+            SurfaceId::mint(format!("catia:zero-entity:surf#{index}")).expect("identity grammar");
         annotate(
             &mut annotations,
             &id,
@@ -640,10 +654,11 @@ pub(crate) fn try_decode_zero_entity(
             continue;
         };
         for support in &run.supports {
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "catia:zero-entity:support-curve#{}",
                 support.record_ordinal
-            ));
+            ))
+            .expect("identity grammar");
             if let Some(geometry) = support.model_curve.clone() {
                 annotate(
                     &mut annotations,
@@ -731,10 +746,11 @@ pub(crate) fn try_decode_zero_entity(
                         "parametric_surface_curve",
                     )
                 };
-            let construction_id = ProceduralCurveId(format!(
+            let construction_id = ProceduralCurveId::mint(format!(
                 "catia:zero-entity:support-curve-construction#{}",
                 support.record_ordinal
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 &mut annotations,
                 &curve_id,
@@ -950,7 +966,7 @@ mod tests {
         let corner = Point3::new(1.0, 0.0, 0.0);
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
-            id: CurveId("catia:test:nurbs#0".to_string()),
+            id: CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Nurbs(
                 NurbsCurve::new(
                     1,
@@ -964,7 +980,7 @@ mod tests {
             source_object: None,
         });
         ir.model.curves.push(Curve {
-            id: CurveId("catia:test:line#1".to_string()),
+            id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Line {
                 origin: corner,
                 direction: Vector3::new(-1.0, 0.0, 0.0),
@@ -1008,8 +1024,14 @@ mod tests {
             },
         ];
         let support_curve_ids = HashMap::from([
-            (4, CurveId("catia:test:nurbs#0".to_string())),
-            (5, CurveId("catia:test:line#1".to_string())),
+            (
+                4,
+                CurveId::mint("catia:test:nurbs#0".to_string()).expect("identity grammar"),
+            ),
+            (
+                5,
+                CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
+            ),
         ]);
         let mut annotations = AnnotationBuilder::new();
 
@@ -1038,7 +1060,7 @@ mod tests {
         .enumerate()
         {
             ir.model.curves.push(Curve {
-                id: CurveId(format!("catia:test:curve#{index}")),
+                id: CurveId::mint(format!("catia:test:curve#{index}")).expect("identity grammar"),
                 geometry: CurveGeometry::Line { origin, direction },
                 source_object: None,
             });
@@ -1103,8 +1125,14 @@ mod tests {
             },
         ];
         let support_curve_ids = HashMap::from([
-            (4, CurveId("catia:test:curve#0".to_string())),
-            (5, CurveId("catia:test:curve#1".to_string())),
+            (
+                4,
+                CurveId::mint("catia:test:curve#0".to_string()).expect("identity grammar"),
+            ),
+            (
+                5,
+                CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"),
+            ),
         ]);
         let ownership_root = crate::families::zero_entity::records::ZeroEntityOwnershipRoot {
             face_roster_pos: 50,
@@ -1133,7 +1161,8 @@ mod tests {
         assert_eq!(counts.points, 4);
         assert_eq!(
             ir.model.bodies[0].id,
-            BodyId("catia:zero-entity:owned-wire-body#8".to_string())
+            BodyId::mint("catia:zero-entity:owned-wire-body#8".to_string())
+                .expect("identity grammar")
         );
         assert!(matches!(ir.model.bodies[0].kind, BodyKind::Wire));
         assert_eq!(ir.model.shells[0].wire_edges.len(), 4);
@@ -1141,24 +1170,30 @@ mod tests {
         assert_eq!(ir.model.edges[1].param_range, Some([0.0, 1.0]));
         assert_eq!(
             ir.model.edges[1].curve,
-            Some(CurveId("catia:test:curve#1".to_string()))
+            Some(CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
         );
         assert!(matches!(
             ir.model
                 .curves
                 .iter()
-                .find(|curve| curve.id == CurveId("catia:test:curve#1".to_string()))
+                .find(|curve| curve.id == CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Line { origin, direction })
                 if *origin == corner && *direction == Vector3::new(-1.0, 0.0, 0.0)
         ));
         assert_eq!(
             ir.model.edges[2].curve,
-            Some(CurveId("catia:zero-entity:wire-curve#1-2-6-0".to_string()))
+            Some(
+                CurveId::mint("catia:zero-entity:wire-curve#1-2-6-0".to_string())
+                    .expect("identity grammar")
+            )
         );
         assert_eq!(
             ir.model.edges[3].curve,
-            Some(CurveId("catia:zero-entity:wire-curve#1-2-6-1".to_string()))
+            Some(
+                CurveId::mint("catia:zero-entity:wire-curve#1-2-6-1".to_string())
+                    .expect("identity grammar")
+            )
         );
         assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
     }
@@ -1172,7 +1207,7 @@ mod tests {
         let chord = first.distance(corner);
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
-            id: CurveId("catia:test:circle#0".to_string()),
+            id: CurveId::mint("catia:test:circle#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Circle {
                 center: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -1182,7 +1217,7 @@ mod tests {
             source_object: None,
         });
         ir.model.curves.push(Curve {
-            id: CurveId("catia:test:line#1".to_string()),
+            id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Line {
                 origin: corner,
                 direction: first.vector_from(corner).scale(1.0 / chord),
@@ -1229,8 +1264,14 @@ mod tests {
             },
         ];
         let support_curve_ids = HashMap::from([
-            (4, CurveId("catia:test:circle#0".to_string())),
-            (5, CurveId("catia:test:line#1".to_string())),
+            (
+                4,
+                CurveId::mint("catia:test:circle#0".to_string()).expect("identity grammar"),
+            ),
+            (
+                5,
+                CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
+            ),
         ]);
         let mut annotations = AnnotationBuilder::new();
 
@@ -1255,8 +1296,11 @@ mod tests {
     fn closed_wire_reverses_helix_construction_and_clones_mixed_orientation() {
         let first = Point3::new(0.0, 0.0, 0.0);
         let corner = Point3::new(1.0, 0.0, 0.0);
-        let curve_id = CurveId("catia:test:helix-curve#0".to_string());
-        let construction_id = ProceduralCurveId("catia:test:helix-construction#0".to_string());
+        let curve_id =
+            CurveId::mint("catia:test:helix-curve#0".to_string()).expect("identity grammar");
+        let construction_id =
+            ProceduralCurveId::mint("catia:test:helix-construction#0".to_string())
+                .expect("identity grammar");
         let definition = ProceduralCurveDefinition::Helix {
             angle_range: [0.0, 1.0],
             center: Point3::new(0.0, 0.0, 0.0),
@@ -1331,7 +1375,8 @@ mod tests {
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
         assert_eq!(ir.model.edges[1].param_range, Some([0.0, 1.0]));
         assert_eq!(ir.model.edges[0].curve, Some(curve_id.clone()));
-        let derived_curve_id = CurveId("catia:zero-entity:wire-curve#1-2-3-1".to_string());
+        let derived_curve_id = CurveId::mint("catia:zero-entity:wire-curve#1-2-3-1".to_string())
+            .expect("identity grammar");
         assert_eq!(ir.model.edges[1].curve, Some(derived_curve_id.clone()));
         let source_definition = ir
             .model

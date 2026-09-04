@@ -368,7 +368,7 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
             .iter()
             .filter(|point| {
                 matches!(
-                    point.id.0.as_str(),
+                    point.id.as_str(),
                     "iges:model:point#D1"
                         | "iges:model:point#D3"
                         | "iges:model:point#D5"

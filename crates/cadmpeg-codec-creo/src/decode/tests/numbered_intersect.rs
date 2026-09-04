@@ -1300,10 +1300,10 @@ fn mixed_current_and_generated_edges_remain_native() {
         native_ref: None,
     });
     ir.model.edges.push(cadmpeg_ir::topology::Edge {
-        id: EdgeId("creo:visibgeom:edge#45".to_string()),
+        id: EdgeId::mint("creo:visibgeom:edge#45".to_string()).expect("identity grammar"),
         curve: None,
-        start: cadmpeg_ir::ids::VertexId("test:start".to_string()),
-        end: cadmpeg_ir::ids::VertexId("test:end".to_string()),
+        start: cadmpeg_ir::ids::VertexId::mint("test:start".to_string()).expect("identity grammar"),
+        end: cadmpeg_ir::ids::VertexId::mint("test:end".to_string()).expect("identity grammar"),
         param_range: None,
         tolerance: None,
     });
@@ -1827,14 +1827,14 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
 #[test]
 fn geometry_signal_excludes_opaque_carriers() {
     let mut ir = CadIr::empty();
-    let surface_id = SurfaceId("surface".to_string());
+    let surface_id = SurfaceId::mint("surface".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Unknown { record: None },
         source_object: None,
     });
     ir.model.curves.push(Curve {
-        id: CurveId("curve".to_string()),
+        id: CurveId::mint("curve".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: None,
     });
@@ -1844,7 +1844,7 @@ fn geometry_signal_excludes_opaque_carriers() {
     let _attached = ir.model.add_procedural_surface(
         surface_id,
         ProceduralSurface::new(
-            ProceduralSurfaceId("procedural".to_string()),
+            ProceduralSurfaceId::mint("procedural".to_string()).expect("identity grammar"),
             ProceduralSurfaceDefinition::Exact {
                 spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
                     ranges: [[0.0, 1.0], [0.0, 1.0]],

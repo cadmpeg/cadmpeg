@@ -692,9 +692,10 @@ pub(super) fn emit_pcurves(
         let range_count = ranges.len();
         for (rank, (range_bits, occurrences)) in ranges.into_iter().enumerate() {
             let id = if range_count == 1 {
-                PcurveId(format!("catia:b5:pcurve#{object_id}"))
+                PcurveId::mint(format!("catia:b5:pcurve#{object_id}")).expect("identity grammar")
             } else {
-                PcurveId(format!("catia:b5:pcurve#{object_id}@{rank}"))
+                PcurveId::mint(format!("catia:b5:pcurve#{object_id}@{rank}"))
+                    .expect("identity grammar")
             };
             annotate(
                 annotations,

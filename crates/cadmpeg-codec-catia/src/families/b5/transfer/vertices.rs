@@ -79,7 +79,7 @@ pub(super) fn emit_vertices(
         if !used_vertices.contains(&index) {
             continue;
         }
-        let point_id = PointId(format!("catia:b5:point#{index}"));
+        let point_id = PointId::mint(format!("catia:b5:point#{index}")).expect("identity grammar");
         annotate(
             annotations,
             &point_id,
@@ -92,7 +92,8 @@ pub(super) fn emit_vertices(
             position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
             source_object: None,
         });
-        let vertex_id = VertexId(format!("catia:b5:vertex#{index}"));
+        let vertex_id =
+            VertexId::mint(format!("catia:b5:vertex#{index}")).expect("identity grammar");
         annotate(
             annotations,
             &vertex_id,
@@ -112,7 +113,7 @@ pub(super) fn emit_vertices(
         if !used_vertices.contains(&index) {
             continue;
         }
-        let point_id = PointId(format!("catia:b5:point#{index}"));
+        let point_id = PointId::mint(format!("catia:b5:point#{index}")).expect("identity grammar");
         annotate(
             annotations,
             &point_id,
@@ -125,7 +126,8 @@ pub(super) fn emit_vertices(
             position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
             source_object: Some(cgm_source("vertex", graph.logical_vertex_refs[rank])),
         });
-        let vertex_id = VertexId(format!("catia:b5:vertex#{index}"));
+        let vertex_id =
+            VertexId::mint(format!("catia:b5:vertex#{index}")).expect("identity grammar");
         annotate(
             annotations,
             &vertex_id,

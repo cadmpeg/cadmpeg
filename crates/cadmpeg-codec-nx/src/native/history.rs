@@ -301,7 +301,7 @@ mod tests {
     }
 
     fn closure_ir(features: Vec<Feature>) -> (CadIr, BodyId) {
-        let body = BodyId("body".into());
+        let body = BodyId::mint("body").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.features = features;
         (ir, body)
@@ -314,7 +314,7 @@ mod tests {
                 "writer",
                 2,
                 Vec::new(),
-                vec![BodyId("body".into())],
+                vec![BodyId::mint("body").expect("identity grammar")],
                 BTreeMap::new(),
                 false,
             )
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn neutral_output_identity_closes_lineage_across_native_identities() {
-        let body = BodyId("body".into());
+        let body = BodyId::mint("body").expect("identity grammar");
         let first = FeatureId("first".into());
         let second = FeatureId("second".into());
         let mut history = BodyWriterHistory::default();
@@ -408,8 +408,8 @@ mod tests {
     fn provisional_output_writer_can_be_retracted_without_affecting_other_writers() {
         let provisional = FeatureId("provisional".into());
         let retained = FeatureId("retained".into());
-        let created = BodyId("created".into());
-        let existing = BodyId("existing".into());
+        let created = BodyId::mint("created").expect("identity grammar");
+        let existing = BodyId::mint("existing").expect("identity grammar");
         let mut history = BodyWriterHistory::default();
         history.record_writer(
             None,
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn native_primary_body_witness_closes_history_without_neutral_outputs() {
-        let body = BodyId("body".into());
+        let body = BodyId::mint("body").expect("identity grammar");
         let dependency = FeatureId("dependency".into());
         let writer = FeatureId("writer".into());
         let mut ir = CadIr::empty();
@@ -574,14 +574,14 @@ mod tests {
             ]))
         );
         assert_eq!(
-            active_feature_closure(&ir, &[BodyId("other".into())]),
+            active_feature_closure(&ir, &[BodyId::mint("other").expect("identity grammar")]),
             Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter)
         );
     }
 
     #[test]
     fn retained_history_input_alone_is_not_an_active_feature_closure() {
-        let body = BodyId("body".into());
+        let body = BodyId::mint("body").expect("identity grammar");
         let (ir, _) = closure_ir(vec![Feature {
             id: FeatureId("initial".into()),
             ordinal: 0,

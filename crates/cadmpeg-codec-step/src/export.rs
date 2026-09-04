@@ -1044,7 +1044,7 @@ impl<'a> Builder<'a> {
             if assigned.is_empty() {
                 if layer.visible == Some(false) {
                     self.hidden_presentation_layers_without_items
-                        .insert(layer.id.0);
+                        .insert(layer.id.as_str().to_owned());
                 }
             } else {
                 let assignment = self.emitter.emit(
@@ -3700,7 +3700,9 @@ impl<'a> Builder<'a> {
                             && !self.ir.model.procedural_surfaces.iter().any(|procedural| {
                                 self.ir.model.procedural_surface_owner(&procedural.id)
                                     == Some(&surface.id)
-                                    && self.written_procedural_surfaces.contains(&procedural.id.0)
+                                    && self
+                                        .written_procedural_surfaces
+                                        .contains(procedural.id.as_str())
                                     && matches!(
                                         procedural.definition(),
                                         ProceduralSurfaceDefinition::DegenerateTorus { .. }
@@ -4448,14 +4450,22 @@ impl<'a> Builder<'a> {
             .model
             .procedural_surfaces
             .iter()
-            .filter(|procedural| !self.written_procedural_surfaces.contains(&procedural.id.0))
+            .filter(|procedural| {
+                !self
+                    .written_procedural_surfaces
+                    .contains(procedural.id.as_str())
+            })
             .count();
         let procedural_curve_count = self
             .ir
             .model
             .procedural_curves
             .iter()
-            .filter(|procedural| !self.written_procedural_curves.contains(&procedural.id.0))
+            .filter(|procedural| {
+                !self
+                    .written_procedural_curves
+                    .contains(procedural.id.as_str())
+            })
             .count();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
             self.loss(

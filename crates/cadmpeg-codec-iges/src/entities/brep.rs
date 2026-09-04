@@ -112,8 +112,11 @@ fn topology_vertex(
     vertex_ids
         .entry((list, index))
         .or_insert_with(|| {
-            let point_id = PointId(format!("iges:model:point#{stem}:D{list}:{}", index + 1));
-            let vertex_id = VertexId(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1));
+            let point_id = PointId::mint(format!("iges:model:point#{stem}:D{list}:{}", index + 1))
+                .expect("identity grammar");
+            let vertex_id =
+                VertexId::mint(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1))
+                    .expect("identity grammar");
             candidate.model_mut().points.push(Point {
                 source_object: None,
                 id: point_id.clone(),
@@ -169,7 +172,7 @@ fn project_pcurve_uses(
         .zip(resolved)
         .enumerate()
         .map(|(index, ((isoparametric, _), (geometry, range)))| {
-            let id = PcurveId(format!("{id_stem}:{index}"));
+            let id = PcurveId::mint(format!("{id_stem}:{index}")).expect("identity grammar");
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
@@ -748,8 +751,9 @@ pub(super) fn project(
         let mut edges_by_curve: Option<BTreeMap<&str, Vec<usize>>> = None;
         let mut candidate = ModelDraft::new();
         let stem = format!("D{}", entry.sequence);
-        let body_id = BodyId(format!("iges:model:body#{stem}"));
-        let region_id = RegionId(format!("iges:model:region#{stem}"));
+        let body_id = BodyId::mint(format!("iges:model:body#{stem}")).expect("identity grammar");
+        let region_id =
+            RegionId::mint(format!("iges:model:region#{stem}")).expect("identity grammar");
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
         let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
@@ -763,13 +767,15 @@ pub(super) fn project(
             } else {
                 format!("{stem}:D{shell_sequence}")
             };
-            let shell_id = ShellId(format!("iges:model:shell#{shell_stem}"));
+            let shell_id =
+                ShellId::mint(format!("iges:model:shell#{shell_stem}")).expect("identity grammar");
             let mut shell_faces = Vec::new();
             for (face_sequence, native_face_sense) in shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = faces[&face_sequence].clone();
                 let surface_id =
-                    SurfaceId(format!("iges:model:surface#D{}", face_definition.surface));
+                    SurfaceId::mint(format!("iges:model:surface#D{}", face_definition.surface))
+                        .expect("identity grammar");
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.0.as_str())
                     .and_then(|position| ir.model.surfaces.get(*position))
@@ -778,13 +784,17 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                let face_id = FaceId(format!("iges:model:face#{shell_stem}:D{face_sequence}"));
+                let face_id =
+                    FaceId::mint(format!("iges:model:face#{shell_stem}:D{face_sequence}"))
+                        .expect("identity grammar");
                 let mut face_loops = Vec::new();
                 for (face_loop_index, loop_sequence) in
                     face_definition.loops.into_iter().enumerate()
                 {
                     let uses = loops[&loop_sequence].clone();
-                    let loop_id = LoopId(format!("iges:model:loop#{shell_stem}:D{loop_sequence}"));
+                    let loop_id =
+                        LoopId::mint(format!("iges:model:loop#{shell_stem}:D{loop_sequence}"))
+                            .expect("identity grammar");
                     let edge_use_indices = uses
                         .iter()
                         .enumerate()
@@ -795,9 +805,10 @@ pub(super) fn project(
                     let coedge_ids = edge_use_indices
                         .iter()
                         .map(|index| {
-                            CoedgeId(format!(
+                            CoedgeId::mint(format!(
                                 "iges:model:coedge#{shell_stem}:D{loop_sequence}:{index}"
                             ))
+                            .expect("identity grammar")
                         })
                         .collect::<Vec<_>>();
                     let coedge_by_use = edge_use_indices
@@ -920,8 +931,11 @@ pub(super) fn project(
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
                             id.clone()
                         } else {
-                            let curve_id =
-                                CurveId(format!("iges:model:curve#D{}", edge_definition.curve));
+                            let curve_id = CurveId::mint(format!(
+                                "iges:model:curve#D{}",
+                                edge_definition.curve
+                            ))
+                            .expect("identity grammar");
                             let curve_edges = edges_by_curve.get_or_insert_with(|| {
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
@@ -975,11 +989,12 @@ pub(super) fn project(
                                     break;
                                 }
                             };
-                            let id = EdgeId(format!(
+                            let id = EdgeId::mint(format!(
                                 "iges:model:edge#{stem}:D{}:{}",
                                 edge_key.0,
                                 edge_key.1 + 1
-                            ));
+                            ))
+                            .expect("identity grammar");
                             candidate.model_mut().edges.push(Edge {
                                 id: id.clone(),
                                 curve: Some(curve_id),

@@ -114,7 +114,7 @@ pub(crate) fn bind_sketch_profiles(
                 sketch.native_ref.as_deref() == Some(lane.id.as_str())
                     && annotations
                         .provenance
-                        .get(&sketch.id.0)
+                        .get(sketch.id.as_str())
                         .is_some_and(|source| source.offset > start && source.offset < end)
             });
             let Some(sketch) = enclosed.next() else {
@@ -2451,7 +2451,7 @@ fn legacy_config_hex_sketch(
         .id
         .0
         .rsplit_once('#')
-        .map_or(sketch.id.0.as_str(), |(_, key)| key);
+        .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| {
         SketchEntityId(format!(
             "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",
@@ -2600,7 +2600,7 @@ fn legacy_config_collinear_sketch(
         .id
         .0
         .rsplit_once('#')
-        .map_or(sketch.id.0.as_str(), |(_, key)| key);
+        .map_or(sketch.id.as_str(), |(_, key)| key);
     let entity_id = |kind: &str, index: usize| {
         SketchEntityId(format!(
             "sldprt:model:sketch-entity#legacy-config:{sketch_key}:{}:{kind}:{index}",

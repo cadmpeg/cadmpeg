@@ -842,7 +842,9 @@ pub fn counterbore_source_boundary_circle(
                 let plane = rows.get(&other)?;
                 (plane.kind == crate::surface::SurfaceKind::Plane).then_some(())?;
                 let curve = exactly_one(ir.model.curves.iter().filter(|curve| {
-                    curve.id == CurveId(format!("creo:visibgeom:curve#{}", edge.id))
+                    curve.id
+                        == CurveId::mint(format!("creo:visibgeom:curve#{}", edge.id))
+                            .expect("identity grammar")
                 }))?;
                 let CurveGeometry::Circle {
                     center,

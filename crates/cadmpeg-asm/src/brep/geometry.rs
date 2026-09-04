@@ -992,7 +992,7 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
         .filter_map(|curve| match &curve.geometry {
             CurveGeometry::Nurbs(nurbs) => {
                 let (first, last) = (nurbs.knots().first()?, nurbs.knots().last()?);
-                Some((curve.id.0.as_str(), [*first, *last]))
+                Some((curve.id.as_str(), [*first, *last]))
             }
             _ => None,
         })

@@ -154,7 +154,7 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let curve_id = CurveId("generated:nurbs_curve#0".into());
+    let curve_id = CurveId::mint("generated:nurbs_curve#0").expect("identity grammar");
     let expected = CurveGeometry::Nurbs(
         NurbsCurve::new(
             2,
@@ -354,7 +354,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
         radius: 5.0,
     };
     source_less.model.surfaces[1].geometry = expected_surface.clone();
-    let curve_id = CurveId("generated:shared_line#0".into());
+    let curve_id = CurveId::mint("generated:shared_line#0").expect("identity grammar");
     let expected_curve = CurveGeometry::Line {
         origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -423,17 +423,19 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
-    let loop_id = LoopId("generated:loop#1".into());
+    let loop_id = LoopId::mint("generated:loop#1").expect("identity grammar");
     let mut coedge_ids = Vec::new();
     let coordinates = [[2.0, 2.0, 0.0], [4.0, 2.0, 0.0], [2.0, 4.0, 0.0]];
     for (index, [x, y, z]) in coordinates.into_iter().enumerate() {
-        let point_id = PointId(format!("generated:inner_point#{index}"));
+        let point_id =
+            PointId::mint(format!("generated:inner_point#{index}")).expect("identity grammar");
         source_less.model.points.push(cadmpeg_ir::topology::Point {
             id: point_id.clone(),
             position: cadmpeg_ir::math::Point3::new(x, y, z),
             source_object: None,
         });
-        let vertex_id = VertexId(format!("generated:inner_vertex#{index}"));
+        let vertex_id =
+            VertexId::mint(format!("generated:inner_vertex#{index}")).expect("identity grammar");
         source_less
             .model
             .vertices
@@ -448,7 +450,8 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         .map(|vertex| vertex.id.clone())
         .collect::<Vec<_>>();
     for index in 0..3 {
-        let edge_id = EdgeId(format!("generated:inner_edge#{index}"));
+        let edge_id =
+            EdgeId::mint(format!("generated:inner_edge#{index}")).expect("identity grammar");
         source_less.model.edges.push(cadmpeg_ir::topology::Edge {
             id: edge_id.clone(),
             curve: None,
@@ -457,7 +460,8 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
-        let coedge_id = CoedgeId(format!("generated:inner_coedge#{index}"));
+        let coedge_id =
+            CoedgeId::mint(format!("generated:inner_coedge#{index}")).expect("identity grammar");
         coedge_ids.push(coedge_id.clone());
         source_less
             .model
@@ -557,7 +561,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
         .expect("valid shared rational surface"),
     );
     source_less.model.surfaces[1].geometry = expected_surface.clone();
-    let curve_id = CurveId("generated:shared_nurbs#0".into());
+    let curve_id = CurveId::mint("generated:shared_nurbs#0").expect("identity grammar");
     let expected_curve = CurveGeometry::Nurbs(
         NurbsCurve::new(
             2,
@@ -578,7 +582,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
         source_object: None,
     });
     source_less.model.edges[0].curve = Some(curve_id);
-    let pcurve_id = PcurveId("generated:pcurve#0".into());
+    let pcurve_id = PcurveId::mint("generated:pcurve#0").expect("identity grammar");
     let mut pcurve = pcurve;
     pcurve.id = pcurve_id.clone();
     let expected_pcurve = pcurve.geometry.clone();
@@ -728,7 +732,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
         minor_radius: -3.0,
     };
     source_less.model.surfaces[1].geometry = expected_surface.clone();
-    let curve_id = CurveId("generated:shared_circle#0".into());
+    let curve_id = CurveId::mint("generated:shared_circle#0").expect("identity grammar");
     let expected_curve = CurveGeometry::Circle {
         center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -788,7 +792,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
     };
     source_less.model.surfaces[0].geometry = cone.clone();
     source_less.model.surfaces[1].geometry = sphere.clone();
-    let curve_id = CurveId("generated:shared_ellipse#0".into());
+    let curve_id = CurveId::mint("generated:shared_ellipse#0").expect("identity grammar");
     let ellipse = CurveGeometry::Ellipse {
         center: Point3::new(0.0, 0.0, 0.0),
         axis: Vector3::new(0.0, 0.0, 1.0),

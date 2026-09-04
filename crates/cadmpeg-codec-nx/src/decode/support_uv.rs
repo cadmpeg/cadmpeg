@@ -1965,7 +1965,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 return None;
             }
             let source_index = sources.iter().position(|source| {
-                index >= source.coedge_start && stream_owns_id(&coedge.id.0, &source.prefix)
+                index >= source.coedge_start && stream_owns_id(&coedge.id.as_str(), &source.prefix)
             })?;
             let surface = loop_faces
                 .get(&coedge.owner_loop)
@@ -2005,7 +2005,8 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     {
         if multiple_sources
             && !sources.iter().any(|source| {
-                index >= source.procedural_start && stream_owns_id(&procedural.id.0, &source.prefix)
+                index >= source.procedural_start
+                    && stream_owns_id(&procedural.id.as_str(), &source.prefix)
             })
         {
             continue;
@@ -2170,10 +2171,11 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         else {
             continue;
         };
-        let pcurve_id = PcurveId(format!(
+        let pcurve_id = PcurveId::mint(format!(
             "{}:intersection-pcurve-completed#{fin_xmt}",
             source.prefix
-        ));
+        ))
+        .expect("identity grammar");
         if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
             continue;
         }
@@ -2256,7 +2258,7 @@ mod tests {
 
     #[test]
     fn oversized_serialized_lane_is_declined_before_geometry_work() {
-        let surface_id = SurfaceId("synthetic:support-plane".into());
+        let surface_id = SurfaceId::mint("synthetic:support-plane").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
@@ -2312,7 +2314,8 @@ mod tests {
         const FIT_TOLERANCE: f64 = 1.0e-10;
         const GEOMETRY_WORK: usize = 1_024;
 
-        let surface_id = SurfaceId("synthetic:coarse-nurbs-support".into());
+        let surface_id =
+            SurfaceId::mint("synthetic:coarse-nurbs-support").expect("identity grammar");
         let nurbs = cadmpeg_ir::geometry::NurbsSurface::new(
             1,
             1,

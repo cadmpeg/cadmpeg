@@ -13,7 +13,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         .into_iter()
         .enumerate()
         .map(|(index, position)| Point {
-            id: PointId(format!("point-{index}")),
+            id: PointId::mint(format!("point-{index}")).expect("identity grammar"),
             position,
             source_object: None,
         }),
@@ -25,8 +25,8 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         radius,
     };
     let surface_ids = [
-        SurfaceId("sphere-0".to_string()),
-        SurfaceId("sphere-1".to_string()),
+        SurfaceId::mint("sphere-0".to_string()).expect("identity grammar"),
+        SurfaceId::mint("sphere-1".to_string()).expect("identity grammar"),
     ];
     ir.model
         .surfaces

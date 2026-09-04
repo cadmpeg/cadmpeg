@@ -747,7 +747,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .model
             .sketch_constraints
             .iter()
-            .find(|constraint| constraint.id.0.ends_with(&format!(":{index}")))
+            .find(|constraint| constraint.id.as_str().ends_with(&format!(":{index}")))
             .expect("constraint index")
     };
     assert!(matches!(
@@ -778,7 +778,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .model
             .parameters
             .iter()
-            .find(|parameter| parameter.id.0.ends_with(":constraint:4"))
+            .find(|parameter| parameter.id.as_str().ends_with(":constraint:4"))
             .expect("Snell parameter")
             .value,
         Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 1.33).abs() < 1.0e-12
@@ -789,7 +789,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .model
             .parameters
             .iter()
-            .find(|parameter| parameter.id.0.ends_with(":constraint:5"))
+            .find(|parameter| parameter.id.as_str().ends_with(":constraint:5"))
             .expect("weight parameter")
             .value,
         Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 0.75).abs() < 1.0e-12

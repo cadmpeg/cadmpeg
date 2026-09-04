@@ -874,7 +874,8 @@ mod tests {
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ]);
-        let occurrence = OccurrenceId("test:model:occurrence#component".into());
+        let occurrence =
+            OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar");
         let features = [
             feature(
                 &component_scope.id,

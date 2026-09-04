@@ -78,7 +78,7 @@ fn closed_cylinder_anchors_sentinel_vertices_to_the_surface_branch() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.id.0.contains("#seam:"))
+        .find(|edge| edge.id.as_str().contains("#seam:"))
         .expect("derived seam");
     let positions = [&seam.start, &seam.end].map(|vertex_id| {
         let vertex = decoded
@@ -297,7 +297,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .model
         .pcurves
         .iter()
-        .find(|pcurve| pcurve.id.0.contains("sphere-seam"))
+        .find(|pcurve| pcurve.id.as_str().contains("sphere-seam"))
         .expect("sphere pole pcurve");
     assert!(matches!(
         pole.geometry,
@@ -316,7 +316,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(&edge.id.0)
+                .get(edge.id.as_str())
                 .and_then(|note| note.tag.as_deref())
                 == Some("derived_sphere_seam")
         })
@@ -372,7 +372,7 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(&curve.id.0)
+                .get(curve.id.as_str())
                 .and_then(|note| note.tag.as_deref())
                 == Some("derived_sphere_seam")
         })
@@ -423,7 +423,7 @@ fn nurbs_boundary_curve_gets_isoparametric_pcurve() {
             .source_fidelity()
             .annotations
             .provenance
-            .get(&pcurve.id.0)
+            .get(pcurve.id.as_str())
             .and_then(|note| note.tag.as_deref())
             == Some("derived_nurbs_isoparametric_pcurve")
     }));
@@ -457,7 +457,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .source_fidelity()
             .annotations
             .provenance
-            .get(&pcurve.id.0)
+            .get(pcurve.id.as_str())
             .and_then(|note| note.tag.as_deref())
             == Some("derived_nurbs_isoparametric_pcurve")
             && matches!(
@@ -545,7 +545,7 @@ fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
             .source_fidelity()
             .annotations
             .provenance
-            .get(&pcurve.id.0)
+            .get(pcurve.id.as_str())
             .and_then(|note| note.tag.as_deref())
             == Some("derived_nurbs_isoparametric_pcurve")
     }));

@@ -3217,7 +3217,8 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
                 continue;
             }
             let support = |fin_xmt| {
-                let coedge_id = CoedgeId(format!("{prefix}:fin#{fin_xmt}"));
+                let coedge_id =
+                    CoedgeId::mint(format!("{prefix}:fin#{fin_xmt}")).expect("identity grammar");
                 let coedge = model_index.coedges(coedge_id.0.as_str())?;
                 (&coedge.edge == edge_id).then_some(())?;
                 let loop_ = model_index.loops(coedge.owner_loop.0.as_str())?;
@@ -3304,8 +3305,11 @@ pub(crate) fn attach_tolerant_edge_intersections_with_budget(
     };
 
     for (xmt, edge_id, supports, endpoints, tolerance) in candidates {
-        let curve_id = CurveId(format!("{prefix}:tolerant-curve#{xmt}"));
-        let procedural_id = ProceduralCurveId(format!("{prefix}:tolerant-intersection#{xmt}"));
+        let curve_id =
+            CurveId::mint(format!("{prefix}:tolerant-curve#{xmt}")).expect("identity grammar");
+        let procedural_id =
+            ProceduralCurveId::mint(format!("{prefix}:tolerant-intersection#{xmt}"))
+                .expect("identity grammar");
         let Some(edge) = ir
             .model
             .edges
@@ -3569,16 +3573,18 @@ mod tests {
 
     #[test]
     fn model_wide_intersection_completion_revisits_prior_coedge_incidence() {
-        let known_surface = SurfaceId("nx:test:surface-known".into());
-        let completed_surface = SurfaceId("nx:test:surface-completed".into());
-        let curve = CurveId("nx:s0:intersection-crv#0".into());
-        let procedural_id = ProceduralCurveId("nx:s0:intersection#0".into());
-        let edge_id = EdgeId("nx:s1:edge#0".into());
-        let loop_id = LoopId("nx:s1:loop#0".into());
-        let face_id = FaceId("nx:s1:face#0".into());
-        let coedge_id = CoedgeId("nx:s0:fin#0".into());
-        let pcurve_id = PcurveId("nx:s1:pcurve#0".into());
-        let vertex_id = VertexId("nx:s1:vertex#0".into());
+        let known_surface = SurfaceId::mint("nx:test:surface-known").expect("identity grammar");
+        let completed_surface =
+            SurfaceId::mint("nx:test:surface-completed").expect("identity grammar");
+        let curve = CurveId::mint("nx:s0:intersection-crv#0").expect("identity grammar");
+        let procedural_id =
+            ProceduralCurveId::mint("nx:s0:intersection#0").expect("identity grammar");
+        let edge_id = EdgeId::mint("nx:s1:edge#0").expect("identity grammar");
+        let loop_id = LoopId::mint("nx:s1:loop#0").expect("identity grammar");
+        let face_id = FaceId::mint("nx:s1:face#0").expect("identity grammar");
+        let coedge_id = CoedgeId::mint("nx:s0:fin#0").expect("identity grammar");
+        let pcurve_id = PcurveId::mint("nx:s1:pcurve#0").expect("identity grammar");
+        let vertex_id = VertexId::mint("nx:s1:vertex#0").expect("identity grammar");
 
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
@@ -3620,9 +3626,9 @@ mod tests {
             id: coedge_id,
             owner_loop: loop_id.clone(),
             edge: edge_id.clone(),
-            next: CoedgeId("nx:s0:fin#0".into()),
-            previous: CoedgeId("nx:s0:fin#0".into()),
-            radial_next: CoedgeId("nx:s0:fin#0".into()),
+            next: CoedgeId::mint("nx:s0:fin#0").expect("identity grammar"),
+            previous: CoedgeId::mint("nx:s0:fin#0").expect("identity grammar"),
+            radial_next: CoedgeId::mint("nx:s0:fin#0").expect("identity grammar"),
             sense: Sense::Forward,
             pcurves: vec![PcurveUse {
                 pcurve: pcurve_id.clone(),
@@ -3645,7 +3651,7 @@ mod tests {
         };
         ir.model.faces.push(Face {
             id: face_id.clone(),
-            shell: ShellId("nx:s1:shell#0".into()),
+            shell: ShellId::mint("nx:s1:shell#0").expect("identity grammar"),
             surface: completed_surface.clone(),
             sense: Sense::Forward,
             loops: vec![loop_id.clone()],
@@ -3658,13 +3664,13 @@ mod tests {
             face: face_id,
             boundary_role: LoopBoundaryRole::default(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-                coedges: vec![CoedgeId("nx:s0:fin#0".into())],
+                coedges: vec![CoedgeId::mint("nx:s0:fin#0").expect("identity grammar")],
                 vertex_uses: Vec::new(),
             },
         });
         ir.model.edges.push(Edge {
             id: edge_id,
-            curve: Some(CurveId("nx:s0:intersection-crv#0".into())),
+            curve: Some(CurveId::mint("nx:s0:intersection-crv#0").expect("identity grammar")),
             start: vertex_id.clone(),
             end: vertex_id,
             param_range: None,

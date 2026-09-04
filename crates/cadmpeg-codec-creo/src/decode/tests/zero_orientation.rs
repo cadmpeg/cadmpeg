@@ -429,7 +429,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#31".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(2.0, 3.0, 0.0),
                 axis: Vector3::new(0.0, -1.0, 0.0),
@@ -439,7 +439,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#32".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Cone {
                 origin: Point3::new(2.0, -5.0, 0.0),
                 axis: Vector3::new(0.0, 1.0, 0.0),
@@ -451,7 +451,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#33".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Sphere {
                 center: Point3::new(2.0, 8.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -632,7 +632,7 @@ fn named_revolve_transfers_profile_axis() {
         });
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:revolution#822:body".to_string()),
+        id: BodyId::mint("creo:feature:revolution#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -659,7 +659,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::container::scan_bytes(Vec::new());
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#822:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -682,7 +682,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::container::scan_bytes(Vec::new());
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#822:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -1019,7 +1019,7 @@ fn transferred_geometry_is_derived_from_ir_arenas() {
     assert!(!has_transferred_geometry(&ir));
 
     ir.model.points.push(Point {
-        id: PointId("point".to_string()),
+        id: PointId::mint("point".to_string()).expect("identity grammar"),
         position: Point3::new(1.0, 2.0, 3.0),
         source_object: None,
     });

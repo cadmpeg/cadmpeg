@@ -84,7 +84,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
     result.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
-        id: cadmpeg_ir::ids::PmiId("test:pmi:presentation".into()),
+        id: cadmpeg_ir::ids::PmiId::mint("test:pmi:presentation").expect("identity grammar"),
         name: Some("width note".into()),
         visible: Some(false),
         targets: Vec::new(),
@@ -630,7 +630,8 @@ fn supported_geometric_tolerance_kinds_emit_matching_leaf_entities() {
         let mut ir = base.clone();
         ir.model.pmi.clear();
         let mut annotation = template.clone();
-        annotation.id = PmiId(format!("test:pmi:tolerance#{ordinal}"));
+        annotation.id =
+            PmiId::mint(format!("test:pmi:tolerance#{ordinal}")).expect("identity grammar");
         let PmiDefinition::GeometricTolerance {
             tolerance,
             datum_system,
@@ -688,7 +689,7 @@ fn annotation_text_requires_one_reachable_carrier() {
         .native_unknowns("step")
         .expect("STEP unknown records")
         .iter()
-        .any(|record| record.id.0.ends_with("#1")));
+        .any(|record| record.id.as_str().ends_with("#1")));
 
     let first = decode(include_bytes!("tests/data/ap04_composite_text_first.p21"));
     let reordered = decode(include_bytes!(
@@ -712,7 +713,7 @@ fn annotation_text_requires_one_reachable_carrier() {
             assert!(
                 unknowns
                     .iter()
-                    .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                    .any(|record| record.id.as_str().ends_with(&format!("#{id}"))),
                 "ambiguous text carrier #{id} was not retained"
             );
         }
@@ -757,7 +758,7 @@ fn composite_presentation_placement_does_not_depend_on_set_order() {
             assert!(
                 unknowns
                     .iter()
-                    .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                    .any(|record| record.id.as_str().ends_with(&format!("#{id}"))),
                 "ambiguous presentation carrier #{id} was not retained"
             );
         }
@@ -1129,7 +1130,8 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     .enumerate()
     {
         let mut annotation = template.clone();
-        annotation.id = PmiId(format!("test:pmi:dimension#{ordinal}"));
+        annotation.id =
+            PmiId::mint(format!("test:pmi:dimension#{ordinal}")).expect("identity grammar");
         annotation.name = Some(format!("dimension {ordinal}"));
         let PmiDefinition::Dimension { dimension, .. } = &mut annotation.definition else {
             unreachable!()
@@ -1138,7 +1140,7 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
         ir.model.pmi.push(annotation);
     }
     let mut unsupported = template;
-    unsupported.id = PmiId("test:pmi:tolerance#other".into());
+    unsupported.id = PmiId::mint("test:pmi:tolerance#other").expect("identity grammar");
     unsupported.definition = PmiDefinition::GeometricTolerance {
         tolerance: GeometricToleranceKind::Other("vendor_tolerance".into()),
         magnitude: cadmpeg_ir::PmiValue {
@@ -1217,7 +1219,7 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
         .cloned()
         .expect("datum A");
     let mut datum_b = datum_a.clone();
-    datum_b.id = PmiId("test:model:pmi#datum-b".into());
+    datum_b.id = PmiId::mint("test:model:pmi#datum-b").expect("identity grammar");
     datum_b.definition = PmiDefinition::Datum {
         identification: "B".into(),
     };
@@ -1391,10 +1393,10 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         source_id: "#39".into()
     }));
     assert!(dimension.targets.contains(&PmiTarget::Face {
-        face: cadmpeg_ir::ids::FaceId("step:data:face#29".into())
+        face: cadmpeg_ir::ids::FaceId::mint("step:data:face#29").expect("identity grammar")
     }));
     assert!(dimension.targets.contains(&PmiTarget::Vertex {
-        vertex: cadmpeg_ir::ids::VertexId("step:data:vertex#6".into())
+        vertex: cadmpeg_ir::ids::VertexId::mint("step:data:vertex#6").expect("identity grammar")
     }));
     assert!(!result
         .ir()
@@ -1403,7 +1405,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .iter()
         .any(|record| {
             matches!(
-                record.id.0.as_str(),
+                record.id.as_str(),
                 "step:data:geometric_item_specific_usage#43"
                     | "step:data:geometric_item_specific_usage#44"
                     | "step:data:geometric_item_specific_usage#46"

@@ -1130,7 +1130,7 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
                 .0
                 .starts_with("catia:consolidated:line-profile-curve#")
         })
-        .map(|curve| curve.id.0.as_str())
+        .map(|curve| curve.id.as_str())
         .collect::<Vec<_>>();
     assert_eq!(
         line_ids,

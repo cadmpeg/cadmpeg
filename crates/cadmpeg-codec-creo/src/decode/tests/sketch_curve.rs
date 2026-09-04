@@ -437,7 +437,7 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(retained_slots.len(), 2);
     let secondary = retained_slots
         .iter()
-        .find(|(constraint, _)| constraint.id.0.ends_with("radius2:42"))
+        .find(|(constraint, _)| constraint.id.as_str().ends_with("radius2:42"))
         .expect("secondary radius binding");
     let SketchConstraintDefinition::Native {
         native_kind,
@@ -487,7 +487,7 @@ fn dimension_identity_includes_its_feature_definition() {
         });
     let typed_slots = section_segment_radius_constraints(&definition, &sketch_917);
     assert!(typed_slots.iter().any(|(constraint, _)| {
-        constraint.id.0.ends_with("segtab-radius:43")
+        constraint.id.as_str().ends_with("segtab-radius:43")
             && matches!(
                 &constraint.definition,
                 SketchConstraintDefinition::Native {
@@ -497,7 +497,7 @@ fn dimension_identity_includes_its_feature_definition() {
             )
     }));
     assert!(typed_slots.iter().any(|(constraint, _)| {
-        constraint.id.0.ends_with("segtab-radius2:43")
+        constraint.id.as_str().ends_with("segtab-radius2:43")
             && matches!(
                 &constraint.definition,
                 SketchConstraintDefinition::Native {
@@ -600,7 +600,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         "creo:feature:revolution#41:body",
     ] {
         ir.model.bodies.push(Body {
-            id: BodyId(id.to_string()),
+            id: BodyId::mint(id.to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -610,7 +610,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         });
     }
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#43:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#43:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),
         transform: None,
@@ -621,8 +621,8 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
     assert_eq!(
         evaluated_sweep_output_bodies(&ir, 40),
         vec![
-            BodyId("creo:feature:extrusion#40:body".to_string()),
-            BodyId("creo:feature:revolution#40:body".to_string()),
+            BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
+            BodyId::mint("creo:feature:revolution#40:body".to_string()).expect("identity grammar"),
         ]
     );
     assert_eq!(

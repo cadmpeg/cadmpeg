@@ -151,7 +151,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                         .into_iter()
                         .collect(),
                     outputs: (ordinal == 0)
-                        .then(|| BodyId("missing-output".into()))
+                        .then(|| BodyId::mint("missing-output").expect("identity grammar"))
                         .into_iter()
                         .collect(),
                     definition,
@@ -466,7 +466,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),
-        outputs: vec![BodyId("body".into())],
+        outputs: vec![BodyId::mint("body").expect("identity grammar")],
         definition: FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
             children: Vec::new(),
@@ -516,7 +516,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         ConfigurationFeatureState {
             suppressed: true,
             dependencies: vec![FeatureId("dependency".into())],
-            outputs: vec![BodyId("body".into())],
+            outputs: vec![BodyId::mint("body").expect("identity grammar")],
             definition: FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::History,
                 children: Vec::new(),

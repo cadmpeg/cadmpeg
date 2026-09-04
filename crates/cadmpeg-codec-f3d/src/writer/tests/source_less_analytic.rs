@@ -689,7 +689,7 @@ fn generated_source_less_f3d_rejects_subds() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId("test:f3d:subd#0".into()),
+        id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         vertices: Vec::new(),
         edges: Vec::new(),
@@ -1019,13 +1019,13 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
 
-    let point_id = PointId("generated:point#3".into());
+    let point_id = PointId::mint("generated:point#3").expect("identity grammar");
     source_less.model.points.push(cadmpeg_ir::topology::Point {
         id: point_id.clone(),
         position: cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
         source_object: None,
     });
-    let vertex_id = VertexId("generated:vertex#3".into());
+    let vertex_id = VertexId::mint("generated:vertex#3").expect("identity grammar");
     source_less
         .model
         .vertices
@@ -1036,7 +1036,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         });
     let first_vertex = source_less.model.edges[0].start.clone();
     source_less.model.edges[2].end = vertex_id.clone();
-    let edge_id = EdgeId("generated:edge#3".into());
+    let edge_id = EdgeId::mint("generated:edge#3").expect("identity grammar");
     source_less.model.edges.push(cadmpeg_ir::topology::Edge {
         id: edge_id.clone(),
         curve: None,
@@ -1045,7 +1045,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
         param_range: Some([0.0, 1.0]),
         tolerance: None,
     });
-    let coedge_id = CoedgeId("generated:coedge#3".into());
+    let coedge_id = CoedgeId::mint("generated:coedge#3").expect("identity grammar");
     let loop_id = source_less.model.loops[0].id.clone();
     source_less
         .model
@@ -1157,7 +1157,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         let length = delta.norm();
         let direction =
             cadmpeg_ir::math::Vector3::new(delta.x / length, delta.y / length, delta.z / length);
-        let id = CurveId(format!("generated:curve#{index}"));
+        let id = CurveId::mint(format!("generated:curve#{index}")).expect("identity grammar");
         source_less.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Line {
@@ -1224,7 +1224,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let curve_id = CurveId("generated:circle#0".into());
+    let curve_id = CurveId::mint("generated:circle#0").expect("identity grammar");
     let expected = CurveGeometry::Circle {
         center: cadmpeg_ir::math::Point3::new(4.0, -2.0, 0.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1287,7 +1287,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
-    let curve_id = CurveId("generated:ellipse#0".into());
+    let curve_id = CurveId::mint("generated:ellipse#0").expect("identity grammar");
     let expected = CurveGeometry::Ellipse {
         center: cadmpeg_ir::math::Point3::new(-3.0, 5.0, 0.0),
         axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1365,34 +1365,34 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
     };
 
     let mut source_less = CadIr::empty();
-    let body = BodyId("synthetic:cylinder-band:body#0".into());
-    let region = RegionId("synthetic:cylinder-band:region#0".into());
-    let shell = ShellId("synthetic:cylinder-band:shell#0".into());
-    let face = FaceId("synthetic:cylinder-band:face#0".into());
-    let surface = SurfaceId("synthetic:cylinder-band:surface#0".into());
+    let body = BodyId::mint("synthetic:cylinder-band:body#0").expect("identity grammar");
+    let region = RegionId::mint("synthetic:cylinder-band:region#0").expect("identity grammar");
+    let shell = ShellId::mint("synthetic:cylinder-band:shell#0").expect("identity grammar");
+    let face = FaceId::mint("synthetic:cylinder-band:face#0").expect("identity grammar");
+    let surface = SurfaceId::mint("synthetic:cylinder-band:surface#0").expect("identity grammar");
     let loops = [
-        LoopId("synthetic:cylinder-band:loop#bottom".into()),
-        LoopId("synthetic:cylinder-band:loop#top".into()),
+        LoopId::mint("synthetic:cylinder-band:loop#bottom").expect("identity grammar"),
+        LoopId::mint("synthetic:cylinder-band:loop#top").expect("identity grammar"),
     ];
     let coedges = [
-        CoedgeId("synthetic:cylinder-band:coedge#bottom".into()),
-        CoedgeId("synthetic:cylinder-band:coedge#top".into()),
+        CoedgeId::mint("synthetic:cylinder-band:coedge#bottom").expect("identity grammar"),
+        CoedgeId::mint("synthetic:cylinder-band:coedge#top").expect("identity grammar"),
     ];
     let edges = [
-        EdgeId("synthetic:cylinder-band:edge#bottom".into()),
-        EdgeId("synthetic:cylinder-band:edge#top".into()),
+        EdgeId::mint("synthetic:cylinder-band:edge#bottom").expect("identity grammar"),
+        EdgeId::mint("synthetic:cylinder-band:edge#top").expect("identity grammar"),
     ];
     let curves = [
-        CurveId("synthetic:cylinder-band:curve#bottom".into()),
-        CurveId("synthetic:cylinder-band:curve#top".into()),
+        CurveId::mint("synthetic:cylinder-band:curve#bottom").expect("identity grammar"),
+        CurveId::mint("synthetic:cylinder-band:curve#top").expect("identity grammar"),
     ];
     let vertices = [
-        VertexId("synthetic:cylinder-band:vertex#bottom".into()),
-        VertexId("synthetic:cylinder-band:vertex#top".into()),
+        VertexId::mint("synthetic:cylinder-band:vertex#bottom").expect("identity grammar"),
+        VertexId::mint("synthetic:cylinder-band:vertex#top").expect("identity grammar"),
     ];
     let points = [
-        PointId("synthetic:cylinder-band:point#bottom".into()),
-        PointId("synthetic:cylinder-band:point#top".into()),
+        PointId::mint("synthetic:cylinder-band:point#bottom").expect("identity grammar"),
+        PointId::mint("synthetic:cylinder-band:point#top").expect("identity grammar"),
     ];
 
     source_less.model.bodies.push(Body {

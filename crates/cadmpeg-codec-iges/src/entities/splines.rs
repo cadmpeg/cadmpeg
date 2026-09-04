@@ -174,12 +174,16 @@ fn add_edge(
         parameter_range[1],
     )?;
     let stem = format!("D{}", entry.sequence);
-    let start_point = PointId(format!("iges:model:point#{stem}-start"));
-    let end_point = PointId(format!("iges:model:point#{stem}-end"));
-    let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
-    let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-    let curve = CurveId(format!("iges:model:curve#{stem}"));
-    let edge = EdgeId(format!("iges:model:edge#{stem}"));
+    let start_point =
+        PointId::mint(format!("iges:model:point#{stem}-start")).expect("identity grammar");
+    let end_point =
+        PointId::mint(format!("iges:model:point#{stem}-end")).expect("identity grammar");
+    let start_vertex =
+        VertexId::mint(format!("iges:model:vertex#{stem}-start")).expect("identity grammar");
+    let end_vertex =
+        VertexId::mint(format!("iges:model:vertex#{stem}-end")).expect("identity grammar");
+    let curve = CurveId::mint(format!("iges:model:curve#{stem}")).expect("identity grammar");
+    let edge = EdgeId::mint(format!("iges:model:edge#{stem}")).expect("identity grammar");
     ir.model.points.extend([
         Point {
             source_object: None,
@@ -872,7 +876,8 @@ pub(super) fn project(
             continue;
         };
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(format!("iges:model:surface#D{}", entry.sequence)),
+            id: SurfaceId::mint(format!("iges:model:surface#D{}", entry.sequence))
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Nurbs(nurbs),
             source_object: Some(source_object(entry)),
         });

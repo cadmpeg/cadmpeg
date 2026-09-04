@@ -22,14 +22,18 @@ impl CarrierIndex {
                 .curves
                 .iter()
                 .enumerate()
-                .filter_map(|(index, curve)| step_instance_id(&curve.id.0).map(|id| (id, index)))
+                .filter_map(|(index, curve)| {
+                    step_instance_id(&curve.id.as_str()).map(|id| (id, index))
+                })
                 .collect(),
             points: ir
                 .model
                 .points
                 .iter()
                 .enumerate()
-                .filter_map(|(index, point)| step_instance_id(&point.id.0).map(|id| (id, index)))
+                .filter_map(|(index, point)| {
+                    step_instance_id(&point.id.as_str()).map(|id| (id, index))
+                })
                 .collect(),
             surfaces: ir
                 .model
@@ -37,7 +41,7 @@ impl CarrierIndex {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, surface)| {
-                    step_instance_id(&surface.id.0).map(|id| (id, index))
+                    step_instance_id(&surface.id.as_str()).map(|id| (id, index))
                 })
                 .collect(),
             point_positions: ir.model.points.iter().map(|point| point.position).collect(),

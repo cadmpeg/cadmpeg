@@ -501,7 +501,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         ((21, 5), vec![([[-1.0, 0.0], [1.0, 0.0]], 0)]),
     ]);
     let circle = |id, radius| Curve {
-        id: CurveId(format!("creo:visibgeom:curve#{id}")),
+        id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
         geometry: CurveGeometry::Circle {
             center: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -668,7 +668,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
 
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#5".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -686,7 +686,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         ),
     ] {
         let curve = Curve {
-            id: CurveId(format!("creo:visibgeom:curve#{id}")),
+            id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: CurveGeometry::Line { origin, direction },
             source_object: None,
         };
@@ -756,7 +756,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         pcurve.face_1_endpoints = pcurve.face_0_endpoints;
     }
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#5".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -765,7 +765,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#6".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),

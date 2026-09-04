@@ -347,16 +347,16 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
     }));
     assert!(face_selection_is_resolved(
         &FaceSelection::HistoricalPartial {
-            state: FeatureInputTopologyId("state:1".into()),
-            faces: vec![HistoricalFaceId("face:1".into())],
+            state: FeatureInputTopologyId::mint("state:1").expect("identity grammar"),
+            faces: vec![HistoricalFaceId::mint("face:1").expect("identity grammar")],
             unresolved: Vec::new(),
             native: "native:historical-face".into(),
         }
     ));
     assert!(!face_selection_is_resolved(
         &FaceSelection::HistoricalPartial {
-            state: FeatureInputTopologyId("state:1".into()),
-            faces: vec![HistoricalFaceId("face:1".into())],
+            state: FeatureInputTopologyId::mint("state:1").expect("identity grammar"),
+            faces: vec![HistoricalFaceId::mint("face:1").expect("identity grammar")],
             unresolved: vec!["native:missing-face".into()],
             native: "native:historical-face".into(),
         }
@@ -371,7 +371,9 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
     let surface = |support_faces, continuity, merge_result| FeatureDefinition::FilledSurface {
-        boundary: SurfaceBoundary::Path(PathRef::Edges(vec![EdgeId("edge:1".into())])),
+        boundary: SurfaceBoundary::Path(PathRef::Edges(vec![
+            EdgeId::mint("edge:1").expect("identity grammar")
+        ])),
         support_faces,
         continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(continuity),
         merge_result,
@@ -393,7 +395,7 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
         Some(true),
     )));
     assert!(!feature_definition_is_incomplete(&surface(
-        FaceSelection::Faces(vec![FaceId("face:support".into())]),
+        FaceSelection::Faces(vec![FaceId::mint("face:support").expect("identity grammar")]),
         SurfaceContinuity::Curvature,
         Some(true),
     )));
@@ -833,7 +835,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         construction,
         CoilResult::Boolean {
             operation: cadmpeg_ir::features::BooleanKind::Cut,
-            targets: BodySelection::Bodies(vec![BodyId("body:1".into())]),
+            targets: BodySelection::Bodies(vec![BodyId::mint("body:1").expect("identity grammar")]),
         },
     )));
 }
@@ -967,7 +969,7 @@ fn body_copy_features_require_resolved_body_selection() {
     use cadmpeg_ir::ids::BodyId;
 
     let resolved = BodySelection::Resolved {
-        bodies: vec![BodyId("body:result".into())],
+        bodies: vec![BodyId::mint("body:result").expect("identity grammar")],
         native: "native:body-selection".into(),
     };
     assert!(!feature_definition_is_incomplete(
@@ -991,11 +993,11 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     use cadmpeg_ir::ids::{BodyId, FaceId};
 
     let resolved_target = BodySelection::Resolved {
-        bodies: vec![BodyId("body:target".into())],
+        bodies: vec![BodyId::mint("body:target").expect("identity grammar")],
         native: "native:target".into(),
     };
     let resolved_tool = FaceSelection::Resolved {
-        faces: vec![FaceId("face:tool".into())],
+        faces: vec![FaceId::mint("face:tool").expect("identity grammar")],
         native: "native:tool".into(),
     };
     assert!(!feature_definition_is_incomplete(
@@ -1014,7 +1016,7 @@ fn split_body_requires_resolved_target_and_tool_selections() {
         &FeatureDefinition::SplitBody {
             targets: BodySelection::Native("native:target".into()),
             tools: FaceSelection::Resolved {
-                faces: vec![FaceId("face:tool".into())],
+                faces: vec![FaceId::mint("face:tool").expect("identity grammar")],
                 native: "native:tool".into(),
             },
         }
@@ -1492,8 +1494,11 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         unreachable!();
     };
     groups[2].edges = cadmpeg_ir::features::EdgeSelection::Historical {
-        state: cadmpeg_ir::ids::FeatureInputTopologyId("history-input".into()),
-        edges: vec![cadmpeg_ir::ids::HistoricalEdgeId("history-edge".into())],
+        state: cadmpeg_ir::ids::FeatureInputTopologyId::mint("history-input")
+            .expect("identity grammar"),
+        edges: vec![
+            cadmpeg_ir::ids::HistoricalEdgeId::mint("history-edge").expect("identity grammar")
+        ],
         native: "native:partial-edges".into(),
     };
     assert_eq!(
@@ -1928,7 +1933,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     };
     ir.model.bodies[0].color = Some(direct);
     ir.model.appearances.push(Appearance {
-        id: AppearanceId("f3d:appearance#material".into()),
+        id: AppearanceId::mint("f3d:appearance#material").expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -1943,7 +1948,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
     let binding = |id: &str, target| AppearanceBinding {
         id: id.into(),
         target,
-        appearance: AppearanceId("f3d:appearance#material".into()),
+        appearance: AppearanceId::mint("f3d:appearance#material").expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
         visible: None,

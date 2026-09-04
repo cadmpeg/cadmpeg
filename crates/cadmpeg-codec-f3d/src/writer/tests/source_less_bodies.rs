@@ -223,7 +223,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         }
 
         fn attribute_index(attribute: &SourceAttribute) -> i64 {
-            suffix_index(&attribute.id.0)
+            suffix_index(&attribute.id.as_str())
         }
 
         fn reference_index(value: &AttributeValue) -> i64 {

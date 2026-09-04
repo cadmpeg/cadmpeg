@@ -733,8 +733,8 @@ fn decode_retains_every_rmfastload_active_body() {
 
 #[test]
 fn rmfastload_membership_precedes_terminal_lineage_for_any_complete_match() {
-    let first = BodyId("nx:s3:body#first".into());
-    let second = BodyId("nx:s8:body#second".into());
+    let first = BodyId::mint("nx:s3:body#first").expect("identity grammar");
+    let second = BodyId::mint("nx:s8:body#second").expect("identity grammar");
     let selected = BTreeSet::from([first.clone()]);
     assert!(!super::rmfastload_allows_terminal_lineage(2, &selected));
     assert!(!super::rmfastload_allows_terminal_lineage(
@@ -816,7 +816,10 @@ fn decode_selects_active_shell_when_body_record_is_absent() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0].id.0.starts_with("nx:s0:"));
+    assert!(result.ir().model.bodies[0]
+        .id
+        .as_str()
+        .starts_with("nx:s0:"));
     assert_eq!(result.ir().model.faces.len(), 50);
     assert!(result
         .report()
@@ -869,7 +872,7 @@ fn container_only_does_not_decode_bounded_object_model_records() {
         .native_unknowns("nx")
         .unwrap()
         .iter()
-        .any(|unknown| unknown.id.0.starts_with("nx:om-section-")));
+        .any(|unknown| unknown.id.as_str().starts_with("nx:om-section-")));
 }
 
 #[test]
@@ -959,9 +962,10 @@ fn decode_retains_unsupported_named_stream_payloads() {
             vendor.len() as u64
         ]
     );
-    assert!(unknowns
-        .iter()
-        .all(|unknown| unknown.id.0.starts_with("nx:container-entry:opaque#")));
+    assert!(unknowns.iter().all(|unknown| unknown
+        .id
+        .as_str()
+        .starts_with("nx:container-entry:opaque#")));
     for name in [
         "/Root/FastLoad/Structure",
         "/Root/FastLoad/JT",
@@ -1503,8 +1507,12 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::TrimSurface {
-            faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]),
-            tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId("edge".into())]),
+            faces: FaceSelection::Faces(vec![
+                cadmpeg_ir::ids::FaceId::mint("face").expect("identity grammar")
+            ]),
+            tool: PathRef::Edges(vec![
+                cadmpeg_ir::ids::EdgeId::mint("edge").expect("identity grammar")
+            ]),
             keep: TrimRegion::Inside,
         },
         native_ref: None,

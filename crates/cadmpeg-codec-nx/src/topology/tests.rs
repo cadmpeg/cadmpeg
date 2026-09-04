@@ -61,7 +61,7 @@ fn topology_retains_shell_body_identity_without_body_record() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].id.0, "nx:s0:body#2");
+    assert_eq!(result.ir().model.bodies[0].id.as_str(), "nx:s0:body#2");
     assert_eq!(result.ir().model.faces.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -263,7 +263,7 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().model.regions.len(), 1);
-    assert_eq!(result.ir().model.regions[0].id.0, "nx:s0:region#12");
+    assert_eq!(result.ir().model.regions[0].id.as_str(), "nx:s0:region#12");
     assert_eq!(result.ir().model.faces.len(), 2);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);

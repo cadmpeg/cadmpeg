@@ -56,7 +56,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
 
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#70:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#70:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -67,7 +67,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
 
     assert_eq!(
         feature_output_bodies(&scan, &ir, 10),
-        vec![BodyId("creo:feature:extrusion#70:body".to_string())]
+        vec![BodyId::mint("creo:feature:extrusion#70:body".to_string()).expect("identity grammar")]
     );
 }
 
@@ -76,7 +76,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     let scan = crate::container::scan_bytes(Vec::new());
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#50:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -102,13 +102,13 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
 
     assert_eq!(
         feature_output_bodies(&scan, &ir, 10),
-        vec![BodyId("creo:feature:extrusion#50:body".to_string())]
+        vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 
     super::super::dependencies::reconcile_feature_links(&scan, &mut ir, &BTreeMap::new());
     assert_eq!(
         ir.model.features[0].outputs,
-        vec![BodyId("creo:feature:extrusion#50:body".to_string())]
+        vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 }
 
@@ -127,7 +127,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     });
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#50:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -136,32 +136,36 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         visible: None,
     });
     ir.model.bodies.push(Body {
-        id: BodyId("creo:generated:result#10".to_string()),
+        id: BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
-        regions: vec![RegionId("creo:generated:region#10".to_string())],
+        regions: vec![
+            RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar")
+        ],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     ir.model.regions.push(Region {
-        id: RegionId("creo:generated:region#10".to_string()),
-        body: BodyId("creo:generated:result#10".to_string()),
-        shells: vec![ShellId("creo:generated:shell#10".to_string())],
+        id: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
+        body: BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
+        shells: vec![
+            ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar")
+        ],
     });
     ir.model.shells.push(Shell {
-        id: ShellId("creo:generated:shell#10".to_string()),
-        region: RegionId("creo:generated:region#10".to_string()),
-        faces: vec![FaceId("creo:generated:face#7".to_string())],
+        id: ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
+        region: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
+        faces: vec![FaceId::mint("creo:generated:face#7".to_string()).expect("identity grammar")],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
     ir.model.faces.push(Face {
-        id: FaceId("creo:generated:face#7".to_string()),
-        shell: ShellId("creo:generated:shell#10".to_string()),
-        surface: SurfaceId("creo:visibgeom:surface#7".to_string()),
+        id: FaceId::mint("creo:generated:face#7".to_string()).expect("identity grammar"),
+        shell: ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
+        surface: SurfaceId::mint("creo:visibgeom:surface#7".to_string()).expect("identity grammar"),
         sense: cadmpeg_ir::topology::Sense::Forward,
-        loops: vec![LoopId("creo:generated:loop#7".to_string())],
+        loops: vec![LoopId::mint("creo:generated:loop#7".to_string()).expect("identity grammar")],
         name: None,
         color: None,
         tolerance: None,
@@ -185,33 +189,33 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     assert_eq!(
         feature_output_bodies(&scan, &ir, 10),
         vec![
-            BodyId("creo:generated:result#10".to_string()),
-            BodyId("creo:feature:extrusion#50:body".to_string()),
+            BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
+            BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
         ]
     );
 
     let mut duplicate_shell = ir.clone();
     duplicate_shell.model.shells.push(Shell {
-        id: ShellId("creo:generated:shell#10".to_string()),
-        region: RegionId("creo:ambiguous:region#10".to_string()),
+        id: ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
+        region: RegionId::mint("creo:ambiguous:region#10".to_string()).expect("identity grammar"),
         faces: Vec::new(),
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
     assert_eq!(
         feature_output_bodies(&scan, &duplicate_shell, 10),
-        vec![BodyId("creo:feature:extrusion#50:body".to_string())]
+        vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 
     let mut duplicate_region = ir.clone();
     duplicate_region.model.regions.push(Region {
-        id: RegionId("creo:generated:region#10".to_string()),
-        body: BodyId("creo:ambiguous:body#10".to_string()),
+        id: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
+        body: BodyId::mint("creo:ambiguous:body#10".to_string()).expect("identity grammar"),
         shells: Vec::new(),
     });
     assert_eq!(
         feature_output_bodies(&scan, &duplicate_region, 10),
-        vec![BodyId("creo:feature:extrusion#50:body".to_string())]
+        vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 
     let mut duplicate_feature = ir.clone();
@@ -219,19 +223,19 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     duplicate_feature.model.features.push(feature);
     assert_eq!(
         feature_output_bodies(&scan, &duplicate_feature, 10),
-        vec![BodyId("creo:generated:result#10".to_string())]
+        vec![BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar")]
     );
 }
 
 #[test]
 fn edge_output_joins_reject_duplicate_topology_owners() {
-    let body_id = BodyId("creo:test:body".to_string());
-    let region_id = RegionId("creo:test:region".to_string());
-    let shell_id = ShellId("creo:test:shell".to_string());
-    let face_id = FaceId("creo:test:face".to_string());
-    let loop_id = LoopId("creo:test:loop".to_string());
-    let coedge_id = CoedgeId("creo:test:coedge".to_string());
-    let edge_id = EdgeId("creo:test:edge".to_string());
+    let body_id = BodyId::mint("creo:test:body".to_string()).expect("identity grammar");
+    let region_id = RegionId::mint("creo:test:region".to_string()).expect("identity grammar");
+    let shell_id = ShellId::mint("creo:test:shell".to_string()).expect("identity grammar");
+    let face_id = FaceId::mint("creo:test:face".to_string()).expect("identity grammar");
+    let loop_id = LoopId::mint("creo:test:loop".to_string()).expect("identity grammar");
+    let coedge_id = CoedgeId::mint("creo:test:coedge".to_string()).expect("identity grammar");
+    let edge_id = EdgeId::mint("creo:test:edge".to_string()).expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
         id: body_id.clone(),
@@ -257,7 +261,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     ir.model.faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
-        surface: SurfaceId("creo:test:surface".to_string()),
+        surface: SurfaceId::mint("creo:test:surface".to_string()).expect("identity grammar"),
         sense: Sense::Forward,
         loops: vec![loop_id.clone()],
         name: None,
@@ -292,7 +296,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     let mut duplicate_loop = ir.clone();
     duplicate_loop.model.loops.push(IrLoop {
         id: loop_id.clone(),
-        face: FaceId("creo:ambiguous:face".to_string()),
+        face: FaceId::mint("creo:ambiguous:face".to_string()).expect("identity grammar"),
         boundary_role: LoopBoundaryRole::default(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
             coedges: Vec::new(),
@@ -304,8 +308,8 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     let mut duplicate_face = ir.clone();
     duplicate_face.model.faces.push(Face {
         id: face_id.clone(),
-        shell: ShellId("creo:ambiguous:shell".to_string()),
-        surface: SurfaceId("creo:test:surface-2".to_string()),
+        shell: ShellId::mint("creo:ambiguous:shell".to_string()).expect("identity grammar"),
+        surface: SurfaceId::mint("creo:test:surface-2".to_string()).expect("identity grammar"),
         sense: Sense::Forward,
         loops: Vec::new(),
         name: None,
@@ -317,7 +321,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     let mut duplicate_shell = ir.clone();
     duplicate_shell.model.shells.push(Shell {
         id: shell_id.clone(),
-        region: RegionId("creo:ambiguous:region".to_string()),
+        region: RegionId::mint("creo:ambiguous:region".to_string()).expect("identity grammar"),
         faces: Vec::new(),
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
@@ -327,7 +331,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     let mut duplicate_region = ir.clone();
     duplicate_region.model.regions.push(Region {
         id: region_id.clone(),
-        body: BodyId("creo:ambiguous:body".to_string()),
+        body: BodyId::mint("creo:ambiguous:body".to_string()).expect("identity grammar"),
         shells: Vec::new(),
     });
     assert!(bodies_containing_edges(&duplicate_region, std::slice::from_ref(&edge_id)).is_empty());
@@ -349,7 +353,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
 fn evaluated_sweep_body_joins_reject_duplicate_ids() {
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#40:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
         transform: None,
@@ -359,7 +363,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
     });
     assert_eq!(
         evaluated_sweep_output_bodies(&ir, 40),
-        vec![BodyId("creo:feature:extrusion#40:body".to_string())]
+        vec![BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar")]
     );
     assert_eq!(
         evaluated_sweep_body_kind(&ir, "extrusion", 40),
@@ -367,7 +371,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
     );
 
     ir.model.bodies.push(Body {
-        id: BodyId("creo:feature:extrusion#40:body".to_string()),
+        id: BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),
         transform: None,

@@ -345,7 +345,7 @@ fn transfer_schema_one(
                     .bodies
                     .iter()
                     .filter(move |body| {
-                        crate::native::id_key(&body.id.0)
+                        crate::native::id_key(&body.id.as_str())
                             .starts_with(&format!("{}:", crate::native::id_key(payload)))
                     })
                     .map(|body| body.id.clone())
@@ -468,7 +468,8 @@ fn transfer_schema_one(
         let Some(packed_color) = packed_color else {
             continue;
         };
-        let appearance_id = AppearanceId(format!("fcstd:appearance:object#{name}"));
+        let appearance_id = AppearanceId::mint(format!("fcstd:appearance:object#{name}"))
+            .expect("identity grammar");
         let mut material_properties = BTreeMap::new();
         if let Some(material) = material {
             for (source, target) in [
@@ -789,14 +790,15 @@ fn transfer_edge_appearance(
         .filter(|edge| {
             payload_prefixes
                 .iter()
-                .any(|prefix| crate::native::id_key(&edge.id.0).starts_with(prefix))
+                .any(|prefix| crate::native::id_key(&edge.id.as_str()).starts_with(prefix))
         })
         .map(|edge| edge.id.clone())
         .collect::<Vec<_>>();
     if edges.is_empty() {
         return;
     }
-    let appearance_id = AppearanceId(format!("fcstd:appearance:edge#{provider_name}"));
+    let appearance_id = AppearanceId::mint(format!("fcstd:appearance:edge#{provider_name}"))
+        .expect("identity grammar");
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} line appearance")),
@@ -842,14 +844,15 @@ fn transfer_vertex_appearance(
         .filter(|vertex| {
             payload_prefixes
                 .iter()
-                .any(|prefix| crate::native::id_key(&vertex.id.0).starts_with(prefix))
+                .any(|prefix| crate::native::id_key(&vertex.id.as_str()).starts_with(prefix))
         })
         .map(|vertex| vertex.id.clone())
         .collect::<Vec<_>>();
     if vertices.is_empty() {
         return;
     }
-    let appearance_id = AppearanceId(format!("fcstd:appearance:vertex#{provider_name}"));
+    let appearance_id = AppearanceId::mint(format!("fcstd:appearance:vertex#{provider_name}"))
+        .expect("identity grammar");
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} point appearance")),
@@ -3475,7 +3478,9 @@ fn transfer_shape_appearances(
         let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face")?;
         let mapped_count = group.map_or(0, |group| group.names.len().saturating_sub(1));
         if materials.len() == 1 {
-            let legacy_id = AppearanceId(format!("fcstd:appearance:object#{}", provider.name));
+            let legacy_id =
+                AppearanceId::mint(format!("fcstd:appearance:object#{}", provider.name))
+                    .expect("identity grammar");
             plan.bindings
                 .retain(|binding| binding.appearance != legacy_id);
             plan.appearances
@@ -3510,11 +3515,12 @@ fn transfer_shape_appearances(
             }
         }
         for (index, material) in materials.iter().enumerate() {
-            let appearance_id = AppearanceId(format!(
+            let appearance_id = AppearanceId::mint(format!(
                 "fcstd:appearance:shape-material#{}:{}",
                 provider.name,
                 index + 1
-            ));
+            ))
+            .expect("identity grammar");
             plan.appearances.push(material_appearance(
                 appearance_id.clone(),
                 &provider.name,
@@ -3574,7 +3580,7 @@ fn displayed_shape_bodies(
             ir.model
                 .bodies
                 .iter()
-                .filter(move |body| crate::native::id_key(&body.id.0).starts_with(&prefix))
+                .filter(move |body| crate::native::id_key(&body.id.as_str()).starts_with(&prefix))
                 .map(|body| body.id.clone())
         })
         .collect())
@@ -3799,10 +3805,11 @@ fn transfer_topology_colors(
     }
     for (index, packed) in colors.into_iter().enumerate() {
         let lower = kind.name().to_ascii_lowercase();
-        let appearance_id = AppearanceId(format!(
+        let appearance_id = AppearanceId::mint(format!(
             "fcstd:appearance:{lower}#{provider_name}:{}",
             index + 1
-        ));
+        ))
+        .expect("identity grammar");
         let uniform_names = (count == 1)
             .then_some(&group.names)
             .into_iter()
@@ -3846,15 +3853,15 @@ fn transfer_topology_colors(
                 emitted_appearance = true;
             }
             let target = match kind {
-                TopologyColorKind::Face => {
-                    AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(topology_id.clone()))
-                }
-                TopologyColorKind::Edge => {
-                    AppearanceTarget::Edge(cadmpeg_ir::ids::EdgeId(topology_id.clone()))
-                }
-                TopologyColorKind::Vertex => {
-                    AppearanceTarget::Vertex(cadmpeg_ir::ids::VertexId(topology_id.clone()))
-                }
+                TopologyColorKind::Face => AppearanceTarget::Face(
+                    cadmpeg_ir::ids::FaceId::mint(topology_id.clone()).expect("identity grammar"),
+                ),
+                TopologyColorKind::Edge => AppearanceTarget::Edge(
+                    cadmpeg_ir::ids::EdgeId::mint(topology_id.clone()).expect("identity grammar"),
+                ),
+                TopologyColorKind::Vertex => AppearanceTarget::Vertex(
+                    cadmpeg_ir::ids::VertexId::mint(topology_id.clone()).expect("identity grammar"),
+                ),
             };
             plan.bindings.push(AppearanceBinding {
                 id: format!(

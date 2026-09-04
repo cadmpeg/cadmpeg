@@ -43,7 +43,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
         .model
         .sketches
         .iter()
-        .all(|sketch| sketch.id.0.starts_with("creo:model:sketch#offset:")));
+        .all(|sketch| sketch.id.as_str().starts_with("creo:model:sketch#offset:")));
     for sketch in &result.ir().model.sketches {
         let expected_native_ref =
             sketch
@@ -90,7 +90,10 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
                 "creo:model:sketch_feature#{identity_scope}"
             )))
         );
-        assert!(parameters[0].id.0.contains(&format!("#{identity_scope}:")));
+        assert!(parameters[0]
+            .id
+            .as_str()
+            .contains(&format!("#{identity_scope}:")));
         let constraints = result
             .ir()
             .model
@@ -108,7 +111,7 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
                 )
             })
             .expect("reference-line verhor");
-        assert!(reference_verhor.id.0.starts_with(&format!(
+        assert!(reference_verhor.id.as_str().starts_with(&format!(
             "creo:featdefs:sketch_constraint#{identity_scope}:verhor:reference_line:offset:"
         )));
         let SketchConstraintDefinition::Native {

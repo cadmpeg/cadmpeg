@@ -523,8 +523,11 @@ fn decode_keeps_representation_uncertainty_scoped_to_native_source() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| {
-            record.id.0.ends_with("#8")
-                && record.id.0.contains("uncertainty_assigned_representation")
+            record.id.as_str().ends_with("#8")
+                && record
+                    .id
+                    .as_str()
+                    .contains("uncertainty_assigned_representation")
         }));
 }
 

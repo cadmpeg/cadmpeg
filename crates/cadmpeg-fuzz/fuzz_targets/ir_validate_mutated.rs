@@ -39,7 +39,7 @@ fuzz_target!(|data: &[u8]| {
         1 => {
             // Create invalid cross-references
             if !ir.model.vertices.is_empty() {
-                ir.model.vertices[0].point = cadmpeg_ir::ids::PointId("nonexistent".to_string());
+                ir.model.vertices[0].point = cadmpeg_ir::ids::PointId::mint("nonexistent".to_string()).expect("identity grammar");
             }
         }
         2 => {
@@ -52,7 +52,7 @@ fuzz_target!(|data: &[u8]| {
         3 => {
             // Create inconsistent edge references
             if !ir.model.edges.is_empty() {
-                ir.model.edges[0].start = cadmpeg_ir::ids::VertexId("nonexistent".to_string());
+                ir.model.edges[0].start = cadmpeg_ir::ids::VertexId::mint("nonexistent".to_string()).expect("identity grammar");
             }
         }
         4 => {
@@ -93,7 +93,7 @@ fuzz_target!(|data: &[u8]| {
         9 => {
             // Break a radial ring with an unresolved coedge.
             if let Some(coedge) = ir.model.coedges.first_mut() {
-                coedge.radial_next = cadmpeg_ir::ids::CoedgeId("nonexistent".to_string());
+                coedge.radial_next = cadmpeg_ir::ids::CoedgeId::mint("nonexistent".to_string()).expect("identity grammar");
             }
         }
         10 => {

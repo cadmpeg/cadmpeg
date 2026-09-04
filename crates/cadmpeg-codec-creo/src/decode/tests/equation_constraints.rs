@@ -45,7 +45,7 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     let (constraint, offset) = &constraints[0];
     assert_eq!(*offset, 28);
     assert_eq!(
-        constraint.id.0,
+        constraint.id.as_str(),
         "creo:featdefs:sketch_constraint#40:equation:offset:28"
     );
     assert_eq!(constraint.active, Some(true));
@@ -344,7 +344,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].1, 28);
     assert_eq!(
-        constraints[0].0.id.0,
+        constraints[0].0.id.as_str(),
         "creo:featdefs:sketch_constraint#40:equation:1:radius:13"
     );
     assert_eq!(constraints[0].0.active, Some(true));
@@ -1054,7 +1054,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
     let constraints = section_equation_equal_distance_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(
-        constraints[0].0.id.0,
+        constraints[0].0.id.as_str(),
         "creo:featdefs:sketch_constraint#40:equation:1"
     );
     assert_eq!(constraints[0].0.active, Some(true));
@@ -1201,7 +1201,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
     let constraints = section_equation_point_on_line_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(
-        constraints[0].0.id.0,
+        constraints[0].0.id.as_str(),
         "creo:featdefs:sketch_constraint#40:equation:1"
     );
     assert_eq!(constraints[0].0.active, Some(true));
@@ -1365,7 +1365,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     let constraints = section_equation_unsigned_distance_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(
-        constraints[0].0.id.0,
+        constraints[0].0.id.as_str(),
         "creo:featdefs:sketch_constraint#40:equation:1"
     );
     assert_eq!(constraints[0].0.active, Some(true));

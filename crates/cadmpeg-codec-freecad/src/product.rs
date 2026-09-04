@@ -213,14 +213,17 @@ pub(crate) fn transfer_neutral(
     }
 
     let definition_id = |object: &str| {
-        ProductDefinitionId(crate::native::model_id(
+        ProductDefinitionId::mint(crate::native::model_id(
             "product_definition",
             object,
             "definition",
         ))
+        .expect("identity grammar")
     };
-    let container_occurrence_id =
-        |object: &str| OccurrenceId(crate::native::model_id("occurrence", object, "container"));
+    let container_occurrence_id = |object: &str| {
+        OccurrenceId::mint(crate::native::model_id("occurrence", object, "container"))
+            .expect("identity grammar")
+    };
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records.iter().filter(|record| record.kind != "occurrence") {
         for member in &record.members {
@@ -289,7 +292,7 @@ pub(crate) fn transfer_neutral(
                 }
             };
             occurrences.push(Occurrence {
-                id: OccurrenceId(crate::native::model_id(
+                id: OccurrenceId::mint(crate::native::model_id(
                     "occurrence",
                     &record.object,
                     if element {
@@ -297,7 +300,8 @@ pub(crate) fn transfer_neutral(
                     } else {
                         "instance".into()
                     },
-                )),
+                ))
+                .expect("identity grammar"),
                 prototype: if let Some(document) = &record.external_document {
                     PrototypeReference::External {
                         document: external_document_reference(
@@ -398,7 +402,7 @@ pub(crate) fn transfer_neutral(
                     .iter()
                     .filter(|body| {
                         body_owners.iter().any(|(prefix, owner)| {
-                            *owner == object.as_str() && body.id.0.starts_with(prefix)
+                            *owner == object.as_str() && body.id.as_str().starts_with(prefix)
                         })
                     })
                     .map(|body| body.id.clone())

@@ -214,7 +214,8 @@ fn cylinder_frame_agrees_with_model(
     surface_id: u32,
     frame: &crate::surface::PositionalCylinderFrame,
 ) -> bool {
-    let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+    let model_id =
+        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar");
     let model_surfaces = ir
         .model
         .surfaces

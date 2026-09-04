@@ -58,11 +58,11 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
 
 #[test]
 fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
-    let curve_id = CurveId("circle".into());
-    let start_id = PointId("start-point".into());
-    let end_id = PointId("end-point".into());
-    let start_vertex = VertexId("start-vertex".into());
-    let end_vertex = VertexId("end-vertex".into());
+    let curve_id = CurveId::mint("circle").expect("identity grammar");
+    let start_id = PointId::mint("start-point").expect("identity grammar");
+    let end_id = PointId::mint("end-point").expect("identity grammar");
+    let start_vertex = VertexId::mint("start-vertex").expect("identity grammar");
+    let end_vertex = VertexId::mint("end-vertex").expect("identity grammar");
     let center = Point3::new(0.0, 0.0, 0.0);
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let reference = Vector3::new(1.0, 0.0, 0.0);
@@ -109,7 +109,7 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
         },
     ]);
     ir.model.edges.push(Edge {
-        id: EdgeId("edge".into()),
+        id: EdgeId::mint("edge").expect("identity grammar"),
         curve: Some(curve_id.clone()),
         start: start_vertex,
         end: end_vertex,

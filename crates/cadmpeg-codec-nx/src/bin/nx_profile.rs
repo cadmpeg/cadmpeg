@@ -908,7 +908,7 @@ mod tests {
         use cadmpeg_ir::topology::{Body, BodyKind};
 
         let mut ir = CadIr::empty();
-        let body = BodyId("body".to_string());
+        let body = BodyId::mint("body".to_string()).expect("identity grammar");
         ir.model.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Solid,
@@ -958,7 +958,7 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
-            outputs: vec![BodyId("body".to_string())],
+            outputs: vec![BodyId::mint("body".to_string()).expect("identity grammar")],
             definition: FeatureDefinition::Block {
                 dimensions: None,
                 placement: None,
@@ -1079,7 +1079,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
-            id: BodyId("body".to_string()),
+            id: BodyId::mint("body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -1087,7 +1087,7 @@ mod tests {
             color: None,
             visible: None,
         };
-        let appearance_id = AppearanceId("appearance".to_string());
+        let appearance_id = AppearanceId::mint("appearance".to_string()).expect("identity grammar");
         ir.model.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
             id: appearance_id.clone(),
@@ -1166,7 +1166,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
-            id: BodyId("body".to_string()),
+            id: BodyId::mint("body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -1174,7 +1174,7 @@ mod tests {
             color: None,
             visible: None,
         };
-        let appearance_id = AppearanceId("appearance".to_string());
+        let appearance_id = AppearanceId::mint("appearance".to_string()).expect("identity grammar");
         ir.model.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
             id: appearance_id.clone(),
@@ -1222,7 +1222,8 @@ mod tests {
     #[test]
     fn effective_color_accepts_absent_color_without_an_assignment() {
         let ir = CadIr::empty();
-        let target = AppearanceTarget::Body(BodyId("body".to_string()));
+        let target =
+            AppearanceTarget::Body(BodyId::mint("body".to_string()).expect("identity grammar"));
 
         assert!(has_effective_color(&ir, None, &target));
     }
@@ -1230,7 +1231,8 @@ mod tests {
     #[test]
     fn effective_color_requires_normalized_direct_color() {
         let ir = CadIr::empty();
-        let target = AppearanceTarget::Body(BodyId("body".to_string()));
+        let target =
+            AppearanceTarget::Body(BodyId::mint("body".to_string()).expect("identity grammar"));
         assert!(!has_effective_color(
             &ir,
             Some(Color {

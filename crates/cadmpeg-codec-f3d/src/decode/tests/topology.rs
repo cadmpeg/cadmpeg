@@ -70,7 +70,7 @@ fn decode_builds_valid_topology_and_geometry() {
         .source_fidelity()
         .annotations
         .provenance
-        .contains_key(&result.ir().model.bodies[0].id.0));
+        .contains_key(result.ir().model.bodies[0].id.as_str()));
 
     // The plane decoded with its stored origin and complete parameter frame.
     match &result.ir().model.surfaces[0].geometry {

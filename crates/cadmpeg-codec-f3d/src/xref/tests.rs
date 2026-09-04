@@ -61,7 +61,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     let occurrences = super::project_occurrences(&table);
 
     assert_eq!(occurrences.len(), 1);
-    assert_eq!(occurrences[0].id.0, "f3d:model:occurrence#xref-0-0");
+    assert_eq!(occurrences[0].id.as_str(), "f3d:model:occurrence#xref-0-0");
     assert_eq!(
         occurrences[0].transform.rows,
         [

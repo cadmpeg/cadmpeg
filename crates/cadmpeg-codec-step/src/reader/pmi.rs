@@ -1358,7 +1358,7 @@ fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
 }
 
 fn pmi_id(id: u64) -> PmiId {
-    PmiId(StepIdentity::presentation("pmi", id))
+    PmiId::mint(StepIdentity::presentation("pmi", id)).expect("identity grammar")
 }
 
 fn datum_target_form(value: &str) -> DatumTargetForm {

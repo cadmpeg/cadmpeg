@@ -115,25 +115,28 @@ pub(crate) fn neutral_xref_occurrence_id(
     reference_ordinal: u32,
     occurrence_ordinal: u32,
 ) -> cadmpeg_ir::ids::OccurrenceId {
-    cadmpeg_ir::ids::OccurrenceId(format!(
+    cadmpeg_ir::ids::OccurrenceId::mint(format!(
         "f3d:model:occurrence#xref-{reference_ordinal}-{occurrence_ordinal}"
     ))
+    .expect("identity grammar")
 }
 
 /// Neutral local component definition projected from its stable Design GUID.
 pub(crate) fn neutral_component_id(guid: &str) -> cadmpeg_ir::ids::ProductDefinitionId {
-    cadmpeg_ir::ids::ProductDefinitionId(format!(
+    cadmpeg_ir::ids::ProductDefinitionId::mint(format!(
         "f3d:model:component#{}",
         guid.to_ascii_lowercase()
     ))
+    .expect("identity grammar")
 }
 
 /// Neutral local occurrence projected from its stable Design GUID.
 pub(crate) fn neutral_component_occurrence_id(guid: &str) -> cadmpeg_ir::ids::OccurrenceId {
-    cadmpeg_ir::ids::OccurrenceId(format!(
+    cadmpeg_ir::ids::OccurrenceId::mint(format!(
         "f3d:model:occurrence#{}",
         guid.to_ascii_lowercase()
     ))
+    .expect("identity grammar")
 }
 
 /// Neutral occurrence identity for an external component-insert scope whose
@@ -142,13 +145,14 @@ pub(crate) fn neutral_component_insert_occurrence_id(
     scope: &DesignParameterScope,
 ) -> cadmpeg_ir::ids::OccurrenceId {
     let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
-    cadmpeg_ir::ids::OccurrenceId(format!(
+    cadmpeg_ir::ids::OccurrenceId::mint(format!(
         "f3d:model:occurrence#component-insert-{}:{}{}:{}",
         stream.len(),
         stream,
         scope.feature_ordinal,
         scope.record_index,
     ))
+    .expect("identity grammar")
 }
 
 /// Neutral assembly-joint key projected from one Design parameter scope.
@@ -573,7 +577,8 @@ pub(crate) fn history_input_prefix(
 
 /// The history-input state key for a `prefix` from [`history_input_prefix`].
 pub(crate) fn history_input_state_id(prefix: &str) -> cadmpeg_ir::ids::FeatureInputTopologyId {
-    cadmpeg_ir::ids::FeatureInputTopologyId(format!("f3d:history-input:state#{prefix}"))
+    cadmpeg_ir::ids::FeatureInputTopologyId::mint(format!("f3d:history-input:state#{prefix}"))
+        .expect("identity grammar")
 }
 
 /// The history-input edge key for `slot` under a `prefix`.
@@ -581,7 +586,8 @@ pub(crate) fn history_input_edge_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalEdgeId {
-    cadmpeg_ir::ids::HistoricalEdgeId(format!("f3d:history-input:edge#{prefix}:{slot}"))
+    cadmpeg_ir::ids::HistoricalEdgeId::mint(format!("f3d:history-input:edge#{prefix}:{slot}"))
+        .expect("identity grammar")
 }
 
 /// The history-input vertex key for `slot` under a `prefix`.
@@ -589,7 +595,8 @@ pub(crate) fn history_input_vertex_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalVertexId {
-    cadmpeg_ir::ids::HistoricalVertexId(format!("f3d:history-input:vertex#{prefix}:{slot}"))
+    cadmpeg_ir::ids::HistoricalVertexId::mint(format!("f3d:history-input:vertex#{prefix}:{slot}"))
+        .expect("identity grammar")
 }
 
 /// The history-input face key for `slot` under a `prefix`.
@@ -597,7 +604,8 @@ pub(crate) fn history_input_face_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalFaceId {
-    cadmpeg_ir::ids::HistoricalFaceId(format!("f3d:history-input:face#{prefix}:{slot}"))
+    cadmpeg_ir::ids::HistoricalFaceId::mint(format!("f3d:history-input:face#{prefix}:{slot}"))
+        .expect("identity grammar")
 }
 
 /// The history-input body key for `slot` under a `prefix`.
@@ -605,7 +613,8 @@ pub(crate) fn history_input_body_id(
     prefix: &str,
     slot: impl std::fmt::Display,
 ) -> cadmpeg_ir::ids::HistoricalBodyId {
-    cadmpeg_ir::ids::HistoricalBodyId(format!("f3d:history-input:body#{prefix}:{slot}"))
+    cadmpeg_ir::ids::HistoricalBodyId::mint(format!("f3d:history-input:body#{prefix}:{slot}"))
+        .expect("identity grammar")
 }
 
 // --- native design-record keys ---------------------------------------------
@@ -918,7 +927,7 @@ mod tests {
         let id = neutral_face_appearance_binding_id(
             "face-guid",
             "visual-guid",
-            &cadmpeg_ir::ids::FaceId("f3d:brep/path:face#12".into()),
+            &cadmpeg_ir::ids::FaceId::mint("f3d:brep/path:face#12").expect("identity grammar"),
         );
         assert_eq!(
             id,

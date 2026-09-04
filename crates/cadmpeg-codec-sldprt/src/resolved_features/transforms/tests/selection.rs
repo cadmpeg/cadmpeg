@@ -745,7 +745,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         .into_iter()
         .enumerate()
         .map(|(index, (y, z))| Surface {
-            id: SurfaceId(format!("cylinder-{index}")),
+            id: SurfaceId::mint(format!("cylinder-{index}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(19.5, y, z),
                 axis: Vector3::new(1.0, 0.0, 0.0),

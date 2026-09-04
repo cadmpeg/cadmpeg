@@ -90,8 +90,8 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     use cadmpeg_ir::math::Point3;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let first = SurfaceId("synthetic:first-intersection-plane".into());
-    let second = SurfaceId("synthetic:second-intersection-plane".into());
+    let first = SurfaceId::mint("synthetic:first-intersection-plane").expect("identity grammar");
+    let second = SurfaceId::mint("synthetic:second-intersection-plane").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: first.clone(),
@@ -162,8 +162,9 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     )
     .is_none());
 
-    let cylinder = SurfaceId("synthetic:intersection-cylinder".into());
-    let section_plane = SurfaceId("synthetic:intersection-section-plane".into());
+    let cylinder = SurfaceId::mint("synthetic:intersection-cylinder").expect("identity grammar");
+    let section_plane =
+        SurfaceId::mint("synthetic:intersection-section-plane").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: cylinder.clone(),
@@ -214,8 +215,8 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         assert!((cylinder_point.z - plane_point.z).abs() < 1.0e-8);
     }
 
-    let tangent_cylinder = SurfaceId("synthetic:tangent-cylinder".into());
-    let tangent_plane = SurfaceId("synthetic:tangent-plane".into());
+    let tangent_cylinder = SurfaceId::mint("synthetic:tangent-cylinder").expect("identity grammar");
+    let tangent_plane = SurfaceId::mint("synthetic:tangent-plane").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: tangent_cylinder.clone(),
@@ -262,8 +263,10 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     assert!(seam_lanes[0].windows(2).all(|pair| pair[0].u < pair[1].u));
     assert!(seam_lanes[0].last().unwrap().u > std::f64::consts::PI);
 
-    let periodic_nurbs = SurfaceId("synthetic:periodic-nurbs-prism".into());
-    let nurbs_section = SurfaceId("synthetic:periodic-nurbs-section".into());
+    let periodic_nurbs =
+        SurfaceId::mint("synthetic:periodic-nurbs-prism").expect("identity grammar");
+    let nurbs_section =
+        SurfaceId::mint("synthetic:periodic-nurbs-section").expect("identity grammar");
     let periodic_geometry = test_surface(
         vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0],
         5,
@@ -310,8 +313,8 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
     use cadmpeg_ir::math::Point3;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let horizontal = SurfaceId("synthetic:large-horizontal-plane".into());
-    let vertical = SurfaceId("synthetic:large-vertical-plane".into());
+    let horizontal = SurfaceId::mint("synthetic:large-horizontal-plane").expect("identity grammar");
+    let vertical = SurfaceId::mint("synthetic:large-vertical-plane").expect("identity grammar");
     let origin = Point3::new(1.0e16, 1.0e16, 0.0);
     ir.model.surfaces.extend([
         Surface {
@@ -381,10 +384,13 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
     use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let surfaces = [SurfaceId("cycle-a".into()), SurfaceId("cycle-b".into())];
+    let surfaces = [
+        SurfaceId::mint("cycle-a").expect("identity grammar"),
+        SurfaceId::mint("cycle-b").expect("identity grammar"),
+    ];
     let constructions = [
-        ProceduralSurfaceId("cycle-construction-a".into()),
-        ProceduralSurfaceId("cycle-construction-b".into()),
+        ProceduralSurfaceId::mint("cycle-construction-a").expect("identity grammar"),
+        ProceduralSurfaceId::mint("cycle-construction-b").expect("identity grammar"),
     ];
     for side in 0..2 {
         ir.model.surfaces.push(Surface {
@@ -490,7 +496,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
     use cadmpeg_ir::ids::CurveId;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let curve = CurveId("synthetic:piecewise-spine".into());
+    let curve = CurveId::mint("synthetic:piecewise-spine").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Nurbs(
@@ -679,8 +685,8 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     use cadmpeg_ir::math::Point3;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let support = SurfaceId("synthetic:support-cylinder".into());
-    let offset = SurfaceId("synthetic:offset-cylinder".into());
+    let support = SurfaceId::mint("synthetic:support-cylinder").expect("identity grammar");
+    let offset = SurfaceId::mint("synthetic:offset-cylinder").expect("identity grammar");
     let cylinder = |id, radius| Surface {
         id,
         geometry: SurfaceGeometry::Cylinder {
@@ -706,8 +712,8 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     origin.y = 1.0;
     assert!(crate::decode::constant_surface_offset_between(&ir, &support, &offset, 0).is_none());
 
-    let support_plane = SurfaceId("synthetic:support-plane".into());
-    let offset_plane = SurfaceId("synthetic:offset-plane".into());
+    let support_plane = SurfaceId::mint("synthetic:support-plane").expect("identity grammar");
+    let offset_plane = SurfaceId::mint("synthetic:offset-plane").expect("identity grammar");
     let plane = |id, origin| Surface {
         id,
         geometry: SurfaceGeometry::Plane {
@@ -742,10 +748,10 @@ fn blend_contact_matches_concentric_blend_carriers() {
     use cadmpeg_ir::math::Point3;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let first = SurfaceId("synthetic:first".into());
-    let second = SurfaceId("synthetic:second".into());
-    let first_offset = SurfaceId("synthetic:first-offset".into());
-    let second_offset = SurfaceId("synthetic:second-offset".into());
+    let first = SurfaceId::mint("synthetic:first").expect("identity grammar");
+    let second = SurfaceId::mint("synthetic:second").expect("identity grammar");
+    let first_offset = SurfaceId::mint("synthetic:first-offset").expect("identity grammar");
+    let second_offset = SurfaceId::mint("synthetic:second-offset").expect("identity grammar");
     let plane = |id, origin, normal, u_axis| Surface {
         id,
         geometry: SurfaceGeometry::Plane {
@@ -782,14 +788,15 @@ fn blend_contact_matches_concentric_blend_carriers() {
         ),
     ]);
 
-    let spine = CurveId("synthetic:shared-spine".into());
-    let inner = SurfaceId("synthetic:inner-blend".into());
-    let outer = SurfaceId("synthetic:outer-blend".into());
+    let spine = CurveId::mint("synthetic:shared-spine").expect("identity grammar");
+    let inner = SurfaceId::mint("synthetic:inner-blend").expect("identity grammar");
+    let outer = SurfaceId::mint("synthetic:outer-blend").expect("identity grammar");
     for (surface, supports, radius) in [
         (inner.clone(), [first, second], 0.7),
         (outer.clone(), [first_offset, second_offset], 3.7),
     ] {
-        let construction = ProceduralSurfaceId(format!("{}:construction", surface.0));
+        let construction = ProceduralSurfaceId::mint(format!("{}:construction", surface.0))
+            .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -827,7 +834,9 @@ fn blend_contact_matches_concentric_blend_carriers() {
         .procedural_surfaces
         .iter_mut()
         .find(|candidate| {
-            candidate.id == ProceduralSurfaceId("synthetic:outer-blend:construction".into())
+            candidate.id
+                == ProceduralSurfaceId::mint("synthetic:outer-blend:construction")
+                    .expect("identity grammar")
         })
         .unwrap();
     outer_definition.edit_definition(|definition| {
@@ -850,15 +859,19 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
 
     const FIT_TOLERANCE: f64 = 1.0e-10;
 
-    let support = SurfaceId("synthetic:reverse-contact-support".into());
-    let support_offset = SurfaceId("synthetic:reverse-contact-support-offset".into());
-    let other = SurfaceId("synthetic:reverse-contact-other".into());
-    let blend = SurfaceId("synthetic:reverse-contact-blend".into());
-    let spine = CurveId("synthetic:reverse-contact-spine".into());
-    let spine_procedural = ProceduralCurveId("synthetic:reverse-contact-spine-record".into());
+    let support = SurfaceId::mint("synthetic:reverse-contact-support").expect("identity grammar");
+    let support_offset =
+        SurfaceId::mint("synthetic:reverse-contact-support-offset").expect("identity grammar");
+    let other = SurfaceId::mint("synthetic:reverse-contact-other").expect("identity grammar");
+    let blend = SurfaceId::mint("synthetic:reverse-contact-blend").expect("identity grammar");
+    let spine = CurveId::mint("synthetic:reverse-contact-spine").expect("identity grammar");
+    let spine_procedural = ProceduralCurveId::mint("synthetic:reverse-contact-spine-record")
+        .expect("identity grammar");
     let support_offset_construction =
-        ProceduralSurfaceId("synthetic:reverse-contact-support-offset-record".into());
-    let blend_construction = ProceduralSurfaceId("synthetic:reverse-contact-blend-record".into());
+        ProceduralSurfaceId::mint("synthetic:reverse-contact-support-offset-record")
+            .expect("identity grammar");
+    let blend_construction = ProceduralSurfaceId::mint("synthetic:reverse-contact-blend-record")
+        .expect("identity grammar");
     let plane = |id, origin, normal| Surface {
         id,
         geometry: SurfaceGeometry::Plane {
@@ -1012,7 +1025,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     use cadmpeg_ir::math::Point3;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let ellipse = CurveId("synthetic:ellipse-spine".into());
+    let ellipse = CurveId::mint("synthetic:ellipse-spine").expect("identity grammar");
     let geometry = CurveGeometry::Ellipse {
         center: Point3::new(2.0, 3.0, 4.0),
         axis: Vector3::new(0.0, 1.0, 0.0),
@@ -1072,8 +1085,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     const DIRECT_INVERSE_TOLERANCE: f64 = 1.0e-8;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let first = SurfaceId("synthetic:first-plane".into());
-    let second = SurfaceId("synthetic:second-plane".into());
+    let first = SurfaceId::mint("synthetic:first-plane").expect("identity grammar");
+    let second = SurfaceId::mint("synthetic:second-plane").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: first.clone(),
@@ -1094,8 +1107,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             source_object: None,
         },
     ]);
-    let first_spine_side = SurfaceId("synthetic:first-spine-side".into());
-    let second_spine_side = SurfaceId("synthetic:second-spine-side".into());
+    let first_spine_side = SurfaceId::mint("synthetic:first-spine-side").expect("identity grammar");
+    let second_spine_side =
+        SurfaceId::mint("synthetic:second-spine-side").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: first_spine_side.clone(),
@@ -1116,7 +1130,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             source_object: None,
         },
     ]);
-    let spine = CurveId("synthetic:spine".into());
+    let spine = CurveId::mint("synthetic:spine").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Line {
@@ -1125,8 +1139,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
         source_object: None,
     });
-    let surface = SurfaceId("synthetic:blend".into());
-    let construction = ProceduralSurfaceId("synthetic:blend-construction".into());
+    let surface = SurfaceId::mint("synthetic:blend").expect("identity grammar");
+    let construction =
+        ProceduralSurfaceId::mint("synthetic:blend-construction").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Procedural {
@@ -1174,7 +1189,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         0.25
     );
     let procedural = ProceduralCurve::try_new(
-        ProceduralCurveId("synthetic:spine-construction".into()),
+        ProceduralCurveId::mint("synthetic:spine-construction").expect("identity grammar"),
         ProceduralCurveDefinition::Intersection {
             context: IntcurveSupportContext {
                 sides: [
@@ -1299,7 +1314,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .model
         .procedural_curves
         .iter_mut()
-        .find(|curve| curve.id == ProceduralCurveId("synthetic:spine-construction".into()))
+        .find(|curve| {
+            curve.id
+                == ProceduralCurveId::mint("synthetic:spine-construction")
+                    .expect("identity grammar")
+        })
         .unwrap()
         .edit_definition(|definition| {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
@@ -1377,7 +1396,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!((translated_parameters.u - expected.u).abs() < 1.0e-3);
     assert!((translated_parameters.v - expected.v).abs() < 1.0e-3);
 
-    let boundary_curve = CurveId("synthetic:blend-boundary-curve".into());
+    let boundary_curve = CurveId::mint("synthetic:blend-boundary-curve").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: boundary_curve.clone(),
         geometry: CurveGeometry::Unknown { record: None },
@@ -1386,7 +1405,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let _attached = ir.model.add_procedural_curve(
         boundary_curve.clone(),
         ProceduralCurve::new(
-            ProceduralCurveId("synthetic:blend-boundary".into()),
+            ProceduralCurveId::mint("synthetic:blend-boundary").expect("identity grammar"),
             ProceduralCurveDefinition::Intersection {
                 context: IntcurveSupportContext {
                     sides: [
@@ -1412,10 +1431,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         ),
     );
     ir.model.edges.push(Edge {
-        id: EdgeId("synthetic:blend-boundary-edge".into()),
+        id: EdgeId::mint("synthetic:blend-boundary-edge").expect("identity grammar"),
         curve: Some(boundary_curve),
-        start: VertexId("synthetic:blend-boundary-start".into()),
-        end: VertexId("synthetic:blend-boundary-end".into()),
+        start: VertexId::mint("synthetic:blend-boundary-start").expect("identity grammar"),
+        end: VertexId::mint("synthetic:blend-boundary-end").expect("identity grammar"),
         param_range: Some([0.0, 1.0]),
         tolerance: Some(1.0e-8),
     });
@@ -1445,7 +1464,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .procedural_curves
         .iter_mut()
         .find(|procedural| {
-            procedural.id == ProceduralCurveId("synthetic:spine-construction".into())
+            procedural.id
+                == ProceduralCurveId::mint("synthetic:spine-construction")
+                    .expect("identity grammar")
         })
         .unwrap()
         .replace_definition(ProceduralCurveDefinition::Unknown {
@@ -1509,7 +1530,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     .sqrt();
     assert!(refined_error < 1.0e-9);
 
-    let third = SurfaceId("synthetic:third-plane".into());
+    let third = SurfaceId::mint("synthetic:third-plane").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: third.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -1519,7 +1540,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
         source_object: None,
     });
-    let outer_spine = CurveId("synthetic:outer-spine".into());
+    let outer_spine = CurveId::mint("synthetic:outer-spine").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: outer_spine.clone(),
         geometry: CurveGeometry::Line {
@@ -1528,8 +1549,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
         source_object: None,
     });
-    let outer = SurfaceId("synthetic:outer-blend".into());
-    let outer_construction = ProceduralSurfaceId("synthetic:outer-blend-construction".into());
+    let outer = SurfaceId::mint("synthetic:outer-blend").expect("identity grammar");
+    let outer_construction =
+        ProceduralSurfaceId::mint("synthetic:outer-blend-construction").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: outer.clone(),
         geometry: SurfaceGeometry::Procedural {
@@ -1591,7 +1613,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .procedural_surfaces
         .iter_mut()
         .find(|candidate| {
-            candidate.id == ProceduralSurfaceId("synthetic:outer-blend-construction".into())
+            candidate.id
+                == ProceduralSurfaceId::mint("synthetic:outer-blend-construction")
+                    .expect("identity grammar")
         })
         .unwrap();
     outer_definition.edit_definition(|definition| {

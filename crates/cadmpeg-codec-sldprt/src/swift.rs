@@ -247,7 +247,7 @@ pub(crate) fn annotations(
     {
         let prefix = pmi_id(&reference.id).0;
         for annotation in projected.iter().filter(|annotation| {
-            annotation.id.0 == prefix || annotation.id.0.starts_with(&format!("{prefix}:"))
+            annotation.id.0 == prefix || annotation.id.as_str().starts_with(&format!("{prefix}:"))
         }) {
             crate::annotations::note(
                 annotations,
@@ -750,7 +750,8 @@ fn project_tolerance(
     let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
     let references = datum_references(entity, datum_ids);
     let system = (!references.is_empty()).then(|| {
-        let id = PmiId(format!("{}:datum-system", pmi_id(&reference.id).0));
+        let id = PmiId::mint(format!("{}:datum-system", pmi_id(&reference.id).0))
+            .expect("identity grammar");
         PmiAnnotation {
             id,
             name: None,
@@ -789,7 +790,8 @@ fn project_lower_profile_tier(
 ) -> Option<PmiAnnotation> {
     let magnitude = finite_nonnegative(entity.doubles.get("ToleranceLowerTier").copied()?)?;
     Some(PmiAnnotation {
-        id: PmiId(format!("{}:lower-tier", pmi_id(&reference.id).0)),
+        id: PmiId::mint(format!("{}:lower-tier", pmi_id(&reference.id).0))
+            .expect("identity grammar"),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
         visible: None,
         targets: targets(entity, feature_index, topology),
@@ -2251,7 +2253,7 @@ fn object_name(entity: &Entity) -> Option<String> {
 }
 
 fn pmi_id(source_id: &str) -> PmiId {
-    PmiId(format!("sldprt:model:pmi#{source_id}"))
+    PmiId::mint(format!("sldprt:model:pmi#{source_id}")).expect("identity grammar")
 }
 
 fn suppressed(entity: &Entity) -> bool {
@@ -2576,7 +2578,7 @@ mod tests {
         index.sequence_targets.insert(
             42,
             Some(PmiTarget::Face {
-                face: FaceId("sldprt:brep:face#42".into()),
+                face: FaceId::mint("sldprt:brep:face#42").expect("identity grammar"),
             }),
         );
         let projected = project_with_topology(&root, Some(&index), &[], None);
@@ -2618,7 +2620,7 @@ mod tests {
         use cadmpeg_ir::topology::{Body, BodyKind, Edge, Face, Sense, Vertex};
 
         let body = Body {
-            id: BodyId("sldprt:brep:body#11".into()),
+            id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
             kind: BodyKind::default(),
             regions: Vec::new(),
             transform: None,
@@ -2627,9 +2629,9 @@ mod tests {
             visible: None,
         };
         let face = Face {
-            id: FaceId("sldprt:brep:face#22".into()),
-            shell: ShellId("sldprt:brep:shell#1".into()),
-            surface: SurfaceId("sldprt:brep:surf#22".into()),
+            id: FaceId::mint("sldprt:brep:face#22").expect("identity grammar"),
+            shell: ShellId::mint("sldprt:brep:shell#1").expect("identity grammar"),
+            surface: SurfaceId::mint("sldprt:brep:surf#22").expect("identity grammar"),
             sense: Sense::Forward,
             loops: Vec::new(),
             name: None,
@@ -2637,16 +2639,16 @@ mod tests {
             tolerance: None,
         };
         let edge = Edge {
-            id: EdgeId("sldprt:brep:edge#33".into()),
+            id: EdgeId::mint("sldprt:brep:edge#33").expect("identity grammar"),
             curve: None,
-            start: VertexId("sldprt:brep:vertex#1".into()),
-            end: VertexId("sldprt:brep:vertex#2".into()),
+            start: VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
+            end: VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
             param_range: None,
             tolerance: None,
         };
         let vertex = Vertex {
-            id: VertexId("sldprt:brep:vertex#44".into()),
-            point: PointId("sldprt:brep:point#44".into()),
+            id: VertexId::mint("sldprt:brep:vertex#44").expect("identity grammar"),
+            point: PointId::mint("sldprt:brep:point#44").expect("identity grammar"),
             tolerance: None,
         };
         let index = TopologyIdentityIndex::from_model(
@@ -2698,7 +2700,7 @@ mod tests {
         );
 
         let qualified_alternate = Face {
-            id: FaceId("sldprt:brep:face#22@alternate".into()),
+            id: FaceId::mint("sldprt:brep:face#22@alternate").expect("identity grammar"),
             ..face.clone()
         };
         let active_with_alternate = TopologyIdentityIndex::from_model(
@@ -2720,7 +2722,7 @@ mod tests {
         assert!(index.resolve("11").is_none());
 
         let collision = Face {
-            id: FaceId("sldprt:brep:face#11".into()),
+            id: FaceId::mint("sldprt:brep:face#11").expect("identity grammar"),
             ..face.clone()
         };
         let index = TopologyIdentityIndex::from_model(
@@ -2771,7 +2773,7 @@ mod tests {
             &[
                 face.clone(),
                 Face {
-                    id: FaceId("sldprt:brep:face#23".into()),
+                    id: FaceId::mint("sldprt:brep:face#23").expect("identity grammar"),
                     ..face.clone()
                 },
             ],
@@ -2913,7 +2915,7 @@ mod tests {
 
         let system = annotations
             .iter()
-            .find(|annotation| annotation.id.0.ends_with(":datum-system"))
+            .find(|annotation| annotation.id.as_str().ends_with(":datum-system"))
             .expect("datum system");
         let PmiDefinition::DatumSystem { references } = &system.definition else {
             panic!("datum-system definition");
@@ -2929,7 +2931,7 @@ mod tests {
 
         let angle = annotations
             .iter()
-            .find(|annotation| annotation.id.0.ends_with("#A40"))
+            .find(|annotation| annotation.id.as_str().ends_with("#A40"))
             .expect("angular annotation");
         let PmiDefinition::Dimension { nominal, .. } = &angle.definition else {
             panic!("angular definition");

@@ -231,7 +231,7 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         .expect("STEP native namespace")
         .iter()
         .all(|record| {
-            !record.id.0.ends_with("draughting_model_item_association#9")
+            !record.id.as_str().ends_with("draughting_model_item_association#9")
                 && !record
                     .id
                     .0

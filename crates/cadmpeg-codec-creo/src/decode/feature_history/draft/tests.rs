@@ -31,7 +31,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         });
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#6".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 1.0, 0.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
@@ -71,7 +71,7 @@ fn unbounded_plane_scan() -> crate::container::ContainerScan<'static> {
 
 fn plane_surface(origin_y: f64) -> Surface {
     Surface {
-        id: SurfaceId("creo:visibgeom:surface#6".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, origin_y, 0.0),
             normal: Vector3::new(0.0, 1.0, 0.0),

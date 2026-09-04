@@ -202,7 +202,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
 
     let mut ir = CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point {
-        id: cadmpeg_ir::ids::PointId("cadir:model:point#honesty".into()),
+        id: cadmpeg_ir::ids::PointId::mint("cadir:model:point#honesty").expect("identity grammar"),
         source_object: None,
         position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
     });

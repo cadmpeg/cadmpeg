@@ -133,12 +133,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             continue;
         };
         let prefix = format!("creo:feature:revolution#{feature_id}");
-        let body_id = BodyId(format!("{prefix}:body"));
+        let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
         if ir.model.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
-        let region_id = RegionId(format!("{prefix}:region"));
-        let shell_id = ShellId(format!("{prefix}:shell"));
+        let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
+        let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
         let count = profile.len();
         let Ok(mut edges) = alloc_filled(count, None, "creo revolution profile edges") else {
             continue;
@@ -158,10 +158,14 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             else {
                 unreachable!();
             };
-            let curve_id = CurveId(format!("{prefix}:curve:vertex:{index}"));
-            let point_id = PointId(format!("{prefix}:point:vertex:{index}"));
-            let vertex_id = VertexId(format!("{prefix}:vertex:{index}"));
-            let edge_id = EdgeId(format!("{prefix}:edge:vertex:{index}"));
+            let curve_id =
+                CurveId::mint(format!("{prefix}:curve:vertex:{index}")).expect("identity grammar");
+            let point_id =
+                PointId::mint(format!("{prefix}:point:vertex:{index}")).expect("identity grammar");
+            let vertex_id =
+                VertexId::mint(format!("{prefix}:vertex:{index}")).expect("identity grammar");
+            let edge_id =
+                EdgeId::mint(format!("{prefix}:edge:vertex:{index}")).expect("identity grammar");
             let position = section_point_in_model(transform, *point);
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
@@ -201,8 +205,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             .enumerate()
         {
             let next = (index + 1) % count;
-            let surface_id = SurfaceId(format!("{prefix}:surface:{index}"));
-            let face_id = FaceId(format!("{prefix}:face:{index}"));
+            let surface_id =
+                SurfaceId::mint(format!("{prefix}:surface:{index}")).expect("identity grammar");
+            let face_id = FaceId::mint(format!("{prefix}:face:{index}")).expect("identity grammar");
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: surface_geometry.clone(),
@@ -216,8 +221,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 let Some(edge_id) = edges[vertex_index].clone() else {
                     continue;
                 };
-                let loop_id = LoopId(format!("{prefix}:loop:{index}:{boundary}"));
-                let coedge_id = CoedgeId(format!("{prefix}:coedge:{index}:{boundary}"));
+                let loop_id = LoopId::mint(format!("{prefix}:loop:{index}:{boundary}"))
+                    .expect("identity grammar");
+                let coedge_id = CoedgeId::mint(format!("{prefix}:coedge:{index}:{boundary}"))
+                    .expect("identity grammar");
                 let radial_index = if boundary == "start" {
                     (index + count - 1) % count
                 } else {
@@ -236,7 +243,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 let pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
-                    PcurveId(format!("{prefix}:pcurve:{index}:{boundary}")),
+                    PcurveId::mint(format!("{prefix}:pcurve:{index}:{boundary}"))
+                        .expect("identity grammar"),
                     transform.offset,
                     pcurve_geometry,
                 );
@@ -255,9 +263,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     edge: edge_id,
                     next: coedge_id.clone(),
                     previous: coedge_id,
-                    radial_next: CoedgeId(format!(
+                    radial_next: CoedgeId::mint(format!(
                         "{prefix}:coedge:{radial_index}:{radial_boundary}"
-                    )),
+                    ))
+                    .expect("identity grammar"),
                     sense,
                     pcurves: vec![PcurveUse {
                         pcurve,

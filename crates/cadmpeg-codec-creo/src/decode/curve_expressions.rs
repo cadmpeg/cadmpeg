@@ -503,14 +503,16 @@ pub(crate) fn transfer_curve_expression_features(
                     curve_expression_helix_feature_definition(helix, procedural)
                 });
         if let Some(procedural_definition) = placed_helix {
-            let curve_id = CurveId(format!(
+            let curve_id = CurveId::mint(format!(
                 "creo:depdb:curve_expression_curve#{}-{}",
                 record.entity_id, record.offset
-            ));
-            let procedural_id = ProceduralCurveId(format!(
+            ))
+            .expect("identity grammar");
+            let procedural_id = ProceduralCurveId::mint(format!(
                 "creo:depdb:curve_expression_helix#{}-{}",
                 record.entity_id, record.offset
-            ));
+            ))
+            .expect("identity grammar");
             annotate(
                 annotations,
                 &curve_id.0,

@@ -100,7 +100,8 @@ fn attach_container_payloads(
         let Some(bytes) = scan.container.data.get(start..end) else {
             continue;
         };
-        let id = UnknownId(format!("nx:container-entry:opaque#{ordinal}"));
+        let id = UnknownId::mint(format!("nx:container-entry:opaque#{ordinal}"))
+            .expect("identity grammar");
         annotations
             .note(&id, annotation_stream, offset)
             .tag(content.label());
@@ -137,9 +138,10 @@ fn attach_indexed_om_unknowns(
             } else {
                 "block"
             };
-            let id = UnknownId(format!(
+            let id = UnknownId::mint(format!(
                 "nx:om-section-{section_index}:{kind}#{record_index}"
-            ));
+            ))
+            .expect("identity grammar");
             let offset = entry_offset + record.offset as u64;
             annotations
                 .note(&id, annotation_stream, offset)
@@ -210,7 +212,7 @@ pub(crate) fn attach(
             .note(&attribute.id, annotation_stream, attribute.source_offset)
             .tag("Attribute");
         annotations.exactness(&attribute.id, Exactness::ByteExact);
-        let id = AttributeId(format!("{}:neutral", attribute.id));
+        let id = AttributeId::mint(format!("{}:neutral", attribute.id)).expect("identity grammar");
         annotations
             .note(&id.0, annotation_stream, attribute.source_offset)
             .tag("Attribute");
@@ -500,7 +502,9 @@ fn attach_rm_appearances(
         annotations.derived(&binding_id, "appearance");
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id.into(),
-            target: AppearanceTarget::Face(FaceId(binding.face_id.clone())),
+            target: AppearanceTarget::Face(
+                FaceId::mint(binding.face_id.clone()).expect("identity grammar"),
+            ),
             appearance: appearance_id,
             source_entity_id: Some(binding.face_id),
             object_type: Some("Parasolid FACE".into()),
@@ -520,10 +524,11 @@ fn ensure_rm_color_appearance(
     appearances
         .entry(definition.id.clone())
         .or_insert_with(|| {
-            let id = AppearanceId(format!(
+            let id = AppearanceId::mint(format!(
                 "nx:appearance:rmfastload-color#{}",
                 native_entity_key(&definition.id)
-            ));
+            ))
+            .expect("identity grammar");
             annotations
                 .note(&id.0, annotation_stream, definition.source_offset)
                 .tag("RMFASTLOAD_COLOR_APPEARANCE");
@@ -760,7 +765,7 @@ fn attach_jpeg_preview_assets(
                 .tag("JPEG_PREVIEW_INVALID");
             annotations.exactness(&native_ref, Exactness::ByteExact);
             unknowns.push(UnknownRecord::retained(
-                UnknownId(native_ref),
+                UnknownId::mint(native_ref).expect("identity grammar"),
                 source_offset,
                 ctx.copy_retained(bytes, "retain NX invalid JPEG preview", None)?,
                 Vec::new(),
@@ -836,12 +841,12 @@ fn attach_material_texture_assets(
     let stream = annotations.stream("nx:container");
     for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
         annotations
-            .note(&asset.id.0, stream, texture.source_offset)
+            .note(&asset.id.as_str(), stream, texture.source_offset)
             .tag("MATERIAL_TEXTURE_ASSET");
-        annotations.exactness(&asset.id.0, Exactness::ByteExact);
-        annotations.derived(&asset.id.0, "id");
-        annotations.derived(&asset.id.0, "media_type");
-        annotations.derived(&asset.id.0, "native_ref");
+        annotations.exactness(&asset.id.as_str(), Exactness::ByteExact);
+        annotations.derived(&asset.id.as_str(), "id");
+        annotations.derived(&asset.id.as_str(), "media_type");
+        annotations.derived(&asset.id.as_str(), "native_ref");
     }
     ir.model.assets.extend(assets);
     Ok(())
@@ -897,7 +902,7 @@ fn attach_active_configuration_parameter_values(
         .collect();
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = values;
-    annotations.derived(&configuration.id.0, "parameter_values");
+    annotations.derived(&configuration.id.as_str(), "parameter_values");
 }
 
 fn attach_current_feature_states(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
@@ -985,7 +990,7 @@ fn attach_active_configuration_feature_states(ir: &mut CadIr, annotations: &mut 
     }
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.feature_states = states;
-    annotations.derived(&configuration.id.0, "feature_states");
+    annotations.derived(&configuration.id.as_str(), "feature_states");
 }
 
 fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> Option<usize> {
@@ -1694,7 +1699,7 @@ fn attach_feature_operations(
             .model
             .bodies
             .iter()
-            .filter(|body| body.id.0.starts_with(&prefix))
+            .filter(|body| body.id.as_str().starts_with(&prefix))
         {
             if !stream_bodies.contains(&body.id) {
                 stream_bodies.push(body.id.clone());
@@ -1871,9 +1876,9 @@ fn attach_feature_operations(
             continue;
         };
         annotations
-            .note(&annotation.id.0, stream, label.source_offset)
+            .note(&annotation.id.as_str(), stream, label.source_offset)
             .tag("TEXT_SEMANTIC_ANNOTATION");
-        annotations.exactness(&annotation.id.0, Exactness::Derived);
+        annotations.exactness(&annotation.id.as_str(), Exactness::Derived);
         ir.model.semantic_annotations.push(annotation);
     }
     for (ordinal, label) in chronological_labels.into_iter().enumerate() {
@@ -3606,10 +3611,11 @@ fn attach_feature_operations(
                 ir.model
                     .feature_result_topologies
                     .push(FeatureResultTopology {
-                        id: FeatureResultTopologyId(format!(
+                        id: FeatureResultTopologyId::mint(format!(
                             "nx:feature-history:result-topology#{key}-{:010}",
                             write.ordinal
-                        )),
+                        ))
+                        .expect("identity grammar"),
                         output_of: id.clone(),
                         bodies: vec![format!(
                             "nx:feature-history:body-identity#{:010}",
@@ -3636,9 +3642,10 @@ fn attach_feature_operations(
                 ir.model
                     .feature_result_topologies
                     .push(FeatureResultTopology {
-                        id: FeatureResultTopologyId(format!(
+                        id: FeatureResultTopologyId::mint(format!(
                             "nx:feature-history:result-topology#{key}"
-                        )),
+                        ))
+                        .expect("identity grammar"),
                         output_of: id.clone(),
                         bodies: vec![local_id],
                         faces: Vec::new(),
@@ -4282,7 +4289,7 @@ fn attach_parasolid_topology_string_attributes(
     }
     ir.model
         .attributes
-        .sort_by(|first, second| first.id.0.cmp(&second.id.0));
+        .sort_by(|first, second| first.id.as_str().cmp(&second.id.as_str()));
 }
 
 struct ParasolidNumericAttributeSources<'a> {
@@ -4594,7 +4601,7 @@ fn topology_attribute_id(
     entity_suffix: Option<&str>,
 ) -> AttributeId {
     let entity_suffix = entity_suffix.map_or_else(String::new, |suffix| format!("-{suffix}"));
-    AttributeId(format!(
+    AttributeId::mint(format!(
         "nx:s{}:{family}#{}-{}-{}{}",
         reference.stream_ordinal,
         reference.topology_type,
@@ -4602,6 +4609,7 @@ fn topology_attribute_id(
         reference_ordinal,
         entity_suffix
     ))
+    .expect("identity grammar")
 }
 
 fn attach_parasolid_topology_numeric_attributes(
@@ -4704,7 +4712,7 @@ fn attach_parasolid_topology_numeric_attributes(
     }
     ir.model
         .attributes
-        .sort_by(|first, second| first.id.0.cmp(&second.id.0));
+        .sort_by(|first, second| first.id.as_str().cmp(&second.id.as_str()));
 }
 
 struct ParasolidStructuredAttributeSources<'a> {
@@ -4867,7 +4875,7 @@ fn attach_parasolid_topology_structured_attributes(
     }
     ir.model
         .attributes
-        .sort_by(|first, second| first.id.0.cmp(&second.id.0));
+        .sort_by(|first, second| first.id.as_str().cmp(&second.id.as_str()));
 }
 
 fn preceding_operation_dependency(
@@ -8507,7 +8515,9 @@ fn operation_body_group_partition_outputs_by_write<'a>(
         .filter_map(|(identity, partition)| {
             let partition = partition?;
             let prefix = format!("nx:s{partition}:body#");
-            let mut matches = bodies.iter().filter(|body| body.id.0.starts_with(&prefix));
+            let mut matches = bodies
+                .iter()
+                .filter(|body| body.id.as_str().starts_with(&prefix));
             let body = matches.next()?;
             matches.next().is_none().then_some(())?;
             Some((identity, body.id.clone()))
@@ -8865,7 +8875,7 @@ fn attach_block_dimension_parameter_consumers(
                     .properties
                     .insert(format!("consumer.{consumer_ordinal}"), consumer.clone());
             }
-            annotations.derived(&parameter.id.0, "properties");
+            annotations.derived(&parameter.id.as_str(), "properties");
         }
     }
 }

@@ -203,14 +203,17 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
                 row.feature_id == feature_id
                     && row.kind == crate::surface::SurfaceKind::Cylinder
                     && !ir.model.surfaces.iter().any(|surface| {
-                        surface.id == SurfaceId(format!("creo:visibgeom:surface#{}", row.id))
+                        surface.id
+                            == SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+                                .expect("identity grammar")
                     })
             })
             .collect::<Vec<_>>();
         let [row] = unresolved_rows.as_slice() else {
             continue;
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
+            .expect("identity grammar");
         annotate(
             annotations,
             &id,
@@ -267,7 +270,8 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         &scan.features.entity_tables,
         &scan.surfaces.rows,
     ) {
-        let sibling = SurfaceId(format!("creo:visibgeom:surface#{sibling_id}"));
+        let sibling = SurfaceId::mint(format!("creo:visibgeom:surface#{sibling_id}"))
+            .expect("identity grammar");
         let Some(SurfaceGeometry::Cylinder {
             origin,
             axis,
@@ -283,7 +287,8 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         else {
             continue;
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{rowless_id}"));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{rowless_id}"))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -343,7 +348,8 @@ pub(in super::super) fn transfer_hole_cylinders(
         for (cylinder_id, geometry) in cylinders {
             let row = crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id)
                 .expect("validated cylinder row");
-            let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -450,7 +456,8 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             continue;
         };
         for cylinder_id in [*first_id, *second_id] {
-            let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -1087,7 +1094,8 @@ pub(in super::super) fn transfer_positional_cylinders(
         {
             continue;
         }
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", record.surface_id))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             if row_local_frame_selected
                 && ir
@@ -1318,7 +1326,8 @@ pub(in super::super) fn transfer_positional_cones(
         else {
             continue;
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
+        let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", record.surface_id))
+            .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -1383,7 +1392,8 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
         for cylinder_id in &sweep.cylinder_ids {
             let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *cylinder_id)
                 .expect("validated cylinder row");
-            let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
+            let id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
+                .expect("identity grammar");
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
@@ -1428,10 +1438,11 @@ pub(in super::super) fn transfer_cross_section_planes(
         if is_axis_aligned(normal) {
             continue;
         }
-        let id = SurfaceId(format!(
+        let id = SurfaceId::mint(format!(
             "creo:cross_section_geometry:surface#{}",
             frame.surface_id
-        ));
+        ))
+        .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -1463,10 +1474,11 @@ pub(in super::super) fn transfer_cross_section_planes(
         transferred += 1;
     }
     for plane in &scan.planes.cross_section_outlines {
-        let id = SurfaceId(format!(
+        let id = SurfaceId::mint(format!(
             "creo:cross_section_geometry:surface#{}",
             plane.surface_id
-        ));
+        ))
+        .expect("identity grammar");
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }

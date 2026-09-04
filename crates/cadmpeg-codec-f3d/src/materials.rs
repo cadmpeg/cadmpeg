@@ -556,7 +556,7 @@ pub fn decode_with_body_bindings<'a>(
         }
         out.extend(appearances);
     }
-    out.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    out.sort_by(|a, b| a.id.as_str().cmp(&b.id.as_str()));
     if let Some(pair) = out
         .windows(2)
         .find(|pair| pair[0].id == pair[1].id && pair[0] != pair[1])
@@ -573,7 +573,8 @@ pub fn decode_with_body_bindings<'a>(
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
             out.push(Appearance {
-                id: AppearanceId(format!("f3d:design:appearance#{}", assignment.visual_guid)),
+                id: AppearanceId::mint(format!("f3d:design:appearance#{}", assignment.visual_guid))
+                    .expect("identity grammar"),
                 name: assignment.visual_preset.clone(),
                 asset_guid: Some(assignment.visual_guid.clone()),
                 library_id: None,
@@ -697,7 +698,8 @@ fn appearances_from_schema_records(
             });
             let base_color = appearance_base_color(record);
             Appearance {
-                id: AppearanceId(format!("f3d:design:appearance#{}", record.guid)),
+                id: AppearanceId::mint(format!("f3d:design:appearance#{}", record.guid))
+                    .expect("identity grammar"),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),
                 library_id: library_id(&record.asset_lib_id),
@@ -2018,7 +2020,7 @@ fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
         fixed_scalar(&mut properties, "refraction_index", record, position + 169);
     }
     Some(Appearance {
-        id: AppearanceId(format!("f3d:design:appearance#{guid}")),
+        id: AppearanceId::mint(format!("f3d:design:appearance#{guid}")).expect("identity grammar"),
         name: Some(base),
         asset_guid: Some(guid.clone()),
         library_id: library_id(&asset_lib_id),

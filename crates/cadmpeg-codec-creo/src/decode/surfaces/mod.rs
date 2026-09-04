@@ -66,13 +66,13 @@ pub(super) fn native_surface_id(scan: &ContainerScan, surface_id: u32) -> Surfac
         .iter()
         .any(|cylinder| cylinder.id == surface_id);
     if visible_present {
-        SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))
+        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar")
     } else if nonvisible_present {
-        SurfaceId(format!("creo:novisgeom:surface#{surface_id}"))
+        SurfaceId::mint(format!("creo:novisgeom:surface#{surface_id}")).expect("identity grammar")
     } else if active_datum_present {
-        SurfaceId(format!("creo:actdatums:surface#{surface_id}"))
+        SurfaceId::mint(format!("creo:actdatums:surface#{surface_id}")).expect("identity grammar")
     } else {
-        SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))
+        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar")
     }
 }
 
@@ -127,8 +127,10 @@ pub(super) fn transfer_part_product(
     let Some(model_name_offset) = scan.framing.model_name_offset else {
         return false;
     };
-    let product_id = ProductDefinitionId("creo:model:product_definition#root".to_string());
-    let occurrence_id = OccurrenceId("creo:model:occurrence#root".to_string());
+    let product_id = ProductDefinitionId::mint("creo:model:product_definition#root".to_string())
+        .expect("identity grammar");
+    let occurrence_id =
+        OccurrenceId::mint("creo:model:occurrence#root".to_string()).expect("identity grammar");
     annotate(
         annotations,
         &product_id,
@@ -370,7 +372,8 @@ pub(super) fn transfer_fc05_cap_circles(
             surface_origin[axis_index] = frame.origin[axis_index];
         }
         let (center, axis, ref_direction) = (witness.origin, witness.axis, witness.ref_direction);
-        let id = CurveId(format!("creo:visibgeom:curve#{}", circle.curve_id));
+        let id = CurveId::mint(format!("creo:visibgeom:curve#{}", circle.curve_id))
+            .expect("identity grammar");
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
             annotate(
                 annotations,
@@ -403,7 +406,8 @@ pub(super) fn transfer_fc05_cap_circles(
                 }),
             });
         }
-        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
+        let surface_id = SurfaceId::mint(format!("creo:visibgeom:surface#{cylinder_id}"))
+            .expect("identity grammar");
         if ir
             .model
             .surfaces

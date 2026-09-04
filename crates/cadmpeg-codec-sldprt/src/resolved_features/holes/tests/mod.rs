@@ -152,7 +152,7 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
 
 fn cylinder(id: usize, x: f64) -> Surface {
     Surface {
-        id: SurfaceId(format!("surface-{id}")),
+        id: SurfaceId::mint(format!("surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(x, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),

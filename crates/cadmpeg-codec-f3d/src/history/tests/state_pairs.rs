@@ -182,7 +182,9 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
             design_reference_offset: 0,
             form: 4,
             form_offset: 0,
-            candidate_faces: vec![FaceId("f3d:brep/second.smbh/brep:entity#1".into())],
+            candidate_faces: vec![
+                FaceId::mint("f3d:brep/second.smbh/brep:entity#1").expect("identity grammar")
+            ],
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),
         }],
@@ -329,8 +331,8 @@ fn circular_pattern_face_uses_unique_rigid_surface_radius() {
         ..AsmHistoricalTopology::default()
     };
     let candidates = [
-        cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(21)),
-        cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(22)),
+        cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(21)).expect("identity grammar"),
+        cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(22)).expect("identity grammar"),
     ];
     assert_eq!(
         resolve_pattern_face_by_surface_radius(
@@ -722,41 +724,59 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
         terminal_edge_recipe_reference_faces(
             &[
                 reference(
-                    vec![FaceId("face-c".into())],
-                    vec![FaceId("ignored".into())],
+                    vec![FaceId::mint("face-c").expect("identity grammar")],
+                    vec![FaceId::mint("ignored").expect("identity grammar")],
                 ),
-                reference(Vec::new(), vec![FaceId("face-d".into())]),
-                reference(vec![FaceId("face-a".into())], Vec::new()),
+                reference(
+                    Vec::new(),
+                    vec![FaceId::mint("face-d").expect("identity grammar")]
+                ),
+                reference(
+                    vec![FaceId::mint("face-a").expect("identity grammar")],
+                    Vec::new()
+                ),
             ],
             None,
         ),
         vec![
-            vec![FaceId("face-c".into())],
-            vec![FaceId("face-d".into())],
-            vec![FaceId("face-a".into())],
+            vec![FaceId::mint("face-c").expect("identity grammar")],
+            vec![FaceId::mint("face-d").expect("identity grammar")],
+            vec![FaceId::mint("face-a").expect("identity grammar")],
         ]
     );
     let reference_faces = terminal_edge_recipe_reference_faces(
         &[
             reference(
-                vec![FaceId("face-c".into())],
-                vec![FaceId("ignored".into())],
+                vec![FaceId::mint("face-c").expect("identity grammar")],
+                vec![FaceId::mint("ignored").expect("identity grammar")],
             ),
-            reference(Vec::new(), vec![FaceId("face-d".into())]),
-            reference(vec![FaceId("face-e".into())], Vec::new()),
+            reference(
+                Vec::new(),
+                vec![FaceId::mint("face-d").expect("identity grammar")],
+            ),
+            reference(
+                vec![FaceId::mint("face-e").expect("identity grammar")],
+                Vec::new(),
+            ),
         ],
         Some(&[std::num::NonZeroU32::new(2).unwrap()]),
     );
-    assert_eq!(reference_faces, vec![vec![FaceId("face-d".into())]]);
+    assert_eq!(
+        reference_faces,
+        vec![vec![FaceId::mint("face-d").expect("identity grammar")]]
+    );
     assert_eq!(
         terminal_edge_recipe_faces(
-            &[FaceId("face-b".into()), FaceId("face-a".into())],
+            &[
+                FaceId::mint("face-b").expect("identity grammar"),
+                FaceId::mint("face-a").expect("identity grammar")
+            ],
             &reference_faces,
         ),
         vec![
-            FaceId("face-a".into()),
-            FaceId("face-b".into()),
-            FaceId("face-d".into()),
+            FaceId::mint("face-a").expect("identity grammar"),
+            FaceId::mint("face-b").expect("identity grammar"),
+            FaceId::mint("face-d").expect("identity grammar"),
         ]
     );
 }
@@ -835,7 +855,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         ..AsmHistoricalTopology::default()
     };
     let candidates = treatment_radius_candidates(
-        Some(&[FaceId("f3d:brep:entity#10".into())]),
+        Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
         &[20],
         &result,
         &preceding,
@@ -852,7 +872,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
     let mut existing_carrier = preceding.clone();
     existing_carrier.surfaces.push(200);
     assert!(treatment_radius_candidates(
-        Some(&[FaceId("f3d:brep:entity#10".into())]),
+        Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
         &[20],
         &result,
         &existing_carrier,
@@ -861,7 +881,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
     .is_empty());
     assert!(treatment_transition_edge_candidates(&[20], &result, &preceding, &[18]).is_empty());
     assert!(treatment_radius_candidates(
-        Some(&[FaceId("f3d:brep:entity#10".into())]),
+        Some(&[FaceId::mint("f3d:brep:entity#10").expect("identity grammar")]),
         &[20],
         &result,
         &preceding,
@@ -929,7 +949,7 @@ fn boundary_edge_change_partition_preserves_boundary_order() {
 fn result_face_support_maps_only_to_one_preceding_owner() {
     use cadmpeg_ir::ids::FaceId;
 
-    let result_faces = [FaceId("f3d:brep:entity#40".into())];
+    let result_faces = [FaceId::mint("f3d:brep:entity#40").expect("identity grammar")];
     let result = AsmHistoricalTopology {
         faces: vec![40],
         face_surfaces: vec![AsmHistoricalCarrierBinding {
@@ -1028,7 +1048,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
     let changed_faces = HashSet::from([5]);
     assert_eq!(
         historical_face_support_contexts(
-            &[FaceId("f3d:brep:entity#40".into())],
+            &[FaceId::mint("f3d:brep:entity#40").expect("identity grammar")],
             &history,
             &preceding,
             &changed_faces,
@@ -1046,7 +1066,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
     variant.states[1].topology.as_mut().unwrap().face_surfaces[0].carrier = 21;
     assert_eq!(
         historical_face_support_contexts(
-            &[FaceId("f3d:brep:entity#4".into())],
+            &[FaceId::mint("f3d:brep:entity#4").expect("identity grammar")],
             &variant,
             &preceding,
             &changed_faces,
@@ -1060,7 +1080,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
         }]
     );
     assert!(historical_face_support_contexts(
-        &[FaceId("f3d:brep:entity#40".into())],
+        &[FaceId::mint("f3d:brep:entity#40").expect("identity grammar")],
         &variant,
         &preceding,
         &changed_faces,
@@ -1159,68 +1179,68 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     let id = |slot| format!("f3d:brep:entity#{slot}");
     let mut brep = cadmpeg_asm::brep::AsmBrep::default();
     brep.bodies.push(Body {
-        id: BodyId(id(1)),
+        id: BodyId::mint(id(1)).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId(id(2))],
+        regions: vec![RegionId::mint(id(2)).expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     brep.regions.push(Region {
-        id: RegionId(id(2)),
-        body: BodyId(id(1)),
-        shells: vec![ShellId(id(3))],
+        id: RegionId::mint(id(2)).expect("identity grammar"),
+        body: BodyId::mint(id(1)).expect("identity grammar"),
+        shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
     });
     brep.shells.push(Shell {
-        id: ShellId(id(3)),
-        region: RegionId(id(2)),
-        faces: vec![FaceId(id(4))],
+        id: ShellId::mint(id(3)).expect("identity grammar"),
+        region: RegionId::mint(id(2)).expect("identity grammar"),
+        faces: vec![FaceId::mint(id(4)).expect("identity grammar")],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
     brep.faces.push(Face {
-        id: FaceId(id(4)),
-        shell: ShellId(id(3)),
-        surface: SurfaceId(id(20)),
+        id: FaceId::mint(id(4)).expect("identity grammar"),
+        shell: ShellId::mint(id(3)).expect("identity grammar"),
+        surface: SurfaceId::mint(id(20)).expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId(id(5))],
+        loops: vec![LoopId::mint(id(5)).expect("identity grammar")],
         name: None,
         color: None,
         tolerance: None,
     });
     brep.loops.push(Loop {
-        id: LoopId(id(5)),
-        face: FaceId(id(4)),
+        id: LoopId::mint(id(5)).expect("identity grammar"),
+        face: FaceId::mint(id(4)).expect("identity grammar"),
         boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: vec![CoedgeId(id(6))],
+            coedges: vec![CoedgeId::mint(id(6)).expect("identity grammar")],
             vertex_uses: Vec::new(),
         },
     });
     brep.coedges.push(Coedge {
-        id: CoedgeId(id(6)),
-        owner_loop: LoopId(id(5)),
-        edge: EdgeId(id(7)),
-        next: CoedgeId(id(6)),
-        previous: CoedgeId(id(6)),
-        radial_next: CoedgeId(id(6)),
+        id: CoedgeId::mint(id(6)).expect("identity grammar"),
+        owner_loop: LoopId::mint(id(5)).expect("identity grammar"),
+        edge: EdgeId::mint(id(7)).expect("identity grammar"),
+        next: CoedgeId::mint(id(6)).expect("identity grammar"),
+        previous: CoedgeId::mint(id(6)).expect("identity grammar"),
+        radial_next: CoedgeId::mint(id(6)).expect("identity grammar"),
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
     });
     brep.edges.push(Edge {
-        id: EdgeId(id(7)),
-        curve: Some(CurveId(id(21))),
-        start: VertexId(id(8)),
-        end: VertexId(id(9)),
+        id: EdgeId::mint(id(7)).expect("identity grammar"),
+        curve: Some(CurveId::mint(id(21)).expect("identity grammar")),
+        start: VertexId::mint(id(8)).expect("identity grammar"),
+        end: VertexId::mint(id(9)).expect("identity grammar"),
         param_range: None,
         tolerance: None,
     });
     for slot in [8, 9] {
         brep.vertices.push(Vertex {
-            id: VertexId(id(slot)),
-            point: PointId(id(slot + 20)),
+            id: VertexId::mint(id(slot)).expect("identity grammar"),
+            point: PointId::mint(id(slot + 20)).expect("identity grammar"),
             tolerance: None,
         });
     }
@@ -1360,10 +1380,14 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     );
     assert_eq!(
         faces_in_topology(
-            &[FaceId(id(4)), FaceId(id(99)), FaceId("foreign".into())],
+            &[
+                FaceId::mint(id(4)).expect("identity grammar"),
+                FaceId::mint(id(99)).expect("identity grammar"),
+                FaceId::mint("foreign").expect("identity grammar")
+            ],
             &topology,
         ),
-        [FaceId(id(4))]
+        [FaceId::mint(id(4)).expect("identity grammar")]
     );
     let mut reference = crate::records::DesignRecipeReference {
         selector: 1,
@@ -1372,7 +1396,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         token_offset: 0,
         design_reference: 1,
         design_reference_offset: 1,
-        candidate_faces: vec![FaceId(id(4))],
+        candidate_faces: vec![FaceId::mint(id(4)).expect("identity grammar")],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -1387,7 +1411,10 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         &HashSet::from([7]),
     );
     assert_eq!(context.reference_ordinal, 2);
-    assert_eq!(context.result_faces, [FaceId(id(4))]);
+    assert_eq!(
+        context.result_faces,
+        [FaceId::mint(id(4)).expect("identity grammar")]
+    );
     let boundary = crate::records::DesignHistoricalFaceBoundaryContext {
         face_slot: 4,
         loops: vec![crate::records::DesignHistoricalFaceLoopContext {
@@ -1401,7 +1428,10 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     };
     assert_eq!(context.result_face_boundaries, [boundary.clone()]);
     assert_eq!(context.result_shared_edge_slots, [7]);
-    assert_eq!(context.preceding_faces, [FaceId(id(4))]);
+    assert_eq!(
+        context.preceding_faces,
+        [FaceId::mint(id(4)).expect("identity grammar")]
+    );
     assert_eq!(context.preceding_face_boundaries, [boundary]);
     assert_eq!(context.preceding_support_face_slots, [4]);
     assert_eq!(context.preceding_support_face_boundaries.len(), 1);
@@ -1409,7 +1439,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(context.changed_shared_edge_slots, [7]);
     assert_eq!(context.changed_reference_edge_slots, [7]);
     reference.candidate_faces.clear();
-    reference.alternate_selector_faces = vec![FaceId(id(4))];
+    reference.alternate_selector_faces = vec![FaceId::mint(id(4)).expect("identity grammar")];
     let alternate_context = edge_recipe_reference_context(
         2,
         &reference,
@@ -1419,8 +1449,14 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         &[7, 98],
         &HashSet::from([7]),
     );
-    assert_eq!(alternate_context.result_faces, [FaceId(id(4))]);
-    assert_eq!(alternate_context.preceding_faces, [FaceId(id(4))]);
+    assert_eq!(
+        alternate_context.result_faces,
+        [FaceId::mint(id(4)).expect("identity grammar")]
+    );
+    assert_eq!(
+        alternate_context.preceding_faces,
+        [FaceId::mint(id(4)).expect("identity grammar")]
+    );
     assert_eq!(alternate_context.changed_reference_edge_slots, [7]);
     let support_only_context = edge_recipe_reference_context(
         2,

@@ -219,7 +219,7 @@ fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode stale pcurve trim");
-    let pcurve = cadmpeg_ir::ids::PcurveId("step:data:pcurve#56".into());
+    let pcurve = cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#56").expect("identity grammar");
     let use_ = decoded
         .ir()
         .model
@@ -959,7 +959,7 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
         assert!(matches!(
             bounded.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { boundaries, .. }
-                if boundaries == &[CurveId("step:data:curve#9".to_owned())]
+                if boundaries == &[CurveId::mint("step:data:curve#9".to_owned()).expect("identity grammar")]
         ));
         assert!(!result.report().losses.iter().any(|loss| {
             loss.message
@@ -1002,7 +1002,7 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
         .expect("curve-bounded surface");
     assert_eq!(
         boundaries,
-        &[cadmpeg_ir::ids::CurveId("step:data:curve#34".into())]
+        &[cadmpeg_ir::ids::CurveId::mint("step:data:curve#34").expect("identity grammar")]
     );
     assert!(
         decoded
@@ -1017,7 +1017,7 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
     );
     assert_eq!(
         boundary_pcurves,
-        &[cadmpeg_ir::ids::PcurveId("step:data:pcurve#44".into())]
+        &[cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#44").expect("identity grammar")]
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

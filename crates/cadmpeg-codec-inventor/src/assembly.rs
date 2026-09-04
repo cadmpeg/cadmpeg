@@ -145,10 +145,11 @@ pub(crate) fn project_occurrences(
         };
 
         occurrences.push(Occurrence {
-            id: OccurrenceId(format!(
+            id: OccurrenceId::mint(format!(
                 "inventor:assembly:instance#{}",
                 source.occurrence_id
-            )),
+            ))
+            .expect("identity grammar"),
             prototype: external_prototype(reference),
             parent: OccurrenceParent::Root,
             ordinal: source.ordinal,

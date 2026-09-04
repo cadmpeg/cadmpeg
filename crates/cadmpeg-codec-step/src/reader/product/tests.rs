@@ -215,7 +215,7 @@ fn ps02_item_defined_transform_items_follow_relationship_endpoint_contexts() {
         .model
         .occurrences
         .iter()
-        .find(|occurrence| occurrence.id.0.contains("#12"))
+        .find(|occurrence| occurrence.id.as_str().contains("#12"))
         .expect("child-to-parent occurrence");
     assert_eq!(child.transform.rows[0][3], 25.0);
     assert!(!child_to_parent
@@ -232,7 +232,7 @@ fn ps02_item_defined_transform_items_follow_relationship_endpoint_contexts() {
         .model
         .occurrences
         .iter()
-        .find(|occurrence| occurrence.id.0.contains("#12"))
+        .find(|occurrence| occurrence.id.as_str().contains("#12"))
         .expect("parent-to-child occurrence");
     assert_eq!(child.transform.rows[0][3], -25.0);
     assert!(!parent_to_child
@@ -347,7 +347,7 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
             .model
             .occurrences
             .iter()
-            .find(|occurrence| occurrence.id.0.contains("#12"));
+            .find(|occurrence| occurrence.id.as_str().contains("#12"));
         assert!(
             occurrence.is_none(),
             "ambiguous occurrence must not be admitted"
@@ -369,7 +369,7 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
         let unknowns = result.ir().native_unknowns("step").unwrap();
         let unknown_ids = unknowns
             .iter()
-            .map(|record| record.id.0.as_str())
+            .map(|record| record.id.as_str())
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(
             unknown_ids,
@@ -411,7 +411,7 @@ fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
             .model
             .occurrences
             .iter()
-            .all(|occurrence| !occurrence.id.0.contains("#12")));
+            .all(|occurrence| !occurrence.id.as_str().contains("#12")));
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
                 && loss.severity == cadmpeg_ir::Severity::Error
@@ -432,7 +432,7 @@ fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
         let unknowns = result.ir().native_unknowns("step").unwrap();
         let unknown_ids = unknowns
             .iter()
-            .map(|record| record.id.0.as_str())
+            .map(|record| record.id.as_str())
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(
             unknown_ids,
@@ -809,7 +809,9 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
         .model
         .occurrences
         .iter()
-        .filter(|occurrence| occurrence.id.0.contains("#16") || occurrence.id.0.contains("#17"))
+        .filter(|occurrence| {
+            occurrence.id.as_str().contains("#16") || occurrence.id.as_str().contains("#17")
+        })
         .collect::<Vec<_>>();
     children.sort_by_key(|occurrence| occurrence.id.clone());
     assert_eq!(children.len(), 2);
@@ -839,7 +841,7 @@ fn ps09_parent_mapped_items_bind_by_child_definition_not_set_order() {
             .model
             .occurrences
             .iter()
-            .find(|occurrence| occurrence.id.0.contains("#16"))
+            .find(|occurrence| occurrence.id.as_str().contains("#16"))
             .expect("first child occurrence");
         assert_eq!(first.transform.rows[0][3], 25.0);
         assert_eq!(first.transform.rows[1][3], 0.0);
@@ -848,7 +850,7 @@ fn ps09_parent_mapped_items_bind_by_child_definition_not_set_order() {
             .model
             .occurrences
             .iter()
-            .find(|occurrence| occurrence.id.0.contains("#17"))
+            .find(|occurrence| occurrence.id.as_str().contains("#17"))
             .expect("second child occurrence");
         assert_eq!(second.transform.rows[0][3], -10.0);
         assert_eq!(second.transform.rows[1][3], 4.0);
@@ -878,7 +880,7 @@ fn unrelated_representation_mapping_does_not_place_an_occurrence() {
         .model
         .occurrences
         .iter()
-        .find(|occurrence| occurrence.id.0.contains("#16"))
+        .find(|occurrence| occurrence.id.as_str().contains("#16"))
         .expect("child occurrence");
     assert_eq!(
         occurrence.transform,
@@ -932,7 +934,9 @@ fn repeated_child_uses_without_owned_placements_remain_unresolved() {
         .model
         .occurrences
         .iter()
-        .filter(|occurrence| occurrence.id.0.contains("#16") || occurrence.id.0.contains("#17"))
+        .filter(|occurrence| {
+            occurrence.id.as_str().contains("#16") || occurrence.id.as_str().contains("#17")
+        })
         .collect::<Vec<_>>();
     assert_eq!(children.len(), 2);
     assert!(children
@@ -963,7 +967,7 @@ fn ps01_repeated_child_binding_requires_occurrence_identity() {
         .model
         .occurrences
         .iter()
-        .find(|occurrence| occurrence.id.0.contains("#12"))
+        .find(|occurrence| occurrence.id.as_str().contains("#12"))
         .expect("single child occurrence");
     assert_eq!(single_child.transform.rows[0][3], 25.0);
     assert_eq!(single_child.transform.rows[1][3], 0.0);
@@ -983,7 +987,9 @@ fn ps01_repeated_child_binding_requires_occurrence_identity() {
             .model
             .occurrences
             .iter()
-            .filter(|occurrence| occurrence.id.0.contains("#12") || occurrence.id.0.contains("#13"))
+            .filter(|occurrence| {
+                occurrence.id.as_str().contains("#12") || occurrence.id.as_str().contains("#13")
+            })
             .collect::<Vec<_>>();
         assert_eq!(children.len(), 2);
         assert!(children
@@ -1005,7 +1011,9 @@ fn ps01_repeated_child_binding_requires_occurrence_identity() {
         .model
         .occurrences
         .iter()
-        .filter(|occurrence| occurrence.id.0.contains("#12") || occurrence.id.0.contains("#13"))
+        .filter(|occurrence| {
+            occurrence.id.as_str().contains("#12") || occurrence.id.as_str().contains("#13")
+        })
         .collect::<Vec<_>>();
     children.sort_by_key(|occurrence| occurrence.id.clone());
     assert_eq!(children.len(), 2);
@@ -1186,8 +1194,11 @@ pub(crate) fn ap203_specified_source_formations_build_occurrence_tree() {
         .unwrap()
         .iter()
         .any(|record| {
-            record.id.0.contains("product_definition_formation")
-                || record.id.0.contains("next_assembly_usage_occurrence")
+            record.id.as_str().contains("product_definition_formation")
+                || record
+                    .id
+                    .as_str()
+                    .contains("next_assembly_usage_occurrence")
         }));
 }
 

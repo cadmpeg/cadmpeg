@@ -134,7 +134,7 @@ pub(crate) fn spatial_sketches(
                     .eq(points.iter().map(|(_, point, _)| point))
             })
         }) {
-            let sketch_id = SpatialSketchId(feature.id.0.replacen(
+            let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
                 ":model:feature#",
                 ":model:spatial-sketch#",
                 1,
@@ -249,7 +249,7 @@ pub(crate) fn spatial_sketches(
         {
             continue;
         }
-        let sketch_id = SpatialSketchId(feature.id.0.replacen(
+        let sketch_id = SpatialSketchId(feature.id.as_str().replacen(
             ":model:feature#",
             ":model:spatial-sketch#",
             1,

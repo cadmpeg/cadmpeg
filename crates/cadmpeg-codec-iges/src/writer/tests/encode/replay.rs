@@ -112,7 +112,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
     ] {
         let mut ir = CadIr::empty();
         ir.model.points.push(Point {
-            id: PointId(format!("point#{id}")),
+            id: PointId::mint(format!("point#{id}")).expect("identity grammar"),
             source_object: None,
             position: Point3::new(1.0, 2.0, 3.0),
         });
@@ -135,7 +135,7 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
         .unwrap();
     let mut edited = decoded.ir().clone();
     edited.model.points.push(Point {
-        id: PointId("point#edited".into()),
+        id: PointId::mint("point#edited").expect("identity grammar"),
         source_object: None,
         position: Point3::new(7.0, 8.0, 9.0),
     });

@@ -723,7 +723,7 @@ pub(super) fn continue_fixed_kind_operations(
         definition: historical_definition,
         native_ref: Some(indexed_revolve_scope.id.clone()),
     };
-    let surface_id = cadmpeg_ir::ids::SurfaceId("surface:53".into());
+    let surface_id = cadmpeg_ir::ids::SurfaceId::mint("surface:53").expect("identity grammar");
     crate::design::feature_project::bind_revolve_face_axes(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&indexed_revolve_scope),
@@ -731,8 +731,8 @@ pub(super) fn continue_fixed_kind_operations(
         std::slice::from_ref(&axis_selection),
         &[],
         &[cadmpeg_ir::topology::Face {
-            id: cadmpeg_ir::ids::FaceId("f3d:brep:entity#40".into()),
-            shell: cadmpeg_ir::ids::ShellId("shell:1".into()),
+            id: cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
+            shell: cadmpeg_ir::ids::ShellId::mint("shell:1").expect("identity grammar"),
             surface: surface_id.clone(),
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: Vec::new(),
@@ -783,8 +783,8 @@ pub(super) fn continue_fixed_kind_operations(
         recipe_node_offsets: Vec::new(),
         recipe_nodes: Vec::new(),
         candidate_faces: vec![
-            cadmpeg_ir::ids::FaceId("face:axis-a".into()),
-            cadmpeg_ir::ids::FaceId("face:axis-b".into()),
+            cadmpeg_ir::ids::FaceId::mint("face:axis-a").expect("identity grammar"),
+            cadmpeg_ir::ids::FaceId::mint("face:axis-b").expect("identity grammar"),
         ],
         unreferenced_candidate_faces: Vec::new(),
         alternate_selector_candidate_faces: Vec::new(),
@@ -816,9 +816,9 @@ pub(super) fn continue_fixed_kind_operations(
     };
     let axis_faces = [
         cadmpeg_ir::topology::Face {
-            id: cadmpeg_ir::ids::FaceId("face:axis-a".into()),
-            shell: cadmpeg_ir::ids::ShellId("shell:axis".into()),
-            surface: cadmpeg_ir::ids::SurfaceId("surface:axis-a".into()),
+            id: cadmpeg_ir::ids::FaceId::mint("face:axis-a").expect("identity grammar"),
+            shell: cadmpeg_ir::ids::ShellId::mint("shell:axis").expect("identity grammar"),
+            surface: cadmpeg_ir::ids::SurfaceId::mint("surface:axis-a").expect("identity grammar"),
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: Vec::new(),
             name: None,
@@ -826,9 +826,9 @@ pub(super) fn continue_fixed_kind_operations(
             tolerance: None,
         },
         cadmpeg_ir::topology::Face {
-            id: cadmpeg_ir::ids::FaceId("face:axis-b".into()),
-            shell: cadmpeg_ir::ids::ShellId("shell:axis".into()),
-            surface: cadmpeg_ir::ids::SurfaceId("surface:axis-b".into()),
+            id: cadmpeg_ir::ids::FaceId::mint("face:axis-b").expect("identity grammar"),
+            shell: cadmpeg_ir::ids::ShellId::mint("shell:axis").expect("identity grammar"),
+            surface: cadmpeg_ir::ids::SurfaceId::mint("surface:axis-b").expect("identity grammar"),
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: Vec::new(),
             name: None,
@@ -838,7 +838,7 @@ pub(super) fn continue_fixed_kind_operations(
     ];
     let mut axis_surfaces = [
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("surface:axis-a".into()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("surface:axis-a").expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -848,7 +848,7 @@ pub(super) fn continue_fixed_kind_operations(
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId("surface:axis-b".into()),
+            id: cadmpeg_ir::ids::SurfaceId::mint("surface:axis-b").expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: Point3::new(1.0, 2.0, 8.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),

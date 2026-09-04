@@ -552,7 +552,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     };
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let plane = |id, z| Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, z),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1033,7 +1033,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     };
     scan.surfaces.rows.extend([row(31), row(32)]);
     let plane = |id, z| Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, z),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1245,7 +1245,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     });
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("creo:visibgeom:surface#6".to_string()),
+        id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 1.0, 0.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
@@ -1484,7 +1484,8 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     ));
     assert!(!preceding_features_establish_body(&ir));
 
-    ir.model.features[0].outputs = vec![BodyId("creo:model:body#1".to_string())];
+    ir.model.features[0].outputs =
+        vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")];
     assert!(preceding_features_establish_body(&ir));
 
     ir.model.features[0] = feature(

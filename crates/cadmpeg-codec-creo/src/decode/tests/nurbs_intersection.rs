@@ -127,7 +127,7 @@ fn source_ir() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -137,7 +137,7 @@ fn source_ir() -> CadIr {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#3".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#3".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 5.0_f64.sqrt(), 0.0),
                 normal: Vector3::new(0.0, 1.0, 0.0),
@@ -146,7 +146,7 @@ fn source_ir() -> CadIr {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#4".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#4".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -155,7 +155,7 @@ fn source_ir() -> CadIr {
             source_object: None,
         },
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Cylinder {
                 origin: Point3::new(4.0, 0.0, 0.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -167,7 +167,7 @@ fn source_ir() -> CadIr {
     ]);
     let y = 5.0_f64.sqrt();
     ir.model.curves.push(Curve {
-        id: CurveId("creo:visibgeom:curve#10".to_string()),
+        id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Nurbs(
             NurbsCurve::new(
                 1,
@@ -186,7 +186,9 @@ fn source_ir() -> CadIr {
 #[test]
 fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
     let scan = carrier_scan();
-    let witness = BTreeSet::from([CurveId("creo:visibgeom:curve#10".to_string())]);
+    let witness = BTreeSet::from([
+        CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar")
+    ]);
 
     let mut with_witness = source_ir();
     let transferred = transfer_carrier_intersection_curves(
@@ -197,14 +199,16 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
     );
     assert_eq!(
         transferred,
-        BTreeSet::from([CurveId("creo:visibgeom:curve#20".to_string())])
+        BTreeSet::from([
+            CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar")
+        ])
     );
     assert!(matches!(
         with_witness
             .model
             .curves
             .iter()
-            .find(|curve| curve.id == CurveId("creo:visibgeom:curve#20".to_string()))
+            .find(|curve| curve.id == CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar"))
         .map(|curve| &curve.geometry),
         Some(CurveGeometry::Line { origin, direction })
             if (origin.x - 2.0).abs() <= EPS_POSITION

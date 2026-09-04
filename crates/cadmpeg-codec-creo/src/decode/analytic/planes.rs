@@ -367,7 +367,8 @@ pub fn reconciled_model_plane(
     ir: &CadIr,
     surface_id: u32,
 ) -> Option<PlaneEquation> {
-    let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+    let model_id =
+        SurfaceId::mint(format!("creo:visibgeom:surface#{surface_id}")).expect("identity grammar");
     let model_surfaces = ir
         .model
         .surfaces

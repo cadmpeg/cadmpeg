@@ -56,7 +56,7 @@ pub(crate) fn transfer_dimensions(
 }
 
 fn pmi_id(source_offset: u64) -> PmiId {
-    PmiId(
+    PmiId::mint(
         format_identity(
             "catia",
             "model",
@@ -65,6 +65,7 @@ fn pmi_id(source_offset: u64) -> PmiId {
         )
         .expect("CATIA PMI source offset produces a valid identity"),
     )
+    .expect("identity grammar")
 }
 
 fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {

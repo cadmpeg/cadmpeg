@@ -32,10 +32,10 @@ fn decode_resolves_feature_topology_selections() {
         )
         .unwrap();
     assert_eq!(base.ir().model.bodies.len(), 2);
-    let body = &base.ir().model.bodies[0].id.0;
-    let tool_body = &base.ir().model.bodies[1].id.0;
-    let face = &base.ir().model.faces[0].id.0;
-    let edge = &base.ir().model.edges[0].id.0;
+    let body = &base.ir().model.bodies[0].id.as_str();
+    let tool_body = &base.ir().model.bodies[1].id.as_str();
+    let face = &base.ir().model.faces[0].id.as_str();
+    let edge = &base.ir().model.edges[0].id.as_str();
     let keywords = format!(
         r#"<Keywords>
             <Fillet Name="Round" Type="Fillet" id="1" Edges="{edge}"><Dimension Name="Radius">1mm</Dimension></Fillet>

@@ -254,9 +254,9 @@ fn add_face(
     geometry: SurfaceGeometry,
     corners: [Point3; 4],
 ) -> FaceId {
-    let face_id = FaceId(format!("face-{name}"));
-    let loop_id = LoopId(format!("loop-{name}"));
-    let surface_id = SurfaceId(format!("surface-{name}"));
+    let face_id = FaceId::mint(format!("face-{name}")).expect("identity grammar");
+    let loop_id = LoopId::mint(format!("loop-{name}")).expect("identity grammar");
+    let surface_id = SurfaceId::mint(format!("surface-{name}")).expect("identity grammar");
     model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry,
@@ -264,11 +264,11 @@ fn add_face(
     });
 
     let coedge_ids = (0..4)
-        .map(|index| CoedgeId(format!("coedge-{name}-{index}")))
+        .map(|index| CoedgeId::mint(format!("coedge-{name}-{index}")).expect("identity grammar"))
         .collect::<Vec<_>>();
     for (index, corner) in corners.iter().copied().enumerate() {
-        let point_id = PointId(format!("point-{name}-{index}"));
-        let vertex_id = VertexId(format!("vertex-{name}-{index}"));
+        let point_id = PointId::mint(format!("point-{name}-{index}")).expect("identity grammar");
+        let vertex_id = VertexId::mint(format!("vertex-{name}-{index}")).expect("identity grammar");
         model.points.push(Point {
             id: point_id.clone(),
             position: corner,
@@ -282,8 +282,8 @@ fn add_face(
     }
     for (index, origin) in corners.iter().copied().enumerate() {
         let next = (index + 1) % 4;
-        let curve_id = CurveId(format!("curve-{name}-{index}"));
-        let edge_id = EdgeId(format!("edge-{name}-{index}"));
+        let curve_id = CurveId::mint(format!("curve-{name}-{index}")).expect("identity grammar");
+        let edge_id = EdgeId::mint(format!("edge-{name}-{index}")).expect("identity grammar");
         let direction = corners[next].vector_from(origin).unit().unwrap();
         model.curves.push(Curve {
             id: curve_id.clone(),
@@ -293,8 +293,8 @@ fn add_face(
         model.edges.push(Edge {
             id: edge_id.clone(),
             curve: Some(curve_id),
-            start: VertexId(format!("vertex-{name}-{index}")),
-            end: VertexId(format!("vertex-{name}-{next}")),
+            start: VertexId::mint(format!("vertex-{name}-{index}")).expect("identity grammar"),
+            end: VertexId::mint(format!("vertex-{name}-{next}")).expect("identity grammar"),
             param_range: None,
             tolerance: None,
         });
@@ -321,7 +321,7 @@ fn add_face(
     });
     model.faces.push(Face {
         id: face_id.clone(),
-        shell: ShellId("shell".into()),
+        shell: ShellId::mint("shell").expect("identity grammar"),
         surface: surface_id,
         sense: Sense::Forward,
         loops: vec![loop_id],
@@ -407,9 +407,9 @@ fn add_cylindrical_patch_face(
         point_at(angles[1], max_z),
         point_at(angles[0], max_z),
     ];
-    let face_id = FaceId(format!("face-{name}"));
-    let loop_id = LoopId(format!("loop-{name}"));
-    let surface_id = SurfaceId(format!("surface-{name}"));
+    let face_id = FaceId::mint(format!("face-{name}")).expect("identity grammar");
+    let loop_id = LoopId::mint(format!("loop-{name}")).expect("identity grammar");
+    let surface_id = SurfaceId::mint(format!("surface-{name}")).expect("identity grammar");
     model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -425,8 +425,10 @@ fn add_cylindrical_patch_face(
         .iter()
         .enumerate()
         .map(|(index, point)| {
-            let point_id = PointId(format!("point-{name}-{index}"));
-            let vertex_id = VertexId(format!("vertex-{name}-{index}"));
+            let point_id =
+                PointId::mint(format!("point-{name}-{index}")).expect("identity grammar");
+            let vertex_id =
+                VertexId::mint(format!("vertex-{name}-{index}")).expect("identity grammar");
             model.points.push(Point {
                 id: point_id.clone(),
                 position: *point,
@@ -441,7 +443,7 @@ fn add_cylindrical_patch_face(
         })
         .collect::<Vec<_>>();
     let coedge_ids = (0..4)
-        .map(|index| CoedgeId(format!("coedge-{name}-{index}")))
+        .map(|index| CoedgeId::mint(format!("coedge-{name}-{index}")).expect("identity grammar"))
         .collect::<Vec<_>>();
     let curve_geometries = [
         CurveGeometry::Circle {
@@ -467,8 +469,8 @@ fn add_cylindrical_patch_face(
     ];
     for (index, geometry) in curve_geometries.into_iter().enumerate() {
         let next = (index + 1) % 4;
-        let curve_id = CurveId(format!("curve-{name}-{index}"));
-        let edge_id = EdgeId(format!("edge-{name}-{index}"));
+        let curve_id = CurveId::mint(format!("curve-{name}-{index}")).expect("identity grammar");
+        let edge_id = EdgeId::mint(format!("edge-{name}-{index}")).expect("identity grammar");
         model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
@@ -505,7 +507,7 @@ fn add_cylindrical_patch_face(
     });
     model.faces.push(Face {
         id: face_id.clone(),
-        shell: ShellId("shell".into()),
+        shell: ShellId::mint("shell").expect("identity grammar"),
         surface: surface_id,
         sense: Sense::Forward,
         loops: vec![loop_id],
@@ -519,22 +521,22 @@ fn add_cylindrical_patch_face(
 fn model_with_body() -> cadmpeg_ir::document::Model {
     let mut model = cadmpeg_ir::document::Model::default();
     model.bodies = vec![Body {
-        id: BodyId("body".into()),
+        id: BodyId::mint("body").expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId("region".into())],
+        regions: vec![RegionId::mint("region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     }];
     model.regions = vec![Region {
-        id: RegionId("region".into()),
-        body: BodyId("body".into()),
-        shells: vec![ShellId("shell".into())],
+        id: RegionId::mint("region").expect("identity grammar"),
+        body: BodyId::mint("body").expect("identity grammar"),
+        shells: vec![ShellId::mint("shell").expect("identity grammar")],
     }];
     model.shells = vec![Shell {
-        id: ShellId("shell".into()),
-        region: RegionId("region".into()),
+        id: ShellId::mint("shell").expect("identity grammar"),
+        region: RegionId::mint("region").expect("identity grammar"),
         faces: Vec::new(),
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
@@ -678,7 +680,10 @@ fn persistent_surface_identity_binds_one_face_and_body() {
         vec!["mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("body").expect("identity grammar"))
+    );
 }
 
 #[test]
@@ -770,7 +775,10 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
 
     assert_eq!(assign_unique_surface_owners(&mut model), vec!["mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![second]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("body").expect("identity grammar"))
+    );
 
     model
         .faces
@@ -810,7 +818,10 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
 
     assert_eq!(assign_unique_surface_owners(&mut model), vec!["lower-mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![lower]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("body").expect("identity grammar"))
+    );
 }
 
 #[test]
@@ -1007,7 +1018,10 @@ fn cone_support_binds_display_list_face() {
 
     assert_eq!(assign_unique_surface_owners(&mut model), vec!["cone-mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("body").expect("identity grammar"))
+    );
 }
 
 #[test]
@@ -1063,7 +1077,10 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
         vec!["cone-cache-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("body").expect("identity grammar"))
+    );
     assert!(model.tessellations[0]
         .chordal_deflection
         .is_some_and(|deflection| deflection > 0.09 && deflection < 0.11));
@@ -1139,7 +1156,10 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
         vec!["nurbs-exact-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("body").expect("identity grammar"))
+    );
     assert!(model.tessellations[0].chordal_deflection.is_none());
 }
 
@@ -1538,12 +1558,12 @@ fn decode_reports_display_list_geometry() {
                 .source_fidelity()
                 .annotations
                 .provenance
-                .get(&record.id.0)
+                .get(record.id.as_str())
                 .and_then(|note| note.tag.as_deref())
                 == Some("displaylist_tessellation")
                 && result
                     .source_fidelity()
-                    .retained_record(&record.id.0)
+                    .retained_record(&record.id.as_str())
                     .is_some_and(|source| source.data().is_some())
         }));
 }
@@ -1755,7 +1775,10 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
         vec!["arc-trim-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![target]);
-    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("body").expect("identity grammar"))
+    );
 }
 
 #[test]

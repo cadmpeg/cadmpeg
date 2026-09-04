@@ -11,6 +11,13 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct AssetId(pub String);
 
+impl AssetId {
+    /// Borrow the underlying id string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Bytes or location supplying an asset's content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

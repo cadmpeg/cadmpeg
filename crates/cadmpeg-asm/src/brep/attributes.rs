@@ -122,7 +122,7 @@ pub fn attribute_key(attribute: &SourceAttribute) -> &str {
         .0
         .rsplit('#')
         .next()
-        .unwrap_or(attribute.id.0.as_str())
+        .unwrap_or(attribute.id.as_str())
 }
 
 /// Serialize one attribute record's value chunks as a [`SourceAttribute`]
@@ -133,7 +133,8 @@ pub fn source_attribute(
     format: IdFormat<'_>,
 ) -> SourceAttribute {
     SourceAttribute {
-        id: AttributeId(format!("{format}:brep:attribute#{}", record.index)),
+        id: AttributeId::mint(format!("{format}:brep:attribute#{}", record.index))
+            .expect("identity grammar"),
         target,
         name: record.name.clone(),
         // Chunks, not raw tokens: the serialized value list is defined over the

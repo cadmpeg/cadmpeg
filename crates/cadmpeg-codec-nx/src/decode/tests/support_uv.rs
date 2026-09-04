@@ -25,7 +25,8 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let validated_id = result.ir().model.procedural_curves[0].id.clone();
-    let unvalidated_id = ProceduralCurveId("synthetic:unvalidated-support-uv".into());
+    let unvalidated_id =
+        ProceduralCurveId::mint("synthetic:unvalidated-support-uv").expect("identity grammar");
     let mut unvalidated = result.ir().model.procedural_curves[0].clone();
     unvalidated.id = unvalidated_id.clone();
     {
@@ -255,12 +256,14 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     const FIT_TOLERANCE: f64 = 1.0e-6;
     const GEOMETRY_WORK: usize = 2_048;
 
-    let support = SurfaceId("synthetic:seeded-offset-support".into());
-    let offset = SurfaceId("synthetic:seeded-offset".into());
-    let offset_construction = ProceduralSurfaceId("synthetic:seeded-offset-construction".into());
-    let plane = SurfaceId("synthetic:seeded-intersection-plane".into());
-    let curve = CurveId("synthetic:seeded-intersection-curve".into());
-    let procedural_id = ProceduralCurveId("synthetic:seeded-intersection".into());
+    let support = SurfaceId::mint("synthetic:seeded-offset-support").expect("identity grammar");
+    let offset = SurfaceId::mint("synthetic:seeded-offset").expect("identity grammar");
+    let offset_construction = ProceduralSurfaceId::mint("synthetic:seeded-offset-construction")
+        .expect("identity grammar");
+    let plane = SurfaceId::mint("synthetic:seeded-intersection-plane").expect("identity grammar");
+    let curve = CurveId::mint("synthetic:seeded-intersection-curve").expect("identity grammar");
+    let procedural_id =
+        ProceduralCurveId::mint("synthetic:seeded-intersection").expect("identity grammar");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         Surface {

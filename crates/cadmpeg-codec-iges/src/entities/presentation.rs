@@ -452,7 +452,8 @@ pub(super) fn project(
         names.insert(entry.sequence, name.clone());
         appearance(
             ir,
-            AppearanceId(format!("iges:appearance:color#D{}", entry.sequence)),
+            AppearanceId::mint(format!("iges:appearance:color#D{}", entry.sequence))
+                .expect("identity grammar"),
             name,
             color,
         );
@@ -462,7 +463,8 @@ pub(super) fn project(
     let resolve = |value: i64| -> Option<(AppearanceId, Color)> {
         match value.cmp(&0) {
             std::cmp::Ordering::Greater => Some((
-                AppearanceId(format!("iges:appearance:standard#{value}")),
+                AppearanceId::mint(format!("iges:appearance:standard#{value}"))
+                    .expect("identity grammar"),
                 standard_color(value)?,
             )),
             std::cmp::Ordering::Less => {
@@ -472,7 +474,8 @@ pub(super) fn project(
                     return None;
                 }
                 Some((
-                    AppearanceId(format!("iges:appearance:color#D{sequence}")),
+                    AppearanceId::mint(format!("iges:appearance:color#D{sequence}"))
+                        .expect("identity grammar"),
                     *defined.get(&sequence)?,
                 ))
             }
@@ -537,7 +540,7 @@ pub(super) fn project(
         .bodies
         .iter()
         .filter_map(|body| {
-            let sequence = source_sequence(&body.id.0)?;
+            let sequence = source_sequence(&body.id.as_str())?;
             let entry = entries.get(&sequence)?;
             resolve(entry.color)
                 .map(|appearance| (body.id.clone(), sequence, appearance, entry.status.blank))
@@ -562,7 +565,7 @@ pub(super) fn project(
     }
     for body in &mut ir.model.bodies {
         if body.visible.is_none() {
-            body.visible = source_sequence(&body.id.0)
+            body.visible = source_sequence(&body.id.as_str())
                 .and_then(|sequence| entries.get(&sequence))
                 .map(|entry| entry.status.blank == 0);
         }
@@ -573,7 +576,7 @@ pub(super) fn project(
         .faces
         .iter()
         .filter_map(|face| {
-            let sequence = source_sequence(&face.id.0)?;
+            let sequence = source_sequence(&face.id.as_str())?;
             let entry = entries.get(&sequence)?;
             resolve(entry.color).map(|appearance| (face.id.clone(), sequence, appearance))
         })

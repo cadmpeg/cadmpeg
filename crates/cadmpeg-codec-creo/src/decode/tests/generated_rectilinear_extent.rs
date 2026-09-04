@@ -84,7 +84,7 @@ fn generated_fixture(
         offset: id as usize,
     };
     let plane = |id, origin, normal| Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin,
             normal,
@@ -258,7 +258,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         offset: id as usize,
     };
     let plane = |id, origin, normal| Surface {
-        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin,
             normal,
@@ -279,7 +279,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
-            id: SurfaceId("creo:visibgeom:surface#37".to_string()),
+            id: SurfaceId::mint("creo:visibgeom:surface#37".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },
@@ -322,7 +322,11 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         .model
         .surfaces
         .iter_mut()
-        .find(|surface| surface.id == SurfaceId("creo:visibgeom:surface#32".to_string()))
+        .find(|surface| {
+            surface.id
+                == SurfaceId::mint("creo:visibgeom:surface#32".to_string())
+                    .expect("identity grammar")
+        })
         .expect("plane surface")
         .geometry = SurfaceGeometry::Unknown { record: None };
     assert_eq!(

@@ -281,8 +281,8 @@ fn inspect_enforces_iges_parser_resource_limits() {
 fn semantic_decode_barrier_rejects_invalid_cadir() {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
-        id: VertexId("iges:model:vertex#invalid".into()),
-        point: PointId("iges:model:point#missing".into()),
+        id: VertexId::mint("iges:model:vertex#invalid").expect("identity grammar"),
+        point: PointId::mint("iges:model:point#missing").expect("identity grammar"),
         tolerance: None,
     });
 

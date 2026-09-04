@@ -69,12 +69,12 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             continue;
         };
         let prefix = format!("creo:feature:extrusion#{feature_id}");
-        let body_id = BodyId(format!("{prefix}:body"));
+        let body_id = BodyId::mint(format!("{prefix}:body")).expect("identity grammar");
         if ir.model.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
-        let region_id = RegionId(format!("{prefix}:region"));
-        let shell_id = ShellId(format!("{prefix}:shell"));
+        let region_id = RegionId::mint(format!("{prefix}:region")).expect("identity grammar");
+        let shell_id = ShellId::mint(format!("{prefix}:shell")).expect("identity grammar");
         let center = section_point_in_model(transform, section_center);
         let seam =
             std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis[axis]);
@@ -83,26 +83,32 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let mut cap_coedges = Vec::new();
         let mut side_coedges = Vec::new();
         for (side_index, (side, offset)) in sides.into_iter().enumerate() {
-            let cap_surface = SurfaceId(format!("{prefix}:surface:{side}"));
-            let cap_face = FaceId(format!("{prefix}:face:{side}"));
-            let cap_loop = LoopId(format!("{prefix}:loop:{side}"));
-            let curve_id = CurveId(format!("{prefix}:curve:{side}"));
-            let edge_id = EdgeId(format!("{prefix}:edge:{side}"));
-            let point_id = PointId(format!("{prefix}:point:{side}"));
-            let vertex_id = VertexId(format!("{prefix}:vertex:{side}"));
-            let cap_coedge = CoedgeId(format!("{prefix}:coedge:{side}:cap"));
-            let side_coedge = CoedgeId(format!("{prefix}:coedge:{side}:side"));
+            let cap_surface =
+                SurfaceId::mint(format!("{prefix}:surface:{side}")).expect("identity grammar");
+            let cap_face = FaceId::mint(format!("{prefix}:face:{side}")).expect("identity grammar");
+            let cap_loop = LoopId::mint(format!("{prefix}:loop:{side}")).expect("identity grammar");
+            let curve_id =
+                CurveId::mint(format!("{prefix}:curve:{side}")).expect("identity grammar");
+            let edge_id = EdgeId::mint(format!("{prefix}:edge:{side}")).expect("identity grammar");
+            let point_id =
+                PointId::mint(format!("{prefix}:point:{side}")).expect("identity grammar");
+            let vertex_id =
+                VertexId::mint(format!("{prefix}:vertex:{side}")).expect("identity grammar");
+            let cap_coedge =
+                CoedgeId::mint(format!("{prefix}:coedge:{side}:cap")).expect("identity grammar");
+            let side_coedge =
+                CoedgeId::mint(format!("{prefix}:coedge:{side}:side")).expect("identity grammar");
             let cap_pcurve = add_extrusion_pcurve(
                 ir,
                 annotations,
-                PcurveId(format!("{prefix}:pcurve:{side}:cap")),
+                PcurveId::mint(format!("{prefix}:pcurve:{side}:cap")).expect("identity grammar"),
                 transform.offset,
                 circular_pcurve(section_center, radius, 0.0, std::f64::consts::TAU),
             );
             let side_pcurve = add_extrusion_pcurve(
                 ir,
                 annotations,
-                PcurveId(format!("{prefix}:pcurve:{side}:side")),
+                PcurveId::mint(format!("{prefix}:pcurve:{side}:side")).expect("identity grammar"),
                 transform.offset,
                 line_pcurve([0.0, offset], [std::f64::consts::TAU, offset]),
             );
@@ -217,8 +223,9 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             cap_coedges.push(cap_coedge);
             side_coedges.push((side_coedge, edge_id, side_pcurve));
         }
-        let side_surface = SurfaceId(format!("{prefix}:surface:side"));
-        let side_face = FaceId(format!("{prefix}:face:side"));
+        let side_surface =
+            SurfaceId::mint(format!("{prefix}:surface:side")).expect("identity grammar");
+        let side_face = FaceId::mint(format!("{prefix}:face:side")).expect("identity grammar");
         let mut side_loops = Vec::new();
         ir.model.surfaces.push(Surface {
             id: side_surface.clone(),
@@ -241,7 +248,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         for (side_index, ((side, _), (coedge, edge, pcurve))) in
             sides.into_iter().zip(side_coedges).enumerate()
         {
-            let loop_id = LoopId(format!("{prefix}:loop:side:{side}"));
+            let loop_id =
+                LoopId::mint(format!("{prefix}:loop:side:{side}")).expect("identity grammar");
             ir.model.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face: side_face.clone(),

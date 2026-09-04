@@ -145,7 +145,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     }));
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Plane { .. })
-            && surface.id.0.contains("hidden-support-surf#100")
+            && surface.id.as_str().contains("hidden-support-surf#100")
     }));
 
     let face_surface = &result.ir().model.faces[0].surface;
@@ -201,7 +201,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         SurfaceGeometry::Unknown { .. }
     ));
     for surface in support_surfaces {
-        assert!(surface.id.0.contains("hidden-support-surf#"));
+        assert!(surface.id.as_str().contains("hidden-support-surf#"));
     }
     assert!(result.report().losses.iter().any(|loss| {
         loss.message

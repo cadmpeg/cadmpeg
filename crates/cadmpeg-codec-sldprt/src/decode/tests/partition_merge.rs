@@ -129,7 +129,10 @@ fn merged_opaque_geometry_retains_its_owning_site() {
     let expected_records = container::scan_bytes(&source)
         .blocks
         .iter()
-        .map(|block| cadmpeg_ir::ids::UnknownId(format!("sldprt:file:block#{}", block.offset)))
+        .map(|block| {
+            cadmpeg_ir::ids::UnknownId::mint(format!("sldprt:file:block#{}", block.offset))
+                .expect("identity grammar")
+        })
         .collect::<std::collections::BTreeSet<_>>();
 
     let result = SldprtCodec
@@ -207,7 +210,7 @@ fn deltas_full_record_overrides_partition_record() {
         .model
         .points
         .iter()
-        .find(|point| point.id.0.ends_with("#60"))
+        .find(|point| point.id.as_str().ends_with("#60"))
         .expect("overridden point");
 
     assert_eq!(point.position.x, 2000.0);
@@ -231,7 +234,7 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
     );
 
     assert_eq!(decoded.faces.len(), 1);
-    assert_eq!(decoded.faces[0].id.0, "sldprt:brep:face#10");
+    assert_eq!(decoded.faces[0].id.as_str(), "sldprt:brep:face#10");
     assert_eq!(decoded.faces[0].surface.0, "sldprt:brep:surf#10");
 }
 
@@ -302,7 +305,7 @@ fn deltas_point_index_does_not_replace_partition_coordinates() {
         .model
         .points
         .iter()
-        .find(|point| point.id.0.ends_with("#60"))
+        .find(|point| point.id.as_str().ends_with("#60"))
         .unwrap();
     assert_eq!(point.position, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
 }

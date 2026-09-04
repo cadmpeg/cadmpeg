@@ -496,7 +496,7 @@ fn decode_exchange_mode(
                 None,
             )?;
             opaque.push(UnknownRecord::retained(
-                UnknownId(source.unknown_id),
+                UnknownId::mint(source.unknown_id).expect("identity grammar"),
                 source.span.start as u64,
                 bytes,
                 source
@@ -717,20 +717,20 @@ fn retain_unowned_carriers(
         .points
         .iter()
         .filter(|point| point.source_object.is_none())
-        .map(|point| point.id.0.as_str())
+        .map(|point| point.id.as_str())
         .chain(
             ir.model
                 .curves
                 .iter()
                 .filter(|curve| curve.source_object.is_none())
-                .map(|curve| curve.id.0.as_str()),
+                .map(|curve| curve.id.as_str()),
         )
         .chain(
             ir.model
                 .surfaces
                 .iter()
                 .filter(|surface| surface.source_object.is_none())
-                .map(|surface| surface.id.0.as_str()),
+                .map(|surface| surface.id.as_str()),
         )
         .filter_map(step_id_from_ir)
         .filter(|id| exchange.records.contains_key(id) && !referenced.contains(id))
@@ -761,41 +761,41 @@ fn retain_unowned_carriers(
                 ir.model
                     .pcurves
                     .iter()
-                    .filter(|pcurve| owned.contains(&pcurve.id.0))
-                    .map(|pcurve| pcurve.id.0.as_str()),
+                    .filter(|pcurve| owned.contains(pcurve.id.as_str()))
+                    .map(|pcurve| pcurve.id.as_str()),
             )
             .chain(
                 ir.model
                     .points
                     .iter()
                     .filter(|point| point.source_object.is_some())
-                    .map(|point| point.id.0.as_str()),
+                    .map(|point| point.id.as_str()),
             )
             .chain(
                 ir.model
                     .curves
                     .iter()
                     .filter(|curve| curve.source_object.is_some())
-                    .map(|curve| curve.id.0.as_str()),
+                    .map(|curve| curve.id.as_str()),
             )
             .chain(
                 ir.model
                     .surfaces
                     .iter()
                     .filter(|surface| surface.source_object.is_some())
-                    .map(|surface| surface.id.0.as_str()),
+                    .map(|surface| surface.id.as_str()),
             )
             .chain(
                 ir.model
                     .procedural_curves
                     .iter()
-                    .map(|curve| curve.id.0.as_str()),
+                    .map(|curve| curve.id.as_str()),
             )
             .chain(
                 ir.model
                     .procedural_surfaces
                     .iter()
-                    .map(|surface| surface.id.0.as_str()),
+                    .map(|surface| surface.id.as_str()),
             )
             .filter_map(step_id_from_ir)
     {
@@ -811,56 +811,56 @@ fn retain_unowned_carriers(
         .model
         .pcurves
         .iter()
-        .filter(|pcurve| !retains_carrier(&pcurve.id.0, &removed_closure, &protected))
+        .filter(|pcurve| !retains_carrier(&pcurve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_points = ir
         .model
         .points
         .iter()
-        .filter(|point| !retains_carrier(&point.id.0, &removed_closure, &protected))
+        .filter(|point| !retains_carrier(&point.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_curves = ir
         .model
         .curves
         .iter()
-        .filter(|curve| !retains_carrier(&curve.id.0, &removed_closure, &protected))
+        .filter(|curve| !retains_carrier(&curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_surfaces = ir
         .model
         .surfaces
         .iter()
-        .filter(|surface| !retains_carrier(&surface.id.0, &removed_closure, &protected))
+        .filter(|surface| !retains_carrier(&surface.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_curves = ir
         .model
         .procedural_curves
         .iter()
-        .filter(|curve| !retains_carrier(&curve.id.0, &removed_closure, &protected))
+        .filter(|curve| !retains_carrier(&curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_surfaces = ir
         .model
         .procedural_surfaces
         .iter()
-        .filter(|surface| !retains_carrier(&surface.id.0, &removed_closure, &protected))
+        .filter(|surface| !retains_carrier(&surface.id.as_str(), &removed_closure, &protected))
         .count();
     ir.model
         .pcurves
-        .retain(|pcurve| owned.contains(&pcurve.id.0));
+        .retain(|pcurve| owned.contains(pcurve.id.as_str()));
     ir.model
         .points
-        .retain(|point| retains_carrier(&point.id.0, &removed_closure, &protected));
+        .retain(|point| retains_carrier(&point.id.as_str(), &removed_closure, &protected));
     ir.model
         .curves
-        .retain(|curve| retains_carrier(&curve.id.0, &removed_closure, &protected));
+        .retain(|curve| retains_carrier(&curve.id.as_str(), &removed_closure, &protected));
     ir.model
         .surfaces
-        .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
+        .retain(|surface| retains_carrier(&surface.id.as_str(), &removed_closure, &protected));
     ir.model
         .procedural_curves
-        .retain(|curve| retains_carrier(&curve.id.0, &removed_closure, &protected));
+        .retain(|curve| retains_carrier(&curve.id.as_str(), &removed_closure, &protected));
     ir.model
         .procedural_surfaces
-        .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
+        .retain(|surface| retains_carrier(&surface.id.as_str(), &removed_closure, &protected));
     typed_records.retain(|id| {
         !unowned_pcurves.contains(id) && (!removed_closure.contains(id) || protected.contains(id))
     });
@@ -876,7 +876,7 @@ fn retain_unowned_carriers(
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
     for point in &mut ir.model.points {
-        let Some(id) = step_id_from_ir(&point.id.0) else {
+        let Some(id) = step_id_from_ir(&point.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) {
@@ -886,7 +886,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
         }
     }
     for curve in &mut ir.model.curves {
-        let Some(id) = step_id_from_ir(&curve.id.0) else {
+        let Some(id) = step_id_from_ir(&curve.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) {
@@ -896,7 +896,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
         }
     }
     for surface in &mut ir.model.surfaces {
-        let Some(id) = step_id_from_ir(&surface.id.0) else {
+        let Some(id) = step_id_from_ir(&surface.id.as_str()) else {
             continue;
         };
         if ids.contains(&id) {
@@ -974,7 +974,7 @@ fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    UnknownId(crate::ids::StepIdentity::data(&kind, record.id))
+    UnknownId::mint(crate::ids::StepIdentity::data(&kind, record.id)).expect("identity grammar")
 }
 
 fn record_targets(

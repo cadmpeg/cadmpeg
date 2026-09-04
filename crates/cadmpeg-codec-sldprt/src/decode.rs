@@ -61,11 +61,13 @@ impl BodyOrigin<'_> {
 
     fn unknown_id(self) -> UnknownId {
         match self {
-            Self::Block(block) => UnknownId(format!("sldprt:file:block#{}", block.offset)),
-            Self::Compound(stream) => UnknownId(format!(
+            Self::Block(block) => UnknownId::mint(format!("sldprt:file:block#{}", block.offset))
+                .expect("identity grammar"),
+            Self::Compound(stream) => UnknownId::mint(format!(
                 "sldprt:file:compound-stream#{}",
                 stream.directory_id
-            )),
+            ))
+            .expect("identity grammar"),
         }
     }
 
@@ -2227,10 +2229,11 @@ fn ensure_display_appearance(
     }) {
         return existing.id.clone();
     }
-    let id = AppearanceId(format!(
+    let id = AppearanceId::mint(format!(
         "sldprt:appearance:displaylist#{section_ordinal}:{}",
         definition.record_offset
-    ));
+    ))
+    .expect("identity grammar");
     crate::annotations::note(
         annotations,
         id.0.clone(),
@@ -2728,10 +2731,11 @@ fn build_geometry_ir(
         header.description.as_str()
     });
     for face_color in brep.face_colors {
-        let id = AppearanceId(format!(
+        let id = AppearanceId::mint(format!(
             "sldprt:appearance:entity53#{}",
             face_color.color_attr
-        ));
+        ))
+        .expect("identity grammar");
         crate::annotations::note(
             &mut annotations,
             id.0.clone(),
@@ -2777,7 +2781,9 @@ fn build_geometry_ir(
             {
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: binding_id.into(),
-                    target: AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(target)),
+                    target: AppearanceTarget::Face(
+                        cadmpeg_ir::ids::FaceId::mint(target).expect("identity grammar"),
+                    ),
                     appearance: id,
                     source_entity_id: Some(face_color.face_attr.to_string()),
                     object_type: Some("Face".into()),
@@ -2788,7 +2794,8 @@ fn build_geometry_ir(
         }
     }
     for (index, definition) in appearance_definitions.into_iter().enumerate() {
-        let id = AppearanceId(format!("sldprt:appearance:material#{index}"));
+        let id = AppearanceId::mint(format!("sldprt:appearance:material#{index}"))
+            .expect("identity grammar");
         crate::annotations::note(
             &mut annotations,
             id.0.clone(),
@@ -2918,7 +2925,7 @@ fn build_geometry_ir(
             Exactness::Unknown,
         );
         unknowns.push(UnknownRecord::retained(
-            UnknownId(display_id),
+            UnknownId::mint(display_id).expect("identity grammar"),
             0,
             display.payload().to_vec(),
             display_links,
@@ -2984,7 +2991,7 @@ fn build_geometry_ir(
             Exactness::ByteExact,
         );
         unknowns.push(UnknownRecord::retained(
-            UnknownId(id),
+            UnknownId::mint(id).expect("identity grammar"),
             0,
             source_block.payload.clone(),
             Vec::new(),
@@ -3001,7 +3008,7 @@ fn build_geometry_ir(
             Exactness::ByteExact,
         );
         unknowns.push(UnknownRecord::retained(
-            UnknownId(id),
+            UnknownId::mint(id).expect("identity grammar"),
             0,
             source_stream.payload.clone(),
             Vec::new(),
@@ -3342,7 +3349,7 @@ fn build_metadata_ir(
             Exactness::Unknown,
         );
         unknowns.push(UnknownRecord::retained(
-            UnknownId(id),
+            UnknownId::mint(id).expect("identity grammar"),
             offset,
             site.payload.to_vec(),
             Vec::new(),
@@ -4316,7 +4323,7 @@ fn stamp_local_digests(ir: &mut CadIr) {
         .model
         .attributes
         .iter()
-        .any(|attribute| attribute.id.0.starts_with("sldprt:metadata:"))
+        .any(|attribute| attribute.id.as_str().starts_with("sldprt:metadata:"))
         || ir
             .model
             .appearances
@@ -4520,7 +4527,7 @@ fn preserve_source_image(
         Exactness::ByteExact,
     );
     unknowns.push(UnknownRecord::retained(
-        UnknownId("sldprt:file:source-image#0".into()),
+        UnknownId::mint("sldprt:file:source-image#0").expect("identity grammar"),
         0,
         scan.source_image.to_vec(),
         Vec::new(),

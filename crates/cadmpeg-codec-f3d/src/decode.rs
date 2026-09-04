@@ -3183,7 +3183,7 @@ fn extend_unique_assets(
             Some(existing) if existing != &asset => {
                 return Err(CodecError::malformed(format_args!(
                     "F3D embedded asset {} has conflicting projections",
-                    asset.id.0
+                    asset.id.as_str()
                 )))
             }
             Some(_) => {}
@@ -3797,7 +3797,7 @@ fn decode_result(
 pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     let id = crate::ids::FILE_SOURCE_IMAGE_ID;
     UnknownRecord::retained(
-        UnknownId(id.into()),
+        UnknownId::mint(id).expect("identity grammar"),
         0,
         scan.source_image.to_vec(),
         Vec::new(),
@@ -3853,7 +3853,7 @@ fn populate_annotations(
         if let Some(native_ref) = constraint.native_ref.as_deref() {
             constraints_by_native
                 .entry(native_ref)
-                .or_insert(constraint.id.0.as_str());
+                .or_insert(constraint.id.as_str());
         }
     }
     let mut entities_by_native = HashMap::new();
@@ -3868,13 +3868,13 @@ fn populate_annotations(
         .model
         .sketches
         .iter()
-        .map(|sketch| sketch.id.0.as_str())
+        .map(|sketch| sketch.id.as_str())
         .collect::<HashSet<_>>();
     let spatial_sketches = ir
         .model
         .spatial_sketches
         .iter()
-        .map(|sketch| sketch.id.0.as_str())
+        .map(|sketch| sketch.id.as_str())
         .collect::<HashSet<_>>();
 
     let native_stream = annotations.stream("f3d:native");
@@ -4052,7 +4052,7 @@ fn populate_annotations(
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
             annotations
-                .note(&appearance.id.0, stream, 0)
+                .note(&appearance.id.as_str(), stream, 0)
                 .tag(appearance.schema.as_deref().unwrap_or("appearance"));
         }
     }
@@ -5015,7 +5015,8 @@ fn build_metadata_ir(
         }
 
         unknowns.push(UnknownRecord::unavailable(
-            UnknownId(crate::ids::native_scoped_id(&brep.name, "unknown", 0)),
+            UnknownId::mint(crate::ids::native_scoped_id(&brep.name, "unknown", 0))
+                .expect("identity grammar"),
             0,
             brep.uncompressed_len,
             brep.sha256.clone(),

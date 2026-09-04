@@ -233,7 +233,7 @@ mod product_roundtrip {
             .iter()
             .map(|definition| {
                 (
-                    definition.id.0.as_str(),
+                    definition.id.as_str(),
                     definition
                         .part_number
                         .as_ref()
@@ -253,7 +253,7 @@ mod product_roundtrip {
             definitions: &HashMap<&str, String>,
             memo: &mut HashMap<String, String>,
         ) -> String {
-            if let Some(path) = memo.get(occurrence.id.0.as_str()) {
+            if let Some(path) = memo.get(occurrence.id.as_str()) {
                 return path.clone();
             }
             let definition = match &occurrence.prototype {
@@ -287,7 +287,7 @@ mod product_roundtrip {
             .model
             .occurrences
             .iter()
-            .map(|occurrence| (occurrence.id.0.as_str(), occurrence))
+            .map(|occurrence| (occurrence.id.as_str(), occurrence))
             .collect::<HashMap<_, _>>();
         let graph = AssemblyGraph::new(&ir.model.occurrences).expect("valid assembly graph");
         let mut memo = HashMap::new();

@@ -19,7 +19,7 @@ const EPS_PROFILE_CLOSURE: f64 = 1.0e-9;
 
 #[test]
 fn profile_closure_rejects_conflicting_edge_occurrences() {
-    let curve_id = CurveId("iges:model:curve#D1".into());
+    let curve_id = CurveId::mint("iges:model:curve#D1").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -31,52 +31,52 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     });
     ir.model.points.extend([
         Point {
-            id: PointId("closed-point".into()),
+            id: PointId::mint("closed-point").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("open-point".into()),
+            id: PointId::mint("open-point").expect("identity grammar"),
             position: Point3::new(1.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("closed-start".into()),
-            point: PointId("closed-point".into()),
+            id: VertexId::mint("closed-start").expect("identity grammar"),
+            point: PointId::mint("closed-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("closed-end".into()),
-            point: PointId("closed-point".into()),
+            id: VertexId::mint("closed-end").expect("identity grammar"),
+            point: PointId::mint("closed-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("open-start".into()),
-            point: PointId("closed-point".into()),
+            id: VertexId::mint("open-start").expect("identity grammar"),
+            point: PointId::mint("closed-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("open-end".into()),
-            point: PointId("open-point".into()),
+            id: VertexId::mint("open-end").expect("identity grammar"),
+            point: PointId::mint("open-point").expect("identity grammar"),
             tolerance: None,
         },
     ]);
     ir.model.edges.extend([
         Edge {
-            id: EdgeId("closed-occurrence".into()),
+            id: EdgeId::mint("closed-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("closed-start".into()),
-            end: VertexId("closed-end".into()),
+            start: VertexId::mint("closed-start").expect("identity grammar"),
+            end: VertexId::mint("closed-end").expect("identity grammar"),
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId("open-occurrence".into()),
+            id: EdgeId::mint("open-occurrence").expect("identity grammar"),
             curve: Some(curve_id),
-            start: VertexId("open-start".into()),
-            end: VertexId("open-end".into()),
+            start: VertexId::mint("open-start").expect("identity grammar"),
+            end: VertexId::mint("open-end").expect("identity grammar"),
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         },

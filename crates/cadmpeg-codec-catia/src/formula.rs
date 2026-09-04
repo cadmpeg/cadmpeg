@@ -492,9 +492,9 @@ pub(crate) fn transfer_parameters(
         .count();
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in &parameters {
-        annotation_builder.derived(&candidate.parameter.id.0, "properties");
+        annotation_builder.derived(&candidate.parameter.id.as_str(), "properties");
         if !candidate.formula_output && candidate.parameter.dependencies.is_empty() {
-            annotation_builder.derived(&candidate.parameter.id.0, "expression");
+            annotation_builder.derived(&candidate.parameter.id.as_str(), "expression");
         }
     }
     *annotations = annotation_builder.build();

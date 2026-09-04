@@ -268,11 +268,19 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     }));
     let index = ModelIndex::new(result.ir());
     assert_eq!(
-        model_curve_point_by_id(&index, &CurveId("step:data:curve#9".into()), 0.0,),
+        model_curve_point_by_id(
+            &index,
+            &CurveId::mint("step:data:curve#9").expect("identity grammar"),
+            0.0,
+        ),
         Some(Point3::new(6.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_curve_point_by_id(&index, &CurveId("step:data:curve#9".into()), 2.0,),
+        model_curve_point_by_id(
+            &index,
+            &CurveId::mint("step:data:curve#9").expect("identity grammar"),
+            2.0,
+        ),
         Some(Point3::new(12.0, 0.0, 0.0))
     );
 
@@ -326,12 +334,12 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     };
     let mut source = CadIr::empty();
     source.model.curves.push(Curve {
-        id: CurveId("transformed-curve".into()),
+        id: CurveId::mint("transformed-curve").expect("identity grammar"),
         geometry: curve_geometry.clone(),
         source_object: None,
     });
     source.model.surfaces.push(Surface {
-        id: SurfaceId("transformed-surface".into()),
+        id: SurfaceId::mint("transformed-surface").expect("identity grammar"),
         geometry: surface_geometry.clone(),
         source_object: None,
     });
@@ -431,11 +439,21 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         }));
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_surface_point_by_id(&index, &SurfaceId("step:data:surface#10".into()), 0.0, 0.0,),
+        model_surface_point_by_id(
+            &index,
+            &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
+            0.0,
+            0.0,
+        ),
         Some(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_surface_point_by_id(&index, &SurfaceId("step:data:surface#10".into()), 1.0, 1.0,),
+        model_surface_point_by_id(
+            &index,
+            &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
+            1.0,
+            1.0,
+        ),
         Some(Point3::new(4.0, 4.0, 0.0))
     );
 
@@ -758,11 +776,20 @@ fn replicas_retain_bounded_parent_relations() {
         }));
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_curve_point_by_id(&index, &CurveId("step:data:curve#9".into()), 0.0,),
+        model_curve_point_by_id(
+            &index,
+            &CurveId::mint("step:data:curve#9").expect("identity grammar"),
+            0.0,
+        ),
         Some(Point3::new(3.0, 0.0, 0.0))
     );
     assert_eq!(
-        model_surface_point_by_id(&index, &SurfaceId("step:data:surface#13".into()), 0.0, 0.0,),
+        model_surface_point_by_id(
+            &index,
+            &SurfaceId::mint("step:data:surface#13").expect("identity grammar"),
+            0.0,
+            0.0,
+        ),
         Some(Point3::new(3.0, 9.0, 0.0))
     );
 

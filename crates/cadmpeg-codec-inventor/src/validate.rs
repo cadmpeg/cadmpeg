@@ -166,7 +166,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_features(ir, &data, &mut findings);
     unique(
         &mut findings,
-        data.unknowns.iter().map(|record| record.id.0.as_str()),
+        data.unknowns.iter().map(|record| record.id.as_str()),
         "ASM unknown-record id",
     );
     validate_properties(&data, &mut findings);
@@ -2313,7 +2313,7 @@ fn validate_assembly(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     );
     projected
         .occurrences
-        .sort_by(|left, right| left.id.0.cmp(&right.id.0));
+        .sort_by(|left, right| left.id.as_str().cmp(&right.id.as_str()));
     if ir.model.occurrences != projected.occurrences {
         findings.push(finding(
             Check::NativeLinks,

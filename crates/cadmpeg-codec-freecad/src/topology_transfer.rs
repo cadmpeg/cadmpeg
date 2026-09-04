@@ -329,7 +329,7 @@ impl<'a> Builder<'a> {
     }
 
     fn pcurve_id(&self, edge: usize, representation: usize, secondary: bool) -> PcurveId {
-        PcurveId(crate::native::model_id(
+        PcurveId::mint(crate::native::model_id(
             "pcurve",
             &self.payload.id,
             format!(
@@ -339,6 +339,7 @@ impl<'a> Builder<'a> {
                 usize::from(secondary) + 1
             ),
         ))
+        .expect("identity grammar")
     }
 
     fn body_roots(&self) -> Result<Vec<BodyRoot>, CodecError> {
@@ -394,7 +395,8 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
         let body_key = self.topology_label(root.shape, Transform::identity());
-        let body_id = BodyId(crate::native::model_id("body", &self.payload.id, &body_key));
+        let body_id = BodyId::mint(crate::native::model_id("body", &self.payload.id, &body_key))
+            .expect("identity grammar");
         self.current_body = Some(body_id.clone());
         let kind = match root_kind {
             TextShapeKind::Solid => BodyKind::Solid,
@@ -466,7 +468,8 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
         let key = self.topology_label(shape_index, transform);
-        let region_id = RegionId(crate::native::model_id("region", &self.payload.id, &key));
+        let region_id = RegionId::mint(crate::native::model_id("region", &self.payload.id, &key))
+            .expect("identity grammar");
         let mut shells = Vec::new();
         if shape.kind == TextShapeKind::Solid {
             for child in shape
@@ -532,7 +535,8 @@ impl<'a> Builder<'a> {
     ) -> Result<Vec<ShellId>, CodecError> {
         let shape = self.shape(shape_index)?.clone();
         let key = self.topology_label(shape_index, transform);
-        let shell_id = ShellId(crate::native::model_id("shell", &self.payload.id, &key));
+        let shell_id = ShellId::mint(crate::native::model_id("shell", &self.payload.id, &key))
+            .expect("identity grammar");
         if shape.kind == TextShapeKind::Shell {
             let face_uses = shape
                 .children
@@ -545,11 +549,12 @@ impl<'a> Builder<'a> {
                 let component_id = if component_index == 0 {
                     shell_id.clone()
                 } else {
-                    ShellId(crate::native::model_id(
+                    ShellId::mint(crate::native::model_id(
                         "shell",
                         &self.payload.id,
                         format!("{key}:component:{}", component_index + 1),
                     ))
+                    .expect("identity grammar")
                 };
                 let mut faces = Vec::with_capacity(component.len());
                 for &face_index in component {
@@ -717,7 +722,8 @@ impl<'a> Builder<'a> {
         };
         let surface_transform = face_transform.compose(self.tables.location(location));
         let face_key = self.topology_label(face_use.shape, face_transform);
-        let face_id = FaceId(crate::native::model_id("face", &self.payload.id, &face_key));
+        let face_id = FaceId::mint(crate::native::model_id("face", &self.payload.id, &face_key))
+            .expect("identity grammar");
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
         // Only the owning topological face placement remains to be applied here.
         let located_triangulation = triangulation.map(|index| {
@@ -741,11 +747,12 @@ impl<'a> Builder<'a> {
         let surface_id = if surface != 0 {
             self.located_surface(ir, surface, surface_transform)?
         } else if let Some((index, triangulation, vertices, triangles)) = &located_triangulation {
-            let id = SurfaceId(crate::native::model_id(
+            let id = SurfaceId::mint(crate::native::model_id(
                 "surface",
                 &self.payload.id,
                 format!("triangulation:{index}@{face_key}"),
-            ));
+            ))
+            .expect("identity grammar");
             let deflection_scale = triangulation_scale.expect("triangulation scale");
             if self.emitted_surfaces.insert(id.clone()) {
                 ir.model.surfaces.push(Surface {
@@ -821,18 +828,20 @@ impl<'a> Builder<'a> {
             if edge_uses.is_empty() {
                 continue;
             }
-            let loop_id = LoopId(crate::native::model_id(
+            let loop_id = LoopId::mint(crate::native::model_id(
                 "loop",
                 &self.payload.id,
                 format!("{}:{}", face_key, loop_index + 1),
-            ));
+            ))
+            .expect("identity grammar");
             let coedge_ids = (0..edge_uses.len())
                 .map(|index| {
-                    CoedgeId(crate::native::model_id(
+                    CoedgeId::mint(crate::native::model_id(
                         "coedge",
                         &self.payload.id,
                         format!("{}:{}:{}", face_key, loop_index + 1, index + 1),
                     ))
+                    .expect("identity grammar")
                 })
                 .collect::<Vec<_>>();
             for (index, edge_use) in edge_uses.iter().enumerate() {
@@ -926,11 +935,12 @@ impl<'a> Builder<'a> {
         let (start_use, end_use) = edge_endpoint_uses(edge_use.shape, &shape.children)?;
         let start = self.ensure_vertex(ir, start_use, transform)?;
         let end = self.ensure_vertex(ir, end_use, transform)?;
-        let id = EdgeId(crate::native::model_id(
+        let id = EdgeId::mint(crate::native::model_id(
             "edge",
             &self.payload.id,
             self.topology_label(edge_use.shape, transform),
-        ));
+        ))
+        .expect("identity grammar");
         let curve_representation =
             select_exact_curve_representation(edge_use.shape, &representations, &self.tables)?;
         let polygon_representation = if curve_representation.is_none() {
@@ -1002,7 +1012,8 @@ impl<'a> Builder<'a> {
                 ))
             }
         };
-        let id = CurveId(format!("{}:polygon:{}", edge.0, ordinal + 1));
+        let id =
+            CurveId::mint(format!("{}:polygon:{}", edge.0, ordinal + 1)).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Polyline(
@@ -1023,7 +1034,8 @@ impl<'a> Builder<'a> {
                 let (points, parameters, deflection) =
                     self.indexed_polygon(secondary, representation)?;
                 ir.model.curves.push(Curve {
-                    id: CurveId(format!("{}:polygon:{}:secondary", edge.0, ordinal + 1)),
+                    id: CurveId::mint(format!("{}:polygon:{}:secondary", edge.0, ordinal + 1))
+                        .expect("identity grammar"),
                     geometry: CurveGeometry::Polyline(
                         PolylineCurve::new(
                             points
@@ -1110,8 +1122,10 @@ impl<'a> Builder<'a> {
             )));
         };
         let label = self.topology_label(vertex_use.shape, transform);
-        let point_id = PointId(crate::native::model_id("point", &self.payload.id, &label));
-        let vertex_id = VertexId(crate::native::model_id("vertex", &self.payload.id, &label));
+        let point_id = PointId::mint(crate::native::model_id("point", &self.payload.id, &label))
+            .expect("identity grammar");
+        let vertex_id = VertexId::mint(crate::native::model_id("vertex", &self.payload.id, &label))
+            .expect("identity grammar");
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: transform.apply_point(point),
@@ -1146,19 +1160,21 @@ impl<'a> Builder<'a> {
         source: usize,
         transform: Transform,
     ) -> Result<CurveId, CodecError> {
-        let base_id = CurveId(crate::native::model_id(
+        let base_id = CurveId::mint(crate::native::model_id(
             "curve",
             &self.payload.id,
             source.to_string(),
-        ));
+        ))
+        .expect("identity grammar");
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let id = CurveId(crate::native::model_id(
+        let id = CurveId::mint(crate::native::model_id(
             "curve",
             &self.payload.id,
             format!("{}@{}", source, transform_digest(transform)),
-        ));
+        ))
+        .expect("identity grammar");
         if self.emitted_curves.insert(id.clone()) {
             let base = ir
                 .model
@@ -1184,19 +1200,21 @@ impl<'a> Builder<'a> {
         source: usize,
         transform: Transform,
     ) -> Result<SurfaceId, CodecError> {
-        let base_id = SurfaceId(crate::native::model_id(
+        let base_id = SurfaceId::mint(crate::native::model_id(
             "surface",
             &self.payload.id,
             source.to_string(),
-        ));
+        ))
+        .expect("identity grammar");
         if is_identity(transform) {
             return Ok(base_id);
         }
-        let id = SurfaceId(crate::native::model_id(
+        let id = SurfaceId::mint(crate::native::model_id(
             "surface",
             &self.payload.id,
             format!("{}@{}", source, transform_digest(transform)),
-        ));
+        ))
+        .expect("identity grammar");
         if self.emitted_surfaces.insert(id.clone()) {
             let base = ir
                 .model
@@ -1221,7 +1239,8 @@ impl<'a> Builder<'a> {
                     .add_procedural_surface(
                         id.clone(),
                         ProceduralSurface::new(
-                            ProceduralSurfaceId(format!("{}:construction", id.0)),
+                            ProceduralSurfaceId::mint(format!("{}:construction", id.0))
+                                .expect("identity grammar"),
                             ProceduralSurfaceDefinition::Replica {
                                 source: base_id,
                                 transform,

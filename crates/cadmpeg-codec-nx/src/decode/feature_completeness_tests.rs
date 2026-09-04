@@ -401,7 +401,9 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     ));
     assert!(!super::extrude_start_is_incomplete(
         &ExtrudeStart::FromFace {
-            face: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("test:face#start".into(),)]),
+            face: FaceSelection::Faces(vec![
+                cadmpeg_ir::ids::FaceId::mint("test:face#start").expect("identity grammar")
+            ]),
             offset: None,
         }
     ));
@@ -428,9 +430,10 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         &construction,
         BooleanOp::Join,
     ));
-    construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId(
+    construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
         "face#0".to_string(),
-    )]));
+    )
+    .expect("identity grammar")]));
     assert!(!super::rib_feature_is_incomplete(
         &construction,
         BooleanOp::Join,
@@ -452,9 +455,10 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         &construction,
         BooleanOp::Join,
     ));
-    construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId(
+    construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
         "face#0".to_string(),
-    )]));
+    )
+    .expect("identity grammar")]));
     construction.draft = RibDraft::Angle(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2));
     assert!(super::rib_feature_is_incomplete(
         &construction,
@@ -475,7 +479,7 @@ fn nx_loft_completeness_validates_point_sections() {
         LoftPointSection::Point(Point3::new(1.0, f64::NAN, 3.0,))
     ),));
     assert!(super::loft_section_is_incomplete(&LoftSection::Point(
-        LoftPointSection::Vertex(VertexId(" ".into()))
+        LoftPointSection::Vertex(VertexId::mint(" ").expect("identity grammar"))
     ),));
 }
 
@@ -494,9 +498,9 @@ fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
     ));
     assert!(!super::sweep_orientation_is_incomplete(
         &SweepOrientation::Auxiliary {
-            path: PathRef::Curves(vec![cadmpeg_ir::ids::CurveId(
-                "test:curve#auxiliary".into(),
-            )]),
+            path: PathRef::Curves(vec![
+                cadmpeg_ir::ids::CurveId::mint("test:curve#auxiliary").expect("identity grammar")
+            ]),
             tangent: false,
             curvilinear: false,
         }
@@ -694,12 +698,12 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
             selections: vec!["nx:path-selection#0".into()],
         }
     ));
-    let edge = cadmpeg_ir::ids::EdgeId("edge#0".into());
+    let edge = cadmpeg_ir::ids::EdgeId::mint("edge#0").expect("identity grammar");
     assert!(super::path_ref_is_incomplete(&PathRef::Edges(vec![
         edge.clone(),
         edge
     ])));
-    let curve = cadmpeg_ir::ids::CurveId("curve#0".into());
+    let curve = cadmpeg_ir::ids::CurveId::mint("curve#0").expect("identity grammar");
     assert!(super::path_ref_is_incomplete(&PathRef::Curves(vec![
         curve.clone(),
         curve
@@ -823,7 +827,7 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
     ));
     assert!(!super::pattern_feature_is_incomplete(
         &[PatternSeed::Bodies(BodySelection::Bodies(vec![
-            cadmpeg_ir::ids::BodyId("test:body#seed".into()),
+            cadmpeg_ir::ids::BodyId::mint("test:body#seed").expect("identity grammar"),
         ]))],
         &pattern,
         &[],
@@ -835,8 +839,8 @@ fn nx_face_blend_completeness_requires_disjoint_supports() {
     use cadmpeg_ir::features::FaceSelection;
     use cadmpeg_ir::ids::FaceId;
 
-    let shared = FaceId("test:face#shared".into());
-    let distinct = FaceId("test:face#distinct".into());
+    let shared = FaceId::mint("test:face#shared").expect("identity grammar");
+    let distinct = FaceId::mint("test:face#distinct").expect("identity grammar");
     let first = FaceSelection::Faces(vec![shared.clone()]);
 
     assert!(super::face_selections_overlap(
@@ -861,9 +865,11 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
     use cadmpeg_ir::ids::FaceId;
 
-    let target = FaceId("test:face#target".into());
+    let target = FaceId::mint("test:face#target").expect("identity grammar");
     let complete_targets = FaceSelection::Faces(vec![target.clone()]);
-    let complete_replacements = FaceSelection::Faces(vec![FaceId("test:face#replacement".into())]);
+    let complete_replacements = FaceSelection::Faces(vec![
+        FaceId::mint("test:face#replacement").expect("identity grammar")
+    ]);
     let overlapping_replacements = FaceSelection::Resolved {
         faces: vec![target],
         native: "test:replacement".into(),
@@ -984,7 +990,8 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     ir.model
         .feature_result_topologies
         .push(FeatureResultTopology {
-            id: FeatureResultTopologyId("test:feature-result#extrude".into()),
+            id: FeatureResultTopologyId::mint("test:feature-result#extrude")
+                .expect("identity grammar"),
             output_of: ir.model.features[0].id.clone(),
             bodies: vec!["test:feature-local-body#0".into()],
             faces: Vec::new(),
@@ -1152,12 +1159,12 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
     };
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
-    let face = FaceId("test:face#repeated".into());
+    let face = FaceId::mint("test:face#repeated").expect("identity grammar");
     assert!(super::face_selection_is_incomplete(&FaceSelection::Faces(
         vec![face.clone(), face]
     ),));
 
-    let face = FaceId("test:profile-face#repeated".into());
+    let face = FaceId::mint("test:profile-face#repeated").expect("identity grammar");
     assert!(super::profile_ref_is_incomplete(&ProfileRef::Faces(vec![
         face.clone(),
         face
@@ -1183,7 +1190,7 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
         &[producer],
     ));
 
-    let edge = EdgeId("test:edge#repeated".into());
+    let edge = EdgeId::mint("test:edge#repeated").expect("identity grammar");
     assert!(super::edge_selection_is_incomplete(&EdgeSelection::Edges(
         vec![edge.clone(), edge]
     ),));
@@ -1302,8 +1309,8 @@ fn nx_body_operation_completeness_requires_disjoint_roles() {
     use cadmpeg_ir::features::BodySelection;
     use cadmpeg_ir::ids::BodyId;
 
-    let shared = BodyId("test:body#shared".into());
-    let distinct = BodyId("test:body#distinct".into());
+    let shared = BodyId::mint("test:body#shared").expect("identity grammar");
+    let distinct = BodyId::mint("test:body#distinct").expect("identity grammar");
     let target = BodySelection::Bodies(vec![shared.clone()]);
 
     assert!(super::body_selection_is_incomplete(&BodySelection::Bodies(
@@ -1515,7 +1522,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
-    let output = cadmpeg_ir::ids::BodyId("test:body#output".into());
+    let output = cadmpeg_ir::ids::BodyId::mint("test:body#output").expect("identity grammar");
     ir.model.features[0].outputs = vec![output.clone()];
     losses.clear();
     super::append_design_intent_losses(&ir, &mut losses);
@@ -1591,13 +1598,14 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let draft = |pull_direction: Option<cadmpeg_ir::math::Vector3>, angle, outward| {
         FeatureDefinition::Draft {
-            faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
-                "test:face#draft".into(),
-            )]),
+            faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+                "test:face#draft",
+            )
+            .expect("identity grammar")]),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                plane: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId(
-                    "test:face#neutral".into(),
-                )]),
+                plane: cadmpeg_ir::features::FaceSelection::Faces(vec![
+                    cadmpeg_ir::ids::FaceId::mint("test:face#neutral").expect("identity grammar"),
+                ]),
                 pull: pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
                     direction,
                     plane: None,
@@ -1850,7 +1858,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let first = ir.model.bodies[0].id.clone();
     let mut second_body = ir.model.bodies[0].clone();
-    second_body.id = cadmpeg_ir::ids::BodyId("test:body#second".into());
+    second_body.id = cadmpeg_ir::ids::BodyId::mint("test:body#second").expect("identity grammar");
     let second = second_body.id.clone();
     ir.model.bodies.push(second_body);
     ir.model.features.push(Feature {
@@ -1909,10 +1917,12 @@ fn nx_shell_completeness_requires_each_construction_field() {
     assert!(super::shell_definition_is_incomplete(&incomplete));
 
     let complete = FeatureDefinition::Shell {
-        bodies: Some(BodySelection::Bodies(vec![BodyId(
-            "test:body#shell".into(),
-        )])),
-        removed_faces: FaceSelection::Faces(vec![FaceId("test:face#opening".into())]),
+        bodies: Some(BodySelection::Bodies(vec![
+            BodyId::mint("test:body#shell").expect("identity grammar")
+        ])),
+        removed_faces: FaceSelection::Faces(vec![
+            FaceId::mint("test:face#opening").expect("identity grammar")
+        ]),
         thickness: Some(Length(2.0)),
         outward: Some(false),
         mode: Some(ShellMode::Skin),

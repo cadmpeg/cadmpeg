@@ -37,9 +37,9 @@ fn configuration_partitions_require_explicit_source_identity() {
     ir.model
         .configurations
         .push(configuration("empty", 10, Some(8)));
-    let first = BodyId("body:first".into());
-    let second = BodyId("body:second".into());
-    let third = BodyId("body:third".into());
+    let first = BodyId::mint("body:first").expect("identity grammar");
+    let second = BodyId::mint("body:second").expect("identity grammar");
+    let third = BodyId::mint("body:third").expect("identity grammar");
 
     assign_configuration_bodies(
         &mut ir,
@@ -80,7 +80,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
             native_ref: Some(format!("native:{ordinal}")),
         });
     }
-    let body = BodyId("body:partition".into());
+    let body = BodyId::mint("body:partition").expect("identity grammar");
 
     assign_configuration_bodies(&mut ir, &[(5, vec![body.clone()])]);
 
@@ -106,7 +106,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
             ("sw_configuration_name".into(), "Default".into()),
         ]),
     ));
-    let body = BodyId("body:active".into());
+    let body = BodyId::mint("body:active").expect("identity grammar");
 
     assign_configuration_bodies(&mut ir, &[(3, vec![body.clone()])]);
     mark_active_configuration(&mut ir);
@@ -294,7 +294,9 @@ fn incoherent_configuration_bodies_are_reported() {
         configuration(
             "missing",
             1,
-            cadmpeg_ir::ConfigurationBodies::Resolved(vec![BodyId("missing-body".into())]),
+            cadmpeg_ir::ConfigurationBodies::Resolved(vec![
+                BodyId::mint("missing-body").expect("identity grammar")
+            ]),
         ),
         configuration("unresolved", 2, cadmpeg_ir::ConfigurationBodies::Unresolved),
     ];

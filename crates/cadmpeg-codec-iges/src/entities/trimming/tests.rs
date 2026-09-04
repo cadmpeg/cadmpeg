@@ -324,8 +324,8 @@ fn face_tolerance_policy_separates_declared_and_coordinate_bounds() {
 
 #[test]
 fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
-    let curve_id = CurveId("curve".into());
-    let surface_id = SurfaceId("surface".into());
+    let curve_id = CurveId::mint("curve").expect("identity grammar");
+    let surface_id = SurfaceId::mint("surface").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -346,63 +346,63 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     });
     let candidates = vec![
         Edge {
-            id: EdgeId("wrong-occurrence".into()),
+            id: EdgeId::mint("wrong-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId("wrong-start".into()),
-            end: VertexId("wrong-end".into()),
+            start: VertexId::mint("wrong-start").expect("identity grammar"),
+            end: VertexId::mint("wrong-end").expect("identity grammar"),
             param_range: Some([1.0, 2.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId("matching-occurrence".into()),
+            id: EdgeId::mint("matching-occurrence").expect("identity grammar"),
             curve: Some(curve_id),
-            start: VertexId("matching-start".into()),
-            end: VertexId("matching-end".into()),
+            start: VertexId::mint("matching-start").expect("identity grammar"),
+            end: VertexId::mint("matching-end").expect("identity grammar"),
             param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
     ];
     ir.model.points.extend([
         Point {
-            id: PointId("wrong-point-start".into()),
+            id: PointId::mint("wrong-point-start").expect("identity grammar"),
             position: Point3::new(10.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("wrong-point-end".into()),
+            id: PointId::mint("wrong-point-end").expect("identity grammar"),
             position: Point3::new(11.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-point-start".into()),
+            id: PointId::mint("matching-point-start").expect("identity grammar"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("matching-point-end".into()),
+            id: PointId::mint("matching-point-end").expect("identity grammar"),
             position: Point3::new(2.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: VertexId("wrong-start".into()),
-            point: PointId("wrong-point-start".into()),
+            id: VertexId::mint("wrong-start").expect("identity grammar"),
+            point: PointId::mint("wrong-point-start").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("wrong-end".into()),
-            point: PointId("wrong-point-end".into()),
+            id: VertexId::mint("wrong-end").expect("identity grammar"),
+            point: PointId::mint("wrong-point-end").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-start".into()),
-            point: PointId("matching-point-start".into()),
+            id: VertexId::mint("matching-start").expect("identity grammar"),
+            point: PointId::mint("matching-point-start").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
-            id: VertexId("matching-end".into()),
-            point: PointId("matching-point-end".into()),
+            id: VertexId::mint("matching-end").expect("identity grammar"),
+            point: PointId::mint("matching-point-end").expect("identity grammar"),
             tolerance: None,
         },
     ]);
@@ -439,17 +439,17 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         true,
     )
     .expect("unique pcurve-compatible edge");
-    assert_eq!(selected.id.0, "matching-occurrence");
+    assert_eq!(selected.id.as_str(), "matching-occurrence");
     assert_eq!(start, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(end, Point3::new(2.0, 0.0, 0.0));
     assert!(pcurves_agree);
 
     let mut ambiguous_candidates = candidates.clone();
     ambiguous_candidates.push(Edge {
-        id: EdgeId("duplicate-occurrence".into()),
-        curve: Some(CurveId("curve".into())),
-        start: VertexId("matching-start".into()),
-        end: VertexId("matching-end".into()),
+        id: EdgeId::mint("duplicate-occurrence").expect("identity grammar"),
+        curve: Some(CurveId::mint("curve").expect("identity grammar")),
+        start: VertexId::mint("matching-start").expect("identity grammar"),
+        end: VertexId::mint("matching-end").expect("identity grammar"),
         param_range: Some([0.0, 2.0]),
         tolerance: None,
     });
@@ -645,10 +645,13 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
             implicit_outer,
         } => {
             assert_eq!(support.0, "iges:model:surface#D1");
-            assert_eq!(boundaries, &[CurveId("iges:model:curve#D9".into())]);
+            assert_eq!(
+                boundaries,
+                &[CurveId::mint("iges:model:curve#D9").expect("identity grammar")]
+            );
             assert_eq!(
                 boundary_pcurves,
-                &[PcurveId("iges:model:pcurve#D15:0:0:0".into())]
+                &[PcurveId::mint("iges:model:pcurve#D15:0:0:0").expect("identity grammar")]
             );
             assert!(*implicit_outer);
         }
@@ -1305,7 +1308,7 @@ fn decode_rejects_a_bounded_sheet_join_just_beyond_global_resolution() {
         .model
         .faces
         .iter()
-        .all(|face| face.id.0 != "iges:model:face#D13"));
+        .all(|face| face.id.as_str() != "iges:model:face#D13"));
     assert!(
         result.report().losses.iter().any(|loss| {
             loss.message

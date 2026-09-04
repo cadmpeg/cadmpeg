@@ -83,7 +83,8 @@ fn sectioned_area_curves_coplanar(
     let identity = Transform::identity();
     let mut active = BTreeSet::new();
     sequences.iter().all(|sequence| {
-        let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
+        let curve_id =
+            CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar");
         let Some(curve) = index.curves(&curve_id.0) else {
             return false;
         };

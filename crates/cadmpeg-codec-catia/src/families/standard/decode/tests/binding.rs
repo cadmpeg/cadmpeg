@@ -263,12 +263,12 @@ fn successor_endpoint_points_filter_independently_and_jointly() {
 fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
     let points = [
         Point {
-            id: PointId("on".to_string()),
+            id: PointId::mint("on".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, 4.0, 7.0),
             source_object: None,
         },
         Point {
-            id: PointId("off".to_string()),
+            id: PointId::mint("off".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, 4.01, 7.0),
             source_object: None,
         },
@@ -283,12 +283,12 @@ fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
 fn standard_circle_endpoint_domain_requires_both_face_carriers() {
     let points = [
         Point {
-            id: PointId("incident".to_string()),
+            id: PointId::mint("incident".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, 4.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("other-occurrence".to_string()),
+            id: PointId::mint("other-occurrence".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, -4.0, 0.0),
             source_object: None,
         },
@@ -314,12 +314,12 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
 fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
     let points = [
         Point {
-            id: PointId("incident".to_string()),
+            id: PointId::mint("incident".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, 4.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("other-occurrence".to_string()),
+            id: PointId::mint("other-occurrence".to_string()).expect("identity grammar"),
             position: Point3::new(3.0, -4.0, 0.0),
             source_object: None,
         },
@@ -396,12 +396,12 @@ fn complete_mesh_endpoint_quotient_overrides_table_local_ports() {
 fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
     let points = [
         Point {
-            id: PointId("a".to_string()),
+            id: PointId::mint("a".to_string()).expect("identity grammar"),
             position: Point3::new(1.0, 0.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("b".to_string()),
+            id: PointId::mint("b".to_string()).expect("identity grammar"),
             position: Point3::new(1.01, 0.0, 0.0),
             source_object: None,
         },
@@ -637,17 +637,17 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     let mut ir = CadIr::empty();
     ir.model.points.extend([
         Point {
-            id: PointId("point-0".into()),
+            id: PointId::mint("point-0").expect("identity grammar"),
             position: Point3::new(1.0, 2.0, 0.0),
             source_object: None,
         },
         Point {
-            id: PointId("point-1".into()),
+            id: PointId::mint("point-1").expect("identity grammar"),
             position: Point3::new(1.0, 2.0, 1.0),
             source_object: None,
         },
     ]);
-    let surface_id = SurfaceId("surface-0".into());
+    let surface_id = SurfaceId::mint("surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -738,18 +738,18 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
         let mut ir = CadIr::empty();
         ir.model.points.extend([
             Point {
-                id: PointId("point-0".into()),
+                id: PointId::mint("point-0").expect("identity grammar"),
                 position: Point3::new(0.0, 0.0, 0.0),
                 source_object: None,
             },
             Point {
-                id: PointId("point-1".into()),
+                id: PointId::mint("point-1").expect("identity grammar"),
                 position: Point3::new(1.0, 0.0, 0.0),
                 source_object: None,
             },
         ]);
         ir.model.surfaces.push(Surface {
-            id: SurfaceId("surface-0".into()),
+            id: SurfaceId::mint("surface-0").expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -758,16 +758,20 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
             source_object: None,
         });
         ir.model.faces.push(Face {
-            id: FaceId("catia:standard:face#0".into()),
-            shell: ShellId("shell-0".into()),
-            surface: SurfaceId("surface-0".into()),
+            id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
+            shell: ShellId::mint("shell-0").expect("identity grammar"),
+            surface: SurfaceId::mint("surface-0").expect("identity grammar"),
             sense: Sense::Forward,
             loops: Vec::new(),
             name: None,
             color: None,
             tolerance: None,
         });
-        let bindings = [(SurfaceId("surface-0".into()), false, 0)];
+        let bindings = [(
+            SurfaceId::mint("surface-0").expect("identity grammar"),
+            false,
+            0,
+        )];
         let surface_indices = HashMap::from([(bindings[0].0.clone(), 0)]);
         let supports = [StandardCurveSupport {
             pos: 0,
@@ -819,11 +823,12 @@ fn standard_emission_reverses_only_face_pcurve_use_range() {
         };
         assert_eq!(
             vertex_use.vertex,
-            VertexId("catia:standard:v#1".to_string())
+            VertexId::mint("catia:standard:v#1".to_string()).expect("identity grammar")
         );
         assert_eq!(
             vertex_use.after,
-            cadmpeg_ir::ids::CoedgeId("catia:standard:coedge#0:0:0".to_string())
+            cadmpeg_ir::ids::CoedgeId::mint("catia:standard:coedge#0:0:0".to_string())
+                .expect("identity grammar")
         );
 
         let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
@@ -942,11 +947,11 @@ fn spherical_section_endpoint_pair_survives_topology_admission_without_pcurve() 
 fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId("point-0".into()),
+        id: PointId::mint("point-0").expect("identity grammar"),
         position: Point3::new(2.0, 0.0, 0.0),
         source_object: None,
     });
-    let surface_id = SurfaceId("surface-0".into());
+    let surface_id = SurfaceId::mint("surface-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {

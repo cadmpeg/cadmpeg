@@ -843,7 +843,8 @@ pub(in super::super) fn round_placed_cylinder_radius(
     ir: &CadIr,
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
-    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+    let id =
+        SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
     exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
         match surface.geometry {
             SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
@@ -988,7 +989,8 @@ fn chamfer_cone_equation(
             half_angle: frame.half_angle,
         });
     }
-    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+    let id =
+        SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
     let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))?;
     let SurfaceGeometry::Cone {
         origin,
@@ -1048,7 +1050,8 @@ pub(in super::super) fn chamfer_constant_distance(
             .collect::<Vec<_>>();
         let is_support_plane = match rows.as_slice() {
             [] => {
-                let model_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
+                let model_id = SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+                    .expect("identity grammar");
                 let model_surfaces = ir
                     .model
                     .surfaces

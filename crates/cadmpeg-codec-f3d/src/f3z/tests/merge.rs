@@ -75,7 +75,7 @@ fn rescoping_a_model_entity_preserves_a_non_finite_coordinate() {
     use cadmpeg_ir::topology::Point;
 
     let point = Point {
-        id: PointId("f3d:model:point#1".into()),
+        id: PointId::mint("f3d:model:point#1").expect("identity grammar"),
         position: Point3 {
             x: f64::NAN,
             y: f64::INFINITY,
@@ -90,7 +90,10 @@ fn rescoping_a_model_entity_preserves_a_non_finite_coordinate() {
     .rewrite(point)
     .expect("a model entity rescopes through the value tree");
 
-    assert_eq!(rescoped.id.0, "f3d:xref/role/occurrence-0/model:point#1");
+    assert_eq!(
+        rescoped.id.as_str(),
+        "f3d:xref/role/occurrence-0/model:point#1"
+    );
     assert!(rescoped.position.x.is_nan());
     assert_eq!(rescoped.position.y, f64::INFINITY);
     assert_eq!(rescoped.position.z, f64::NEG_INFINITY);
@@ -131,17 +134,17 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     let mut merged = Model::default();
     let mut component = Model::default();
     component.bodies = vec![Body {
-        id: BodyId("f3d:brep:entity#1".into()),
+        id: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId("f3d:brep:entity#2".into())],
+        regions: vec![RegionId::mint("f3d:brep:entity#2").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     }];
     component.regions = vec![Region {
-        id: RegionId("f3d:brep:entity#2".into()),
-        body: BodyId("f3d:brep:entity#1".into()),
+        id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
+        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
         shells: Vec::new(),
     }];
     for ordinal in 0..2 {
@@ -156,9 +159,9 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
 
     for ordinal in 0..2 {
         let prefix = format!("f3d:xref/role/occurrence-{ordinal}/brep:entity#");
-        assert_eq!(merged.bodies[ordinal].id.0, format!("{prefix}1"));
+        assert_eq!(merged.bodies[ordinal].id.as_str(), format!("{prefix}1"));
         assert_eq!(merged.bodies[ordinal].regions[0].0, format!("{prefix}2"));
-        assert_eq!(merged.regions[ordinal].id.0, format!("{prefix}2"));
+        assert_eq!(merged.regions[ordinal].id.as_str(), format!("{prefix}2"));
         assert_eq!(merged.regions[ordinal].body.0, format!("{prefix}1"));
     }
 }

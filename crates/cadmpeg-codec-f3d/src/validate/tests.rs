@@ -26,7 +26,9 @@ fn recipe_reference() -> crate::records::DesignRecipeReference {
         token_offset: 28,
         design_reference: 329,
         design_reference_offset: 37,
-        candidate_faces: vec![cadmpeg_ir::ids::FaceId("f3d:brep:entity#10".into())],
+        candidate_faces: vec![
+            cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#10").expect("identity grammar")
+        ],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -37,7 +39,8 @@ fn recipe_reference() -> crate::records::DesignRecipeReference {
 fn finalized_recipe_reference_validation_ignores_only_derived_candidates() {
     let actual = recipe_reference();
     let mut expected = actual.clone();
-    expected.candidate_faces = vec![cadmpeg_ir::ids::FaceId("f3d:brep:entity#20".into())];
+    expected.candidate_faces =
+        vec![cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#20").expect("identity grammar")];
     assert!(super::recipe_reference_frames_match(
         &[actual.clone()],
         &[expected.clone()],

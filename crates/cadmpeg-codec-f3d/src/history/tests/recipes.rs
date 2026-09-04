@@ -77,7 +77,9 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         token_offset: 0,
         design_reference: 200,
         design_reference_offset: 0,
-        candidate_faces: vec![FaceId(crate::ids::brep_entity_id(face))],
+        candidate_faces: vec![
+            FaceId::mint(crate::ids::brep_entity_id(face)).expect("identity grammar")
+        ],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
@@ -264,7 +266,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     };
     recipe.recipe_references[0]
         .candidate_faces
-        .push(FaceId(crate::ids::brep_entity_id(11)));
+        .push(FaceId::mint(crate::ids::brep_entity_id(11)).expect("identity grammar"));
     super::super::bind_vertex_recipe_history(
         &mut ambiguous,
         std::slice::from_ref(&timeline),
@@ -392,9 +394,15 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
     let references = vec![
         reference(
             Vec::new(),
-            vec![EdgeId("edge#22".into()), EdgeId("edge#23".into())],
+            vec![
+                EdgeId::mint("edge#22").expect("identity grammar"),
+                EdgeId::mint("edge#23").expect("identity grammar"),
+            ],
         ),
-        reference(vec![FaceId("face#10".into())], Vec::new()),
+        reference(
+            vec![FaceId::mint("face#10").expect("identity grammar")],
+            Vec::new(),
+        ),
         reference(Vec::new(), Vec::new()),
         reference(Vec::new(), Vec::new()),
         reference(Vec::new(), Vec::new()),
@@ -572,7 +580,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         form_offset: 0,
         candidate_faces: faces
             .iter()
-            .map(|face| FaceId((*face).to_owned()))
+            .map(|face| FaceId::mint((*face).to_owned()).expect("identity grammar"))
             .collect(),
         preceding_candidate_faces: Vec::new(),
         preceding_body_slots: Vec::new(),
@@ -608,9 +616,9 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         next_byte_offset: 0,
     };
     let body = |id: &str, region: &str, visible| Body {
-        id: BodyId(id.into()),
+        id: BodyId::mint(id).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId(region.into())],
+        regions: vec![RegionId::mint(region).expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
@@ -623,25 +631,25 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     ];
     let regions = [
         Region {
-            id: RegionId("current-region".into()),
+            id: RegionId::mint("current-region").expect("identity grammar"),
             body: bodies[0].id.clone(),
-            shells: vec![ShellId("current-shell".into())],
+            shells: vec![ShellId::mint("current-shell").expect("identity grammar")],
         },
         Region {
-            id: RegionId("external-region".into()),
+            id: RegionId::mint("external-region").expect("identity grammar"),
             body: bodies[1].id.clone(),
-            shells: vec![ShellId("external-shell".into())],
+            shells: vec![ShellId::mint("external-shell").expect("identity grammar")],
         },
         Region {
-            id: RegionId("cache-region".into()),
+            id: RegionId::mint("cache-region").expect("identity grammar"),
             body: bodies[2].id.clone(),
-            shells: vec![ShellId("cache-shell".into())],
+            shells: vec![ShellId::mint("cache-shell").expect("identity grammar")],
         },
     ];
     let shell = |id: &str, region: &str, face: &str| Shell {
-        id: ShellId(id.into()),
-        region: RegionId(region.into()),
-        faces: vec![FaceId(face.into())],
+        id: ShellId::mint(id).expect("identity grammar"),
+        region: RegionId::mint(region).expect("identity grammar"),
+        faces: vec![FaceId::mint(face).expect("identity grammar")],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     };
@@ -694,7 +702,7 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         10,
     );
     scope.history_state_id = Some(2);
-    let candidate = FaceId("f3d:brep:entity#10".into());
+    let candidate = FaceId::mint("f3d:brep:entity#10").expect("identity grammar");
     let mut operands = vec![crate::records::DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
         scope_record_index: 10,
@@ -923,7 +931,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             design_reference_offset: 0,
             form: 33,
             form_offset: 0,
-            candidate_faces: vec![FaceId("f3d:brep:entity#7".into())],
+            candidate_faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),
         }],
@@ -938,23 +946,23 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         next_byte_offset: 0,
     };
     let body = Body {
-        id: BodyId("f3d:brep:body#1".into()),
+        id: BodyId::mint("f3d:brep:body#1").expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId("region#1".into())],
+        regions: vec![RegionId::mint("region#1").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: Some(true),
     };
     let region = Region {
-        id: RegionId("region#1".into()),
+        id: RegionId::mint("region#1").expect("identity grammar"),
         body: body.id.clone(),
-        shells: vec![ShellId("shell#1".into())],
+        shells: vec![ShellId::mint("shell#1").expect("identity grammar")],
     };
     let shell = Shell {
-        id: ShellId("shell#1".into()),
+        id: ShellId::mint("shell#1").expect("identity grammar"),
         region: region.id.clone(),
-        faces: vec![FaceId("f3d:brep:entity#7".into())],
+        faces: vec![FaceId::mint("f3d:brep:entity#7").expect("identity grammar")],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     };
@@ -974,7 +982,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         selection,
         BodySelection::Resolved {
-            bodies: vec![BodyId("f3d:brep:body#1".into())],
+            bodies: vec![BodyId::mint("f3d:brep:body#1").expect("identity grammar")],
             native: group_id.into(),
         }
     );
@@ -1139,7 +1147,10 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         source_tag: Some("Base Feature".into()),
         source_text: None,
         source_content: Vec::new(),
-        outputs: vec![BodyId("body:2".into()), BodyId("body:1".into())],
+        outputs: vec![
+            BodyId::mint("body:2").expect("identity grammar"),
+            BodyId::mint("body:1").expect("identity grammar"),
+        ],
         definition: FeatureDefinition::BaseFeature {
             bodies: BodySelection::Native("native:scope".into()),
         },
@@ -1150,7 +1161,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         feature.definition,
         FeatureDefinition::BaseFeature {
             bodies: BodySelection::Resolved { ref bodies, ref native }
-        } if bodies == &[BodyId("body:2".into()), BodyId("body:1".into())]
+        } if bodies == &[BodyId::mint("body:2").expect("identity grammar"), BodyId::mint("body:1").expect("identity grammar")]
             && native == "native:scope"
     ));
 }
@@ -1182,7 +1193,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
 
     let scope_id = "f3d:Design/BulkStream.dat:scope#42".to_string();
     let group_id = "f3d:Design/BulkStream.dat:operand-group#100".to_string();
-    let face_id = FaceId("f3d:brep:entity#7".into());
+    let face_id = FaceId::mint("f3d:brep:entity#7").expect("identity grammar");
     let mut scope = DesignParameterScope::empty(&scope_id, "SplitFace", 42);
     scope.history_state_id = Some(2);
 
@@ -1344,7 +1355,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let face = |slot| FaceId(format!("f3d:brep:entity#{slot}"));
+    let face = |slot| FaceId::mint(format!("f3d:brep:entity#{slot}")).expect("identity grammar");
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let mut scope = DesignParameterScope::empty(scope_id, "Thread", 42);
     scope.history_state_id = Some(2);
@@ -1523,7 +1534,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     });
     let mut cylinder_operand = operand.clone();
     cylinder_operand.recipe_references[0].candidate_faces =
-        vec![FaceId("f3d:brep/input/brep:entity#999".into())];
+        vec![FaceId::mint("f3d:brep/input/brep:entity#999").expect("identity grammar")];
     cylinder_operand.candidate_faces = cylinder_operand.recipe_references[0]
         .candidate_faces
         .clone();
@@ -1571,7 +1582,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     let mut stale_active_operand = cylinder_operands[0].clone();
     stale_active_operand.recipe_references[0]
         .candidate_faces
-        .push(FaceId("f3d:brep/input/brep:entity#998".into()));
+        .push(FaceId::mint("f3d:brep/input/brep:entity#998").expect("identity grammar"));
     let mut stale_active_operands = vec![stale_active_operand];
     bind_face_operand_history_candidates(
         &mut stale_active_operands,
@@ -1657,7 +1668,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     use cadmpeg_ir::topology::{Body, BodyKind};
 
     let body = |id: &str, kind| Body {
-        id: BodyId(id.into()),
+        id: BodyId::mint(id).expect("identity grammar"),
         kind,
         regions: Vec::new(),
         transform: None,
@@ -1700,13 +1711,25 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         body("solid", BodyKind::Solid),
     ];
     let mut features = [
-        sweep("sheet-sweep", vec![BodyId("sheet".into())]),
-        sweep("solid-sweep", vec![BodyId("solid".into())]),
+        sweep(
+            "sheet-sweep",
+            vec![BodyId::mint("sheet").expect("identity grammar")],
+        ),
+        sweep(
+            "solid-sweep",
+            vec![BodyId::mint("solid").expect("identity grammar")],
+        ),
         sweep(
             "mixed-sweep",
-            vec![BodyId("sheet".into()), BodyId("solid".into())],
+            vec![
+                BodyId::mint("sheet").expect("identity grammar"),
+                BodyId::mint("solid").expect("identity grammar"),
+            ],
         ),
-        sweep("missing-sweep", vec![BodyId("missing".into())]),
+        sweep(
+            "missing-sweep",
+            vec![BodyId::mint("missing").expect("identity grammar")],
+        ),
     ];
 
     bind_sweep_result_modes(&mut features, &bodies);
@@ -1736,7 +1759,9 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     use cadmpeg_ir::ids::FaceId;
     use std::collections::HashSet;
 
-    let source_face = |source: &str, slot| FaceId(format!("f3d:brep/{source}/entity#{slot}"));
+    let source_face = |source: &str, slot| {
+        FaceId::mint(format!("f3d:brep/{source}/entity#{slot}")).expect("identity grammar")
+    };
     let active_candidates = vec![source_face("old", 10), source_face("new", 10)];
     assert_eq!(
         select_legacy_extrude_face_candidate(
@@ -1757,7 +1782,10 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
         None
     );
 
-    let historical_candidates = vec![FaceId("f3d:brep:entity#20".into()), source_face("new", 21)];
+    let historical_candidates = vec![
+        FaceId::mint("f3d:brep:entity#20").expect("identity grammar"),
+        source_face("new", 21),
+    ];
     let topology = AsmHistoricalTopology {
         faces: vec![20, 21],
         ..AsmHistoricalTopology::default()
@@ -1775,7 +1803,7 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
     assert_eq!(
         select_legacy_extrude_face_candidate(
-            &[FaceId("f3d:brep:entity#20".into())],
+            &[FaceId::mint("f3d:brep:entity#20").expect("identity grammar")],
             &topology,
             &changed,
             None,
