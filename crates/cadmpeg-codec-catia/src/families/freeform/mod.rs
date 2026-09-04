@@ -1287,23 +1287,33 @@ pub(crate) fn append_freeform_surface_pools(
         let sites = jet
             .sites
             .iter()
-            .zip(&jet.first_derivatives)
-            .zip(&jet.second_derivatives)
-            .map(|((site, first), second)| RollingBallJetSite {
-                first_limit: Point3::new(site.limit1[0], site.limit1[1], site.limit1[2]),
-                second_limit: Point3::new(site.limit2[0], site.limit2[1], site.limit2[2]),
-                center: Point3::new(site.center[0], site.center[1], site.center[2]),
-                angle: site.theta,
-                first_derivative: rolling_ball_derivative(*first),
-                second_derivative: rolling_ball_derivative(*second),
+            .map(|sample| RollingBallJetSite {
+                first_limit: Point3::new(
+                    sample.site.limit1[0],
+                    sample.site.limit1[1],
+                    sample.site.limit1[2],
+                ),
+                second_limit: Point3::new(
+                    sample.site.limit2[0],
+                    sample.site.limit2[1],
+                    sample.site.limit2[2],
+                ),
+                center: Point3::new(
+                    sample.site.center[0],
+                    sample.site.center[1],
+                    sample.site.center[2],
+                ),
+                angle: sample.site.theta,
+                first_derivative: rolling_ball_derivative(sample.first_derivatives),
+                second_derivative: rolling_ball_derivative(sample.second_derivatives),
             })
             .collect::<Vec<_>>();
-        if sites.len() != jet.knots.len() {
+        if sites.len() != jet.sites.len() {
             continue;
         }
         let Ok(multiplicities) = alloc_filled(
-            jet.knots.len(),
-            jet.degree + 1,
+            jet.sites.len(),
+            crate::families::a5a8::records::A5FreeformCurve::DEGREE + 1,
             "catia rolling-ball multiplicities",
         ) else {
             continue;
@@ -1344,9 +1354,9 @@ pub(crate) fn append_freeform_surface_pools(
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet {
-                degree: jet.degree,
+                degree: crate::families::a5a8::records::A5FreeformCurve::DEGREE,
                 multiplicities,
-                knots: jet.knots,
+                knots: jet.knots(),
                 sites,
             },
             None,

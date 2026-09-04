@@ -911,9 +911,8 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
         let curves = crate::families::a5a8::records::a5_freeform_curves(&bytes);
         assert_eq!(curves.len(), 1);
         assert_eq!(curves[0].header_token, u32::from(header_token));
-        assert_eq!(curves[0].degree, 5);
-        assert_eq!(curves[0].knots, vec![0.0, 1.0]);
-        assert_eq!(curves[0].sites[1].radius, 2.0);
+        assert_eq!(curves[0].knots(), vec![0.0, 1.0]);
+        assert_eq!(curves[0].sites[1].site.radius, 2.0);
     }
 
     let mut wrong_degree = a5_freeform_curve_stream();
@@ -955,8 +954,8 @@ fn a5_curve_parser_accepts_frame_bounded_continuation() {
     let [curve] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
         .try_into()
         .expect("one rolling-ball jet");
-    assert_eq!(curve.knots, [0.0, 1.0]);
-    assert_eq!(curve.sites[1].radius, 2.0);
+    assert_eq!(curve.knots(), [0.0, 1.0]);
+    assert_eq!(curve.sites[1].site.radius, 2.0);
 }
 
 #[test]
@@ -965,7 +964,7 @@ fn a5_curve_parser_accepts_frame_bounded_site_count() {
         &a5_freeform_curve_stream_with_count(4097),
     );
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].knots.len(), 4097);
+    assert_eq!(curves[0].knots().len(), 4097);
     assert_eq!(curves[0].sites.len(), 4097);
 }
 
@@ -978,20 +977,21 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
         let curve = crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
             .expect("exact limiting curve");
         let geometry = CurveGeometry::Nurbs(curve);
-        let expected = [jet.sites.first().unwrap(), jet.sites.last().unwrap()].map(|site| {
+        let expected = [jet.sites.first().unwrap(), jet.sites.last().unwrap()].map(|sample| {
             let point = if second_limit {
-                site.limit2
+                sample.site.limit2
             } else {
-                site.limit1
+                sample.site.limit1
             };
             Point3::new(point[0], point[1], point[2])
         });
+        let knots = jet.knots();
         assert_eq!(
-            cadmpeg_ir::eval::curve_point(&geometry, jet.knots[0]),
+            cadmpeg_ir::eval::curve_point(&geometry, knots[0]),
             Some(expected[0])
         );
         assert_eq!(
-            cadmpeg_ir::eval::curve_point(&geometry, jet.knots[1]),
+            cadmpeg_ir::eval::curve_point(&geometry, knots[1]),
             Some(expected[1])
         );
     }
@@ -1006,7 +1006,7 @@ fn rolling_ball_parsers_accept_finite_nonzero_radii() {
         let [curve] = crate::families::a5a8::records::a5_freeform_curves(&a5)
             .try_into()
             .expect("one consolidated rolling-ball jet");
-        assert_eq!(curve.sites[0].radius, radius);
+        assert_eq!(curve.sites[0].site.radius, radius);
 
         let mut a8 = a8_freeform_curve_stream();
         a8[36..44].copy_from_slice(&le_f64(radius));
@@ -1032,8 +1032,8 @@ fn rolling_ball_parsers_reject_scale_relative_radius_disagreement() {
 fn consolidated_curve_parser_reads_width2_frame() {
     let curves = crate::families::a5a8::records::a5_freeform_curves(&a6_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].degree, 5);
-    assert_eq!(curves[0].sites[1].radius, 2.0);
+    assert_eq!(curves[0].knots().len(), 2);
+    assert_eq!(curves[0].sites[1].site.radius, 2.0);
 }
 
 #[test]
@@ -1148,11 +1148,7 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
     for (one_shot, indexed) in one_shot.iter().zip(&indexed) {
         assert_eq!(one_shot.pos, indexed.pos);
         assert_eq!(one_shot.header_token, indexed.header_token);
-        assert_eq!(one_shot.degree, indexed.degree);
-        assert_eq!(one_shot.knots, indexed.knots);
         assert_eq!(one_shot.sites, indexed.sites);
-        assert_eq!(one_shot.first_derivatives, indexed.first_derivatives);
-        assert_eq!(one_shot.second_derivatives, indexed.second_derivatives);
     }
 
     let guide = a5_guide_curve_stream();
