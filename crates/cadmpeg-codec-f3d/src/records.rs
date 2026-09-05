@@ -2893,14 +2893,12 @@ pub struct DesignCombineOperation {
 }
 
 /// Thread construction form selected by the scope prefix and payload marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DesignThreadForm {
     /// Standard prefix, construction marker, and trailer layout.
     Standard,
     /// Compact prefix, construction marker, and trailer layout.
-    Compact,
+    Compact(Option<Located<u32>>),
     /// Direct standard prefix with the legacy compact scalar and trailer lanes.
     StandardLegacy,
     /// Compact prefix with the legacy scalar and no-reference trailer lanes.
@@ -2910,6 +2908,7 @@ pub enum DesignThreadForm {
 /// Exact form and size construction carried by a `Thread` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignThreadConstructionWire", into = "DesignThreadConstructionWire")]
 pub struct DesignThreadConstruction {
     /// Standard, compact, or class-specific legacy construction form.
     pub form: DesignThreadForm,
@@ -2931,15 +2930,114 @@ pub struct DesignThreadConstruction {
     pub pitch: f64,
     /// Pitch diameter in Design length units.
     pub pitch_diameter: f64,
-    /// Record named by the reference-bearing compact trailer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trailing_reference_record_index: Option<u32>,
-    /// Byte offset of `trailing_reference_record_index`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trailing_reference_offset: Option<u64>,
     /// Ordered counted face-selection groups referenced by the scope.
     pub face_group_record_indices: Vec<u32>,
 }
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum DesignThreadFormWire {
+    /// Standard prefix, construction marker, and trailer layout.
+    Standard,
+    /// Compact prefix, construction marker, and trailer layout.
+    Compact,
+    /// Direct standard prefix with the legacy compact scalar and trailer lanes.
+    StandardLegacy,
+    /// Compact prefix with the legacy scalar and no-reference trailer lanes.
+    CompactLegacy,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignThreadConstructionWire {
+    /// Standard, compact, or class-specific legacy construction form.
+    form: DesignThreadFormWire,
+    /// Byte offset of the designation LP-UTF16 field.
+    designation_offset: u64,
+    /// Standard thread designation.
+    designation: String,
+    /// Exact nominal-size text interpreted into `nominal_size`.
+    nominal_size_text: String,
+    /// Numeric nominal size interpreted by `profile`.
+    nominal_size: f64,
+    /// Thread profile name.
+    profile: String,
+    /// Physical major diameter in Design length units.
+    major_diameter: f64,
+    /// Physical minor diameter in Design length units.
+    minor_diameter: f64,
+    /// Thread pitch in Design length units.
+    pitch: f64,
+    /// Pitch diameter in Design length units.
+    pitch_diameter: f64,
+    /// Record named by the reference-bearing compact trailer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trailing_reference_record_index: Option<u32>,
+    /// Byte offset of `trailing_reference_record_index`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trailing_reference_offset: Option<u64>,
+    /// Ordered counted face-selection groups referenced by the scope.
+    face_group_record_indices: Vec<u32>,
+}
+
+impl From<DesignThreadConstruction> for DesignThreadConstructionWire {
+    fn from(value: DesignThreadConstruction) -> Self {
+        let (form, trailing_reference) = match value.form {
+            DesignThreadForm::Standard => (DesignThreadFormWire::Standard, None),
+            DesignThreadForm::Compact(reference) => (DesignThreadFormWire::Compact, reference),
+            DesignThreadForm::StandardLegacy => (DesignThreadFormWire::StandardLegacy, None),
+            DesignThreadForm::CompactLegacy => (DesignThreadFormWire::CompactLegacy, None),
+        };
+        Self {
+            form,
+            designation_offset: value.designation_offset,
+            designation: value.designation,
+            nominal_size_text: value.nominal_size_text,
+            nominal_size: value.nominal_size,
+            profile: value.profile,
+            major_diameter: value.major_diameter,
+            minor_diameter: value.minor_diameter,
+            pitch: value.pitch,
+            pitch_diameter: value.pitch_diameter,
+            trailing_reference_record_index: trailing_reference.map(|located| located.value),
+            trailing_reference_offset: trailing_reference.map(|located| located.offset),
+            face_group_record_indices: value.face_group_record_indices,
+        }
+    }
+}
+
+impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
+    type Error = String;
+    fn try_from(value: DesignThreadConstructionWire) -> Result<Self, Self::Error> {
+        let reference = match (value.trailing_reference_record_index, value.trailing_reference_offset) {
+            (None, None) => None,
+            (Some(value), Some(offset)) => Some(Located { value, offset }),
+            _ => return Err("trailing_reference_record_index and trailing_reference_offset must occur together".into()),
+        };
+        let form = match (value.form, reference) {
+            (DesignThreadFormWire::Compact, reference) => DesignThreadForm::Compact(reference),
+            (DesignThreadFormWire::Standard, None) => DesignThreadForm::Standard,
+            (DesignThreadFormWire::StandardLegacy, None) => DesignThreadForm::StandardLegacy,
+            (DesignThreadFormWire::CompactLegacy, None) => DesignThreadForm::CompactLegacy,
+            _ => return Err("trailing_reference_record_index is only valid for compact form".into()),
+        };
+        Ok(Self {
+            form,
+            designation_offset: value.designation_offset,
+            designation: value.designation,
+            nominal_size_text: value.nominal_size_text,
+            nominal_size: value.nominal_size,
+            profile: value.profile,
+            major_diameter: value.major_diameter,
+            minor_diameter: value.minor_diameter,
+            pitch: value.pitch,
+            pitch_diameter: value.pitch_diameter,
+            face_group_record_indices: value.face_group_record_indices,
+        })
+    }
+}
+
 
 /// Exact signed-angle lanes carried by a `Draft` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

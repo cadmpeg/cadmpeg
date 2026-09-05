@@ -3525,7 +3525,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .copied()
                         .into_iter()
                         .collect(),
-                    records::DesignThreadForm::Compact
+                    records::DesignThreadForm::Compact(_)
                     | records::DesignThreadForm::CompactLegacy => {
                         scope.reference_members.iter().step_by(2).copied().collect()
                     }
@@ -3540,7 +3540,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             scope.class_tag == "414" && scope.paired_class_tag == "263"
                         }
                         records::DesignThreadForm::Standard
-                        | records::DesignThreadForm::Compact => true,
+                        | records::DesignThreadForm::Compact(_) => true,
                     }
                     && construction.face_group_record_indices == expected_groups
                     && matches!(
@@ -3555,18 +3555,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .parse::<f64>()
                         .is_ok_and(|value| value.to_bits() == construction.nominal_size.to_bits())
                     && !construction.profile.is_empty()
-                    && match (
-                        construction.trailing_reference_record_index,
-                        construction.trailing_reference_offset,
-                    ) {
-                        (None, None) => true,
-                        (Some(record_index), Some(offset)) => {
-                            construction.form == records::DesignThreadForm::Compact
-                                && offset > construction.designation_offset
-                                && offset < scope.paired_byte_offset
-                                && record_indices.contains(&(native_stream, record_index))
+                    && match construction.form {
+                        records::DesignThreadForm::Compact(Some(reference)) => {
+                            reference.offset > construction.designation_offset
+                                && reference.offset < scope.paired_byte_offset
+                                && record_indices.contains(&(native_stream, reference.value))
                         }
-                        _ => false,
+                        records::DesignThreadForm::Compact(None)
+                        | records::DesignThreadForm::Standard
+                        | records::DesignThreadForm::StandardLegacy
+                        | records::DesignThreadForm::CompactLegacy => true,
                     }
                     && [
                         construction.nominal_size,
@@ -3586,7 +3584,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .all(|(group_ordinal, record_index)| {
                             let compact_member = if matches!(
                                 construction.form,
-                                records::DesignThreadForm::Compact
+                                records::DesignThreadForm::Compact(_)
                                     | records::DesignThreadForm::CompactLegacy
                             ) {
                                 let reference_ordinal = group_ordinal.saturating_mul(2);

@@ -683,9 +683,8 @@ pub(crate) fn exact_thread_construction(
     let (prefix_form, designation_delta) = exact_thread_prefix(bytes.get(start..)?)?;
     let designation_at = start.checked_add(designation_delta)?;
     let face_group_record_indices = match prefix_form {
-        DesignThreadForm::Standard => vec![scope.reference_members[0]],
-        DesignThreadForm::Compact => scope.reference_members.iter().step_by(2).copied().collect(),
-        DesignThreadForm::StandardLegacy | DesignThreadForm::CompactLegacy => return None,
+        ThreadPrefix::Standard => vec![scope.reference_members[0]],
+        ThreadPrefix::Compact => scope.reference_members.iter().step_by(2).copied().collect(),
     };
     let construction = parse_thread_payload(
         bytes,
@@ -700,7 +699,7 @@ pub(crate) fn exact_thread_construction(
         DesignThreadForm::CompactLegacy => {
             scope.class_tag == "414" && scope.paired_class_tag == "263"
         }
-        DesignThreadForm::Standard | DesignThreadForm::Compact => true,
+        DesignThreadForm::Standard | DesignThreadForm::Compact(_) => true,
     };
     if !class_pair_is_valid {
         return None;
@@ -708,7 +707,13 @@ pub(crate) fn exact_thread_construction(
     Some(construction)
 }
 
-fn exact_thread_prefix(bytes: &[u8]) -> Option<(DesignThreadForm, usize)> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ThreadPrefix {
+    Standard,
+    Compact,
+}
+
+fn exact_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
     let direct = if bytes.get(thread_standard::ZERO_RUN_10..thread_standard::FIXED_SCALAR)?
         == [0; 10]
         && View::f64_le_at(bytes, thread_standard::FIXED_SCALAR)?.to_bits() == 60.0f64.to_bits()
@@ -738,13 +743,13 @@ fn exact_thread_prefix(bytes: &[u8]) -> Option<(DesignThreadForm, usize)> {
     }
 }
 
-fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<DesignThreadForm> {
+fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<ThreadPrefix> {
     match (
         bytes.get(marker_at..marker_at + 5)?,
         bytes.get(token_at..token_at + 4)?,
     ) {
-        ([1, 2, 0, 0, 0], [0x36, 0, 0x67, 0]) => Some(DesignThreadForm::Standard),
-        ([0, 2, 0, 0, 0], [0x36, 0, 0x48, 0]) => Some(DesignThreadForm::Compact),
+        ([1, 2, 0, 0, 0], [0x36, 0, 0x67, 0]) => Some(ThreadPrefix::Standard),
+        ([0, 2, 0, 0, 0], [0x36, 0, 0x48, 0]) => Some(ThreadPrefix::Compact),
         _ => None,
     }
 }
@@ -752,27 +757,25 @@ fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<Design
 pub(crate) fn parse_thread_payload(
     bytes: &[u8],
     designation_at: usize,
-    expected_form: DesignThreadForm,
+    expected_form: ThreadPrefix,
     face_group_record_indices: Vec<u32>,
 ) -> Option<DesignThreadConstruction> {
     let (designation, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
     let (nominal_size_text, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
     let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
-    let (form, pitch_marker, trailer_kind) =
+    let (pitch_marker, trailer_kind) =
         match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
-            (DesignThreadForm::Standard, [0, 1, 0, 0, 0]) => {
-                (DesignThreadForm::Standard, 1, ThreadTrailerKind::Standard)
+            (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => {
+                (1, ThreadTrailerKind::Standard)
             }
-            (DesignThreadForm::Standard, [1, 1, 0, 0, 0]) => (
-                DesignThreadForm::StandardLegacy,
+            (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => (
                 0,
                 ThreadTrailerKind::StandardLegacy,
             ),
-            (DesignThreadForm::Compact, [1, 2, 0, 0, 0]) => {
-                (DesignThreadForm::Compact, 0, ThreadTrailerKind::Compact)
+            (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => {
+                (0, ThreadTrailerKind::Compact)
             }
-            (DesignThreadForm::Compact, [1, 1, 0, 0, 0]) => (
-                DesignThreadForm::CompactLegacy,
+            (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => (
                 0,
                 ThreadTrailerKind::CompactLegacy,
             ),
@@ -791,19 +794,20 @@ pub(crate) fn parse_thread_payload(
         ThreadTrailerKind::CompactLegacy => thread_compact_legacy_tail::LEGACY_TRAILER,
     };
     let trailer_offset = after_profile.checked_add(trailer_at)?;
-    let (trailing_reference_record_index, trailing_reference_offset) = match trailer_kind {
+    let form = match trailer_kind {
         ThreadTrailerKind::Standard if bytes.get(trailer_offset..trailer_offset + 2)? == [0, 1] => {
-            (None, None)
+            DesignThreadForm::Standard
         }
-        ThreadTrailerKind::StandardLegacy | ThreadTrailerKind::CompactLegacy
+        ThreadTrailerKind::StandardLegacy
             if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
-        {
-            (None, None)
-        }
+        { DesignThreadForm::StandardLegacy }
+        ThreadTrailerKind::CompactLegacy
+            if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
+        { DesignThreadForm::CompactLegacy }
         ThreadTrailerKind::Compact
             if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
         {
-            (None, None)
+            DesignThreadForm::Compact(None)
         }
         ThreadTrailerKind::Compact
             if bytes.get(trailer_offset) == Some(&1)
@@ -814,10 +818,10 @@ pub(crate) fn parse_thread_payload(
             if record_index == 0 {
                 return None;
             }
-            (
-                Some(record_index),
-                Some(u64::try_from(reference_offset).ok()?),
-            )
+            DesignThreadForm::Compact(Some(crate::records::Located {
+                value: record_index,
+                offset: u64::try_from(reference_offset).ok()?,
+            }))
         }
         _ => return None,
     };
@@ -846,8 +850,6 @@ pub(crate) fn parse_thread_payload(
         minor_diameter,
         pitch,
         pitch_diameter,
-        trailing_reference_record_index,
-        trailing_reference_offset,
         face_group_record_indices,
     })
 }

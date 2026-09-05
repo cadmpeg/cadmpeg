@@ -599,7 +599,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     );
     if let crate::records::DesignScopePayload::Thread(slot) = &mut thread.payload {
         *slot = Some(DesignThreadConstruction {
-            form: DesignThreadForm::Compact,
+            form: DesignThreadForm::Compact(None),
             designation_offset: 0,
             designation: "M3.5x0.6".into(),
             nominal_size_text: "3.5".into(),
@@ -609,8 +609,6 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             minor_diameter: 0.293,
             pitch: 0.06,
             pitch_diameter: 0.3166,
-            trailing_reference_record_index: None,
-            trailing_reference_offset: None,
             face_group_record_indices: vec![701],
         });
     }
