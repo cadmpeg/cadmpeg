@@ -7889,24 +7889,9 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn coil_mut(&mut self) -> Option<&mut DesignCoilScope> {
-        match &mut self.payload {
-            DesignScopePayload::SpirePrimitive(value)
-            | DesignScopePayload::CoilPrimitive(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn base_flange(&self) -> Option<&DesignBaseFlangeScope> {
         match &self.payload {
             DesignScopePayload::BaseFlange(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn base_flange_mut(&mut self) -> Option<&mut DesignBaseFlangeScope> {
-        match &mut self.payload {
-            DesignScopePayload::BaseFlange(value) => value.as_mut(),
             _ => None,
         }
     }
@@ -7949,26 +7934,9 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn sketch_entity_mut(&mut self) -> Option<&mut DesignSketchEntityBinding> {
-        match &mut self.payload {
-            DesignScopePayload::Sketch(value)
-            | DesignScopePayload::Esquisse(value)
-            | DesignScopePayload::Skizze(value)
-            | DesignScopePayload::Esboco(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn move_operation(&self) -> Option<&DesignMoveOperation> {
         match &self.payload {
             DesignScopePayload::Move(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn move_operation_mut(&mut self) -> Option<&mut DesignMoveOperation> {
-        match &mut self.payload {
-            DesignScopePayload::Move(value) => value.as_mut(),
             _ => None,
         }
     }
@@ -7982,27 +7950,9 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn scale_operation_mut(&mut self) -> Option<&mut DesignScaleOperation> {
-        match &mut self.payload {
-            DesignScopePayload::Scale(value) | DesignScopePayload::Massstab(value) => {
-                value.as_mut()
-            }
-            _ => None,
-        }
-    }
-
     pub(crate) fn surface_stitch_operation(&self) -> Option<&DesignSurfaceStitchOperation> {
         match &self.payload {
             DesignScopePayload::SurfaceStitch(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn surface_stitch_operation_mut(
-        &mut self,
-    ) -> Option<&mut DesignSurfaceStitchOperation> {
-        match &mut self.payload {
-            DesignScopePayload::SurfaceStitch(value) => value.as_mut(),
             _ => None,
         }
     }
@@ -8014,27 +7964,9 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn surface_extend_operation_mut(
-        &mut self,
-    ) -> Option<&mut DesignSurfaceExtendOperation> {
-        match &mut self.payload {
-            DesignScopePayload::SurfaceExtend(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn surface_offset_operation(&self) -> Option<&DesignSurfaceOffsetOperation> {
         match &self.payload {
             DesignScopePayload::SurfaceOffset(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn surface_offset_operation_mut(
-        &mut self,
-    ) -> Option<&mut DesignSurfaceOffsetOperation> {
-        match &mut self.payload {
-            DesignScopePayload::SurfaceOffset(value) => value.as_mut(),
             _ => None,
         }
     }
@@ -8046,15 +7978,6 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn ruled_surface_operation_mut(
-        &mut self,
-    ) -> Option<&mut DesignRuledSurfaceOperation> {
-        match &mut self.payload {
-            DesignScopePayload::SurfaceRuled(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn edge_flange_operation(&self) -> Option<&DesignEdgeFlangeOperation> {
         match &self.payload {
             DesignScopePayload::EdgeFlange(value) => value.as_ref(),
@@ -8062,23 +7985,9 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn edge_flange_operation_mut(&mut self) -> Option<&mut DesignEdgeFlangeOperation> {
-        match &mut self.payload {
-            DesignScopePayload::EdgeFlange(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn hem_operation(&self) -> Option<&DesignHemOperation> {
         match &self.payload {
             DesignScopePayload::Hem(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn hem_operation_mut(&mut self) -> Option<&mut DesignHemOperation> {
-        match &mut self.payload {
-            DesignScopePayload::Hem(value) => value.as_mut(),
             _ => None,
         }
     }
@@ -8093,33 +8002,10 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn fixed_fillet_parameters_mut(
-        &mut self,
-    ) -> Option<&mut DesignFixedFilletParameters> {
-        match &mut self.payload {
-            DesignScopePayload::Fillet(value)
-            | DesignScopePayload::Conge(value)
-            | DesignScopePayload::Abrundung(value)
-            | DesignScopePayload::Arredondamento(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn fixed_chamfer_parameters(&self) -> Option<&DesignFixedChamferParameters> {
         match &self.payload {
             DesignScopePayload::Chamfer(value) | DesignScopePayload::Chanfrein(value) => {
                 value.as_ref()
-            }
-            _ => None,
-        }
-    }
-
-    pub(crate) fn fixed_chamfer_parameters_mut(
-        &mut self,
-    ) -> Option<&mut DesignFixedChamferParameters> {
-        match &mut self.payload {
-            DesignScopePayload::Chamfer(value) | DesignScopePayload::Chanfrein(value) => {
-                value.as_mut()
             }
             _ => None,
         }
@@ -8146,23 +8032,9 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn thread_construction_mut(&mut self) -> Option<&mut DesignThreadConstruction> {
-        match &mut self.payload {
-            DesignScopePayload::Thread(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn draft_operation(&self) -> Option<&DesignDraftOperation> {
         match &self.payload {
             DesignScopePayload::Draft(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn draft_operation_mut(&mut self) -> Option<&mut DesignDraftOperation> {
-        match &mut self.payload {
-            DesignScopePayload::Draft(value) => value.as_mut(),
             _ => None,
         }
     }
@@ -8238,29 +8110,11 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn component_insert_construction_mut(
-        &mut self,
-    ) -> Option<&mut DesignComponentInsertConstruction> {
-        match &mut self.payload {
-            DesignScopePayload::ComponentInsert(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn derived_instance_construction(
         &self,
     ) -> Option<&DesignDerivedInstanceConstruction> {
         match &self.payload {
             DesignScopePayload::DerivedInstance(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn derived_instance_construction_mut(
-        &mut self,
-    ) -> Option<&mut DesignDerivedInstanceConstruction> {
-        match &mut self.payload {
-            DesignScopePayload::DerivedInstance(value) => value.as_mut(),
             _ => None,
         }
     }
@@ -8274,27 +8128,9 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn copy_paste_component_operation_mut(
-        &mut self,
-    ) -> Option<&mut DesignCopyPasteComponentOperation> {
-        match &mut self.payload {
-            DesignScopePayload::CopyPaste(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn copy_paste_bodies_operation(&self) -> Option<&DesignCopyPasteBodiesOperation> {
         match &self.payload {
             DesignScopePayload::CopyPasteBodies(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn copy_paste_bodies_operation_mut(
-        &mut self,
-    ) -> Option<&mut DesignCopyPasteBodiesOperation> {
-        match &mut self.payload {
-            DesignScopePayload::CopyPasteBodies(value) => value.as_mut(),
             _ => None,
         }
     }
@@ -8324,25 +8160,9 @@ impl DesignParameterScope {
         }
     }
 
-    pub(crate) fn base_feature_construction_mut(
-        &mut self,
-    ) -> Option<&mut DesignBaseFeatureConstruction> {
-        match &mut self.payload {
-            DesignScopePayload::BaseFeature(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
     pub(crate) fn work_axis_construction(&self) -> Option<&DesignWorkAxisConstruction> {
         match &self.payload {
             DesignScopePayload::WorkAxis(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn work_axis_construction_mut(&mut self) -> Option<&mut DesignWorkAxisConstruction> {
-        match &mut self.payload {
-            DesignScopePayload::WorkAxis(value) => value.as_mut(),
             _ => None,
         }
     }
