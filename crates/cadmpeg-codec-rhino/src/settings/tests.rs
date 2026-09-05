@@ -1208,8 +1208,6 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
 fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() {
     let layer = |index| settings::LayerRecord {
         source: settings::SourceRange { range: 0..1 },
-        version: (1, 15),
-        obsolete_mode: 0,
         index,
         iges_level: 0,
         render_material_index: -1,

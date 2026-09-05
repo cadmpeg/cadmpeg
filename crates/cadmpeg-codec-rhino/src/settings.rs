@@ -61,22 +61,18 @@ pub(crate) struct SourceRange {
 
 /// A finite three-dimensional point.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct Point3(pub(crate) [f64; 3]);
 
 /// A finite three-dimensional vector.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct Vector3(pub(crate) [f64; 3]);
 
 /// A serialized parameter interval.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct Interval(pub(crate) [f64; 2]);
 
 /// A serialized plane, including its wire equation.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct Plane {
     /// Origin.
     pub(crate) origin: Point3,
@@ -92,7 +88,6 @@ pub(crate) struct Plane {
 
 /// A serialized axis-aligned bounding box.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct BoundingBox {
     /// Minimum point.
     pub(crate) minimum: Point3,
@@ -102,7 +97,6 @@ pub(crate) struct BoundingBox {
 
 /// A serialized row-major 4×4 transform.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct Xform(pub(crate) [f64; 16]);
 
 /// A UTF-16 UTC time tuple as written by Rhino.
@@ -114,7 +108,6 @@ pub(crate) struct UtcTime {
 
 /// Decoded document properties.
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 pub(crate) struct Properties {
     /// Writer version short value.
     pub(crate) writer_version: Option<i64>,
@@ -132,7 +125,6 @@ pub(crate) struct Properties {
 
 /// Revision-history property.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct RevisionHistory {
     /// Source range.
     pub(crate) source: SourceRange,
@@ -150,7 +142,6 @@ pub(crate) struct RevisionHistory {
 
 /// Notes property.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct Notes {
     /// Source range.
     pub(crate) source: SourceRange,
@@ -168,7 +159,6 @@ pub(crate) struct Notes {
 
 /// Application property.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct Application {
     /// Source range.
     pub(crate) source: SourceRange,
@@ -187,8 +177,6 @@ pub(crate) struct PreviewDescriptor {
     pub(crate) source: SourceRange,
     /// Whether the preview is compressed.
     pub(crate) compressed: bool,
-    /// Payload byte length.
-    pub(crate) payload_bytes: usize,
 }
 
 /// The standard and custom Rhino unit systems.
@@ -211,7 +199,6 @@ pub(crate) enum UnitSystem {
 
 /// Units and tolerances.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct UnitsAndTolerances {
     /// Structure version.
     pub(crate) version: i32,
@@ -239,7 +226,6 @@ pub(crate) struct UnitsAndTolerances {
 
 /// One plugin reference stored in the settings plugin list.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct PluginReference {
     /// Complete anonymous-chunk source range.
     pub(crate) source: SourceRange,
@@ -281,7 +267,6 @@ pub(crate) struct PluginReference {
 
 /// The settings plugin list and its bounded entries.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct PluginList {
     /// Complete source range.
     pub(crate) source: SourceRange,
@@ -450,19 +435,15 @@ pub(crate) struct SettingsAttributes {
 
 /// A bounded unsupported setting payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) struct SettingDescriptor {
     /// Record typecode.
     pub(crate) typecode: u32,
     /// Complete source range.
     pub(crate) source: SourceRange,
-    /// Payload byte length.
-    pub(crate) payload_bytes: usize,
 }
 
 /// Current document selectors, typed settings, and bounded unsupported settings.
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 pub(crate) struct DocumentSettings {
     /// Current layer archive index.
     pub(crate) current_layer: Option<i64>,
@@ -498,14 +479,9 @@ pub(crate) struct DocumentSettings {
 
 /// Layer metadata decoded without attributes or geometry.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct LayerRecord {
     /// Complete source range.
     pub(crate) source: SourceRange,
-    /// Packed layer version.
-    pub(crate) version: (u8, u8),
-    /// Obsolete mode.
-    pub(crate) obsolete_mode: i32,
     /// Archive layer index.
     pub(crate) index: i32,
     /// IGES level.
@@ -582,7 +558,6 @@ pub(crate) struct EmbeddedDescriptor {
 
 /// All typed metadata produced by a scan.
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 pub(crate) struct DocumentMetadata {
     /// Typed losses raised while decoding metadata.
     pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
@@ -625,28 +600,24 @@ fn finite_array<const N: usize>(
 }
 
 /// Reads a finite point.
-#[allow(dead_code)]
 pub(crate) fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, FramingError> {
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
     Ok(Point3(finite_array(reader, values, "point")?))
 }
 
 /// Reads a finite vector.
-#[allow(dead_code)]
 pub(crate) fn vector(reader: &mut BoundedReader<'_>) -> Result<Vector3, FramingError> {
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
     Ok(Vector3(finite_array(reader, values, "vector")?))
 }
 
 /// Reads a finite interval.
-#[allow(dead_code)]
 pub(crate) fn interval(reader: &mut BoundedReader<'_>) -> Result<Interval, FramingError> {
     let values = [reader.f64()?, reader.f64()?];
     Ok(Interval(finite_array(reader, values, "interval")?))
 }
 
 /// Reads a finite plane without reconstructing its serialized equation.
-#[allow(dead_code)]
 pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingError> {
     let origin = point(reader)?;
     let xaxis = vector(reader)?;
@@ -663,7 +634,6 @@ pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingErro
 }
 
 /// Reads a finite bounding box.
-#[allow(dead_code)]
 pub(crate) fn bbox(reader: &mut BoundedReader<'_>) -> Result<BoundingBox, FramingError> {
     Ok(BoundingBox {
         minimum: point(reader)?,
@@ -672,7 +642,6 @@ pub(crate) fn bbox(reader: &mut BoundedReader<'_>) -> Result<BoundingBox, Framin
 }
 
 /// Reads a finite row-major transform.
-#[allow(dead_code)]
 pub(crate) fn xform(reader: &mut BoundedReader<'_>) -> Result<Xform, FramingError> {
     let mut values = [0.0; 16];
     for value in &mut values {
@@ -682,7 +651,7 @@ pub(crate) fn xform(reader: &mut BoundedReader<'_>) -> Result<Xform, FramingErro
 }
 
 /// Decodes an archive UTF-8 string for later plugin/settings records.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn utf8(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
     let count_offset = reader.position();
     let count = usize::try_from(reader.u32()?)
@@ -2222,8 +2191,6 @@ fn parse_layer(
         source: SourceRange {
             range: record.range.clone(),
         },
-        version,
-        obsolete_mode,
         index,
         iges_level,
         render_material_index,
@@ -2414,7 +2381,6 @@ pub(crate) fn parse_metadata(
                                 range: record.range.clone(),
                             },
                             compressed: record.typecode == COMPRESSED_PREVIEW,
-                            payload_bytes: record.body.len(),
                         });
                         Ok(())
                     }
@@ -2632,7 +2598,6 @@ pub(crate) fn parse_setting(
                 source: SourceRange {
                     range: record.range.clone(),
                 },
-                payload_bytes: record.body.len(),
             });
             Ok(())
         }
