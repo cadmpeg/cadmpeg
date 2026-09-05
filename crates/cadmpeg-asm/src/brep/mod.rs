@@ -17,6 +17,7 @@
 //! ASM model-space lengths become millimetres. Unit vectors, ratios, angles,
 //! knots, weights, and UV parameters keep their native scale.
 
+pub mod annotations;
 pub mod attributes;
 mod emit;
 pub mod geometry;
@@ -50,11 +51,12 @@ use serde::{Deserialize, Serialize};
 use serde_value::Value;
 use std::collections::{HashMap, HashSet};
 
+use self::annotations::{emit_annotation_records, AnnotationRecord};
 use self::attributes::attribute_owner;
 use self::emit::{
-    count_other_records, emit_annotation_records, emit_attributes, emit_carrier_records,
-    emit_coedges, emit_containers, emit_edges, emit_faces, emit_loops, emit_passthrough_unknowns,
-    emit_pcurves, emit_points, emit_vertices, project_subshell_faces,
+    count_other_records, emit_attributes, emit_carrier_records, emit_coedges, emit_containers,
+    emit_edges, emit_faces, emit_loops, emit_passthrough_unknowns, emit_pcurves, emit_points,
+    emit_vertices, project_subshell_faces,
 };
 use self::geometry::{clamp_edge_ranges_to_carrier_domains, classify_body_kinds};
 use self::records::{
@@ -137,20 +139,6 @@ pub struct AsmBrep {
     /// Source locations for emitted B-rep and synthetic child records.
     #[serde(skip)]
     pub annotation_records: Vec<AnnotationRecord>,
-}
-
-/// One sparse v1 annotation produced while SAB record offsets are available.
-pub struct AnnotationRecord {
-    /// Globally unique IR entity id.
-    pub id: String,
-    /// BREP ZIP entry containing the source SAB record.
-    pub stream: String,
-    /// Byte offset in the decompressed ASM stream.
-    pub offset: u64,
-    /// Source SAB record name.
-    pub tag: String,
-    /// Serialized fields whose values were canonically derived.
-    pub derived_fields: Vec<&'static str>,
 }
 
 impl AsmBrep {

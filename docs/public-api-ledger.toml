@@ -4901,3 +4901,24 @@ crate = "cadmpeg-asm"
 kind = "deletion"
 item = "cadmpeg_asm::brep::transfer::AsmTransferRemainder::face_keys"
 reason = "ASM-14: derive join maps from native key records only at serialization and the Inventor presentation consumer"
+
+[[change]]
+commit = "0cd8193e851bb9e540a764e015c44ca4939eb95f"
+crate = "cadmpeg-asm"
+kind = "move"
+item = "cadmpeg_asm::brep::AnnotationRecord"
+reason = "ASM-17: move annotation records and their producer into brep::annotations"
+
+[[change]]
+commit = "0cd8193e851bb9e540a764e015c44ca4939eb95f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::annotations::AnnotationRecord::tag"
+reason = "ASM-17: store AnnotationTag instead of mixing source names and synthetic labels as String"
+
+[[change]]
+commit = "0cd8193e851bb9e540a764e015c44ca4939eb95f"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::brep::annotations::AnnotationTag"
+reason = "ASM-17: distinguish source Record names from four closed synthetic annotation tags"
