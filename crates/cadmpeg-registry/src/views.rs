@@ -42,10 +42,16 @@ pub fn dialect_provenance(dialects: &DialectLayers) -> DialectProvenance {
 pub struct FormatRow {
     /// The format id.
     pub id: &'static str,
-    /// Whether this build writes it.
-    pub write: bool,
     /// The extensions the detector accepts for it.
     pub extensions: &'static [&'static str],
+}
+
+impl FormatRow {
+    /// Whether this build writes the row's format.
+    #[must_use]
+    pub fn write(&self) -> bool {
+        Format::from_name(self.id).is_some()
+    }
 }
 
 /// The readable formats in this build, with their write capability, in catalog
@@ -60,7 +66,6 @@ pub fn format_rows(inputs: &InputCatalog) -> Vec<FormatRow> {
                 // Every input descriptor is readable. CADIR carries no codec
                 // because the neutral document is parsed, not decoded.
                 id,
-                write: Format::from_name(id).is_some(),
                 extensions: descriptor.extensions(),
             }
         })

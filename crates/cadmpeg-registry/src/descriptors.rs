@@ -86,8 +86,6 @@ impl OutputPhysics {
 /// Facts that exist together only when a format is writable.
 #[derive(Debug)]
 pub(crate) struct OutputDescriptor {
-    pub format: Format,
-    pub order: u8,
     pub extensions: &'static [&'static str],
     pub physics: OutputPhysics,
     pub encoder: EncoderConstructor,
@@ -97,7 +95,7 @@ pub(crate) struct OutputDescriptor {
 #[derive(Debug)]
 pub struct FormatDescriptor {
     pub(crate) kind: FormatKind,
-    output: Option<&'static OutputDescriptor>,
+    input_order: u8,
 }
 
 impl FormatDescriptor {
@@ -135,23 +133,21 @@ impl FormatDescriptor {
     feature = "sat"
 ))]
 macro_rules! reader {
-    ($name:ident, $id:literal, $input_exts:expr, $decoder:expr) => {
+    ($name:ident, $input_order:expr, $id:literal, $input_exts:expr, $decoder:expr) => {
         static $name: FormatDescriptor = FormatDescriptor {
             kind: FormatKind::Native(NativeDescriptor {
                 id: $id,
                 input_extensions: $input_exts,
                 decoder: $decoder,
             }),
-            output: None,
+            input_order: $input_order,
         };
     };
 }
 
 macro_rules! writable {
-    ($name:ident, $output:ident, $id:literal, $input_exts:expr, $decoder:expr, $format:expr, $order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
+    ($name:ident, $output:ident, $id:literal, $input_exts:expr, $decoder:expr, $input_order:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
         static $output: OutputDescriptor = OutputDescriptor {
-            format: $format,
-            order: $order,
             extensions: $output_exts,
             physics: $physics,
             encoder: $encoder,
@@ -162,7 +158,7 @@ macro_rules! writable {
                 input_extensions: $input_exts,
                 decoder: $decoder,
             }),
-            output: Some(&$output),
+            input_order: $input_order,
         };
     };
 }
@@ -174,8 +170,7 @@ writable!(
     "fcstd",
     &["fcstd"],
     || Box::new(cadmpeg_codec_freecad::FcstdCodec),
-    Format::Fcstd,
-    2,
+    0,
     &["fcstd"],
     OutputPhysics::GeometryBinary,
     || Box::new(cadmpeg_codec_freecad::FcstdCodec)
@@ -187,14 +182,13 @@ writable!(
     "f3d",
     &["f3d", "f3z"],
     || Box::new(cadmpeg_codec_f3d::F3dCodec),
-    Format::F3d,
-    3,
+    1,
     &["f3d"],
     OutputPhysics::GeometryBinary,
     || Box::new(cadmpeg_codec_f3d::F3dCodec)
 );
 #[cfg(feature = "inventor")]
-reader!(INVENTOR, "inventor", &["ipt", "iam"], || Box::new(
+reader!(INVENTOR, 2, "inventor", &["ipt", "iam"], || Box::new(
     cadmpeg_codec_inventor::InventorCodec
 ));
 #[cfg(feature = "sldprt")]
@@ -204,22 +198,23 @@ writable!(
     "sldprt",
     &["sldprt"],
     || Box::new(cadmpeg_codec_sldprt::SldprtCodec),
-    Format::Sldprt,
-    4,
+    3,
     &["sldprt"],
     OutputPhysics::GeometryBinary,
     || Box::new(cadmpeg_codec_sldprt::SldprtCodec)
 );
 #[cfg(feature = "catia")]
-reader!(CATIA, "catia", &["catpart"], || Box::new(
+reader!(CATIA, 4, "catia", &["catpart"], || Box::new(
     cadmpeg_codec_catia::CatiaCodec
 ));
 #[cfg(feature = "creo")]
-reader!(CREO, "creo", &["prt"], || Box::new(
+reader!(CREO, 5, "creo", &["prt"], || Box::new(
     cadmpeg_codec_creo::CreoCodec
 ));
 #[cfg(feature = "nx")]
-reader!(NX, "nx", &["prt"], || Box::new(cadmpeg_codec_nx::NxCodec));
+reader!(NX, 6, "nx", &["prt"], || Box::new(
+    cadmpeg_codec_nx::NxCodec
+));
 #[cfg(feature = "rhino")]
 writable!(
     RHINO,
@@ -227,8 +222,7 @@ writable!(
     "rhino",
     &["3dm"],
     || Box::new(cadmpeg_codec_rhino::RhinoCodec),
-    Format::Rhino,
-    5,
+    7,
     &["3dm"],
     OutputPhysics::GeometryBinary,
     || Box::new(cadmpeg_codec_rhino::RhinoCodec)
@@ -240,8 +234,7 @@ writable!(
     "step",
     &["step", "stp"],
     || Box::new(cadmpeg_codec_step::StepCodec::default()),
-    Format::Step,
-    1,
+    8,
     &["step", "stp"],
     OutputPhysics::GeometryText,
     || Box::new(cadmpeg_codec_step::StepCodec::default())
@@ -253,19 +246,16 @@ writable!(
     "iges",
     &["iges", "igs"],
     || Box::new(cadmpeg_codec_iges::IgesCodec),
-    Format::Iges,
-    6,
+    9,
     &["iges", "igs"],
     OutputPhysics::GeometryText,
     || Box::new(cadmpeg_codec_iges::IgesCodec)
 );
 #[cfg(feature = "sat")]
-reader!(SAT, "sat", &["sat", "sab", "smt", "smb"], || Box::new(
+reader!(SAT, 10, "sat", &["sat", "sab", "smt", "smb"], || Box::new(
     cadmpeg_codec_sat::SatCodec
 ));
 static CADIR_OUTPUT: OutputDescriptor = OutputDescriptor {
-    format: Format::Cadir,
-    order: 0,
     extensions: &["cadir", "json"],
     physics: OutputPhysics::NeutralText,
     encoder: || Box::new(CadirEncoder),
@@ -275,33 +265,29 @@ pub(crate) static CADIR: FormatDescriptor = FormatDescriptor {
         id: "cadir",
         input_extensions: &["cadir", "json"],
     },
-    output: Some(&CADIR_OUTPUT),
+    input_order: 11,
 };
-pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
-    #[cfg(feature = "fcstd")]
-    &FCSTD,
-    #[cfg(feature = "f3d")]
-    &F3D,
-    #[cfg(feature = "inventor")]
-    &INVENTOR,
-    #[cfg(feature = "sldprt")]
-    &SLDPRT,
-    #[cfg(feature = "catia")]
-    &CATIA,
-    #[cfg(feature = "creo")]
-    &CREO,
-    #[cfg(feature = "nx")]
-    &NX,
-    #[cfg(feature = "rhino")]
-    &RHINO,
-    #[cfg(feature = "step")]
-    &STEP,
-    #[cfg(feature = "iges")]
-    &IGES,
-    #[cfg(feature = "sat")]
-    &SAT,
-    &CADIR,
-];
+pub(crate) static FORMAT_DESCRIPTORS: std::sync::LazyLock<Vec<&'static FormatDescriptor>> =
+    std::sync::LazyLock::new(|| {
+        let read_only: &[&FormatDescriptor] = &[
+            #[cfg(feature = "inventor")]
+            &INVENTOR,
+            #[cfg(feature = "catia")]
+            &CATIA,
+            #[cfg(feature = "creo")]
+            &CREO,
+            #[cfg(feature = "nx")]
+            &NX,
+            #[cfg(feature = "sat")]
+            &SAT,
+        ];
+        let mut descriptors: Vec<_> = Format::all()
+            .map(|format| format.descriptor().0)
+            .chain(read_only.iter().copied())
+            .collect();
+        descriptors.sort_by_key(|descriptor| descriptor.input_order);
+        descriptors
+    });
 
 impl Format {
     /// The compiled descriptor pair behind a writable format. Total: every
@@ -323,16 +309,6 @@ impl Format {
             Self::Iges => (&IGES, &IGES_OUTPUT),
         }
     }
-}
-
-pub(crate) fn writable(
-) -> impl Iterator<Item = (&'static FormatDescriptor, &'static OutputDescriptor)> {
-    let mut descriptors = FORMAT_DESCRIPTORS
-        .iter()
-        .filter_map(|descriptor| descriptor.output.map(|output| (*descriptor, output)))
-        .collect::<Vec<_>>();
-    descriptors.sort_by_key(|(_, output)| output.order);
-    descriptors.into_iter()
 }
 
 /// Resolves the CLI's forced-input vocabulary from the compiled descriptors.
@@ -360,19 +336,12 @@ mod tests {
     #[test]
     fn compiled_descriptors_have_unique_ids_and_consistent_capabilities() {
         let mut ids = BTreeSet::new();
-        for descriptor in FORMAT_DESCRIPTORS {
+        for descriptor in FORMAT_DESCRIPTORS.iter() {
             assert!(
                 ids.insert(descriptor.id()),
                 "duplicate {} descriptor",
                 descriptor.id()
             );
-            if let Some(output) = descriptor.output {
-                assert!(
-                    std::ptr::eq(output.format.descriptor().0, *descriptor),
-                    "{} is not the descriptor its Format names",
-                    descriptor.id()
-                );
-            }
             assert!(
                 crate::registry::format_words(descriptor.id())
                     .next()
@@ -385,8 +354,8 @@ mod tests {
                 "{} has no input extension",
                 descriptor.id()
             );
-            if let Some(output) = descriptor.output {
-                assert_eq!(output.format.name(), descriptor.id());
+            if let Some(format) = Format::from_name(descriptor.id()) {
+                let output = format.descriptor().1;
                 assert!(!output.extensions.is_empty());
                 assert_eq!(
                     crate::registry::canonical_format_name(descriptor.id()),
@@ -400,7 +369,7 @@ mod tests {
 
     #[test]
     fn every_registry_word_resolves_through_its_descriptor() {
-        for descriptor in FORMAT_DESCRIPTORS {
+        for descriptor in FORMAT_DESCRIPTORS.iter() {
             let expected = descriptor.forced_input();
             for name in crate::registry::format_words(descriptor.id()) {
                 assert_eq!(forced_input(name), Some(expected), "{name}");

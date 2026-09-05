@@ -23,7 +23,7 @@ pub fn print_formats(inputs: &InputCatalog) {
             "{:<10} {:<6} {:<6} {}",
             row.id,
             "yes",
-            yes_no(row.write),
+            yes_no(row.write()),
             row.extensions.join(", ")
         );
     }

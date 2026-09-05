@@ -4257,3 +4257,59 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::topology::coedge_ring_neighbors"
 reason = "a coedge missing from its owning loop ring is absence, not a fabricated self-cycle"
+
+[[change]]
+commit = "3946462d6d9a35c194a93896f8bb8d8b813c931e"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::ReadDisposition::Level"
+reason = "REG-02: carries a checked LadderLevel rather than an unrestricted byte"
+
+[[change]]
+commit = "3946462d6d9a35c194a93896f8bb8d8b813c931e"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::LadderLevel"
+reason = "REG-02: checked 0..=9 ladder level with rejecting Deserialize"
+
+[[change]]
+commit = "3946462d6d9a35c194a93896f8bb8d8b813c931e"
+crate = "cadmpeg-registry"
+kind = "signature"
+item = "cadmpeg_registry::InvalidLadderLevel"
+reason = "REG-02: construction error naming the rejected level"
+
+[[change]]
+commit = "3946462d6d9a35c194a93896f8bb8d8b813c931e"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::FormatRow::write"
+reason = "REG-05: replace stored duplicate write capability with write() computed from id"
+
+[[change]]
+commit = "3946462d6d9a35c194a93896f8bb8d8b813c931e"
+crate = "cadmpeg-registry"
+kind = "field"
+item = "cadmpeg_registry::ResolveSourceError::Ambiguous::candidates"
+reason = "REG-06: keep candidate ids as Vec<&static str> and join only in Display"
+
+[[change]]
+commit = "3946462d6d9a35c194a93896f8bb8d8b813c931e"
+crate = "cadmpeg-registry"
+kind = "variant"
+item = "cadmpeg_registry::Identification"
+reason = "REG-04: Cadir and Native variants replace independently writable format confidence and inspection fields"
+
+[[change]]
+commit = "3946462d6d9a35c194a93896f8bb8d8b813c931e"
+crate = "cadmpeg-registry"
+kind = "deletion"
+item = "cadmpeg_registry::SkipReason"
+reason = "REG-04: delete neutral skip reason and its one-variant remainder; Inspection::Ambiguous represents native ties"
+
+[[change]]
+commit = "3946462d6d9a35c194a93896f8bb8d8b813c931e"
+crate = "cadmpeg-registry"
+kind = "variant"
+item = "cadmpeg_registry::Inspection"
+reason = "REG-04: replace Skipped(SkipReason) with Ambiguous; CADIR is an Identification variant"
