@@ -1057,7 +1057,7 @@ fn decode_transfers_generated_protein_appearance() {
         .cloned()
         .expect("generated sketch entity header");
     assert_eq!(sketch_header.entity_id.as_str(), "0_277");
-    assert_eq!(sketch_header.class_tag, "257");
+    assert_eq!(sketch_header.class_tag.as_str(), "257");
     assert!(sketch_header.optional_slot_present);
     assert_eq!(
         sketch_header.module.as_deref(),

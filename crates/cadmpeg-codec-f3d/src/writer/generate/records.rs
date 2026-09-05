@@ -254,7 +254,6 @@ pub(crate) fn encode_design_bulkstream(
         out.push(0);
     }
     for header in &native.design_entity_headers {
-        validate_dynamic_class_tag(&header.class_tag, "Design entity header")?;
         primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
         out.extend_from_slice(&3u32.to_le_bytes());
         out.extend_from_slice(header.class_tag.as_bytes());
