@@ -6,21 +6,20 @@ fn operation_state_indices_retain_each_admitted_form() {
         0x7f, 0x83, 0xf9, 0x90, 0x12, 0x34, 0xa3, 0x1f, 0x85, 0xf1, 0x04, 0x2d, 0xff,
     ];
     let expected = [
-        (Some(0x7f), OperationStateIndexForm::Direct, 1),
-        (Some(0x3f9), OperationStateIndexForm::Compact, 2),
-        (Some(0x1234), OperationStateIndexForm::Wide16, 3),
-        (Some(0x31f85), OperationStateIndexForm::Wide20, 3),
-        (Some(0x42d), OperationStateIndexForm::Extended16, 3),
-        (None, OperationStateIndexForm::Null, 1),
+        (Some(0x7f), 1),
+        (Some(0x3f9), 2),
+        (Some(0x1234), 3),
+        (Some(0x31f85), 3),
+        (Some(0x42d), 3),
+        (None, 1),
     ];
 
     let mut at = 0;
-    for (value, form, width) in expected {
+    for (value, width) in expected {
         let token = super::operation_state_index(&bytes, at).expect("complete state index");
-        assert_eq!(token.value, value);
-        assert_eq!(token.form, form);
-        assert_eq!(token.raw, &bytes[at..at + width]);
-        assert_eq!(token.offset, at);
+        assert_eq!(token.value(), value);
+        assert_eq!(token.raw(), &bytes[at..at + width]);
+        assert_eq!(token.offset(), at);
         at += width;
     }
     assert_eq!(at, bytes.len());
@@ -29,37 +28,16 @@ fn operation_state_indices_retain_each_admitted_form() {
 #[test]
 fn operation_state_tagged_values_retain_width_and_value() {
     let cases = [
-        (
-            [0xaa, 0x60, 0x6b, 0, 0],
-            OperationStateTaggedValueForm::Two,
-            0x000a_606b,
-            3,
-        ),
-        (
-            [0xc0, 0x1a, 0x3f, 0x40, 0],
-            OperationStateTaggedValueForm::Three,
-            0x001a_3f40,
-            4,
-        ),
-        (
-            [0xe0, 0x01, 0x02, 0x03, 0x04],
-            OperationStateTaggedValueForm::Four,
-            0x0102_0304,
-            5,
-        ),
-        (
-            [0xff, 0x80, 0x00, 0x00, 0x01],
-            OperationStateTaggedValueForm::Four,
-            0x8000_0001,
-            5,
-        ),
+        ([0xaa, 0x60, 0x6b, 0, 0], 0x000a_606b, 3),
+        ([0xc0, 0x1a, 0x3f, 0x40, 0], 0x001a_3f40, 4),
+        ([0xe0, 0x01, 0x02, 0x03, 0x04], 0x0102_0304, 5),
+        ([0xff, 0x80, 0x00, 0x00, 0x01], 0x8000_0001, 5),
     ];
 
-    for (raw, form, value, width) in cases {
+    for (raw, value, width) in cases {
         let token = super::operation_state_tagged_value(&raw, 0).expect("complete tagged value");
-        assert_eq!(token.form, form);
         assert_eq!(token.value, value);
-        assert_eq!(token.marker, raw[0]);
+        assert_eq!(token.marker(), raw[0]);
         assert_eq!(token.raw, &raw[..width]);
         assert_eq!(token.offset, 0);
     }
@@ -83,17 +61,14 @@ fn operation_state_counter_map_anchors_to_the_longest_bounded_suffix() {
     assert_eq!(map.end_offset, 1004 + 8 + 8 + 6);
     assert_eq!(map.trailing_bytes.len(), 16);
     assert_eq!(map.rows[0].row_kind, 1);
-    assert_eq!(map.rows[0].object_index.value, Some(0x1234));
+    assert_eq!(map.rows[0].object_index.value(), Some(0x1234));
     assert_eq!(map.rows[0].introduced_state, 0x56);
     assert_eq!(map.rows[0].modified_state, 0x57);
     assert_eq!(map.rows[1].row_kind, 2);
-    assert_eq!(map.rows[1].object_index.value, Some(0x31f85));
+    assert_eq!(map.rows[1].object_index.value(), Some(0x31f85));
     assert_eq!(map.rows[1].introduced_state, 0x2a);
     assert_eq!(map.rows[1].modified_state, 0x2b);
-    assert_eq!(
-        map.rows[2].object_index.form,
-        OperationStateIndexForm::Direct
-    );
+    assert_eq!(map.rows[2].object_index.raw().len(), 1);
 }
 
 #[test]
@@ -126,7 +101,7 @@ fn operation_state_messages_decode_text_value_and_severity() {
     assert_eq!(messages[0].offset, 500);
     assert_eq!(messages[0].declared_length, 7);
     assert_eq!(messages[0].text, "hello");
-    assert_eq!(messages[0].value.form, OperationStateTaggedValueForm::Three);
+    assert_eq!(messages[0].value.raw.len(), 4);
     assert_eq!(messages[0].value.value, 0x0001_0203);
     assert_eq!(messages[0].count_or_severity, 3);
     assert_eq!(messages[0].end_offset, 500 + bytes.len());
@@ -163,7 +138,7 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     let table =
         super::operation_state_status_table(&bytes, 0, bytes.len(), 700).expect("status table");
     assert_eq!(table.rows.len(), 4);
-    assert_eq!(table.rows[0].status_code.value, Some(0x41));
+    assert_eq!(table.rows[0].status_code.value, 0x41);
     assert!(matches!(
         table.rows[0].payload,
         OperationStateStatusPayload::Plain
@@ -185,7 +160,7 @@ fn operation_state_status_table_retains_plain_link_diagnostic_and_opaque_rows() 
     assert_eq!(raw, &[0x1e, 0x01, 0x41, 0xff, 0x83, 0xad, 0xff, 0x02, 0x11]);
     assert_eq!(table.slot_lanes.len(), 1);
     assert_eq!(table.slot_lanes[0].slots.len(), 3);
-    assert_eq!(table.slot_lanes[0].slots[1].value, Some(0x3ad));
+    assert_eq!(table.slot_lanes[0].slots[1].value(), Some(0x3ad));
     assert_eq!(table.trailing_bytes, &b""[..]);
 }
 
@@ -222,8 +197,8 @@ fn operation_state_status_table_ignores_incomplete_preceding_operation_lane() {
         .expect("complete status chain");
     assert_eq!(block.offset, 500 + 13);
     assert_eq!(block.rows.len(), 2);
-    assert_eq!(block.rows[0].object_index.value, Some(0x20));
-    assert_eq!(block.rows[1].status_code.value, Some(0x44));
+    assert_eq!(block.rows[0].object_index.value(), Some(0x20));
+    assert_eq!(block.rows[1].status_code.value, 0x44);
     assert_eq!(block.status_end_offset, 500 + boundary);
 }
 
@@ -299,8 +274,8 @@ fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
         panic!("pair group row was not typed");
     };
     assert_eq!(tag, 0x4f);
-    assert_eq!(first.value, Some(0x42d));
-    assert_eq!(second.value, Some(0x3e1));
+    assert_eq!(first.value(), Some(0x42d));
+    assert_eq!(second.value(), Some(0x3e1));
     assert_eq!(table.groups[2].declared_count, 0);
     assert_eq!(table.groups[2].rows.len(), 0);
 }
@@ -362,8 +337,8 @@ fn operation_state_journal_decodes_timestamp_value_schema_and_ordinal() {
     let row = groups[0].rows[0];
     assert_eq!(row.timestamp, 0x6553_4d20);
     assert_eq!(row.value.value, 0x0001_0203);
-    assert_eq!(row.schema_id.value, Some(0x310));
-    assert_eq!(row.ordinal.value, Some(0x2a));
+    assert_eq!(row.schema_id.value(), Some(0x310));
+    assert_eq!(row.ordinal.value(), Some(0x2a));
 }
 
 #[test]
@@ -382,7 +357,7 @@ fn operation_state_journal_start_accepts_count_token_runs() {
         super::operation_state_journal_groups_before_boundary(&bytes, start, bytes.len(), 0)
             .expect("journal groups");
     assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].rows[0].ordinal.value, Some(0x2a));
+    assert_eq!(groups[0].rows[0].ordinal.value(), Some(0x2a));
 }
 
 #[test]
@@ -394,16 +369,16 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
     ];
     let rows = super::audit_trail_rows(&bytes, 2, bytes.len(), 900).expect("audit rows");
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].ordinal.value, Some(2));
+    assert_eq!(rows[0].ordinal.value(), Some(2));
     assert_eq!(rows[0].frame_selector, None);
     assert_eq!(rows[0].timestamp, 0x6553_4d20);
-    assert_eq!(rows[0].value.form, OperationStateTaggedValueForm::Four);
+    assert_eq!(rows[0].value.raw.len(), 5);
     assert_eq!(rows[0].value.value, 0x0102_0304);
     assert_eq!(rows[0].offset, 900 + 7);
     assert_eq!(rows[0].raw, &bytes[7..20]);
-    assert_eq!(rows[1].ordinal.value, Some(3));
+    assert_eq!(rows[1].ordinal.value(), Some(3));
     assert_eq!(rows[1].frame_selector, Some(7));
-    assert_eq!(rows[1].value.form, OperationStateTaggedValueForm::Three);
+    assert_eq!(rows[1].value.raw.len(), 4);
     assert_eq!(rows[1].value.value, 0x0001_0203);
     assert_eq!(rows[1].raw, &bytes[20..36]);
     assert_eq!(rows[1].end_offset, 900 + 36);

@@ -1722,47 +1722,83 @@ pub struct OperationTerminalFrame {
     pub object_index_offset: usize,
 }
 
-/// Encoding family for an object index in an operation-state lane.
-#[allow(dead_code)] // Retained for the exact parser API and focused tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateIndexForm {
-    /// One-byte value in `00..7f`.
-    Direct,
-    /// `80..8f` followed by one low byte.
-    Compact,
-    /// `90` followed by a big-endian `u16`.
-    Wide16,
-    /// `a0..af` followed by a big-endian `u16`.
-    Wide20,
-    /// `f1` followed by a big-endian `u16`.
-    Extended16,
-    /// The `ff` null token.
-    Null,
-}
-
 /// One operation-state object-index token with its exact serialized form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperationStateIndex<'a> {
+pub enum OperationStateIndex<'a> {
+    /// The `ff` null token.
+    Null {
+        /// Exact serialized token.
+        raw: &'a [u8],
+        /// Absolute byte offset of the token.
+        offset: usize,
+    },
+    /// A decoded non-null object index.
+    Value {
+        /// Decoded value.
+        value: u32,
+        /// Serialized token width in bytes.
+        width: usize,
+        /// Exact serialized token.
+        raw: &'a [u8],
+        /// Absolute byte offset of the token.
+        offset: usize,
+    },
+}
+
+impl<'a> OperationStateIndex<'a> {
     /// Decoded value, or `None` for the `ff` null token.
-    pub value: Option<u32>,
-    /// Encoding family selected by the first byte.
-    pub form: OperationStateIndexForm,
+    pub const fn value(self) -> Option<u32> {
+        match self {
+            Self::Null { .. } => None,
+            Self::Value { value, .. } => Some(value),
+        }
+    }
+
+    /// Exact serialized token.
+    pub const fn raw(self) -> &'a [u8] {
+        match self {
+            Self::Null { raw, .. } | Self::Value { raw, .. } => raw,
+        }
+    }
+
+    /// Absolute byte offset of the token.
+    pub const fn offset(self) -> usize {
+        match self {
+            Self::Null { offset, .. } | Self::Value { offset, .. } => offset,
+        }
+    }
+}
+
+/// A non-null operation-state index token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NonNullStateIndex<'a> {
+    /// Decoded value.
+    pub value: u32,
+    /// Serialized token width in bytes.
+    pub width: usize,
     /// Exact serialized token.
     pub raw: &'a [u8],
     /// Absolute byte offset of the token.
     pub offset: usize,
 }
 
-/// Width family for one tagged integer in the operation-state block.
-#[allow(dead_code)] // Retained for the exact parser API and focused tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OperationStateTaggedValueForm {
-    /// `a0..bf` followed by two bytes.
-    Two,
-    /// `c0..df` followed by three bytes.
-    Three,
-    /// `e0` or `ff` followed by four bytes.
-    Four,
+impl<'a> NonNullStateIndex<'a> {
+    fn from_index(index: OperationStateIndex<'a>) -> Option<Self> {
+        match index {
+            OperationStateIndex::Value {
+                value,
+                width,
+                raw,
+                offset,
+            } => Some(Self {
+                value,
+                width,
+                raw,
+                offset,
+            }),
+            OperationStateIndex::Null { .. } => None,
+        }
+    }
 }
 
 /// One operation-state tagged integer with its exact serialized form.
@@ -1770,14 +1806,17 @@ pub enum OperationStateTaggedValueForm {
 pub struct OperationStateTaggedValue<'a> {
     /// Decoded unsigned value.
     pub value: u32,
-    /// Width family selected by the marker.
-    pub form: OperationStateTaggedValueForm,
-    /// First serialized marker byte.
-    pub marker: u8,
     /// Exact marker and payload bytes.
     pub raw: &'a [u8],
     /// Absolute byte offset of the marker.
     pub offset: usize,
+}
+
+impl OperationStateTaggedValue<'_> {
+    /// First serialized marker byte.
+    pub fn marker(self) -> u8 {
+        self.raw[0]
+    }
 }
 
 /// One row in the operation-state object counter map.
@@ -1856,8 +1895,8 @@ pub enum OperationStateStatusPayload<'a> {
 pub struct OperationStateStatus<'a> {
     /// Absolute byte offset of the status-code token.
     pub offset: usize,
-    /// Exact status-code token and decoded value.
-    pub status_code: OperationStateIndex<'a>,
+    /// Exact non-null status-code token and decoded value.
+    pub status_code: NonNullStateIndex<'a>,
     /// Object carrying this status.
     pub object_index: OperationStateIndex<'a>,
     /// Status payload, retained without naming suppression codes.
@@ -7269,7 +7308,7 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
 
 fn operation_relation_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
     let token = operation_state_index_at(bytes, at, 0)?;
-    Some((token.value, at + token.raw.len()))
+    Some((token.value(), at + token.raw().len()))
 }
 
 /// Decode one object-index token used by the operation-state block.
@@ -7284,36 +7323,31 @@ fn operation_state_index_at(
     base_offset: usize,
 ) -> Option<OperationStateIndex<'_>> {
     let prefix = *bytes.get(at)?;
-    let (form, value, width) = match prefix {
-        0x00..=0x7f => (OperationStateIndexForm::Direct, Some(u32::from(prefix)), 1),
+    let (value, width) = match prefix {
+        0x00..=0x7f => (Some(u32::from(prefix)), 1),
         0x80..=0x8f => (
-            OperationStateIndexForm::Compact,
             Some(u32::from(prefix - 0x80) * 256 + u32::from(*bytes.get(at + 1)?)),
             2,
         ),
-        0x90 => (
-            OperationStateIndexForm::Wide16,
-            Some(u32::from(View::u16_be_at(bytes, at + 1)?)),
-            3,
-        ),
+        0x90 => (Some(u32::from(View::u16_be_at(bytes, at + 1)?)), 3),
         0xa0..=0xaf => (
-            OperationStateIndexForm::Wide20,
             Some(u32::from(prefix - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?)),
             3,
         ),
-        0xf1 => (
-            OperationStateIndexForm::Extended16,
-            Some(u32::from(View::u16_be_at(bytes, at + 1)?)),
-            3,
-        ),
-        0xff => (OperationStateIndexForm::Null, None, 1),
+        0xf1 => (Some(u32::from(View::u16_be_at(bytes, at + 1)?)), 3),
+        0xff => (None, 1),
         _ => return None,
     };
-    Some(OperationStateIndex {
-        value,
-        form,
-        raw: bytes.get(at..at + width)?,
-        offset: base_offset.checked_add(at)?,
+    let raw = bytes.get(at..at + width)?;
+    let offset = base_offset.checked_add(at)?;
+    Some(match value {
+        None => OperationStateIndex::Null { raw, offset },
+        Some(value) => OperationStateIndex::Value {
+            value,
+            width,
+            raw,
+            offset,
+        },
     })
 }
 
@@ -7332,31 +7366,23 @@ fn operation_state_tagged_value_at(
     base_offset: usize,
 ) -> Option<OperationStateTaggedValue<'_>> {
     let marker = *bytes.get(at)?;
-    let (form, width, value) = match marker {
+    let (width, value) = match marker {
         0xa0..=0xbf => (
-            OperationStateTaggedValueForm::Two,
             3,
             u32::from(marker - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?),
         ),
         0xc0..=0xdf => (
-            OperationStateTaggedValueForm::Three,
             4,
             u32::from(marker - 0xc0) * 0x1_000_000
                 + (u32::from(*bytes.get(at + 1)?) << 16)
                 + (u32::from(*bytes.get(at + 2)?) << 8)
                 + u32::from(*bytes.get(at + 3)?),
         ),
-        0xe0 | 0xff => (
-            OperationStateTaggedValueForm::Four,
-            5,
-            View::u32_be_at(bytes, at + 1)?,
-        ),
+        0xe0 | 0xff => (5, View::u32_be_at(bytes, at + 1)?),
         _ => return None,
     };
     Some(OperationStateTaggedValue {
         value,
-        form,
-        marker,
         raw: bytes.get(at..at + width)?,
         offset: base_offset.checked_add(at)?,
     })
@@ -7376,8 +7402,8 @@ fn operation_state_counter_row(
     }
     let object_at = at.checked_add(2)?;
     let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-    object_index.value?;
-    let state_at = object_at.checked_add(object_index.raw.len())?;
+    object_index.value()?;
+    let state_at = object_at.checked_add(object_index.raw().len())?;
     let introduced_state = *bytes.get(state_at)?;
     let modified_state = *bytes.get(state_at + 1)?;
     let end = state_at.checked_add(3)?;
@@ -7762,8 +7788,8 @@ fn operation_state_link_payload(
     }
     let linked_at = payload_at.checked_add(2)?;
     let linked = operation_state_index_at(bytes, linked_at, base_offset)?;
-    linked.value?;
-    let sentinel_at = linked_at.checked_add(linked.raw.len())?;
+    linked.value()?;
+    let sentinel_at = linked_at.checked_add(linked.raw().len())?;
     if bytes.get(sentinel_at) != Some(&0xff) {
         return None;
     }
@@ -7798,7 +7824,7 @@ fn operation_state_slot_lane_at(
             });
         }
         let slot = operation_state_index_at(bytes, cursor, base_offset)?;
-        cursor = cursor.checked_add(slot.raw.len())?;
+        cursor = cursor.checked_add(slot.raw().len())?;
         slots.push(slot);
     }
     None
@@ -7814,7 +7840,7 @@ fn operation_state_slot_lane_end_at(bytes: &[u8], at: usize, end: usize) -> Opti
             return cursor.checked_add(2);
         }
         let slot = operation_state_index_at(bytes, cursor, 0)?;
-        cursor = cursor.checked_add(slot.raw.len())?;
+        cursor = cursor.checked_add(slot.raw().len())?;
     }
     None
 }
@@ -7826,12 +7852,12 @@ fn operation_state_status_row_at<'a>(
     base_offset: usize,
     opaque_lane_starts: Option<&[usize]>,
 ) -> Option<OperationStateStatus<'a>> {
-    let status_code = operation_state_index_at(bytes, at, base_offset)?;
-    status_code.value?;
+    let status_code =
+        NonNullStateIndex::from_index(operation_state_index_at(bytes, at, base_offset)?)?;
     let object_at = at.checked_add(status_code.raw.len())?;
     let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-    object_index.value?;
-    let payload_at = object_at.checked_add(object_index.raw.len())?;
+    object_index.value()?;
+    let payload_at = object_at.checked_add(object_index.raw().len())?;
     if payload_at >= end {
         return None;
     }
@@ -7943,11 +7969,11 @@ fn operation_state_group_row_at(
         0x4a => {
             let object_at = cursor.checked_add(1)?;
             let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
-            object_index.value?;
-            let position_at = object_at.checked_add(object_index.raw.len())?;
+            object_index.value()?;
+            let position_at = object_at.checked_add(object_index.raw().len())?;
             let position = operation_state_index_at(bytes, position_at, base_offset)?;
-            position.value?;
-            let sentinel_at = position_at.checked_add(position.raw.len())?;
+            position.value()?;
+            let sentinel_at = position_at.checked_add(position.raw().len())?;
             let row_end = sentinel_at.checked_add(1)?;
             (bytes.get(sentinel_at) == Some(&0xff)).then_some((
                 OperationStateGroupRow::List {
@@ -7961,11 +7987,11 @@ fn operation_state_group_row_at(
         0x4f | 0x48 => {
             let first_at = cursor.checked_add(1)?;
             let first = operation_state_index_at(bytes, first_at, base_offset)?;
-            first.value?;
-            let second_at = first_at.checked_add(first.raw.len())?;
+            first.value()?;
+            let second_at = first_at.checked_add(first.raw().len())?;
             let second = operation_state_index_at(bytes, second_at, base_offset)?;
-            second.value?;
-            let sentinels_at = second_at.checked_add(second.raw.len())?;
+            second.value()?;
+            let sentinels_at = second_at.checked_add(second.raw().len())?;
             let row_end = sentinels_at.checked_add(2)?;
             (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some((
                 OperationStateGroupRow::Pair {
@@ -8151,11 +8177,11 @@ fn operation_state_journal_row_at(
     let value = operation_state_tagged_value_at(bytes, at + 5, base_offset)?;
     let schema_at = at.checked_add(5 + value.raw.len())?;
     let schema_id = operation_state_index_at(bytes, schema_at, base_offset)?;
-    schema_id.value?;
-    let ordinal_at = schema_at.checked_add(schema_id.raw.len())?;
+    schema_id.value()?;
+    let ordinal_at = schema_at.checked_add(schema_id.raw().len())?;
     let ordinal = operation_state_index_at(bytes, ordinal_at, base_offset)?;
-    ordinal.value?;
-    let terminator_at = ordinal_at.checked_add(ordinal.raw.len())?;
+    ordinal.value()?;
+    let terminator_at = ordinal_at.checked_add(ordinal.raw().len())?;
     if terminator_at >= end || bytes.get(terminator_at) != Some(&0x13) {
         return None;
     }
@@ -8181,8 +8207,8 @@ fn audit_trail_row_at(
         return None;
     }
     let ordinal = operation_state_index_at(bytes, at.checked_add(1)?, base_offset)?;
-    ordinal.value?;
-    let mut cursor = at.checked_add(1 + ordinal.raw.len())?;
+    ordinal.value()?;
+    let mut cursor = at.checked_add(1 + ordinal.raw().len())?;
     if bytes.get(cursor) != Some(&0x13) {
         return None;
     }
@@ -8241,7 +8267,7 @@ pub fn audit_trail_rows(
             at += 1;
             continue;
         };
-        let ordinal = row.ordinal.value?;
+        let ordinal = row.ordinal.value()?;
         if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
             return None;
         }
@@ -8347,7 +8373,7 @@ fn operation_state_journal_groups_before_boundary(
             continue;
         };
         for row in &group.rows {
-            let ordinal = row.ordinal.value?;
+            let ordinal = row.ordinal.value()?;
             if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
                 return None;
             }
