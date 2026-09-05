@@ -8,25 +8,490 @@ use crate::framing::read_xmt_width as read_xmt;
 use crate::vec3_at::vec3_be_at;
 use cadmpeg_core::decode::View;
 
+/// Semantic family of one admitted deltas record.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RecordFamily {
+    Body {
+        node_id: u32,
+    },
+    Shell {
+        node_id: u32,
+    },
+    Face {
+        node_id: u32,
+    },
+    Loop {
+        node_id: u32,
+    },
+    Edge {
+        node_id: u32,
+    },
+    Fin,
+    Vertex {
+        node_id: u32,
+    },
+    Region {
+        node_id: u32,
+    },
+    Point {
+        node_id: u32,
+        position: [f64; 3],
+    },
+    Line {
+        node_id: u32,
+    },
+    Circle {
+        node_id: u32,
+    },
+    Ellipse {
+        node_id: u32,
+    },
+    Intersection {
+        node_id: u32,
+    },
+    Chart,
+    TermUse,
+    Type45,
+    Plane {
+        node_id: u32,
+    },
+    Cylinder {
+        node_id: u32,
+    },
+    Cone {
+        node_id: u32,
+    },
+    Sphere {
+        node_id: u32,
+    },
+    Torus {
+        node_id: u32,
+    },
+    BlendSurf {
+        node_id: u32,
+    },
+    BlendBound,
+    OffsetSurf {
+        node_id: u32,
+    },
+    Type67 {
+        node_id: u32,
+    },
+    Type70 {
+        node_id: u32,
+    },
+    AttdefList,
+    Entity51,
+    Entity52,
+    Entity53,
+    Entity54,
+    Entity55,
+    Entity56,
+    Entity57,
+    Entity58,
+    Entity59,
+    Entity62,
+    Group {
+        node_id: u32,
+        selector: u8,
+        linked_reference_status: u8,
+    },
+    IntersectionData,
+    Type91,
+    Type101,
+    BSurface {
+        node_id: u32,
+    },
+    BSurfaceData,
+    BSurfaceDescriptor,
+    Multiplicities,
+    Knots,
+    TrimmedCurve {
+        node_id: u32,
+    },
+    BCurve {
+        node_id: u32,
+    },
+    BCurveData,
+    BCurveDescriptor,
+    SpCurve {
+        node_id: u32,
+    },
+    Type141,
+    SupportUv,
+}
+
+impl RecordFamily {
+    /// Numeric Parasolid node type for this family.
+    pub const fn kind(self) -> u16 {
+        match self {
+            Self::Body { .. } => 12,
+            Self::Shell { .. } => 13,
+            Self::Face { .. } => 14,
+            Self::Loop { .. } => 15,
+            Self::Edge { .. } => 16,
+            Self::Fin => 17,
+            Self::Vertex { .. } => 18,
+            Self::Region { .. } => 19,
+            Self::Point { .. } => 29,
+            Self::Line { .. } => 30,
+            Self::Circle { .. } => 31,
+            Self::Ellipse { .. } => 32,
+            Self::Intersection { .. } => 38,
+            Self::Chart => 40,
+            Self::TermUse => 41,
+            Self::Type45 => 45,
+            Self::Plane { .. } => 50,
+            Self::Cylinder { .. } => 51,
+            Self::Cone { .. } => 52,
+            Self::Sphere { .. } => 53,
+            Self::Torus { .. } => 54,
+            Self::BlendSurf { .. } => 56,
+            Self::BlendBound => 59,
+            Self::OffsetSurf { .. } => 60,
+            Self::Type67 { .. } => 67,
+            Self::Type70 { .. } => 70,
+            Self::AttdefList => 74,
+            Self::Entity51 => 81,
+            Self::Entity52 => 82,
+            Self::Entity53 => 83,
+            Self::Entity54 => 84,
+            Self::Entity55 => 85,
+            Self::Entity56 => 86,
+            Self::Entity57 => 87,
+            Self::Entity58 => 88,
+            Self::Entity59 => 89,
+            Self::Entity62 => 98,
+            Self::Group { .. } | Self::IntersectionData => 90,
+            Self::Type91 => 91,
+            Self::Type101 => 101,
+            Self::BSurface { .. } => 124,
+            Self::BSurfaceData => 125,
+            Self::BSurfaceDescriptor => 126,
+            Self::Multiplicities => 127,
+            Self::Knots => 128,
+            Self::TrimmedCurve { .. } => 133,
+            Self::BCurve { .. } => 134,
+            Self::BCurveData => 135,
+            Self::BCurveDescriptor => 136,
+            Self::SpCurve { .. } => 137,
+            Self::Type141 => 141,
+            Self::SupportUv => 204,
+        }
+    }
+
+    /// Kernel node identifier when this family serializes one.
+    pub const fn node_id(self) -> Option<u32> {
+        match self {
+            Self::Body { node_id }
+            | Self::Shell { node_id }
+            | Self::Face { node_id }
+            | Self::Loop { node_id }
+            | Self::Edge { node_id }
+            | Self::Vertex { node_id }
+            | Self::Region { node_id }
+            | Self::Point { node_id, .. }
+            | Self::Line { node_id }
+            | Self::Circle { node_id }
+            | Self::Ellipse { node_id }
+            | Self::Intersection { node_id }
+            | Self::Plane { node_id }
+            | Self::Cylinder { node_id }
+            | Self::Cone { node_id }
+            | Self::Sphere { node_id }
+            | Self::Torus { node_id }
+            | Self::BlendSurf { node_id }
+            | Self::OffsetSurf { node_id }
+            | Self::Type67 { node_id }
+            | Self::Type70 { node_id }
+            | Self::Group { node_id, .. }
+            | Self::BSurface { node_id }
+            | Self::TrimmedCurve { node_id }
+            | Self::BCurve { node_id }
+            | Self::SpCurve { node_id } => Some(node_id),
+            Self::Fin
+            | Self::Chart
+            | Self::TermUse
+            | Self::Type45
+            | Self::BlendBound
+            | Self::AttdefList
+            | Self::Entity51
+            | Self::Entity52
+            | Self::Entity53
+            | Self::Entity54
+            | Self::Entity55
+            | Self::Entity56
+            | Self::Entity57
+            | Self::Entity58
+            | Self::Entity59
+            | Self::Entity62
+            | Self::IntersectionData
+            | Self::Type91
+            | Self::Type101
+            | Self::BSurfaceData
+            | Self::BSurfaceDescriptor
+            | Self::Multiplicities
+            | Self::Knots
+            | Self::BCurveData
+            | Self::BCurveDescriptor
+            | Self::Type141
+            | Self::SupportUv => None,
+        }
+    }
+
+    /// POINT coordinates in Parasolid metres.
+    pub const fn position(self) -> Option<[f64; 3]> {
+        match self {
+            Self::Point { position, .. } => Some(position),
+            _ => None,
+        }
+    }
+
+    /// Stable family name used by the deltas census and native records.
+    pub const fn family_name(self) -> &'static str {
+        match self {
+            Self::Body { .. } => "BODY",
+            Self::Shell { .. } => "SHELL",
+            Self::Face { .. } => "FACE",
+            Self::Loop { .. } => "LOOP",
+            Self::Edge { .. } => "EDGE",
+            Self::Fin => "FIN",
+            Self::Vertex { .. } => "VERTEX",
+            Self::Region { .. } => "REGION",
+            Self::Point { .. } => "POINT",
+            Self::Line { .. } => "LINE",
+            Self::Circle { .. } => "CIRCLE",
+            Self::Ellipse { .. } => "ELLIPSE",
+            Self::Intersection { .. } => "INTERSECTION",
+            Self::Chart => "CHART",
+            Self::TermUse => "TERM_USE",
+            Self::Type45 => "TYPE_45",
+            Self::Plane { .. } => "PLANE",
+            Self::Cylinder { .. } => "CYLINDER",
+            Self::Cone { .. } => "CONE",
+            Self::Sphere { .. } => "SPHERE",
+            Self::Torus { .. } => "TORUS",
+            Self::BlendSurf { .. } => "BLEND_SURF",
+            Self::BlendBound => "BLEND_BOUND",
+            Self::OffsetSurf { .. } => "OFFSET_SURF",
+            Self::Type67 { .. } => "TYPE_67",
+            Self::Type70 { .. } => "TYPE_70",
+            Self::AttdefList => "ATTDEF_LIST",
+            Self::Entity51 => "ENTITY_51",
+            Self::Entity52 => "ENTITY_52",
+            Self::Entity53 => "ENTITY_53",
+            Self::Entity54 => "ENTITY_54",
+            Self::Entity55 => "ENTITY_55",
+            Self::Entity56 => "ENTITY_56",
+            Self::Entity57 => "ENTITY_57",
+            Self::Entity58 => "ENTITY_58",
+            Self::Entity59 => "ENTITY_59",
+            Self::Entity62 => "ENTITY_62",
+            Self::Group { .. } => "GROUP",
+            Self::IntersectionData => "INTERSECTION_DATA",
+            Self::Type91 => "TYPE_91",
+            Self::Type101 => "TYPE_101",
+            Self::BSurface { .. } => "B_SURFACE",
+            Self::BSurfaceData => "B_SURFACE_DATA",
+            Self::BSurfaceDescriptor => "B_SURFACE_DESCRIPTOR",
+            Self::Multiplicities => "MULTIPLICITIES",
+            Self::Knots => "KNOTS",
+            Self::TrimmedCurve { .. } => "TRIMMED_CURVE",
+            Self::BCurve { .. } => "B_CURVE",
+            Self::BCurveData => "B_CURVE_DATA",
+            Self::BCurveDescriptor => "B_CURVE_DESCRIPTOR",
+            Self::SpCurve { .. } => "SP_CURVE",
+            Self::Type141 => "TYPE_141",
+            Self::SupportUv => "SUPPORT_UV",
+        }
+    }
+
+    fn from_fixed(kind: u16, node_id: Option<u32>, position: Option<[f64; 3]>) -> Option<Self> {
+        Some(match kind {
+            13 => Self::Shell { node_id: node_id? },
+            14 => Self::Face { node_id: node_id? },
+            15 => Self::Loop { node_id: node_id? },
+            16 => Self::Edge { node_id: node_id? },
+            17 => Self::Fin,
+            18 => Self::Vertex { node_id: node_id? },
+            19 => Self::Region { node_id: node_id? },
+            29 => Self::Point {
+                node_id: node_id?,
+                position: position?,
+            },
+            30 => Self::Line { node_id: node_id? },
+            31 => Self::Circle { node_id: node_id? },
+            32 => Self::Ellipse { node_id: node_id? },
+            38 => Self::Intersection { node_id: node_id? },
+            50 => Self::Plane { node_id: node_id? },
+            51 => Self::Cylinder { node_id: node_id? },
+            52 => Self::Cone { node_id: node_id? },
+            53 => Self::Sphere { node_id: node_id? },
+            54 => Self::Torus { node_id: node_id? },
+            56 => Self::BlendSurf { node_id: node_id? },
+            60 => Self::OffsetSurf { node_id: node_id? },
+            124 => Self::BSurface { node_id: node_id? },
+            133 => Self::TrimmedCurve { node_id: node_id? },
+            134 => Self::BCurve { node_id: node_id? },
+            137 => Self::SpCurve { node_id: node_id? },
+            _ => return None,
+        })
+    }
+
+    fn from_variable_kind(kind: u16) -> Option<Self> {
+        Some(match kind {
+            81 => Self::Entity51,
+            82 => Self::Entity52,
+            83 => Self::Entity53,
+            84 => Self::Entity54,
+            85 => Self::Entity55,
+            86 => Self::Entity56,
+            87 => Self::Entity57,
+            88 => Self::Entity58,
+            89 => Self::Entity59,
+            98 => Self::Entity62,
+            _ => return None,
+        })
+    }
+
+    pub(crate) fn from_wire(
+        name: &str,
+        kind: u16,
+        node_id: Option<u32>,
+        position: Option<[f64; 3]>,
+        group_selector: Option<u8>,
+        group_linked_reference_status: Option<u8>,
+    ) -> Option<Self> {
+        let family = match name {
+            "BODY" => Self::Body { node_id: node_id? },
+            "SHELL" => Self::Shell { node_id: node_id? },
+            "FACE" => Self::Face { node_id: node_id? },
+            "LOOP" => Self::Loop { node_id: node_id? },
+            "EDGE" => Self::Edge { node_id: node_id? },
+            "FIN" => Self::Fin,
+            "VERTEX" => Self::Vertex { node_id: node_id? },
+            "REGION" => Self::Region { node_id: node_id? },
+            "POINT" => Self::Point {
+                node_id: node_id?,
+                position: position?,
+            },
+            "LINE" => Self::Line { node_id: node_id? },
+            "CIRCLE" => Self::Circle { node_id: node_id? },
+            "ELLIPSE" => Self::Ellipse { node_id: node_id? },
+            "INTERSECTION" => Self::Intersection { node_id: node_id? },
+            "CHART" => Self::Chart,
+            "TERM_USE" => Self::TermUse,
+            "TYPE_45" => Self::Type45,
+            "PLANE" => Self::Plane { node_id: node_id? },
+            "CYLINDER" => Self::Cylinder { node_id: node_id? },
+            "CONE" => Self::Cone { node_id: node_id? },
+            "SPHERE" => Self::Sphere { node_id: node_id? },
+            "TORUS" => Self::Torus { node_id: node_id? },
+            "BLEND_SURF" => Self::BlendSurf { node_id: node_id? },
+            "BLEND_BOUND" => Self::BlendBound,
+            "OFFSET_SURF" => Self::OffsetSurf { node_id: node_id? },
+            "TYPE_67" => Self::Type67 { node_id: node_id? },
+            "TYPE_70" => Self::Type70 { node_id: node_id? },
+            "ATTDEF_LIST" => Self::AttdefList,
+            "ENTITY_51" => Self::Entity51,
+            "ENTITY_52" => Self::Entity52,
+            "ENTITY_53" => Self::Entity53,
+            "ENTITY_54" => Self::Entity54,
+            "ENTITY_55" => Self::Entity55,
+            "ENTITY_56" => Self::Entity56,
+            "ENTITY_57" => Self::Entity57,
+            "ENTITY_58" => Self::Entity58,
+            "ENTITY_59" => Self::Entity59,
+            "ENTITY_62" => Self::Entity62,
+            "GROUP" => Self::Group {
+                node_id: node_id?,
+                selector: group_selector?,
+                linked_reference_status: group_linked_reference_status?,
+            },
+            "INTERSECTION_DATA" => Self::IntersectionData,
+            "TYPE_91" => Self::Type91,
+            "TYPE_101" => Self::Type101,
+            "B_SURFACE" => Self::BSurface { node_id: node_id? },
+            "B_SURFACE_DATA" => Self::BSurfaceData,
+            "B_SURFACE_DESCRIPTOR" => Self::BSurfaceDescriptor,
+            "MULTIPLICITIES" => Self::Multiplicities,
+            "KNOTS" => Self::Knots,
+            "TRIMMED_CURVE" => Self::TrimmedCurve { node_id: node_id? },
+            "B_CURVE" => Self::BCurve { node_id: node_id? },
+            "B_CURVE_DATA" => Self::BCurveData,
+            "B_CURVE_DESCRIPTOR" => Self::BCurveDescriptor,
+            "SP_CURVE" => Self::SpCurve { node_id: node_id? },
+            "TYPE_141" => Self::Type141,
+            "SUPPORT_UV" => Self::SupportUv,
+            _ => return None,
+        };
+        let group_ok = match family {
+            Self::Group { .. } => {
+                group_selector.is_some() && group_linked_reference_status.is_some()
+            }
+            _ => group_selector.is_none() && group_linked_reference_status.is_none(),
+        };
+        let position_ok = match family {
+            Self::Point { .. } => position.is_some(),
+            _ => position.is_none(),
+        };
+        (family.kind() == kind
+            && family.family_name() == name
+            && family.node_id() == node_id
+            && group_ok
+            && position_ok)
+            .then_some(family)
+    }
+
+    fn from_auxiliary_kind(kind: u16) -> Option<Self> {
+        Some(match kind {
+            40 => Self::Chart,
+            41 => Self::TermUse,
+            59 => Self::BlendBound,
+            125 => Self::BSurfaceData,
+            126 => Self::BSurfaceDescriptor,
+            127 => Self::Multiplicities,
+            128 => Self::Knots,
+            135 => Self::BCurveData,
+            136 => Self::BCurveDescriptor,
+            204 => Self::SupportUv,
+            _ => return None,
+        })
+    }
+}
+
 /// One complete admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Record {
-    /// Parasolid node type.
-    pub kind: u16,
+    /// Semantic family, including family-owned node identity and POINT/GROUP data.
+    pub family: RecordFamily,
     /// Stream-local XMT identifier.
     pub xmt: u32,
-    /// Kernel node identifier. FIN and variable entity records do not carry one.
-    pub node_id: Option<u32>,
     /// Ordered reference fields without their framing status bytes.
     pub references: Vec<u32>,
-    /// POINT coordinates in Parasolid metres, when present.
-    pub position: Option<[f64; 3]>,
     /// Partition-style bytes for fixed records and exact bytes for variable records.
     pub canonical_bytes: Vec<u8>,
     /// Record start offset in the inflated stream.
     pub offset: usize,
     /// First byte following the record.
     pub end: usize,
+}
+
+impl Record {
+    /// Numeric Parasolid node type.
+    pub const fn kind(&self) -> u16 {
+        self.family.kind()
+    }
+
+    /// Kernel node identifier when this family serializes one.
+    pub const fn node_id(&self) -> Option<u32> {
+        self.family.node_id()
+    }
+
+    /// Stable family name used by the deltas census and native records.
+    pub const fn family_name(&self) -> &'static str {
+        self.family.family_name()
+    }
 }
 
 /// One compact deletion carrying an explicit Parasolid type and XMT identity.
@@ -675,8 +1140,7 @@ pub fn walk(stream: &[u8]) -> Census {
             intersection_schema_anchor_seen,
         ) {
             census.bytes_decoded += record.end - offset;
-            let name =
-                record_family_name(&record).expect("shared records have admitted deltas families");
+            let name = record.family_name();
             *census.full_counts.entry(name).or_default() += 1;
             offset = record.end;
             value_boundary = true;
@@ -685,7 +1149,7 @@ pub fn walk(stream: &[u8]) -> Census {
         }
         if let Some(record) = consume_intersection_auxiliary(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
-            let family = match record.kind {
+            let family = match record.kind() {
                 40 => "CHART",
                 41 => "TERM_USE",
                 59 => "BLEND_BOUND",
@@ -700,7 +1164,7 @@ pub fn walk(stream: &[u8]) -> Census {
         }
         if let Some(record) = consume_nurbs_auxiliary(stream, offset) {
             census.bytes_decoded += record.end - record.offset;
-            let family = match record.kind {
+            let family = match record.kind() {
                 125 => "B_SURFACE_DATA",
                 126 => "B_SURFACE_DESCRIPTOR",
                 127 => "MULTIPLICITIES",
@@ -1023,7 +1487,7 @@ fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericT
     census
         .records
         .iter()
-        .filter(|record| record.kind == 41)
+        .filter(|record| record.kind() == 41)
         .filter_map(|record| {
             let (term_use, parsed_end) = crate::intersection::term_use_at(stream, record.offset)?;
             (parsed_end == record.end && term_use.xmt == record.xmt).then_some(())?;
@@ -1083,7 +1547,7 @@ fn reference_type_maps(stream: &[u8], census: &Census) -> Vec<ReferenceTypeMap> 
                 let following_kind = census
                     .records
                     .iter()
-                    .map(|record| (record.offset, record.kind))
+                    .map(|record| (record.offset, record.kind()))
                     .chain(
                         census
                             .tombstones
@@ -2169,7 +2633,7 @@ fn consume_shared_record(
 }
 
 fn has_shareable_terminal(stream: &[u8], record: &Record) -> bool {
-    if fixed_signature(record.kind).is_some_and(|signature| {
+    if fixed_signature(record.kind()).is_some_and(|signature| {
         signature
             .last()
             .is_some_and(|token| matches!(token, Token::Ref))
@@ -2180,10 +2644,10 @@ fn has_shareable_terminal(stream: &[u8], record: &Record) -> bool {
             .and_then(|offset| stream.get(offset))
             == Some(&0);
     }
-    if record.kind == 84 {
+    if record.kind() == 84 {
         return true;
     }
-    if record.kind != 81 || record.canonical_bytes.last() != Some(&0) {
+    if record.kind() != 81 || record.canonical_bytes.last() != Some(&0) {
         return false;
     }
     let bytes = &record.canonical_bytes;
@@ -2258,7 +2722,7 @@ pub(crate) fn merge_full_records_with_census(
         .iter()
         .filter(|record| current_scope_contains(&current_scopes, record.offset))
     {
-        let Ok(kind) = u8::try_from(record.kind) else {
+        let Ok(kind) = u8::try_from(record.kind()) else {
             continue;
         };
         if mergeable_record(record, kind) {
@@ -2393,7 +2857,7 @@ fn collect_unmatched_events(
         .iter()
         .filter(|record| current_scope_contains(&current_scopes, record.offset))
     {
-        let Ok(kind) = u8::try_from(record.kind) else {
+        let Ok(kind) = u8::try_from(record.kind()) else {
             continue;
         };
         if !mergeable_record(record, kind) {
@@ -2583,14 +3047,14 @@ pub(crate) fn semantic_residual_with_census(stream: &[u8], census: &Census) -> V
         .filter(|record| {
             let is_current = current_scope_contains(&current_scopes, record.offset);
             let is_semantic = matches!(
-                record.kind,
+                record.kind(),
                 40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204
-            ) || record.kind == 90
+            ) || record.kind() == 90
                 && record.canonical_bytes.first() == Some(&0x5a);
             is_current && is_semantic
         })
         .map(|record| {
-            if record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a) {
+            if record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a) {
                 let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
                 let mut anchored = Vec::new();
                 anchored.extend_from_slice(&crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]);
@@ -2716,11 +3180,9 @@ fn fixed_layout(
         }
     }
     Some(Record {
-        kind,
+        family: RecordFamily::from_fixed(kind, node_id, position)?,
         xmt,
-        node_id,
         references,
-        position,
         canonical_bytes,
         offset,
         end: at,
@@ -2750,11 +3212,9 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
     };
     let end = offset.checked_add(byte_len)?;
     Some(Record {
-        kind,
+        family: RecordFamily::from_variable_kind(kind)?,
         xmt,
-        node_id: None,
         references,
-        position: None,
         canonical_bytes: stream
             .get(offset..end)
             .expect("validated variable record bounds")
@@ -2775,14 +3235,16 @@ fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
     let escaped = escaped_marker
         .then(|| group_layout(stream, offset, 1))
         .flatten();
-    let (xmt, node_id, references, _, _, end) =
+    let (xmt, node_id, references, selector, linked_reference_status, end) =
         select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
-        kind: 90,
+        family: RecordFamily::Group {
+            node_id,
+            selector,
+            linked_reference_status,
+        },
         xmt,
-        node_id: Some(node_id),
         references,
-        position: None,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
@@ -2799,22 +3261,17 @@ pub(crate) struct GroupControls {
 }
 
 pub(crate) fn group_controls(record: &Record) -> Option<GroupControls> {
-    (record_family_name(record) == Some("GROUP")).then_some(())?;
-    let direct = group_layout(&record.canonical_bytes, 0, 0);
-    let escaped_marker = record.canonical_bytes.get(2) == Some(&0xff);
-    let escaped = escaped_marker
-        .then(|| group_layout(&record.canonical_bytes, 0, 1))
-        .flatten();
-    let (xmt, node_id, references, selector, linked_reference_status, end) =
-        select_enveloped_layout(escaped_marker, direct, escaped)?;
-    (xmt == record.xmt
-        && Some(node_id) == record.node_id
-        && references == record.references
-        && end == record.canonical_bytes.len())
-    .then_some(GroupControls {
-        selector,
-        linked_reference_status,
-    })
+    match record.family {
+        RecordFamily::Group {
+            selector,
+            linked_reference_status,
+            ..
+        } => Some(GroupControls {
+            selector,
+            linked_reference_status,
+        }),
+        _ => None,
+    }
 }
 
 fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
@@ -2826,11 +3283,9 @@ fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
         .flatten();
     let (xmt, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
-        kind: 74,
+        family: RecordFamily::AttdefList,
         xmt,
-        node_id: None,
         references,
-        position: None,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
@@ -2846,11 +3301,9 @@ fn consume_type_70(stream: &[u8], offset: usize) -> Option<Record> {
         .flatten();
     let (xmt, node_id, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
-        kind: 70,
+        family: RecordFamily::Type70 { node_id },
         xmt,
-        node_id: Some(node_id),
         references,
-        position: None,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
@@ -2920,11 +3373,9 @@ fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
         .flatten();
     let (references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
-        kind: 101,
+        family: RecordFamily::Type101,
         xmt: 2,
-        node_id: None,
         references,
-        position: None,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
@@ -3097,11 +3548,9 @@ fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
         direct?
     };
     Some(Record {
-        kind: 91,
+        family: RecordFamily::Type91,
         xmt,
-        node_id: None,
         references,
-        position: None,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
@@ -3143,11 +3592,9 @@ fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
         direct?
     };
     Some(Record {
-        kind: 141,
+        family: RecordFamily::Type141,
         xmt,
-        node_id: None,
         references,
-        position: None,
         canonical_bytes: stream.get(offset..at)?.to_vec(),
         offset,
         end: at,
@@ -3163,11 +3610,9 @@ fn consume_type_45(stream: &[u8], offset: usize) -> Option<Record> {
         .flatten();
     let (xmt, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
-        kind: 45,
+        family: RecordFamily::Type45,
         xmt,
-        node_id: None,
         references: Vec::new(),
-        position: None,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
@@ -3183,11 +3628,9 @@ fn consume_type_67(stream: &[u8], offset: usize) -> Option<Record> {
         .flatten();
     let (xmt, node_id, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
-        kind: 67,
+        family: RecordFamily::Type67 { node_id },
         xmt,
-        node_id: Some(node_id),
         references,
-        position: None,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
@@ -3311,11 +3754,9 @@ fn consume_intersection_data(
     let mut references = curve.header_references.to_vec();
     references.extend(curve.references);
     Some(Record {
-        kind: 90,
+        family: RecordFamily::IntersectionData,
         xmt: curve.xmt,
-        node_id: None,
         references,
-        position: None,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
@@ -3341,11 +3782,9 @@ fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record
         (204, support_uv.xmt, Vec::new(), end)
     };
     Some(Record {
-        kind,
+        family: RecordFamily::from_auxiliary_kind(kind)?,
         xmt,
-        node_id: None,
         references,
-        position: None,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
         end,
@@ -3355,11 +3794,9 @@ fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record
 fn consume_nurbs_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
     let auxiliary = crate::nurbs::auxiliary_record_at(stream, offset)?;
     Some(Record {
-        kind: auxiliary.kind,
+        family: RecordFamily::from_auxiliary_kind(auxiliary.kind)?,
         xmt: auxiliary.xmt,
-        node_id: None,
         references: auxiliary.references,
-        position: None,
         canonical_bytes: stream.get(offset..auxiliary.end)?.to_vec(),
         offset,
         end: auxiliary.end,
@@ -3446,14 +3883,8 @@ pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
 }
 
 /// Resolve the semantic family after the record-form discriminator is known.
-/// Numeric tag 90 is `GROUP` in the two-byte fixed-record form and
-/// `INTERSECTION_DATA` in the schema-anchored single-byte form.
-pub(crate) fn record_family_name(record: &Record) -> Option<&'static str> {
-    if record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a) {
-        Some("INTERSECTION_DATA")
-    } else {
-        family_name(record.kind)
-    }
+pub(crate) fn record_family_name(record: &Record) -> &'static str {
+    record.family_name()
 }
 
 fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
@@ -3518,9 +3949,8 @@ mod type_67_record_tests {
             assert!(matches!(
                 census.records.as_slice(),
                 [Record {
-                    kind: 67,
+                    family: RecordFamily::Type67 { node_id: 1_061 },
                     xmt: 67,
-                    node_id: Some(1_061),
                     references,
                     canonical_bytes,
                     end,
@@ -4464,7 +4894,7 @@ mod nurbs_auxiliary_tests {
         let census = walk(&bytes);
 
         assert_eq!(census.records.len(), 1);
-        assert_eq!(census.records[0].kind, 136);
+        assert_eq!(census.records[0].kind(), 136);
         assert_eq!(census.records[0].xmt, 3_537);
         assert_eq!(census.records[0].references, [3_540, 3_539, 3_538]);
         assert_eq!(census.records[0].end, bytes.len());
@@ -4490,7 +4920,7 @@ mod nurbs_auxiliary_tests {
         let census = walk(&bytes);
 
         assert_eq!(census.records.len(), 1);
-        assert_eq!(census.records[0].kind, 136);
+        assert_eq!(census.records[0].kind(), 136);
         assert_eq!(census.records[0].xmt, 50_947);
         assert_eq!(census.records[0].references, [50_950, 50_949, 50_948]);
         assert_eq!(census.records[0].end, bytes.len());

@@ -556,5 +556,5 @@ fn intersection_data_requires_complete_schema_header() {
     assert!(crate::deltas::walk(&incomplete_header)
         .records
         .iter()
-        .all(|record| record.kind != 90));
+        .all(|record| record.kind() != 90));
 }
