@@ -4137,23 +4137,16 @@ pub struct DesignCopyPasteComponentOperation {
 #[serde(try_from = "DesignMirrorConstructionWire", into = "DesignMirrorConstructionWire")]
 #[cfg_attr(feature = "schema", schemars(with = "DesignMirrorConstructionWire"))]
 pub struct DesignMirrorConstruction {
-    /// Fixed instance count, including the seed.
-    pub count: u32,
-    /// Parameter-owner record carrying `count`.
+    /// Parameter-owner record carrying the fixed count two.
     pub count_record_index: u32,
     /// Byte offset of the evaluated count scalar.
     pub count_offset: u64,
     /// Positive model-space stitch tolerance in source centimetres.
     pub stitch_tolerance: f64,
-    /// Parameter-owner record carrying `stitch_tolerance`, when the source
-    /// stores the scalar in a separate owner record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stitch_tolerance_record_index: Option<u32>,
     /// Byte offset of the evaluated stitch-tolerance scalar.
     pub stitch_tolerance_offset: u64,
-    /// Inline scope-frame carrier used by the legacy Mirror envelope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stitch_tolerance_scope: Option<DesignMirrorScopeTolerance>,
+    /// Owner-backed or inline scope-frame tolerance carrier.
+    pub tolerance_source: DesignMirrorToleranceSource,
     /// Seed group selected by the source operation.
     pub seed_group_record_index: u32,
     /// Role-`0x5` mirror-plane group.
@@ -4169,6 +4162,13 @@ pub struct DesignMirrorConstruction {
     pub plane_selection_record_index: Option<u32>,
     /// Proven selected-face mirror plane, when exact.
     pub plane: Option<DesignPlane>,
+}
+
+/// Native carrier of a Mirror stitch tolerance.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DesignMirrorToleranceSource {
+    Owner { record_index: u32 },
+    Scope(DesignMirrorScopeTolerance),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4220,14 +4220,20 @@ struct DesignMirrorConstructionWire {
 impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
     type Error = String;
     fn try_from(wire: DesignMirrorConstructionWire) -> Result<Self, Self::Error> {
+        if wire.count != 2 {
+            return Err("count must be 2 for Mirror".into());
+        }
+        let tolerance_source = match (wire.stitch_tolerance_record_index, wire.stitch_tolerance_scope) {
+            (Some(record_index), None) => DesignMirrorToleranceSource::Owner { record_index },
+            (None, Some(scope)) => DesignMirrorToleranceSource::Scope(scope),
+            _ => return Err("stitch_tolerance_record_index and stitch_tolerance_scope require exactly one carrier".into()),
+        };
         Ok(Self {
-            count: wire.count,
             count_record_index: wire.count_record_index,
             count_offset: wire.count_offset,
             stitch_tolerance: wire.stitch_tolerance,
-            stitch_tolerance_record_index: wire.stitch_tolerance_record_index,
             stitch_tolerance_offset: wire.stitch_tolerance_offset,
-            stitch_tolerance_scope: wire.stitch_tolerance_scope,
+            tolerance_source,
             seed_group_record_index: wire.seed_group_record_index,
             plane_group_record_index: wire.plane_group_record_index,
             seed_feature_scope_record_index: Located::from_wire(wire.seed_feature_scope_record_index, wire.seed_feature_reference_offset, "seed_feature_scope_record_index").map_err(|_| "seed_feature_scope_record_index and seed_feature_reference_offset must occur together")?,
@@ -4244,14 +4250,18 @@ impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
 
 impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
     fn from(record: DesignMirrorConstruction) -> Self {
+        let (stitch_tolerance_record_index, stitch_tolerance_scope) = match record.tolerance_source {
+            DesignMirrorToleranceSource::Owner { record_index } => (Some(record_index), None),
+            DesignMirrorToleranceSource::Scope(scope) => (None, Some(scope)),
+        };
         Self {
-            count: record.count,
+            count: 2,
             count_record_index: record.count_record_index,
             count_offset: record.count_offset,
             stitch_tolerance: record.stitch_tolerance,
-            stitch_tolerance_record_index: record.stitch_tolerance_record_index,
+            stitch_tolerance_record_index,
             stitch_tolerance_offset: record.stitch_tolerance_offset,
-            stitch_tolerance_scope: record.stitch_tolerance_scope,
+            stitch_tolerance_scope,
             seed_group_record_index: record.seed_group_record_index,
             plane_group_record_index: record.plane_group_record_index,
             seed_feature_scope_record_index: record.seed_feature_scope_record_index.map(|reference| reference.value),
@@ -4268,15 +4278,12 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
 /// Exact inline carrier for a legacy Mirror stitch tolerance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignMirrorScopeToleranceWire", into = "DesignMirrorScopeToleranceWire")]
 pub struct DesignMirrorScopeTolerance {
     /// Fixed scalar-lane marker preceding the tolerance value.
-    pub marker: u32,
+    pub marker: DesignMirrorToleranceMarker,
     /// Byte offset of the first scalar-lane marker.
     pub marker_offset: u64,
-    /// Byte offset of the repeated scalar-lane marker, when this generation
-    /// carries the marker twice.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repeated_marker_offset: Option<u64>,
     /// First marked reference in the scalar lane.
     pub first_reference: u32,
     /// Byte offset of the first marked reference.
@@ -4285,6 +4292,98 @@ pub struct DesignMirrorScopeTolerance {
     pub second_reference: u32,
     /// Byte offset of the second marked reference.
     pub second_reference_offset: u64,
+}
+
+/// Scalar-lane marker and its required repeated location.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesignMirrorToleranceMarker {
+    Single61,
+    Repeated89(u64),
+    Repeated94(u64),
+    Repeated100(u64),
+}
+
+impl DesignMirrorToleranceMarker {
+    #[must_use]
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Single61 => 61,
+            Self::Repeated89(_) => 89,
+            Self::Repeated94(_) => 94,
+            Self::Repeated100(_) => 100,
+        }
+    }
+
+    #[must_use]
+    pub fn repeated_offset(self) -> Option<u64> {
+        match self {
+            Self::Single61 => None,
+            Self::Repeated89(offset) | Self::Repeated94(offset) | Self::Repeated100(offset) => Some(offset),
+        }
+    }
+}
+
+impl TryFrom<(u32, Option<u64>)> for DesignMirrorToleranceMarker {
+    type Error = String;
+    fn try_from((marker, offset): (u32, Option<u64>)) -> Result<Self, Self::Error> {
+        match (marker, offset) {
+            (61, None) => Ok(Self::Single61),
+            (89, Some(offset)) => Ok(Self::Repeated89(offset)),
+            (94, Some(offset)) => Ok(Self::Repeated94(offset)),
+            (100, Some(offset)) => Ok(Self::Repeated100(offset)),
+            _ => Err("marker and repeated_marker_offset must identify a single 61 or repeated 89, 94, or 100 lane".into()),
+        }
+    }
+}
+
+/// Exact inline carrier for a legacy Mirror stitch tolerance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignMirrorScopeToleranceWire {
+    /// Fixed scalar-lane marker preceding the tolerance value.
+    marker: u32,
+    /// Byte offset of the first scalar-lane marker.
+    marker_offset: u64,
+    /// Byte offset of the repeated scalar-lane marker, when this generation
+    /// carries the marker twice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repeated_marker_offset: Option<u64>,
+    /// First marked reference in the scalar lane.
+    first_reference: u32,
+    /// Byte offset of the first marked reference.
+    first_reference_offset: u64,
+    /// Second marked reference in the scalar lane.
+    second_reference: u32,
+    /// Byte offset of the second marked reference.
+    second_reference_offset: u64,
+}
+
+impl TryFrom<DesignMirrorScopeToleranceWire> for DesignMirrorScopeTolerance {
+    type Error = String;
+    fn try_from(wire: DesignMirrorScopeToleranceWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            marker: DesignMirrorToleranceMarker::try_from((wire.marker, wire.repeated_marker_offset))?,
+            marker_offset: wire.marker_offset,
+            first_reference: wire.first_reference,
+            first_reference_offset: wire.first_reference_offset,
+            second_reference: wire.second_reference,
+            second_reference_offset: wire.second_reference_offset,
+        })
+    }
+}
+
+impl From<DesignMirrorScopeTolerance> for DesignMirrorScopeToleranceWire {
+    fn from(record: DesignMirrorScopeTolerance) -> Self {
+        Self {
+            marker: record.marker.code(),
+            marker_offset: record.marker_offset,
+            repeated_marker_offset: record.marker.repeated_offset(),
+            first_reference: record.first_reference,
+            first_reference_offset: record.first_reference_offset,
+            second_reference: record.second_reference,
+            second_reference_offset: record.second_reference_offset,
+        }
+    }
 }
 
 /// Exact fixed scalar lanes carried by a Chamfer scope.

@@ -1937,3 +1937,46 @@ fn component_occurrence_derives_base_ordinal_and_requires_nonzero_placed_ordinal
         assert!(error.to_string().contains("occurrence_ordinal"));
     }
 }
+
+#[test]
+fn mirror_scope_tolerance_pairs_repeated_markers_with_their_locations() {
+    for (marker, repeated) in [(61, None), (89, Some(59)), (94, Some(58)), (100, Some(59))] {
+        let offset = repeated.map_or_else(String::new, |offset| format!(",\"repeated_marker_offset\":{offset}"));
+        let wire = format!("{{\"marker\":{marker},\"marker_offset\":47{offset},\"first_reference\":12,\"first_reference_offset\":63,\"second_reference\":11,\"second_reference_offset\":76}}");
+        let lane: super::DesignMirrorScopeTolerance = serde_json::from_str(&wire).expect("mirror scalar lane");
+        assert_eq!(serde_json::to_string(&lane).expect("mirror scalar lane wire"), wire);
+        assert_eq!(lane.marker.code(), marker);
+    }
+    for (marker, repeated) in [(0, None), (89, None), (94, None), (100, None), (61, Some(59)), (90, Some(59))] {
+        let offset = repeated.map_or_else(String::new, |offset| format!(",\"repeated_marker_offset\":{offset}"));
+        let wire = format!("{{\"marker\":{marker},\"marker_offset\":47{offset},\"first_reference\":12,\"first_reference_offset\":63,\"second_reference\":11,\"second_reference_offset\":76}}");
+        let error = serde_json::from_str::<super::DesignMirrorScopeTolerance>(&wire).expect_err("invalid mirror scalar lane");
+        assert!(error.to_string().contains("marker"));
+        assert!(error.to_string().contains("repeated_marker_offset"));
+    }
+}
+
+#[test]
+fn mirror_derives_count_and_requires_one_tolerance_carrier() {
+    let wire = r#"{"count":2,"count_record_index":11,"count_offset":0,"stitch_tolerance":0.001,"stitch_tolerance_offset":51,"stitch_tolerance_scope":{"marker":89,"marker_offset":47,"repeated_marker_offset":59,"first_reference":12,"first_reference_offset":63,"second_reference":11,"second_reference_offset":76},"seed_group_record_index":20,"plane_group_record_index":30}"#;
+    let construction: super::DesignMirrorConstruction = serde_json::from_str(wire).expect("inline mirror tolerance");
+    assert_eq!(serde_json::to_string(&construction).expect("inline mirror tolerance wire"), wire);
+    let source: serde_json::Value = serde_json::from_str(wire).expect("mirror wire");
+    for count in [0, 1, 3, u32::MAX] {
+        let mut invalid = source.clone();
+        invalid["count"] = count.into();
+        let error = serde_json::from_value::<super::DesignMirrorConstruction>(invalid).expect_err("fixed mirror count");
+        assert!(error.to_string().contains("count"));
+    }
+    for present in [false, true] {
+        let mut invalid = source.clone();
+        if present {
+            invalid["stitch_tolerance_record_index"] = 12.into();
+        } else {
+            invalid.as_object_mut().expect("mirror object").remove("stitch_tolerance_scope");
+        }
+        let error = serde_json::from_value::<super::DesignMirrorConstruction>(invalid).expect_err("one mirror tolerance carrier");
+        assert!(error.to_string().contains("stitch_tolerance_record_index"));
+        assert!(error.to_string().contains("stitch_tolerance_scope"));
+    }
+}

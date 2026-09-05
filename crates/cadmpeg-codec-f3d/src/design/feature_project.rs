@@ -6389,9 +6389,6 @@ pub(crate) fn project_mirror(
     use cadmpeg_ir::features::{FeatureDefinition, PatternKind, PatternSeed};
 
     let construction = scope.mirror_construction()?;
-    if construction.count != 2 {
-        return None;
-    }
     let stream = native_stream(&scope.id)?;
     let matching_groups = groups
         .iter()

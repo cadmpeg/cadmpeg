@@ -61,13 +61,11 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
     | crate::records::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
     {
         *slot = Some(DesignMirrorConstruction {
-            count: 2,
             count_record_index: 11,
             count_offset: 0,
             stitch_tolerance: 0.001,
-            stitch_tolerance_record_index: Some(12),
             stitch_tolerance_offset: 0,
-            stitch_tolerance_scope: None,
+            tolerance_source: crate::records::DesignMirrorToleranceSource::Owner { record_index: 12 },
             seed_group_record_index,
             plane_group_record_index: 30,
             seed_feature_scope_record_index: None,

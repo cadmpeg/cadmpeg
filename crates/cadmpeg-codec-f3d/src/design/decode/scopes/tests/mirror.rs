@@ -118,8 +118,8 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-369 tolerance");
     assert_eq!(value, 0.25);
     assert_eq!(offset, 51);
-    assert_eq!(carrier.marker, 89);
-    assert_eq!(carrier.repeated_marker_offset, Some(59));
+    assert_eq!(carrier.marker.code(), 89);
+    assert_eq!(carrier.marker.repeated_offset(), Some(59));
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 
@@ -149,8 +149,8 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-391 tolerance");
     assert_eq!(value, 0.25);
     assert_eq!(offset, 50);
-    assert_eq!(carrier.marker, 94);
-    assert_eq!(carrier.repeated_marker_offset, Some(58));
+    assert_eq!(carrier.marker.code(), 94);
+    assert_eq!(carrier.marker.repeated_offset(), Some(58));
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 
@@ -180,7 +180,7 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-440 tolerance");
     assert_eq!(value, 0.25);
     assert_eq!(offset, 51);
-    assert_eq!(carrier.marker, 100);
+    assert_eq!(carrier.marker.code(), 100);
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 }
@@ -206,8 +206,8 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
         exact_legacy_mirror_scope_tolerance(&bytes, &scope).expect("class-441 tolerance");
     assert_eq!(value, 0.125);
     assert_eq!(offset, 50);
-    assert_eq!(carrier.marker, 61);
-    assert_eq!(carrier.repeated_marker_offset, None);
+    assert_eq!(carrier.marker.code(), 61);
+    assert_eq!(carrier.marker.repeated_offset(), None);
     assert_eq!(carrier.first_reference, 12);
     assert_eq!(carrier.second_reference, 11);
 }
@@ -249,6 +249,6 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
 
     assert_eq!(
         exact_legacy_mirror_scope_count(&bytes, &records, &scope),
-        Some((2, count_record_index, 40))
+        Some((count_record_index, 40))
     );
 }
