@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cached parameter-space curve (pcurve) block decoding, patch layouts, and cache entry points.
 
-use crate::nurbs::core::KnotPatchLayout;
 use crate::nurbs::reader::{
     construction_marker_positions, is_periodic, marker_at, marker_positions, read_knots,
-    take_tagged_int, INT_WIDTHS,
+    take_tagged_int, KnotLayout, INT_WIDTHS,
 };
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
@@ -80,7 +79,7 @@ pub struct PcurvePatchLayout {
     /// Number of UV control points.
     pub control_count: usize,
     /// Native unique-knot payloads and expanded run lengths.
-    pub knots: KnotPatchLayout,
+    pub knots: KnotLayout,
     /// Payload offset for the closure enum.
     pub periodic_value_offset: usize,
     /// Offset immediately after the final UV control component.
@@ -133,7 +132,7 @@ fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<Pcurv
                 control_value_offsets: offsets,
                 weight_value_offsets: weight_offsets,
                 control_count,
-                knots: knot_layout.into(),
+                knots: knot_layout,
                 periodic_value_offset,
                 control_end: pos,
             })
