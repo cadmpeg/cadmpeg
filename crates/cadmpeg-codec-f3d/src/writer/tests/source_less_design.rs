@@ -595,8 +595,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         owner_reference: 277,
         owner_entity_id: String::new(),
         owner_reference_offset: 0,
-        auxiliary_references: Vec::new(),
-        auxiliary_reference_offsets: Vec::new(),
+        auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
         members: vec![
             SketchRelationMember::from_index(100),

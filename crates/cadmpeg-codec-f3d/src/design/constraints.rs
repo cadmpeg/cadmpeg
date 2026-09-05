@@ -160,7 +160,7 @@ pub fn project_sketch_constraints(
             relation
                 .member_indices()
                 .into_iter()
-                .chain(relation.auxiliary_references.iter().copied())
+                .chain(relation.auxiliary_references.values().copied())
                 .chain(relation.return_member_indices())
                 .filter_map(|record_index| {
                     projected
@@ -206,7 +206,7 @@ pub fn project_sketch_constraints(
                 .chain(
                     relation
                         .auxiliary_references
-                        .iter()
+                        .values()
                         .map(|record_index| native_operand(scope, "auxiliary", *record_index)),
                 )
                 .chain(
@@ -461,7 +461,7 @@ pub(crate) fn exact_text_relation(
             if relation.constraint_kinds() == [SketchConstraintKind::TextFrame]
                 && relation.members.first().map(|member| member.record_index)
                     == Some(*text_reference)
-                && relation.auxiliary_references == [*text_reference]
+                && relation.auxiliary_references.values().copied().eq([*text_reference])
                 && relation.return_member_indices() == relation.member_indices()[1..] =>
         {
             let text = projected.get(&(scope, *text_reference))?;
@@ -493,7 +493,7 @@ pub(crate) fn exact_text_relation(
             && relation.members.len() == 2
             && relation.member_relation_ordinals().len() == 2
             && relation.members[1].record_index == *text_reference
-            && relation.auxiliary_references == [*text_reference]
+            && relation.auxiliary_references.values().copied().eq([*text_reference])
             && relation.return_member_indices() == [relation.members[0].record_index] =>
         {
             let path = projected.get(&(scope, relation.members[0].record_index))?;
@@ -1000,8 +1000,7 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: "0_1".into(),
-            auxiliary_references,
-            auxiliary_reference_offsets: Vec::new(),
+            auxiliary_references: crate::records::ReferenceRun::Unlocated(auxiliary_references),
             rectangular_counted_reference_count: Some(rectangular_counted_reference_count),
             members: members
                 .clone()
@@ -1227,8 +1226,7 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: "0_1".into(),
-            auxiliary_references: vec![20, 21],
-            auxiliary_reference_offsets: Vec::new(),
+            auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![20, 21]),
             rectangular_counted_reference_count: None,
             members: vec![
                 SketchRelationMember::from_index(1),
@@ -1334,8 +1332,7 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: "0_1".into(),
-            auxiliary_references: vec![20, 21],
-            auxiliary_reference_offsets: Vec::new(),
+            auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![20, 21]),
             rectangular_counted_reference_count: None,
             members: vec![
                 SketchRelationMember::from_index(1),
@@ -1417,8 +1414,7 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: String::new(),
-            auxiliary_references: vec![2],
-            auxiliary_reference_offsets: Vec::new(),
+            auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![2]),
             rectangular_counted_reference_count: None,
             members: vec![
                 SketchRelationMember::from_index(1),

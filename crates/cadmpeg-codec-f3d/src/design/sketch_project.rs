@@ -83,7 +83,7 @@ fn text_frame_curve_records(
                 || relation.constraint_kinds() != [SketchConstraintKind::TextFrame]
                 || relation.members.first().map(|member| member.record_index)
                     != Some(*text_reference)
-                || relation.auxiliary_references != [*text_reference]
+                || !relation.auxiliary_references.values().copied().eq([*text_reference])
                 || relation.members.len() < 2
                 || relation.return_member_indices() != relation.member_indices()[1..]
                 || text_owners.get(&(scope.clone(), *text_reference))

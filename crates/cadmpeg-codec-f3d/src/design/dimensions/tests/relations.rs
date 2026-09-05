@@ -383,26 +383,14 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         state_offset: 100,
         owner_reference: 1,
         owner_entity_id: "0_1".into(),
-        auxiliary_references: vec![0],
-        auxiliary_reference_offsets: vec![80],
+        auxiliary_references: crate::records::ReferenceRun::Located(vec![crate::records::Located { value: 0, offset: 80 }]),
         rectangular_counted_reference_count: None,
-        members: crate::records::zip_relation_members(
-            vec![1, 2, 3, 4],
-            vec![25, 40, 55, 70],
-            vec![3, 5, 1, 1],
-            Vec::new(),
-        )
-        .expect("member zip"),
+        members: [(1, 25, 3), (2, 40, 5), (3, 55, 1), (4, 70, 1)].into_iter().map(|(record_index, offset, relation_ordinal)| crate::records::SketchRelationMember { record_index, offset, relation_ordinal, resolved: None }).collect(),
         owner_reference_offset: 90,
         state: 0x20_0000_0000,
         entity_genesis: None,
         kind: crate::records::SketchRelationKind::Unpatterned,
-        return_members: crate::records::zip_return_members(
-            vec![1, 3, 2, 4],
-            vec![120, 131, 142, 153],
-            vec![curve(1, 10), curve(3, 30), curve(2, 20), curve(4, 40)],
-        )
-        .expect("return zip"),
+        return_members: [(1, 120, curve(1, 10)), (3, 131, curve(3, 30)), (2, 142, curve(2, 20)), (4, 153, curve(4, 40))].into_iter().map(|(record_index, offset, resolved)| crate::records::SketchRelationReturnMember { record_index, offset, resolved: Some(resolved) }).collect(),
         raw_bytes: Vec::new(),
     };
     let projected = HashMap::from([

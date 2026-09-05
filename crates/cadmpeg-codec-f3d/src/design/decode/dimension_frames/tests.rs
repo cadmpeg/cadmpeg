@@ -842,26 +842,14 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         state_offset: 66,
         owner_reference: 172,
         owner_entity_id: "0_172".into(),
-        auxiliary_references: Vec::new(),
-        auxiliary_reference_offsets: Vec::new(),
+        auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: crate::records::zip_relation_members(
-            vec![175, 217],
-            vec![25, 40],
-            Vec::new(),
-            Vec::new(),
-        )
-        .expect("members"),
+        members: [(175, 25), (217, 40)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationMember { record_index, offset, relation_ordinal: 0, resolved: None }).collect(),
         owner_reference_offset: 56,
         state: 0,
         entity_genesis: None,
         kind: SketchRelationKind::Unpatterned,
-        return_members: crate::records::zip_return_members(
-            vec![217, 175],
-            vec![79, 90],
-            Vec::new(),
-        )
-        .expect("return members"),
+        return_members: [(217, 79), (175, 90)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationReturnMember { record_index, offset, resolved: None }).collect(),
         raw_bytes: bytes[..101].to_vec(),
     };
     let mut relations = vec![relation_at("native", 0), relation_at("other", 0)];
