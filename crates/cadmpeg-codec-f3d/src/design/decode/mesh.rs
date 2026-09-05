@@ -32,7 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::{DesignMeshSceneNode, DesignMeshSceneState, DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
+use crate::records::{DesignMeshCollectionOwner, DesignMeshSceneNode, DesignMeshSceneState, DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -308,9 +308,8 @@ struct MeshScopeRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshCollectionOwnerRecord {
-    identity: DesignMeshRecordIdentity,
+    owner: DesignMeshCollectionOwner,
     collection_record_index: u32,
-    collection_reference_offset: u64,
 }
 
 impl MeshBody {
@@ -1013,10 +1012,10 @@ fn parse_mesh_collection_owner_record(
         return Ok(None);
     };
     Ok(Some(MeshCollectionOwnerRecord {
-        identity,
+        owner: DesignMeshCollectionOwner::new(identity, source_offset(frame.start, backlink_at)
+            .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?)
+            .map_err(|_| malformed_frame("mesh-collection-owner", frame.entity_id))?,
         collection_record_index,
-        collection_reference_offset: source_offset(frame.start, backlink_at)
-            .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
     }))
 }
 
@@ -1228,7 +1227,7 @@ where
         .flatten()
         .filter(|owner| collection_record_indices.contains(&owner.collection_record_index))
         .collect(),
-        |record| record.identity.record_index(),
+        |record| record.owner.record().record_index(),
         "mesh-collection-owner",
     )?;
     let body_owner_frames = typed_frame_map(
@@ -1292,7 +1291,7 @@ where
             .get(&collection.owner_record_index)
             .filter(|owner| {
                 owner.collection_record_index == collection.identity.record_index()
-                    && used_collection_owners.insert(owner.identity.record_index())
+                    && used_collection_owners.insert(owner.owner.record().record_index())
             })
             .ok_or_else(|| {
                 stream_error("each mesh collection has one unused owner with a reciprocal backlink")
@@ -1420,9 +1419,8 @@ where
                 collection.count_offsets[1],
             ],
             texture_table_reference_offset: collection.texture_reference_offset,
-            collection_owner_record: collection_owner.identity.clone(),
+            collection_owner: collection_owner.owner.clone(),
             collection_owner_reference_offset: collection.owner_reference_offset,
-            collection_owner_backlink_offset: collection_owner.collection_reference_offset,
             scope_owner_record_index: scope.owner_record_index,
             scope_owner_reference_offset: scope.owner_reference_offset,
             texture_flags_count_offset: texture_table.flags_count_offset,
@@ -2680,7 +2678,7 @@ mod tests {
             .expect("valid legacy owner frame")
             .expect("legacy collection owner");
         assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
-        assert_eq!(owner.collection_reference_offset, 859);
+        assert_eq!(owner.owner.backlink_offset(), 859);
     }
 
     #[test]
@@ -2715,7 +2713,7 @@ mod tests {
             .expect("version-17 collection owner");
         assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
         assert_eq!(
-            owner.collection_reference_offset,
+            owner.owner.backlink_offset(),
             collection_owner_v17::COLLECTION_BACKLINK as u64
         );
     }

@@ -885,8 +885,8 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "texture_table_record": identity, "body_count_offsets": [21, 31, 41],
         "body_record_indices": [104, 104], "scope_body_reference_offsets": [25, 36],
         "collection_body_reference_offsets": [62, 73], "texture_table_reference_offset": 52,
-        "collection_owner_record": identity, "collection_owner_reference_offset": 84,
-        "collection_owner_backlink_offset": 94, "scope_owner_record_index": 109,
+        "collection_owner_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 273}, "collection_owner_reference_offset": 84,
+        "collection_owner_backlink_offset": 362, "scope_owner_record_index": 109,
         "scope_owner_reference_offset": 105, "texture_flags_count_offset": 115,
         "texture_filename_count_offset": 125, "bodies": [body, body], "textures": []
     });
@@ -2751,4 +2751,19 @@ fn mesh_scene_forms_derive_bounds_and_transform_locations() {
     let mut bad_bounds = bound_wire.unwrap();
     bad_bounds.offsets = [247, 271];
     assert!(super::DesignMeshSceneState::from_wire(record, Some(bad_bounds)).is_err());
+}
+
+#[test]
+fn mesh_collection_owner_derives_fixed_and_terminal_backlinks() {
+    let identity = |length| super::DesignMeshRecordIdentity::new(
+        super::DesignClassTag::try_from("256".to_owned()).unwrap(), 4, 100, length).unwrap();
+    for (length, relative) in [(252, 241), (400, 241), (273, 262), (400, 262), (200, 189), (400, 389)] {
+        let owner = super::DesignMeshCollectionOwner::new(identity(length), 100 + relative).unwrap();
+        assert_eq!(owner.backlink_offset(), 100 + relative);
+        assert_eq!(owner.record(), &identity(length));
+        assert_eq!(super::DesignMeshCollectionOwner::new(owner.record().clone(), owner.backlink_offset()).unwrap(), owner);
+    }
+    for (length, offset) in [(250, 341), (272, 362), (400, 99), (400, 488)] {
+        assert!(super::DesignMeshCollectionOwner::new(identity(length), offset).is_err());
+    }
 }

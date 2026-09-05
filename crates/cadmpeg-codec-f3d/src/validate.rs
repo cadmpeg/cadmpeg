@@ -1501,7 +1501,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && collection_records.insert((stream, feature.collection_record.record_index()))
             && texture_table_records.insert((stream, feature.texture_table_record.record_index()))
             && collection_owner_records
-                .insert((stream, feature.collection_owner_record.record_index()))
+                .insert((stream, feature.collection_owner.record().record_index()))
             && feature.scope_base_record.record_index() == feature.scope_record.record_index()
             && feature.collection_base_record.record_index()
                 == feature.collection_record.record_index()
@@ -1545,11 +1545,10 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             )
             && expected_collection_owner_reference
                 == Some(feature.collection_owner_reference_offset)
-            && feature.collection_owner_record.frame_length() >= 273
             && mesh_record_offset_is(
-                &feature.collection_owner_record,
+                feature.collection_owner.record(),
                 262,
-                feature.collection_owner_backlink_offset,
+                feature.collection_owner.backlink_offset(),
             )
             && mesh_record_offset_is(
                 &feature.scope_base_record,

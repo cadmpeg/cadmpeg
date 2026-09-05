@@ -14429,6 +14429,45 @@ impl From<MeshAffineTransform> for [[f64; 4]; 4] {
     }
 }
 
+/// Collection-owner record with a fixed-prefix or terminal backlink.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignMeshCollectionOwner {
+    record: DesignMeshRecordIdentity,
+    backlink: DesignMeshCollectionBacklink,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DesignMeshCollectionBacklink {
+    Fixed241,
+    Fixed262,
+    Terminal,
+}
+impl DesignMeshCollectionOwner {
+    pub fn new(record: DesignMeshRecordIdentity, backlink_offset: u64) -> Result<Self, String> {
+        let relative = backlink_offset.checked_sub(record.byte_offset()).ok_or("collection_owner_backlink_offset precedes its record")?;
+        let backlink = if relative == crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK as u64
+            && record.frame_length() >= crate::layout::paramesh_collection_owner_v17::LEN as u64 {
+            DesignMeshCollectionBacklink::Fixed241
+        } else if relative == crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK as u64
+            && record.frame_length() >= crate::layout::paramesh_collection_owner_backlink_prefix::LEN as u64 {
+            DesignMeshCollectionBacklink::Fixed262
+        } else if relative == record.frame_length() - 11 {
+            DesignMeshCollectionBacklink::Terminal
+        } else {
+            return Err("collection_owner_backlink_offset must identify a complete fixed-prefix or terminal reference".into());
+        };
+        Ok(Self { record, backlink })
+    }
+    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn backlink_offset(&self) -> u64 {
+        let relative = match self.backlink {
+            DesignMeshCollectionBacklink::Fixed241 => crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK as u64,
+            DesignMeshCollectionBacklink::Fixed262 => crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK as u64,
+            DesignMeshCollectionBacklink::Terminal => self.record.frame_length() - 11,
+        };
+        self.record.byte_offset() + relative
+    }
+}
+
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -14452,11 +14491,9 @@ pub struct DesignMeshFeature {
     /// Byte offset of the collection's texture-table reference.
     pub texture_table_reference_offset: u64,
     /// Typed Design owner of the mesh-body collection.
-    pub collection_owner_record: DesignMeshRecordIdentity,
+    pub collection_owner: DesignMeshCollectionOwner,
     /// Byte offset of the collection's owner reference.
     pub collection_owner_reference_offset: u64,
-    /// Byte offset of the owner's reciprocal collection reference.
-    pub collection_owner_backlink_offset: u64,
     /// Design owner of the feature scope.
     pub scope_owner_record_index: u32,
     /// Byte offset of the paired scope record's owner reference.
@@ -14542,9 +14579,8 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             texture_table_record: wire.texture_table_record,
             body_count_offsets: wire.body_count_offsets,
             texture_table_reference_offset: wire.texture_table_reference_offset,
-            collection_owner_record: wire.collection_owner_record,
+            collection_owner: DesignMeshCollectionOwner::new(wire.collection_owner_record, wire.collection_owner_backlink_offset)?,
             collection_owner_reference_offset: wire.collection_owner_reference_offset,
-            collection_owner_backlink_offset: wire.collection_owner_backlink_offset,
             scope_owner_record_index: wire.scope_owner_record_index,
             scope_owner_reference_offset: wire.scope_owner_reference_offset,
             texture_flags_count_offset: wire.texture_flags_count_offset,
@@ -14566,6 +14602,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_body_reference_offsets.push(body.collection_body_reference_offset);
             bodies.push(body.into());
         }
+        let collection_owner_backlink_offset = value.collection_owner.backlink_offset();
         Self {
             body_record_indices,
             scope_body_reference_offsets,
@@ -14579,9 +14616,9 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             texture_table_record: value.texture_table_record,
             body_count_offsets: value.body_count_offsets,
             texture_table_reference_offset: value.texture_table_reference_offset,
-            collection_owner_record: value.collection_owner_record,
+            collection_owner_record: value.collection_owner.record,
             collection_owner_reference_offset: value.collection_owner_reference_offset,
-            collection_owner_backlink_offset: value.collection_owner_backlink_offset,
+            collection_owner_backlink_offset,
             scope_owner_record_index: value.scope_owner_record_index,
             scope_owner_reference_offset: value.scope_owner_reference_offset,
             texture_flags_count_offset: value.texture_flags_count_offset,
