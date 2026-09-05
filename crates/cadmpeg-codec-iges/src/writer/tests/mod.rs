@@ -258,7 +258,12 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         Some(WRITER_NATIVE_FILE_NAME)
     );
     assert_eq!(global.units_name().as_deref(), Some(WRITER_UNITS_NAME));
-    assert_eq!(global.version(), Some(IgesVersion::V5_3));
+    assert_eq!(
+        global
+            .declared_version()
+            .and_then(crate::version::VersionFlag::verified_version),
+        Some(IgesVersion::V5_3)
+    );
     assert!(
         (global
             .length_context()
@@ -295,7 +300,12 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         let fixture = fixed_ascii_with_global(&global_bytes);
         let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
         let (global, losses) = crate::global::parse(&scan).expect("versioned Global parses");
-        assert_eq!(global.version(), Some(version));
+        assert_eq!(
+            global
+                .declared_version()
+                .and_then(crate::version::VersionFlag::verified_version),
+            Some(version)
+        );
         assert_eq!(global.version_name(), name);
         assert!(losses.is_empty(), "{name}: {losses:#?}");
 

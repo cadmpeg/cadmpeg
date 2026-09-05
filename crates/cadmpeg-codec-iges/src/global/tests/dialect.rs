@@ -245,7 +245,10 @@ fn the_4_0_global_contract_accepts_twenty_four_fields_and_the_short_date() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
 
-    assert_eq!(parsed.version(), Some(crate::IgesVersion::V4_0));
+    assert_eq!(
+        parsed.declaration.effective_version().verified_version(),
+        Some(crate::IgesVersion::V4_0)
+    );
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -306,7 +309,10 @@ fn the_5_0_global_contract_stops_at_model_date_and_keeps_the_short_date() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
 
-    assert_eq!(parsed.version(), Some(crate::IgesVersion::V5_0));
+    assert_eq!(
+        parsed.declaration.effective_version().verified_version(),
+        Some(crate::IgesVersion::V5_0)
+    );
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -549,8 +555,8 @@ fn the_4_0_missing_numeric_context_uses_reported_recovery_fallbacks() {
 
     let (parsed, losses) = resolve_global_fields(&fields);
 
-    assert_eq!(parsed.precision.single_significance, 17);
-    assert_eq!(parsed.precision.double_significance, 17);
+    assert_eq!(parsed.real_precision().single_significance, 17);
+    assert_eq!(parsed.real_precision().double_significance, 17);
     assert_eq!(parsed.minimum_resolution, 0.0);
     assert!(parsed.line_weight_scale.is_none());
     assert_eq!(
