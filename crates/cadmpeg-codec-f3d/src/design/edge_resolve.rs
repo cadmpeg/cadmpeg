@@ -2135,12 +2135,12 @@ fn corroborated_common_triplet_intersection(
 ) -> Option<i64> {
     let edge_sets = selector_contexts.iter().flat_map(|selector| {
         selector
-            .clause_entries
+            .clauses
             .iter()
-            .zip(&selector.clause_triplet_edge_slots)
-            .filter_map(|(entry, triplet_edges)| {
-                entry.as_ref()?.common_incident_edge_ordinal?;
-                let [first, second] = triplet_edges.as_ref()?;
+            .flatten()
+            .filter_map(|clause| {
+                clause.entry.common_incident_edge_ordinal?;
+                let [first, second] = &clause.triplet_edge_slots;
                 let mut common = first.clone();
                 common.retain(|edge| second.contains(edge));
                 common.sort_unstable();
@@ -2156,11 +2156,11 @@ fn corroborated_cross_clause_triplet_intersection(
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
     let edge_sets = selector_contexts.iter().flat_map(|selector| {
-        let [Some(left), Some(right)] = selector.clause_triplet_edge_slots.as_slice() else {
+        let [Some(left), Some(right)] = selector.clauses.as_slice() else {
             return Vec::new();
         };
-        left.iter()
-            .zip(right)
+        left.triplet_edge_slots.iter()
+            .zip(&right.triplet_edge_slots)
             .filter_map(|(left, right)| {
                 let mut common = left.clone();
                 common.retain(|edge| right.contains(edge));

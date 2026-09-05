@@ -10954,26 +10954,99 @@ pub struct DesignHistoricalEdgeLoopContext {
 
 /// Edge-recipe topology entries sharing one selector value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DesignEdgeRecipeSelectorContextWire", into = "DesignEdgeRecipeSelectorContextWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignEdgeRecipeSelectorContextWire"))]
 pub struct DesignEdgeRecipeSelectorContext {
-    /// Selector value stored in each grouped entry.
     pub selector: i32,
+    pub clauses: Vec<Option<DesignEdgeRecipeSelectorClause>>,
+    pub incidence_matching_edge_slots: Vec<i64>,
+    pub boundary_count_matching_edge_slots: Vec<i64>,
+}
+
+/// One selector entry and the historical edge slots selected by its triplets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignEdgeRecipeSelectorClause {
+    pub entry: DesignTopologyRecipeEntry,
+    pub triplet_edge_slots: [Vec<i64>; 2],
+}
+
+impl DesignEdgeRecipeSelectorContext {
+    pub fn unique_incidence_edge_slot(&self) -> Option<i64> {
+        match self.incidence_matching_edge_slots.as_slice() {
+            [edge] => Some(*edge),
+            _ => None,
+        }
+    }
+}
+
+/// Serialized selector context.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignEdgeRecipeSelectorContextWire {
+    /// Selector value stored in each grouped entry.
+    selector: i32,
     /// Entry from each ordered recipe clause; a selector occurs at most once in
     /// one clause.
-    pub clause_entries: Vec<Option<DesignTopologyRecipeEntry>>,
+    clause_entries: Vec<Option<DesignTopologyRecipeEntry>>,
     /// Changed historical edge slots at the loop position named by each of the
     /// two triplets in each present clause entry.
-    pub clause_triplet_edge_slots: Vec<Option<[Vec<i64>; 2]>>,
+    clause_triplet_edge_slots: Vec<Option<[Vec<i64>; 2]>>,
     /// Changed historical edges satisfying both triplets of every present
     /// clause entry.
-    pub incidence_matching_edge_slots: Vec<i64>,
+    incidence_matching_edge_slots: Vec<i64>,
     /// The sole incidence-compatible historical edge when the matching set is
     /// a singleton.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unique_incidence_edge_slot: Option<i64>,
+    unique_incidence_edge_slot: Option<i64>,
     /// Changed historical edges whose incident loop counts satisfy every
     /// present clause entry.
-    pub boundary_count_matching_edge_slots: Vec<i64>,
+    boundary_count_matching_edge_slots: Vec<i64>,
+}
+
+impl TryFrom<DesignEdgeRecipeSelectorContextWire> for DesignEdgeRecipeSelectorContext {
+    type Error = String;
+
+    fn try_from(wire: DesignEdgeRecipeSelectorContextWire) -> Result<Self, Self::Error> {
+        if wire.clause_entries.len() != wire.clause_triplet_edge_slots.len() {
+            return Err("clause_triplet_edge_slots must match clause_entries length".into());
+        }
+        let clauses = wire.clause_entries.into_iter().zip(wire.clause_triplet_edge_slots)
+            .map(|(entry, slots)| match (entry, slots) {
+                (None, None) => Ok(None),
+                (Some(entry), Some(triplet_edge_slots)) => Ok(Some(DesignEdgeRecipeSelectorClause { entry, triplet_edge_slots })),
+                _ => Err("clause_entries and clause_triplet_edge_slots must be present together".to_owned()),
+            }).collect::<Result<_, _>>()?;
+        let context = Self {
+            selector: wire.selector,
+            clauses,
+            incidence_matching_edge_slots: wire.incidence_matching_edge_slots,
+            boundary_count_matching_edge_slots: wire.boundary_count_matching_edge_slots,
+        };
+        if context.unique_incidence_edge_slot() != wire.unique_incidence_edge_slot {
+            return Err("unique_incidence_edge_slot must name the singleton incidence_matching_edge_slots".into());
+        }
+        Ok(context)
+    }
+}
+
+impl From<DesignEdgeRecipeSelectorContext> for DesignEdgeRecipeSelectorContextWire {
+    fn from(context: DesignEdgeRecipeSelectorContext) -> Self {
+        let unique_incidence_edge_slot = context.unique_incidence_edge_slot();
+        let (clause_entries, clause_triplet_edge_slots) = context.clauses.into_iter()
+            .map(|clause| match clause {
+                Some(clause) => (Some(clause.entry), Some(clause.triplet_edge_slots)),
+                None => (None, None),
+            }).unzip();
+        Self {
+            selector: context.selector,
+            clause_entries,
+            clause_triplet_edge_slots,
+            incidence_matching_edge_slots: context.incidence_matching_edge_slots,
+            unique_incidence_edge_slot,
+            boundary_count_matching_edge_slots: context.boundary_count_matching_edge_slots,
+        }
+    }
 }
 
 /// Standard delimiter structure following an edge recipe's common prologue.

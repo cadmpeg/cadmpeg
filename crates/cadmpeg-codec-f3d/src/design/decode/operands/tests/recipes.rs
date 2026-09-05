@@ -737,10 +737,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     terminal_unresolved.treatment_radius_candidates.clear();
     terminal_unresolved.recipe_selectors = vec![crate::records::DesignEdgeRecipeSelectorContext {
         selector: 0,
-        clause_entries: vec![None, None],
-        clause_triplet_edge_slots: vec![None, None],
+        clauses: vec![None, None],
         incidence_matching_edge_slots: vec![18, 19],
-        unique_incidence_edge_slot: None,
+
         boundary_count_matching_edge_slots: vec![18, 19],
     }];
     let terminal = crate::design::edge_resolve::resolved_edge_group(

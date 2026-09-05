@@ -6161,22 +6161,41 @@ fn recipe_selector_candidates(
     selectors
         .iter()
         .map(|selector| {
-            let clause_entries = structure
+            let clauses = structure
                 .sides
                 .iter()
                 .map(|side| {
                     side.entries
                         .iter()
                         .find(|entry| entry.selector == *selector)
-                        .cloned()
+                        .map(|entry| {
+                        let triplet_edge_slots = entry.topology_triplets.each_ref().map(|triplet| {
+                            contexts
+                                .iter()
+                                .filter(|context| {
+                                    context.incident_loops.iter().any(|incident| {
+                                        incident.boundary_edge_count
+                                            == entry.boundary_edge_count.get()
+                                            && triplet.incident_edge_ordinal.is_some_and(
+                                                |ordinal| incident.coedge_ordinal == ordinal,
+                                            )
+                                    })
+                                })
+                                .map(|context| context.edge_slot)
+                                .collect()
+                        });
+                        crate::records::DesignEdgeRecipeSelectorClause {
+                            entry: entry.clone(), triplet_edge_slots,
+                        }
+                    })
                 })
                 .collect::<Vec<_>>();
-            let required = clause_entries
+            let required = clauses
                 .iter()
                 .map(|entry| {
                     entry
                         .as_ref()
-                        .map(|entry| i64::from(entry.boundary_edge_count.get()))
+                        .map(|entry| i64::from(entry.entry.boundary_edge_count.get()))
                 })
                 .collect::<Vec<_>>();
             let boundary_count_matching_edge_slots = contexts
@@ -6191,32 +6210,11 @@ fn recipe_selector_candidates(
                 })
                 .map(|context| context.edge_slot)
                 .collect();
-            let clause_triplet_edge_slots = clause_entries
-                .iter()
-                .map(|entry| {
-                    entry.as_ref().map(|entry| {
-                        entry.topology_triplets.each_ref().map(|triplet| {
-                            contexts
-                                .iter()
-                                .filter(|context| {
-                                    context.incident_loops.iter().any(|incident| {
-                                        incident.boundary_edge_count
-                                            == entry.boundary_edge_count.get()
-                                            && triplet.incident_edge_ordinal.is_some_and(
-                                                |ordinal| incident.coedge_ordinal == ordinal,
-                                            )
-                                    })
-                                })
-                                .map(|context| context.edge_slot)
-                                .collect()
-                        })
-                    })
-                })
-                .collect::<Vec<_>>();
             let incidence_matching_edge_slots = contexts
                 .iter()
                 .filter(|context| {
-                    clause_entries.iter().flatten().all(|entry| {
+                    clauses.iter().flatten().all(|clause| {
+                        let entry = &clause.entry;
                         entry.topology_triplets.iter().all(|triplet| {
                             context.incident_loops.iter().any(|incident| {
                                 incident.boundary_edge_count == entry.boundary_edge_count.get()
@@ -6229,16 +6227,10 @@ fn recipe_selector_candidates(
                 })
                 .map(|context| context.edge_slot)
                 .collect::<Vec<_>>();
-            let unique_incidence_edge_slot = match incidence_matching_edge_slots.as_slice() {
-                [edge] => Some(*edge),
-                _ => None,
-            };
             crate::records::DesignEdgeRecipeSelectorContext {
                 selector: *selector,
-                clause_entries,
-                clause_triplet_edge_slots,
+                clauses,
                 incidence_matching_edge_slots,
-                unique_incidence_edge_slot,
                 boundary_count_matching_edge_slots,
             }
         })

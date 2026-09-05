@@ -1463,3 +1463,52 @@ fn face_operand_wire_derives_node_offsets() {
         }
     }
 }
+
+#[test]
+fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
+    let entry = super::DesignTopologyRecipeEntry {
+        selector: 3,
+        boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+        topology_triplets: std::array::from_fn(|_| super::DesignTopologyRecipeTriplet {
+            outer: std::num::NonZeroU32::new(3).unwrap(),
+            middle: 2,
+            vertex_ordinal: 2,
+            incident_edge_ordinal: Some(1),
+            incident_side: Some(super::DesignTopologyIncidentSide::Preceding),
+        }),
+        common_incident_edge_ordinal: Some(1),
+    };
+    for edges in [vec![], vec![7], vec![7, 8]] {
+        for count in [0, 1, 3] {
+            let entries: Vec<_> = (0..count).map(|index| (index % 2 == 0).then(|| entry.clone())).collect();
+            let slots: Vec<_> = (0..count).map(|index| (index % 2 == 0).then(|| [vec![7, 8], vec![7]])).collect();
+            let mut wire = serde_json::json!({
+                "selector": 3, "clause_entries": entries,
+                "clause_triplet_edge_slots": slots,
+                "incidence_matching_edge_slots": edges,
+                "boundary_count_matching_edge_slots": [7, 8]
+            });
+            if edges.len() == 1 {
+                wire["unique_incidence_edge_slot"] = serde_json::json!(7);
+            }
+            let context: super::DesignEdgeRecipeSelectorContext = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(context.clauses.len(), count);
+            assert_eq!(serde_json::to_value(&context).unwrap(), wire);
+            let mut invalid = wire.clone();
+            invalid["unique_incidence_edge_slot"] = serde_json::json!(9);
+            assert!(serde_json::from_value::<super::DesignEdgeRecipeSelectorContext>(invalid).unwrap_err().to_string().contains("unique_incidence_edge_slot"));
+            for field in ["clause_entries", "clause_triplet_edge_slots"] {
+                let mut invalid = wire.clone();
+                invalid[field].as_array_mut().unwrap().push(serde_json::Value::Null);
+                assert!(serde_json::from_value::<super::DesignEdgeRecipeSelectorContext>(invalid).unwrap_err().to_string().contains("clause_triplet_edge_slots"));
+                if count != 0 {
+                    let mut invalid = wire.clone();
+                    invalid[field][0] = serde_json::Value::Null;
+                    let error = serde_json::from_value::<super::DesignEdgeRecipeSelectorContext>(invalid).unwrap_err().to_string();
+                    assert!(error.contains("clause_entries"));
+                    assert!(error.contains("clause_triplet_edge_slots"));
+                }
+            }
+        }
+    }
+}

@@ -1083,10 +1083,9 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
 
     let selector = |selector, edges: &[i64]| DesignEdgeRecipeSelectorContext {
         selector,
-        clause_entries: vec![None, None],
-        clause_triplet_edge_slots: vec![None, None],
+        clauses: vec![None, None],
         incidence_matching_edge_slots: edges.to_vec(),
-        unique_incidence_edge_slot: (edges.len() == 1).then(|| edges[0]),
+
         boundary_count_matching_edge_slots: Vec::new(),
     };
     let selector_with_counts = |ordinal: i32, incidence: &[i64], counts: &[i64]| {
@@ -1232,13 +1231,12 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         incident_side: Some(DesignTopologyIncidentSide::Preceding),
     };
     let mut common = selector(0, &[]);
-    common.clause_entries[0] = Some(DesignTopologyRecipeEntry {
+    common.clauses[0] = Some(crate::records::DesignEdgeRecipeSelectorClause { entry: DesignTopologyRecipeEntry {
         selector: 0,
         boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
         topology_triplets: [triplet.clone(), triplet.clone()],
         common_incident_edge_ordinal: Some(1),
-    });
-    common.clause_triplet_edge_slots[0] = Some([vec![17, 18], vec![17]]);
+    }, triplet_edge_slots: [vec![17, 18], vec![17]] });
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17, 18][..]]),
         Some(17)
@@ -1248,13 +1246,12 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         Some(17)
     );
     let mut common = selector(0, &[]);
-    common.clause_entries[0] = Some(DesignTopologyRecipeEntry {
+    common.clauses[0] = Some(crate::records::DesignEdgeRecipeSelectorClause { entry: DesignTopologyRecipeEntry {
         selector: 0,
         boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-        topology_triplets: [triplet.clone(), triplet],
+        topology_triplets: [triplet.clone(), triplet.clone()],
         common_incident_edge_ordinal: Some(1),
-    });
-    common.clause_triplet_edge_slots[0] = Some([vec![17, 18, 19], vec![17, 18]]);
+    }, triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]] });
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17][..]]),
         Some(17)
@@ -1263,9 +1260,19 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         resolved_edge_candidate_intersection(&[common], [&[19][..]]),
         None
     );
+    let clause = |triplet_edge_slots| Some(crate::records::DesignEdgeRecipeSelectorClause {
+        entry: DesignTopologyRecipeEntry {
+            selector: 0,
+            boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+            topology_triplets: [triplet.clone(), DesignTopologyRecipeTriplet {
+                vertex_ordinal: 3, incident_edge_ordinal: Some(2), ..triplet.clone()
+            }],
+            common_incident_edge_ordinal: None,
+        },
+        triplet_edge_slots,
+    });
     let mut cross_clause = selector(0, &[]);
-    cross_clause.clause_triplet_edge_slots =
-        vec![Some([vec![18], vec![17, 19]]), Some([vec![20], vec![17]])];
+    cross_clause.clauses = vec![clause([vec![18], vec![17, 19]]), clause([vec![20], vec![17]])];
     assert_eq!(
         resolved_edge_candidate_intersection(&[cross_clause.clone()], std::iter::empty::<&[i64]>(),),
         Some(17)
@@ -1278,8 +1285,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         resolved_edge_candidate_intersection(&[cross_clause.clone()], [&[18][..]]),
         None
     );
-    cross_clause.clause_triplet_edge_slots =
-        vec![Some([vec![18], vec![17]]), Some([vec![18], vec![17]])];
+    cross_clause.clauses = vec![clause([vec![18], vec![17]]), clause([vec![18], vec![17]])];
     assert_eq!(
         resolved_edge_candidate_intersection(&[cross_clause], std::iter::empty::<&[i64]>(),),
         None
@@ -1290,10 +1296,9 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
 fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
     let selector = |candidates: &[i64]| crate::records::DesignEdgeRecipeSelectorContext {
         selector: 0,
-        clause_entries: vec![None, None],
-        clause_triplet_edge_slots: vec![None, None],
+        clauses: vec![None, None],
         incidence_matching_edge_slots: Vec::new(),
-        unique_incidence_edge_slot: None,
+
         boundary_count_matching_edge_slots: candidates.to_vec(),
     };
     let first = [selector(&[19, 17, 18])];
@@ -1649,10 +1654,9 @@ fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
 
     let selector = |edges| crate::records::DesignEdgeRecipeSelectorContext {
         selector: 0,
-        clause_entries: Vec::new(),
-        clause_triplet_edge_slots: Vec::new(),
+        clauses: Vec::new(),
         incidence_matching_edge_slots: edges,
-        unique_incidence_edge_slot: None,
+
         boundary_count_matching_edge_slots: Vec::new(),
     };
     let selectors = [selector(vec![11, 12]), selector(vec![13])];
