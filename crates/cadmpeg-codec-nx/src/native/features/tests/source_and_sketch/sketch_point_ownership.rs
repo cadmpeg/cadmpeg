@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use super::super::{
-        feature_sketch_fixed_points, feature_sketch_payload_named_records,
+        feature_sketch_fixed_points, feature_sketch_payload_named_records, FeaturePayloadTypeCode,
         FeatureSketchConstructionPayload, FeatureSketchPayloadFixedPair, FeatureSketchPayloadName,
     };
     let payload = FeatureSketchConstructionPayload {
@@ -22,11 +22,12 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal,
-        type_code: Some(1),
-        raw_type_code: Some(vec![1]),
-        type_code_payload_offset: Some(offset + 1),
-        type_code_source_offset: Some(1001 + offset),
-        payload_leading: false,
+        type_code: Some(FeaturePayloadTypeCode {
+            value: 1,
+            raw: vec![1],
+            payload_offset: offset + 1,
+            source_offset: Some(1001 + offset),
+        }),
         value: format!("Point{}", ordinal + 1),
         payload_offset: offset,
         source_offset: 1000 + offset,

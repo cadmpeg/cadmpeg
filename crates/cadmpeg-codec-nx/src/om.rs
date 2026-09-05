@@ -1046,21 +1046,33 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
     fields
 }
 
+/// Compact type code on a construction payload name that is not payload-leading.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstructionPayloadTypeCode {
+    /// Decoded non-null compact type code following the `66` marker.
+    pub value: u32,
+    /// Exact compact type-code token.
+    pub raw: Vec<u8>,
+    /// Payload-relative compact type-code offset.
+    pub offset: usize,
+}
+
 /// One compact-code string field in a reconstructed construction payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstructionPayloadNamedField<'a> {
     /// Payload-relative offset of the `66` marker.
     pub offset: usize,
-    /// Decoded non-null compact type code following the marker.
-    pub type_code: Option<u32>,
-    /// Exact compact type-code token, absent for the payload-leading form.
-    pub raw_type_code: Option<Vec<u8>>,
-    /// Payload-relative compact type-code offset, when present.
-    pub type_code_offset: Option<usize>,
-    /// Whether the field uses the type-free payload-leading form.
-    pub payload_leading: bool,
+    /// Compact type code, absent for the type-free payload-leading form.
+    pub type_code: Option<ConstructionPayloadTypeCode>,
     /// Exact nonempty printable ASCII value.
     pub value: &'a str,
+}
+
+impl ConstructionPayloadNamedField<'_> {
+    /// Whether the field uses the type-free payload-leading form.
+    pub fn payload_leading(&self) -> bool {
+        self.type_code.is_none()
+    }
 }
 
 /// Exact type-free named point record spanning consecutive store blocks.
@@ -1089,19 +1101,19 @@ pub(crate) fn offset_store_named_point<'a>(
         if !bytes.is_empty()
             && construction_payload_named_fields(block)
                 .first()
-                .is_some_and(|name| name.payload_leading)
+                .is_some_and(|name| name.payload_leading())
         {
             return candidate;
         }
         bytes.extend_from_slice(block);
         let names = construction_payload_named_fields(&bytes);
         let name = names.first()?;
-        if !name.payload_leading || parse_positive_decimal_suffix(name.value, "Point").is_none() {
+        if !name.payload_leading() || parse_positive_decimal_suffix(name.value, "Point").is_none() {
             return None;
         }
         let next_name = names
             .iter()
-            .find(|next| !next.payload_leading && next.offset > name.offset);
+            .find(|next| !next.payload_leading() && next.offset > name.offset);
         let interval_end = next_name.map_or(bytes.len(), |next| next.offset);
         let scalars = construction_payload_scalar_fields(&bytes)
             .into_iter()
@@ -1150,9 +1162,6 @@ pub fn construction_payload_named_fields(bytes: &[u8]) -> Vec<ConstructionPayloa
             fields.push(ConstructionPayloadNamedField {
                 offset: 0,
                 type_code: None,
-                raw_type_code: None,
-                type_code_offset: None,
-                payload_leading: true,
                 value,
             });
         }
@@ -1175,10 +1184,11 @@ pub fn construction_payload_named_fields(bytes: &[u8]) -> Vec<ConstructionPayloa
         };
         fields.push(ConstructionPayloadNamedField {
             offset: start,
-            type_code: Some(type_code),
-            raw_type_code: Some(bytes[start + 1..marker].to_vec()),
-            type_code_offset: Some(start + 1),
-            payload_leading: false,
+            type_code: Some(ConstructionPayloadTypeCode {
+                value: type_code,
+                raw: bytes[start + 1..marker].to_vec(),
+                offset: start + 1,
+            }),
             value,
         });
     }
