@@ -454,9 +454,6 @@ struct SpannedValue {
     kind: ValueKind,
     /// Absolute offset of this value's marker byte.
     start: usize,
-    /// Exclusive end offset of this value (byte-range contract for visitors).
-    #[allow(dead_code)]
-    end: usize,
     /// Absolute offset of the writable scalar payload (kind-dependent).
     data_offset: usize,
 }
@@ -756,13 +753,11 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
         Marker::FixPos(value) => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(value)),
             start,
-            end: *cursor,
             data_offset: start,
         }),
         Marker::FixNeg(value) => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(value)),
             start,
-            end: *cursor,
             data_offset: start,
         }),
         Marker::FixMap(len) => parse_map(bytes, cursor, usize::from(len), depth, start),
@@ -771,60 +766,56 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
         Marker::Null => Some(SpannedValue {
             kind: ValueKind::Nil,
             start,
-            end: *cursor,
             data_offset: start,
         }),
         Marker::False => Some(SpannedValue {
             kind: ValueKind::Bool(false),
             start,
-            end: *cursor,
             data_offset: start,
         }),
         Marker::True => Some(SpannedValue {
             kind: ValueKind::Bool(true),
             start,
-            end: *cursor,
             data_offset: start,
         }),
         Marker::Bin8 => {
             let len = usize::from(take_u8(bytes, cursor)?);
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Bin16 => {
             let len = usize::from(take_u16(bytes, cursor)?);
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Bin32 => {
             let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Ext8 => {
             let len = usize::from(take_u8(bytes, cursor)?);
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Ext16 => {
             let len = usize::from(take_u16(bytes, cursor)?);
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Ext32 => {
             let len = usize::try_from(take_u32(bytes, cursor)?).ok()?;
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, len)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::F32 => {
             let bits = take_u32(bytes, cursor)?;
             Some(SpannedValue {
                 kind: ValueKind::Float(f64::from(f32::from_bits(bits))),
                 start,
-                end: *cursor,
                 data_offset: start + 1,
             })
         }
@@ -833,26 +824,22 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
             Some(SpannedValue {
                 kind: ValueKind::Float(f64::from_bits(bits)),
                 start,
-                end: *cursor,
                 data_offset: start + 1,
             })
         }
         Marker::U8 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u8(bytes, cursor)?)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::U16 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u16(bytes, cursor)?)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::U32 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u32(bytes, cursor)?)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::U64 => {
@@ -860,58 +847,53 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
             Some(SpannedValue {
                 kind: i64::try_from(value).map_or(ValueKind::Opaque, ValueKind::Int),
                 start,
-                end: *cursor,
                 data_offset: start + 1,
             })
         }
         Marker::I8 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u8(bytes, cursor)? as i8)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::I16 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u16(bytes, cursor)? as i16)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::I32 => Some(SpannedValue {
             kind: ValueKind::Int(i64::from(take_u32(bytes, cursor)? as i32)),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::I64 => Some(SpannedValue {
             kind: ValueKind::Int(take_u64(bytes, cursor)? as i64),
             start,
-            end: *cursor,
             data_offset: start + 1,
         }),
         Marker::FixExt1 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 1)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::FixExt2 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 2)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::FixExt4 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 4)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::FixExt8 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 8)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::FixExt16 => {
             let _typeid = take_u8(bytes, cursor)?;
             skip_bytes(bytes, cursor, 16)?;
-            Some(opaque(start, *cursor))
+            Some(opaque(start))
         }
         Marker::Str8 => {
             let len = usize::from(take_u8(bytes, cursor)?);
@@ -945,11 +927,10 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
     }
 }
 
-fn opaque(start: usize, end: usize) -> SpannedValue {
+fn opaque(start: usize) -> SpannedValue {
     SpannedValue {
         kind: ValueKind::Opaque,
         start,
-        end,
         data_offset: start,
     }
 }
@@ -975,7 +956,6 @@ fn parse_map(
     Some(SpannedValue {
         kind: ValueKind::Map(values),
         start,
-        end: *cursor,
         data_offset: start,
     })
 }
@@ -998,7 +978,6 @@ fn parse_array(
     Some(SpannedValue {
         kind: ValueKind::Array(values),
         start,
-        end: *cursor,
         data_offset: start,
     })
 }
@@ -1019,7 +998,6 @@ fn parse_string(
     Some(SpannedValue {
         kind,
         start,
-        end: *cursor,
         data_offset,
     })
 }
