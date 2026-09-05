@@ -352,8 +352,7 @@ pub(super) fn continue_fixed_kind_operations(
             angle: 3.5,
             angle_record_index: 1_779,
             angle_offset: (revolve_scalar_start + 40) as u64,
-            opposite_angle_record_index: Some(1_780),
-            opposite_angle_offset: Some((revolve_scalar_start + 116 + 40) as u64),
+            opposite_angle: Some(crate::records::Located { value: 1_780, offset: (revolve_scalar_start + 116 + 40) as u64 }),
         }))
     );
 
@@ -401,8 +400,7 @@ pub(super) fn continue_fixed_kind_operations(
             angle: std::f64::consts::TAU,
             angle_record_index: indexed_angle_record_index,
             angle_offset: 45,
-            opposite_angle_record_index: None,
-            opposite_angle_offset: None,
+            opposite_angle: None,
         }))
     );
 
@@ -448,8 +446,7 @@ pub(super) fn continue_fixed_kind_operations(
             angle: std::f64::consts::TAU,
             angle_record_index: indexed_angle_record_index,
             angle_offset: (class403_start + 40) as u64,
-            opposite_angle_record_index: None,
-            opposite_angle_offset: None,
+            opposite_angle: None,
         }))
     );
     bytes[class403_start + 34] = 0;
@@ -507,8 +504,7 @@ pub(super) fn continue_fixed_kind_operations(
             angle: std::f64::consts::TAU,
             angle_record_index: legacy_angle_record_index,
             angle_offset: 55,
-            opposite_angle_record_index: None,
-            opposite_angle_offset: None,
+            opposite_angle: None,
         }))
     );
     legacy_revolve_scope.class_tag = "323".into();
@@ -529,8 +525,7 @@ pub(super) fn continue_fixed_kind_operations(
             angle: std::f64::consts::TAU,
             angle_record_index: legacy_angle_record_index,
             angle_offset: 55,
-            opposite_angle_record_index: None,
-            opposite_angle_offset: None,
+            opposite_angle: None,
         }))
     );
     legacy_revolve_scope.class_tag = "385".into();
@@ -551,8 +546,7 @@ pub(super) fn continue_fixed_kind_operations(
             angle: std::f64::consts::TAU,
             angle_record_index: legacy_angle_record_index,
             angle_offset: 55,
-            opposite_angle_record_index: None,
-            opposite_angle_offset: None,
+            opposite_angle: None,
         }))
     );
     revolve_scope.id = "stream:scope".into();
