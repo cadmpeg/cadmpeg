@@ -265,9 +265,9 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         id: owner,
         asm_body_key: 7,
         asm_body_key_offset: 125,
-        entity_suffix: 200,
+
         entity_suffix_offset: 133,
-        entity_id: "0_200".into(),
+        entity_id: crate::records::DesignEntityId::try_from("0_200".to_owned()).expect("valid entity ID"),
         entity_id_offset: 500,
         visual_guid: visual_guid.into(),
         visual_guid_offset: 600,
@@ -312,9 +312,9 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         id: "f3d:design:material-assignment#1".into(),
         asm_body_key: 7,
         asm_body_key_offset: 25,
-        entity_suffix: 100,
+
         entity_suffix_offset: 33,
-        entity_id: "0_100".into(),
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
         entity_id_offset: 500,
         visual_guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
         visual_guid_offset: 600,

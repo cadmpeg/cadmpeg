@@ -992,9 +992,9 @@ pub(crate) fn decode_design_assignments(
                 ),
                 asm_body_key: body_binding.asm_key,
                 asm_body_key_offset: body_binding.asm_key_offset as u64,
-                entity_suffix: presentation.entity_suffix,
+
                 entity_suffix_offset: body_binding.entity_suffix_offset as u64,
-                entity_id,
+                entity_id: crate::records::DesignEntityId::try_from(entity_id).map_err(crate::error::malformed)?,
                 entity_id_offset,
                 visual_guid: material.visual_guid,
                 visual_guid_offset: material.visual_guid_offset,
@@ -1470,7 +1470,7 @@ fn bind_bodies(
             &assignment.id,
             assignment.asm_body_key,
             assignment.asm_body_key_offset,
-            assignment.entity_suffix,
+            assignment.entity_id.suffix(),
             assignment.entity_suffix_offset,
         )?
         else {
@@ -1482,16 +1482,16 @@ fn bind_bodies(
         out.push(AppearanceBinding {
             id: format!(
                 "f3d:appearance:binding#{}:{}",
-                assignment.entity_id, assignment.visual_guid
+                assignment.entity_id.as_str(), assignment.visual_guid
             )
             .into(),
             target: AppearanceTarget::Body(body),
             appearance: appearance.id.clone(),
-            source_entity_id: Some(assignment.entity_id.clone()),
-            object_type: object_types.get(&assignment.entity_suffix).cloned(),
+            source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
+            object_type: object_types.get(&assignment.entity_id.suffix()).cloned(),
             visible: None,
             channels: act_channels
-                .get(&assignment.entity_suffix)
+                .get(&assignment.entity_id.suffix())
                 .cloned()
                 .unwrap_or_default(),
         });

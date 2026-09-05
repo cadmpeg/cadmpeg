@@ -12625,6 +12625,7 @@ pub struct LostEdgeReference {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DesignMaterialAssignmentWire", into = "DesignMaterialAssignmentWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignMaterialAssignmentWire"))]
 pub struct DesignMaterialAssignment {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -12632,12 +12633,10 @@ pub struct DesignMaterialAssignment {
     pub asm_body_key: u64,
     /// Byte offset of the body-map ASM key.
     pub asm_body_key_offset: u64,
-    /// Numeric suffix of `entity_id`.
-    pub entity_suffix: u64,
     /// Byte offset of the body-map entity suffix.
     pub entity_suffix_offset: u64,
     /// UTF-16 design-entity id.
-    pub entity_id: String,
+    pub entity_id: DesignEntityId,
     /// Byte offset of the UTF-16 entity-id code units.
     pub entity_id_offset: u64,
     /// Complete serialized visual token.
@@ -12689,13 +12688,16 @@ struct DesignMaterialAssignmentWire {
 impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {
     type Error = String;
     fn try_from(wire: DesignMaterialAssignmentWire) -> Result<Self, Self::Error> {
+        let entity_id = DesignEntityId::try_from(wire.entity_id)?;
+        if entity_id.suffix() != wire.entity_suffix {
+            return Err("entity_suffix disagrees with entity_id".into());
+        }
         Ok(Self {
             id: wire.id,
             asm_body_key: wire.asm_body_key,
             asm_body_key_offset: wire.asm_body_key_offset,
-            entity_suffix: wire.entity_suffix,
             entity_suffix_offset: wire.entity_suffix_offset,
-            entity_id: wire.entity_id,
+            entity_id,
             entity_id_offset: wire.entity_id_offset,
             visual_guid: wire.visual_guid,
             visual_guid_offset: wire.visual_guid_offset,
@@ -12711,9 +12713,9 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
             id: value.id,
             asm_body_key: value.asm_body_key,
             asm_body_key_offset: value.asm_body_key_offset,
-            entity_suffix: value.entity_suffix,
+            entity_suffix: value.entity_id.suffix(),
             entity_suffix_offset: value.entity_suffix_offset,
-            entity_id: value.entity_id,
+            entity_id: value.entity_id.0,
             entity_id_offset: value.entity_id_offset,
             visual_guid: value.visual_guid,
             visual_guid_offset: value.visual_guid_offset,
