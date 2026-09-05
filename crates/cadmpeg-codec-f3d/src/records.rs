@@ -3480,6 +3480,7 @@ pub struct DesignHoleConstruction {
 /// used by grouped operands, but the scope owns the selection directly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignHoleFaceSelectionWire", into = "DesignHoleFaceSelectionWire")]
 pub struct DesignHoleFaceSelection {
     /// Indexed record carrying the persistent selection envelope.
     pub record_index: u32,
@@ -3505,16 +3506,10 @@ pub struct DesignHoleFaceSelection {
     pub primary_identity_offset: u64,
     /// Optional secondary persistent identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_identity: Option<u64>,
-    /// Byte offset of the optional secondary persistent identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_identity_offset: Option<u64>,
+    pub secondary_identity: Option<Located<u64>>,
     /// Optional secondary identity of a selected Sketch curve.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curve_secondary_identity: Option<u64>,
-    /// Byte offset of the optional Sketch-curve secondary identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curve_secondary_identity_offset: Option<u64>,
+    pub curve_secondary_identity: Option<Located<u64>>,
     /// History-qualified face proofs for the primary identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
@@ -3522,6 +3517,101 @@ pub struct DesignHoleFaceSelection {
     pub next_record_index: u32,
     /// Byte offset of the following indexed record.
     pub next_byte_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignHoleFaceSelectionWire {
+    /// Indexed record carrying the persistent selection envelope.
+    record_index: u32,
+    /// Byte offset of the selection envelope header.
+    byte_offset: u64,
+    /// Source per-file dynamic primary class tag.
+    class_tag: String,
+    /// Asset UUID qualifying the selection namespace.
+    asset_id: String,
+    /// Byte offset of the asset identifier's UTF-16LE code units.
+    asset_id_offset: u64,
+    /// UUID of the selection context.
+    context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    context_id_offset: u64,
+    /// Nested indexed record carrying the persistent identity.
+    identity_record_index: u32,
+    /// Byte offset of the nested identity record.
+    identity_record_offset: u64,
+    /// Primary persistent identity of the selected face.
+    primary_identity: u64,
+    /// Byte offset of the primary persistent identity.
+    primary_identity_offset: u64,
+    /// Optional secondary persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    secondary_identity: Option<u64>,
+    /// Byte offset of the optional secondary persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    secondary_identity_offset: Option<u64>,
+    /// Optional secondary identity of a selected Sketch curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    curve_secondary_identity: Option<u64>,
+    /// Byte offset of the optional Sketch-curve secondary identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    curve_secondary_identity_offset: Option<u64>,
+    /// History-qualified face proofs for the primary identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
+    /// Indexed record immediately following the selection envelope.
+    next_record_index: u32,
+    /// Byte offset of the following indexed record.
+    next_byte_offset: u64,
+}
+
+impl TryFrom<DesignHoleFaceSelectionWire> for DesignHoleFaceSelection {
+    type Error = String;
+    fn try_from(wire: DesignHoleFaceSelectionWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            asset_id: wire.asset_id,
+            asset_id_offset: wire.asset_id_offset,
+            context_id: wire.context_id,
+            context_id_offset: wire.context_id_offset,
+            identity_record_index: wire.identity_record_index,
+            identity_record_offset: wire.identity_record_offset,
+            primary_identity: wire.primary_identity,
+            primary_identity_offset: wire.primary_identity_offset,
+            secondary_identity: Located::from_wire(wire.secondary_identity, wire.secondary_identity_offset, "secondary_identity")?,
+            curve_secondary_identity: Located::from_wire(wire.curve_secondary_identity, wire.curve_secondary_identity_offset, "curve_secondary_identity")?,
+            historical_face_candidates: wire.historical_face_candidates,
+            next_record_index: wire.next_record_index,
+            next_byte_offset: wire.next_byte_offset,
+        })
+    }
+}
+
+impl From<DesignHoleFaceSelection> for DesignHoleFaceSelectionWire {
+    fn from(record: DesignHoleFaceSelection) -> Self {
+        Self {
+            record_index: record.record_index,
+            byte_offset: record.byte_offset,
+            class_tag: record.class_tag,
+            asset_id: record.asset_id,
+            asset_id_offset: record.asset_id_offset,
+            context_id: record.context_id,
+            context_id_offset: record.context_id_offset,
+            identity_record_index: record.identity_record_index,
+            identity_record_offset: record.identity_record_offset,
+            primary_identity: record.primary_identity,
+            primary_identity_offset: record.primary_identity_offset,
+            secondary_identity: record.secondary_identity.map(|identity| identity.value),
+            secondary_identity_offset: record.secondary_identity.map(|identity| identity.offset),
+            curve_secondary_identity: record.curve_secondary_identity.map(|identity| identity.value),
+            curve_secondary_identity_offset: record.curve_secondary_identity.map(|identity| identity.offset),
+            historical_face_candidates: record.historical_face_candidates,
+            next_record_index: record.next_record_index,
+            next_byte_offset: record.next_byte_offset,
+        }
+    }
 }
 
 macro_rules! design_feature_kinds {
@@ -7519,6 +7609,7 @@ impl DesignExtrudeSelectionMember {
 /// Persistent Design entity selected through a nested indexed-record frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignEntitySelectionOperandWire", into = "DesignEntitySelectionOperandWire")]
 pub struct DesignEntitySelectionOperand {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
@@ -7554,16 +7645,10 @@ pub struct DesignEntitySelectionOperand {
     /// Secondary identity in the nested pair; for a Sketch curve selection,
     /// this is the curve's primary persistent identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_identity: Option<u64>,
-    /// Byte offset of `secondary_identity`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_identity_offset: Option<u64>,
+    pub secondary_identity: Option<Located<u64>>,
     /// Optional secondary identity of the selected Sketch curve.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curve_secondary_identity: Option<u64>,
-    /// Byte offset of `curve_secondary_identity`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curve_secondary_identity_offset: Option<u64>,
+    pub curve_secondary_identity: Option<Located<u64>>,
     /// Input-state edge proofs derived from the two serialized identities.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
@@ -7577,6 +7662,129 @@ pub struct DesignEntitySelectionOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following the identity record.
     pub next_byte_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignEntitySelectionOperandWire {
+    /// Globally unique deterministic identifier for this native operand.
+    id: String,
+    /// Owning feature scope record.
+    scope_record_index: u32,
+    /// Owning construction-operand group record.
+    group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    group_member_ordinal: u32,
+    /// Primary indexed-record identity.
+    record_index: u32,
+    /// Primary indexed-header byte offset.
+    byte_offset: u64,
+    /// Source per-file dynamic primary class tag.
+    class_tag: String,
+    /// Asset UUID qualifying the selection namespace.
+    asset_id: String,
+    /// Byte offset of the asset identifier's UTF-16LE code units.
+    asset_id_offset: u64,
+    /// UUID of the selection context.
+    context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    context_id_offset: u64,
+    /// Nested indexed record that carries the persistent entity identity.
+    identity_record_index: u32,
+    /// Byte offset of the nested identity record.
+    identity_record_offset: u64,
+    /// Primary entity identity in the nested identity pair; for a Sketch
+    /// curve selection, this is the owning Sketch entity suffix.
+    primary_identity: u64,
+    /// Byte offset of `primary_identity`.
+    primary_identity_offset: u64,
+    /// Secondary identity in the nested pair; for a Sketch curve selection,
+    /// this is the curve's primary persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    secondary_identity: Option<u64>,
+    /// Byte offset of `secondary_identity`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    secondary_identity_offset: Option<u64>,
+    /// Optional secondary identity of the selected Sketch curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    curve_secondary_identity: Option<u64>,
+    /// Byte offset of `curve_secondary_identity`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    curve_secondary_identity_offset: Option<u64>,
+    /// Input-state edge proofs derived from the two serialized identities.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
+    /// History-qualified face proofs derived from the primary identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    historical_face_candidates: Vec<DesignEntitySelectionFaceCandidate>,
+    /// Unique input-state edge selected by every available identity proof.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_edge_slot: Option<i64>,
+    /// Identity of the indexed record immediately following the identity record.
+    next_record_index: u32,
+    /// Byte offset of the indexed record immediately following the identity record.
+    next_byte_offset: u64,
+}
+
+impl TryFrom<DesignEntitySelectionOperandWire> for DesignEntitySelectionOperand {
+    type Error = String;
+    fn try_from(wire: DesignEntitySelectionOperandWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            group_record_index: wire.group_record_index,
+            group_member_ordinal: wire.group_member_ordinal,
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            asset_id: wire.asset_id,
+            asset_id_offset: wire.asset_id_offset,
+            context_id: wire.context_id,
+            context_id_offset: wire.context_id_offset,
+            identity_record_index: wire.identity_record_index,
+            identity_record_offset: wire.identity_record_offset,
+            primary_identity: wire.primary_identity,
+            primary_identity_offset: wire.primary_identity_offset,
+            secondary_identity: Located::from_wire(wire.secondary_identity, wire.secondary_identity_offset, "secondary_identity")?,
+            curve_secondary_identity: Located::from_wire(wire.curve_secondary_identity, wire.curve_secondary_identity_offset, "curve_secondary_identity")?,
+            historical_edge_candidates: wire.historical_edge_candidates,
+            historical_face_candidates: wire.historical_face_candidates,
+            resolved_edge_slot: wire.resolved_edge_slot,
+            next_record_index: wire.next_record_index,
+            next_byte_offset: wire.next_byte_offset,
+        })
+    }
+}
+
+impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
+    fn from(record: DesignEntitySelectionOperand) -> Self {
+        Self {
+            id: record.id,
+            scope_record_index: record.scope_record_index,
+            group_record_index: record.group_record_index,
+            group_member_ordinal: record.group_member_ordinal,
+            record_index: record.record_index,
+            byte_offset: record.byte_offset,
+            class_tag: record.class_tag,
+            asset_id: record.asset_id,
+            asset_id_offset: record.asset_id_offset,
+            context_id: record.context_id,
+            context_id_offset: record.context_id_offset,
+            identity_record_index: record.identity_record_index,
+            identity_record_offset: record.identity_record_offset,
+            primary_identity: record.primary_identity,
+            primary_identity_offset: record.primary_identity_offset,
+            secondary_identity: record.secondary_identity.map(|identity| identity.value),
+            secondary_identity_offset: record.secondary_identity.map(|identity| identity.offset),
+            curve_secondary_identity: record.curve_secondary_identity.map(|identity| identity.value),
+            curve_secondary_identity_offset: record.curve_secondary_identity.map(|identity| identity.offset),
+            historical_edge_candidates: record.historical_edge_candidates,
+            historical_face_candidates: record.historical_face_candidates,
+            resolved_edge_slot: record.resolved_edge_slot,
+            next_record_index: record.next_record_index,
+            next_byte_offset: record.next_byte_offset,
+        }
+    }
 }
 
 /// Face proof for one persistent identity in one ASM history namespace.

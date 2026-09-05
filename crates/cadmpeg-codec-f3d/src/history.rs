@@ -6847,7 +6847,7 @@ pub(crate) fn bind_entity_selection_history(
     let identities = HistoricalIdentityIndex::build(
         histories,
         operands.iter().flat_map(|operand| {
-            std::iter::once(operand.primary_identity).chain(operand.secondary_identity)
+            std::iter::once(operand.primary_identity).chain(operand.secondary_identity.map(|identity| identity.value))
         }),
     );
     for operand in operands {
@@ -6885,7 +6885,7 @@ pub(crate) fn bind_entity_selection_history(
         };
         let identity_pair = operand
             .secondary_identity
-            .map(|secondary| [operand.primary_identity, secondary]);
+            .map(|secondary| [operand.primary_identity, secondary.value]);
         operand.historical_edge_candidates = identity_pair.as_ref().map_or_else(
             || {
                 entity_selection_edge_candidates(
@@ -6929,7 +6929,7 @@ pub(crate) fn bind_hole_selection_history(
         if selection.historical_face_candidates.is_empty() {
             if let Some(candidate) = hole_transition_face_candidate(
                 selection.primary_identity,
-                selection.secondary_identity,
+                selection.secondary_identity.map(|identity| identity.value),
                 construction.position,
                 construction.direction,
                 history_state_id,

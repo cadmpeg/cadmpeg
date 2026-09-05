@@ -7087,15 +7087,13 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == operand
                     .identity_record_offset
                     .saturating_add(class_338_curve::OWNER_RECORD_INDEX as u64)
-            && operand.secondary_identity_offset
+            && operand.secondary_identity.map(|identity| identity.offset)
                 == Some(
                     operand
                         .identity_record_offset
                         .saturating_add(class_338_curve::CURVE_PERSISTENT_ID as u64),
                 )
-            && operand.secondary_identity.is_some()
             && operand.curve_secondary_identity.is_none()
-            && operand.curve_secondary_identity_offset.is_none()
             && operand.next_record_index == operand.record_index.saturating_add(4)
             && operand.next_byte_offset
                 == operand
@@ -7118,27 +7116,20 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && operand.identity_record_index == operand.record_index.saturating_add(3)
             && (class_338_curve_identity
                 || matches!(
-                (operand.primary_identity_offset, operand.secondary_identity, operand.secondary_identity_offset),
-                (primary, Some(_), Some(secondary))
+                (operand.primary_identity_offset, operand.secondary_identity),
+                (primary, Some(secondary))
                     if primary == operand.identity_record_offset.saturating_add(29)
-                        && secondary == operand.identity_record_offset.saturating_add(37)
+                        && secondary.offset == operand.identity_record_offset.saturating_add(37)
                 )
                 || matches!(
-                    (operand.primary_identity_offset, operand.secondary_identity, operand.secondary_identity_offset),
-                    (primary, None, None)
+                    (operand.primary_identity_offset, operand.secondary_identity),
+                    (primary, None)
                         if primary == operand.identity_record_offset.saturating_add(21)
                 ))
-            && match (
-                operand.curve_secondary_identity,
-                operand.curve_secondary_identity_offset,
-            ) {
-                (None, None) => true,
-                (Some(_), Some(offset)) => {
-                    operand.secondary_identity.is_some()
-                        && offset == operand.identity_record_offset.saturating_add(21)
-                }
-                _ => false,
-            }
+            && operand.curve_secondary_identity.is_none_or(|identity| {
+                operand.secondary_identity.is_some()
+                    && identity.offset == operand.identity_record_offset.saturating_add(21)
+            })
             && (operand.secondary_identity.is_none()
                 || operand.next_record_index == operand.record_index.saturating_add(4))
             && operand.next_byte_offset

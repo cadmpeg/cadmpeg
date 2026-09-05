@@ -152,3 +152,31 @@ fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
         assert!(error.to_string().contains("selector_tail"));
     }
 }
+
+#[test]
+fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
+    let fields = r#""record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"asset","asset_id_offset":100,"context_id":"context","context_id_offset":150,"identity_record_index":5,"identity_record_offset":180,"primary_identity":183,"primary_identity_offset":209"#;
+    let suffix = r#","next_record_index":6,"next_byte_offset":225}"#;
+    for prefix in ["{", "{\"id\":\"operand\",\"scope_record_index\":1,\"group_record_index\":2,\"group_member_ordinal\":0,"] {
+        for identities in ["", ",\"secondary_identity\":249,\"secondary_identity_offset\":217", ",\"secondary_identity\":249,\"secondary_identity_offset\":217,\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201"] {
+            let wire = format!("{prefix}{fields}{identities}{suffix}");
+            let encoded = if prefix == "{" {
+                let value: super::DesignHoleFaceSelection = serde_json::from_str(&wire).expect("hole selection");
+                serde_json::to_string(&value).expect("hole selection wire")
+            } else {
+                let value: super::DesignEntitySelectionOperand = serde_json::from_str(&wire).expect("entity selection");
+                serde_json::to_string(&value).expect("entity selection wire")
+            };
+            assert_eq!(encoded, wire);
+        }
+        for field in ["secondary_identity", "secondary_identity_offset", "curve_secondary_identity", "curve_secondary_identity_offset"] {
+            let wire = format!("{prefix}{fields},\"{field}\":1{suffix}");
+            let error = if prefix == "{" {
+                serde_json::from_str::<super::DesignHoleFaceSelection>(&wire).expect_err("partial hole selection identity").to_string()
+            } else {
+                serde_json::from_str::<super::DesignEntitySelectionOperand>(&wire).expect_err("partial entity selection identity").to_string()
+            };
+            assert!(error.contains(field));
+        }
+    }
+}
