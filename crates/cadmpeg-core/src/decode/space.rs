@@ -16,19 +16,19 @@
 /// Ids are dense and assigned in registration order; the root is always
 /// [`SpaceId::ROOT`]. Error locations use the id to qualify offsets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SpaceId(u32);
+pub struct SpaceId(usize);
 
 impl SpaceId {
     /// The root input space, registered first by every decode.
     pub const ROOT: SpaceId = SpaceId(0);
 
     /// Creates a session-local address-space identifier.
-    pub(crate) const fn from_index(index: u32) -> Self {
+    pub(crate) const fn from_index(index: usize) -> Self {
         Self(index)
     }
 
     /// Returns the dense index of this space.
-    pub fn index(self) -> u32 {
+    pub fn index(self) -> usize {
         self.0
     }
 }
@@ -73,8 +73,6 @@ pub enum SpaceDerivation {
 /// Stable description of one registered address space.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceDescriptor {
-    /// Session-local identifier.
-    pub id: SpaceId,
     /// Stable label (archive member name, stream path, or `"root"`).
     pub label: String,
     /// How this space was derived.
@@ -131,15 +129,21 @@ impl ResolvedAddress {
     /// extracted member. Root-only addresses emit `inspect hex` on the file.
     pub fn inspect_commands(&self, file: &str) -> Vec<String> {
         let leaf = self.steps.last();
-        match leaf.map(|step| step.kind) {
-            None | Some(AddressStepKind::Root) => {
+        match leaf {
+            None
+            | Some(AddressStep {
+                kind: AddressStepKind::Root,
+                ..
+            }) => {
                 vec![format!(
                     "cadmpeg inspect hex {file} --offset {} --len 64",
                     self.offset
                 )]
             }
-            Some(AddressStepKind::StoredMember | AddressStepKind::ExpandedMember) => {
-                let member = leaf.expect("leaf present").label.clone();
+            Some(AddressStep {
+                kind: AddressStepKind::StoredMember | AddressStepKind::ExpandedMember,
+                label: member,
+            }) => {
                 let extracted = format!("{file}.member");
                 vec![
                     format!("cadmpeg inspect extract {file} {member} -o {extracted}"),
@@ -160,10 +164,8 @@ pub fn resolve_address(
 ) -> ResolvedAddress {
     let mut steps = Vec::new();
     let mut current = location.space;
-    let mut guard = 0u32;
-    while guard < descriptors.len() as u32 + 1 {
-        guard = guard.saturating_add(1);
-        let Some(descriptor) = descriptors.iter().find(|entry| entry.id == current) else {
+    for _ in 0..=descriptors.len() {
+        let Some(descriptor) = descriptors.get(current.index()) else {
             break;
         };
         let kind = match descriptor.derivation {

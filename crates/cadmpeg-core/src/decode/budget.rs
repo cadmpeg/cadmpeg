@@ -312,8 +312,7 @@ impl Drop for DepthGuard<'_> {
 #[derive(Debug)]
 pub struct WorkBudget<'a> {
     limit: usize,
-    remaining: Cell<usize>,
-    exhausted: Cell<bool>,
+    remaining: Cell<Option<usize>>,
     recursion_depth: Cell<usize>,
     session: Option<&'a DecodeBudget>,
 }
@@ -337,8 +336,7 @@ impl WorkBudget<'static> {
     pub const fn new(limit: usize) -> Self {
         Self {
             limit,
-            remaining: Cell::new(limit),
-            exhausted: Cell::new(false),
+            remaining: Cell::new(Some(limit)),
             recursion_depth: Cell::new(0),
             session: None,
         }
@@ -354,8 +352,7 @@ impl<'a> WorkBudget<'a> {
         };
         Self {
             limit,
-            remaining: Cell::new(limit),
-            exhausted: Cell::new(false),
+            remaining: Cell::new(Some(limit)),
             recursion_depth: Cell::new(0),
             session: Some(session),
         }
@@ -368,43 +365,42 @@ impl<'a> WorkBudget<'a> {
 
     /// Charges several work units, with sticky exhaustion on refusal.
     pub fn charge_by(&self, work: usize) -> bool {
-        if self.exhausted.get() {
+        let Some(remaining) = self.remaining.get() else {
             return false;
-        }
-        let remaining = self.remaining.get();
+        };
         if work > remaining {
-            self.exhausted.set(true);
+            self.remaining.set(None);
             false
         } else {
             if let Some(session) = self.session {
                 if session.charge_work(work as u64, "work_budget").is_err() {
-                    self.exhausted.set(true);
+                    self.remaining.set(None);
                     return false;
                 }
             }
-            self.remaining.set(remaining - work);
+            self.remaining.set(Some(remaining - work));
             true
         }
     }
 
     /// Returns whether this slice has refused a charge.
     pub fn exhausted(&self) -> bool {
-        self.exhausted.get()
+        self.remaining.get().is_none()
     }
 
     /// Marks this slice exhausted without consuming additional session work.
     pub fn exhaust(&self) {
-        self.exhausted.set(true);
+        self.remaining.set(None);
     }
 
     /// Returns unconsumed work units.
     pub fn remaining(&self) -> usize {
-        self.remaining.get()
+        self.remaining.get().unwrap_or(0)
     }
 
-    /// Returns work units consumed by successful charges.
+    /// Returns charged work and the remainder forfeited by exhaustion.
     pub fn consumed(&self) -> usize {
-        self.limit.saturating_sub(self.remaining.get())
+        self.limit.saturating_sub(self.remaining())
     }
 
     /// Enters one recursive geometry-evaluation frame.
@@ -413,7 +409,8 @@ impl<'a> WorkBudget<'a> {
     /// slice, so cross-carrier cycles cannot reset a local recursion limit.
     pub fn recursion_guard(&self) -> Option<WorkBudgetRecursionGuard<'_, 'a>> {
         const MAX_WORK_RECURSION_DEPTH: usize = 256;
-        if self.exhausted.get() || self.recursion_depth.get() >= MAX_WORK_RECURSION_DEPTH {
+        if self.remaining.get().is_none() || self.recursion_depth.get() >= MAX_WORK_RECURSION_DEPTH
+        {
             self.exhaust();
             return None;
         }
@@ -431,8 +428,7 @@ impl<'a> WorkBudget<'a> {
     pub fn session_child_slice(&self, limit: usize) -> WorkBudget<'_> {
         WorkBudget {
             limit: limit.min(self.remaining()),
-            remaining: Cell::new(limit.min(self.remaining())),
-            exhausted: Cell::new(false),
+            remaining: Cell::new(Some(limit.min(self.remaining()))),
             recursion_depth: Cell::new(0),
             session: self.session,
         }

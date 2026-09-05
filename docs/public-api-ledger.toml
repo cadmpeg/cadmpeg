@@ -4313,3 +4313,17 @@ crate = "cadmpeg-registry"
 kind = "variant"
 item = "cadmpeg_registry::Inspection"
 reason = "REG-04: replace Skipped(SkipReason) with Ambiguous; CADIR is an Identification variant"
+
+[[change]]
+commit = "ae2ccd8a0b10c48f528860709bfe70dda50b3840"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::decode::SpaceDescriptor::id"
+reason = "CORE-02: delete stored id; the descriptor index is its session identity"
+
+[[change]]
+commit = "ae2ccd8a0b10c48f528860709bfe70dda50b3840"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::decode::SpaceId::index"
+reason = "CORE-02: return usize so dense space indices cannot narrow or saturate relative to descriptor length"
