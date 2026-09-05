@@ -66,7 +66,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert!(object.byte_offset < object.version_offset);
     assert_eq!(object.entity_id_offsets.len(), 2);
     object.type_guid = "91111111-2222-3333-4444-555555555555".into();
-    object.base_type_guid = Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into());
+    object.base_type_guid.as_mut().expect("base GUID").value = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into();
     object.version = 9;
     let act_guid = native
         .act_guids
@@ -176,7 +176,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(object.entity_ids, [33, 44]);
     assert_eq!(object.type_guid, "91111111-2222-3333-4444-555555555555");
     assert_eq!(
-        object.base_type_guid.as_deref(),
+        object.base_type_guid.as_ref().map(|field| field.value.as_str()),
         Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef")
     );
     assert_eq!(object.version, 9);

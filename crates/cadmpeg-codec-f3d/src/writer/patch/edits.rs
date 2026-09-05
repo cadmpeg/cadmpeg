@@ -1468,7 +1468,10 @@ pub(crate) fn validate_design_type_edits(
         let mut normalized = after.clone();
         normalized.entity_ids.clone_from(&before.entity_ids);
         normalized.type_guid.clone_from(&before.type_guid);
-        normalized.base_type_guid.clone_from(&before.base_type_guid);
+        normalized.base_type_guid = before.base_type_guid.as_ref().map(|field| crate::records::RecordedValue {
+            value: field.value.clone(),
+            offset: after.base_type_guid.as_ref().and_then(|field| field.offset),
+        });
         normalized.version = before.version;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
@@ -1499,15 +1502,16 @@ pub(crate) fn validate_design_type_edits(
             strings.push((after.type_guid_offset, after.type_guid.as_bytes().to_vec()));
         }
         if after.base_type_guid != before.base_type_guid {
-            let before_base = before.base_type_guid.as_deref().ok_or_else(|| {
+            let before_base = before.base_type_guid.as_ref().map(|field| field.value.as_str()).ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
             })?;
-            let after_base = after.base_type_guid.as_deref().ok_or_else(|| {
+            let after_field = after.base_type_guid.as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
             })?;
+            let after_base = after_field.value.as_str();
             validate_fixed_design_string(id, before_base, after_base)?;
             strings.push((
-                after.base_type_guid_offset.ok_or_else(|| {
+                after_field.offset.ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "F3D design type {id} has no base-type-GUID offset"
                     ))

@@ -31,7 +31,7 @@ impl From<&SegmentType> for GeneratedDesignType {
     fn from(value: &SegmentType) -> Self {
         Self {
             type_guid: value.type_guid.clone(),
-            base_type_guid: value.base_type_guid.clone(),
+            base_type_guid: value.base_type_guid.as_ref().map(|field| field.value.clone()),
             version: value.version,
             module: value.module.clone(),
             entity_ids: value.entity_ids.clone(),
@@ -318,8 +318,7 @@ mod tests {
             byte_offset: 0,
             type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into()),
-            base_type_guid_offset: Some(0),
+            base_type_guid: Some(crate::records::RecordedValue { value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(), offset: Some(0) }),
             version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_BODY.into(),
@@ -334,8 +333,7 @@ mod tests {
             byte_offset: 0,
             type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID.into(),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID.into()),
-            base_type_guid_offset: Some(0),
+            base_type_guid: Some(crate::records::RecordedValue { value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID.into(), offset: Some(0) }),
             version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_FUSION.into(),

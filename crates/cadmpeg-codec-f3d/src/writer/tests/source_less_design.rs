@@ -37,7 +37,6 @@ fn generated_source_less_writes_design_type_metastream() {
             type_guid: "11111111-2222-3333-4444-555555555555".into(),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version: 7,
             version_offset: 0,
         },
@@ -49,8 +48,7 @@ fn generated_source_less_writes_design_type_metastream() {
             entity_id_offsets: Vec::new(),
             type_guid: "22222222-3333-4444-5555-666666666666".into(),
             type_guid_offset: 0,
-            base_type_guid: Some("11111111-2222-3333-4444-555555555555".into()),
-            base_type_guid_offset: None,
+            base_type_guid: Some(crate::records::RecordedValue { value: "11111111-2222-3333-4444-555555555555".into(), offset: None }),
             version: 9,
             version_offset: 0,
         },
@@ -62,8 +60,7 @@ fn generated_source_less_writes_design_type_metastream() {
             entity_id_offsets: Vec::new(),
             type_guid: "33333333-4444-5555-6666-777777777777".into(),
             type_guid_offset: 0,
-            base_type_guid: Some("11111111-2222-3333-4444-555555555555".into()),
-            base_type_guid_offset: None,
+            base_type_guid: Some(crate::records::RecordedValue { value: "11111111-2222-3333-4444-555555555555".into(), offset: None }),
             version: 11,
             version_offset: 0,
         },
@@ -86,7 +83,7 @@ fn generated_source_less_writes_design_type_metastream() {
         .to_string()
         .contains("Design type module name is GUID-shaped"));
     f3d_native_mut(&mut source_less).design_types[0].base_type_guid =
-        Some("22222222-3333-4444-5555-666666666666".into());
+        Some(crate::records::RecordedValue { value: "22222222-3333-4444-5555-666666666666".into(), offset: None });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -113,7 +110,7 @@ fn generated_source_less_writes_design_type_metastream() {
         .expect("sketch-module type");
     assert_eq!(sketch.entity_ids, [277]);
     assert_eq!(
-        sketch.base_type_guid.as_deref(),
+        sketch.base_type_guid.as_ref().map(|field| field.value.as_str()),
         Some("11111111-2222-3333-4444-555555555555")
     );
     assert_eq!(sketch.version, 9);
@@ -323,7 +320,6 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         type_guid: "22222222-3333-4444-5555-666666666666".into(),
         type_guid_offset: 0,
         base_type_guid: None,
-        base_type_guid_offset: None,
         version: 4,
         version_offset: 0,
     }];
@@ -439,7 +435,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             type_guid: crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID.into(),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version: 1,
             version_offset: 0,
         },
@@ -452,7 +447,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2".into(),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version: 1,
             version_offset: 0,
         },
@@ -465,7 +459,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             type_guid: "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB".into(),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version: 11,
             version_offset: 0,
         },
@@ -478,7 +471,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             type_guid: "DCA267ED-D615-4934-B64F-AD805E8003E2".into(),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version: 2,
             version_offset: 0,
         },
@@ -491,7 +483,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             type_guid: "F0130424-8B7E-4092-93C9-1CA807482534".into(),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version: 0,
             version_offset: 0,
         },
@@ -504,7 +495,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             type_guid: "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B".into(),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version: 3,
             version_offset: 0,
         },
@@ -519,7 +509,6 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 .into(),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
             version_offset: 0,
         },

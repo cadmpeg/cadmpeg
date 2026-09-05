@@ -274,8 +274,7 @@ fn decode_sketch_visibilities_in_stream(
         if frame.design_type.module != DESIGN_MODULE_SKETCH
             || !frame
                 .design_type
-                .base_type_guid
-                .as_deref()
+                .base_type_guid.as_ref().map(|field| field.value.as_str())
                 .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -322,7 +321,7 @@ fn decode_sketch_visibilities_in_stream(
                     .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
                     && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
                     && member_type.module == "Geometry"
-                    && member_type.base_type_guid.as_deref().is_some_and(|base| {
+                    && member_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
                         base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
                     })
             })

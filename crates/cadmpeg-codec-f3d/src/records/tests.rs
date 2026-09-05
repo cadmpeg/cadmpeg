@@ -446,3 +446,26 @@ fn recipe_design_id_preserves_source_and_authored_wire() {
     let error = serde_json::from_str::<super::ConstructionRecipe>(&wire).expect_err("orphan design id offset").to_string();
     assert!(error.contains("design_id_offset"));
 }
+
+#[test]
+fn segment_base_guid_preserves_source_and_authored_wire() {
+    let prefix = r#"{"id":"type#0","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4"#;
+    let suffix = r#","version":1,"version_offset":80,"module":"Fusion","entity_ids":[1],"entity_id_offsets":[]}"#;
+    for value in ["\"\"", "\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\""] {
+        for offset in [None, Some(0), Some(44)] {
+            let mut wire = format!("{prefix},\"base_type_guid\":{value}");
+            if let Some(offset) = offset {
+                wire.push_str(&format!(",\"base_type_guid_offset\":{offset}"));
+            }
+            wire.push_str(suffix);
+            let parsed: super::SegmentType = serde_json::from_str(&wire).expect("base GUID");
+            assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
+        }
+    }
+    let wire = format!("{prefix}{suffix}");
+    let parsed: super::SegmentType = serde_json::from_str(&wire).expect("root type");
+    assert_eq!(serde_json::to_string(&parsed).expect("segment wire"), wire);
+    let wire = format!("{prefix},\"base_type_guid_offset\":44{suffix}");
+    let error = serde_json::from_str::<super::SegmentType>(&wire).expect_err("orphan base GUID offset").to_string();
+    assert!(error.contains("base_type_guid_offset"));
+}

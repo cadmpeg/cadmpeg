@@ -149,10 +149,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         type_guid: type_guid.into(),
         type_guid_offset: 4,
         base_type_guid: (type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
-            .then(|| crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID.into()),
-        base_type_guid_offset: (type_guid
-            == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
-            .then_some(8),
+            .then(|| crate::records::RecordedValue { value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID.into(), offset: Some(8) }),
         version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
             crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSIONS[1]
         } else {

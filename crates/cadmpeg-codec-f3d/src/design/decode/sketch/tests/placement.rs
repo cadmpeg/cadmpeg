@@ -639,7 +639,6 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
             type_guid: type_guid.into(),
             type_guid_offset: 0,
             base_type_guid: None,
-            base_type_guid_offset: None,
             version,
             version_offset: 0,
             module: module.into(),
