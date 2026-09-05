@@ -1354,7 +1354,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     }
     let mut extrude_scope = scope.clone();
     extrude_scope.kind = "Extrude".into();
-    extrude_scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
+    extrude_scope.ensure_extrude().extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
         reference: None,
         operation: DesignExtrudeOperation::NewBody,
         operation_offset: 28,

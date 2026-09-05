@@ -1022,22 +1022,26 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 210,
-        extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
-            reference: None,
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 128,
-            direction_face_extend_values: [1, 2],
-            side_extent_discriminators: [1, 0],
-            side_extent_discriminator_offsets: [177, 190],
-            first_side_target_ordinal: None,
-            extent: DesignExtrudeExtent::OneSidedDistance,
-            direction_face_extend_offsets: [132, 136],
-            direction_reversed: false,
-            direction_reversed_offset: 140,
-            solid_operation: true,
-            solid_operation_offset: 141,
-            start: DesignExtrudeStart::ProfilePlane,
-            start_offset: 142,
+        extrude: Some(crate::records::DesignExtrudeScope {
+            extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+                reference: None,
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 128,
+                direction_face_extend_values: [1, 2],
+                side_extent_discriminators: [1, 0],
+                side_extent_discriminator_offsets: [177, 190],
+                first_side_target_ordinal: None,
+                extent: DesignExtrudeExtent::OneSidedDistance,
+                direction_face_extend_offsets: [132, 136],
+                direction_reversed: false,
+                direction_reversed_offset: 140,
+                solid_operation: true,
+                solid_operation_offset: 141,
+                start: DesignExtrudeStart::ProfilePlane,
+                start_offset: 142,
+            }),
+            extrude_profile: Some(profile),
+            ..crate::records::DesignExtrudeScope::default()
         }),
         coil_operation: None,
         coil_operation_offset: None,
@@ -1072,7 +1076,6 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
-        fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
@@ -1087,7 +1090,6 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,
-        extrude_profile: Some(profile),
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
@@ -1159,12 +1161,15 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         .any(profile_message));
 
     let profile = f3d_native_mut(&mut ir).design_parameter_scopes[0]
+        .ensure_extrude()
         .extrude_profile
         .take();
     assert!(!crate::validate::validate_native(&ir)
         .iter()
         .any(profile_message));
-    f3d_native_mut(&mut ir).design_parameter_scopes[0].extrude_profile = profile;
+    f3d_native_mut(&mut ir).design_parameter_scopes[0]
+        .ensure_extrude()
+        .extrude_profile = profile;
 
     f3d_native_mut(&mut ir)
         .design_construction_operand_groups
@@ -1174,8 +1179,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         .any(profile_message));
 
     f3d_native_mut(&mut ir).design_parameter_scopes[0]
-        .extrude_profile
-        .as_mut()
+        .extrude_profile_mut()
         .expect("test Extrude profile")
         .scope_reference_ordinal = 1;
     assert!(crate::validate::validate_native(&ir)

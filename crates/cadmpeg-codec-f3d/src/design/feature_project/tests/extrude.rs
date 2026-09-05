@@ -23,7 +23,7 @@ fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtr
         | DesignExtrudePrologue::LegacyShifted {
             operation: value, ..
         },
-    ) = scope.extrude_prologue.as_mut()
+    ) = scope.extrude_prologue_mut()
     else {
         panic!("test scope must carry an Extrude prologue");
     };
@@ -31,7 +31,7 @@ fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtr
 }
 
 fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExtent) {
-    let Some(prologue) = scope.extrude_prologue.as_mut() else {
+    let Some(prologue) = scope.extrude_prologue_mut() else {
         panic!("test scope must carry an Extrude prologue");
     };
     match prologue {
@@ -107,7 +107,7 @@ fn set_extrude_direction_reversed(scope: &mut DesignParameterScope, reversed: bo
         | DesignExtrudePrologue::LegacyShifted {
             direction_reversed, ..
         },
-    ) = scope.extrude_prologue.as_mut()
+    ) = scope.extrude_prologue_mut()
     else {
         panic!("test scope must carry an Extrude prologue");
     };
@@ -119,7 +119,7 @@ fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart
         DesignExtrudePrologue::ReferenceAware { start: value, .. }
         | DesignExtrudePrologue::ShiftedReferenceAware { start: value, .. }
         | DesignExtrudePrologue::LegacyShifted { start: value, .. },
-    ) = scope.extrude_prologue.as_mut()
+    ) = scope.extrude_prologue_mut()
     else {
         panic!("test scope must carry an Extrude prologue");
     };
@@ -152,22 +152,39 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 210,
-        extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
-            reference: None,
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 128,
-            direction_face_extend_values: [1, 2],
-            side_extent_discriminators: [1, 0],
-            side_extent_discriminator_offsets: [177, 190],
-            first_side_target_ordinal: None,
-            extent: DesignExtrudeExtent::OneSidedDistance,
-            direction_face_extend_offsets: [132, 136],
-            direction_reversed: false,
-            direction_reversed_offset: 140,
-            solid_operation: true,
-            solid_operation_offset: 141,
-            start: DesignExtrudeStart::ProfilePlane,
-            start_offset: 142,
+        extrude: Some(crate::records::DesignExtrudeScope {
+            extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
+                reference: None,
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 128,
+                direction_face_extend_values: [1, 2],
+                side_extent_discriminators: [1, 0],
+                side_extent_discriminator_offsets: [177, 190],
+                first_side_target_ordinal: None,
+                extent: DesignExtrudeExtent::OneSidedDistance,
+                direction_face_extend_offsets: [132, 136],
+                direction_reversed: false,
+                direction_reversed_offset: 140,
+                solid_operation: true,
+                solid_operation_offset: 141,
+                start: DesignExtrudeStart::ProfilePlane,
+                start_offset: 142,
+            }),
+            extrude_profile: Some(DesignSketchProfileOperand {
+                scope_reference_ordinal: 0,
+                record_index: 100,
+                byte_offset: 300,
+                class_tag: "308".into(),
+                asset_id: "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".into(),
+                asset_id_offset: 330,
+                entity_id: "0_172".into(),
+                entity_suffix: 172,
+                entity_reference_offset: 420,
+                region_selection: None,
+                paired_class_tag: "259".into(),
+                paired_byte_offset: 520,
+            }),
+            ..crate::records::DesignExtrudeScope::default()
         }),
         coil_operation: None,
         coil_operation_offset: None,
@@ -202,7 +219,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
-        fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
@@ -217,20 +233,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,
-        extrude_profile: Some(DesignSketchProfileOperand {
-            scope_reference_ordinal: 0,
-            record_index: 100,
-            byte_offset: 300,
-            class_tag: "308".into(),
-            asset_id: "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".into(),
-            asset_id_offset: 330,
-            entity_id: "0_172".into(),
-            entity_suffix: 172,
-            entity_reference_offset: 420,
-            region_selection: None,
-            paired_class_tag: "259".into(),
-            paired_byte_offset: 520,
-        }),
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
@@ -292,10 +294,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if profile == &neutral_sketch_id(&placement)
     ));
-    let reference_aware_prologue = scope.extrude_prologue;
+    let reference_aware_prologue = scope.extrude_prologue();
     let Some(DesignExtrudePrologue::ReferenceAware {
         solid_operation, ..
-    }) = scope.extrude_prologue.as_mut()
+    }) = scope.extrude_prologue_mut()
     else {
         panic!("reference-aware Extrude prologue");
     };
@@ -316,7 +318,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         }
     ));
-    scope.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
+    scope.ensure_extrude().extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation: DesignExtrudeOperation::NewBody,
@@ -530,8 +532,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .scope_record_index
         .expect("test placement carries a scope record index");
     sketch_scope.kind = "Sketch".into();
-    sketch_scope.extrude_prologue = None;
-    sketch_scope.extrude_profile = None;
+    sketch_scope.ensure_extrude().extrude_prologue = None;
+    sketch_scope.ensure_extrude().extrude_profile = None;
     let scopes = vec![sketch_scope, scope.clone()];
     let (mut features, _) = project_parameter_design(
         std::slice::from_ref(&owned_along),
@@ -664,7 +666,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             && selections == &[format!(
                 "f3d:Design/BulkStream.dat:design-record-header#{}",
                 scope
-                    .extrude_profile
+                    .extrude_profile()
                     .as_ref()
                     .expect("test profile operand")
                     .byte_offset
@@ -723,7 +725,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
 
-    scope.extrude_prologue = reference_aware_prologue;
+    scope.ensure_extrude().extrude_prologue = reference_aware_prologue;
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
     let mut target_shape_group = body_group.clone();
@@ -737,7 +739,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let Some(DesignExtrudePrologue::ReferenceAware {
         first_side_target_ordinal,
         ..
-    }) = scope.extrude_prologue.as_mut()
+    }) = scope.extrude_prologue_mut()
     else {
         panic!("reference-aware target-shape Extrude prologue");
     };
@@ -897,8 +899,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
     set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
-    let sketch_profile = scope.extrude_profile.clone();
-    scope.extrude_profile = None;
+    let sketch_profile = scope.extrude_profile().cloned();
+    scope.ensure_extrude().extrude_profile = None;
     let mut first_profile_group = body_group.clone();
     first_profile_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
     first_profile_group.record_index = 102;
@@ -935,7 +937,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         &[],
     )
     .is_none());
-    scope.extrude_profile = sketch_profile;
+    scope.ensure_extrude().extrude_profile = sketch_profile;
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
 
     let mut profile_group = body_group.clone();
@@ -959,7 +961,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if profile == &neutral_sketch_id(&placement)
     ));
-    scope.fixed_extrude_parameters = Some(DesignFixedExtrudeParameters {
+    scope.ensure_extrude().fixed_extrude_parameters = Some(DesignFixedExtrudeParameters {
         along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
             DesignFixedExtrudeScalar {
                 value: 0.55,
@@ -1019,9 +1021,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         }
     ));
     set_extrude_direction_reversed(&mut scope, false);
-    scope.fixed_extrude_parameters = None;
+    scope.ensure_extrude().fixed_extrude_parameters = None;
     let mut native_profile_scope = scope.clone();
-    native_profile_scope.extrude_profile = None;
+    native_profile_scope.ensure_extrude().extrude_profile = None;
     let reversed_native_profile = project_extrude(
         &native_profile_scope,
         &[(0, &parameter("AlongDistance", "mm", -0.2)), (1, &taper)],

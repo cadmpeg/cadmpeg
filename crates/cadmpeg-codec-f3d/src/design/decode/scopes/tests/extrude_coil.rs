@@ -173,7 +173,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
     );
     assert_eq!(
-        direct.extrude_prologue,
+        direct.extrude_prologue(),
         Some(DesignExtrudePrologue::ReferenceAware {
             reference: None,
             operation: DesignExtrudeOperation::Join,
@@ -206,7 +206,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
     );
     assert_eq!(
-        referenced.extrude_prologue,
+        referenced.extrude_prologue(),
         Some(DesignExtrudePrologue::ReferenceAware {
             reference: Some(crate::records::DesignExtrudePrologueReference {
                 record_index: 77,
@@ -246,7 +246,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         two_sided_to_faces
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::TwoSidedToFaces)
     );
@@ -267,7 +267,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         reference: Some(reference),
         operation_offset,
         ..
-    }) = compact_reference.extrude_prologue
+    }) = compact_reference.extrude_prologue()
     else {
         panic!("compact referenced Extrude prologue");
     };
@@ -291,7 +291,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         reference: Some(reference),
         operation_offset,
         ..
-    }) = marked_reference.extrude_prologue
+    }) = marked_reference.extrude_prologue()
     else {
         panic!("marked indexed-reference Extrude prologue");
     };
@@ -313,7 +313,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
     );
     assert_eq!(to_face.kind, "Extrusion");
-    let Some(prologue) = to_face.extrude_prologue else {
+    let Some(prologue) = to_face.extrude_prologue() else {
         panic!("to-face Extrude prologue");
     };
     assert_eq!(prologue.extent(), Some(DesignExtrudeExtent::OneSidedToFace));
@@ -335,7 +335,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         same_face_extend_blind
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedDistance)
     );
@@ -354,7 +354,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         same_face_extend_through_all
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedThroughAll)
     );
@@ -372,7 +372,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
     );
     assert!(matches!(
-        target_ordinal.extrude_prologue,
+        target_ordinal.extrude_prologue(),
         Some(DesignExtrudePrologue::ReferenceAware {
             side_extent_discriminators: [2, 0],
             side_extent_discriminator_offsets: [92, 176],
@@ -400,7 +400,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_distance
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedDistance)
     );
@@ -419,12 +419,12 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_symmetric
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::SymmetricDistance)
     );
     assert!(matches!(
-        shifted_symmetric.extrude_prologue,
+        shifted_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             side_extent_discriminator_offsets: [116, 130],
             ..
@@ -444,7 +444,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(283),
     );
     assert!(matches!(
-        shifted_compact_symmetric.extrude_prologue,
+        shifted_compact_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
@@ -467,7 +467,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(283),
     );
     assert!(matches!(
-        shifted_marked_symmetric.extrude_prologue,
+        shifted_marked_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             operation_prefix_marker: Some(1),
             operation_prefix_marker_offset: Some(27),
@@ -497,7 +497,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(262),
     );
     assert!(matches!(
-        shifted_offset_profile.extrude_prologue,
+        shifted_offset_profile.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
@@ -525,7 +525,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_two_sided
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::TwoSidedDistance)
     );
@@ -543,7 +543,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(283),
     );
     assert!(matches!(
-        shifted_compact_two_sided.extrude_prologue,
+        shifted_compact_two_sided.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             side_extent_discriminator_offsets: [166, 181],
             extent: Some(DesignExtrudeExtent::TwoSidedDistance),
@@ -566,7 +566,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_through_all
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedThroughAll)
     );
@@ -585,12 +585,12 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     );
     assert_eq!(
         shifted_to_face
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::OneSidedToFace)
     );
     assert!(matches!(
-        shifted_to_face.extrude_prologue,
+        shifted_to_face.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             side_extent_discriminator_offsets: [116, 268],
             ..
@@ -612,7 +612,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             Some(reference_count_offset),
         );
         assert!(matches!(
-            shifted_compact_to_face.extrude_prologue,
+            shifted_compact_to_face.extrude_prologue(),
             Some(DesignExtrudePrologue::LegacyShifted {
                 extent: Some(DesignExtrudeExtent::OneSidedToFace),
                 side_extent_discriminator_offsets: [106, offset],
@@ -635,7 +635,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(294),
     );
     assert!(matches!(
-        shifted_symmetric_through_all.extrude_prologue,
+        shifted_symmetric_through_all.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             extent: Some(DesignExtrudeExtent::SymmetricThroughAll),
             side_extent_discriminator_offsets: [116, 129],
@@ -656,7 +656,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(((0, 0), false)),
         None,
     );
-    assert_eq!(invalid_absent_first_side.extrude_prologue, None);
+    assert_eq!(invalid_absent_first_side.extrude_prologue(), None);
 
     let contradictory_direction_and_sides = scope(
         "Extrude",
@@ -671,11 +671,11 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
         None,
     );
-    assert_eq!(contradictory_direction_and_sides.extrude_prologue, None);
+    assert_eq!(contradictory_direction_and_sides.extrude_prologue(), None);
 
     let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false, None, None, None);
     assert_eq!(unrecognized.kind, "Extrude");
-    assert_eq!(unrecognized.extrude_prologue, None);
+    assert_eq!(unrecognized.extrude_prologue(), None);
     assert_eq!(
         scope(
             "Extrude",
@@ -690,7 +690,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             None,
             None,
         )
-        .extrude_prologue,
+        .extrude_prologue(),
         None
     );
     let sheet = scope(
@@ -706,7 +706,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
         None,
     )
-    .extrude_prologue
+    .extrude_prologue()
     .expect("sheet Extrude prologue");
     assert!(!sheet.solid_operation());
     assert_eq!(
@@ -723,7 +723,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             None,
             None,
         )
-        .extrude_prologue,
+        .extrude_prologue(),
         None
     );
 }
@@ -772,7 +772,7 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
     };
 
     assert_eq!(
-        scope(false, 1, 1).extrude_prologue,
+        scope(false, 1, 1).extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyDistance {
             prefix_value: None,
             prefix_value_offset: None,
@@ -787,7 +787,7 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
         })
     );
     assert_eq!(
-        scope(true, 4, 0).extrude_prologue,
+        scope(true, 4, 0).extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyDistance {
             prefix_value: Some(0),
             prefix_value_offset: Some(21),
@@ -802,7 +802,7 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
         })
     );
 
-    let mut invalid_extent_kind = scope(false, 1, 1).extrude_prologue.unwrap();
+    let mut invalid_extent_kind = scope(false, 1, 1).extrude_prologue().unwrap();
     let DesignExtrudePrologue::LegacyDistance { extent_kind, .. } = &mut invalid_extent_kind else {
         unreachable!("the fixture constructs the early distance-only layout");
     };
@@ -857,7 +857,7 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
         .expect("compact shifted Extrude scope");
     assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
     assert_eq!(
-        scope.extrude_prologue,
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
@@ -934,7 +934,7 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
     assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
     assert_eq!(scope.reference_members, reference_members);
     assert_eq!(
-        scope.extrude_prologue,
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             operation_prefix_marker: None,
             operation_prefix_marker_offset: None,
@@ -1186,7 +1186,7 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
         assert_eq!(scope.frame_length, frame_length);
         assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
         assert_eq!(
-            scope.extrude_prologue,
+            scope.extrude_prologue(),
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation,
@@ -1216,16 +1216,16 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
     let valid = make_bytes(&REFERENCE_MEMBERS_5, 1);
     let mut invalid_marker = valid.clone();
     invalid_marker[layout::OPERATION_PREFIX_MARKER] = 0;
-    assert!(parse(&invalid_marker, "415").extrude_prologue.is_none());
+    assert!(parse(&invalid_marker, "415").extrude_prologue().is_none());
 
     let mut invalid_class = valid.clone();
-    assert!(parse(&invalid_class, "414").extrude_prologue.is_none());
+    assert!(parse(&invalid_class, "414").extrude_prologue().is_none());
     invalid_class[447 + 4..447 + 7].copy_from_slice(b"264");
-    assert!(parse(&invalid_class, "415").extrude_prologue.is_none());
+    assert!(parse(&invalid_class, "415").extrude_prologue().is_none());
 
     let mut invalid_slots = valid;
     invalid_slots[layout::REFERENCE_SLOTS + 1] = 0;
-    assert!(parse(&invalid_slots, "415").extrude_prologue.is_none());
+    assert!(parse(&invalid_slots, "415").extrude_prologue().is_none());
 }
 
 #[test]
@@ -1324,7 +1324,7 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
         extent,
         direction_reversed,
         ..
-    }) = to_face.extrude_prologue
+    }) = to_face.extrude_prologue()
     else {
         panic!("class-415 one-sided to-face prologue");
     };
@@ -1346,7 +1346,7 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
         extent,
         direction_reversed,
         ..
-    }) = distance.extrude_prologue
+    }) = distance.extrude_prologue()
     else {
         panic!("class-415 one-sided distance prologue");
     };
@@ -1359,11 +1359,11 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     let mut invalid_extent = make_bytes(false, &DISTANCE_REFERENCES);
     invalid_extent[distance_layout::SECOND_SIDE_EXTENT..distance_layout::SECOND_SIDE_EXTENT + 4]
         .copy_from_slice(&1u32.to_le_bytes());
-    assert!(parse(&invalid_extent).extrude_prologue.is_none());
+    assert!(parse(&invalid_extent).extrude_prologue().is_none());
 
     let mut invalid_paired_class = make_bytes(true, &TO_FACE_REFERENCES);
     invalid_paired_class[481 + 4..481 + 7].copy_from_slice(b"264");
-    assert!(parse(&invalid_paired_class).extrude_prologue.is_none());
+    assert!(parse(&invalid_paired_class).extrude_prologue().is_none());
 }
 
 #[test]
@@ -1493,7 +1493,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
         assert_eq!(scope.reference_count_offset, REFERENCE_COUNT_OFFSET as u64);
         assert_eq!(
-            scope.extrude_prologue,
+            scope.extrude_prologue(),
             Some(DesignExtrudePrologue::ShiftedReferenceAware {
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: 27,
@@ -1525,7 +1525,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         },
     )
     .expect("class-397 scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_tail = make_bytes(b"357", b"258", 2);
     invalid_tail[135..139].copy_from_slice(&0u32.to_le_bytes());
@@ -1541,7 +1541,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         &header,
     )
     .expect("scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_class = make_bytes(b"349", b"266", 2);
     invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
@@ -1556,7 +1556,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         },
     )
     .expect("scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 
     let prefix_length = 17;
     let mut nonzero_start = vec![0; prefix_length];
@@ -1578,7 +1578,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         nonzero_scope.reference_count_offset,
         (prefix_length + REFERENCE_COUNT_OFFSET) as u64
     );
-    assert!(nonzero_scope.extrude_prologue.is_some());
+    assert!(nonzero_scope.extrude_prologue().is_some());
 }
 
 #[test]
@@ -1680,7 +1680,7 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
     assert_eq!(scope.frame_length, FRAME_LENGTH as u64);
     assert_eq!(scope.reference_count_offset, layout::REFERENCE_COUNT as u64);
     assert_eq!(
-        scope.extrude_prologue,
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::ShiftedReferenceAware {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: layout::OPERATION as u64,
@@ -1711,7 +1711,7 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         &header,
     )
     .expect("scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 
     let mut invalid_class = bytes;
     invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
@@ -1721,7 +1721,7 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         &header,
     )
     .expect("scope envelope remains parseable");
-    assert!(invalid_scope.extrude_prologue.is_none());
+    assert!(invalid_scope.extrude_prologue().is_none());
 }
 
 #[test]
@@ -1823,7 +1823,7 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
         symmetric::REFERENCE_COUNT as u64
     );
     assert_eq!(
-        scope.extrude_prologue,
+        scope.extrude_prologue(),
         Some(DesignExtrudePrologue::ShiftedReferenceAware {
             operation: DesignExtrudeOperation::Cut,
             operation_offset: layout::OPERATION as u64,
@@ -1847,19 +1847,19 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
     let mut invalid_extent = bytes.clone();
     invalid_extent[symmetric::SECOND_SIDE_EXTENT..symmetric::SECOND_SIDE_EXTENT + 4]
         .copy_from_slice(&3u32.to_le_bytes());
-    assert!(parse(&invalid_extent).extrude_prologue.is_none());
+    assert!(parse(&invalid_extent).extrude_prologue().is_none());
 
     let mut invalid_trailing_reference = bytes.clone();
     invalid_trailing_reference
         [symmetric::TRAILING_REFERENCE + 1..symmetric::TRAILING_REFERENCE + 5]
         .copy_from_slice(&9001u32.to_le_bytes());
     assert!(parse(&invalid_trailing_reference)
-        .extrude_prologue
+        .extrude_prologue()
         .is_none());
 
     let mut invalid_class = bytes;
     invalid_class[FRAME_LENGTH + 4..FRAME_LENGTH + 7].copy_from_slice(b"259");
-    assert!(parse(&invalid_class).extrude_prologue.is_none());
+    assert!(parse(&invalid_class).extrude_prologue().is_none());
 }
 
 #[test]

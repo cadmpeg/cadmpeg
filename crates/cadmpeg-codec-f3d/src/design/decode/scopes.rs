@@ -306,13 +306,15 @@ pub fn decode_parameter_scopes(
                 exact_surface_extend_operation(bytes, &records, &scope);
             scope.surface_offset_operation =
                 exact_surface_offset_operation(bytes, &records, &scope);
-            scope.fixed_extrude_parameters = exact_fixed_extrude_parameters(
+            if let Some(parameters) = exact_fixed_extrude_parameters(
                 bytes,
                 &records,
                 &scope,
                 parameters,
                 parameter_owners,
-            );
+            ) {
+                scope.ensure_extrude().fixed_extrude_parameters = Some(parameters);
+            }
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &records, &scope);
             scope.fixed_chamfer_parameters =
                 exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
@@ -6909,7 +6911,7 @@ pub(crate) fn exact_fixed_extrude_parameters(
 ) -> Option<DesignFixedExtrudeParameters> {
     if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Extrude)
         || scope
-            .extrude_prologue
+            .extrude_prologue()
             .and_then(DesignExtrudePrologue::extent)
             != Some(DesignExtrudeExtent::OneSidedDistance)
     {
@@ -9077,7 +9079,10 @@ pub(crate) fn parse_parameter_scope(
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
         kind: kind.clone().into(),
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
-        extrude_prologue,
+        extrude: extrude_prologue.map(|prologue| crate::records::DesignExtrudeScope {
+            extrude_prologue: Some(prologue),
+            ..crate::records::DesignExtrudeScope::default()
+        }),
         coil_operation,
         coil_operation_offset,
         coil_extent,
@@ -9113,7 +9118,6 @@ pub(crate) fn parse_parameter_scope(
         base_flange_operation,
         edge_flange_operation,
         hem_operation: None,
-        fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
@@ -9128,7 +9132,6 @@ pub(crate) fn parse_parameter_scope(
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,
-        extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,

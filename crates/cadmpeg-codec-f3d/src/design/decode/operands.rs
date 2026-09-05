@@ -739,7 +739,7 @@ pub fn decode_face_operands(
             continue;
         }
         if group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
-            && scope.extrude_profile.is_some()
+            && scope.extrude_profile().is_some()
         {
             continue;
         }
@@ -1270,7 +1270,7 @@ pub fn bind_sketch_profiles(
             } else if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep) {
                 scope.sweep_profile = Some(profile.clone());
             } else {
-                scope.extrude_profile = Some(profile.clone());
+                scope.ensure_extrude().extrude_profile = Some(profile.clone());
             }
         }
     }
@@ -1618,7 +1618,7 @@ pub(crate) fn assign_extrude_face_roles(
     let mut face_groups = groups
         .iter_mut()
         .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces));
-    if scope.extrude_prologue.map(DesignExtrudePrologue::start)
+    if scope.extrude_prologue().map(DesignExtrudePrologue::start)
         == Some(DesignExtrudeStart::FromFace)
     {
         if let Some(group) = face_groups.next() {
@@ -1887,14 +1887,14 @@ fn extrude_operand_role(
         0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
         0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
         0x0000_0005_0000_0000
-            if scope.extrude_prologue.map(DesignExtrudePrologue::start)
+            if scope.extrude_prologue().map(DesignExtrudePrologue::start)
                 == Some(DesignExtrudeStart::FromFace) =>
         {
             Some(DesignExtrudeOperandRole::Faces)
         }
         0x0000_0012_0000_0000
             if scope
-                .extrude_prologue
+                .extrude_prologue()
                 .and_then(DesignExtrudePrologue::extent)
                 == Some(DesignExtrudeExtent::OneSidedToFace) =>
         {
@@ -3732,7 +3732,7 @@ pub fn bind_extrude_selection_geometry(
             })?;
             Some((
                 (stream, group.record_index),
-                scope.extrude_profile.as_ref()?.entity_suffix,
+                scope.extrude_profile()?.entity_suffix,
             ))
         })
         .collect::<HashMap<_, _>>();

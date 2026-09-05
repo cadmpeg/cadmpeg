@@ -2033,8 +2033,7 @@ fn scope_properties(
         properties.insert(format!("reference:{ordinal}"), record_index.to_string());
     }
     if let Some(profile) = scope
-        .extrude_profile
-        .as_ref()
+        .extrude_profile()
         .or(scope.base_flange_profile.as_ref())
     {
         if let Some(placement) = placements.iter().find(|placement| {
@@ -2542,7 +2541,7 @@ pub fn bind_sketch_feature_geometry(
             continue;
         };
         if spatial.profiles.is_empty() {
-            let Some(profile_operand) = scope.extrude_profile.as_ref() else {
+            let Some(profile_operand) = scope.extrude_profile() else {
                 continue;
             };
             let Some(stream) = native_stream(&scope.id) else {
@@ -7614,8 +7613,8 @@ pub(crate) fn project_extrude(
         })
         .collect::<Vec<_>>();
     let profile_groups = extrude_profile_group_roots(scope, construction_groups)?;
-    let prologue = scope.extrude_prologue?;
-    let profile_ref = match scope.extrude_profile.as_ref() {
+    let prologue = scope.extrude_prologue()?;
+    let profile_ref = match scope.extrude_profile() {
         Some(profile) => {
             let placement = placements.iter().find(|placement| {
                 native_stream(&placement.id) == native_stream(&scope.id)
@@ -7707,7 +7706,7 @@ pub(crate) fn project_extrude(
         None => None,
     };
     let fixed_along = scope
-        .fixed_extrude_parameters
+        .fixed_extrude_parameters()
         .as_ref()
         .and_then(|fixed| fixed.along_distance.as_ref())
         .map(|fixed| match fixed {
@@ -7759,7 +7758,7 @@ pub(crate) fn project_extrude(
     if effective_side_two_offset.is_some()
         && !matches!(
             scope
-                .extrude_prologue
+                .extrude_prologue()
                 .and_then(DesignExtrudePrologue::extent),
             Some(
                 DesignExtrudeExtent::TwoSidedToFaces | DesignExtrudeExtent::TwoSidedDistanceToFace,
@@ -8008,7 +8007,7 @@ pub(crate) fn project_extrude(
         None => None,
     };
     let fixed_draft = scope
-        .fixed_extrude_parameters
+        .fixed_extrude_parameters()
         .as_ref()
         .and_then(|fixed| fixed.taper_angle.as_ref())
         .map(|fixed| Angle(fixed.value));

@@ -38,7 +38,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 1100,
-        extrude_prologue: None,
+        extrude: None,
         coil_operation: None,
         coil_operation_offset: None,
         coil_extent: None,
@@ -72,7 +72,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         base_flange_operation: None,
         edge_flange_operation: None,
         hem_operation: None,
-        fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
@@ -87,7 +86,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,
-        extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
@@ -196,23 +194,24 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(retained_role_five.extrude_role, None);
 
     let mut from_face_scope = scope.clone();
-    from_face_scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
-        reference: None,
-        operation: DesignExtrudeOperation::Cut,
-        operation_offset: 1028,
-        direction_face_extend_values: [1, 2],
-        side_extent_discriminators: [1, 0],
-        side_extent_discriminator_offsets: [1077, 1090],
-        first_side_target_ordinal: None,
-        extent: DesignExtrudeExtent::OneSidedDistance,
-        direction_face_extend_offsets: [1032, 1036],
-        direction_reversed: false,
-        direction_reversed_offset: 1040,
-        solid_operation: true,
-        solid_operation_offset: 1041,
-        start: DesignExtrudeStart::FromFace,
-        start_offset: 1042,
-    });
+    from_face_scope.ensure_extrude().extrude_prologue =
+        Some(DesignExtrudePrologue::ReferenceAware {
+            reference: None,
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: 1028,
+            direction_face_extend_values: [1, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets: [1077, 1090],
+            first_side_target_ordinal: None,
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            direction_face_extend_offsets: [1032, 1036],
+            direction_reversed: false,
+            direction_reversed_offset: 1040,
+            solid_operation: true,
+            solid_operation_offset: 1041,
+            start: DesignExtrudeStart::FromFace,
+            start_offset: 1042,
+        });
     let start_face =
         parse_construction_operand_group(&start_face_bytes, &from_face_scope, 0, &record)
             .complete()
@@ -224,7 +223,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
 
     let mut to_face_scope = from_face_scope.clone();
-    to_face_scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
+    to_face_scope.ensure_extrude().extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
         reference: None,
         operation: DesignExtrudeOperation::Cut,
         operation_offset: 1028,
@@ -1102,7 +1101,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     scope.frame_length = 536;
     scope.reference_count_offset = 1291;
     scope.reference_members = (0..13).map(|index| 296_500 + index).collect();
-    scope.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
+    scope.ensure_extrude().extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker: None,
         operation_prefix_marker_offset: None,
         operation: DesignExtrudeOperation::Join,
@@ -1168,7 +1167,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
 
     let mut wrong_extent = scope;
     let Some(DesignExtrudePrologue::LegacyShifted { extent, .. }) =
-        wrong_extent.extrude_prologue.as_mut()
+        wrong_extent.extrude_prologue_mut()
     else {
         panic!("synthetic class-296 two-sided-to-faces prologue");
     };
