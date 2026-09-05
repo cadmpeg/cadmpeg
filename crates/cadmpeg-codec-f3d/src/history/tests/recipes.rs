@@ -983,11 +983,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         byte_offset: 0,
         record_index_offset: None,
         kind: crate::records::ConstructionRecipeKind::Body,
-        design_id: Some(crate::records::RecordedValue { value: "301".into(), offset: None }),
-        design_selector: Some(crate::records::ConstructionRecipeSelector {
+        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: "301".into(), offset: None }, selector: Some(crate::records::ConstructionRecipeSelector {
             value: 9,
             byte_offset: 0,
-        }),
+        }) }),
         recipe_index: 0,
         record_index: 0,
     };

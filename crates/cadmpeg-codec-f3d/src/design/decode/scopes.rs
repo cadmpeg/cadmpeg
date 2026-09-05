@@ -9530,8 +9530,8 @@ fn exact_coil_face_selection(
         recipe_record_byte_offset: face.recipe_record_byte_offset,
         recipe_id: recipe.id.clone(),
         recipe_kind: recipe.kind,
-        design_id: recipe.design_id.as_ref().map(|field| field.value.clone()),
-        design_selector: recipe.design_selector,
+        design_id: recipe.design.as_ref().map(|design| design.id.value.clone()),
+        design_selector: recipe.design.as_ref().and_then(|design| design.selector),
     })
 }
 

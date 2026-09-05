@@ -215,8 +215,8 @@ pub(crate) fn encode_design_bulkstream(
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
-        if let Some(field) = &recipe.design_id {
-            let design_id = &field.value;
+        if let Some(design) = &recipe.design {
+            let design_id = &design.id.value;
             if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
                 return Err(CodecError::malformed(format_args!(
                     "source-less Design recipe id must be three ASCII digits: {design_id}"

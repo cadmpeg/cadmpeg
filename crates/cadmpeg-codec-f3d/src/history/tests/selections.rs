@@ -448,11 +448,10 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         byte_offset: 0,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: Some(crate::records::RecordedValue { value: design_id.into(), offset: None }),
-        design_selector: Some(ConstructionRecipeSelector {
+        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: design_id.into(), offset: None }, selector: Some(ConstructionRecipeSelector {
             value: selector,
             byte_offset: 0,
-        }),
+        }) }),
         recipe_index: 0,
         record_index: 0,
     };
@@ -480,7 +479,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                 selector_tail: None,
 
                 references: vec![DesignBodyRecipeReference {
-                    design_reference: if recipe.design_id.as_ref().map(|field| field.value.as_str()) == Some("family") {
+                    design_reference: if recipe.design.as_ref().map(|design| design.id.value.as_str()) == Some("family") {
                         413
                     } else {
                         409
@@ -530,7 +529,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
 
     operands[1].references[0].preceding_body_slots.clear();
     let mut duplicate_selector = recipes.clone();
-    duplicate_selector[1].design_selector = duplicate_selector[2].design_selector;
+    duplicate_selector[1].design.as_mut().unwrap().selector = duplicate_selector[2].design.as_ref().unwrap().selector;
     assert!(combine_recipe_family_tool_slots(
         stream,
         10,

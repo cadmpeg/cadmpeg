@@ -82,11 +82,10 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         byte_offset: recipe_at as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: Some(crate::records::RecordedValue { value: "2265".into(), offset: None }),
-        design_selector: Some(crate::records::ConstructionRecipeSelector {
+        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: "2265".into(), offset: None }, selector: Some(crate::records::ConstructionRecipeSelector {
             value: 9,
             byte_offset: 0,
-        }),
+        }) }),
         recipe_index: 0,
         record_index: 0,
     };
@@ -199,13 +198,11 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             tools: Vec::new(),
         });
     }
-    let combine_recipe = ConstructionRecipe {
-        design_selector: Some(crate::records::ConstructionRecipeSelector {
-            value: 1,
-            byte_offset: 0,
-        }),
-        ..recipe.clone()
-    };
+    let mut combine_recipe = recipe.clone();
+    combine_recipe.design.as_mut().unwrap().selector = Some(crate::records::ConstructionRecipeSelector {
+        value: 1,
+        byte_offset: 0,
+    });
     let mut combine_operand = operand.clone();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut combine_operand),
@@ -319,11 +316,10 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         byte_offset: recipe_at as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: Some(crate::records::RecordedValue { value: "301".into(), offset: None }),
-        design_selector: Some(crate::records::ConstructionRecipeSelector {
+        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: "301".into(), offset: None }, selector: Some(crate::records::ConstructionRecipeSelector {
             value: 6,
             byte_offset: 0,
-        }),
+        }) }),
         recipe_index: 0,
         record_index: 0,
     };
@@ -396,8 +392,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         byte_offset: recipe_name_at as u64,
         record_index_offset: Some(recipe_record_at + 8),
         kind: ConstructionRecipeKind::Edge,
-        design_id: None,
-        design_selector: None,
+        design: None,
         recipe_index: 7,
         record_index: 303,
     };
@@ -508,8 +503,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         byte_offset: u64::try_from(vertex_recipe_name_at).expect("generated offset fits u64"),
         record_index_offset: Some(vertex_recipe_record_at + 8),
         kind: ConstructionRecipeKind::Vertex,
-        design_id: None,
-        design_selector: None,
+        design: None,
         recipe_index: 9,
         record_index: 303,
     };
@@ -1288,7 +1282,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_scope.payload = crate::records::DesignFeatureKind::Extrude.into();
     let mut face_recipe = recipe;
     face_recipe.kind = ConstructionRecipeKind::BoundedFace;
-    face_recipe.design_id.as_mut().expect("recipe id").value = "303".into();
+    face_recipe.design.as_mut().expect("recipe id").id.value = "303".into();
     face_recipe.byte_offset = face_recipe_name_at as u64;
     face_recipe.record_index_offset = Some(face_recipe_record_at + 8);
     let mut operand = parse_face_operand(

@@ -1005,7 +1005,7 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(
         f3d_native(result.ir()).construction_recipes[0]
-            .design_id.as_ref().map(|field| field.value.as_str()),
+            .design.as_ref().map(|design| design.id.value.as_str()),
         Some("322")
     );
     assert_eq!(

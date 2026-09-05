@@ -1369,8 +1369,9 @@ fn combine_recipe_family_tool_slots(
         let recipe = recipes_by_id
             .get(operand.recipe_id.as_str())
             .and_then(|recipe| *recipe)?;
-        let design_id = recipe.design_id.as_ref().map(|field| field.value.clone())?;
-        let selector = recipe.design_selector?.value;
+        let design = recipe.design.as_ref()?;
+        let design_id = design.id.value.clone();
+        let selector = design.selector?.value;
         if selector == 0 {
             return None;
         }
@@ -1823,8 +1824,9 @@ fn body_recipe_link_candidate(
     if matching_recipes.next().is_some() {
         return None;
     }
-    let design_id = recipe.design_id.as_ref().map(|field| field.value.as_str())?;
-    let selector = i64::from(recipe.design_selector?.value);
+    let design = recipe.design.as_ref()?;
+    let design_id = design.id.value.as_str();
+    let selector = i64::from(design.selector?.value);
     let mut matching_bodies = Vec::new();
     for link in persistent_design_links.iter().filter(|link| {
         link.is_current && link.design_id == design_id && link.design_reference == selector
@@ -4570,7 +4572,8 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let recipe = recipes_by_id
             .get(operand.recipe_id.as_str())
             .and_then(|recipe| *recipe)?;
-        let selector = recipe.design_selector?;
+        let design = recipe.design.as_ref()?;
+        let selector = design.selector?;
         Some((
             stream,
             operand.asset_id.clone(),
@@ -4580,7 +4583,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 .iter()
                 .map(|reference| (reference.design_reference, reference.form))
                 .collect::<Vec<_>>(),
-            recipe.design_id.as_ref().map(|field| field.value.clone()),
+            design.id.value.clone(),
             selector.value,
         ))
     };

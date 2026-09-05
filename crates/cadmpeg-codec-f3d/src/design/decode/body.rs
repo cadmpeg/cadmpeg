@@ -262,18 +262,19 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
             if !framed_name {
                 continue;
             }
-            let design_id_field = recipe_design_id(bytes, offset, name);
-            let design_id = design_id_field.as_ref().map(|field| field.0.clone());
-            let design_selector = design_id_field
-                .as_ref()
-                .and_then(|(design_id, design_id_at)| {
-                    let selector_at = design_id_at.checked_add(design_id.len())?;
+            let design = recipe_design_id(bytes, offset, name).map(|(value, design_id_at)| {
+                let selector = design_id_at.checked_add(value.len()).and_then(|selector_at| {
                     Some(ConstructionRecipeSelector {
                         value: View::u32_le_at(bytes, selector_at)?,
                         byte_offset: u64::try_from(selector_at).ok()?,
                     })
                 });
-            let key = (kind, design_id);
+                crate::records::ConstructionRecipeDesign {
+                    id: crate::records::RecordedValue { value, offset: Some(design_id_at as u64) },
+                    selector,
+                }
+            });
+            let key = (kind, design.as_ref().map(|design| design.id.value.clone()));
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
             *counter += 1;
@@ -286,8 +287,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 byte_offset: offset as u64,
                 record_index_offset: record_index_offset.map(|offset| offset as u64),
                 kind,
-                design_id: design_id_field.map(|(value, offset)| crate::records::RecordedValue { value, offset: Some(offset as u64) }),
-                design_selector,
+                design,
                 recipe_index,
                 record_index,
             });
@@ -1756,7 +1756,7 @@ mod tests {
         crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes);
         assert_eq!(recipes.len(), 2);
         assert!(recipes.iter().all(|recipe| recipe.record_index == 309));
-        assert!(recipes.iter().all(|recipe| recipe.design_id.is_none()));
+        assert!(recipes.iter().all(|recipe| recipe.design.is_none()));
         assert_eq!(recipes[0].recipe_index, 0);
         assert_eq!(recipes[1].recipe_index, 1);
 
@@ -1770,10 +1770,10 @@ mod tests {
         let mut recipes = Vec::new();
         crate::design::decode::body::decode_stream(&body, "Design/BulkStream.dat", &mut recipes);
         assert_eq!(recipes.len(), 1);
-        assert_eq!(recipes[0].design_id.as_ref().map(|field| field.value.as_str()), Some("2265"));
-        assert_eq!(recipes[0].design_id.as_ref().and_then(|field| field.offset), Some(4));
+        assert_eq!(recipes[0].design.as_ref().map(|design| design.id.value.as_str()), Some("2265"));
+        assert_eq!(recipes[0].design.as_ref().and_then(|design| design.id.offset), Some(4));
         assert_eq!(
-            recipes[0].design_selector,
+            recipes[0].design.as_ref().and_then(|design| design.selector),
             Some(crate::records::ConstructionRecipeSelector {
                 value: 3,
                 byte_offset: 8,

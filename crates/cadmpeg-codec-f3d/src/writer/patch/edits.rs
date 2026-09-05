@@ -1972,16 +1972,22 @@ pub(crate) fn validate_construction_recipe_edits(
         let after = target_by_id[id];
         let mut normalized = after.clone();
         normalized.record_index = before.record_index;
-        normalized.design_id = before.design_id.as_ref().map(|field| crate::records::RecordedValue {
-            value: field.value.clone(),
-            offset: after.design_id.as_ref().and_then(|field| field.offset),
+        normalized.design = before.design.as_ref().map(|design| crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: design.id.value.clone(),
+                offset: after.design.as_ref().and_then(|design| design.id.offset),
+            },
+            selector: design.selector,
         });
-        if &normalized != before {
+        if &normalized != before
+            || before.design.as_ref().and_then(|design| design.selector)
+                != after.design.as_ref().and_then(|design| design.selector)
+        {
             return Err(CodecError::NotImplemented(format!(
                 "F3D construction-recipe edit changes fields other than record_index or design_id: {id}"
             )));
         }
-        if after.record_index == before.record_index && after.design_id == before.design_id {
+        if after.record_index == before.record_index && after.design == before.design {
             continue;
         }
         let record_index = (after.record_index != before.record_index)
@@ -1999,15 +2005,16 @@ pub(crate) fn validate_construction_recipe_edits(
                     })
             })
             .transpose()?;
-        let design_id = if after.design_id == before.design_id {
+        let design_id = if after.design == before.design {
             None
         } else {
-            let before_value = before.design_id.as_ref().map(|field| field.value.as_str()).ok_or_else(|| {
+            let before_value = before.design.as_ref().map(|design| design.id.value.as_str()).ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot add F3D recipe design id: {id}"))
             })?;
-            let after_field = after.design_id.as_ref().ok_or_else(|| {
+            let after_design = after.design.as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D recipe design id: {id}"))
             })?;
+            let after_field = &after_design.id;
             let after_value = after_field.value.as_str();
             let offset = after_field.offset.ok_or_else(|| {
                 CodecError::NotImplemented(format!(

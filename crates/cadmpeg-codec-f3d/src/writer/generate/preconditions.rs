@@ -222,7 +222,7 @@ pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
     let mut group_counts = HashMap::new();
     for recipe in &native.construction_recipes {
         let expected = group_counts
-            .entry((recipe.kind, recipe.design_id.as_ref().map(|field| field.value.as_str())))
+            .entry((recipe.kind, recipe.design.as_ref().map(|design| design.id.value.as_str())))
             .or_insert(0u32);
         if recipe.recipe_index != *expected {
             return Err(CodecError::InvalidInput(format!(

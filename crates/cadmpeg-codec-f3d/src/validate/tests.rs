@@ -341,11 +341,10 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             byte_offset: byte_offset + 220,
             record_index_offset: None,
             kind: ConstructionRecipeKind::Body,
-            design_id: Some(crate::records::RecordedValue { value: "301".into(), offset: Some(byte_offset + 197) }),
-            design_selector: Some(ConstructionRecipeSelector {
+            design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: "301".into(), offset: Some(byte_offset + 197) }, selector: Some(ConstructionRecipeSelector {
                 value: operand_record_index + 4,
                 byte_offset: byte_offset + 200,
-            }),
+            }) }),
             recipe_index: ordinal,
             record_index: i32::try_from(operand_record_index + 3).unwrap(),
         });

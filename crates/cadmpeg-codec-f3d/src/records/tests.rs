@@ -1698,3 +1698,24 @@ fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
     }
     assert!(super::DesignParameterSource::new(String::new(), Some(2), None).unwrap_err().contains("source_kind"));
 }
+
+#[test]
+fn construction_recipe_design_preserves_wire_and_rejects_orphan_selector() {
+    let prefix = r#"{"id":"recipe","byte_offset":80,"kind":"body"#;
+    let suffix = r#","recipe_index":0,"record_index":7}"#;
+    for fields in [
+        "",
+        ",\"design_id\":\"301\"",
+        ",\"design_id\":\"301\",\"design_id_offset\":12",
+        ",\"design_id\":\"301\",\"design_selector\":{\"value\":2,\"byte_offset\":0}",
+        ",\"design_id\":\"301\",\"design_id_offset\":12,\"design_selector\":{\"value\":2,\"byte_offset\":15}",
+    ] {
+        let wire = format!("{prefix}\"{fields}{suffix}");
+        let recipe: super::ConstructionRecipe = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&recipe).unwrap(), wire);
+    }
+    let wire = format!("{prefix}\",\"design_selector\":{{\"value\":2,\"byte_offset\":15}}{suffix}");
+    let error = serde_json::from_str::<super::ConstructionRecipe>(&wire).unwrap_err().to_string();
+    assert!(error.contains("design_id"));
+    assert!(error.contains("design_selector"));
+}
