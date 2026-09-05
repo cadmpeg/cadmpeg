@@ -65,12 +65,8 @@ use cadmpeg_ir::compare::{is_local_digest_attribute, values_agree};
 /// One snapshot branch: a subdirectory of `tests/golden` and the function that
 /// produces the text pinned there.
 pub struct Branch {
-    /// Subdirectory name under `tests/golden`, also used in failure messages.
-    ///
-    /// Empty writes `{name}.json` directly under `tests/golden` (flat
-    /// snapshot directory). Failure text then says `snapshot` rather than
-    /// an empty kind.
-    pub kind: &'static str,
+    /// Named snapshot subdirectory, or the golden root.
+    kind: Option<&'static str>,
     /// Serializes one fixture's bytes as the snapshot text.
     pub snapshot: fn(&[u8]) -> String,
 }
@@ -78,8 +74,20 @@ pub struct Branch {
 impl Branch {
     /// Names a branch and the function that produces its snapshot.
     #[must_use]
-    pub const fn new(kind: &'static str, snapshot: fn(&[u8]) -> String) -> Self {
-        Self { kind, snapshot }
+    pub const fn named(kind: &'static str, snapshot: fn(&[u8]) -> String) -> Self {
+        Self {
+            kind: Some(kind),
+            snapshot,
+        }
+    }
+
+    /// Places snapshots directly in the golden root.
+    #[must_use]
+    pub const fn root(snapshot: fn(&[u8]) -> String) -> Self {
+        Self {
+            kind: None,
+            snapshot,
+        }
     }
 }
 
@@ -196,7 +204,7 @@ impl Harness {
     /// Use this when fixtures are constructed in code rather than read from
     /// `tests/golden/fixtures`. `UPDATE_GOLDEN` rewrites golden outputs only.
     ///
-    /// A [`Branch`] whose [`kind`](Branch::kind) is empty writes `{name}.json`
+    /// A [`Branch::root`] branch writes `{name}.json`
     /// directly under `tests/golden`. Otherwise `{name}.json` lives under
     /// `tests/golden/{kind}/`.
     ///
@@ -270,7 +278,7 @@ impl Harness {
                     let (line, one, two) = first_line_diff(&first, &second);
                     panic!(
                         "fixture `{name}`: nondeterministic {} at line {line}\n    run 1: {one}\n    run 2: {two}",
-                        branch_label(branch.kind)
+                        branch.kind.unwrap_or("snapshot")
                     );
                 }
             }
@@ -287,8 +295,11 @@ impl Harness {
         update: bool,
         from_files: bool,
     ) -> Vec<String> {
-        let dir = self.golden_dir.join(branch.kind);
-        let kind = branch_label(branch.kind);
+        let dir = branch.kind.map_or_else(
+            || self.golden_dir.clone(),
+            |kind| self.golden_dir.join(kind),
+        );
+        let kind = branch.kind.unwrap_or("snapshot");
         let mut failures: Vec<String> = Vec::new();
         for (name, bytes) in inputs {
             let actual = (branch.snapshot)(bytes);
@@ -332,15 +343,6 @@ impl Harness {
             });
         }
         failures
-    }
-}
-
-/// Failure-message label for [`Branch::kind`]. Empty kind is a flat snapshot.
-fn branch_label(kind: &str) -> &str {
-    if kind.is_empty() {
-        "snapshot"
-    } else {
-        kind
     }
 }
 

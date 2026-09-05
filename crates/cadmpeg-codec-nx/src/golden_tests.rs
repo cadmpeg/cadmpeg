@@ -818,14 +818,14 @@ fn snapshot(bytes: &[u8]) -> String {
 
 #[test]
 fn golden_snapshots_are_byte_identical() {
-    harness().check_inputs(&inputs(), &[Branch::new("", snapshot)]);
+    harness().check_inputs(&inputs(), &[Branch::root(snapshot)]);
 }
 
 /// Guards against nondeterministic codec output (`HashMap` iteration order,
 /// timestamps): decoding the same bytes twice must produce identical JSON.
 #[test]
 fn golden_output_is_deterministic() {
-    harness().check_determinism_inputs(&inputs(), &[Branch::new("", snapshot)]);
+    harness().check_determinism_inputs(&inputs(), &[Branch::root(snapshot)]);
 }
 
 /// Union of `nx`-namespace arenas the fixture set populates.
