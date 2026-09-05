@@ -1888,14 +1888,14 @@ fn resolve_entity_selection_path(
     let mut selected_curve_identities = HashSet::with_capacity(selected_operands.len());
     for operand in &selected_operands {
         let owner_reference = u32::try_from(operand.primary_identity).ok()?;
-        let secondary_identity = operand.secondary_identity?;
+        let secondary_identity = operand.secondary_identity?.value;
         let mut curves = resolution.curve_identities.iter().filter(|curve| {
             native_stream(&curve.id) == Some(stream)
                 && curve.owner_reference == Some(owner_reference)
                 && curve.primary_id == secondary_identity
                 && operand
                     .curve_secondary_identity
-                    .is_none_or(|secondary| curve.secondary_id == secondary)
+                    .is_none_or(|secondary| curve.secondary_id == secondary.value)
         });
         let curve = curves.next()?;
         if curves.next().is_some()

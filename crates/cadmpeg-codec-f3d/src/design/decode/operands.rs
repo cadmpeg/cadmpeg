@@ -3002,9 +3002,7 @@ pub(crate) fn parse_entity_selection_operand(
         primary_identity: frame.primary_identity,
         primary_identity_offset: frame.primary_identity_offset,
         secondary_identity: frame.secondary_identity,
-        secondary_identity_offset: frame.secondary_identity_offset,
         curve_secondary_identity: frame.curve_secondary_identity,
-        curve_secondary_identity_offset: frame.curve_secondary_identity_offset,
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -3028,10 +3026,8 @@ pub(crate) struct EntitySelectionFrame {
     pub(crate) identity_record_offset: u64,
     pub(crate) primary_identity: u64,
     pub(crate) primary_identity_offset: u64,
-    pub(crate) secondary_identity: Option<u64>,
-    pub(crate) secondary_identity_offset: Option<u64>,
-    pub(crate) curve_secondary_identity: Option<u64>,
-    pub(crate) curve_secondary_identity_offset: Option<u64>,
+    pub(crate) secondary_identity: Option<crate::records::Located<u64>>,
+    pub(crate) curve_secondary_identity: Option<crate::records::Located<u64>>,
     pub(crate) next_record_index: u32,
     pub(crate) next_byte_offset: u64,
 }
@@ -3106,10 +3102,10 @@ pub(crate) fn entity_selection_matches_curve(
     operand: &DesignEntitySelectionOperand,
     curve: &SketchCurveIdentity,
 ) -> bool {
-    Some(curve.primary_id) == operand.secondary_identity
+    Some(curve.primary_id) == operand.secondary_identity.map(|identity| identity.value)
         && operand
             .curve_secondary_identity
-            .is_none_or(|secondary| curve.secondary_id == secondary)
+            .is_none_or(|secondary| curve.secondary_id == secondary.value)
 }
 
 /// Direct sketch-point identity carried by a `WorkPoint` input.
@@ -3246,8 +3242,6 @@ pub(crate) fn parse_entity_selection_frame(
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
     let (
         primary_identity_offset,
-        secondary_identity_offset,
-        curve_secondary_identity_offset,
         primary_identity,
         secondary_identity,
         curve_secondary_identity,
@@ -3276,10 +3270,11 @@ pub(crate) fn parse_entity_selection_frame(
         )?);
         (
             identity_at.checked_add(class_338_curve::OWNER_RECORD_INDEX)?,
-            Some(identity_at.checked_add(class_338_curve::CURVE_PERSISTENT_ID)?),
-            None,
             primary_identity,
-            Some(secondary_identity),
+            Some(crate::records::Located {
+                value: secondary_identity,
+                offset: u64::try_from(identity_at.checked_add(class_338_curve::CURVE_PERSISTENT_ID)?).ok()?,
+            }),
             None,
         )
     } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
@@ -3291,11 +3286,15 @@ pub(crate) fn parse_entity_selection_frame(
         let secondary_identity_offset = identity_at.checked_add(37)?;
         (
             primary_identity_offset,
-            Some(secondary_identity_offset),
-            Some(curve_secondary_identity_offset),
             View::u64_le_at(bytes, primary_identity_offset)?,
-            Some(View::u64_le_at(bytes, secondary_identity_offset)?),
-            Some(View::u64_le_at(bytes, curve_secondary_identity_offset)?),
+            Some(crate::records::Located {
+                value: View::u64_le_at(bytes, secondary_identity_offset)?,
+                offset: u64::try_from(secondary_identity_offset).ok()?,
+            }),
+            Some(crate::records::Located {
+                value: View::u64_le_at(bytes, curve_secondary_identity_offset)?,
+                offset: u64::try_from(curve_secondary_identity_offset).ok()?,
+            }).filter(|identity| identity.value != 0),
         )
     } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
         && identity_at.checked_add(29)? == next_at
@@ -3303,8 +3302,6 @@ pub(crate) fn parse_entity_selection_frame(
         let primary_identity_offset = identity_at.checked_add(21)?;
         (
             primary_identity_offset,
-            None,
-            None,
             View::u64_le_at(bytes, primary_identity_offset)?,
             None,
             None,
@@ -3325,12 +3322,7 @@ pub(crate) fn parse_entity_selection_frame(
         primary_identity,
         primary_identity_offset: u64::try_from(primary_identity_offset).ok()?,
         secondary_identity,
-        secondary_identity_offset: secondary_identity_offset
-            .and_then(|offset| u64::try_from(offset).ok()),
-        curve_secondary_identity: curve_secondary_identity.filter(|identity| *identity != 0),
-        curve_secondary_identity_offset: curve_secondary_identity_offset
-            .filter(|offset| View::u64_le_at(bytes, *offset).is_some_and(|identity| identity != 0))
-            .and_then(|offset| u64::try_from(offset).ok()),
+        curve_secondary_identity,
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })

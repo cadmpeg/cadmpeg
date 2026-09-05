@@ -636,9 +636,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         primary_identity: 225,
         primary_identity_offset: 0,
         secondary_identity: None,
-        secondary_identity_offset: None,
         curve_secondary_identity: None,
-        curve_secondary_identity_offset: None,
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),
