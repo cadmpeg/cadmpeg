@@ -136,3 +136,19 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
         assert!(error.to_string().contains(field));
     }
 }
+
+#[test]
+fn body_recipe_selector_tail_preserves_wire_and_rejects_partial_locations() {
+    let prefix = r#"{"id":"operand","scope_record_index":1,"scope_reference_ordinal":0,"record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"asset","asset_id_offset":100,"context_id":"context","context_id_offset":150"#;
+    let suffix = r#","references":[],"nested_record_index":5,"nested_record_index_offset":80,"recipe_id":"recipe","next_record_index":6,"next_byte_offset":240}"#;
+    for fields in ["", ",\"selector_tail\":[7,0,0,0],\"selector_tail_offset\":220"] {
+        let wire = format!("{prefix}{fields}{suffix}");
+        let value: super::DesignBodyRecipeOperand = serde_json::from_str(&wire).expect("body recipe operand");
+        assert_eq!(serde_json::to_string(&value).expect("body recipe operand wire"), wire);
+    }
+    for fields in [",\"selector_tail\":[7,0,0,0]", ",\"selector_tail_offset\":220"] {
+        let error = serde_json::from_str::<super::DesignBodyRecipeOperand>(&format!("{prefix}{fields}{suffix}"))
+            .expect_err("partial selector tail location");
+        assert!(error.to_string().contains("selector_tail"));
+    }
+}
