@@ -467,23 +467,18 @@ _ => {},
                     *slot = construction;
                 }
             }
-            let solved_frame = scope
-                .assembly_alignment()
-                .and_then(|alignment| alignment.solved_frame());
-            let legacy_operand_carriers = solved_frame.as_ref().and_then(|solved_frame| {
-                exact_legacy_as_built_421_operands(
-                    bytes,
-                    &records,
-                    &scope,
-                    &stream_types,
-                    recipes,
-                    solved_frame,
-                )
+            let legacy_form = scope.assembly_alignment().and_then(|alignment| {
+                let crate::records::DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, limits } = alignment.form.as_ref()? else { return None; };
+                let carriers = exact_legacy_as_built_421_operands(bytes, &records, &scope, &stream_types, recipes, solved_frame)?;
+                Some(crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                    carriers,
+                    solved_frame: solved_frame.clone(),
+                    limits: limits.clone(),
+                    frames_field_present: true,
+                })
             });
-            if let (Some(alignment), Some(carriers)) =
-                (scope.assembly_alignment_mut(), legacy_operand_carriers)
-            {
-                alignment.set_legacy_operand_carriers(carriers);
+            if let (Some(alignment), Some(form)) = (scope.assembly_alignment_mut(), legacy_form) {
+                alignment.form = Some(form);
             }
             {
                 let construction = exact_component_insert_construction(bytes, &records, &scope);
@@ -948,7 +943,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             continue;
         }
         if let Some(alignment) = assembly.assembly_alignment_mut() {
-            alignment.joint_origin_scope_record_index = Some(joint_origin_record_index);
+            alignment.form = Some(crate::records::DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index: joint_origin_record_index });
         }
     }
 }
@@ -968,25 +963,22 @@ pub(crate) fn bind_axial_assembly_operand_targets(
                 return None;
             }
             let alignment = scope.assembly_alignment()?;
-            if alignment.operand_qualifiers().is_some() {
-                return None;
-            }
-            let frames = alignment.operand_frames()?;
+            let crate::records::DesignAssemblyAlignmentForm::Frames { frames } = alignment.form.as_ref()? else { return None; };
             let first =
                 exact_assembly_axial_operand_target(bytes, records, scope, &frames[0], scopes)?;
             let second =
                 exact_assembly_axial_operand_target(bytes, records, scope, &frames[1], scopes)?;
             Some((
                 ordinal,
-                [first, second]
-                    .map(|target| DesignAssemblyOperandQualifier::AxialTarget { target }),
+                crate::records::DesignAssemblyAlignmentForm::qualified(frames.clone(), [first, second]
+                    .map(|target| DesignAssemblyOperandQualifier::AxialTarget { target })),
             ))
         })
         .collect::<Vec<_>>();
 
-    for (ordinal, targets) in bindings {
+    for (ordinal, form) in bindings {
         if let Some(alignment) = scopes[ordinal].assembly_alignment_mut() {
-            alignment.set_operand_qualifiers(targets);
+            alignment.form = Some(form);
         }
     }
 }
@@ -1744,16 +1736,16 @@ pub(crate) fn exact_assembly_alignment(
     if legacy_class_388 {
         exact_legacy_class_388_scope(bytes, scope)?;
     }
-    let (angle, offset, owner_record_indices, value_offsets, limits) = if as_built_421 {
+    use crate::records::DesignAssemblyAlignmentForm;
+    if as_built_421 {
         let exact = exact_legacy_as_built_421_alignment(bytes, scope, &lanes)?;
-        (
-            exact.angle,
-            exact.offset,
-            exact.owner_record_indices,
-            exact.value_offsets,
-            Some(exact.limits),
-        )
-    } else {
+        let form = match exact_legacy_as_built_421_solved_frame(bytes, records, scope) {
+            Some(solved_frame) => DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, limits: Some(exact.limits) },
+            None => DesignAssemblyAlignmentForm::LimitsOnly { limits: exact.limits },
+        };
+        return Some(DesignAssemblyAlignment { angle: exact.angle, offset: exact.offset, owners: exact.owners, form: Some(form) });
+    }
+    let (angle, offset, owners) = {
         if matches!(scope.frame_length, 671 | 744 | 748)
             && crate::design::assembly::operand_frame_variant(
                 scope.frame_length,
@@ -1771,38 +1763,16 @@ pub(crate) fn exact_assembly_alignment(
             lanes.len(),
         )?;
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
-        let (angle, offset, owner_record_indices, value_offsets) = match alignment_lanes {
+        let (angle, offset) = match alignment_lanes {
             [angle, offset_x, offset_y, offset_z] => (
                 angle.evaluated_value,
-                [
-                    offset_x.evaluated_value,
-                    offset_y.evaluated_value,
-                    offset_z.evaluated_value,
-                ],
-                vec![
-                    angle.record_index,
-                    offset_x.record_index,
-                    offset_y.record_index,
-                    offset_z.record_index,
-                ],
-                vec![
-                    angle.evaluated_value_offset,
-                    offset_x.evaluated_value_offset,
-                    offset_y.evaluated_value_offset,
-                    offset_z.evaluated_value_offset,
-                ],
+                [offset_x.evaluated_value, offset_y.evaluated_value, offset_z.evaluated_value],
             ),
-            [angle, axial_offset] => (
-                angle.evaluated_value,
-                [0.0, 0.0, axial_offset.evaluated_value],
-                vec![angle.record_index, axial_offset.record_index],
-                vec![
-                    angle.evaluated_value_offset,
-                    axial_offset.evaluated_value_offset,
-                ],
-            ),
+            [angle, axial_offset] => (angle.evaluated_value, [0.0, 0.0, axial_offset.evaluated_value]),
             _ => return None,
         };
+        let owners: Vec<crate::records::Located<u32>> = alignment_lanes.iter()
+            .map(|owner| crate::records::Located { value: owner.record_index, offset: owner.evaluated_value_offset }).collect();
         if legacy_class_388 {
             let owner_reference_order_matches = CLASS_388_OWNER_REFERENCE_ORDINALS
                 .into_iter()
@@ -1814,7 +1784,7 @@ pub(crate) fn exact_assembly_alignment(
                 .iter()
                 .any(|owner| owner.class_tag != "282" || owner.frame_length != 103)
                 || !owner_reference_order_matches
-                || !scope.reference_members.values().skip(4).take(4).eq(owner_record_indices.iter())
+                || !scope.reference_members.values().skip(4).take(4).eq(owners.iter().map(|owner| &owner.value))
             {
                 return None;
             }
@@ -1829,7 +1799,7 @@ pub(crate) fn exact_assembly_alignment(
                 .iter()
                 .any(|owner| owner.class_tag != "284" || owner.frame_length != 103)
                 || !owner_reference_order_matches
-                || !scope.reference_members.values().skip(8).take(4).eq(owner_record_indices.iter())
+                || !scope.reference_members.values().skip(8).take(4).eq(owners.iter().map(|owner| &owner.value))
             {
                 return None;
             }
@@ -1841,89 +1811,49 @@ pub(crate) fn exact_assembly_alignment(
                 .iter()
                 .any(|owner| owner.class_tag != "289" || owner.frame_length != 103)
                 || (0..scope.reference_members.len())
-                    .filter(|&start| scope.reference_members.values_in(start..start + owner_record_indices.len())
-                        .is_some_and(|values| values.eq(owner_record_indices.iter())))
+                    .filter(|&start| scope.reference_members.values_in(start..start + owners.len())
+                        .is_some_and(|values| values.eq(owners.iter().map(|owner| &owner.value))))
                     .count()
                     != 1
             {
                 return None;
             }
-        } else if !scope.reference_members.values().rev().take(owner_record_indices.len()).eq(owner_record_indices.iter().rev()) {
+        } else if !scope.reference_members.values().rev().take(owners.len()).eq(owners.iter().map(|owner| &owner.value).rev()) {
             return None;
         }
-        (angle, offset, owner_record_indices, value_offsets, None)
+        (angle, offset, owners)
     };
-    let solved_frame = as_built_421
-        .then(|| exact_legacy_as_built_421_solved_frame(bytes, records, scope))
-        .flatten();
-    let frames;
-    let mut qualifiers = None;
-    if scope.kind() == crate::records::DesignFeatureKind::AsBuilt {
-        let paths = exact_assembly_operand_paths(bytes, records, scope);
-        frames = paths
-            .as_ref()
-            .and_then(|paths| exact_as_built_operand_frames(bytes, paths));
-        qualifiers = paths
-            .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }));
+    let form = if scope.kind() == crate::records::DesignFeatureKind::AsBuilt {
+        exact_assembly_operand_paths(bytes, records, scope).map(|paths| {
+            match exact_as_built_operand_frames(bytes, &paths) {
+                Some(frames) => DesignAssemblyAlignmentForm::qualified(frames,
+                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })),
+                None => DesignAssemblyAlignmentForm::UnframedPaths(paths),
+            }
+        })
     } else {
-        frames = exact_assembly_operand_frames(bytes, scope);
-        if let Some(operand_frames) = frames.as_ref() {
-            let paths = if legacy_class_383 {
-                exact_legacy_class_383_operand_paths(bytes, records, scope, operand_frames)
+        exact_assembly_operand_frames(bytes, scope).map(|frames| {
+            let qualifiers = if legacy_class_383 {
+                exact_legacy_class_383_operand_paths(bytes, records, scope, &frames)
+                    .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }))
             } else if legacy_class_388 {
                 exact_legacy_class_388_operand_paths(bytes, records, scope)
-            } else if crate::design::assembly::variable_reference_assembly_generation(
-                &scope.class_tag,
-                &scope.paired_class_tag,
-            ) {
-                if let Some(variable_qualifiers) =
-                    assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
-                        bytes,
-                        records,
-                        scope,
-                        operand_frames,
-                    )
-                {
-                    qualifiers = Some(variable_qualifiers);
-                    let operands = crate::records::DesignAssemblyOperandForm::from_decoded(
-                        None,
-                        solved_frame,
-                        frames,
-                        qualifiers,
-                    );
-                    return Some(DesignAssemblyAlignment {
-                        angle,
-                        offset,
-                        owner_record_indices,
-                        value_offsets,
-                        operands,
-                        limits,
-                        joint_origin_scope_record_index: None,
-                    });
-                }
-                exact_assembly_operand_paths(bytes, records, scope)
+                    .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }))
+            } else if crate::design::assembly::variable_reference_assembly_generation(&scope.class_tag, &scope.paired_class_tag) {
+                assembly_carrier_paths::exact_variable_reference_operand_qualifiers(bytes, records, scope, &frames)
+                    .or_else(|| exact_assembly_operand_paths(bytes, records, scope)
+                        .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })))
             } else {
                 exact_assembly_operand_paths(bytes, records, scope)
+                    .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }))
             };
-            qualifiers = paths.map(|paths| {
-                paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-            });
-        }
-    }
-    Some(DesignAssemblyAlignment {
-        angle,
-        offset,
-        owner_record_indices,
-        value_offsets,
-        operands: crate::records::DesignAssemblyOperandForm::from_decoded(
-            None,
-            solved_frame,
-            frames,
-            qualifiers,
-        ),
-        limits,
-        joint_origin_scope_record_index: None,
-    })
+            match qualifiers {
+                Some(qualifiers) => DesignAssemblyAlignmentForm::qualified(frames, qualifiers),
+                None => DesignAssemblyAlignmentForm::Frames { frames },
+            }
+        })
+    };
+    Some(DesignAssemblyAlignment { angle, offset, owners, form })
 }
 
 pub(crate) fn exact_derived_instance_construction(

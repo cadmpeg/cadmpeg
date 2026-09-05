@@ -11,7 +11,7 @@ use cadmpeg_ir::products::{
 
 use crate::ids::native_stream;
 use crate::records::{
-    DesignAssemblyAxialOperandTarget, DesignAssemblyLegacyOperand, DesignAssemblyLimitKind,
+    DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind,
     DesignAssemblyOperandQualifier, DesignComponentOccurrence, DesignParameterScope,
 };
 
@@ -283,23 +283,23 @@ pub(crate) fn project_assembly_joints(
         let Some(alignment) = scope.assembly_alignment() else {
             continue;
         };
-        let Some(frames) = alignment.operand_frames() else {
-            continue;
+        let (frames, operands, limits) = match alignment.form.as_ref() {
+            Some(crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, solved_frame, limits, .. }) => (
+                carriers.frames(solved_frame),
+                carriers.selections().map(|selection| JointOperand::root(
+                    crate::ids::neutral_assembly_legacy_object_id(selection), Vec::new()
+                )),
+                limits.as_ref(),
+            ),
+            Some(crate::records::DesignAssemblyAlignmentForm::Qualified(operands)) => {
+                let Some(projected) = project_qualified_operands(
+                    operands.each_ref().map(|operand| &operand.qualifier), stream, &occurrences, scopes, features
+                ) else { continue; };
+                (operands.each_ref().map(|operand| operand.frame.clone()), projected, None)
+            }
+            _ => continue,
         };
-        let operands = if let Some(carriers) = alignment.legacy_operand_carriers() {
-            project_legacy_operands(&carriers)
-        } else {
-            alignment
-                .operand_qualifiers()
-                .as_ref()
-                .and_then(|qualifiers| {
-                    project_qualified_operands(qualifiers, stream, &occurrences, scopes, features)
-                })
-        };
-        let Some(operands) = operands else {
-            continue;
-        };
-        let (angular_limits, linear_limits) = match alignment.limits.as_ref() {
+        let (angular_limits, linear_limits) = match limits {
             Some(limits) => {
                 let projected = JointLimits::Both {
                     minimum: limits.minimum,
@@ -313,11 +313,7 @@ pub(crate) fn project_assembly_joints(
             None => (None, None),
         };
         let id = crate::ids::neutral_assembly_joint_id(scope);
-        let Ok([first_operand, second_operand]) =
-            <Vec<JointOperand> as TryInto<[JointOperand; 2]>>::try_into(operands)
-        else {
-            continue;
-        };
+        let [first_operand, second_operand] = operands;
         let [first_frame, second_frame] =
             std::array::from_fn(|index| neutral_transform(frames[index].transform));
         joints.entry(id.0.clone()).or_insert_with(|| {
@@ -350,30 +346,14 @@ pub(crate) fn project_assembly_joints(
     joints.into_values().collect()
 }
 
-fn project_legacy_operands(
-    carriers: &[DesignAssemblyLegacyOperand; 2],
-) -> Option<Vec<JointOperand>> {
-    carriers
-        .iter()
-        .map(|carrier| {
-            Some(JointOperand::root(
-                crate::ids::neutral_assembly_legacy_object_id(&carrier.selection),
-                Vec::new(),
-            ))
-        })
-        .collect()
-}
-
 fn project_qualified_operands(
-    qualifiers: &[DesignAssemblyOperandQualifier; 2],
+    qualifiers: [&DesignAssemblyOperandQualifier; 2],
     stream: &str,
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
     features: &[Feature],
-) -> Option<Vec<JointOperand>> {
-    qualifiers
-        .iter()
-        .map(|qualifier| match qualifier {
+) -> Option<[JointOperand; 2]> {
+    let projected = qualifiers.map(|qualifier| match qualifier {
             DesignAssemblyOperandQualifier::OccurrencePath { path } => {
                 let root_guid = path.occurrence_guids.first()?;
                 let occurrence = occurrences
@@ -433,8 +413,9 @@ fn project_qualified_operands(
             DesignAssemblyOperandQualifier::JointOrigin {
                 scope_record_index, ..
             } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
-        })
-        .collect()
+        });
+    let [first, second] = projected;
+    Some([first?, second?])
 }
 
 fn project_joint_origin_operand(
@@ -916,7 +897,7 @@ mod tests {
             targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
         let scopes = vec![component_scope, origin_scope.clone()];
         let operands = super::project_qualified_operands(
-            &qualifiers,
+            qualifiers.each_ref(),
             "f3d:Design/BulkStream.dat",
             &BTreeMap::new(),
             &scopes,
@@ -938,7 +919,7 @@ mod tests {
         );
 
         let unlisted_operands = super::project_qualified_operands(
-            &qualifiers,
+            qualifiers.each_ref(),
             "f3d:Design/BulkStream.dat",
             &BTreeMap::new(),
             &scopes,

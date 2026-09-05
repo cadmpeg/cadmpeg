@@ -153,7 +153,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     for scope in scopes {
         let Some(target_record_index) = scope
             .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index)
+            .and_then(|alignment| alignment.joint_origin_scope_record_index())
         else {
             continue;
         };
@@ -260,7 +260,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     for scope in scopes {
         let Some(target_record_index) = scope
             .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index)
+            .and_then(|alignment| alignment.joint_origin_scope_record_index())
         else {
             continue;
         };
@@ -653,11 +653,9 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Assemble) => scope
                     .assembly_alignment()
                     .filter(|alignment| {
-                        alignment.operand_frames().is_some()
-                            && ((alignment.legacy_operand_carriers().is_some()
-                                && alignment.operand_qualifiers().is_none())
-                                || (alignment.legacy_operand_carriers().is_none()
-                                    && alignment.operand_qualifiers().is_some()))
+                        matches!(alignment.form,
+                            Some(crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 { .. }
+                                | crate::records::DesignAssemblyAlignmentForm::Qualified(_)))
                     })
                     .map_or_else(
                         || FeatureDefinition::Native {

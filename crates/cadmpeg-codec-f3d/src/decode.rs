@@ -1291,7 +1291,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     || {
                         scope
                             .assembly_alignment()
-                            .and_then(|alignment| alignment.joint_origin_scope_record_index)
+                            .and_then(|alignment| alignment.joint_origin_scope_record_index())
                             .is_none()
                     },
                     |ordinals| {

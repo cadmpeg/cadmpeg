@@ -416,8 +416,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("exact assembly scalar lanes");
     assert_eq!(alignment.angle, 3.0);
     assert_eq!(alignment.offset, [1.0, 10.0, 0.0]);
-    assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
-    assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [50, 51, 52, 53]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), [501, 502, 503, 504]);
     assert_eq!(alignment.operand_frames(), None);
 
     let mut placement_and_alignment_owners = rectangular_owners.to_vec();
@@ -445,7 +445,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("assembly alignment after four placement lanes");
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [4.0, 5.0, 6.0]);
-    assert_eq!(alignment.owner_record_indices, [60, 61, 62, 63]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [60, 61, 62, 63]);
     scope.frame_length = 604;
     let datum_envelope_alignment = exact_assembly_alignment(
         &bytes,
@@ -457,7 +457,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(datum_envelope_alignment.angle, 0.25);
     assert_eq!(datum_envelope_alignment.offset, [4.0, 5.0, 6.0]);
     assert_eq!(
-        datum_envelope_alignment.owner_record_indices,
+        datum_envelope_alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(),
         [60, 61, 62, 63]
     );
     assert!(datum_envelope_alignment.operand_frames().is_none());
@@ -503,8 +503,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("legacy assembly axial alignment lanes");
     assert_eq!(alignment.angle, 0.5);
     assert_eq!(alignment.offset, [0.0, 0.0, 2.0]);
-    assert_eq!(alignment.owner_record_indices, [64, 65]);
-    assert_eq!(alignment.value_offsets, [605, 606]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [64, 65]);
+    assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), [605, 606]);
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
 
     let assembly_bytes = assembly_operand_frame_fixture(scope_record_index);
@@ -649,7 +649,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .expect("short axial assembly alignment and operand frames");
     assert_eq!(short_axial_alignment.angle, 0.5);
     assert_eq!(short_axial_alignment.offset, [0.0, 0.0, 2.0]);
-    assert_eq!(short_axial_alignment.owner_record_indices, [64, 65]);
+    assert_eq!(short_axial_alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [64, 65]);
     assert!(short_axial_alignment.operand_paths().is_none());
     let short_axial_frames = short_axial_alignment
         .operand_frames()
@@ -686,7 +686,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         linked_scopes[0]
             .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+            .and_then(|alignment| alignment.joint_origin_scope_record_index()),
         None
     );
 
@@ -734,7 +734,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         single_frame_scopes[0]
             .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+            .and_then(|alignment| alignment.joint_origin_scope_record_index()),
         Some(91)
     );
 
@@ -742,7 +742,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     conflicting_assembly
         .assembly_alignment_mut()
         .unwrap()
-        .joint_origin_scope_record_index = None;
+        .form = None;
     let mut conflicting_joint_origin = single_frame_scopes[1].clone();
     conflicting_joint_origin
         .joint_origin_frame_mut()
@@ -753,7 +753,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(
         conflicting_scopes[0]
             .assembly_alignment()
-            .and_then(|alignment| alignment.joint_origin_scope_record_index),
+            .and_then(|alignment| alignment.joint_origin_scope_record_index()),
         None
     );
 

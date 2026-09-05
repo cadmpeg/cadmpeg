@@ -2546,31 +2546,135 @@ pub struct DesignAssemblySolvedFrame {
     pub transform_offset: u64,
 }
 
+/// A construction and its face selection in a legacy assembly operand.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignAssemblyLegacyOperand<C> {
+    pub construction_class_tag: String,
+    pub construction: C,
+    pub selection: DesignAssemblyLegacySelection,
+    pub reference_offset: u64,
+}
+
+/// The ordered point and hole constructions of a legacy 421-byte assembly.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignAssemblyLegacyOperands {
+    pub point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
+    pub hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
+}
+
+impl DesignAssemblyLegacyOperands {
+    pub(crate) fn references(&self) -> [Located<u32>; 2] {
+        [
+            Located { value: self.point.construction.point_record_index, offset: self.point.reference_offset },
+            Located { value: self.hole.construction.point_record_index, offset: self.hole.reference_offset },
+        ]
+    }
+
+    pub(crate) fn selections(&self) -> [&DesignAssemblyLegacySelection; 2] {
+        [&self.point.selection, &self.hole.selection]
+    }
+
+    pub(crate) fn frames(&self, solved: &DesignAssemblySolvedFrame) -> [DesignAssemblyOperandFrame; 2] {
+        let references = self.references();
+        let positions = [self.point.construction.position, self.hole.construction.position];
+        [0, 1].map(|index| {
+            let mut transform = solved.transform;
+            for (row, value) in positions[index].into_iter().enumerate() {
+                transform[row][3] = value;
+            }
+            DesignAssemblyOperandFrame {
+                reference_record_index: references[index].value,
+                reference_offset: references[index].offset,
+                transform,
+                transform_offset: solved.transform_offset,
+            }
+        })
+    }
+
+    fn from_wire(wire: [DesignAssemblyLegacyOperandWire; 2], solved: &DesignAssemblySolvedFrame) -> Result<Self, String> {
+        let [point, hole] = wire;
+        let DesignAssemblyLegacyConstruction::Point(point_construction) = point.construction else {
+            return Err("legacy_operand_carriers[0].construction requires a point".into());
+        };
+        let DesignAssemblyLegacyConstruction::Hole(hole_construction) = hole.construction else {
+            return Err("legacy_operand_carriers[1].construction requires a hole".into());
+        };
+        if point.construction_record_index != point_construction.point_record_index
+            || hole.construction_record_index != hole_construction.point_record_index {
+            return Err("legacy_operand_carriers construction_record_index disagrees with construction".into());
+        }
+        if point.construction_byte_offset != point_construction.point_record_byte_offset
+            || hole.construction_byte_offset != hole_construction.point_record_byte_offset {
+            return Err("legacy_operand_carriers construction_byte_offset disagrees with construction".into());
+        }
+        let carriers = Self {
+            point: DesignAssemblyLegacyOperand {
+                construction_class_tag: point.construction_class_tag,
+                construction: point_construction,
+                selection: point.selection,
+                reference_offset: point.frame.reference_offset,
+            },
+            hole: DesignAssemblyLegacyOperand {
+                construction_class_tag: hole.construction_class_tag,
+                construction: hole_construction,
+                selection: hole.selection,
+                reference_offset: hole.frame.reference_offset,
+            },
+        };
+        if [point.frame, hole.frame] != carriers.frames(solved) {
+            return Err("legacy_operand_carriers frame disagrees with construction and solved_frame".into());
+        }
+        Ok(carriers)
+    }
+
+    fn into_wire(self, solved: &DesignAssemblySolvedFrame) -> [DesignAssemblyLegacyOperandWire; 2] {
+        let [point_frame, hole_frame] = self.frames(solved);
+        [
+            DesignAssemblyLegacyOperandWire {
+                construction_record_index: self.point.construction.point_record_index,
+                construction_byte_offset: self.point.construction.point_record_byte_offset,
+                construction_class_tag: self.point.construction_class_tag,
+                construction: DesignAssemblyLegacyConstruction::Point(self.point.construction),
+                selection: self.point.selection,
+                frame: point_frame,
+            },
+            DesignAssemblyLegacyOperandWire {
+                construction_record_index: self.hole.construction.point_record_index,
+                construction_byte_offset: self.hole.construction.point_record_byte_offset,
+                construction_class_tag: self.hole.construction_class_tag,
+                construction: DesignAssemblyLegacyConstruction::Hole(self.hole.construction),
+                selection: self.hole.selection,
+                frame: hole_frame,
+            },
+        ]
+    }
+}
+
 /// Exact construction and face-selection pair carried by a legacy 421-byte
 /// `As-built` operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignAssemblyLegacyOperand {
+struct DesignAssemblyLegacyOperandWire {
     /// Primary construction record named by the scope reference table.
-    pub construction_record_index: u32,
+    construction_record_index: u32,
     /// Byte offset of the primary construction record header.
-    pub construction_byte_offset: u64,
+    construction_byte_offset: u64,
     /// Dynamic class of the primary construction record.
-    pub construction_class_tag: String,
+    construction_class_tag: String,
     /// Exact point or point-and-direction construction.
-    pub construction: DesignAssemblyLegacyConstruction,
+    construction: DesignAssemblyLegacyConstruction,
     /// Face-selection record paired with the construction record.
-    pub selection: DesignAssemblyLegacySelection,
+    selection: DesignAssemblyLegacySelection,
     /// Connector-local frame derived from the stored solved-frame orientation
     /// and this operand's construction position.
-    pub frame: DesignAssemblyOperandFrame,
+    frame: DesignAssemblyOperandFrame,
 }
 
 /// Construction carrier family used by a legacy 421-byte `As-built` operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum DesignAssemblyLegacyConstruction {
+enum DesignAssemblyLegacyConstruction {
     /// Point-only connector construction.
     Point(Box<DesignWorkPointConstruction>),
     /// Point-and-direction connector construction.
@@ -2613,177 +2717,114 @@ pub struct DesignAssemblyLegacySelection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignAssemblyAlignmentSerde"))]
-#[serde(
-    try_from = "DesignAssemblyAlignmentSerde",
-    into = "DesignAssemblyAlignmentSerde"
-)]
+#[serde(try_from = "DesignAssemblyAlignmentSerde", into = "DesignAssemblyAlignmentSerde")]
 pub struct DesignAssemblyAlignment {
     /// Signed alignment rotation in radians.
     pub angle: f64,
     /// Signed local-frame translation in source centimetres.
     pub offset: [f64; 3],
-    /// Parameter-owner records for the stored alignment scalars.
-    pub owner_record_indices: Vec<u32>,
-    /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub value_offsets: Vec<u64>,
-    /// Form-dependent operand payload: legacy 421-byte As-built, occurrence
-    /// paths, or axial targets.
-    pub operands: Option<DesignAssemblyOperandForm>,
-    /// Optional limits carried by a legacy As-built scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "angular_limits")]
-    pub limits: Option<DesignAssemblyLimits>,
-    /// `JointOrigin` scope whose datum frame is carried by this scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub joint_origin_scope_record_index: Option<u32>,
+    /// Parameter-owner records and their evaluated-value locations.
+    pub owners: Vec<Located<u32>>,
+    /// Datum, legacy solved-carrier, or qualified-operand form.
+    pub form: Option<DesignAssemblyAlignmentForm>,
 }
 
-/// Operand layout selected by an assembly-alignment form.
+/// One assembly operand frame and its source qualifier.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DesignAssemblyOperandForm {
+pub struct DesignQualifiedAssemblyOperand {
+    pub frame: DesignAssemblyOperandFrame,
+    pub qualifier: DesignAssemblyOperandQualifier,
+}
+
+/// Native evidence retained by an assembly-alignment form.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DesignAssemblyAlignmentForm {
+    DatumEnvelope { joint_origin_scope_record_index: u32 },
+    LimitsOnly { limits: DesignAssemblyLimits },
     SolvedOnly {
         solved_frame: DesignAssemblySolvedFrame,
+        limits: Option<DesignAssemblyLimits>,
     },
     LegacyAsBuilt421 {
-        carriers: [DesignAssemblyLegacyOperand; 2],
+        carriers: DesignAssemblyLegacyOperands,
         solved_frame: DesignAssemblySolvedFrame,
+        limits: Option<DesignAssemblyLimits>,
+        /// Preserve omission of the redundant frame field in older native records.
+        frames_field_present: bool,
     },
-    Frames {
-        frames: [DesignAssemblyOperandFrame; 2],
-    },
-    OccurrencePaths {
-        frames: [DesignAssemblyOperandFrame; 2],
-        paths: [DesignAssemblyOperandPath; 2],
-    },
-    Axial {
-        frames: [DesignAssemblyOperandFrame; 2],
-        targets: [DesignAssemblyAxialOperandTarget; 2],
-    },
+    Frames { frames: [DesignAssemblyOperandFrame; 2] },
+    Qualified([DesignQualifiedAssemblyOperand; 2]),
+    /// The two locator paths are known, but their connector frames did not decode.
+    UnframedPaths([DesignAssemblyOperandPath; 2]),
 }
 
-impl DesignAssemblyOperandForm {
-    pub(crate) fn from_decoded(
-        carriers: Option<[DesignAssemblyLegacyOperand; 2]>,
-        solved_frame: Option<DesignAssemblySolvedFrame>,
-        frames: Option<[DesignAssemblyOperandFrame; 2]>,
-        qualifiers: Option<[DesignAssemblyOperandQualifier; 2]>,
-    ) -> Option<Self> {
-        DesignAssemblyAlignmentSerde {
-            angle: 0.0,
-            offset: [0.0; 3],
-            owner_record_indices: Vec::new(),
-            value_offsets: Vec::new(),
-            operand_frames: frames,
-            legacy_operand_carriers: carriers,
-            solved_frame,
-            operand_qualifiers: qualifiers,
-            limits: None,
-            joint_origin_scope_record_index: None,
-        }
-        .try_into()
-        .ok()
-        .and_then(|alignment: DesignAssemblyAlignment| alignment.operands)
+impl DesignAssemblyAlignmentForm {
+    pub(crate) fn qualified(
+        frames: [DesignAssemblyOperandFrame; 2],
+        qualifiers: [DesignAssemblyOperandQualifier; 2],
+    ) -> Self {
+        let [first_frame, second_frame] = frames;
+        let [first_qualifier, second_qualifier] = qualifiers;
+        Self::Qualified([
+            DesignQualifiedAssemblyOperand { frame: first_frame, qualifier: first_qualifier },
+            DesignQualifiedAssemblyOperand { frame: second_frame, qualifier: second_qualifier },
+        ])
     }
 }
 
 impl DesignAssemblyAlignment {
     pub(crate) fn operand_frames(&self) -> Option<[DesignAssemblyOperandFrame; 2]> {
-        match &self.operands {
-            Some(DesignAssemblyOperandForm::Frames { frames })
-            | Some(DesignAssemblyOperandForm::OccurrencePaths { frames, .. })
-            | Some(DesignAssemblyOperandForm::Axial { frames, .. }) => Some(frames.clone()),
-            Some(
-                DesignAssemblyOperandForm::LegacyAsBuilt421 { .. }
-                | DesignAssemblyOperandForm::SolvedOnly { .. },
-            )
-            | None => None,
+        match self.form.as_ref()? {
+            DesignAssemblyAlignmentForm::Frames { frames } => Some(frames.clone()),
+            DesignAssemblyAlignmentForm::Qualified(operands) => Some(operands.each_ref().map(|operand| operand.frame.clone())),
+            DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, solved_frame, .. } => Some(carriers.frames(solved_frame)),
+            DesignAssemblyAlignmentForm::DatumEnvelope { .. }
+            | DesignAssemblyAlignmentForm::LimitsOnly { .. }
+            | DesignAssemblyAlignmentForm::SolvedOnly { .. }
+            | DesignAssemblyAlignmentForm::UnframedPaths(_) => None,
         }
     }
 
-    pub(crate) fn legacy_operand_carriers(&self) -> Option<[DesignAssemblyLegacyOperand; 2]> {
-        match &self.operands {
-            Some(DesignAssemblyOperandForm::LegacyAsBuilt421 { carriers, .. }) => {
-                Some(carriers.clone())
-            }
+    pub(crate) fn solved_frame(&self) -> Option<&DesignAssemblySolvedFrame> {
+        match self.form.as_ref()? {
+            DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, .. }
+            | DesignAssemblyAlignmentForm::LegacyAsBuilt421 { solved_frame, .. } => Some(solved_frame),
             _ => None,
         }
-    }
-
-    pub(crate) fn solved_frame(&self) -> Option<DesignAssemblySolvedFrame> {
-        match &self.operands {
-            Some(DesignAssemblyOperandForm::SolvedOnly { solved_frame })
-            | Some(DesignAssemblyOperandForm::LegacyAsBuilt421 { solved_frame, .. }) => {
-                Some(solved_frame.clone())
-            }
-            _ => None,
-        }
-    }
-
-    pub(crate) fn set_operand_qualifiers(
-        &mut self,
-        qualifiers: [DesignAssemblyOperandQualifier; 2],
-    ) {
-        let Some(frames) = self.operand_frames() else {
-            return;
-        };
-        self.operands = match qualifiers {
-            [DesignAssemblyOperandQualifier::OccurrencePath { path: first }, DesignAssemblyOperandQualifier::OccurrencePath { path: second }] => {
-                Some(DesignAssemblyOperandForm::OccurrencePaths {
-                    frames,
-                    paths: [first, second],
-                })
-            }
-            [DesignAssemblyOperandQualifier::AxialTarget { target: first }, DesignAssemblyOperandQualifier::AxialTarget { target: second }] => {
-                Some(DesignAssemblyOperandForm::Axial {
-                    frames,
-                    targets: [first, second],
-                })
-            }
-            _ => self.operands.take(),
-        };
-    }
-
-    pub(crate) fn set_legacy_operand_carriers(
-        &mut self,
-        carriers: [DesignAssemblyLegacyOperand; 2],
-    ) {
-        let Some(solved_frame) = self.solved_frame() else {
-            return;
-        };
-        self.operands = Some(DesignAssemblyOperandForm::LegacyAsBuilt421 {
-            carriers,
-            solved_frame,
-        });
     }
 
     pub(crate) fn operand_qualifiers(&self) -> Option<[DesignAssemblyOperandQualifier; 2]> {
-        match &self.operands {
-            Some(DesignAssemblyOperandForm::OccurrencePaths { paths, .. }) => Some(
-                paths
-                    .clone()
-                    .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }),
-            ),
-            Some(DesignAssemblyOperandForm::Axial { targets, .. }) => Some(
-                targets
-                    .clone()
-                    .map(|target| DesignAssemblyOperandQualifier::AxialTarget { target }),
-            ),
+        match self.form.as_ref()? {
+            DesignAssemblyAlignmentForm::Qualified(operands) => Some(operands.each_ref().map(|operand| operand.qualifier.clone())),
+            DesignAssemblyAlignmentForm::UnframedPaths(paths) => Some(paths.clone().map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })),
             _ => None,
         }
     }
 
     /// Return both occurrence paths when every operand uses that qualifier form.
     pub(crate) fn operand_paths(&self) -> Option<[DesignAssemblyOperandPath; 2]> {
-        match &self.operands {
-            Some(DesignAssemblyOperandForm::OccurrencePaths { paths, .. }) => Some(paths.clone()),
+        match self.form.as_ref()? {
+            DesignAssemblyAlignmentForm::UnframedPaths(paths) => Some(paths.clone()),
+            DesignAssemblyAlignmentForm::Qualified(operands) => {
+                let [Some(first), Some(second)] = operands.each_ref().map(|operand| operand.qualifier.occurrence_path()) else { return None; };
+                Some([first.clone(), second.clone()])
+            }
             _ => None,
         }
     }
 
-    /// Return both axial targets when every operand uses that qualifier form.
-    pub(crate) fn axial_operand_targets(&self) -> Option<[DesignAssemblyAxialOperandTarget; 2]> {
-        match &self.operands {
-            Some(DesignAssemblyOperandForm::Axial { targets, .. }) => Some(targets.clone()),
+    pub(crate) fn limits(&self) -> Option<&DesignAssemblyLimits> {
+        match self.form.as_ref()? {
+            DesignAssemblyAlignmentForm::LimitsOnly { limits } => Some(limits),
+            DesignAssemblyAlignmentForm::SolvedOnly { limits, .. }
+            | DesignAssemblyAlignmentForm::LegacyAsBuilt421 { limits, .. } => limits.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn joint_origin_scope_record_index(&self) -> Option<u32> {
+        match self.form.as_ref()? {
+            DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index } => Some(*joint_origin_scope_record_index),
             _ => None,
         }
     }
@@ -2799,7 +2840,7 @@ struct DesignAssemblyAlignmentSerde {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     operand_frames: Option<[DesignAssemblyOperandFrame; 2]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    legacy_operand_carriers: Option<[DesignAssemblyLegacyOperand; 2]>,
+    legacy_operand_carriers: Option<[DesignAssemblyLegacyOperandWire; 2]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     solved_frame: Option<DesignAssemblySolvedFrame>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2811,82 +2852,88 @@ struct DesignAssemblyAlignmentSerde {
     joint_origin_scope_record_index: Option<u32>,
 }
 
+
 impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
     type Error = String;
 
     fn try_from(wire: DesignAssemblyAlignmentSerde) -> Result<Self, Self::Error> {
-        let operands = match (
+        if wire.owner_record_indices.len() != wire.value_offsets.len() {
+            return Err("owner_record_indices and value_offsets must have equal lengths".into());
+        }
+        let owners = wire.owner_record_indices.into_iter().zip(wire.value_offsets)
+            .map(|(value, offset)| Located { value, offset }).collect();
+        let form = match (
             wire.legacy_operand_carriers,
             wire.solved_frame,
             wire.operand_frames,
             wire.operand_qualifiers,
+            wire.limits,
+            wire.joint_origin_scope_record_index,
         ) {
-            (Some(carriers), Some(solved_frame), None, None) => {
-                Some(DesignAssemblyOperandForm::LegacyAsBuilt421 {
-                    carriers,
-                    solved_frame,
-                })
-            }
-            (None, Some(solved_frame), None, None) => {
-                Some(DesignAssemblyOperandForm::SolvedOnly { solved_frame })
-            }
-            (None, None, Some(frames), None) => Some(DesignAssemblyOperandForm::Frames { frames }),
-            (None, None, Some(frames), Some(qualifiers)) => match qualifiers {
-                [DesignAssemblyOperandQualifier::OccurrencePath { path: first }, DesignAssemblyOperandQualifier::OccurrencePath { path: second }] => {
-                    Some(DesignAssemblyOperandForm::OccurrencePaths {
-                        frames,
-                        paths: [first, second],
-                    })
+            (None, None, None, None, None, Some(joint_origin_scope_record_index)) => Some(
+                DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index }
+            ),
+            (Some(carriers), Some(solved_frame), frames, None, limits, None) => {
+                let carriers = DesignAssemblyLegacyOperands::from_wire(carriers, &solved_frame)?;
+                if frames.as_ref().is_some_and(|frames| frames != &carriers.frames(&solved_frame)) {
+                    return Err("operand_frames must match legacy_operand_carriers frames".into());
                 }
-                [DesignAssemblyOperandQualifier::AxialTarget { target: first }, DesignAssemblyOperandQualifier::AxialTarget { target: second }] => {
-                    Some(DesignAssemblyOperandForm::Axial {
-                        frames,
-                        targets: [first, second],
-                    })
-                }
-                _ => {
-                    return Err(
-                        "assembly alignment operand_qualifiers must be a homogeneous path or axial pair"
-                            .into(),
-                    );
-                }
-            },
-            (None, None, None, None) => None,
-            _ => {
-                return Err(
-                    "assembly alignment operand fields disagree with a single operand form".into(),
-                );
+                Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, solved_frame, limits, frames_field_present: frames.is_some() })
             }
+            (None, Some(solved_frame), None, None, limits, None) => Some(
+                DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, limits }
+            ),
+            (None, None, None, None, Some(limits), None) => Some(
+                DesignAssemblyAlignmentForm::LimitsOnly { limits }
+            ),
+            (None, None, Some(frames), None, None, None) => Some(
+                DesignAssemblyAlignmentForm::Frames { frames }
+            ),
+            (None, None, Some(frames), Some(qualifiers), None, None) => Some(
+                DesignAssemblyAlignmentForm::qualified(frames, qualifiers)
+            ),
+            (None, None, None, Some([
+                DesignAssemblyOperandQualifier::OccurrencePath { path: first },
+                DesignAssemblyOperandQualifier::OccurrencePath { path: second },
+            ]), None, None) => Some(DesignAssemblyAlignmentForm::UnframedPaths([first, second])),
+            (None, None, None, None, None, None) => None,
+            _ => return Err("assembly alignment operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, and joint_origin_scope_record_index disagree with one form".into()),
         };
-        Ok(Self {
-            angle: wire.angle,
-            offset: wire.offset,
-            owner_record_indices: wire.owner_record_indices,
-            value_offsets: wire.value_offsets,
-            operands,
-            limits: wire.limits,
-            joint_origin_scope_record_index: wire.joint_origin_scope_record_index,
-        })
+        Ok(Self { angle: wire.angle, offset: wire.offset, owners, form })
     }
 }
 
 impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
     fn from(alignment: DesignAssemblyAlignment) -> Self {
-        let operand_frames = alignment.operand_frames();
-        let legacy_operand_carriers = alignment.legacy_operand_carriers();
-        let solved_frame = alignment.solved_frame();
-        let operand_qualifiers = alignment.operand_qualifiers();
+        let (operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, joint_origin_scope_record_index) = match alignment.form {
+            None => (None, None, None, None, None, None),
+            Some(DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index }) => (None, None, None, None, None, Some(joint_origin_scope_record_index)),
+            Some(DesignAssemblyAlignmentForm::LimitsOnly { limits }) => (None, None, None, None, Some(limits), None),
+            Some(DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, limits }) => (None, None, Some(solved_frame), None, limits, None),
+            Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, solved_frame, limits, frames_field_present }) => {
+                let frames = frames_field_present.then(|| carriers.frames(&solved_frame));
+                let carriers = carriers.into_wire(&solved_frame);
+                (frames, Some(carriers), Some(solved_frame), None, limits, None)
+            }
+            Some(DesignAssemblyAlignmentForm::Frames { frames }) => (Some(frames), None, None, None, None, None),
+            Some(DesignAssemblyAlignmentForm::Qualified([
+                DesignQualifiedAssemblyOperand { frame: first_frame, qualifier: first_qualifier },
+                DesignQualifiedAssemblyOperand { frame: second_frame, qualifier: second_qualifier },
+            ])) => (Some([first_frame, second_frame]), None, None, Some([first_qualifier, second_qualifier]), None, None),
+            Some(DesignAssemblyAlignmentForm::UnframedPaths(paths)) => (None, None, None, Some(paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })), None, None),
+        };
+        let (owner_record_indices, value_offsets) = alignment.owners.into_iter().map(|owner| (owner.value, owner.offset)).unzip();
         Self {
             angle: alignment.angle,
             offset: alignment.offset,
-            owner_record_indices: alignment.owner_record_indices,
-            value_offsets: alignment.value_offsets,
+            owner_record_indices,
+            value_offsets,
             operand_frames,
             legacy_operand_carriers,
             solved_frame,
             operand_qualifiers,
-            limits: alignment.limits,
-            joint_origin_scope_record_index: alignment.joint_origin_scope_record_index,
+            limits,
+            joint_origin_scope_record_index,
         }
     }
 }
@@ -3273,13 +3320,6 @@ impl DesignAssemblyOperandQualifier {
         }
     }
 
-    /// Return the axial target when this qualifier carries one.
-    pub(crate) fn axial_target(&self) -> Option<&DesignAssemblyAxialOperandTarget> {
-        match self {
-            Self::AxialTarget { target } => Some(target),
-            Self::OccurrencePath { .. } | Self::JointOrigin { .. } => None,
-        }
-    }
 }
 
 /// One operand frame embedded by an assembly-operation scope.
