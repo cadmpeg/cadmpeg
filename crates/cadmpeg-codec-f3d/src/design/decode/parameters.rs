@@ -883,14 +883,14 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
             .filter(|scope| {
                 native_stream(&scope.id) == Some(stream)
                     && scope.byte_offset >= u64::try_from(end).unwrap_or(u64::MAX)
-                    && scope.sketch_entity.is_some()
+                    && scope.sketch_entity().is_some()
             })
             .filter_map(|scope| {
                 entities
                     .iter()
                     .filter(|entity| {
                         native_stream(&entity.id) == Some(stream)
-                            && scope.sketch_entity.as_ref().is_some_and(|binding| {
+                            && scope.sketch_entity().is_some_and(|binding| {
                                 binding.entity_suffix == entity.entity_suffix
                             })
                             && usize::try_from(entity.byte_offset)

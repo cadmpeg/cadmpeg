@@ -370,7 +370,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             ],
         }
     );
-    scope.combine_operation = Some(operation);
+    scope.set_combine_operation(Some(operation));
     assert_eq!(
         project_combine(&scope, "Design1/BulkStream.dat"),
         Some(cadmpeg_ir::features::FeatureDefinition::Combine {

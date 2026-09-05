@@ -346,7 +346,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
                 support_record_index: 200,
             })
         ));
-        scope.work_axis_construction = Some(construction);
+        scope.set_work_axis_construction(Some(construction));
         let (features, _) = project_parameter_design(
             &[],
             &[],

@@ -431,7 +431,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         })
     ));
-    axis_scope.work_axis_construction = Some(construction);
+    axis_scope.set_work_axis_construction(Some(construction));
     let (axis_features, _) = project_parameter_design(
         &[],
         &[],
@@ -1110,8 +1110,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         })
     ));
-    thicken_scope.direct_face_operation =
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope);
+    thicken_scope.set_direct_face_operation(exact_direct_face_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &thicken_scope,
+    ));
     let thicken_group = DesignConstructionOperandGroup {
         id: "thicken-group".into(),
         scope_record_index: thicken_scope.record_index,
@@ -1192,10 +1195,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     shell_scope.kind = "Shell".into();
     shell_scope.frame_length = 278;
     shell_scope.reference_members = vec![200, 201, 1_778];
-    shell_scope.direct_face_operation =
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &shell_scope);
+    shell_scope.set_direct_face_operation(exact_direct_face_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &shell_scope,
+    ));
     assert!(matches!(
-        shell_scope.direct_face_operation,
+        shell_scope.direct_face_operation(),
         Some(DesignDirectFaceOperation::Shell {
             thickness: 0.5,
             thickness_record_index: 1_778,
@@ -1292,11 +1298,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         }) if outward_offset == (shifted_shell_at + 21) as u64
     ));
-    compact_shell_scope.direct_face_operation = exact_direct_face_operation(
+    compact_shell_scope.set_direct_face_operation(exact_direct_face_operation(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &compact_shell_scope,
-    );
+    ));
     shell_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
         crate::design::feature_project::project_shell(
@@ -1312,8 +1318,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             ..
         }) if body == "shell-group" && removed.is_empty()
     ));
-    offset_scope.direct_face_operation =
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope);
+    offset_scope.set_direct_face_operation(exact_direct_face_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &offset_scope,
+    ));
     let mut offset_group = thicken_group.clone();
     offset_group.id = "offset-group".into();
     offset_group.scope_record_index = offset_scope.record_index;
@@ -1526,7 +1535,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
         }
     );
-    extend_scope.surface_extend_operation = Some(operation);
+    extend_scope.set_surface_extend_operation(Some(operation));
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -1555,7 +1564,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         ..extend_boundary_at + extend_boundary_tail + 25]
         .copy_from_slice(&65u32.to_le_bytes());
     extend_scope.kind = "SurfaceOffset".into();
-    extend_scope.surface_extend_operation = None;
+    extend_scope.set_surface_extend_operation(None);
     let operation =
         exact_surface_offset_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope)
             .expect("exact SurfaceOffset construction");
@@ -1577,7 +1586,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             },
         }
     );
-    extend_scope.surface_offset_operation = Some(operation);
+    extend_scope.set_surface_offset_operation(Some(operation));
     let (features, _) = project_parameter_design(
         &[],
         &[],

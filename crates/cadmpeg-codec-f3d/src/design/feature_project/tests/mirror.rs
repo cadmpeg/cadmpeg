@@ -57,7 +57,7 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
 
 fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#10", "Mirror", 10);
-    scope.mirror_construction = Some(DesignMirrorConstruction {
+    scope.set_mirror_construction(Some(DesignMirrorConstruction {
         count: 2,
         count_record_index: 11,
         count_offset: 0,
@@ -74,7 +74,7 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
         plane_selection_record_index: None,
         plane_origin: Some(Point3::new(0.0, 0.0, 0.0)),
         plane_normal: Some(Vector3::new(0.0, 0.0, 1.0)),
-    });
+    }));
     scope
 }
 

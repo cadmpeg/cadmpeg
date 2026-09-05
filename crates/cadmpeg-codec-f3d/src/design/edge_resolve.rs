@@ -2305,7 +2305,7 @@ pub(crate) fn project_fixed_fillet_with_corners(
         FeatureDefinition, FilletGroup, Length, RadiusSpec, VariableRadius,
     };
 
-    let fixed = scope.fixed_fillet_parameters.as_ref()?;
+    let fixed = scope.fixed_fillet_parameters()?;
     let stream = native_stream(&scope.id)?;
     let radius_spec = |group: &crate::records::DesignFixedFilletGroup| match group.radii.as_slice()
     {

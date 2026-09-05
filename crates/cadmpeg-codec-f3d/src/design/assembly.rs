@@ -280,7 +280,7 @@ pub(crate) fn project_assembly_joints(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(alignment) = &scope.assembly_alignment else {
+        let Some(alignment) = scope.assembly_alignment() else {
             continue;
         };
         let Some(frames) = &alignment.operand_frames else {

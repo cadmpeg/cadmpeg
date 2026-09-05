@@ -62,7 +62,7 @@ fn rectangular_scope() -> DesignParameterScope {
         "R-Pattern",
         10,
     );
-    scope.rectangular_pattern_construction = Some(DesignRectangularPatternConstruction {
+    scope.set_rectangular_pattern_construction(Some(DesignRectangularPatternConstruction {
         u_count: 3,
         v_count: 1,
         u_extent: 10.0,
@@ -70,7 +70,7 @@ fn rectangular_scope() -> DesignParameterScope {
         owner_record_indices: [11, 12, 13, 14],
         value_offsets: [101, 102, 103, 104],
         instances: None,
-    });
+    }));
     scope
 }
 

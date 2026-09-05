@@ -108,7 +108,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         "WorkPoint",
         200,
     );
-    work_point.work_point_construction = Some(DesignWorkPointConstruction {
+    work_point.set_work_point_construction(Some(DesignWorkPointConstruction {
         point_record_index: 201,
         point_record_byte_offset: 0,
         position: [4.0, 3.0, 0.0],
@@ -123,7 +123,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             },
         },
         reference_type_offset: 0,
-    });
+    }));
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,
         member_refs,
@@ -239,8 +239,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     )
     .expect("authored WorkPoint history");
     let construction = scopes[1]
-        .work_point_construction
-        .as_ref()
+        .work_point_construction()
         .expect("WorkPoint construction");
     let DesignWorkPointRule::Vertex { input } = &construction.rule else {
         unreachable!("test construction is vertex-based")
@@ -254,8 +253,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
 
     let mut ambiguous = scopes;
     let construction = ambiguous[1]
-        .work_point_construction
-        .as_mut()
+        .work_point_construction_mut()
         .expect("WorkPoint construction");
     let DesignWorkPointRule::Vertex { input } = &mut construction.rule else {
         unreachable!("test construction is vertex-based")
@@ -274,8 +272,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     )
     .expect("authored WorkPoint history");
     let construction = ambiguous[1]
-        .work_point_construction
-        .as_ref()
+        .work_point_construction()
         .expect("WorkPoint construction");
     let DesignWorkPointRule::Vertex { input } = &construction.rule else {
         unreachable!("test construction is vertex-based")
@@ -1517,7 +1514,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(operands[0].resolved_face_slots, [7]);
 
     let mut cylinder_scope = scope.clone();
-    cylinder_scope.thread_construction = Some(DesignThreadConstruction {
+    cylinder_scope.set_thread_construction(Some(DesignThreadConstruction {
         form: DesignThreadForm::Standard,
         designation_offset: 0,
         designation: "M4x0.7".into(),
@@ -1531,7 +1528,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         trailing_reference_record_index: None,
         trailing_reference_offset: None,
         face_group_record_indices: vec![100],
-    });
+    }));
     let mut cylinder_operand = operand.clone();
     cylinder_operand.recipe_references[0].candidate_faces =
         vec![FaceId::mint("f3d:brep/input/brep:entity#999").expect("identity grammar")];
@@ -1832,7 +1829,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     let mut scope = DesignParameterScope::empty(scope_id, "Hole", 42);
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.hole_construction = Some(DesignHoleConstruction {
+    scope.set_hole_construction(Some(DesignHoleConstruction {
         point_record_index: 55,
         point_record_byte_offset: 0,
         position: [0.0; 3],
@@ -1874,7 +1871,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             next_record_index: 104,
             next_byte_offset: 0,
         }),
-    });
+    }));
     let mut feature = Feature::new(
         feature_id.clone(),
         0,

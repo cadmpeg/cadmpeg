@@ -1167,7 +1167,10 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         .chain(second_members)
         .chain([90, 91])
         .collect();
-    assembly.assembly_alignment = Some(axial_test_alignment([first_transform, second_transform]));
+    assembly.set_assembly_alignment(Some(axial_test_alignment([
+        first_transform,
+        second_transform,
+    ])));
     let mut scopes = vec![
         assembly,
         axial_test_component_scope(200, first_role),
@@ -1177,8 +1180,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
 
     bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);
     let targets = scopes[0]
-        .assembly_alignment
-        .as_ref()
+        .assembly_alignment()
         .and_then(|alignment| alignment.axial_operand_targets())
         .expect("two exact pathless assembly targets");
     let DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
@@ -1236,8 +1238,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         &mut mismatched_scopes,
     );
     assert!(mismatched_scopes[0]
-        .assembly_alignment
-        .as_ref()
+        .assembly_alignment()
         .is_some_and(|alignment| alignment.axial_operand_targets().is_none()));
 }
 
@@ -1261,7 +1262,10 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
         DesignParameterScope::empty("f3d:Design/BulkStream.dat:assembly#500", "Assemble", 500);
     assembly.frame_length = 705;
     assembly.reference_members = members.into_iter().chain([90, 91]).collect();
-    assembly.assembly_alignment = Some(axial_test_alignment([first_transform, second_transform]));
+    assembly.set_assembly_alignment(Some(axial_test_alignment([
+        first_transform,
+        second_transform,
+    ])));
     let mut origin = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:joint-origin#80",
         "JointOrigin",
@@ -1272,8 +1276,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
 
     bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);
     let targets = scopes[0]
-        .assembly_alignment
-        .as_ref()
+        .assembly_alignment()
         .and_then(|alignment| alignment.axial_operand_targets())
         .expect("component and root assembly targets");
     assert!(matches!(
@@ -1941,7 +1944,7 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
         "Component Insert",
         record_index,
     );
-    scope.component_insert_construction = Some(DesignComponentInsertConstruction {
+    scope.set_component_insert_construction(Some(DesignComponentInsertConstruction {
         relation_record_index: record_index + 1,
         carrier_record_index: record_index + 2,
         occurrence_identity: None,
@@ -1950,6 +1953,6 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
         transform: identity_matrix(),
         transform_offset: Some(0),
         carrier_transform_offset: Some(0),
-    });
+    }));
     scope
 }

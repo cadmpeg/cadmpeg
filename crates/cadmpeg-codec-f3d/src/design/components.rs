@@ -28,8 +28,7 @@ pub(crate) fn project_local_components(
 
     for scope in scopes {
         if let Some(qualifiers) = scope
-            .assembly_alignment
-            .as_ref()
+            .assembly_alignment()
             .and_then(|alignment| alignment.operand_qualifiers.as_ref())
         {
             for qualifier in qualifiers {
@@ -60,7 +59,7 @@ pub(crate) fn project_local_components(
                 );
             }
         }
-        if let Some(operation) = &scope.copy_paste_component_operation {
+        if let Some(operation) = scope.copy_paste_component_operation() {
             project_occurrence(
                 &mut components,
                 &mut occurrences,
@@ -78,7 +77,7 @@ pub(crate) fn project_local_components(
                 operation.copied_transform,
             );
         }
-        if let Some(construction) = &scope.derived_instance_construction {
+        if let Some(construction) = scope.derived_instance_construction() {
             project_occurrence(
                 &mut components,
                 &mut occurrences,
@@ -89,8 +88,7 @@ pub(crate) fn project_local_components(
             );
         }
         let Some((instances, component_occurrences)) = scope
-            .rectangular_pattern_construction
-            .as_ref()
+            .rectangular_pattern_construction()
             .and_then(|construction| construction.instances.as_ref())
             .and_then(|instances| Some((instances, instances.component_occurrences.as_ref()?)))
         else {
@@ -141,7 +139,7 @@ pub(crate) fn project_derived_instance_features(
     scopes: &[DesignParameterScope],
 ) {
     for scope in scopes {
-        let Some(construction) = scope.derived_instance_construction.as_ref() else {
+        let Some(construction) = scope.derived_instance_construction() else {
             continue;
         };
         let Some(feature) = features
@@ -174,7 +172,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
 ) -> Vec<Occurrence> {
     let mut occurrences = Vec::new();
     for scope in scopes {
-        let Some(construction) = scope.component_insert_construction.as_ref() else {
+        let Some(construction) = scope.component_insert_construction() else {
             continue;
         };
         let Some(feature) = features
@@ -323,7 +321,7 @@ mod tests {
             "CopyPaste",
             10,
         );
-        scope.copy_paste_component_operation = Some(DesignCopyPasteComponentOperation {
+        scope.set_copy_paste_component_operation(Some(DesignCopyPasteComponentOperation {
             relation_record_index: 20,
             source_occurrence_record_index: 100,
             copied_occurrence_record_index: 101,
@@ -334,7 +332,7 @@ mod tests {
             source_transform_offset: 0,
             copied_transform: identity_matrix(),
             copied_transform_offset: 0,
-        });
+        }));
 
         let (definitions, occurrences) =
             super::project_local_components(&[scope], &native_occurrences);
@@ -357,7 +355,7 @@ mod tests {
             "DerivedInstance",
             385,
         );
-        scope.derived_instance_construction = Some(DesignDerivedInstanceConstruction {
+        scope.set_derived_instance_construction(Some(DesignDerivedInstanceConstruction {
             reference_record_index: 305,
             relation_record_index: 383,
             carrier_record_index: 382,
@@ -365,7 +363,7 @@ mod tests {
             occurrence_guid: OCCURRENCE.into(),
             transform: identity_matrix(),
             transform_offset: 473,
-        });
+        }));
         let native_occurrence = DesignComponentOccurrence {
             id: "f3d:Design/BulkStream.dat:design-component-occurrence#382".into(),
             class_tag: "380".into(),

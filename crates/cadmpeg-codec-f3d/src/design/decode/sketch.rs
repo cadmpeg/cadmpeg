@@ -125,7 +125,7 @@ pub fn decode_sketch_placements(
         .iter()
         .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch))
     {
-        let Some(binding) = scope.sketch_entity.as_ref() else {
+        let Some(binding) = scope.sketch_entity() else {
             continue;
         };
         let entity_id = binding.entity_id.as_str();

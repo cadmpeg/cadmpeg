@@ -27,7 +27,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         382,
     );
     scope.reference_members = vec![383, 385, 388, 393, 396, 399, 402, 404, 407, 411];
-    scope.edge_flange_operation = Some(DesignEdgeFlangeOperation {
+    scope.set_edge_flange_operation(Some(DesignEdgeFlangeOperation {
         edge_wrapper_record_indices: vec![383],
         edge_group_record_indices: vec![385],
         edge_operand_record_indices: vec![388],
@@ -47,7 +47,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         reference_side_code: (),
         height_datum: DesignSheetMetalHeightDatum::InnerFaces,
         bend_position: DesignBendPosition::Adjacent,
-    });
+    }));
 
     let owner =
         |record_index: u32, parameter_record_index: u32| crate::records::DesignParameterOwner {
@@ -186,15 +186,15 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
 
     let mut offset_scope = scope.clone();
     let mut offset_operation = offset_scope
-        .edge_flange_operation
-        .clone()
+        .edge_flange_operation()
+        .cloned()
         .expect("single-edge operation fixture");
     offset_operation.width_mode = Some(crate::records::DesignEdgeWidthMode::TwoSidesPerEdge);
     offset_operation.width_distance_owner_record_indices = vec![393, 396];
     offset_operation.width_distance_owner_record_indices_by_edge = vec![[393, 396]];
     offset_operation.width_parameter_source =
         crate::records::DesignEdgeFlangeWidthParameterSource::EdgeOffset;
-    offset_scope.edge_flange_operation = Some(offset_operation);
+    offset_scope.set_edge_flange_operation(Some(offset_operation));
     let mut offset_parameters = parameters.clone();
     offset_parameters[0].source_kind = "EdgeOffset_1".into();
     offset_parameters[0].evaluated_value = -3.0;
@@ -238,13 +238,13 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
 
     let mut multi_scope = scope.clone();
     let mut multi_operation = multi_scope
-        .edge_flange_operation
-        .clone()
+        .edge_flange_operation()
+        .cloned()
         .expect("single-edge operation fixture");
     multi_operation.edge_group_record_indices = vec![385, 415];
     multi_operation.edge_operand_record_indices = vec![388, 418];
     multi_operation.aggregate_operand_record_indices = vec![407, 420];
-    multi_scope.edge_flange_operation = Some(multi_operation.clone());
+    multi_scope.set_edge_flange_operation(Some(multi_operation.clone()));
     let mut second_group = group.clone();
     second_group.id = format!("{stream}:design-construction-operand-group#415");
     second_group.record_index = 415;
@@ -287,7 +287,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     per_edge_parameters[1].evaluated_value = 3.0;
     let mut per_edge_operation = multi_operation;
     per_edge_operation.width_mode = Some(crate::records::DesignEdgeWidthMode::SymmetricPerEdge);
-    multi_scope.edge_flange_operation = Some(per_edge_operation);
+    multi_scope.set_edge_flange_operation(Some(per_edge_operation));
     let per_edge_inputs = crate::design::feature_project::ProjectInputs {
         native: &per_edge_parameters,
         owners: &owners,
@@ -349,15 +349,15 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     );
 
     let mut two_sided_per_edge_operation = multi_scope
-        .edge_flange_operation
-        .clone()
+        .edge_flange_operation()
+        .cloned()
         .expect("per-edge width operation fixture");
     two_sided_per_edge_operation.width_mode =
         Some(crate::records::DesignEdgeWidthMode::TwoSidesPerEdge);
     two_sided_per_edge_operation.width_distance_owner_record_indices = vec![393, 396, 414, 417];
     two_sided_per_edge_operation.width_distance_owner_record_indices_by_edge =
         vec![[393, 396], [414, 417]];
-    multi_scope.edge_flange_operation = Some(two_sided_per_edge_operation);
+    multi_scope.set_edge_flange_operation(Some(two_sided_per_edge_operation));
     let mut two_sided_owners = owners.to_vec();
     two_sided_owners.push(owner(414, 413));
     two_sided_owners.push(owner(417, 416));
@@ -423,7 +423,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         "EdgeFlange",
         382,
     );
-    scope.edge_flange_operation = Some(DesignEdgeFlangeOperation {
+    scope.set_edge_flange_operation(Some(DesignEdgeFlangeOperation {
         edge_wrapper_record_indices: vec![383],
         edge_group_record_indices: vec![385],
         edge_operand_record_indices: vec![388],
@@ -448,7 +448,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         reference_side_code: (),
         height_datum: DesignSheetMetalHeightDatum::OuterFaces,
         bend_position: DesignBendPosition::Inside,
-    });
+    }));
 
     let owner =
         |record_index: u32, parameter_record_index: u32| crate::records::DesignParameterOwner {
@@ -627,7 +627,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         317,
     );
     scope.reference_members = vec![318, 320, 323, 328, 331, 334, 336, 339, 343];
-    scope.edge_flange_operation = Some(DesignEdgeFlangeOperation {
+    scope.set_edge_flange_operation(Some(DesignEdgeFlangeOperation {
         edge_wrapper_record_indices: vec![318],
         edge_group_record_indices: vec![320],
         edge_operand_record_indices: vec![323],
@@ -647,7 +647,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         reference_side_code: (),
         height_datum: DesignSheetMetalHeightDatum::OuterFaces,
         bend_position: DesignBendPosition::Inside,
-    });
+    }));
 
     let inputs = crate::design::feature_project::ProjectInputs {
         native: &[],
@@ -688,7 +688,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     };
     let scope_with = |boundaries: Vec<DesignSurfacePatchBoundary>| {
         let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "SurfacePatch", 1);
-        scope.surface_patch_boundaries = boundaries;
+        scope.set_surface_patch_boundaries(boundaries);
         scope
     };
     let uniform_continuity = |scope: &DesignParameterScope| {
@@ -747,7 +747,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
     let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "SurfacePatch", 1);
     scope.frame_length = 442;
     scope.reference_members = vec![900, 100, 101, 102, 110, 111, 112, 120, 121, 122];
-    scope.surface_patch_boundaries = vec![
+    scope.set_surface_patch_boundaries(vec![
         DesignSurfacePatchBoundary {
             scope_reference_ordinal: 3,
             record_index: 102,
@@ -775,10 +775,11 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             scale: -1.0,
             model_reference: 120,
         },
-    ];
+    ]);
+    let scope_record_index = scope.record_index;
     let group = |record_index, ordinal, member| DesignConstructionOperandGroup {
         id: format!("f3d:test:construction-group#{record_index}"),
-        scope_record_index: scope.record_index,
+        scope_record_index,
         scope_reference_ordinal: ordinal,
         record_index,
         byte_offset: 0,
@@ -829,7 +830,11 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
     ));
 
     scope.reference_members = vec![100, 101, 102, 110, 111, 112, 120, 121, 122, 900];
-    for (boundary, ordinal) in scope.surface_patch_boundaries.iter_mut().zip([2_u32, 5, 8]) {
+    for (boundary, ordinal) in scope
+        .surface_patch_boundaries_mut()
+        .iter_mut()
+        .zip([2_u32, 5, 8])
+    {
         boundary.scope_reference_ordinal = ordinal;
     }
     let endpoint_groups = [group(100, 0, 101), group(110, 3, 111), group(120, 6, 121)];
@@ -963,7 +968,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             "Hem",
             record_index,
         );
-        scope.hem_operation = Some(operation);
+        scope.set_hem_operation(Some(operation));
         let groups = vec![
             group(record_index, 710, 713, 0x0000_0008_0000_0000),
             group(record_index, 717, 720, 0x0000_0043_0000_0000),

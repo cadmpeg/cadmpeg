@@ -120,12 +120,12 @@ pub(crate) use crate::records::{
     DesignHoleConstruction, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
     DesignRecipeReference, DesignRecordHeader, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
-    DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
-    DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
-    DesignThreadForm, DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag,
-    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationOperand, SketchSurface, DESIGN_MODULE_SKETCH,
+    DesignScaleOperation, DesignScopePayload, DesignSketchPlacement, DesignSketchProfileOperand,
+    DesignSolidPrimitive, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation,
+    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation,
+    DesignThreadConstruction, DesignThreadForm, DesignTopologyRecipeSide, LostEdgeReference,
+    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface, DESIGN_MODULE_SKETCH,
 };
 pub(crate) use cadmpeg_core::decode::WorkBudget;
 pub(crate) use cadmpeg_ir::attributes::AttributeTarget;

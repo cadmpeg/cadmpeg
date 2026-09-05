@@ -152,8 +152,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     }
     for scope in scopes {
         let Some(target_record_index) = scope
-            .assembly_alignment
-            .as_ref()
+            .assembly_alignment()
             .and_then(|alignment| alignment.joint_origin_scope_record_index)
         else {
             continue;
@@ -260,8 +259,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     }
     for scope in scopes {
         let Some(target_record_index) = scope
-            .assembly_alignment
-            .as_ref()
+            .assembly_alignment()
             .and_then(|alignment| alignment.joint_origin_scope_record_index)
         else {
             continue;
@@ -657,8 +655,7 @@ pub fn project_parameter_design_with_edge_identities(
             let definition = match family {
                 Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch { sketch: None },
                 Some(DesignFeatureFamily::Assemble) => scope
-                    .assembly_alignment
-                    .as_ref()
+                    .assembly_alignment()
                     .filter(|alignment| {
                         alignment.operand_frames.is_some()
                             && ((alignment.legacy_operand_carriers.is_some()
@@ -829,7 +826,7 @@ pub fn project_parameter_design_with_edge_identities(
                     parameters: BTreeMap::new(),
                 }),
                 Some(DesignFeatureFamily::SurfaceExtend) => {
-                    scope.surface_extend_operation.as_ref().map_or_else(
+                    scope.surface_extend_operation().map_or_else(
                         || FeatureDefinition::Native {
                             kind: scope.kind.as_str().into(),
                             parameters: BTreeMap::new(),
@@ -857,8 +854,7 @@ pub fn project_parameter_design_with_edge_identities(
                     )
                 }
                 Some(DesignFeatureFamily::SurfaceOffset) => scope
-                    .surface_offset_operation
-                    .as_ref()
+                    .surface_offset_operation()
                     .and_then(|operation| {
                         project_surface_offset(scope, operation, construction_groups, face_operands)
                     })
@@ -998,7 +994,7 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     })
                 }
-                Some(DesignFeatureFamily::Scale) => scope.scale_operation.as_ref().map_or_else(
+                Some(DesignFeatureFamily::Scale) => scope.scale_operation().map_or_else(
                     || FeatureDefinition::Native {
                         kind: scope.kind.as_str().into(),
                         parameters: BTreeMap::new(),
@@ -1037,82 +1033,75 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     },
                 ),
-                Some(DesignFeatureFamily::Thread) => {
-                    scope.thread_construction.as_ref().map_or_else(
-                        || FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
-                            parameters: parameters
-                                .iter()
-                                .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
-                                })
-                                .collect(),
-                        },
-                        |construction| {
-                            let face = project_thread_face_selection(
-                                scope,
-                                &construction.face_group_record_indices,
-                                construction_groups,
-                                face_operands,
-                            );
-                            let has_parameter_owners = owners.iter().any(|owner| {
-                                native_stream(&owner.id) == Some(native_scope)
-                                    && owner.scope_record_index == scope.record_index
-                            });
-                            let face_reference_count = construction
+                Some(DesignFeatureFamily::Thread) => scope.thread_construction().map_or_else(
+                    || FeatureDefinition::Native {
+                        kind: scope.kind.as_str().into(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                    },
+                    |construction| {
+                        let face = project_thread_face_selection(
+                            scope,
+                            &construction.face_group_record_indices,
+                            construction_groups,
+                            face_operands,
+                        );
+                        let has_parameter_owners = owners.iter().any(|owner| {
+                            native_stream(&owner.id) == Some(native_scope)
+                                && owner.scope_record_index == scope.record_index
+                        });
+                        let face_reference_count = construction
+                            .face_group_record_indices
+                            .len()
+                            .saturating_mul(2);
+                        let full_face_extent = !has_parameter_owners
+                            && scope.reference_members.len() == face_reference_count
+                            && construction
                                 .face_group_record_indices
-                                .len()
-                                .saturating_mul(2);
-                            let full_face_extent = !has_parameter_owners
-                                && scope.reference_members.len() == face_reference_count
-                                && construction
-                                    .face_group_record_indices
-                                    .iter()
-                                    .enumerate()
-                                    .all(|(group_ordinal, group_record_index)| {
-                                        let pair_at = group_ordinal.saturating_mul(2);
-                                        let Some(member_record_index) = scope
-                                            .reference_members
-                                            .get(pair_at.saturating_add(1))
-                                            .copied()
-                                        else {
-                                            return false;
-                                        };
-                                        scope.reference_members.get(pair_at)
-                                            == Some(group_record_index)
-                                            && construction_groups.iter().any(|group| {
-                                                native_stream(&group.id) == Some(native_scope)
-                                                    && group.scope_record_index
-                                                        == scope.record_index
-                                                    && group.record_index == *group_record_index
-                                                    && group.role == ROLE_0X10
-                                                    && group.members.as_slice()
-                                                        == std::slice::from_ref(
-                                                            &member_record_index,
-                                                        )
-                                            })
-                                    });
-                            let extent = parameters
                                 .iter()
-                                .find(|(ordinal, _)| *ordinal == 1)
-                                .and_then(|(_, parameter)| design_length(parameter))
-                                .filter(|length| length.0 > 0.0)
-                                .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
-                                    length,
-                                })
-                                .or_else(|| {
-                                    full_face_extent.then_some(
-                                        cadmpeg_ir::features::CosmeticThreadExtent::Through,
-                                    )
+                                .enumerate()
+                                .all(|(group_ordinal, group_record_index)| {
+                                    let pair_at = group_ordinal.saturating_mul(2);
+                                    let Some(member_record_index) = scope
+                                        .reference_members
+                                        .get(pair_at.saturating_add(1))
+                                        .copied()
+                                    else {
+                                        return false;
+                                    };
+                                    scope.reference_members.get(pair_at) == Some(group_record_index)
+                                        && construction_groups.iter().any(|group| {
+                                            native_stream(&group.id) == Some(native_scope)
+                                                && group.scope_record_index == scope.record_index
+                                                && group.record_index == *group_record_index
+                                                && group.role == ROLE_0X10
+                                                && group.members.as_slice()
+                                                    == std::slice::from_ref(&member_record_index)
+                                        })
                                 });
-                            FeatureDefinition::CosmeticThread {
-                                face,
-                                diameter: Some(Length(construction.nominal_size)),
-                                extent,
-                            }
-                        },
-                    )
-                }
+                        let extent = parameters
+                            .iter()
+                            .find(|(ordinal, _)| *ordinal == 1)
+                            .and_then(|(_, parameter)| design_length(parameter))
+                            .filter(|length| length.0 > 0.0)
+                            .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
+                                length,
+                            })
+                            .or_else(|| {
+                                full_face_extent
+                                    .then_some(cadmpeg_ir::features::CosmeticThreadExtent::Through)
+                            });
+                        FeatureDefinition::CosmeticThread {
+                            face,
+                            diameter: Some(Length(construction.nominal_size)),
+                            extent,
+                        }
+                    },
+                ),
                 Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
                     project_edge_flange(scope, inputs).unwrap_or_else(|| {
                         FeatureDefinition::Native {
@@ -1137,7 +1126,7 @@ pub fn project_parameter_design_with_edge_identities(
                             .collect(),
                     }),
                 None => {
-                    if let Some(primitive) = scope.solid_primitive.as_ref() {
+                    if let Some(primitive) = scope.solid_primitive() {
                         let operation = |operation| match operation {
                             DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
                             DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
@@ -1272,8 +1261,7 @@ pub fn project_parameter_design_with_edge_identities(
                         )
                     } else if scope.kind == "WorkAxis" {
                         scope
-                            .work_axis_construction
-                            .as_ref()
+                            .work_axis_construction()
                             .and_then(|construction| {
                                 let displacement = Vector3::new(
                                     construction.displacement[0],
@@ -1302,7 +1290,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 },
                             )
                     } else if scope.kind == "WorkPoint" {
-                        scope.work_point_construction.as_ref().map_or_else(
+                        scope.work_point_construction().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind.as_str().into(),
                                 parameters: parameters
@@ -1369,7 +1357,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 parameters: BTreeMap::new(),
                             })
                     } else if scope.kind == "CopyPasteBodies" {
-                        scope.copy_paste_bodies_operation.as_ref().map_or_else(
+                        scope.copy_paste_bodies_operation().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind.as_str().into(),
                                 parameters: BTreeMap::new(),
@@ -1383,7 +1371,7 @@ pub fn project_parameter_design_with_edge_identities(
                             },
                         )
                     } else if scope.kind == "CopyPaste" {
-                        scope.copy_paste_component_operation.as_ref().map_or_else(
+                        scope.copy_paste_component_operation().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind.as_str().into(),
                                 parameters: BTreeMap::new(),
@@ -1395,7 +1383,7 @@ pub fn project_parameter_design_with_edge_identities(
                             },
                         )
                     } else if scope.kind == "Base Feature" {
-                        scope.base_feature_construction.as_ref().map_or_else(
+                        scope.base_feature_construction().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind.as_str().into(),
                                 parameters: BTreeMap::new(),
@@ -1565,7 +1553,7 @@ pub fn project_parameter_design_with_edge_identities(
         else {
             continue;
         };
-        let Some(construction) = &scope.work_point_construction else {
+        let Some(construction) = scope.work_point_construction() else {
             continue;
         };
         for state_id in construction
@@ -1806,7 +1794,7 @@ pub(crate) fn work_point_recipe_state_id(
     scope: &DesignParameterScope,
     edge_operands: &[DesignEdgeOperand],
 ) -> Option<i64> {
-    let construction = scope.work_point_construction.as_ref()?;
+    let construction = scope.work_point_construction()?;
     let mut states = construction
         .rule
         .inputs()
@@ -1994,7 +1982,7 @@ pub(crate) fn project_combine(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
 
-    let operation = scope.combine_operation.as_ref()?;
+    let operation = scope.combine_operation()?;
     if operation.tools.is_empty() {
         return None;
     }
@@ -2717,7 +2705,7 @@ pub fn bind_work_point_sketch_point_constructions(
                         },
                 },
             ..
-        }) = scope.work_point_construction.as_ref()
+        }) = scope.work_point_construction()
         else {
             continue;
         };
@@ -2845,7 +2833,7 @@ fn project_draft(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{Angle, FeatureDefinition};
 
-    let construction = scope.draft_operation.as_ref()?;
+    let construction = scope.draft_operation()?;
     let faces = single_operand_group(groups, scope, ROLE_0X10)?;
     let role_groups = groups
         .iter()
@@ -3237,7 +3225,7 @@ pub(crate) fn project_offset_faces(
         [(_, distance)] if distance.source_kind == "distance" => Some(design_length(distance)?),
         _ => return None,
     };
-    let fixed_distance = match &scope.direct_face_operation {
+    let fixed_distance = match scope.direct_face_operation() {
         Some(DesignDirectFaceOperation::OffsetFaces { distance, .. }) => {
             Some(Length(*distance * 10.0))
         }
@@ -3274,7 +3262,7 @@ pub(crate) fn project_thicken(
 
     let DesignDirectFaceOperation::Thicken {
         signed_thickness, ..
-    } = scope.direct_face_operation.as_ref()?
+    } = scope.direct_face_operation()?
     else {
         return None;
     };
@@ -3311,7 +3299,7 @@ pub(crate) fn project_shell(
 
     let DesignDirectFaceOperation::Shell {
         thickness, outward, ..
-    } = scope.direct_face_operation.as_ref()?
+    } = scope.direct_face_operation()?
     else {
         return None;
     };
@@ -3341,7 +3329,7 @@ fn project_move(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
 
-    let operation = scope.move_operation.as_ref()?;
+    let operation = scope.move_operation()?;
     let group = single_operand_group(groups, scope, ROLE_0X4)?;
     Some(FeatureDefinition::MoveBody {
         bodies: BodySelection::Native(group.id.clone()),
@@ -3440,7 +3428,7 @@ pub(crate) fn project_edge_flange(
         entity_selection_operands,
         ..
     } = inputs;
-    let operation = scope.edge_flange_operation.as_ref()?;
+    let operation = scope.edge_flange_operation()?;
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index, source_kind: &str| {
         let mut matching = owners.iter().filter(|owner| {
@@ -3697,7 +3685,7 @@ pub(crate) fn project_hem(
         histories,
         ..
     } = inputs;
-    let operation = scope.hem_operation.as_ref()?;
+    let operation = scope.hem_operation()?;
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index: u32, source_kind: &str| {
         let mut matching_owners = owners.iter().filter(|owner| {
@@ -3829,7 +3817,7 @@ pub(crate) fn project_surface_stitch(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
 
-    let operation = scope.surface_stitch_operation.as_ref()?;
+    let operation = scope.surface_stitch_operation()?;
     let input_references = scope
         .reference_members
         .get(..scope.reference_members.len() - 2)?;
@@ -3872,7 +3860,7 @@ pub(crate) fn project_ruled_surface(
         FaceSelection, FeatureDefinition, RuledSurfaceCorner, RuledSurfaceMode,
     };
 
-    let operation = scope.ruled_surface_operation.as_ref()?;
+    let operation = scope.ruled_surface_operation()?;
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index, source_kind: &str| {
         let mut matching = owners.iter().filter(|owner| {
@@ -5499,7 +5487,7 @@ fn project_fixed_chamfer(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, FeatureDefinition, Length};
 
-    let fixed = scope.fixed_chamfer_parameters.as_ref()?;
+    let fixed = scope.fixed_chamfer_parameters()?;
     let stream = native_stream(&scope.id)?;
     let groups = construction_groups
         .iter()
@@ -6292,7 +6280,7 @@ pub(crate) fn project_circular_pattern(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{Angle, FeatureDefinition, PatternKind, PatternSeed};
 
-    let construction = scope.circular_pattern_construction.as_ref()?;
+    let construction = scope.circular_pattern_construction()?;
     let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
     let stream = native_stream(&scope.id)?;
     let matching_groups = groups
@@ -6356,7 +6344,7 @@ fn project_rectangular_pattern_scalars(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, Length, PatternKind, PatternSeed};
 
-    let construction = scope.rectangular_pattern_construction.as_ref()?;
+    let construction = scope.rectangular_pattern_construction()?;
     let active = [
         (
             construction.u_count,
@@ -6446,7 +6434,7 @@ pub(crate) fn project_mirror(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, PatternKind, PatternSeed};
 
-    let construction = scope.mirror_construction.as_ref()?;
+    let construction = scope.mirror_construction()?;
     if construction.count != 2 {
         return None;
     }
@@ -6864,7 +6852,7 @@ pub(crate) fn surface_patch_boundary_continuities(
     scope: &DesignParameterScope,
 ) -> Vec<cadmpeg_ir::features::SurfaceContinuity> {
     scope
-        .surface_patch_boundaries
+        .surface_patch_boundaries()
         .iter()
         .map(|boundary| surface_patch_boundary_continuity(boundary.continuity))
         .collect::<Option<Vec<_>>>()
@@ -6942,7 +6930,7 @@ pub(crate) fn project_surface_patch(
         }
         (boundary_count, ROLE_0X4)
     };
-    if groups.len() != boundary_count || scope.surface_patch_boundaries.len() != boundary_count {
+    if groups.len() != boundary_count || scope.surface_patch_boundaries().len() != boundary_count {
         return None;
     }
     let mut occupied = cadmpeg_core::decode::alloc_filled(
@@ -6966,7 +6954,7 @@ pub(crate) fn project_surface_patch(
         {
             return None;
         }
-        let settings = scope.surface_patch_boundaries.iter().find(|settings| {
+        let settings = scope.surface_patch_boundaries().iter().find(|settings| {
             usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
         })?;
         if settings.record_index != scope.reference_members[settings_ordinal]
@@ -7138,7 +7126,7 @@ fn project_hole(
     };
     let face = resolved_direct_face_selection(scope, face_operands)
         .unwrap_or_else(|| FaceSelection::Native(scope.id.clone()));
-    let placements = scope.hole_construction.as_ref().map(|construction| {
+    let placements = scope.hole_construction().map(|construction| {
         vec![cadmpeg_ir::features::HolePlacement::Directed {
             position: Point3::new(
                 construction.position[0] * 10.0,

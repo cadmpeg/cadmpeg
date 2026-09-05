@@ -177,8 +177,6 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         frame_length: 329,
         kind: "C-Pattern".into(),
         kind_offset: 0,
-        extrude: None,
-        coil: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: Some(2),
@@ -193,40 +191,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             selection_record_index,
         ],
         reference_member_offsets: vec![0; 4],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_frame: None,
-        work_axis_construction: None,
-        joint_origin_frame: None,
-        work_point_construction: None,
+        payload: DesignScopePayload::Empty,
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        sketch_entity: None,
         paired_class_tag: "258".into(),
         paired_byte_offset: 329,
     };
@@ -709,7 +675,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut second_joint_origin = first_joint_origin.clone();
     second_joint_origin.record_index = 80;
     let mut linked_assembly = axial_assembly_scope.clone();
-    linked_assembly.assembly_alignment = Some(axial_alignment.clone());
+    linked_assembly.set_assembly_alignment(Some(axial_alignment.clone()));
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
     bind_joint_origin_frames_from_assemblies(&axial_assembly_bytes, &mut linked_scopes);
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
@@ -724,8 +690,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
     assert_eq!(
         linked_scopes[0]
-            .assembly_alignment
-            .as_ref()
+            .assembly_alignment()
             .and_then(|alignment| alignment.joint_origin_scope_record_index),
         None
     );
@@ -747,7 +712,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .iter()
         .map(|owner| owner.record_index)
         .collect();
-    single_frame_assembly.assembly_alignment = Some(datum_envelope_alignment);
+    single_frame_assembly.set_assembly_alignment(Some(datum_envelope_alignment));
     let mut single_frame_joint_origin = scope.clone();
     single_frame_joint_origin.kind = "JointOrigin".into();
     single_frame_joint_origin.record_index = 91;
@@ -769,37 +734,33 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
     assert_eq!(
         single_frame_scopes[0]
-            .assembly_alignment
-            .as_ref()
+            .assembly_alignment()
             .and_then(|alignment| alignment.joint_origin_scope_record_index),
         Some(91)
     );
 
     let mut conflicting_assembly = single_frame_scopes[0].clone();
     conflicting_assembly
-        .assembly_alignment
-        .as_mut()
+        .assembly_alignment_mut()
         .unwrap()
         .joint_origin_scope_record_index = None;
     let mut conflicting_joint_origin = single_frame_scopes[1].clone();
     conflicting_joint_origin
-        .joint_origin_frame
-        .as_mut()
+        .joint_origin_frame_mut()
         .unwrap()
         .joint_origin_transform[2][3] += 1.0;
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(
         conflicting_scopes[0]
-            .assembly_alignment
-            .as_ref()
+            .assembly_alignment()
             .and_then(|alignment| alignment.joint_origin_scope_record_index),
         None
     );
 
     single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
     let mut invalid_joint_origin = single_frame_scopes[1].clone();
-    invalid_joint_origin.joint_origin_frame = None;
+    invalid_joint_origin.set_joint_origin_frame(None);
     let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut invalid_single_frame_scopes);
     assert_eq!(
