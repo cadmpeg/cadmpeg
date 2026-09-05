@@ -83,7 +83,7 @@ pub(crate) enum StreamEvidence<'a> {
 
 impl StreamEvidence<'_> {
     /// The host row this evidence identifies. Every variant is a reportable
-    /// kind, so the id is total: [`StreamKind::Unknown`] never reaches here.
+    /// kind, so the id is total: unclassified streams never reach here.
     const fn dialect(&self) -> DialectId {
         match self {
             Self::AsmBinary(_) | Self::UnframedAsmBinary(_) => SAT_ASM_BINARY,

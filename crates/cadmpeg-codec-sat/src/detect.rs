@@ -22,21 +22,19 @@ pub(crate) enum StreamKind {
     AcisBinary,
     /// Text header lines.
     Text,
-    /// Not an ASM stream.
-    Unknown,
 }
 
-pub(crate) fn classify(prefix: &[u8]) -> StreamKind {
+pub(crate) fn classify(prefix: &[u8]) -> Option<StreamKind> {
     if asm_header::has_asm_magic(prefix) {
-        return StreamKind::AsmBinary;
+        return Some(StreamKind::AsmBinary);
     }
     if acis_header::has_acis_magic(prefix) {
-        return StreamKind::AcisBinary;
+        return Some(StreamKind::AcisBinary);
     }
     if looks_like_text_stream(prefix) {
-        return StreamKind::Text;
+        return Some(StreamKind::Text);
     }
-    StreamKind::Unknown
+    None
 }
 
 /// Whether the prefix opens like a text stream: a first line of four ASCII
@@ -61,11 +59,11 @@ fn looks_like_text_stream(prefix: &[u8]) -> bool {
 
 pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
     match classify(prefix) {
-        StreamKind::AsmBinary | StreamKind::AcisBinary => Confidence::High,
+        Some(StreamKind::AsmBinary | StreamKind::AcisBinary) => Confidence::High,
         // The text opening is a weak signature shared with other numeric
         // text files, so detection defers to stronger magics.
-        StreamKind::Text => Confidence::Medium,
-        StreamKind::Unknown => Confidence::No,
+        Some(StreamKind::Text) => Confidence::Medium,
+        None => Confidence::No,
     }
 }
 
@@ -102,7 +100,11 @@ pub(crate) fn inspect(
     let bytes = root.window();
     let mut attributes = BTreeMap::new();
     let mut notes = Vec::new();
-    let kind = classify(bytes);
+    let Some(kind) = classify(bytes) else {
+        return Err(CodecError::WrongFormat(
+            "not an ASM stream: no binary magic and no text header lines".to_string(),
+        ));
+    };
     // Inspect classifies from the same evidence decode would read, so the two
     // report the same `sat:` row and the same admission for the same bytes.
     let (matched, kernel) = match kind {
@@ -174,11 +176,6 @@ pub(crate) fn inspect(
             let evidence = StreamEvidence::Text(text);
             crate::dialect::layers(&evidence)
         }
-        StreamKind::Unknown => {
-            return Err(CodecError::WrongFormat(
-                "not an ASM stream: no binary magic and no text header lines".to_string(),
-            ))
-        }
     };
     let losses = crate::dialect::dialect_loss(&kernel).into_iter().collect();
     Ok(ContainerSummary::classified(
@@ -190,7 +187,6 @@ pub(crate) fn inspect(
                 StreamKind::AsmBinary => "brep",
                 StreamKind::AcisBinary => "acis-binary",
                 StreamKind::Text => "brep-text",
-                StreamKind::Unknown => unreachable!("unknown kind returned above"),
             }
             .to_string(),
             compression: "stored".to_string(),
