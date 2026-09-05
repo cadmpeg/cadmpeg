@@ -215,3 +215,34 @@ fn extrude_prefixes_preserve_wire_and_reject_partial_locations() {
         }
     }
 }
+
+#[test]
+fn mirror_references_preserve_wire_and_reject_partial_locations() {
+    let prefix = r#"{"count":2,"count_record_index":11,"count_offset":0,"stitch_tolerance":0.001,"stitch_tolerance_record_index":12,"stitch_tolerance_offset":0,"seed_group_record_index":20,"plane_group_record_index":30"#;
+    for fields in ["", ",\"seed_feature_scope_record_index\":40,\"seed_feature_reference_offset\":100", ",\"plane_scope_record_index\":50,\"plane_reference_offset\":200", ",\"seed_feature_scope_record_index\":40,\"seed_feature_reference_offset\":100,\"plane_scope_record_index\":50,\"plane_reference_offset\":200"] {
+        let wire = format!("{prefix}{fields}}}");
+        let value: super::DesignMirrorConstruction = serde_json::from_str(&wire).expect("mirror construction");
+        assert_eq!(serde_json::to_string(&value).expect("mirror wire"), wire);
+    }
+    for field in ["seed_feature_scope_record_index", "seed_feature_reference_offset", "plane_scope_record_index", "plane_reference_offset"] {
+        let error = serde_json::from_str::<super::DesignMirrorConstruction>(&format!("{prefix},\"{field}\":1}}"))
+            .expect_err("partial mirror reference");
+        assert!(error.to_string().contains(field));
+    }
+}
+
+#[test]
+fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() {
+    let prefix = r#"{"id":"carrier","scope_record_index":12,"scope_reference_ordinal":0,"record_index":20,"byte_offset":0,"class_tag":"322","owner_scope_record_index":12,"owner_scope_record_index_offset":20,"members":[22],"member_offsets":[30],"member_count":1,"member_count_offset":26,"opaque_index":1,"opaque_index_offset":34,"opaque_scalar":1.0,"opaque_scalar_offset":38,"repeated_opaque_index":1,"repeated_opaque_index_offset":46,"next_next_record_index":22,"next_next_reference_offset":50,"flags":[0,0],"flags_offset":59,"next_record_index":21,"next_reference_offset":61"#;
+    let suffix = r#","paired_class_tag":"262","paired_byte_offset":98}"#;
+    for fields in ["", ",\"trailing_scope_record_index\":12,\"trailing_scope_reference_offset\":88"] {
+        let wire = format!("{prefix}{fields}{suffix}");
+        let value: super::DesignLoftLegacyBodyCarrier = serde_json::from_str(&wire).expect("loft carrier");
+        assert_eq!(serde_json::to_string(&value).expect("loft carrier wire"), wire);
+    }
+    for field in ["trailing_scope_record_index", "trailing_scope_reference_offset"] {
+        let error = serde_json::from_str::<super::DesignLoftLegacyBodyCarrier>(&format!("{prefix},\"{field}\":12{suffix}"))
+            .expect_err("partial loft scope reference");
+        assert!(error.to_string().contains(field));
+    }
+}

@@ -74,9 +74,7 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
             seed_group_record_index,
             plane_group_record_index: 30,
             seed_feature_scope_record_index: None,
-            seed_feature_reference_offset: None,
             plane_scope_record_index: None,
-            plane_reference_offset: None,
             plane_selection_record_index: None,
             plane: Some(
                 crate::records::DesignPlane {

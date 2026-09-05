@@ -1038,7 +1038,6 @@ pub(super) fn continue_fixed_kind_operations(
         next_record_index: 501,
         next_reference_offset: 76,
         trailing_scope_record_index: None,
-        trailing_scope_reference_offset: None,
         paired_class_tag: "262".into(),
         paired_byte_offset: 87,
     };

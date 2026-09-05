@@ -1591,7 +1591,7 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     if cursor != start.checked_add(legacy_loft_322::LEN)? {
         return None;
     }
-    let (trailing_scope_record_index, trailing_scope_reference_offset) = if has_trailing_scope {
+    let trailing_scope_record_index = if has_trailing_scope {
         if cursor != start + legacy_loft_322_tail::TAIL_ZERO || bytes.get(cursor)? != &0 {
             return None;
         }
@@ -1604,12 +1604,9 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         if record_index != scope.record_index {
             return None;
         }
-        (
-            Some(record_index),
-            Some(u64::try_from(reference_offset).ok()?),
-        )
+        Some(crate::records::Located { value: record_index, offset: u64::try_from(reference_offset).ok()? })
     } else {
-        (None, None)
+        None
     };
     let paired_byte_offset = start.checked_add(frame_length)?;
     if cursor != paired_byte_offset
@@ -1654,7 +1651,6 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         next_record_index,
         next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
         trailing_scope_record_index,
-        trailing_scope_reference_offset,
         paired_class_tag: paired_class_tag.to_owned(),
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
     })
