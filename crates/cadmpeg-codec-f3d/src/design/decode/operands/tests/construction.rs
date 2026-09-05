@@ -63,7 +63,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         hem_operation: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
-        path_feature_construction: None,
+        path_feature: None,
         combine_operation: None,
         thread_construction: None,
         draft_operation: None,
@@ -75,7 +75,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,
-        sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
         assembly_alignment: None,
@@ -1439,10 +1438,11 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
 
     let mut scope =
         crate::records::DesignParameterScope::empty("f3d:Design/BulkStream.dat", "Loft", 12);
-    scope.path_feature_construction = Some(crate::records::DesignPathFeatureConstruction::Loft {
-        operation: crate::records::DesignExtrudeOperation::Cut,
-        operation_offset: 0,
-    });
+    scope.ensure_path_feature().path_feature_construction =
+        Some(crate::records::DesignPathFeatureConstruction::Loft {
+            operation: crate::records::DesignExtrudeOperation::Cut,
+            operation_offset: 0,
+        });
 
     let class_322 = carrier(b"322", b"262", 12, 100, false);
     let parsed_322 = parse_loft_legacy_body_carrier(

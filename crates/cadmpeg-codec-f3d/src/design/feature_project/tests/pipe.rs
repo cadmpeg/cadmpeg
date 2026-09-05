@@ -19,17 +19,18 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     scope.class_tag = "405".into();
     scope.paired_class_tag = "259".into();
     scope.reference_members = vec![10, 11, 12, 13, 20, 21, 22];
-    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: 26,
-        section_shape: 1,
-        section_shape_offset: 30,
-        filled: true,
-        filled_offset: 31,
-        values: [1.0, 1.0, 0.6, 0.15],
-        record_indexes: [10, 11, 12, 13],
-        value_offsets: [40, 151, 262, 373],
-    });
+    scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 26,
+            section_shape: 1,
+            section_shape_offset: 30,
+            filled: true,
+            filled_offset: 31,
+            values: [1.0, 1.0, 0.6, 0.15],
+            record_indexes: [10, 11, 12, 13],
+            value_offsets: [40, 151, 262, 373],
+        });
 
     let parameter = |record_index: u32,
                      source_kind: &str,
@@ -119,17 +120,18 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         } if path == path_group.id
     ));
 
-    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: 26,
-        section_shape: 1,
-        section_shape_offset: 30,
-        filled: false,
-        filled_offset: 31,
-        values: [1.0, 1.0, 0.6, 0.15],
-        record_indexes: [10, 11, 12, 13],
-        value_offsets: [40, 151, 262, 373],
-    });
+    scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 26,
+            section_shape: 1,
+            section_shape_offset: 30,
+            filled: false,
+            filled_offset: 31,
+            values: [1.0, 1.0, 0.6, 0.15],
+            record_indexes: [10, 11, 12, 13],
+            value_offsets: [40, 151, 262, 373],
+        });
     let hollow_definition = crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,
@@ -156,17 +158,18 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         .iter()
         .map(|parameter| (parameter.record_index, parameter))
         .collect::<Vec<_>>();
-    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: 26,
-        section_shape: 1,
-        section_shape_offset: 30,
-        filled: false,
-        filled_offset: 31,
-        values: [1.0, 1.0, 0.6, 0.35],
-        record_indexes: [10, 11, 12, 13],
-        value_offsets: [40, 151, 262, 373],
-    });
+    scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 26,
+            section_shape: 1,
+            section_shape_offset: 30,
+            filled: false,
+            filled_offset: 31,
+            values: [1.0, 1.0, 0.6, 0.35],
+            record_indexes: [10, 11, 12, 13],
+            value_offsets: [40, 151, 262, 373],
+        });
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &too_thick_parameter_refs,
@@ -176,17 +179,18 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .is_none());
 
-    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: 26,
-        section_shape: 1,
-        section_shape_offset: 30,
-        filled: true,
-        filled_offset: 31,
-        values: [1.0, 1.0, 0.6, 0.15],
-        record_indexes: [10, 11, 12, 13],
-        value_offsets: [40, 151, 262, 373],
-    });
+    scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 26,
+            section_shape: 1,
+            section_shape_offset: 30,
+            filled: true,
+            filled_offset: 31,
+            values: [1.0, 1.0, 0.6, 0.15],
+            record_indexes: [10, 11, 12, 13],
+            value_offsets: [40, 151, 262, 373],
+        });
 
     scope.reference_members.push(23);
     assert!(crate::design::feature_project::project_fixed_pipe(
@@ -212,17 +216,18 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
 
     scope.class_tag = "421".into();
     scope.paired_class_tag = "257".into();
-    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: 25,
-        section_shape: 1,
-        section_shape_offset: 29,
-        filled: true,
-        filled_offset: 30,
-        values: [1.0, 1.0, 0.6, 0.15],
-        record_indexes: [10, 11, 12, 13],
-        value_offsets: [40, 151, 262, 373],
-    });
+    scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 25,
+            section_shape: 1,
+            section_shape_offset: 29,
+            filled: true,
+            filled_offset: 30,
+            values: [1.0, 1.0, 0.6, 0.15],
+            record_indexes: [10, 11, 12, 13],
+            value_offsets: [40, 151, 262, 373],
+        });
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,

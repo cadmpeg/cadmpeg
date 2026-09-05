@@ -548,17 +548,18 @@ fn validation_checks_pipe_path_group_roles() {
     let scope_id = format!("{stream}:design-parameter-scope#10");
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let mut scope = DesignParameterScope::empty(&scope_id, "Pipe", 10);
-    scope.path_feature_construction = Some(DesignPathFeatureConstruction::Pipe {
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: 0,
-        section_shape: 1,
-        section_shape_offset: 0,
-        filled: true,
-        filled_offset: 0,
-        values: [1.0, 1.0, 0.6, 0.15],
-        record_indexes: [11, 12, 13, 14],
-        value_offsets: [0; 4],
-    });
+    scope.ensure_path_feature().path_feature_construction =
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: 0,
+            section_shape: 1,
+            section_shape_offset: 0,
+            filled: true,
+            filled_offset: 0,
+            values: [1.0, 1.0, 0.6, 0.15],
+            record_indexes: [11, 12, 13, 14],
+            value_offsets: [0; 4],
+        });
     scope.reference_members = vec![1, 2, 3, 4, 20, 21];
     let path_group = DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#20"),
@@ -1067,7 +1068,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         hem_operation: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
-        path_feature_construction: None,
+        path_feature: None,
         combine_operation: None,
         thread_construction: None,
         draft_operation: None,
@@ -1079,7 +1080,6 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
         hole_construction: None,
-        sweep_profile: None,
         circular_pattern_construction: None,
         rectangular_pattern_construction: None,
         assembly_alignment: None,

@@ -2993,9 +2993,10 @@ pub struct DesignParameterScope {
     /// Exact fixed scalar lane carried by an equal-distance Chamfer scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_chamfer_parameters: Option<DesignFixedChamferParameters>,
-    /// Exact fixed construction carried by a Loft or Sweep scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path_feature_construction: Option<DesignPathFeatureConstruction>,
+    /// Path-feature construction and Sweep sketch profile.
+    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "path_feature_scope_is_absent")]
+    pub path_feature: Option<DesignPathFeatureScope>,
     /// Exact Boolean construction carried by a `Combine` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combine_operation: Option<DesignCombineOperation>,
@@ -3055,10 +3056,6 @@ pub struct DesignParameterScope {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hole_construction: Option<DesignHoleConstruction>,
 
-    /// Sketch-profile operand carried by a `Sweep` scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sweep_profile: Option<DesignSketchProfileOperand>,
-
     /// Sketch-module entity bound to this sketch scope.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3109,6 +3106,15 @@ fn extrude_scope_is_absent(extrude: &Option<DesignExtrudeScope>) -> bool {
     }
 }
 
+fn path_feature_scope_is_absent(path_feature: &Option<DesignPathFeatureScope>) -> bool {
+    match path_feature {
+        None => true,
+        Some(path_feature) => {
+            path_feature.path_feature_construction.is_none() && path_feature.sweep_profile.is_none()
+        }
+    }
+}
+
 /// BaseFlange-specific records carried by a BaseFlange parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3134,6 +3140,18 @@ pub struct DesignExtrudeScope {
     /// Profile operand carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_profile: Option<DesignSketchProfileOperand>,
+}
+
+/// Path-feature construction and Sweep profile carried by a Loft, Sweep, Revolve, or Pipe scope.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignPathFeatureScope {
+    /// Exact fixed construction carried by a Loft, Sweep, Revolve, or Pipe scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_feature_construction: Option<DesignPathFeatureConstruction>,
+    /// Sketch-profile operand carried by a `Sweep` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_profile: Option<DesignSketchProfileOperand>,
 }
 
 /// Coil-specific records carried by a Coil parameter scope.
@@ -3747,6 +3765,23 @@ impl DesignParameterScope {
             .and_then(|coil| coil.coil_transform.as_ref())
     }
 
+    pub(crate) fn ensure_path_feature(&mut self) -> &mut DesignPathFeatureScope {
+        self.path_feature
+            .get_or_insert_with(DesignPathFeatureScope::default)
+    }
+
+    pub(crate) fn path_feature_construction(&self) -> Option<&DesignPathFeatureConstruction> {
+        self.path_feature
+            .as_ref()
+            .and_then(|path_feature| path_feature.path_feature_construction.as_ref())
+    }
+
+    pub(crate) fn sweep_profile(&self) -> Option<&DesignSketchProfileOperand> {
+        self.path_feature
+            .as_ref()
+            .and_then(|path_feature| path_feature.sweep_profile.as_ref())
+    }
+
     pub(crate) fn ensure_extrude(&mut self) -> &mut DesignExtrudeScope {
         self.extrude.get_or_insert_with(DesignExtrudeScope::default)
     }
@@ -3903,7 +3938,7 @@ impl DesignParameterScope {
             hem_operation: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
-            path_feature_construction: None,
+            path_feature: None,
             combine_operation: None,
             thread_construction: None,
             draft_operation: None,
@@ -3922,8 +3957,6 @@ impl DesignParameterScope {
             work_point_construction: None,
             unclosed_construction_operand_groups: Vec::new(),
             hole_construction: None,
-            sweep_profile: None,
-
             sketch_entity: None,
             paired_class_tag: String::new(),
             paired_byte_offset: 0,
