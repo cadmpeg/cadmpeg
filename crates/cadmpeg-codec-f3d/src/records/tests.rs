@@ -2554,3 +2554,21 @@ fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
         assert!(super::DesignMeshSceneBounds::new([1.0; 3], [value, 0.0, 0.0], 0).is_err());
     }
 }
+
+#[test]
+fn mesh_record_identity_preserves_wire_and_rejects_invalid_headers() {
+    let wire = r#"{"class_tag":"256","record_index":1,"byte_offset":100,"frame_length":11}"#;
+    let record: super::DesignMeshRecordIdentity = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+    for (field, bad) in [
+        ("class_tag", serde_json::json!("25x")),
+        ("class_tag", serde_json::json!("2560")),
+        ("record_index", serde_json::json!(0)),
+        ("frame_length", serde_json::json!(10)),
+        ("frame_length", serde_json::json!(u64::MAX)),
+    ] {
+        let mut invalid = serde_json::to_value(&record).unwrap();
+        invalid[field] = bad;
+        assert!(serde_json::from_value::<super::DesignMeshRecordIdentity>(invalid).unwrap_err().to_string().contains(field));
+    }
+}

@@ -465,10 +465,10 @@ fn source_offset(frame_start: usize, relative: usize) -> Option<u64> {
     u64::try_from(frame_start.checked_add(relative)?).ok()
 }
 
-fn indexed_class_tag(record: &[u8], at: usize) -> Option<String> {
+fn indexed_class_tag(record: &[u8], at: usize) -> Option<crate::records::DesignClassTag> {
     (View::u32_le_at(record, at) == Some(3)).then_some(())?;
     let tag = std::str::from_utf8(record.get(at.checked_add(4)?..at.checked_add(7)?)?).ok()?;
-    (tag.len() == 3 && tag.bytes().all(|byte| byte.is_ascii_digit())).then(|| tag.to_owned())
+    crate::records::DesignClassTag::try_from(tag.to_owned()).ok()
 }
 
 fn record_identity(
@@ -479,14 +479,11 @@ fn record_identity(
     let record_index = exact_record_index(record, frame, record_kind)?;
     let class_tag = indexed_class_tag(record, 0)
         .ok_or_else(|| malformed_frame(record_kind, frame.entity_id))?;
-    Ok(DesignMeshRecordIdentity {
-        class_tag,
-        record_index,
-        byte_offset: u64::try_from(frame.start)
-            .map_err(|_| malformed_frame(record_kind, frame.entity_id))?,
-        frame_length: u64::try_from(frame.end.saturating_sub(frame.start))
-            .map_err(|_| malformed_frame(record_kind, frame.entity_id))?,
-    })
+    DesignMeshRecordIdentity::new(
+        class_tag, record_index,
+        u64::try_from(frame.start).map_err(|_| malformed_frame(record_kind, frame.entity_id))?,
+        u64::try_from(frame.end.saturating_sub(frame.start)).map_err(|_| malformed_frame(record_kind, frame.entity_id))?,
+    ).map_err(|_| malformed_frame(record_kind, frame.entity_id))
 }
 
 fn validate_design_type(
@@ -522,7 +519,7 @@ fn nested_record_identity(
     let class_tag = indexed_class_tag(record, at)?;
     (View::u32_le_at(record, at.checked_add(indexed_header::RECORD_INDEX)?) == Some(record_index))
         .then_some(())?;
-    let tag = class_tag.parse::<u32>().ok()?;
+    let tag = class_tag.as_str().parse::<u32>().ok()?;
     let ordinal = usize::try_from(tag.checked_sub(256)?).ok()?;
     validate_design_type(
         meta.types.get(ordinal)?,
@@ -532,12 +529,10 @@ fn nested_record_identity(
         expected_module,
     )
     .then_some(())?;
-    Some(DesignMeshRecordIdentity {
-        class_tag,
-        record_index,
-        byte_offset: source_offset(frame_start, at)?,
-        frame_length: u64::try_from(end.checked_sub(at)?).ok()?,
-    })
+    DesignMeshRecordIdentity::new(
+        class_tag, record_index, source_offset(frame_start, at)?,
+        u64::try_from(end.checked_sub(at)?).ok()?,
+    ).ok()
 }
 
 fn exact_local_record_index(record: &[u8], at: usize) -> Option<u32> {
@@ -720,7 +715,7 @@ fn parse_mesh_collection_record(
             frame.start,
             mesh_collection::LEN,
             record.len(),
-            identity.record_index,
+            identity.record_index(),
             meta,
             MESH_COLLECTION_BASE_TYPE_GUID,
             MESH_COLLECTION_BASE_BASE_TYPE_GUID,
@@ -1035,8 +1030,8 @@ fn parse_mesh_scope_record(
             counted_local_record_indices(record, frame.start, feature_scope::BODY_COUNT)?;
         let header = DesignRecordHeader {
             id: String::new(),
-            record_index: identity.record_index,
-            class_tag: identity.class_tag.clone(),
+            record_index: identity.record_index(),
+            class_tag: identity.class_tag().to_owned(),
             byte_offset: u64::try_from(frame.start).ok()?,
         };
         let scope = parse_parameter_scope(bytes, records, &header)?;
@@ -1053,7 +1048,7 @@ fn parse_mesh_scope_record(
             frame.start,
             paired_relative,
             record.len(),
-            identity.record_index,
+            identity.record_index(),
             meta,
             MESH_SCOPE_BASE_RECORD_TYPE_GUID,
             MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID,
@@ -1226,7 +1221,7 @@ where
             .into_iter()
             .map(|frame| parse_mesh_entry_name_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index,
+        |record| record.identity.record_index(),
         "mesh-entry-name",
     )?;
     let mut guids = unique_record_map(
@@ -1234,7 +1229,7 @@ where
             .into_iter()
             .map(|frame| parse_mesh_guid_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index,
+        |record| record.identity.record_index(),
         "mesh-GUID",
     )?;
     let mut bodies = unique_record_map(
@@ -1242,12 +1237,12 @@ where
             .into_iter()
             .map(|frame| parse_mesh_body_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index,
+        |record| record.identity.record_index(),
         "mesh-body",
     )?;
     let collection_record_indices = collections
         .iter()
-        .map(|collection| collection.identity.record_index)
+        .map(|collection| collection.identity.record_index())
         .collect::<HashSet<_>>();
     let mut texture_tables = unique_record_map(
         typed_primary_frames(
@@ -1259,7 +1254,7 @@ where
         .into_iter()
         .map(|frame| parse_mesh_texture_table_record(bytes, frame))
         .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index,
+        |record| record.identity.record_index(),
         "mesh-texture-table",
     )?;
     let mut wrappers = unique_record_map(
@@ -1267,7 +1262,7 @@ where
             .into_iter()
             .map(|frame| parse_mesh_wrapper_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index,
+        |record| record.identity.record_index(),
         "mesh-wrapper",
     )?;
     let mut scopes = unique_record_map(
@@ -1280,7 +1275,7 @@ where
         .into_iter()
         .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
         .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index,
+        |record| record.identity.record_index(),
         "mesh-feature-scope",
     )?;
     let mut states = unique_record_map(
@@ -1288,7 +1283,7 @@ where
             .into_iter()
             .map(|frame| parse_mesh_scene_state_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.0.record_index,
+        |record| record.0.record_index(),
         "mesh-scene-state",
     )?;
     let mut scene_nodes = unique_record_map(
@@ -1296,7 +1291,7 @@ where
             .into_iter()
             .map(|frame| parse_scene_node_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index,
+        |record| record.identity.record_index(),
         "mesh-scene-node",
     )?;
     let scene_auxiliary_frames = typed_frame_map(
@@ -1331,7 +1326,7 @@ where
         .flatten()
         .filter(|owner| collection_record_indices.contains(&owner.collection_record_index))
         .collect(),
-        |record| record.identity.record_index,
+        |record| record.identity.record_index(),
         "mesh-collection-owner",
     )?;
     let body_owner_frames = typed_frame_map(
@@ -1351,7 +1346,7 @@ where
                 collection.body_records.iter().map(|row| &row.value).all(|body_index| {
                     bodies.get(body_index).is_some_and(|body| {
                         body.scope_record_index == **scope_index
-                            && body.collection_record_index == collection.identity.record_index
+                            && body.collection_record_index == collection.identity.record_index()
                     })
                 })
             })
@@ -1377,7 +1372,7 @@ where
                 .collect::<Vec<_>>();
             return Err(CodecError::malformed(format_args!(
                 "F3D Design mesh feature graph violates `each mesh collection has exactly one scope with the same ordered body list` in {stream}: collection {} bodies {:?}, scope lists {:?}, body links {:?}",
-                collection.identity.record_index,
+                collection.identity.record_index(),
                 collection.body_records.iter().map(|row| row.value).collect::<Vec<_>>(),
                 scope_lists,
                 body_links,
@@ -1394,8 +1389,8 @@ where
         let collection_owner = collection_owners
             .get(&collection.owner_record_index)
             .filter(|owner| {
-                owner.collection_record_index == collection.identity.record_index
-                    && used_collection_owners.insert(owner.identity.record_index)
+                owner.collection_record_index == collection.identity.record_index()
+                    && used_collection_owners.insert(owner.identity.record_index())
             })
             .ok_or_else(|| {
                 stream_error("each mesh collection has one unused owner with a reciprocal backlink")
@@ -1452,14 +1447,14 @@ where
             })?;
             let wrapper = wrappers
                 .remove(&body.wrapper_record_index)
-                .filter(|wrapper| wrapper.body_record_index == body.identity.record_index)
+                .filter(|wrapper| wrapper.body_record_index == body.identity.record_index())
                 .ok_or_else(|| stream_error("each mesh body has one unused reciprocal wrapper"))?;
             let guid = guids
                 .remove(&body.guid_record_index)
                 .ok_or_else(|| stream_error("each mesh body has one unused GUID record"))?;
             let entry_name = entry_names
                 .remove(&guid.entry_name_record_index)
-                .filter(|entry| entry.guid_record_index == guid.identity.record_index)
+                .filter(|entry| entry.guid_record_index == guid.identity.record_index())
                 .ok_or_else(|| {
                     stream_error("each mesh GUID has one unused reciprocal entry-name record")
                 })?;
@@ -1496,7 +1491,7 @@ where
                 "Body",
                 "mesh-body-owner",
             )?;
-            let body_byte_offset = usize::try_from(body.identity.byte_offset).map_err(|_| {
+            let body_byte_offset = usize::try_from(body.identity.byte_offset()).map_err(|_| {
                 stream_error("mesh body byte offsets fit the platform address domain")
             })?;
             feature_bodies.push(DesignMeshBody {
@@ -1541,7 +1536,7 @@ where
                 tessellation_id: None,
             });
         }
-        let scope_offset = usize::try_from(scope.identity.byte_offset).map_err(|_| {
+        let scope_offset = usize::try_from(scope.identity.byte_offset()).map_err(|_| {
             stream_error("mesh feature scope byte offsets fit the platform address domain")
         })?;
         features.push(DesignMeshFeature {
@@ -1683,7 +1678,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
         let body = &design_records[design_ordinal].features[feature_ordinal].bodies[body_ordinal];
         let projected = match MeshBody::from_container(
             &entry.name,
-            body.body_record.byte_offset,
+            body.body_record.byte_offset(),
             MeshAffineTransform::from_rows(body.transform),
             container,
         ) {
@@ -2445,21 +2440,21 @@ mod tests {
         let [feature] = design.features.as_slice() else {
             panic!("one mesh feature");
         };
-        assert_eq!(feature.scope_record.record_index, 109);
-        assert_eq!(feature.collection_record.record_index, 100);
-        assert_eq!(feature.texture_table_record.record_index, 101);
-        assert_eq!(feature.bodies.iter().map(|body| body.body_record.record_index).collect::<Vec<_>>(), [104]);
+        assert_eq!(feature.scope_record.record_index(), 109);
+        assert_eq!(feature.collection_record.record_index(), 100);
+        assert_eq!(feature.texture_table_record.record_index(), 101);
+        assert_eq!(feature.bodies.iter().map(|body| body.body_record.record_index()).collect::<Vec<_>>(), [104]);
         assert!(feature.textures.is_empty());
         let [body] = feature.bodies.as_slice() else {
             panic!("one mesh body");
         };
         assert_eq!(body.entry_name, ENTRY_NAME);
         assert_eq!(body.fusion_uuid, FUSION_UUID);
-        assert_eq!(body.wrapper_record.record_index, 108);
-        assert_eq!(body.scene_state_record.record_index, 105);
-        assert_eq!(body.scene_node_record.record_index, 107);
-        assert_eq!(body.scene_auxiliary_record.record_index, 106);
-        assert_eq!(body.owner_record.record_index, 111);
+        assert_eq!(body.wrapper_record.record_index(), 108);
+        assert_eq!(body.scene_state_record.record_index(), 105);
+        assert_eq!(body.scene_node_record.record_index(), 107);
+        assert_eq!(body.scene_auxiliary_record.record_index(), 106);
+        assert_eq!(body.owner_record.record_index(), 111);
         assert_eq!(
             resolve_mesh_body(&[design], ENTRY_NAME, FUSION_UUID),
             Some((0, 0, 0))
@@ -2534,7 +2529,7 @@ mod tests {
             panic!("two mesh bodies");
         };
 
-        assert_eq!(feature.bodies.iter().map(|body| body.body_record.record_index).collect::<Vec<_>>(), [104, 117]);
+        assert_eq!(feature.bodies.iter().map(|body| body.body_record.record_index()).collect::<Vec<_>>(), [104, 117]);
         assert_eq!(first.owner_record, second.owner_record);
         assert_ne!(first.body_record, second.body_record);
     }

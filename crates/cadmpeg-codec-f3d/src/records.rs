@@ -13649,15 +13649,52 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
 /// Exact identity and source extent of one indexed Design mesh record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignMeshRecordIdentityWire"))]
+#[serde(try_from = "DesignMeshRecordIdentityWire", into = "DesignMeshRecordIdentityWire")]
 pub struct DesignMeshRecordIdentity {
+    class_tag: DesignClassTag,
+    record_index: std::num::NonZeroU32,
+    byte_offset: u64,
+    frame_length: u64,
+}
+
+impl DesignMeshRecordIdentity {
+    pub fn new(class_tag: DesignClassTag, record_index: u32, byte_offset: u64, frame_length: u64) -> Result<Self, String> {
+        let record_index = std::num::NonZeroU32::new(record_index).ok_or("mesh record_index must be nonzero")?;
+        if frame_length < 11 { return Err("mesh frame_length must contain the indexed header".into()); }
+        byte_offset.checked_add(frame_length).ok_or("mesh frame_length overflows byte_offset")?;
+        Ok(Self { class_tag, record_index, byte_offset, frame_length })
+    }
+    pub fn class_tag(&self) -> &str { self.class_tag.as_str() }
+    pub fn record_index(&self) -> u32 { self.record_index.get() }
+    pub fn byte_offset(&self) -> u64 { self.byte_offset }
+    pub fn frame_length(&self) -> u64 { self.frame_length }
+}
+
+/// Exact identity and source extent of one indexed Design mesh record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignMeshRecordIdentityWire {
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    class_tag: String,
     /// Stream-local indexed-record identity.
-    pub record_index: u32,
+    record_index: u32,
     /// Byte offset of the indexed header in the Design `BulkStream`.
-    pub byte_offset: u64,
+    byte_offset: u64,
     /// Complete primary or nested record length in bytes.
-    pub frame_length: u64,
+    frame_length: u64,
+}
+
+impl TryFrom<DesignMeshRecordIdentityWire> for DesignMeshRecordIdentity {
+    type Error = String;
+    fn try_from(wire: DesignMeshRecordIdentityWire) -> Result<Self, Self::Error> {
+        Self::new(DesignClassTag::try_from(wire.class_tag)?, wire.record_index, wire.byte_offset, wire.frame_length)
+    }
+}
+impl From<DesignMeshRecordIdentity> for DesignMeshRecordIdentityWire {
+    fn from(record: DesignMeshRecordIdentity) -> Self {
+        Self { class_tag: record.class_tag.into(), record_index: record.record_index.get(), byte_offset: record.byte_offset, frame_length: record.frame_length }
+    }
 }
 
 /// One texture resource owned by a Design mesh feature.
@@ -14067,7 +14104,7 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         if wire.collection_body_reference_offsets.len() != wire.bodies.len() {
             return Err("collection_body_reference_offsets must match bodies".into());
         }
-        if !wire.body_record_indices.iter().copied().eq(wire.bodies.iter().map(|body| body.body_record.record_index)) {
+        if !wire.body_record_indices.iter().copied().eq(wire.bodies.iter().map(|body| body.body_record.record_index())) {
             return Err("body_record_indices must repeat bodies.body_record.record_index in order".into());
         }
         let bodies = wire.bodies.into_iter().zip(wire.scope_body_reference_offsets).zip(wire.collection_body_reference_offsets)
@@ -14102,7 +14139,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
         let mut collection_body_reference_offsets = Vec::with_capacity(value.bodies.len());
         let mut bodies = Vec::with_capacity(value.bodies.len());
         for body in value.bodies {
-            body_record_indices.push(body.body_record.record_index);
+            body_record_indices.push(body.body_record.record_index());
             scope_body_reference_offsets.push(body.scope_body_reference_offset);
             collection_body_reference_offsets.push(body.collection_body_reference_offset);
             bodies.push(body.into());
