@@ -1067,14 +1067,12 @@ pub struct FieldDefinition {
 
 /// Directory entry for one externally bounded NX OM entity record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
 pub struct ObjectRecord {
     /// Globally unique record identity.
     pub id: String,
-    /// Persistent OM object identifier when the section carries an ID table.
-    pub object_id: Option<u32>,
-    /// Absolute file offset of the paired object-id table word.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_id_source_offset: Option<u64>,
+    /// Persistent OM object identifier and the offset of its table word.
+    pub object_id: Option<(u32, u64)>,
     /// Zero-based indexed-section ordinal within the container.
     pub section_ordinal: u32,
     /// Zero-based record ordinal within the indexed section.
@@ -1098,6 +1096,82 @@ pub struct ObjectRecord {
     pub source_entry: String,
     /// Absolute file offset of the record start.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ObjectRecordWire {
+    id: String,
+    object_id: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_id_source_offset: Option<u64>,
+    section_ordinal: u32,
+    record_ordinal: u32,
+    section_offset: u64,
+    byte_len: u64,
+    sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stable_identity: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    dependencies: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    dependents: Vec<String>,
+    source_entry: String,
+    source_offset: u64,
+}
+
+impl From<ObjectRecord> for ObjectRecordWire {
+    fn from(value: ObjectRecord) -> Self {
+        let (object_id, object_id_source_offset) = match value.object_id {
+            Some((id, offset)) => (Some(id), Some(offset)),
+            None => (None, None),
+        };
+        Self {
+            id: value.id,
+            object_id,
+            object_id_source_offset,
+            section_ordinal: value.section_ordinal,
+            record_ordinal: value.record_ordinal,
+            section_offset: value.section_offset,
+            byte_len: value.byte_len,
+            sha256: value.sha256,
+            stable_identity: value.stable_identity,
+            dependencies: value.dependencies,
+            dependents: value.dependents,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<ObjectRecordWire> for ObjectRecord {
+    type Error = String;
+
+    fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
+        let object_id = match (wire.object_id, wire.object_id_source_offset) {
+            (None, None) => None,
+            (Some(id), Some(offset)) => Some((id, offset)),
+            _ => {
+                return Err(
+                    "object record object_id and object_id_source_offset are present together"
+                        .to_owned(),
+                )
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            object_id,
+            section_ordinal: wire.section_ordinal,
+            record_ordinal: wire.record_ordinal,
+            section_offset: wire.section_offset,
+            byte_len: wire.byte_len,
+            sha256: wire.sha256,
+            stable_identity: wire.stable_identity,
+            dependencies: wire.dependencies,
+            dependents: wire.dependents,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Return a content-backed identity for one indexed OM object record.
@@ -1404,6 +1478,10 @@ pub struct DataBlockControlIndexValue {
 
 /// Registered class selected by the leading lane of an offset-store control block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "DataBlockControlClassReferenceWire",
+    into = "DataBlockControlClassReferenceWire"
+)]
 pub struct DataBlockControlClassReference {
     /// Globally unique class-reference identity.
     pub id: String,
@@ -1413,16 +1491,72 @@ pub struct DataBlockControlClassReference {
     pub ordinal: u32,
     /// Zero-based ordinal in the store's class registry.
     pub class_ordinal: u32,
-    /// Target in the native `class_definitions` arena when that registry slot
-    /// has a retained declaration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_definition: Option<String>,
-    /// Exact registered class name when that registry slot has a retained
-    /// declaration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class_name: Option<String>,
+    /// Retained class definition and name when that registry slot exists.
+    pub class: Option<DataBlockControlClassRef>,
     /// Absolute file offset of the four-byte control word.
     pub source_offset: u64,
+}
+
+/// Retained class-definition identity and registered name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataBlockControlClassRef {
+    pub definition: String,
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DataBlockControlClassReferenceWire {
+    id: String,
+    data_block: String,
+    ordinal: u32,
+    class_ordinal: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_definition: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    class_name: Option<String>,
+    source_offset: u64,
+}
+
+impl From<DataBlockControlClassReference> for DataBlockControlClassReferenceWire {
+    fn from(value: DataBlockControlClassReference) -> Self {
+        let (class_definition, class_name) = match value.class {
+            Some(class) => (Some(class.definition), Some(class.name)),
+            None => (None, None),
+        };
+        Self {
+            id: value.id,
+            data_block: value.data_block,
+            ordinal: value.ordinal,
+            class_ordinal: value.class_ordinal,
+            class_definition,
+            class_name,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<DataBlockControlClassReferenceWire> for DataBlockControlClassReference {
+    type Error = String;
+
+    fn try_from(wire: DataBlockControlClassReferenceWire) -> Result<Self, Self::Error> {
+        let class = match (wire.class_definition, wire.class_name) {
+            (None, None) => None,
+            (Some(definition), Some(name)) => Some(DataBlockControlClassRef { definition, name }),
+            _ => {
+                return Err(
+                    "control class reference definition and name are present together".to_owned(),
+                )
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            data_block: wire.data_block,
+            ordinal: wire.ordinal,
+            class_ordinal: wire.class_ordinal,
+            class,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Ordered object reference carried by an offset-only OM data block.
@@ -3307,8 +3441,7 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 });
                 ObjectRecord {
                     id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
-                    object_id: Some(record.object_id.0),
-                    object_id_source_offset: Some(entry_offset + record.object_id.1),
+                    object_id: Some((record.object_id.0, entry_offset + record.object_id.1)),
                     section_ordinal: section_ordinal as u32,
                     record_ordinal: record_ordinal as u32,
                     section_offset,
@@ -3604,10 +3737,13 @@ pub fn data_block_control_class_references(
                         data_block: data_block.clone(),
                         ordinal: ordinal as u32,
                         class_ordinal,
-                        class_definition: definition.map(|definition| {
-                            format!("nx:om-entry-{entry_index}:class#{}", definition.offset)
+                        class: definition.map(|definition| DataBlockControlClassRef {
+                            definition: format!(
+                                "nx:om-entry-{entry_index}:class#{}",
+                                definition.offset
+                            ),
+                            name: definition.name.to_string(),
                         }),
-                        class_name: definition.map(|definition| definition.name.to_string()),
                         source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
                     }
                 })
@@ -3789,7 +3925,7 @@ pub fn data_block_references(
 ) -> Vec<DataBlockReference> {
     let mut target_records = BTreeMap::<(String, u32), Vec<String>>::new();
     for record in object_records {
-        let Some(object_id) = record.object_id else {
+        let Some((object_id, _)) = record.object_id else {
             continue;
         };
         target_records
@@ -6056,9 +6192,15 @@ mod tests {
         assert_eq!(classes[0].data_block, blocks[0].id);
         assert_eq!(classes[0].ordinal, 0);
         assert_eq!(classes[0].class_ordinal, 0);
-        assert_eq!(classes[0].class_name.as_deref(), Some("UGS::ModlFeature"));
         assert_eq!(
-            classes[0].class_definition.as_deref(),
+            classes[0].class.as_ref().map(|class| class.name.as_str()),
+            Some("UGS::ModlFeature")
+        );
+        assert_eq!(
+            classes[0]
+                .class
+                .as_ref()
+                .map(|class| class.definition.as_str()),
             Some("nx:om-entry-0:class#8")
         );
         assert!(super::string_values(&container).is_empty());
@@ -6132,10 +6274,10 @@ mod tests {
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].class_ordinal, 1);
         assert_eq!(
-            classes[0].class_name.as_deref(),
+            classes[0].class.as_ref().map(|class| class.name.as_str()),
             Some("UGS::FEATURE_RECORD")
         );
-        assert!(classes[0].class_definition.is_some());
+        assert!(classes[0].class.is_some());
     }
 
     #[test]
@@ -6288,12 +6430,10 @@ mod tests {
         assert_eq!(headers.len(), 1);
         assert_eq!(headers[0].version, "NX 2027.3102");
         assert_eq!(headers[0].object_id, Some(0x101));
-        assert_eq!(object_records[1].object_id, Some(0x102));
+        assert_eq!(object_records[1].object_id.map(|(id, _)| id), Some(0x102));
         assert_eq!(
-            object_records[1].object_id_source_offset,
-            object_records[0]
-                .object_id_source_offset
-                .map(|offset| offset + 4)
+            object_records[1].object_id.map(|(_, offset)| offset),
+            object_records[0].object_id.map(|(_, offset)| offset + 4)
         );
         assert_eq!(expressions[0].record.as_ref(), Some(&object_records[1].id));
         assert_eq!(object_records[1].record_ordinal, 1);
