@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse body members, bounds, bindings, and visibility.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
-use crate::container::{role, ContainerScan};
-use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::container::ContainerScan;
 use crate::design::RECIPES;
+use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids::{self, native_stream};
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector, DesignBodyBinding,
-    DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
+    ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector, DESIGN_MODULE_BODY,
+    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignEntityHeader,
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
+use cadmpeg_core::CodecError;
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use std::collections::{HashMap, HashSet};
 
@@ -34,7 +36,7 @@ pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(start) = bytes
@@ -100,7 +102,8 @@ pub fn decode_body_bounds(
         let Some(stream) = native_stream(&entity.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -697,13 +700,13 @@ fn body_map_records(
                 Some(Some(record_ordinal)) => *record_ordinal,
                 Some(None) => {
                     return Err(CodecError::malformed(format_args!(
-                    "F3D Design body-map carrier entity {entity_id} has multiple primary records"
-                )))
+                        "F3D Design body-map carrier entity {entity_id} has multiple primary records"
+                    )));
                 }
                 None => {
                     return Err(CodecError::malformed(format_args!(
                         "F3D Design body-map carrier entity {entity_id} has no primary record"
-                    )))
+                    )));
                 }
             };
             let frame = record_frames[record_ordinal];
@@ -784,7 +787,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         saw_design_stream = true;
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -816,7 +819,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
     let mut archive_counts = HashMap::<String, usize>::new();
     for entry in scan.entries.iter().filter(|entry| {
         scan.belongs_to_design_asset(&entry.name)
-            && matches!(entry.role.as_str(), role::BREP_SMB | role::BREP_SMBH)
+            && matches!(entry.role, ContainerRole::BrepSmb | ContainerRole::BrepSmbh)
     }) {
         let basename = entry.name.rsplit('/').next().unwrap_or(&entry.name);
         *archive_counts.entry(basename.to_owned()).or_default() += 1;
@@ -960,7 +963,7 @@ pub fn decode_design_body_bindings(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -1047,7 +1050,7 @@ pub(crate) fn decode_all_body_visibility(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -1563,9 +1566,11 @@ mod tests {
                     .expect("empty body-map frame")
                     .expect("supported empty body-map variant");
             assert!(frame.is_empty());
-            assert!(body_bindings(&bytes, &body_map_metadata())
-                .expect("empty typed body map")
-                .is_empty());
+            assert!(
+                body_bindings(&bytes, &body_map_metadata())
+                    .expect("empty typed body map")
+                    .is_empty()
+            );
         }
     }
 
@@ -1582,9 +1587,11 @@ mod tests {
     #[test]
     fn truncated_body_map_frame_is_not_decoded() {
         let bytes = body_map_bytes(10, 2, &[(10, 20)]);
-        assert!(body_bindings(&bytes, &body_map_metadata())
-            .expect("typed carrier record")
-            .is_empty());
+        assert!(
+            body_bindings(&bytes, &body_map_metadata())
+                .expect("typed carrier record")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1594,9 +1601,11 @@ mod tests {
         bytes.extend_from_slice(&[0xff; 4]);
         bytes.extend(body_map_bytes(10, 1, &[(10, 20)]));
 
-        assert!(body_bindings(&bytes, &body_map_metadata())
-            .expect("outer typed carrier record")
-            .is_empty());
+        assert!(
+            body_bindings(&bytes, &body_map_metadata())
+                .expect("outer typed carrier record")
+                .is_empty()
+        );
     }
 
     fn push_browser_node(
@@ -1732,9 +1741,11 @@ mod tests {
         assert_eq!(candidates, [(0, values)]);
 
         bytes[0] = 0;
-        assert!(body_bound_candidates(&bytes, 0, bytes.len())
-            .next()
-            .is_none());
+        assert!(
+            body_bound_candidates(&bytes, 0, bytes.len())
+                .next()
+                .is_none()
+        );
     }
 
     #[test]

@@ -32,12 +32,13 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         1
     );
     let frame = crate::surface::prototype_cone_frame(prototype).expect("prototype frame");
-    assert!(scan
-        .surfaces
-        .parameters
-        .iter()
-        .find(|record| record.surface_id == 7)
-        .is_some_and(|record| record.positional_cone_frame.is_none()));
+    assert!(
+        scan.surfaces
+            .parameters
+            .iter()
+            .find(|record| record.surface_id == 7)
+            .is_some_and(|record| record.positional_cone_frame.is_none())
+    );
 
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 31,
@@ -387,16 +388,18 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 0.5);
     assert_eq!(frame.length, Some(2.0));
-    assert!(super::round_support_envelope_cylinder(
-        &scan,
-        &ir,
-        913,
-        crate::surface::Type24RoundEnvelope {
-            diameter: 2.0,
-            extent_endpoints: [[-9.0, 0.0, -3.0], [-7.0, 2.0, -2.5]],
-        },
-    )
-    .is_none());
+    assert!(
+        super::round_support_envelope_cylinder(
+            &scan,
+            &ir,
+            913,
+            crate::surface::Type24RoundEnvelope {
+                diameter: 2.0,
+                extent_endpoints: [[-9.0, 0.0, -3.0], [-7.0, 2.0, -2.5]],
+            },
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -636,7 +639,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         offset: 0,
         length: 20,
         expanded_length: None,
-        role: crate::container::role::GEOMETRY,
+        role: cadmpeg_core::container::ContainerRole::PsbGeometry,
     });
 
     let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
@@ -715,7 +718,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         offset: 20,
         length: 20,
         expanded_length: None,
-        role: crate::container::role::GEOMETRY,
+        role: cadmpeg_core::container::ContainerRole::PsbGeometry,
     });
     scan.surfaces.prototype_records.push(prototype(25));
     scan.surfaces.rows.push(row(2, 26));

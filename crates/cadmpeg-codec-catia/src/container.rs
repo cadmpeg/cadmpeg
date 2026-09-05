@@ -12,13 +12,15 @@
 //! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
 //! container view returned by codec inspection.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
+use cadmpeg_core::ContainerEntry;
 use cadmpeg_core::bytes::{find, find_from};
 use cadmpeg_core::decode::View;
-use cadmpeg_core::ContainerEntry;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::layout::extent_struct as extent;
@@ -584,18 +586,6 @@ fn vertex_row_at(data: &[u8], position: usize) -> bool {
 const EDGE_DELIMITER: &[u8; 8] = &[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_MARKER: &[u8; 3] = &[0x05, 0x08, 0x01];
 pub(crate) const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
-
-/// Codec-defined role labels for [`ContainerEntry::role`].
-pub mod role {
-    /// A named logical stream catalogued by the inner directory.
-    pub const STREAM: &str = "stream";
-    /// JPEG preview embedded in the outer summary-information segment.
-    pub const PREVIEW: &str = "preview";
-    /// Referenced CATIA document.
-    pub const EXTERNAL_REFERENCE: &str = "external-reference";
-    /// Named outer FINJPL block.
-    pub const FINJPL_SEGMENT: &str = "finjpl-segment";
-}
 
 /// One physical extent of a logical stream. `phys_off` is measured from the
 /// directory's physical storage base.
@@ -1424,8 +1414,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                 } else {
                     d.name.clone()
                 },
-                role: role::STREAM.to_string(),
-                compression: "none".to_string(),
+                role: ContainerRole::Stream,
+                compression: EntryCompression::None,
                 compressed_size: phys,
                 uncompressed_size: d.logical_length as u64,
                 attributes,
@@ -1440,8 +1430,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         attributes.insert("components".to_string(), preview.components.to_string());
         entries.push(ContainerEntry {
             name: format!("CATPreview#{index}"),
-            role: role::PREVIEW.to_string(),
-            compression: "jpeg".to_string(),
+            role: ContainerRole::Preview,
+            compression: EntryCompression::Jpeg,
             compressed_size: (preview.range.end - preview.range.start) as u64,
             uncompressed_size: 0,
             attributes,
@@ -1452,8 +1442,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         attributes.insert("file_offset".to_string(), reference.offset.to_string());
         entries.push(ContainerEntry {
             name: reference.target.clone(),
-            role: role::EXTERNAL_REFERENCE.to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::ExternalReference,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
             attributes,
@@ -1480,8 +1470,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                 .name
                 .clone()
                 .unwrap_or_else(|| format!("FINJPL#{index}")),
-            role: role::FINJPL_SEGMENT.to_string(),
-            compression: "none".to_string(),
+            role: ContainerRole::FinjplSegment,
+            compression: EntryCompression::None,
             compressed_size: (segment.range.end - segment.range.start) as u64,
             uncompressed_size: (segment.range.end - segment.range.start) as u64,
             attributes,

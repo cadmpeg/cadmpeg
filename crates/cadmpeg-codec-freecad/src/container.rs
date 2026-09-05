@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded `FCStd` archive scanning and physical byte accounting.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Component, Path};
 
@@ -160,19 +162,19 @@ fn validate_name(name: &str) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn classify(name: &str) -> &'static str {
+fn classify(name: &str) -> ContainerRole {
     match name {
-        "Document.xml" => "document",
-        "GuiDocument.xml" => "gui-document",
-        "thumbnails/Thumbnail.png" | "Thumbnail.png" => "thumbnail",
-        _ if name.ends_with('/') => "directory",
+        "Document.xml" => ContainerRole::Document,
+        "GuiDocument.xml" => ContainerRole::GuiDocument,
+        "thumbnails/Thumbnail.png" | "Thumbnail.png" => ContainerRole::Thumbnail,
+        _ if name.ends_with('/') => ContainerRole::Directory,
         _ if Path::new(name).extension().is_some_and(|extension| {
             extension.eq_ignore_ascii_case("brp") || extension.eq_ignore_ascii_case("brep")
         }) =>
         {
-            "brep"
+            ContainerRole::Brep
         }
-        _ => "auxiliary",
+        _ => ContainerRole::Auxiliary,
     }
 }
 

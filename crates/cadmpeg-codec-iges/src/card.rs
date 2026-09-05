@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact physical-line and fixed-card framing.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::codec::Confidence;
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::SourceProvenance;
+use cadmpeg_ir::codec::Confidence;
+use cadmpeg_ir::report::LossNote;
 use std::collections::BTreeMap;
 
 const CARD_WIDTH: usize = 80;
@@ -570,8 +572,8 @@ pub(crate) fn summarize(
             });
             Some(ContainerEntry {
                 name: section.name().into(),
-                role: "section".into(),
-                compression: "none".into(),
+                role: ContainerRole::Section,
+                compression: EntryCompression::None,
                 compressed_size: size,
                 uncompressed_size: size,
                 attributes,
@@ -593,8 +595,8 @@ pub(crate) fn summarize(
         });
         entries.push(ContainerEntry {
             name: "post-terminate".into(),
-            role: "retained-trailing-records".into(),
-            compression: "none".into(),
+            role: ContainerRole::RetainedTrailingRecords,
+            compression: EntryCompression::None,
             compressed_size: size,
             uncompressed_size: size,
             attributes: BTreeMap::from([("records".into(), post_terminate.len().to_string())]),

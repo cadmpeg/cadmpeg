@@ -39,16 +39,16 @@ mod writer;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use cadmpeg_core::CodecError;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
 
 use crate::loss::FreecadLossCode;
@@ -1146,7 +1146,7 @@ impl CodecBackend for FcstdCodec {
                     Ok(native::EntryRecord {
                         id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),
-                        role: entry.role.clone(),
+                        role: entry.role.to_string(),
                         referenced_by,
                         data: bytes.to_vec(),
                     })

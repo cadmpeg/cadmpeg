@@ -6,8 +6,8 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::test_support::*;
 use crate::IgesCodec;
+use crate::test_support::*;
 
 #[test]
 fn overlong_preterminate_physical_line_is_malformed() {
@@ -210,7 +210,7 @@ fn terminate_card_remainder_is_retained_after_terminate() {
         .iter()
         .find(|entry| entry.name == "post-terminate")
         .unwrap();
-    assert_eq!(post_terminate.role, "retained-trailing-records");
+    assert_eq!(post_terminate.role.as_str(), "retained-trailing-records");
     assert_eq!(post_terminate.attributes["records"], "1");
 
     let result = IgesCodec

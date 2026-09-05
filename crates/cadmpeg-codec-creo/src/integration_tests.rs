@@ -2,6 +2,8 @@
 //! End-to-end contracts over synthesized Creo PSB byte images.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -10,9 +12,8 @@ use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::sketches::SketchConstraintDefinition;
 
-use crate::container::role;
-use crate::test_support::*;
 use crate::CreoCodec;
+use crate::test_support::*;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     CreoCodec
@@ -74,14 +75,18 @@ fn psb_pipeline_aligns_detection_inspection_layout_and_section_roles() {
     assert_eq!(summary.container_kind, "psb");
     assert_eq!(summary.entries.len(), 3);
     assert!(summary.notes.iter().any(|note| note.contains("layout: ND")));
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note.contains("srf_array=7")));
-    assert!(summary
-        .entries
-        .iter()
-        .any(|entry| entry.role == role::THUMBNAIL));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note.contains("srf_array=7"))
+    );
+    assert!(
+        summary
+            .entries
+            .iter()
+            .any(|entry| entry.role == ContainerRole::Thumbnail)
+    );
 }
 
 #[test]
@@ -148,12 +153,14 @@ fn datum_pipeline_merges_placed_geometry_with_ordered_feature_history() {
         datum_feature.definition,
         FeatureDefinition::DatumPlane { .. }
     ));
-    assert!(result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Plane { .. }) }));
+    assert!(
+        result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| { matches!(surface.geometry, SurfaceGeometry::Plane { .. }) })
+    );
     assert_valid(&result);
 }
 
@@ -174,17 +181,19 @@ fn featdefs_pipeline_projects_mixed_sketch_entities_and_native_constraints() {
     assert_eq!(result.ir().model.sketches.len(), 1);
     assert_eq!(result.ir().model.sketch_entities.len(), 5);
     assert_eq!(result.ir().model.sketch_constraints.len(), 7);
-    assert!(result
-        .ir()
-        .model
-        .sketch_constraints
-        .iter()
-        .any(|constraint| {
-            matches!(
-                constraint.definition,
-                SketchConstraintDefinition::Native { .. }
-            )
-        }));
+    assert!(
+        result
+            .ir()
+            .model
+            .sketch_constraints
+            .iter()
+            .any(|constraint| {
+                matches!(
+                    constraint.definition,
+                    SketchConstraintDefinition::Native { .. }
+                )
+            })
+    );
     assert_valid(&result);
 }
 
@@ -210,12 +219,16 @@ fn featdefs_pipeline_retains_solver_relations_and_resolved_dimension_inputs() {
     assert_eq!(sketches.len(), 1);
     let fields = sketches[0].fields();
     let headers = fields["table_headers"].as_array().unwrap();
-    assert!(headers
-        .iter()
-        .any(|header| header["kind"] == "solver_incidences"));
-    assert!(headers
-        .iter()
-        .any(|header| header["kind"] == "relation_triples"));
+    assert!(
+        headers
+            .iter()
+            .any(|header| header["kind"] == "solver_incidences")
+    );
+    assert!(
+        headers
+            .iter()
+            .any(|header| header["kind"] == "relation_triples")
+    );
     assert_valid(&result);
 }
 

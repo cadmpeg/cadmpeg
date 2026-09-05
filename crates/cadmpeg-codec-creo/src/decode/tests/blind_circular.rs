@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: blind circular.
 
+use cadmpeg_core::container::ContainerRole;
+
 use super::parameter_slot;
 use crate::decode::analytic::PlaneEquation;
 use crate::decode::feature_history::{
@@ -12,18 +14,17 @@ use crate::decode::feature_history::{
     unique_positive_length,
 };
 use crate::decode::holes::{
-    compact_simple_hole_cylinder_id, extrusion_extent_and_direction,
-    single_cap_circular_sweep_geometry, two_cap_circular_sweep_geometry, ExtrusionSpan,
+    ExtrusionSpan, compact_simple_hole_cylinder_id, extrusion_extent_and_direction,
+    single_cap_circular_sweep_geometry, two_cap_circular_sweep_geometry,
 };
 use crate::decode::surfaces::{
     reference_cap_bound_round_frame, reference_circle_pair_cylinder_frame,
 };
 use crate::decode::sweep::{
-    agreed_generated_cylinder_extent, blind_extrusion_from_carriers, bounded_cylinder_span,
-    directed_blind_extrusion_span, generated_bounded_cylinder_extent, generated_cap_plane_extent,
-    generated_rectilinear_plane_extent, ordered_parallel_cap_extent,
+    ExtrusionCarrierSpan, agreed_generated_cylinder_extent, blind_extrusion_from_carriers,
+    bounded_cylinder_span, directed_blind_extrusion_span, generated_bounded_cylinder_extent,
+    generated_cap_plane_extent, generated_rectilinear_plane_extent, ordered_parallel_cap_extent,
     resolved_feature_extrusion_span, unique_available_positional_cylinder_frame_records,
-    ExtrusionCarrierSpan,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -366,36 +367,44 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
         Some(117)
     );
     table.entries[2].payload = crate::feature::EntryPayload::Source { entity: None };
-    assert!(compact_simple_hole_cylinder_id(
-        107,
-        std::slice::from_ref(&table),
-        std::slice::from_ref(&row),
-    )
-    .is_none());
+    assert!(
+        compact_simple_hole_cylinder_id(
+            107,
+            std::slice::from_ref(&table),
+            std::slice::from_ref(&row),
+        )
+        .is_none()
+    );
     table.entries[2].payload = crate::feature::EntryPayload::Source { entity: Some(0) };
     table.table_class_id = 28;
-    assert!(compact_simple_hole_cylinder_id(
-        107,
-        std::slice::from_ref(&table),
-        std::slice::from_ref(&row),
-    )
-    .is_none());
+    assert!(
+        compact_simple_hole_cylinder_id(
+            107,
+            std::slice::from_ref(&table),
+            std::slice::from_ref(&row),
+        )
+        .is_none()
+    );
     table.table_class_id = 29;
     table.entries[3].class_id = 201;
-    assert!(compact_simple_hole_cylinder_id(
-        107,
-        std::slice::from_ref(&table),
-        std::slice::from_ref(&row),
-    )
-    .is_none());
+    assert!(
+        compact_simple_hole_cylinder_id(
+            107,
+            std::slice::from_ref(&table),
+            std::slice::from_ref(&row),
+        )
+        .is_none()
+    );
     table.entries[3].class_id = 200;
     table.mark_surface_ids([109, 117]);
-    assert!(compact_simple_hole_cylinder_id(
-        107,
-        std::slice::from_ref(&table),
-        std::slice::from_ref(&row),
-    )
-    .is_none());
+    assert!(
+        compact_simple_hole_cylinder_id(
+            107,
+            std::slice::from_ref(&table),
+            std::slice::from_ref(&row),
+        )
+        .is_none()
+    );
 
     let mut extended = crate::feature::FeatureEntityTable {
         feature_id: 107,
@@ -499,14 +508,16 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
         ),
         Some([0.0, 0.0, -15.0])
     );
-    assert!(paired_five_coordinate_sphere_center(
-        [
-            five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
-            five_coordinate([-2.65, -12.0, -2.65, 2.65, -15.0]),
-        ],
-        2.65,
-    )
-    .is_none());
+    assert!(
+        paired_five_coordinate_sphere_center(
+            [
+                five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
+                five_coordinate([-2.65, -12.0, -2.65, 2.65, -15.0]),
+            ],
+            2.65,
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -577,29 +588,31 @@ fn unique_parallel_round_supports_define_constant_radius() {
     assert_eq!(cylinder.origin, [-8.5, -2.0, -6.5]);
     assert_eq!(cylinder.axis, [0.0, 1.0, 0.0]);
     assert_eq!(cylinder.radius, 0.5);
-    assert!(slot_fillet_cylinder(
-        [
-            PlaneEquation {
-                origin: [0.0, -2.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-            PlaneEquation {
-                origin: [0.0, 3.0, 0.0],
-                normal: [0.0, 1.0, 0.0],
-            },
-        ],
-        &[
-            PlaneEquation {
-                origin: [-9.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-            PlaneEquation {
-                origin: [-8.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0],
-            },
-        ],
-    )
-    .is_none());
+    assert!(
+        slot_fillet_cylinder(
+            [
+                PlaneEquation {
+                    origin: [0.0, -2.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [0.0, 3.0, 0.0],
+                    normal: [0.0, 1.0, 0.0],
+                },
+            ],
+            &[
+                PlaneEquation {
+                    origin: [-9.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                PlaneEquation {
+                    origin: [-8.0, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+            ],
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -644,7 +657,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         offset: 0,
         length: 1_000,
         expanded_length: None,
-        role: crate::container::role::GEOMETRY,
+        role: ContainerRole::PsbGeometry,
     });
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
@@ -1540,14 +1553,16 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let lengthless = scan.surfaces.parameters[0]
         .positional_cylinder_frame
         .expect("cylinder frame");
-    assert!(bounded_cylinder_span(
-        lengthless,
-        &[
-            ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
-            ([0.0, -6.0, 0.0], [0.0, 1.0, 0.0]),
-        ],
-    )
-    .is_none());
+    assert!(
+        bounded_cylinder_span(
+            lengthless,
+            &[
+                ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
+                ([0.0, -6.0, 0.0], [0.0, 1.0, 0.0]),
+            ],
+        )
+        .is_none()
+    );
     let invalid_length = crate::surface::PositionalCylinderFrame {
         length: Some(0.0),
         ..lengthless

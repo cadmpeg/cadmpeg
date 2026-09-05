@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inventor compound-container classification.
 
+use cadmpeg_core::container::ContainerRole;
+
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
-use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ContainerSummary;
 
-use crate::external_reference::{parse as parse_ufrx, UfrxState};
-use crate::property_set::{inventory as property_set_inventory, PropertySetDescriptor};
-use crate::protein::{parse as parse_protein, ProteinState};
+use crate::external_reference::{UfrxState, parse as parse_ufrx};
+use crate::property_set::{PropertySetDescriptor, inventory as property_set_inventory};
+use crate::protein::{ProteinState, parse as parse_protein};
 use crate::rse::SegmentBulkState;
-use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
+use crate::rse::{RseInventory, SegmentMetaState, database_band, direct_rse_child};
 
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {
@@ -154,37 +156,37 @@ pub(crate) fn has_inventor_evidence(paths: &[String]) -> bool {
     has_storage && corroborated
 }
 
-fn classify(entry: &CompoundEntry) -> &'static str {
+fn classify(entry: &CompoundEntry) -> ContainerRole {
     let path = entry.path();
     if path.eq_ignore_ascii_case("RSeStorage") {
-        return "rse-storage";
+        return ContainerRole::RseStorage;
     }
     if database_band(path).is_some() {
-        return "rse-database";
+        return ContainerRole::RseDatabase;
     }
     if path.eq_ignore_ascii_case("RSeStorage/RSeSegInfo") {
-        return "rse-segment-registry";
+        return ContainerRole::RseSegmentRegistry;
     }
     if path.eq_ignore_ascii_case("RSeStorage/RSeDbRevisionInfo") {
-        return "rse-revision-table";
+        return ContainerRole::RseRevisionTable;
     }
     if path.eq_ignore_ascii_case("Protein") {
-        return "protein";
+        return ContainerRole::Protein;
     }
     if path.eq_ignore_ascii_case("UFRxDoc") || is_reference_file(path) {
-        return "external-reference";
+        return ContainerRole::ExternalReference;
     }
     if let Some(name) = direct_rse_child(path) {
         if name.starts_with('M') {
-            return "rse-segment-metadata";
+            return ContainerRole::RseSegmentMetadata;
         }
         if name.starts_with('B') {
-            return "rse-segment-bulk";
+            return ContainerRole::RseSegmentBulk;
         }
     }
     match entry {
-        CompoundEntry::Storage(_) => "storage",
-        CompoundEntry::Stream(_) => "stream",
+        CompoundEntry::Storage(_) => ContainerRole::Storage,
+        CompoundEntry::Stream(_) => ContainerRole::Stream,
     }
 }
 

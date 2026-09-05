@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids;
@@ -12,8 +14,8 @@ use crate::layout::design_decal_scope_prefix as decal_scope;
 use crate::records::{
     DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignDecalImage, DesignParameterScope,
 };
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition};
 
@@ -40,7 +42,7 @@ pub fn decode_decal_images(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);

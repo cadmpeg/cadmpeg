@@ -5,10 +5,12 @@
 //! and a typed Design graph joins the container, mesh body, owning feature,
 //! optional texture resources, and Scene state ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded, take_reference};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::decode::meta::{
-    metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
+    TypedPrimaryFrame, metadata_for_bulk_stream, typed_primary_frames,
 };
 use crate::design::decode::scopes::parse_parameter_scope;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -29,13 +31,13 @@ use crate::layout::paramesh_scene_node_placed as placed_scene_node;
 use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
-use crate::paramesh::{decode_mesh_container, MeshContainer};
+use crate::paramesh::{MeshContainer, decode_mesh_container};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
 };
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use std::collections::{HashMap, HashSet};
 
 const PARAMESH_MODULE: &str = "ParaMesh";
@@ -1612,14 +1614,14 @@ fn decode_mesh_design_records(scan: &ContainerScan) -> Result<Vec<MeshDesignReco
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
         let mut asset_for_filename = |filename: &str| {
             let mut matches = scan.entries.iter().filter(|candidate| {
-                scan.is_design_asset_entry(candidate, role::IMAGE)
+                scan.is_design_asset_entry(candidate, ContainerRole::Image)
                     && candidate.name.rsplit('/').next() == Some(filename)
             });
             let (Some(asset), None) = (matches.next(), matches.next()) else {
@@ -1677,7 +1679,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, role::PARAMESH))
+        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
     {
         let container = match scan
             .entry_bytes(&entry.name)
@@ -2906,9 +2908,11 @@ mod tests {
             design_type,
         };
 
-        assert!(parse_mesh_collection_owner_record(&bytes, frame)
-            .expect("valid generic owner frame")
-            .is_none());
+        assert!(
+            parse_mesh_collection_owner_record(&bytes, frame)
+                .expect("valid generic owner frame")
+                .is_none()
+        );
     }
 
     #[test]
@@ -2940,12 +2944,14 @@ mod tests {
             &mut no_asset,
         )
         .expect("mesh graph");
-        assert!(resolve_mesh_body(
-            &[design.clone(), design],
-            "ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh",
-            "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
-        )
-        .is_none());
+        assert!(
+            resolve_mesh_body(
+                &[design.clone(), design],
+                "ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh",
+                "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+            )
+            .is_none()
+        );
     }
 
     #[test]

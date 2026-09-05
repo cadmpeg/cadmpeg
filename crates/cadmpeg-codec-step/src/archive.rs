@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP Part 21 ZIP-container rules.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::path::Path;
 
-use cadmpeg_container::{ArchiveSnapshot, EntryCompression};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, View};
 
 /// The required root member name from Part 21 Annex A.4.
 pub(crate) const ROOT_NAME: &str = "ISO-10303.p21";
@@ -49,7 +51,7 @@ pub(crate) fn open_root<'a>(
                 "STEP ZIP uses prohibited Unicode filename support".into(),
             ));
         }
-        if entry.compression == EntryCompression::Zstd {
+        if entry.compression == ZipCompression::Zstd {
             return Err(CodecError::NotImplemented(
                 "STEP ZIP requires PKZIP 2.04g stored or Deflate entries".into(),
             ));
@@ -103,7 +105,7 @@ pub(crate) fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarge
             "" => {
                 return Err(CodecError::malformed(format_args!(
                     "invalid empty path component in STEP ZIP URI {uri:?}"
-                )))
+                )));
             }
             "." => {}
             ".." => {
@@ -198,18 +200,18 @@ fn has_uri_scheme(uri: &str) -> bool {
 }
 
 /// Classifies a physical ZIP member for the STEP container report.
-pub(crate) fn classify_entry(name: &str) -> &'static str {
+pub(crate) fn classify_entry(name: &str) -> ContainerRole {
     match name {
-        ROOT_NAME => "root-exchange",
-        _ if name.ends_with('/') => "directory",
+        ROOT_NAME => ContainerRole::RootExchange,
+        _ if name.ends_with('/') => ContainerRole::Directory,
         _ if extension_is(name, "p21")
             || extension_is(name, "step")
             || extension_is(name, "stp") =>
         {
-            "subsidiary-exchange"
+            ContainerRole::SubsidiaryExchange
         }
-        _ if extension_is(name, "zip") => "nested-archive",
-        _ => "ancillary",
+        _ if extension_is(name, "zip") => ContainerRole::NestedArchive,
+        _ => ContainerRole::Ancillary,
     }
 }
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Lazy, budgeted Microsoft Compound File Binary (CFB) snapshots.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read};
@@ -379,7 +381,7 @@ impl<'a> CompoundSnapshot<'a> {
     /// Builds generic hierarchy summaries using a codec-owned classifier.
     pub fn container_entries(
         &self,
-        classify: impl Fn(&CompoundEntry) -> &'static str,
+        classify: impl Fn(&CompoundEntry) -> ContainerRole,
     ) -> Vec<ContainerEntry> {
         self.entries
             .iter()
@@ -389,8 +391,8 @@ impl<'a> CompoundSnapshot<'a> {
                 match entry {
                     CompoundEntry::Storage(_) => ContainerEntry {
                         name: entry.path().into(),
-                        role: classify(entry).into(),
-                        compression: "storage".into(),
+                        role: classify(entry),
+                        compression: EntryCompression::Storage,
                         compressed_size: 0,
                         uncompressed_size: 0,
                         attributes,
@@ -400,8 +402,8 @@ impl<'a> CompoundSnapshot<'a> {
                         attributes.insert("start_sector".into(), stream.start_sector().to_string());
                         ContainerEntry {
                             name: stream.path.clone(),
-                            role: classify(entry).into(),
-                            compression: "stored".into(),
+                            role: classify(entry),
+                            compression: EntryCompression::Stored,
                             compressed_size: stream.logical_size(),
                             uncompressed_size: stream.logical_size(),
                             attributes,
@@ -1039,7 +1041,7 @@ impl CompoundState {
                             _ => {
                                 return malformed(format!(
                                     "empty CFB stream {path} has an invalid start sector"
-                                ))
+                                ));
                             }
                         };
                         StreamData::Empty(start)
@@ -1872,12 +1874,14 @@ mod tests {
             let stream = snapshot.stream("Small").expect("empty stream exists");
             assert_eq!(stream.start_sector(), marker);
             assert_eq!(stream.logical_size(), 0);
-            assert!(snapshot
-                .open(&ctx, stream)
-                .expect("empty stream opens")
-                .window()
-                .is_empty());
-            let summary = snapshot.container_entries(|_| "payload");
+            assert!(
+                snapshot
+                    .open(&ctx, stream)
+                    .expect("empty stream opens")
+                    .window()
+                    .is_empty()
+            );
+            let summary = snapshot.container_entries(|_| ContainerRole::Stream);
             let entry = summary
                 .iter()
                 .find(|entry| entry.name == "Small")
@@ -1921,14 +1925,16 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&too_large, &arena, &policy)
             .expect("synthetic CFB fits the decode policy");
         let snapshot = CompoundSnapshot::new(&ctx, root).expect("metadata still parses");
-        assert!(snapshot
-            .open(
-                &ctx,
-                snapshot
-                    .stream("Store/Large")
-                    .expect("regular stream exists")
-            )
-            .is_err());
+        assert!(
+            snapshot
+                .open(
+                    &ctx,
+                    snapshot
+                        .stream("Store/Large")
+                        .expect("regular stream exists")
+                )
+                .is_err()
+        );
     }
 
     #[test]

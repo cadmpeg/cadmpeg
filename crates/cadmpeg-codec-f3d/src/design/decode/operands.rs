@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
     recipe_record_prefix,
@@ -10,10 +12,10 @@ use crate::design::decode::dimension_frames::{
 use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::payload_prologue;
 use crate::design::decode::sketch::{
-    indexed_record_index, next_indexed_record_offset, next_indexed_record_offset_with_index,
-    IndexedRecordOffsets,
+    IndexedRecordOffsets, indexed_record_index, next_indexed_record_offset,
+    next_indexed_record_offset_with_index,
 };
-use crate::design::{design_feature_family, DesignFeatureFamily};
+use crate::design::{DesignFeatureFamily, design_feature_family};
 use crate::ids::{self, native_stream};
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
@@ -45,8 +47,8 @@ use crate::records::{
     DesignWorkPointSketchPointSelection, LostEdgeReference, PersistentSubentityTag,
     SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use std::collections::{HashMap, HashSet};
 
 /// Decode edge-recipe operand frames named by edge-selecting feature scopes.
@@ -122,7 +124,8 @@ pub fn decode_edge_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -192,7 +195,8 @@ pub fn decode_edge_treatment_vertex_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -291,7 +295,8 @@ pub fn bind_work_point_input_carriers(
         let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, &stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -435,7 +440,8 @@ pub fn bind_work_plane_constructions(
         let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, &stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -608,7 +614,8 @@ pub fn decode_edge_identity_operands(
         }) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -753,7 +760,8 @@ pub fn decode_face_operands(
         {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -827,7 +835,8 @@ pub fn decode_face_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -908,7 +917,8 @@ pub fn decode_face_source_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1264,7 +1274,8 @@ pub fn bind_sketch_profiles(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1310,7 +1321,8 @@ pub fn decode_extrude_selection_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1390,7 +1402,8 @@ pub fn decode_construction_operand_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1446,7 +1459,8 @@ pub fn decode_loft_legacy_body_carriers(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2251,7 +2265,8 @@ pub fn bind_construction_operand_trailing_records(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2312,7 +2327,8 @@ pub fn bind_construction_operand_paths(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2492,7 +2508,8 @@ pub fn decode_construction_operand_identities(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let Some(trailing_record_index) = group.frame.trailing_record_indices.first() else {
@@ -2870,7 +2887,8 @@ pub fn decode_extrude_selection_members(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2908,7 +2926,8 @@ pub fn decode_entity_selection_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -3341,7 +3360,8 @@ pub fn decode_body_recipe_operands(
         }) {
             continue;
         }
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -3379,7 +3399,8 @@ pub fn decode_body_recipe_operands(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;

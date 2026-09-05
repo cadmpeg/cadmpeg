@@ -1,24 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::bytes::{
-    f64s_at, lp_ascii_filtered, lp_utf16_bounded, take_reference, utf16le_at, Reference,
+    Reference, f64s_at, lp_ascii_filtered, lp_utf16_bounded, take_reference, utf16le_at,
 };
-use crate::container::{role, ContainerScan};
-use crate::design::{design_feature_family, DesignFeatureFamily};
+use crate::container::ContainerScan;
+use crate::design::{DesignFeatureFamily, design_feature_family};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
 use crate::records::{
-    DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    DesignSketchVisibility, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
-    SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
+    DESIGN_MODULE_SKETCH, DesignEntityHeader, DesignParameterScope, DesignRecordHeader,
+    DesignSketchPlacement, DesignSketchVisibility, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
     SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
-    DESIGN_MODULE_SKETCH,
 };
+use cadmpeg_core::CodecError;
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
@@ -99,7 +100,7 @@ pub fn decode_sketch_placements(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         record_offsets.insert(
@@ -131,7 +132,7 @@ pub fn decode_sketch_placements(
         let entity_id = binding.entity_id.as_str();
         let entity_suffix = binding.entity_suffix;
         let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
+            scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && scope.id.starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
@@ -640,7 +641,7 @@ pub fn decode_persistent_references(
         .entries
         .iter()
         .enumerate()
-        .filter(|(_, entry)| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|(_, entry)| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         for &(name, kind) in &[
@@ -710,7 +711,7 @@ pub fn decode_lost_edge_references(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut cursor = 0;
@@ -1015,7 +1016,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         // Modules come from the type table of this stream's own `MetaStream`.
@@ -1205,7 +1206,7 @@ fn decode_headers_for_indices(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1245,7 +1246,7 @@ pub fn decode_sketch_relations(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let scope = ids::native_scope(&entry.name);
@@ -1584,7 +1585,7 @@ pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, Co
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
@@ -1677,7 +1678,7 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
@@ -2282,11 +2283,7 @@ pub(crate) fn decode_sketch_text_record(
                         }
                     }
                 }
-                if ambiguous {
-                    None
-                } else {
-                    closed
-                }
+                if ambiguous { None } else { closed }
             }
             SketchTextIdentity::TxtTag { rotation } => {
                 decode_txt_tag_sketch_text_tail(payload, head.cursor, class_version, rotation)
@@ -2776,7 +2773,7 @@ pub fn decode_sketch_curve_identities(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
@@ -2877,7 +2874,7 @@ pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut at = 0usize;

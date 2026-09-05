@@ -10,6 +10,8 @@
 //! expose unique or legacy carrier sets for metadata reporting; model decode
 //! uses the typed Design body-map catalog.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::BTreeMap;
 use std::io::Read;
 
@@ -17,8 +19,8 @@ use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ContainerSummary;
+use cadmpeg_ir::hash::sha256_hex;
 
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{acis_header, asm_header};
@@ -32,53 +34,6 @@ use crate::manifest;
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 /// Write-path per-entry inflate cap for `read_entry_bounded`.
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
-
-/// Codec-defined role labels for [`ContainerEntry::role`].
-pub mod role {
-    /// An ASM BREP entry with the `.smbh` extension. Its header normally
-    /// declares a history partition.
-    pub const BREP_SMBH: &str = "brep-smbh";
-    /// An ASM BREP entry with the `.smb` extension. Its header normally omits
-    /// the history partition.
-    pub const BREP_SMB: &str = "brep-smb";
-    /// An ASM BREP entry in the text encoding, with the `.sat` or `.smt`
-    /// extension. It carries the same entity model as `.smb` and `.smbh` in a
-    /// line-oriented ASCII form that ends with `End-of-ASM-data`. This role
-    /// exists so that a document whose only geometry carrier is text is
-    /// reported as a carrier that is present and not read, and not as a
-    /// document with no carrier.
-    pub const BREP_TEXT: &str = "brep-text";
-    /// A nested `.protein` material/appearance ZIP.
-    pub const PROTEIN: &str = "protein-assets";
-    /// A design/ACT/browser `BulkStream.dat`.
-    pub const BULKSTREAM: &str = "bulkstream";
-    /// A per-segment `MetaStream.dat` object table.
-    pub const METASTREAM: &str = "metastream";
-    /// A top-level or per-asset `Manifest.dat`.
-    pub const MANIFEST: &str = "manifest";
-    /// A thumbnail or preview asset.
-    pub const PREVIEW: &str = "preview";
-    /// An optional appearance/decal image blob.
-    pub const IMAGE: &str = "image";
-    /// Secondary tessellated mesh data (`.paramesh`), not the exact source.
-    pub const PARAMESH: &str = "paramesh";
-    /// The `OGS.BlobFolder` display scene graph and its buffer arenas. The
-    /// `world` member's drawable nodes carry the design entity ID they draw,
-    /// `stream_mesh_NNN` and `Fusion_mesh_NNN` are the vertex and index
-    /// buffer arenas that graph addresses by byte offset, its geometry is a
-    /// tessellation of the B-rep streams, and its appearance bindings repeat
-    /// the ACT and protein assets, so no carrier depends on it. See DR-28 for
-    /// the one value class whose design source is unknown.
-    pub const OGS_CACHE: &str = "ogs-cache";
-    /// An empty/placeholder design-configuration entry.
-    pub const DESIGN_CONFIG: &str = "design-config";
-    /// The empty top-level document-properties slot.
-    pub const PROPERTIES: &str = "properties";
-    /// A directory entry.
-    pub const DIRECTORY: &str = "directory";
-    /// Anything not matched by a known family.
-    pub const OTHER: &str = "other";
-}
 
 /// The f3d marker substrings used for confident detection from a byte prefix
 /// (ZIP local file headers store entry names in cleartext near the start).
@@ -128,48 +83,48 @@ pub(crate) fn read_entry_bounded(
 }
 
 /// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#6-geometry-carriers)).
-pub fn classify(name: &str) -> &'static str {
+pub fn classify(name: &str) -> ContainerRole {
     if name.ends_with('/') {
-        return role::DIRECTORY;
+        return ContainerRole::Directory;
     }
     let base = name.rsplit('/').next().unwrap_or(name);
     if std::path::Path::new(name)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("smbh"))
     {
-        role::BREP_SMBH
+        ContainerRole::BrepSmbh
     } else if std::path::Path::new(name)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("smb"))
     {
-        role::BREP_SMB
+        ContainerRole::BrepSmb
     } else if std::path::Path::new(name)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("sat") || ext.eq_ignore_ascii_case("smt"))
     {
-        role::BREP_TEXT
+        ContainerRole::BrepText
     } else if name.ends_with(".protein") {
-        role::PROTEIN
+        ContainerRole::ProteinAssets
     } else if name.ends_with(".paramesh") {
-        role::PARAMESH
+        ContainerRole::Paramesh
     } else if name.ends_with(".dsgcfg") || name.ends_with(".dsgcfgrule") {
-        role::DESIGN_CONFIG
+        ContainerRole::DesignConfig
     } else if base == "Manifest.dat" {
-        role::MANIFEST
+        ContainerRole::Manifest
     } else if base == "MetaStream.dat" {
-        role::METASTREAM
+        ContainerRole::Metastream
     } else if base == "BulkStream.dat" {
-        role::BULKSTREAM
+        ContainerRole::Bulkstream
     } else if base == "Properties.dat" {
-        role::PROPERTIES
+        ContainerRole::Properties
     } else if name.contains("Previews/") {
-        role::PREVIEW
+        ContainerRole::Preview
     } else if name.contains("Images.BlobParts") {
-        role::IMAGE
+        ContainerRole::Image
     } else if name.contains("OGS.BlobFolder/") {
-        role::OGS_CACHE
+        ContainerRole::OgsCache
     } else {
-        role::OTHER
+        ContainerRole::Other
     }
 }
 
@@ -288,7 +243,7 @@ impl<'a> ContainerScan<'a> {
     /// `find` over `entries` with both predicates.
     pub(crate) fn design_stream_entry_for_scope(
         &self,
-        expected_role: &str,
+        expected_role: ContainerRole,
         scope: &str,
     ) -> Option<&ContainerEntry> {
         self.scope_entry_indices
@@ -338,14 +293,18 @@ impl<'a> ContainerScan<'a> {
     pub(crate) fn is_design_asset_entry(
         &self,
         entry: &ContainerEntry,
-        expected_role: &str,
+        expected_role: ContainerRole,
     ) -> bool {
         entry.role == expected_role && self.belongs_to_design_asset(&entry.name)
     }
 
     /// Whether `entry` is a stream of `expected_role` in a Design segment of
     /// the manifest-selected Design asset.
-    pub(crate) fn is_design_stream(&self, entry: &ContainerEntry, expected_role: &str) -> bool {
+    pub(crate) fn is_design_stream(
+        &self,
+        entry: &ContainerEntry,
+        expected_role: ContainerRole,
+    ) -> bool {
         if !self.is_design_asset_entry(entry, expected_role) {
             return false;
         }
@@ -357,7 +316,7 @@ impl<'a> ContainerScan<'a> {
     /// Whether `entry` is a `BulkStream.dat` in an ACT segment of the
     /// manifest-selected Design asset.
     pub(crate) fn is_act_stream(&self, entry: &ContainerEntry) -> bool {
-        self.is_design_asset_entry(entry, role::BULKSTREAM)
+        self.is_design_asset_entry(entry, ContainerRole::Bulkstream)
             && self
                 .asset_segment(&entry.name)
                 .is_some_and(|segment| is_numbered_segment(segment, "FusionACTSegmentType"))
@@ -393,12 +352,12 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     for file in archive.entries() {
         let name = file.name.clone();
         let role = classify(&name);
-        let compression = file.compression.label().to_string();
+        let compression = file.compression.into();
         let compressed_size = file.compressed_size;
         let uncompressed_size = file.uncompressed_size;
         let mut attributes = BTreeMap::new();
 
-        let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
+        let is_brep = role == ContainerRole::BrepSmbh || role == ContainerRole::BrepSmb;
         let view = archive.open(ctx, &file.name)?;
         let buf = view.window();
         if is_brep {
@@ -460,7 +419,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
             breps.push(BrepFacts {
                 name: name.clone(),
-                is_smbh: role == role::BREP_SMBH,
+                is_smbh: role == ContainerRole::BrepSmbh,
                 uncompressed_len: uncompressed_size,
                 kernel,
                 solved_record_limit,
@@ -470,7 +429,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
         entries.push(ContainerEntry {
             name: name.clone(),
-            role: role.to_string(),
+            role,
             compression,
             compressed_size,
             uncompressed_size,
@@ -665,7 +624,9 @@ pub fn design_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s
 pub fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
     scan.entries
         .iter()
-        .filter(|entry| entry.role == role::BREP_TEXT && scan.belongs_to_design_asset(&entry.name))
+        .filter(|entry| {
+            entry.role == ContainerRole::BrepText && scan.belongs_to_design_asset(&entry.name)
+        })
         .map(|entry| entry.name.as_str())
         .collect()
 }

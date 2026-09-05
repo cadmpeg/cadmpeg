@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
@@ -17,10 +19,10 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::CompressionMethod;
 
-use crate::container::{self, role};
+use crate::F3dCodec;
+use crate::container::{self};
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
-use crate::F3dCodec;
 
 #[test]
 fn asm_header_parses_documented_fields() {
@@ -407,18 +409,27 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
 
 #[test]
 fn classify_matches_spec_families() {
-    assert_eq!(classify("a/Breps.BlobParts/x.smbh"), role::BREP_SMBH);
-    assert_eq!(classify("a/Breps.BlobParts/x.smb"), role::BREP_SMB);
+    assert_eq!(
+        classify("a/Breps.BlobParts/x.smbh"),
+        ContainerRole::BrepSmbh
+    );
+    assert_eq!(classify("a/Breps.BlobParts/x.smb"), ContainerRole::BrepSmb);
     assert_eq!(
         classify("a/ProteinAssets.BlobParts/y.protein"),
-        role::PROTEIN
+        ContainerRole::ProteinAssets
     );
-    assert_eq!(classify("a/Design1/BulkStream.dat"), role::BULKSTREAM);
-    assert_eq!(classify("a/Design1/MetaStream.dat"), role::METASTREAM);
-    assert_eq!(classify("Manifest.dat"), role::MANIFEST);
-    assert_eq!(classify("a/Previews/thumb.png"), role::PREVIEW);
-    assert_eq!(classify("a/x.paramesh"), role::PARAMESH);
-    assert_eq!(classify("a/b/"), role::DIRECTORY);
+    assert_eq!(
+        classify("a/Design1/BulkStream.dat"),
+        ContainerRole::Bulkstream
+    );
+    assert_eq!(
+        classify("a/Design1/MetaStream.dat"),
+        ContainerRole::Metastream
+    );
+    assert_eq!(classify("Manifest.dat"), ContainerRole::Manifest);
+    assert_eq!(classify("a/Previews/thumb.png"), ContainerRole::Preview);
+    assert_eq!(classify("a/x.paramesh"), ContainerRole::Paramesh);
+    assert_eq!(classify("a/b/"), ContainerRole::Directory);
 }
 
 use crate::container::classify;
@@ -456,9 +467,9 @@ fn inspect_enumerates_and_reads_headers() {
     let smbh = summary
         .entries
         .iter()
-        .find(|e| e.role == role::BREP_SMBH)
+        .find(|e| e.role == ContainerRole::BrepSmbh)
         .expect("smbh entry present");
-    assert_eq!(smbh.compression, "deflate");
+    assert_eq!(smbh.compression.as_str(), "deflate");
     assert_eq!(
         smbh.attributes.get("product_family").map(String::as_str),
         Some("Autodesk Neutron")
@@ -468,10 +479,12 @@ fn inspect_enumerates_and_reads_headers() {
     assert!(smbh.attributes.contains_key("sha256"));
 
     // The header identifies the unique history-bearing stream.
-    assert!(summary
-        .notes
-        .iter()
-        .any(|n| n.contains("history-bearing BREP")));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|n| n.contains("history-bearing BREP"))
+    );
 }
 
 #[test]
@@ -531,15 +544,19 @@ fn decode_yields_metadata_and_honest_report() {
     let unknowns = result.ir().native_unknowns("f3d").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(result.source_fidelity().retained_records.len(), 2);
-    assert!(result
-        .source_fidelity()
-        .retained_records
-        .iter()
-        .all(|record| record.sha256().len() == 64));
-    assert!(result
-        .source_fidelity()
-        .retained_record("f3d:file:source-image#0")
-        .is_some());
+    assert!(
+        result
+            .source_fidelity()
+            .retained_records
+            .iter()
+            .all(|record| record.sha256().len() == 64)
+    );
+    assert!(
+        result
+            .source_fidelity()
+            .retained_record("f3d:file:source-image#0")
+            .is_some()
+    );
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.format(), "f3d");
     assert_eq!(
@@ -549,11 +566,13 @@ fn decode_yields_metadata_and_honest_report() {
     // resabs/resnor were carried into tolerances.
     assert_eq!(result.ir().tolerances.linear, 1.0e-6);
     assert_f3d_native_parity(result.ir());
-    assert!(result
-        .source_fidelity()
-        .annotations
-        .provenance
-        .contains_key(unknowns[0].id.as_str()));
+    assert!(
+        result
+            .source_fidelity()
+            .annotations
+            .provenance
+            .contains_key(unknowns[0].id.as_str())
+    );
 }
 
 #[test]
@@ -565,9 +584,11 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
         assert!(container::select_history_brep(scan).is_none());
         assert!(container::legacy_design_model_breps(scan).is_none());
         let notes = container::summary_notes(scan, container::SummaryScope::FullDecode);
-        assert!(notes
-            .iter()
-            .any(|note| note.contains("no BREP header declares a history partition")));
+        assert!(
+            notes
+                .iter()
+                .any(|note| note.contains("no BREP header declares a history partition"))
+        );
     });
 }
 
@@ -600,7 +621,7 @@ fn manifest_selects_design_asset_independently_of_brep_order() {
         let streams = scan
             .entries
             .iter()
-            .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+            .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
             .map(|entry| entry.name.as_str())
             .collect::<Vec<_>>();
         assert_eq!(
@@ -641,12 +662,14 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
             .map(String::as_str),
         Some("DesignAsset[Active]")
     );
-    assert!(decoded
-        .ir()
-        .model
-        .bodies
-        .iter()
-        .all(|body| !body.id.as_str().contains("BREP.sibling")));
+    assert!(
+        decoded
+            .ir()
+            .model
+            .bodies
+            .iter()
+            .all(|body| !body.id.as_str().contains("BREP.sibling"))
+    );
 }
 
 #[test]

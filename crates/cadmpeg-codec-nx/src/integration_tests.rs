@@ -34,14 +34,18 @@ fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("legacy CFB NX inspection");
     assert_eq!(summary.container_kind, "cfb");
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note.contains("legacy CFB container")));
-    assert!(summary
-        .entries
-        .iter()
-        .any(|entry| entry.role == "parasolid-stream"));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note.contains("legacy CFB container"))
+    );
+    assert!(
+        summary
+            .entries
+            .iter()
+            .any(|entry| entry.role.as_str() == "parasolid-stream")
+    );
 
     let result = decode(bytes);
     assert!(!result.report().geometry_transferred());
@@ -55,10 +59,12 @@ fn legacy_cfb_nx_accepts_a_partial_final_stream_sector() {
         .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
         .expect("legacy CFB with a partial stream sector is inspectable");
     assert_eq!(summary.container_kind, "cfb");
-    assert!(summary
-        .entries
-        .iter()
-        .any(|entry| entry.role == "parasolid-stream"));
+    assert!(
+        summary
+            .entries
+            .iter()
+            .any(|entry| entry.role.as_str() == "parasolid-stream")
+    );
 
     let result = decode(bytes);
     assert!(!result.report().geometry_transferred());
@@ -78,7 +84,7 @@ fn legacy_cfb_catalogues_logical_stream_spans() {
         .iter()
         .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
         .expect("legacy UG_PART stream entry");
-    assert_eq!(part.role, "part-payload");
+    assert_eq!(part.role.as_str(), "part-payload");
     assert!(part.compressed_size > 0);
     assert_eq!(part.compressed_size, part.uncompressed_size);
 }
@@ -101,7 +107,7 @@ fn legacy_cfb_catalogues_each_reachable_stream_in_a_disjoint_logical_span() {
         .expect("legacy extra stream entry");
     assert_eq!(part.compressed_size, 10 * 512);
     assert_eq!(part.compressed_size, part.uncompressed_size);
-    assert_eq!(extra.role, "named-opaque-stream");
+    assert_eq!(extra.role.as_str(), "named-opaque-stream");
     assert_eq!(extra.compressed_size, 8 * 512);
     assert_eq!(extra.compressed_size, extra.uncompressed_size);
 
@@ -130,10 +136,12 @@ fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() 
         .expect("NX inspection");
     assert_eq!(summary.format(), "nx");
     assert_eq!(summary.container_kind, "splmsstr");
-    assert!(summary
-        .entries
-        .iter()
-        .any(|entry| entry.role == "parasolid-stream"));
+    assert!(
+        summary
+            .entries
+            .iter()
+            .any(|entry| entry.role.as_str() == "parasolid-stream")
+    );
     assert!(summary.losses.iter().any(|loss| {
         loss.code == crate::loss::NxLossCode::KernelDialectUnverified.kind()
             && loss.message.contains("SCH_TEST_1_9999")

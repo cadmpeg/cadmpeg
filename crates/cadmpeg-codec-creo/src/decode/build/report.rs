@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-report assembly from coverage counters and container census.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
@@ -9,7 +11,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::sketches::SketchGeometry;
 
-use crate::container::{self, role, ContainerScan};
+use crate::container::{self, ContainerScan};
 use crate::loss::CreoLossCode;
 
 use super::super::analytic::is_axis_aligned;
@@ -74,7 +76,7 @@ pub(in super::super) fn build_report(
         .framing
         .sections
         .iter()
-        .filter(|s| s.role == role::GEOMETRY)
+        .filter(|s| s.role == ContainerRole::PsbGeometry)
         .count();
     let mut placed_plane_ids = scan
         .planes

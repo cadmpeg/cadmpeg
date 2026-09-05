@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::Exactness;
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::container::{self, role, Layout, UnknownLayout};
-use crate::test_support::*;
 use crate::CreoCodec;
+use crate::container::{self, Layout, UnknownLayout};
+use crate::test_support::*;
 
 #[test]
 fn detect_matches_ugc_magic_only() {
@@ -166,10 +168,10 @@ fn scan_enumerates_and_classifies_sections() {
     assert_eq!(scan.framing.version_line, "#UGC:2 P test");
     assert_eq!(scan.framing.sections.len(), 3);
     assert_eq!(scan.framing.sections[0].name, "VisibGeom");
-    assert_eq!(scan.framing.sections[0].role, role::GEOMETRY);
+    assert_eq!(scan.framing.sections[0].role, ContainerRole::PsbGeometry);
     assert_eq!(scan.framing.sections[1].name, "AllFeatur");
-    assert_eq!(scan.framing.sections[1].role, role::MODEL_DATA);
-    assert_eq!(scan.framing.sections[2].role, role::THUMBNAIL);
+    assert_eq!(scan.framing.sections[1].role, ContainerRole::ModelData);
+    assert_eq!(scan.framing.sections[2].role, ContainerRole::Thumbnail);
     assert!(container::has_thumbnail(&scan));
 }
 
@@ -204,8 +206,8 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
             .collect::<Vec<_>>(),
         ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
     );
-    assert_eq!(scan.framing.sections[1].role, role::GEOMETRY);
-    assert_eq!(scan.framing.sections[2].role, role::MODEL_DATA);
+    assert_eq!(scan.framing.sections[1].role, ContainerRole::PsbGeometry);
+    assert_eq!(scan.framing.sections[2].role, ContainerRole::ModelData);
 }
 
 #[test]
@@ -269,7 +271,7 @@ fn scan_expands_toc_sized_unix_compress_payload() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
     let summary = container::summarize(&scan, &classification);
-    assert_eq!(summary.entries[0].compression, "unix-compress");
+    assert_eq!(summary.entries[0].compression.as_str(), "unix-compress");
     assert_eq!(summary.entries[0].uncompressed_size, 18);
 }
 
@@ -504,9 +506,11 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     );
     assert_eq!(surface_parameters[0].fields()["slots"][0]["value"], 1.0);
     let surface_prototypes = &namespace.arenas["nonvisible_surface_prototypes"];
-    assert!(surface_prototypes[0]
-        .id()
-        .starts_with("creo:novisgeom:surface_prototype#"));
+    assert!(
+        surface_prototypes[0]
+            .id()
+            .starts_with("creo:novisgeom:surface_prototype#")
+    );
     assert_eq!(
         surface_prototypes[0].fields()["source_section"],
         "NovisGeom"
@@ -527,16 +531,18 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
     let data = build_prt("c", &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data);
     assert_eq!(scan.framing.layout, Layout::Depdb);
-    assert!(scan
-        .surfaces
-        .rows
-        .iter()
-        .any(|row| row.id == 7 && row.feature_id == 4));
-    assert!(scan
-        .features
-        .definitions
-        .iter()
-        .any(|definition| definition.id == 12));
+    assert!(
+        scan.surfaces
+            .rows
+            .iter()
+            .any(|row| row.id == 7 && row.feature_id == 4)
+    );
+    assert!(
+        scan.features
+            .definitions
+            .iter()
+            .any(|definition| definition.id == 12)
+    );
     assert_eq!(scan.features.operations.len(), 1);
     assert_eq!(scan.features.operations[0].feature_id, 17);
     assert_eq!(

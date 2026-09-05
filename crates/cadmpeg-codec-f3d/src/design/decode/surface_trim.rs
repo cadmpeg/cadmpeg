@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode the auxiliary BRep-cell carrier of a `SurfaceTrim` operation.
 
-use crate::container::{role, ContainerScan};
+use cadmpeg_core::container::ContainerRole;
+
+use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::scopes::{exact_indexed_header_at, marked_record_reference};
 use crate::design::decode::sketch::{
-    indexed_record_index, next_indexed_record_offset, IndexedRecordOffsets,
+    IndexedRecordOffsets, indexed_record_index, next_indexed_record_offset,
 };
 use crate::ids::{native_design_surface_trim_operation_id, native_stream};
 use crate::records::{
     DesignParameterScope, DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord,
     DesignSurfaceTrimOperation,
 };
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use std::collections::{HashMap, HashSet};
 
 /// Decode the exact auxiliary BRep-cell carrier of a `SurfaceTrim` scope.
@@ -157,7 +159,8 @@ pub(crate) fn decode_surface_trim_operations(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;

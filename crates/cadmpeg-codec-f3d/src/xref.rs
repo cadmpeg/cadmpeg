@@ -8,12 +8,14 @@
 //! form of `Properties.dat`. [`is_assembly`] classifies a BREP-less document
 //! whose model is the placement of its XREF targets.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::HashSet;
 
 use serde::Deserialize;
 
-use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
     ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,
@@ -23,7 +25,6 @@ use crate::bytes::{
     is_guid_prefix, is_guid_relaxed, lp_ascii_filtered, lp_ascii_strict, lp_utf16_bounded,
     take_reference,
 };
-use crate::container::role;
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
 use crate::records::{
@@ -365,7 +366,7 @@ fn bind_occurrences(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let meta_name = entry

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
+use cadmpeg_core::container::ContainerRole;
+
 use crate::test_support::*;
 use std::io::Cursor;
 
@@ -12,7 +14,6 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::container::role;
 use crate::SldprtCodec;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
@@ -40,18 +41,22 @@ fn compound_pipeline_aligns_detection_inspection_blocks_cache_directory_and_meta
         summary
             .entries
             .iter()
-            .filter(|entry| entry.role == role::BLOCK)
+            .filter(|entry| entry.role == ContainerRole::Block)
             .count(),
         2
     );
-    assert!(summary
-        .entries
-        .iter()
-        .any(|entry| entry.role == role::CACHE_CELL));
-    assert!(summary
-        .entries
-        .iter()
-        .any(|entry| entry.role == role::DIRECTORY_ENTRY));
+    assert!(
+        summary
+            .entries
+            .iter()
+            .any(|entry| entry.role == ContainerRole::CacheCell)
+    );
+    assert!(
+        summary
+            .entries
+            .iter()
+            .any(|entry| entry.role == ContainerRole::DirectoryEntry)
+    );
     let result = decode(bytes);
     assert!(!result.source_fidelity().retained_records.is_empty());
     assert_valid(&result);
@@ -409,11 +414,12 @@ fn the_patch_path_names_the_preserved_dialect() {
     assert!(plan.report().losses.iter().all(|loss| {
         loss.code != crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
     }));
-    assert!(plan
-        .report()
-        .notes
-        .iter()
-        .any(|note| note == "preserved source container replayed with semantic patches"));
+    assert!(
+        plan.report()
+            .notes
+            .iter()
+            .any(|note| note == "preserved source container replayed with semantic patches")
+    );
     let claimed = named_target(&plan);
     assert_eq!(claimed, "sldprt:sw-version-12000-plus");
 

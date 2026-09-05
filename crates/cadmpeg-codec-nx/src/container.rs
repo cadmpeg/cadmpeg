@@ -9,14 +9,16 @@
 //! `/Root/UG_PART/UG_PART` span or the opened legacy `UG_PART/UG_PART` stream
 //! to locate Parasolid data.
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
-use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::bytes::find;
+use cadmpeg_core::decode::{DecodeContext, View, bounded_len};
 
 use crate::layout::directory_entry as dir_entry;
 use crate::layout::directory_file_payload as file_payload;
@@ -71,22 +73,22 @@ pub(crate) enum EntryContent {
 
 impl EntryContent {
     /// Stable inspection label for this content family.
-    pub fn label(self) -> &'static str {
+    pub fn role(self) -> ContainerRole {
         match self {
-            Self::Directory => "directory",
-            Self::PartPayload => "part-payload",
-            Self::ActiveBodyIndex => "active-body-index",
-            Self::FastLoadStructure => "fast-load-structure",
-            Self::FastLoadJt => "fast-load-jt",
-            Self::DisplayJt => "display-jt",
-            Self::ExternalReferences => "external-references",
-            Self::SaveToggleInfo => "save-toggle-info",
-            Self::PreviewImage => "preview-image",
-            Self::MaterialTexture => "material-texture",
-            Self::Arrangements => "arrangements",
-            Self::PartAttributes => "part-attributes",
-            Self::AssetCatalog => "asset-catalog",
-            Self::NamedOpaqueStream => "named-opaque-stream",
+            Self::Directory => ContainerRole::Directory,
+            Self::PartPayload => ContainerRole::PartPayload,
+            Self::ActiveBodyIndex => ContainerRole::ActiveBodyIndex,
+            Self::FastLoadStructure => ContainerRole::FastLoadStructure,
+            Self::FastLoadJt => ContainerRole::FastLoadJt,
+            Self::DisplayJt => ContainerRole::DisplayJt,
+            Self::ExternalReferences => ContainerRole::ExternalReferences,
+            Self::SaveToggleInfo => ContainerRole::SaveToggleInfo,
+            Self::PreviewImage => ContainerRole::PreviewImage,
+            Self::MaterialTexture => ContainerRole::MaterialTexture,
+            Self::Arrangements => ContainerRole::Arrangements,
+            Self::PartAttributes => ContainerRole::PartAttributes,
+            Self::AssetCatalog => ContainerRole::AssetCatalog,
+            Self::NamedOpaqueStream => ContainerRole::NamedOpaqueStream,
         }
     }
 
@@ -99,6 +101,9 @@ impl EntryContent {
                 | Self::SaveToggleInfo
                 | Self::NamedOpaqueStream
         )
+    }
+    pub fn label(self) -> &'static str {
+        self.role().as_str()
     }
 }
 

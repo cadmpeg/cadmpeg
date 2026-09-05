@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Preserve passthrough PSB sections and emit legacy persistence arenas.
 
+use cadmpeg_core::container::ContainerRole;
+
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::ids::UnknownId;
 use serde::Serialize;
 
-use crate::container::{self, role, ContainerScan};
+use crate::container::{self, ContainerScan};
 
 use super::super::native::annotate;
 use super::super::native::emit_arena;
@@ -19,19 +21,16 @@ pub(in super::super) fn preserve_passthrough_sections(
     annotations: &mut AnnotationBuilder,
 ) -> Vec<UnknownRecord> {
     let mut unknowns = Vec::new();
-    for section in scan
-        .framing
-        .sections
-        .iter()
-        .filter(|section| section.role == role::GEOMETRY || section.role == role::THUMBNAIL)
-    {
+    for section in scan.framing.sections.iter().filter(|section| {
+        section.role == ContainerRole::PsbGeometry || section.role == ContainerRole::Thumbnail
+    }) {
         let end = (section.offset + section.length).min(scan.framing.data.len());
         let section_bytes = &scan.framing.data[section.offset..end];
         let payload_start = section.raw_name.len().saturating_add(2);
         let raw_is_compressed = section_bytes
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
-        let (bytes, offset, tag, exactness) = if section.role == role::THUMBNAIL {
+        let (bytes, offset, tag, exactness) = if section.role == ContainerRole::Thumbnail {
             if raw_is_compressed {
                 let Some(expanded) = container::expanded_section_for(scan, section) else {
                     continue;

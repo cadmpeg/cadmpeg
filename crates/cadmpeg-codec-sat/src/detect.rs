@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stream-kind detection and container inspection for bare ASM streams.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use cadmpeg_asm::acis_header;
 use cadmpeg_asm::asm_header;
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::sat;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::ContainerSummary;
+use cadmpeg_ir::codec::Confidence;
 use std::collections::BTreeMap;
 
-use crate::dialect::{terminator_line, StreamEvidence, TextEvidence};
+use crate::dialect::{StreamEvidence, TextEvidence, terminator_line};
 
 /// The stream encoding a byte prefix selects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,12 +186,11 @@ pub(crate) fn inspect(
         vec![ContainerEntry {
             name: "stream".to_string(),
             role: match kind {
-                StreamKind::AsmBinary => "brep",
-                StreamKind::AcisBinary => "acis-binary",
-                StreamKind::Text => "brep-text",
-            }
-            .to_string(),
-            compression: "stored".to_string(),
+                StreamKind::AsmBinary => ContainerRole::Brep,
+                StreamKind::AcisBinary => ContainerRole::AcisBinary,
+                StreamKind::Text => ContainerRole::BrepText,
+            },
+            compression: EntryCompression::Stored,
             compressed_size: bytes.len() as u64,
             uncompressed_size: bytes.len() as u64,
             attributes,

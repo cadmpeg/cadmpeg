@@ -2,14 +2,16 @@
 //! Outer-container detect, scan, inspect, and partition-selection tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
-use crate::container::{self, role};
-use crate::test_support::*;
 use crate::SldprtCodec;
+use crate::container::{self};
+use crate::test_support::*;
 
 use super::{looks_like_compound_file, looks_like_sldprt};
 
@@ -289,17 +291,26 @@ fn inspect_enumerates_every_structure() {
         summary
             .entries
             .iter()
-            .filter(|e| e.role == role::BLOCK)
+            .filter(|e| e.role == ContainerRole::Block)
             .count(),
         2
     );
-    assert!(summary.entries.iter().any(|e| e.role == role::CACHE_CELL));
-    assert!(summary
-        .entries
-        .iter()
-        .any(|e| e.role == role::DIRECTORY_ENTRY));
-    assert!(summary
-        .notes
-        .iter()
-        .any(|n| n.contains("active Parasolid B-rep candidate")));
+    assert!(
+        summary
+            .entries
+            .iter()
+            .any(|e| e.role == ContainerRole::CacheCell)
+    );
+    assert!(
+        summary
+            .entries
+            .iter()
+            .any(|e| e.role == ContainerRole::DirectoryEntry)
+    );
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|n| n.contains("active Parasolid B-rep candidate"))
+    );
 }

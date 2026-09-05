@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode fixed local component-occurrence carriers.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::container::ContainerRole;
+
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::View;
 
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids;
 use crate::records::DesignComponentOccurrence;
@@ -21,7 +23,7 @@ pub fn decode_component_occurrences(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = ids::native_scope(&entry.name);

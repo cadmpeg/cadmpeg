@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP codec backend and encoder.
 
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::report::LossNote;
-use cadmpeg_ir::ContainerSummary;
 
 use crate::archive;
 use crate::dialect::refuse_alternate_encoding;
@@ -125,8 +127,8 @@ fn inspect_exchange(
     } = reader::analyze_exchange(bytes, &mut exchange, &diagnostics, ctx)?;
     let mut entries = vec![ContainerEntry {
         name: "HEADER".into(),
-        role: "metadata".into(),
-        compression: "none".into(),
+        role: ContainerRole::Metadata,
+        compression: EntryCompression::None,
         compressed_size: 0,
         uncompressed_size: 0,
         attributes: BTreeMap::default(),
@@ -136,8 +138,8 @@ fn inspect_exchange(
         attributes.insert("anchor_count".into(), exchange.anchors.len().to_string());
         entries.push(ContainerEntry {
             name: "ANCHOR".into(),
-            role: "in_file_anchors".into(),
-            compression: "none".into(),
+            role: ContainerRole::InFileAnchors,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
             attributes,
@@ -160,8 +162,8 @@ fn inspect_exchange(
         );
         entries.push(ContainerEntry {
             name: "REFERENCE".into(),
-            role: "external_references".into(),
-            compression: "none".into(),
+            role: ContainerRole::StepExternalReferences,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
             attributes,
@@ -187,8 +189,8 @@ fn inspect_exchange(
         attributes.insert("unknown_entities".into(), unknown);
         entries.push(ContainerEntry {
             name: format!("DATA[{index}]"),
-            role: "entity_records".into(),
-            compression: "none".into(),
+            role: ContainerRole::EntityRecords,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
             attributes,
@@ -212,8 +214,8 @@ fn inspect_exchange(
         attributes.insert("dependencies".into(), external_dependencies.join(","));
         entries.push(ContainerEntry {
             name: "EXTERNAL_DEPENDENCIES".into(),
-            role: "external_references".into(),
-            compression: "none".into(),
+            role: ContainerRole::StepExternalReferences,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
             attributes,
@@ -226,8 +228,8 @@ fn inspect_exchange(
             } else {
                 format!("SIGNATURE[{index}]")
             },
-            role: "signature".into(),
-            compression: "none".into(),
+            role: ContainerRole::Signature,
+            compression: EntryCompression::None,
             compressed_size: 0,
             uncompressed_size: 0,
             attributes: BTreeMap::default(),
@@ -585,7 +587,7 @@ mod tests {
     use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-    use super::{starts_with_step_magic, StepCodec};
+    use super::{StepCodec, starts_with_step_magic};
 
     #[test]
     fn detects_magic_after_ignored_controls_and_inside_token() {
@@ -610,9 +612,11 @@ mod tests {
             .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
             .expect("inspection describes recoverable source order");
 
-        assert!(summary
-            .notes
-            .iter()
-            .any(|note| note.contains("complex partial records are not alphabetical")));
+        assert!(
+            summary
+                .notes
+                .iter()
+                .any(|note| note.contains("complex partial records are not alphabetical"))
+        );
     }
 }

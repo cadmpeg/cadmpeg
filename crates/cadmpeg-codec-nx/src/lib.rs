@@ -101,15 +101,17 @@ pub mod fuzz;
 
 #[doc(hidden)]
 pub use evaluation::{
-    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
+    BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason, saved_body_census_evidence,
 };
+
+use cadmpeg_core::container::{ContainerRole, EntryCompression};
 
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::ContainerSummary;
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 
 /// Decoder and inspector for Siemens NX `.prt` files.
 #[derive(Debug, Default, Clone, Copy)]
@@ -161,8 +163,8 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         };
         entries.push(ContainerEntry {
             name: entry.name.clone(),
-            role: entry.content().label().to_string(),
-            compression: "none".to_string(),
+            role: entry.content().role(),
+            compression: EntryCompression::None,
             compressed_size: compressed,
             uncompressed_size: uncompressed,
             attributes,
@@ -275,17 +277,17 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
             }
         }
         let (compression, compressed_size) = match scan.container.layout {
-            container::ContainerLayout::Modern { .. } => ("zlib", 0),
-            container::ContainerLayout::LegacyCfb => ("stored", stream.consumed),
+            container::ContainerLayout::Modern { .. } => (EntryCompression::Zlib, 0),
+            container::ContainerLayout::LegacyCfb => (EntryCompression::Stored, stream.consumed),
         };
         entries.push(ContainerEntry {
             name: format!("parasolid#{si}"),
             role: if stream.kind.is_parasolid() {
-                "parasolid-stream".to_string()
+                ContainerRole::ParasolidStream
             } else {
-                "preview".to_string()
+                ContainerRole::Preview
             },
-            compression: compression.to_string(),
+            compression,
             compressed_size,
             uncompressed_size: stream.inflated.len() as u64,
             attributes,

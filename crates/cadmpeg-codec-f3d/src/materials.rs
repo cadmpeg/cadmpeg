@@ -8,14 +8,16 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
+use cadmpeg_core::container::ContainerRole;
+
 use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
 
 use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::bytes::find_from;
+use cadmpeg_core::decode::{DecodeContext, View, bounded_len};
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
@@ -26,10 +28,10 @@ use cadmpeg_protein::{
 };
 
 use crate::bytes::{is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded, take_lp_utf8};
-use crate::container::{role, ContainerScan};
+use crate::container::ContainerScan;
 use crate::design::presentation::{
-    visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
-    MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
+    APPEARANCE_LIBRARY_ID, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
+    visual_token,
 };
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
@@ -110,7 +112,7 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
         _ => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less Protein schema {schema} is unsupported"
-            )))
+            )));
         }
     }
     let instance = page_logical(&logical)?;
@@ -333,7 +335,7 @@ fn patch_instance_colors(
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
                             "Protein schema {schema} has no writable color carrier"
-                        )))
+                        )));
                     }
                 }
             };
@@ -357,7 +359,7 @@ fn patch_instance_colors(
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
-                        )))
+                        )));
                     }
                 };
                 decoded_record
@@ -403,7 +405,7 @@ fn patch_instance_colors(
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
                             "Protein schema {schema} property {name} has no writable carrier"
-                        )))
+                        )));
                     }
                 }
             };
@@ -504,7 +506,7 @@ pub fn decode_with_body_bindings<'a>(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, role::PROTEIN))
+        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
     {
         let protein = scan.entry_view(&entry.name).ok_or_else(|| {
             CodecError::Malformed("protein archive entry missing from scan".into())
@@ -940,7 +942,7 @@ pub(crate) fn decode_design_assignments(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -1012,7 +1014,7 @@ fn decode_body_appearance_overrides(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -1105,7 +1107,7 @@ fn decode_face_appearance_assignments(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
@@ -1592,7 +1594,7 @@ fn decode_design_object_types(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;

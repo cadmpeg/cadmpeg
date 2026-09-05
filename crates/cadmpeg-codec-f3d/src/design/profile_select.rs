@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve extrude profile selections against sketch regions.
 
-use crate::container::{role, ContainerScan};
+use cadmpeg_core::container::ContainerRole;
+
+use crate::container::ContainerScan;
 use crate::design::decode::operands::{entity_selection_matches_curve, parse_sketch_profile};
 use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::geometry::{
@@ -19,8 +21,8 @@ use crate::records::{
     DesignRecordHeader, DesignSketchPlacement, DesignSketchProfileOperand,
     DesignSketchProfileRegionMember, SketchCurveIdentity, SketchRelationOperand,
 };
-use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -1698,9 +1700,11 @@ fn resolved_selection_member_points(
     };
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let v_axis = normal.cross(u_axis);
-    Some(vec![origin
-        .translated(u_axis, position.u)
-        .translated(v_axis, position.v)])
+    Some(vec![
+        origin
+            .translated(u_axis, position.u)
+            .translated(v_axis, position.v),
+    ])
 }
 
 pub(crate) fn ordered_unique_profile_selections(
@@ -2247,7 +2251,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;

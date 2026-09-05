@@ -4369,3 +4369,59 @@ crate = "cadmpeg-container"
 kind = "signature"
 item = "cadmpeg_container::ArchiveSnapshot::open"
 reason = "CTR-04: resolve an entry name inside the snapshot instead of accepting detached EntryRecord metadata"
+
+[[change]]
+commit = "6bfc75be595a2cf2cc7173986276f3c5ac8a4791"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::container::ContainerEntry::role"
+reason = "CORE-04: use the closed ContainerRole enum"
+
+[[change]]
+commit = "6bfc75be595a2cf2cc7173986276f3c5ac8a4791"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::container::ContainerEntry::compression"
+reason = "CORE-04: use typed summary compression"
+
+[[change]]
+commit = "6bfc75be595a2cf2cc7173986276f3c5ac8a4791"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::container::ContainerRole"
+reason = "CORE-04: add the closed summary-role vocabulary with stable string serde"
+
+[[change]]
+commit = "6bfc75be595a2cf2cc7173986276f3c5ac8a4791"
+crate = "cadmpeg-core"
+kind = "variant"
+item = "cadmpeg_core::container::EntryCompression"
+reason = "CORE-04: add the closed compression and storage summary vocabulary"
+
+[[change]]
+commit = "6bfc75be595a2cf2cc7173986276f3c5ac8a4791"
+crate = "cadmpeg-container"
+kind = "move"
+item = "cadmpeg_container::EntryCompression"
+reason = "CORE-04: rename the ZIP-only admission type to ZipCompression; summary labels live in core"
+
+[[change]]
+commit = "6bfc75be595a2cf2cc7173986276f3c5ac8a4791"
+crate = "cadmpeg-container"
+kind = "signature"
+item = "cadmpeg_container::ArchiveSnapshot::container_entries"
+reason = "CORE-04: classifier returns ContainerRole"
+
+[[change]]
+commit = "6bfc75be595a2cf2cc7173986276f3c5ac8a4791"
+crate = "cadmpeg-container"
+kind = "signature"
+item = "cadmpeg_container::compound::CompoundSnapshot::container_entries"
+reason = "CORE-04: classifier returns ContainerRole"
+
+[[change]]
+commit = "6bfc75be595a2cf2cc7173986276f3c5ac8a4791"
+crate = "cadmpeg-container"
+kind = "field"
+item = "cadmpeg_container::EntryRecord::compression"
+reason = "CORE-04: name the ZIP admission enum ZipCompression"

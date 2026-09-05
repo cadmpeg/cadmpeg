@@ -3,14 +3,14 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::IR_VERSION;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::chunks::{parse_header, ArchiveVersion, FramingError, TCODE_ENDOFTABLE};
-use crate::test_support::test_dump::*;
 use crate::RhinoCodec;
+use crate::chunks::{ArchiveVersion, FramingError, TCODE_ENDOFTABLE, parse_header};
+use crate::test_support::test_dump::*;
 
 #[test]
 fn document_table_record_budget_rejects_compact_record_amplification() {
@@ -73,10 +73,12 @@ pub(crate) fn scans_metadata_tables_and_reports_offsets() {
         .expect("required invariant");
     assert_eq!(summary.container_kind, "3dm-chunks");
     assert_eq!(summary.entries.len(), 4);
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note == "archive version 50"));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note == "archive version 50")
+    );
     assert_eq!(
         summary.entries[2].attributes.get("record_count"),
         Some(&"1".to_string())
@@ -104,7 +106,7 @@ fn aggregates_object_classes_after_table_entries() {
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("required invariant");
     assert_eq!(summary.entries.len(), 5);
-    assert_eq!(summary.entries[3].role, "object-class");
+    assert_eq!(summary.entries[3].role.as_str(), "object-class");
     assert_eq!(
         summary.entries[3].attributes.get("count"),
         Some(&"1".to_string())
@@ -266,11 +268,11 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
             .admission(),
         &cadmpeg_core::dialect::Admission::Admitted
     );
-    assert!(!decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.code == crate::loss::RhinoLossCode::SourceDialectUnverified.kind() }));
+    assert!(
+        !decoded.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::SourceDialectUnverified.kind()
+        })
+    );
 }
 
 #[test]
@@ -426,10 +428,12 @@ fn crc_mismatch_is_a_summary_warning_and_later_record_survives() {
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
         .expect("required invariant");
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note.contains("CRC mismatch")));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note.contains("CRC mismatch"))
+    );
     assert_eq!(
         summary.entries[2].attributes.get("record_count"),
         Some(&"2".to_string())
@@ -754,10 +758,12 @@ fn historical_settings_record_is_bounded_and_retained_as_a_setting() {
     );
 
     let scan = crate::container::scan_owned(bytes).expect("historical setting framing");
-    assert!(!scan
-        .warnings
-        .iter()
-        .any(|warning| warning.contains("unknown bounded record 0x2000803e")));
+    assert!(
+        !scan
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("unknown bounded record 0x2000803e"))
+    );
     assert_eq!(scan.metadata.settings.unsupported.len(), 1);
     assert_eq!(scan.metadata.settings.unsupported[0].typecode, 0x2000_803e);
 }
@@ -795,9 +801,11 @@ fn obsolete_layerset_occupies_the_layer_group_compatibility_slot() {
             table(archive, 0x1000_0013, &[]),
         ],
     );
-    assert!(RhinoCodec
-        .inspect(&mut Cursor::new(valid), &InspectOptions::default())
-        .is_ok());
+    assert!(
+        RhinoCodec
+            .inspect(&mut Cursor::new(valid), &InspectOptions::default())
+            .is_ok()
+    );
 
     let invalid = minimal_document(
         "50",
@@ -850,10 +858,12 @@ fn skips_short_and_long_unknown_table_records() {
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(short_object), &InspectOptions::default())
         .expect("unknown short record is skipped");
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note.contains("unknown bounded record")));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note.contains("unknown bounded record"))
+    );
 
     let unknown = minimal_document(
         "50",
@@ -866,8 +876,10 @@ fn skips_short_and_long_unknown_table_records() {
     let summary = RhinoCodec
         .inspect(&mut Cursor::new(unknown), &InspectOptions::default())
         .expect("required invariant");
-    assert!(summary
-        .notes
-        .iter()
-        .any(|note| note.contains("unknown bounded record")));
+    assert!(
+        summary
+            .notes
+            .iter()
+            .any(|note| note.contains("unknown bounded record"))
+    );
 }
