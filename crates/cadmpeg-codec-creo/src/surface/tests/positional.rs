@@ -1973,15 +1973,18 @@ fn decodes_terminal_type24_round_radius() {
 fn summarizes_seven_byte_torus_radius() {
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x5e\x33\x33\x33\x33\x33\x2c\xe0\x01radius2\0\x29\xc9\x99\xe3";
 
-    assert!(matches!(
-        prototypes(payload).as_slice(),
-        [SurfacePrototype {
-            kind: SurfaceKind::TorusOrSphere,
-            radius: Some(major),
-            radius2: Some(minor),
-            ..
-        }] if (*major - 0.3).abs() < 1.0e-12 && (*minor - 0.2).abs() < 1.0e-12
-    ));
+    assert_eq!(prototype_count(payload), 1);
+    let records = named_prototype_records(payload);
+    let radius1 = records[0].field("radius1").expect("radius1");
+    let radius2 = records[0].field("radius2").expect("radius2");
+    let SurfaceNamedValue::ScalarSequence(major) = &radius1.value else {
+        panic!("radius1 sequence");
+    };
+    let SurfaceNamedValue::ScalarSequence(minor) = &radius2.value else {
+        panic!("radius2 sequence");
+    };
+    assert!((major[0] - 0.3).abs() < 1.0e-12);
+    assert!((minor[0] - 0.2).abs() < 1.0e-12);
 }
 
 #[test]

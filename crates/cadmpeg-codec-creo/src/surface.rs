@@ -2,8 +2,8 @@
 //! Surface namespace rows and prototype parameters.
 //!
 //! A [`SurfaceRow`] identifies a surface family and its feature, orientation,
-//! boundary, and namespace links. A [`SurfacePrototype`] contains named template
-//! parameters. A named prototype locates its adjacent first positional instance.
+//! boundary, and namespace links. A named prototype locates its adjacent first
+//! positional instance.
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
@@ -167,24 +167,6 @@ pub(crate) fn uniquely_identified_rows(rows: &[SurfaceRow]) -> Vec<&SurfaceRow> 
     rows.iter()
         .filter(|row| counts.get(&row.id) == Some(&1))
         .collect()
-}
-
-/// Named scalar parameters from one surface-family prototype.
-#[derive(Debug, Clone, PartialEq)]
-pub struct SurfacePrototype {
-    /// The prototype's surface family, from its labeled `geom_type` field.
-    pub kind: SurfaceKind,
-    /// The `radius` scalar field for a cylinder prototype, or `radius1` for
-    /// a torus/sphere prototype (nonzero for a torus, zero for a sphere).
-    pub radius: Option<f64>,
-    /// The `radius2` scalar field for a torus/sphere prototype.
-    pub radius2: Option<f64>,
-    /// The `half_angle` scalar field for a cone prototype, in radians, in
-    /// the range `(0, pi/2)` ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)).
-    pub half_angle: Option<f64>,
-    /// Byte offset of the `srf_prim_ptr` record's label in the original
-    /// stream.
-    pub offset: usize,
 }
 
 /// Named `srf_prim_ptr(<kind>)` prototype family.
@@ -8281,39 +8263,14 @@ fn complete_plane_compact_scalar_suffix(
         .collect()
 }
 
-/// Decode fully specified scalar fields in labeled `srf_prim_ptr` prototype
-/// records. A prototype is emitted only when its named kind is known.
-pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
-    let mut prototypes = named_prototype_records(payload)
-        .into_iter()
-        .filter_map(|record| {
-            let kind = match record.family {
-                SurfacePrototypeFamily::Plane => SurfaceKind::Plane,
-                SurfacePrototypeFamily::Cylinder => SurfaceKind::Cylinder,
-                SurfacePrototypeFamily::Cone => SurfaceKind::Cone,
-                SurfacePrototypeFamily::Torus => SurfaceKind::TorusOrSphere,
-                SurfacePrototypeFamily::Spline => SurfaceKind::Spline,
-                SurfacePrototypeFamily::Fillet => SurfaceKind::Fillet,
-                SurfacePrototypeFamily::Extrusion => SurfaceKind::Extrusion,
-                SurfacePrototypeFamily::Other(_) => return None,
-            };
-            let scalar = |name: &str| match &record.field(name)?.value {
-                SurfaceNamedValue::ScalarSequence(values) if values.len() == 1 => Some(values[0]),
-                _ => None,
-            };
-            let radius = match kind {
-                SurfaceKind::TorusOrSphere => scalar("radius1"),
-                _ => scalar("radius"),
-            };
-            Some(SurfacePrototype {
-                kind,
-                radius,
-                radius2: scalar("radius2"),
-                half_angle: scalar("half_angle").filter(|value| valid_half_angle(*value)),
-                offset: record.offset,
-            })
-        })
-        .collect::<Vec<_>>();
+/// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
+/// `geom_type` prototype records. Production readers use only this count.
+pub fn prototype_count(payload: &[u8]) -> usize {
+    let named = named_prototype_records(payload)
+        .iter()
+        .filter(|record| !matches!(record.family, SurfacePrototypeFamily::Other(_)))
+        .count();
+    let mut unlabeled = 0;
     let mut start = 0;
     while let Some(record) = find(payload, b"srf_prim_ptr\0", start) {
         start = record + b"srf_prim_ptr\0".len();
@@ -8321,31 +8278,15 @@ pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
         let Some(kind_label) = find_in(payload, b"geom_type\0", start, end) else {
             continue;
         };
-        let Some(kind) = payload
+        if payload
             .get(kind_label + b"geom_type\0".len())
             .and_then(|value| SurfaceKind::from_byte(*value))
-        else {
-            continue;
-        };
-        let scalar_at = |label: &[u8]| {
-            find_in(payload, label, start, end)
-                .and_then(|pos| scalar::decode(payload, pos + label.len()).map(|(value, _)| value))
-        };
-        let half_angle = find_in(payload, b"half_angle\0", start, end).and_then(|pos| {
-            scalar::decode_positive_dict(payload, pos + b"half_angle\0".len())
-                .map(|(value, _)| value)
-                .filter(|value| valid_half_angle(*value))
-        });
-        prototypes.push(SurfacePrototype {
-            kind,
-            radius: scalar_at(b"radius\0"),
-            radius2: scalar_at(b"radius2\0"),
-            half_angle,
-            offset: record,
-        });
+            .is_some()
+        {
+            unlabeled += 1;
+        }
     }
-    prototypes.sort_by_key(|prototype| prototype.offset);
-    prototypes
+    named + unlabeled
 }
 
 fn valid_half_angle(value: f64) -> bool {
