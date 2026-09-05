@@ -7374,8 +7374,7 @@ pub(crate) fn bind_mirror_selection_planes(
             crate::records::DesignPlane {
                 origin: plane.origin,
                 normal: plane.normal,
-            }
-            .into(),
+            },
         );
     }
 }

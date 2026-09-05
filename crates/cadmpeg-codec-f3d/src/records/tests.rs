@@ -1555,3 +1555,21 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
         }
     }
 }
+
+#[test]
+fn mirror_plane_wire_rejects_partial_placement() {
+    let prefix = r#"{"count":2,"count_record_index":11,"count_offset":0,"stitch_tolerance":0.001,"stitch_tolerance_record_index":12,"stitch_tolerance_offset":0,"seed_group_record_index":20,"plane_group_record_index":30"#;
+    let origin = serde_json::to_string(&cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
+    let normal = serde_json::to_string(&cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    for fields in [String::new(), format!(",\"plane_origin\":{origin},\"plane_normal\":{normal}")] {
+        let wire = format!("{prefix}{fields}}}");
+        let construction: super::DesignMirrorConstruction = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&construction).unwrap(), wire);
+    }
+    for (field, value) in [("plane_origin", origin), ("plane_normal", normal)] {
+        let invalid = format!("{prefix},\"{field}\":{value}}}");
+        let error = serde_json::from_str::<super::DesignMirrorConstruction>(&invalid).unwrap_err().to_string();
+        assert!(error.contains("plane_origin"));
+        assert!(error.contains("plane_normal"));
+    }
+}
