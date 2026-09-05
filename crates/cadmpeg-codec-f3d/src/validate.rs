@@ -2209,16 +2209,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let unique_index = scope_indices.insert((native_stream, scope.record_index));
         let entity_link = scope.sketch_entity().map(|binding| {
             entities_by_suffix
-                .get(&(native_stream, binding.entity_suffix))
+                .get(&(native_stream, binding.entity_id.suffix()))
                 .is_some_and(|entity| {
-                    entity.entity_id == binding.entity_id
+                    entity.entity_id == binding.entity_id.as_str()
                         && binding.entity_reference_offset > scope.byte_offset
                         && binding.entity_reference_offset < scope.paired_byte_offset
                 })
         });
         let valid_sketch_profile = |profile: &records::DesignSketchProfileOperand| {
             let header = records_by_index.get(&(native_stream, profile.record_index));
-            let entity = entities_by_suffix.get(&(native_stream, profile.entity_suffix));
+            let entity = entities_by_suffix.get(&(native_stream, profile.entity_id.suffix()));
             usize::try_from(profile.scope_reference_ordinal)
                 .ok()
                 .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
@@ -2228,7 +2228,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && header.class_tag == profile.class_tag
                 })
                 && entity.is_some_and(|entity| {
-                    entity.in_sketch_module() && entity.entity_id == profile.entity_id
+                    entity.in_sketch_module() && entity.entity_id == profile.entity_id.as_str()
                 })
                 && valid_design_guid(&profile.asset_id)
                 && profile.asset_id_offset > profile.byte_offset
@@ -6516,7 +6516,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
             .and_then(|scope| scope.extrude_profile());
         let selected_sketch =
-            selected_profile.and_then(|profile| u32::try_from(profile.entity_suffix).ok());
+            selected_profile.and_then(|profile| u32::try_from(profile.entity_id.suffix()).ok());
         let point_targets = native.sketch_points.iter().filter_map(|point| {
             (selected_sketch.is_some()
                 && design_stream(&point.id) == native_stream
@@ -7647,8 +7647,8 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     design::design_feature_family(&scope.kind())
                         == Some(design::DesignFeatureFamily::Sketch)
                         && scope.sketch_entity().is_some_and(|binding| {
-                            binding.entity_id == placement.entity_id
-                                && binding.entity_suffix == placement.entity_suffix
+                            binding.entity_id.as_str() == placement.entity_id
+                                && binding.entity_id.suffix() == placement.entity_suffix
                         })
                 })
         };

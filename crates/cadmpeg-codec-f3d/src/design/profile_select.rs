@@ -191,7 +191,7 @@ pub(crate) fn bind_sweep_sketch_selections(
             if group_matches {
                 let mut candidates = placements.iter().filter(|placement| {
                     native_stream(&placement.id) == Some(stream)
-                        && placement.entity_suffix == profile_operand.entity_suffix
+                        && placement.entity_suffix == profile_operand.entity_id.suffix()
                 });
                 if let (Some(placement), None) = (candidates.next(), candidates.next()) {
                     let sketch = neutral_sketch_id(placement);
@@ -2034,7 +2034,7 @@ fn resolved_sketch_profile_regions(
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<Vec<u32>> {
     let selection = profile.region_selection.as_ref()?;
-    let owner_reference = u32::try_from(profile.entity_suffix).ok()?;
+    let owner_reference = u32::try_from(profile.entity_id.suffix()).ok()?;
     let mut resolved = Vec::with_capacity(selection.regions.len());
     for region in &selection.regions {
         let first = sketch_profile_member_entity(
@@ -2140,7 +2140,7 @@ fn resolved_spatial_sketch_profile_regions(
             .collect::<Result<Vec<_>, _>>()
             .ok();
     };
-    let owner_reference = u32::try_from(profile.entity_suffix).ok()?;
+    let owner_reference = u32::try_from(profile.entity_id.suffix()).ok()?;
     let mut resolved = Vec::with_capacity(selection.regions.len());
     for region in &selection.regions {
         let first = spatial_profile_member_entity(
@@ -2269,7 +2269,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             .iter()
             .filter(|placement| {
                 native_stream(&placement.id) == Some(stream)
-                    && placement.entity_id == profile.entity_id
+                    && placement.entity_id == profile.entity_id.as_str()
             })
             .collect::<Vec<_>>();
         let [placement] = matches.as_slice() else {

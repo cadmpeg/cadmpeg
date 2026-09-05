@@ -850,7 +850,7 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
                     .filter(|entity| {
                         native_stream(&entity.id) == Some(stream)
                             && scope.sketch_entity().is_some_and(|binding| {
-                                binding.entity_suffix == entity.entity_suffix
+                                binding.entity_id.suffix() == entity.entity_suffix
                             })
                             && usize::try_from(entity.byte_offset)
                                 .is_ok_and(|offset| offset >= start && offset < end)

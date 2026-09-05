@@ -58,8 +58,8 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     )
     .expect("sketch-profile operand");
     assert_eq!(profile.scope_reference_ordinal, 4);
-    assert_eq!(profile.entity_suffix, 172);
-    assert_eq!(profile.entity_id, "0_172");
+    assert_eq!(profile.entity_id.suffix(), 172);
+    assert_eq!(profile.entity_id.as_str(), "0_172");
     assert_eq!(profile.paired_byte_offset, paired_at as u64);
 
     bytes.truncate(paired_at - 94);
@@ -163,8 +163,8 @@ fn generated_base_flange_profile_frame_resolves() {
         std::slice::from_ref(&entity),
     )
     .expect("generated BaseFlange profile operand");
-    assert_eq!(profile.entity_id, "Sketch_800");
-    assert_eq!(profile.entity_suffix, 800);
+    assert_eq!(profile.entity_id.as_str(), "Sketch_800");
+    assert_eq!(profile.entity_id.suffix(), 800);
 }
 
 #[test]
@@ -620,8 +620,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 class_tag: "308".into(),
                 asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
                 asset_id_offset: 3040,
-                entity_id: "0_172".into(),
-                entity_suffix: 172,
+                entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity identity"),
                 entity_reference_offset: 3120,
                 region_selection: None,
                 paired_class_tag: "259".into(),

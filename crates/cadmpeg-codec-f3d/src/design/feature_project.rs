@@ -2022,7 +2022,7 @@ fn scope_properties(
     if let Some(profile) = scope.extrude_profile().or(scope.base_flange_profile()) {
         if let Some(placement) = placements.iter().find(|placement| {
             native_stream(&placement.id) == Some(native_scope)
-                && placement.entity_id == profile.entity_id
+                && placement.entity_id == profile.entity_id.as_str()
         }) {
             properties.insert("profile".into(), neutral_sketch_id(placement).0);
         }
@@ -3375,7 +3375,7 @@ fn project_base_flange(
     }
     let placement = placements.iter().find(|placement| {
         native_stream(&placement.id) == native_stream(&scope.id)
-            && placement.entity_id == profile.entity_id
+            && placement.entity_id == profile.entity_id.as_str()
     })?;
     Some(FeatureDefinition::SheetMetalBaseFlange {
         profile: ProfileRef::Sketch(neutral_sketch_id(placement)),
@@ -7541,7 +7541,7 @@ pub(crate) fn project_extrude(
         Some(profile) => {
             let placement = placements.iter().find(|placement| {
                 native_stream(&placement.id) == native_stream(&scope.id)
-                    && placement.entity_id == profile.entity_id
+                    && placement.entity_id == profile.entity_id.as_str()
             })?;
             ProfileRef::Sketch(neutral_sketch_id(placement))
         }
