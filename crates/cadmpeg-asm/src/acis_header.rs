@@ -6,6 +6,7 @@
 //! `0x07`-tagged strings, and three `0x06`-tagged tolerance doubles. The SAB
 //! record stream begins immediately after the doubles.
 
+use crate::kernel_header::RefWidth;
 use cadmpeg_core::decode::View;
 
 use crate::kernel_header::{read_string_region, KernelHeader};
@@ -26,7 +27,7 @@ pub fn parse(bytes: &[u8]) -> Option<KernelHeader> {
         return None;
     }
     let mut header = KernelHeader {
-        width: 4,
+        width: RefWidth::Four,
         save_format_version: View::u32_le_at(bytes, acis_bf4::SAVE_FORMAT_VERSION),
         record_count: View::u32_le_at(bytes, acis_bf4::RECORD_COUNT),
         entity_count: View::u32_le_at(bytes, acis_bf4::ENTITY_COUNT).map(u64::from),
@@ -59,7 +60,7 @@ pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
 /// Byte offset immediately after the three strings and three doubles, using
 /// an already-parsed ACIS header.
 pub fn record_stream_start_with_header(bytes: &[u8], header: &KernelHeader) -> Option<usize> {
-    if header.width != 4 {
+    if header.width != RefWidth::Four {
         return None;
     }
     let (strings, doubles, position) = read_string_region(bytes, acis_bf4::LEN);
@@ -79,7 +80,7 @@ pub fn solved_record_limit_with_header(bytes: &[u8], header: &KernelHeader) -> O
         return None;
     }
     let start = record_stream_start_with_header(bytes, header)?;
-    let records = crate::sab::frame(bytes, start, bytes.len(), 4).ok()?;
+    let records = crate::sab::frame(bytes, start, bytes.len(), RefWidth::Four).ok()?;
     let mut next = match records.last() {
         Some(record) => record.offset.checked_add(record.len)?,
         None => start,
@@ -118,7 +119,7 @@ mod tests {
         bytes.extend_from_slice(b"delta_state");
 
         let header = parse(&bytes).expect("ACIS header");
-        assert_eq!(header.width, 4);
+        assert_eq!(header.width.bytes(), 4);
         assert_eq!(header.save_format_version, Some(21_800));
         assert_eq!(header.entity_count, Some(2));
         assert_eq!(header.format_revision(), Some(6));

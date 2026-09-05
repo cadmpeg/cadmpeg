@@ -19,16 +19,16 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use zip::CompressionMethod;
 
-use crate::F3dCodec;
 use crate::container::{self};
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
+use crate::F3dCodec;
 
 #[test]
 fn asm_header_parses_documented_fields() {
     let bytes = synthetic_smbh();
     let h = asm_header::parse(&bytes).expect("magic present");
-    assert_eq!(h.width, 8);
+    assert_eq!(h.width.bytes(), 8);
     assert_eq!(h.save_format_version, Some(23100));
     assert_eq!(h.entity_count, Some(7));
     assert_eq!(h.flags, Some(3));
@@ -55,7 +55,7 @@ fn asm_header_parses_documented_fields() {
 #[test]
 fn asm_header_flag_bits_one_to_seven_hold_the_format_revision() {
     let header = |flags: u64| cadmpeg_asm::kernel_header::KernelHeader {
-        width: 8,
+        width: cadmpeg_asm::kernel_header::RefWidth::Eight,
         save_format_version: Some(22500),
         record_count: None,
         entity_count: None,
@@ -91,7 +91,7 @@ fn asm_header_parses_binaryfile4_fields() {
     let bytes = bf4_header_prefix(5);
     assert!(asm_header::has_asm_magic(&bytes));
     let h = asm_header::parse(&bytes).expect("magic present");
-    assert_eq!(h.width, 4);
+    assert_eq!(h.width.bytes(), 4);
     assert_eq!(h.save_format_version, Some(22700));
     assert_eq!(h.record_count, Some(0));
     assert_eq!(h.entity_count, Some(2));
@@ -288,7 +288,13 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 
     assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let solved = cadmpeg_asm::sab::frame(&bytes, start, expected, 8).unwrap();
+    let solved = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        expected,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     assert_eq!(
         solved.last().map(|record| record.name.as_str()),
         Some("body")
@@ -479,12 +485,10 @@ fn inspect_enumerates_and_reads_headers() {
     assert!(smbh.attributes.contains_key("sha256"));
 
     // The header identifies the unique history-bearing stream.
-    assert!(
-        summary
-            .notes
-            .iter()
-            .any(|n| n.contains("history-bearing BREP"))
-    );
+    assert!(summary
+        .notes
+        .iter()
+        .any(|n| n.contains("history-bearing BREP")));
 }
 
 #[test]
@@ -544,19 +548,15 @@ fn decode_yields_metadata_and_honest_report() {
     let unknowns = result.ir().native_unknowns("f3d").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(result.source_fidelity().retained_records.len(), 2);
-    assert!(
-        result
-            .source_fidelity()
-            .retained_records
-            .iter()
-            .all(|record| record.sha256().len() == 64)
-    );
-    assert!(
-        result
-            .source_fidelity()
-            .retained_record("f3d:file:source-image#0")
-            .is_some()
-    );
+    assert!(result
+        .source_fidelity()
+        .retained_records
+        .iter()
+        .all(|record| record.sha256().len() == 64));
+    assert!(result
+        .source_fidelity()
+        .retained_record("f3d:file:source-image#0")
+        .is_some());
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.format(), "f3d");
     assert_eq!(
@@ -566,13 +566,11 @@ fn decode_yields_metadata_and_honest_report() {
     // resabs/resnor were carried into tolerances.
     assert_eq!(result.ir().tolerances.linear, 1.0e-6);
     assert_f3d_native_parity(result.ir());
-    assert!(
-        result
-            .source_fidelity()
-            .annotations
-            .provenance
-            .contains_key(unknowns[0].id.as_str())
-    );
+    assert!(result
+        .source_fidelity()
+        .annotations
+        .provenance
+        .contains_key(unknowns[0].id.as_str()));
 }
 
 #[test]
@@ -584,11 +582,9 @@ fn smb_only_is_an_explicit_geometry_fallback_without_history() {
         assert!(container::select_history_brep(scan).is_none());
         assert!(container::legacy_design_model_breps(scan).is_none());
         let notes = container::summary_notes(scan, container::SummaryScope::FullDecode);
-        assert!(
-            notes
-                .iter()
-                .any(|note| note.contains("no BREP header declares a history partition"))
-        );
+        assert!(notes
+            .iter()
+            .any(|note| note.contains("no BREP header declares a history partition")));
     });
 }
 
@@ -662,14 +658,12 @@ fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
             .map(String::as_str),
         Some("DesignAsset[Active]")
     );
-    assert!(
-        decoded
-            .ir()
-            .model
-            .bodies
-            .iter()
-            .all(|body| !body.id.as_str().contains("BREP.sibling"))
-    );
+    assert!(decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| !body.id.as_str().contains("BREP.sibling")));
 }
 
 #[test]
@@ -714,7 +708,13 @@ fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
     let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("framing succeeds");
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("framing succeeds");
 
     // asmheader occupies index 0; the topology records follow in order.
     assert_eq!(records[0].index, 0);

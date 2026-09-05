@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{decode_pcurve_cache, final_pcurve_patch_layout, pcurve_fit_tolerance};
+use crate::kernel_header::RefWidth;
 use crate::nurbs::blend::{
     decode_rolling_ball_curve, decode_rolling_ball_side, decode_rolling_ball_surface,
     DecodedRollingBallCurve,
@@ -23,9 +24,9 @@ use crate::nurbs::toks::{lex_test_span, test_table};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-fn push_int(out: &mut Vec<u8>, tag: u8, value: i64, int_width: usize) {
+fn push_int(out: &mut Vec<u8>, tag: u8, value: i64, int_width: RefWidth) {
     out.push(tag);
-    if int_width == 4 {
+    if int_width == RefWidth::Four {
         out.extend_from_slice(
             &i32::try_from(value)
                 .expect("test value fits i32")
@@ -66,7 +67,7 @@ fn push_vector(out: &mut Vec<u8>, values: [f64; 3]) {
 }
 
 /// A degree-1 two-pole 3D `nubs` curve block over `[0, 1]`.
-fn curve_block_with_endpoint(int_width: usize, endpoint: [f64; 3]) -> Vec<u8> {
+fn curve_block_with_endpoint(int_width: RefWidth, endpoint: [f64; 3]) -> Vec<u8> {
     let mut b = NUBS_MARKER.to_vec();
     push_int(&mut b, 0x04, 1, int_width); // degree
     push_int(&mut b, 0x15, 0, int_width); // open closure
@@ -81,12 +82,12 @@ fn curve_block_with_endpoint(int_width: usize, endpoint: [f64; 3]) -> Vec<u8> {
     b
 }
 
-fn curve_block(int_width: usize) -> Vec<u8> {
+fn curve_block(int_width: RefWidth) -> Vec<u8> {
     curve_block_with_endpoint(int_width, [1.0, 2.0, 3.0])
 }
 
 /// A degree-1 2×2-pole `nubs` surface block over `[0, 1]²`.
-fn surface_block_with_x_offset(int_width: usize, x_offset: f64) -> Vec<u8> {
+fn surface_block_with_x_offset(int_width: RefWidth, x_offset: f64) -> Vec<u8> {
     let mut b = NUBS_MARKER.to_vec();
     push_int(&mut b, 0x04, 1, int_width); // u degree
     push_int(&mut b, 0x04, 1, int_width); // v degree
@@ -109,11 +110,11 @@ fn surface_block_with_x_offset(int_width: usize, x_offset: f64) -> Vec<u8> {
     b
 }
 
-fn surface_block(int_width: usize) -> Vec<u8> {
+fn surface_block(int_width: RefWidth) -> Vec<u8> {
     surface_block_with_x_offset(int_width, 0.0)
 }
 
-fn pcurve_block(int_width: usize) -> Vec<u8> {
+fn pcurve_block(int_width: RefWidth) -> Vec<u8> {
     let mut b = NUBS_MARKER.to_vec();
     push_int(&mut b, 0x04, 1, int_width);
     push_int(&mut b, 0x15, 0, int_width);
@@ -130,7 +131,7 @@ fn pcurve_block(int_width: usize) -> Vec<u8> {
 
 /// A revision-gated exact curve with one plane support and one paired BS2
 /// pcurve in the shared cache-first context.
-fn exact_cache_first_curve(int_width: usize) -> Vec<u8> {
+fn exact_cache_first_curve(int_width: RefWidth) -> Vec<u8> {
     let mut bytes = vec![0x0f];
     push_ident(&mut bytes, "exact_int_cur");
     push_int(&mut bytes, 0x04, 23_100, int_width);
@@ -168,7 +169,7 @@ fn exact_cache_first_curve(int_width: usize) -> Vec<u8> {
 
 #[test]
 fn intcurve_selector_uses_the_serialized_direct_slot() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = curve_block(int_width);
         bytes.extend_from_slice(&pcurve_block(int_width));
         let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
@@ -191,7 +192,7 @@ fn intcurve_selector_uses_the_serialized_direct_slot() {
 
 #[test]
 fn exact_curve_selector_uses_its_cache_first_support_slot() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let bytes = exact_cache_first_curve(int_width);
 
         let toks = crate::nurbs::toks::lex_test_span(&bytes, int_width);
@@ -218,7 +219,7 @@ fn exact_curve_selector_uses_its_cache_first_support_slot() {
 
 #[test]
 fn exact_curve_selector_follows_subtype_reference() {
-    for int_width in [4usize, 8] {
+    for int_width in [RefWidth::Four, RefWidth::Eight] {
         let active = exact_cache_first_curve(int_width);
         for named in [false, true] {
             let mut wrapper = vec![0x0f];
@@ -241,7 +242,7 @@ fn exact_curve_selector_follows_subtype_reference() {
     }
 }
 
-fn rolling_ball_side(int_width: usize, label: &str) -> Vec<u8> {
+fn rolling_ball_side(int_width: RefWidth, label: &str) -> Vec<u8> {
     let mut bytes = Vec::new();
     push_string(
         &mut bytes,
@@ -262,7 +263,7 @@ fn rolling_ball_side(int_width: usize, label: &str) -> Vec<u8> {
     bytes
 }
 
-fn variable_blend_side(int_width: usize, name: &str, extension: Option<i64>) -> Vec<u8> {
+fn variable_blend_side(int_width: RefWidth, name: &str, extension: Option<i64>) -> Vec<u8> {
     let mut bytes = Vec::new();
     push_string(&mut bytes, name);
     push_ident(&mut bytes, "null_surface");

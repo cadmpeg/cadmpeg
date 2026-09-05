@@ -397,8 +397,13 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .windows(b"\x0d\x09asmheader".len())
         .position(|window| window == b"\x0d\x09asmheader")
         .expect("generated ASM record table");
-    let records = cadmpeg_asm::sab::frame(&smbh, record_start, smbh.len(), 8)
-        .expect("generated ASM records must frame");
+    let records = cadmpeg_asm::sab::frame(
+        &smbh,
+        record_start,
+        smbh.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("generated ASM records must frame");
     let point_records = records
         .iter()
         .filter(|record| record.head == "point")

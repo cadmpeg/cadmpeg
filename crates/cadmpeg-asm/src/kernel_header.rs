@@ -3,11 +3,37 @@
 
 use cadmpeg_core::decode::View;
 
+/// Integer and reference payload width of a kernel stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefWidth {
+    /// Four-byte signed integers and references.
+    Four,
+    /// Eight-byte signed integers and references.
+    Eight,
+}
+
+impl RefWidth {
+    /// Encoded payload size in bytes.
+    #[must_use]
+    pub const fn bytes(self) -> usize {
+        match self {
+            Self::Four => 4,
+            Self::Eight => 8,
+        }
+    }
+}
+
+impl std::fmt::Display for RefWidth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.bytes().fmt(f)
+    }
+}
+
 /// The recognized metadata fields of an ASM or ACIS model stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KernelHeader {
     /// Integer and reference width used by the record stream.
-    pub width: u8,
+    pub width: RefWidth,
     /// ACIS save-format version, encoded as `100 * major + minor`.
     pub save_format_version: Option<u32>,
     /// Record-count word when the header carries one.

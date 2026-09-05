@@ -87,7 +87,13 @@ pub(crate) fn synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh() -> Vec<
     let mut bytes = synthetic_versioned_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let record = &records[9];
     let subtype_close = record.offset + record.len - 2;
     assert_eq!(bytes[subtype_close], 0x10);
@@ -106,7 +112,13 @@ pub(crate) fn synthetic_versioned_cyl_spl_sur_with_tail_smbh(tail_form: i64) -> 
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
 
@@ -149,7 +161,13 @@ pub(crate) fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
 
@@ -180,7 +198,13 @@ pub(crate) fn synthetic_exact_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -218,7 +242,13 @@ pub(crate) fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> V
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -245,7 +275,13 @@ pub(crate) fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -273,7 +309,13 @@ pub(crate) fn synthetic_rot_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -299,7 +341,13 @@ pub(crate) fn synthetic_off_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -335,7 +383,13 @@ pub(crate) fn synthetic_comp_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -368,7 +422,13 @@ pub(crate) fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
 
     let mut surface = Vec::new();
@@ -445,7 +505,13 @@ pub(crate) fn synthetic_loft_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -483,7 +549,13 @@ pub(crate) fn synthetic_net_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -526,7 +598,13 @@ pub(crate) fn synthetic_profile_first_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -574,7 +652,13 @@ pub(crate) fn synthetic_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -614,7 +698,13 @@ pub(crate) fn synthetic_helix_surface_smbh(circular: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -664,7 +754,13 @@ pub(crate) fn synthetic_minimal_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -705,7 +801,13 @@ pub(crate) fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -763,7 +865,13 @@ pub(crate) fn synthetic_revision_deformable_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -827,7 +935,13 @@ pub(crate) fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -883,7 +997,13 @@ pub(crate) fn synthetic_full_deformable_surface_smbh(version_value: Option<i64>)
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -952,7 +1072,13 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old_offset = records[9].offset;
     let old_len = records[9].len;
     let mut surface = Vec::new();
@@ -992,12 +1118,15 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
         &bytes,
         asm_header::record_stream_start(&bytes).unwrap(),
         asm_header::solved_record_limit(&bytes).unwrap(),
-        8,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap();
     let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes);
     let index = tables
-        .index_of_offset(8, old_offset + shared_offset)
+        .index_of_offset(
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+            old_offset + shared_offset,
+        )
         .expect("shared T-spline subtype index");
     bytes[old_offset + reference_value_offset..old_offset + reference_value_offset + 8]
         .copy_from_slice(&i64::try_from(index).unwrap().to_le_bytes());
@@ -1008,7 +1137,13 @@ pub(crate) fn synthetic_explicit_formula_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1056,7 +1191,13 @@ pub(crate) fn synthetic_explicit_guide_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1109,7 +1250,13 @@ pub(crate) fn synthetic_explicit_surface_sweep_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1182,7 +1329,13 @@ fn synthetic_revision_text_law_sweep_with_tail_smbh(tail_form: i64) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1259,7 +1412,13 @@ fn synthetic_law_driven_sweep_smbh_with_law_slots(
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1346,7 +1505,13 @@ pub(crate) fn synthetic_compound_loft_smbh() -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1385,7 +1550,13 @@ pub(crate) fn synthetic_scaled_compound_loft_smbh(full: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1437,7 +1608,13 @@ pub(crate) fn synthetic_skin_spl_sur_smbh(law_case: u8, expanded: bool) -> Vec<u
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1550,7 +1727,13 @@ pub(crate) fn synthetic_law_spl_sur_smbh(
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");
@@ -1627,7 +1810,13 @@ pub(crate) fn synthetic_sub_spl_sur_smbh(name: &str) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let old = &records[9];
     let mut surface = Vec::new();
     t_subident(&mut surface, "spline");

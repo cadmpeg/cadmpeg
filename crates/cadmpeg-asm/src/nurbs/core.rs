@@ -7,6 +7,7 @@
 //! edits the original binary stream in place and is therefore byte-addressed
 //! by nature.
 
+use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
     construction_marker_positions, is_periodic, marker_at, marker_positions,
     owned_marker_positions, read_control_points, read_knots, take_tagged_int, KnotLayout,
@@ -270,13 +271,13 @@ pub struct SurfacePatchLayout {
     /// Payload offsets for the U/V degree integers.
     pub degree_value_offsets: [usize; 2],
     /// Payload width of integer and enum fields.
-    pub int_width: usize,
+    pub int_width: RefWidth,
 }
 
 pub(crate) fn decode_surface_block(
     b: &[u8],
     marker_pos: usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<SurfacePatchLayout> {
     let (cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker_len;
@@ -368,7 +369,10 @@ pub(crate) fn decode_surface_block(
 
 /// Locate the final valid `nubs`/`nurbs` surface block at the stream's known
 /// integer width.
-pub fn final_surface_patch_layout(record: &[u8], int_width: usize) -> Option<SurfacePatchLayout> {
+pub fn final_surface_patch_layout(
+    record: &[u8],
+    int_width: RefWidth,
+) -> Option<SurfacePatchLayout> {
     construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|position| decode_surface_block(record, position, int_width))
@@ -380,7 +384,7 @@ pub fn final_surface_patch_layout(record: &[u8], int_width: usize) -> Option<Sur
 pub fn surface_patch_layout_at(
     record: &[u8],
     ordinal: usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<SurfacePatchLayout> {
     construction_marker_positions(record, int_width)
         .into_iter()
@@ -406,13 +410,13 @@ pub struct CurvePatchLayout {
     /// Payload offset for the degree integer.
     pub degree_value_offset: usize,
     /// Payload width of integer and enum fields.
-    pub int_width: usize,
+    pub int_width: RefWidth,
 }
 
 pub(crate) fn decode_curve_block(
     b: &[u8],
     marker_pos: usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<CurvePatchLayout> {
     let (cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker_len;
@@ -457,14 +461,14 @@ pub(crate) fn decode_curve_block(
 }
 
 /// Locate the first valid 3D curve cache at the stream's known integer width.
-pub fn first_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
+pub fn first_curve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<CurvePatchLayout> {
     construction_marker_positions(record, int_width)
         .into_iter()
         .find_map(|position| decode_curve_block(record, position, int_width))
 }
 
 /// Locate the final valid 3D curve cache at the stream's known integer width.
-pub fn final_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
+pub fn final_curve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<CurvePatchLayout> {
     construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|position| decode_curve_block(record, position, int_width))
@@ -496,7 +500,7 @@ pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
 /// nested constructions carries their caches too, and those are not its own.
 pub(crate) fn decode_owned_surface_cache_at(
     scope: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<NurbsSurface> {
     owned_marker_positions(scope, int_width)
         .into_iter()
@@ -512,7 +516,7 @@ pub(crate) fn decode_owned_surface_cache_resolving_refs_at(
     scope: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<NurbsSurface> {
     decode_cache_resolving_refs(
         scope,
@@ -545,7 +549,7 @@ pub fn decode_curve_cache(record_bytes: &[u8]) -> Option<NurbsCurve> {
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block
 /// outside every construction the scope nests.
-pub fn decode_owned_curve_cache_at(scope: &[u8], int_width: usize) -> Option<NurbsCurve> {
+pub fn decode_owned_curve_cache_at(scope: &[u8], int_width: RefWidth) -> Option<NurbsCurve> {
     owned_marker_positions(scope, int_width)
         .into_iter()
         .find_map(|pos| decode_curve_block(scope, pos, int_width).map(|decoded| decoded.curve))
@@ -557,7 +561,7 @@ pub(crate) fn decode_owned_curve_cache_resolving_refs_at(
     scope: &[u8],
     active_bytes: &[u8],
     tables: &SubtypeTables,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<NurbsCurve> {
     decode_cache_resolving_refs(
         scope,

@@ -17,10 +17,10 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use crate::native::{F3D_NATIVE_VERSION, F3dNative};
-use cadmpeg_asm::brep::transfer::{AsmTransferRemainder, transfer_into_ir};
-use cadmpeg_core::CodecError;
+use crate::native::{F3dNative, F3D_NATIVE_VERSION};
+use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
@@ -4092,7 +4092,9 @@ fn decode_asm_history(
         .kernel
         .as_ref()
         .and_then(crate::container::KernelFraming::asm_header)
-        .map_or(8, |header| usize::from(header.width));
+        .map_or(cadmpeg_asm::kernel_header::RefWidth::Eight, |header| {
+            header.width
+        });
     let bytes = scan.entry_bytes(&history_brep.name)?;
     Ok(crate::history::decode(
         bytes,
@@ -4740,14 +4742,14 @@ fn try_decode_brep(
     scan: &ContainerScan,
     brep_entry: &BrepFacts,
 ) -> Result<Option<Brep>, CodecError> {
-    let width = brep_entry
+    let Some(width) = brep_entry
         .kernel
         .as_ref()
         .and_then(crate::container::KernelFraming::asm_header)
-        .map_or(0, |header| header.width);
-    if width != 4 && width != 8 {
+        .map(|header| header.width)
+    else {
         return Ok(None);
-    }
+    };
 
     let bytes = scan.entry_bytes(&brep_entry.name)?;
     let Some(start) = asm_header::record_stream_start(bytes) else {
@@ -4757,8 +4759,8 @@ fn try_decode_brep(
     // `End-of-ASM-data` record ends at EOF without the `0x11` terminator, so
     // it needs the EOF-tolerant framer used for the history partition.
     let framed = match brep_entry.solved_record_limit {
-        Some(limit) => sab::frame(bytes, start, limit, usize::from(width)),
-        None => sab::frame_history(bytes, start, bytes.len(), usize::from(width)),
+        Some(limit) => sab::frame(bytes, start, limit, width),
+        None => sab::frame_history(bytes, start, bytes.len(), width),
     };
     let records = match framed {
         Ok(r) if !r.is_empty() => r,

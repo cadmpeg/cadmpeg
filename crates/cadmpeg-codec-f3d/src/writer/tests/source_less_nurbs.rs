@@ -629,7 +629,13 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .unwrap()
             .read_to_end(&mut stream)
             .unwrap();
-        let records = cadmpeg_asm::sab::frame(&stream, 47, stream.len(), 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(
+            &stream,
+            47,
+            stream.len(),
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        )
+        .unwrap();
         let tolerant = records
             .iter()
             .find(|record| record.head == "tcoedge")

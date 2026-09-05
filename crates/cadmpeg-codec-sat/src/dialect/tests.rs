@@ -42,7 +42,7 @@ fn enum_and_registry_rows_are_closed_bidirectionally() {
 /// classification reads.
 fn header(save_format_version: Option<u32>) -> KernelHeader {
     KernelHeader {
-        width: 4,
+        width: cadmpeg_asm::kernel_header::RefWidth::Four,
         save_format_version,
         record_count: None,
         entity_count: None,

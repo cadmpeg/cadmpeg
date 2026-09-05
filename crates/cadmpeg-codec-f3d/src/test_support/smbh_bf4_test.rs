@@ -22,7 +22,13 @@ pub(crate) fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_bf4_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 4).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Four,
+    )
+    .unwrap();
     let ellipse_range = records[19].offset..records[19].offset + records[19].len;
 
     let mut curve = Vec::new();

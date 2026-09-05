@@ -2,6 +2,7 @@
 #![allow(clippy::items_after_test_module)]
 //! Blend spline-surface decoders (cylindrical, rolling-ball, variable, vertex, and rb blends).
 
+use crate::kernel_header::RefWidth;
 use crate::nurbs::core::{
     curve_block, decode_curve_block, decode_owned_curve_cache_at,
     decode_owned_curve_cache_resolving_refs_at, decode_owned_surface_cache_at,
@@ -152,7 +153,7 @@ pub(crate) fn cyl_spl_sur(
 pub(crate) fn decode_rolling_ball_side(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<EmbeddedRollingBallSide> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
@@ -218,7 +219,7 @@ pub(crate) type OptionalSupportSurface = (Option<SurfaceGeometry>, [[Option<f64>
 pub(crate) fn decode_optional_rolling_ball_surface(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<OptionalSupportSurface> {
     let saved = *position;
@@ -233,7 +234,7 @@ pub(crate) fn decode_optional_rolling_ball_surface(
 pub(crate) fn decode_rolling_ball_surface(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
     let saved = *position;
@@ -284,7 +285,7 @@ pub(crate) struct DecodedRollingBallCurve {
 pub(crate) fn decode_rolling_ball_curve(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedRollingBallCurve> {
     if marker_at(bytes, *position).is_some() {
@@ -803,7 +804,7 @@ mod variable_blend_value_tests {
     fn decodes_generated_two_ends_and_recursive_const_values() {
         let mut direct = Vec::new();
         two_ends(&mut direct);
-        let toks = crate::nurbs::toks::lex_test_span(&direct, 8);
+        let toks = crate::nurbs::toks::lex_test_span(&direct, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
         let decoded = variable_blend_value(&mut cur, true, 0).expect("generated two-ends value");
         assert_eq!(cur.pos(), toks.len());
@@ -825,7 +826,7 @@ mod variable_blend_value_tests {
         integer(&mut recursive, 0x15, 3);
         integer(&mut recursive, 0x15, 2);
         two_ends(&mut recursive);
-        let toks = crate::nurbs::toks::lex_test_span(&recursive, 8);
+        let toks = crate::nurbs::toks::lex_test_span(&recursive, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
         let decoded =
             variable_blend_value(&mut cur, true, 0).expect("generated recursive const value");
@@ -850,7 +851,7 @@ mod variable_blend_value_tests {
         for value in [0.5, 3.5, 0.1905] {
             double(&mut bytes, value);
         }
-        let toks = crate::nurbs::toks::lex_test_span(&bytes, 8);
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
         let decoded = variable_blend_value(&mut cur, true, 0).expect("generated fixed-width value");
         assert_eq!(cur.pos(), toks.len());
@@ -902,7 +903,7 @@ mod variable_blend_value_tests {
         // the enclosing record's cross-section clause, so it must be left
         // unconsumed.
         integer(&mut bytes, 0x15, 0);
-        let toks = crate::nurbs::toks::lex_test_span(&bytes, 8);
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
         let decoded =
             variable_blend_value(&mut cur, true, 0).expect("generated enum-tagged interp value");
@@ -974,7 +975,7 @@ mod variable_blend_value_tests {
         }
         // The enclosing record's cross-section enum, left unconsumed.
         integer(&mut bytes, 0x15, 0);
-        let toks = crate::nurbs::toks::lex_test_span(&bytes, 8);
+        let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight);
         let mut cur = Cur::at(&toks, 0);
         let decoded = variable_blend_value(&mut cur, true, 0)
             .expect("generated interp value with unset derivatives");

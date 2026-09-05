@@ -1573,8 +1573,11 @@ fn subtype_reference_resolves_surface_cache() {
     let mut active = target;
     active.extend_from_slice(&source);
     let decoded = cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(
-        &cadmpeg_asm::nurbs::toks::lex_test_span(&source, 8),
-        &cadmpeg_asm::nurbs::toks::test_table(&active, 8),
+        &cadmpeg_asm::nurbs::toks::lex_test_span(
+            &source,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        ),
+        &cadmpeg_asm::nurbs::toks::test_table(&active, cadmpeg_asm::kernel_header::RefWidth::Eight),
     )
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count(), decoded.v_count()), (2, 2));
@@ -1588,7 +1591,9 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // The support is the unit bilinear patch scaled to millimetres, so the
     // isoline at u = 1 is the patch's far edge.
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
-    let curve = decode_par_int_cur_isoline(&scope, 8, None).expect("form-2 isoline");
+    let curve =
+        decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight, None)
+            .expect("form-2 isoline");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
@@ -1599,11 +1604,21 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // A pcurve that crosses the support holds neither parameter fixed, so no
     // NURBS curve reproduces it and the form is refused.
     let diagonal = generated_form_two_par_int_cur([0.0, 0.0], [1.0, 1.0]);
-    assert!(decode_par_int_cur_isoline(&diagonal, 8, None).is_none());
+    assert!(decode_par_int_cur_isoline(
+        &diagonal,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        None
+    )
+    .is_none());
 
     // A pcurve running only part of the support's domain would need a trim.
     let partial = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 0.5]);
-    assert!(decode_par_int_cur_isoline(&partial, 8, None).is_none());
+    assert!(decode_par_int_cur_isoline(
+        &partial,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        None
+    )
+    .is_none());
 }
 
 #[test]
@@ -1622,7 +1637,9 @@ fn a_nested_construction_cache_is_not_the_enclosing_scope_cache() {
     scope.push(0x10);
 
     assert!(decode_curve_cache(&scope).is_some());
-    assert!(decode_owned_curve_cache_at(&scope, 8).is_none());
+    assert!(
+        decode_owned_curve_cache_at(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight).is_none()
+    );
 }
 
 #[test]
@@ -1634,7 +1651,13 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let record = &records[9];
     let owned = bytes[record.offset..record.offset + record.len].to_vec();
     let decoded = procedural_surface_resolving_refs(
@@ -1658,7 +1681,13 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     nested.splice(at..at, *b"\x0f\x0d\x14srf_srf_v_bl_spl_sur");
     let terminator = nested.len() - 1;
     nested.insert(terminator, 0x10);
-    let nested_records = cadmpeg_asm::sab::frame(&nested, 0, nested.len(), 8).unwrap();
+    let nested_records = cadmpeg_asm::sab::frame(
+        &nested,
+        0,
+        nested.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     assert!(procedural_surface_resolving_refs(
         &nested_records[0].tokens,
         &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
@@ -1668,7 +1697,10 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
 
 #[test]
 fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
-    for ref_width in [4usize, 8] {
+    for ref_width in [
+        cadmpeg_asm::kernel_header::RefWidth::Four,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    ] {
         // The last four payload bytes spell a definition opening. Only a walker
         // that consumes the length prefix at `ref_width` steps past them.
         let payload = [b'0', b'1', b'2', b'3', 0x0f, 0x0d, 0x01, b'x'];
@@ -1676,7 +1708,7 @@ fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
         let mut active = Vec::new();
         t_ident(&mut active, "tspl");
         active.push(0x09);
-        active.extend_from_slice(&payload.len().to_le_bytes()[..ref_width]);
+        active.extend_from_slice(&payload.len().to_le_bytes()[..ref_width.bytes()]);
         active.extend_from_slice(&payload);
         let definition = active.len();
         active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
@@ -1704,7 +1736,13 @@ fn rgb_attribute_chain_decodes_body_color() {
     t_dbl(&mut bytes, 0.3);
     t_end(&mut bytes);
 
-    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
@@ -1727,7 +1765,13 @@ fn truecolor_attribute_chain_decodes_by_color_as_opaque_rgb() {
     bytes.extend_from_slice(&(0xc240_80c0i64).to_le_bytes());
     t_end(&mut bytes);
 
-    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
@@ -1752,7 +1796,13 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
     push_u8_string(&mut bytes, "4227264"); // 0x4080c0
     t_end(&mut bytes);
 
-    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
@@ -1778,7 +1828,13 @@ fn bt_text_color_rejects_non_decimal_and_overwide_values() {
         push_u8_string(&mut bytes, value);
         t_end(&mut bytes);
 
-        let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(
+            &bytes,
+            0,
+            bytes.len(),
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        )
+        .unwrap();
         let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
         assert!(
             cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).is_none()
@@ -1809,7 +1865,13 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
     t_dbl(&mut bytes, 0.3);
     t_end(&mut bytes);
 
-    let records = cadmpeg_asm::sab::frame(&bytes, 0, bytes.len(), 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &bytes,
+        0,
+        bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();

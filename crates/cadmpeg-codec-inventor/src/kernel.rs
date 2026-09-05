@@ -102,7 +102,7 @@ pub(crate) fn decode_kernel_carrier(
             )
         }
     };
-    let width = usize::from(header.width);
+    let width = header.width;
     let records = match solved_limit {
         Some(limit) => sab::frame(bytes, start, limit, width),
         None => sab::frame_history(bytes, start, bytes.len(), width),
@@ -356,7 +356,7 @@ mod tests {
         let carrier = parse_carrier(view, "token", 7, 100, 23).expect("carrier parses");
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ASM carrier decodes");
 
-        assert_eq!(decoded.header.width, 4);
+        assert_eq!(decoded.header.width.bytes(), 4);
         assert_eq!(decoded.header.save_format_version, Some(700));
         assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
         assert!(decoded.brep.bodies.is_empty());
@@ -374,7 +374,7 @@ mod tests {
         let decoded = decode_test_carrier(&ctx, &carrier).expect("ACIS carrier decodes");
 
         assert_eq!(carrier.family, KernelFamily::Acis);
-        assert_eq!(decoded.header.width, 4);
+        assert_eq!(decoded.header.width.bytes(), 4);
         assert_eq!(decoded.header.save_format_version, Some(21_800));
         assert_eq!(decoded.header.product_family.as_deref(), Some("Inventor"));
         assert!(decoded.brep.bodies.is_empty());
@@ -400,7 +400,7 @@ mod tests {
         let verified = decode(21_800);
         let unverified = decode(70_000);
 
-        assert_eq!(unverified.header.width, 4);
+        assert_eq!(unverified.header.width.bytes(), 4);
         assert_eq!(unverified.header.save_format_version, Some(70_000));
         assert_eq!(
             unverified.header.product_family.as_deref(),

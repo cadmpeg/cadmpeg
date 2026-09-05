@@ -8,6 +8,7 @@ use super::geometry::{
 };
 use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
 use super::*;
+use crate::kernel_header::RefWidth;
 use crate::nurbs;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -894,8 +895,8 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 4
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 5
 
-    let records =
-        crate::sab::frame(&bytes, 0, bytes.len(), 8).expect("generated subshell bytes must frame");
+    let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+        .expect("generated subshell bytes must frame");
     let by_index = records
         .iter()
         .map(|record| (record.index as i64, record))
@@ -926,7 +927,7 @@ fn subshell_wires_project_onto_the_nearest_shell() {
     record(&mut bytes, "wire", &[]); // 5
     record(&mut bytes, "wire", &[]); // 6
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), 8)
+    let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
         .expect("generated subshell-wire bytes must frame");
     let by_index = records
         .iter()

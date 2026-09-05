@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Procedural curve embedded types, decoders, resolving-ref walkers, and writer-facing patch layouts.
 
+use crate::kernel_header::RefWidth;
 use crate::nurbs::blend::{
     decode_optional_rolling_ball_surface, decode_rolling_ball_side, decode_surface_ranges,
     optional_rolling_ball_surface, surface_ranges,
@@ -1144,7 +1145,7 @@ pub struct SpringPatchLayout {
 }
 
 /// Locate spring context fields by walking the subtype grammar at `int_width`.
-pub fn spring_patch_layout(bytes: &[u8], int_width: usize) -> Option<SpringPatchLayout> {
+pub fn spring_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<SpringPatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"spring_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     for _ in 0..2 {
@@ -1241,7 +1242,7 @@ pub struct CompoundPatchLayout {
 }
 
 /// Locate both compound parameter arrays from their native counts.
-pub fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<CompoundPatchLayout> {
+pub fn compound_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<CompoundPatchLayout> {
     let name = b"comp_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
@@ -1263,7 +1264,7 @@ pub fn compound_patch_layout(bytes: &[u8], int_width: usize) -> Option<CompoundP
 }
 
 /// Locate the subset range by consuming the subtype-owned parent curve.
-pub fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<SubsetPatchLayout> {
+pub fn subset_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<SubsetPatchLayout> {
     let name = b"subset_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
@@ -1279,7 +1280,7 @@ pub fn subset_patch_layout(bytes: &[u8], int_width: usize) -> Option<SubsetPatch
 /// Locate vector-offset fields by consuming the wrapper flag and source curve.
 pub fn vector_offset_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<VectorOffsetPatchLayout> {
     let name = b"offset_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
@@ -1300,7 +1301,7 @@ pub fn vector_offset_patch_layout(
 }
 
 /// Locate helix fields by consuming the subtype prefix grammar.
-pub fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLayout> {
+pub fn helix_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<HelixPatchLayout> {
     let name = b"helix_int_cur";
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
@@ -1338,7 +1339,7 @@ pub fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<HelixPatchLa
 }
 
 /// Locate extrusion fields from the `cyl_spl_sur` subtype header.
-pub fn extrusion_patch_layout(bytes: &[u8], int_width: usize) -> Option<ExtrusionPatchLayout> {
+pub fn extrusion_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<ExtrusionPatchLayout> {
     let names: [&[u8]; 2] = [b"cyl_spl_sur", b"cylsur"];
     let (start, name_len) = find_owned_subtype_marker(bytes, &names, int_width)
         .map(|(start, name)| (start, name.len()))?;
@@ -1360,7 +1361,10 @@ pub fn extrusion_patch_layout(bytes: &[u8], int_width: usize) -> Option<Extrusio
 }
 
 /// Locate the rolling-ball radius pair by walking both supports and the slice curve.
-pub fn rolling_ball_patch_layout(bytes: &[u8], int_width: usize) -> Option<RollingBallPatchLayout> {
+pub fn rolling_ball_patch_layout(
+    bytes: &[u8],
+    int_width: RefWidth,
+) -> Option<RollingBallPatchLayout> {
     let names: [&[u8]; 6] = [
         b"rb_blend_spl_sur",
         b"rbblnsur",
@@ -1600,7 +1604,7 @@ pub struct SurfaceOffsetPatchLayout {
 /// Locate surface-offset fields by walking supports and the base curve.
 pub fn surface_offset_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<SurfaceOffsetPatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"off_surf_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
@@ -1705,7 +1709,7 @@ pub struct SilhouettePatchLayout {
 /// Locate silhouette fields by walking its context and cast surface.
 pub fn silhouette_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
     silhouette: &cadmpeg_ir::geometry::SilhouetteKind,
 ) -> Option<SilhouettePatchLayout> {
     use cadmpeg_ir::geometry::SilhouetteKind;
@@ -1781,7 +1785,7 @@ fn embedded_surface_curve(
 /// pcurve denotes a curve a NURBS cache can only approximate, so it is refused.
 pub fn decode_par_int_cur_isoline(
     scope: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
     reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<NurbsCurve> {
     let names: [&[u8]; 2] = [b"par_int_cur", b"parcur"];
@@ -2112,7 +2116,7 @@ pub struct SurfaceCurvePatchLayout {
 /// Locate a surface-curve context by walking its two ordered support pairs.
 pub fn surface_curve_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
     family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
 ) -> Option<SurfaceCurvePatchLayout> {
     use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
@@ -2184,7 +2188,7 @@ pub struct ThreeSurfacePatchLayout {
 /// Locate three-surface intersection fields by walking all three support pairs.
 pub fn three_surface_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<ThreeSurfacePatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"sss_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
@@ -2277,7 +2281,7 @@ pub struct ProjectionPatchLayout {
 }
 
 /// Locate projection fields by walking supports, source curve, and selected tail.
-pub fn projection_patch_layout(bytes: &[u8], int_width: usize) -> Option<ProjectionPatchLayout> {
+pub fn projection_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<ProjectionPatchLayout> {
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, b"proj_int_cur", int_width)?;
     let mut position = marker + name_len + 3;
     decode_embedded_surface(bytes, &mut position, int_width)?;
@@ -2430,7 +2434,7 @@ pub struct IntersectionPatchLayout {
 /// Locate an intersection context by walking both ordered support pairs.
 pub fn intersection_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<IntersectionPatchLayout> {
     let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
     let (marker, name) = find_owned_subtype_marker(bytes, &names, int_width)?;
@@ -2583,7 +2587,7 @@ pub struct TwoSidedOffsetPatchLayout {
 /// Locates the fixed-width scalar payloads after variable embedded supports.
 pub fn two_sided_offset_patch_layout(
     bytes: &[u8],
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<TwoSidedOffsetPatchLayout> {
     let name = b"off_int_cur";
     let (marker, name_len) = find_owned_intcurve_subtype(bytes, name, int_width)?;
@@ -2615,7 +2619,11 @@ pub fn two_sided_offset_patch_layout(
     })
 }
 
-fn skip_offset_support_surface(bytes: &[u8], position: &mut usize, int_width: usize) -> Option<()> {
+fn skip_offset_support_surface(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: RefWidth,
+) -> Option<()> {
     let start = *position;
     if take_native_ident(bytes, position)?.as_str() == "null_surface" {
         return Some(());
@@ -2625,7 +2633,11 @@ fn skip_offset_support_surface(bytes: &[u8], position: &mut usize, int_width: us
     Some(())
 }
 
-fn skip_offset_support_pcurve(bytes: &[u8], position: &mut usize, int_width: usize) -> Option<()> {
+fn skip_offset_support_pcurve(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: RefWidth,
+) -> Option<()> {
     let start = *position;
     if take_native_ident(bytes, position)?.as_str() == "nullbs" {
         return Some(());
@@ -2637,7 +2649,7 @@ fn skip_offset_support_pcurve(bytes: &[u8], position: &mut usize, int_width: usi
 pub(crate) fn decode_embedded_surface(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<SurfaceGeometry> {
     decode_embedded_surface_fields(bytes, position, int_width, false).map(|(surface, _)| surface)
 }
@@ -2799,7 +2811,7 @@ fn embedded_surface_fields(
 pub(crate) fn decode_embedded_surface_with_ranges(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
     decode_embedded_surface_fields(bytes, position, int_width, true)
 }
@@ -2807,7 +2819,7 @@ pub(crate) fn decode_embedded_surface_with_ranges(
 fn decode_embedded_surface_fields(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
     preserve_ranges: bool,
 ) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
     let no_ranges = [[None, None], [None, None]];
@@ -3199,7 +3211,7 @@ pub(crate) fn helix_definition(
 pub(crate) fn take_optional_helix_revision(
     bytes: &[u8],
     position: &mut usize,
-    int_width: usize,
+    int_width: RefWidth,
 ) -> Option<bool> {
     if bytes.get(*position) != Some(&0x04) {
         return Some(false);
@@ -3333,11 +3345,11 @@ mod cache_form_tests {
     }
 
     /// A tagged integer field.
-    fn push_int(bytes: &mut Vec<u8>, tag: u8, value: i64, int_width: usize) {
+    fn push_int(bytes: &mut Vec<u8>, tag: u8, value: i64, int_width: RefWidth) {
         bytes.push(tag);
         match int_width {
-            8 => bytes.extend_from_slice(&value.to_le_bytes()),
-            _ => bytes.extend_from_slice(&(value as i32).to_le_bytes()),
+            RefWidth::Eight => bytes.extend_from_slice(&value.to_le_bytes()),
+            RefWidth::Four => bytes.extend_from_slice(&(value as i32).to_le_bytes()),
         }
     }
 
@@ -3351,7 +3363,7 @@ mod cache_form_tests {
     /// The shared cache-first intcurve context after its leading enum: two null
     /// supports, two null pcurves, two absent solved-interval endpoints, three
     /// empty discontinuity arrays, and the ASM extension integer.
-    fn push_cache_first_remainder(bytes: &mut Vec<u8>, int_width: usize) {
+    fn push_cache_first_remainder(bytes: &mut Vec<u8>, int_width: RefWidth) {
         push_ident(bytes, "null_surface");
         push_ident(bytes, "null_surface");
         push_ident(bytes, "nullbs");
@@ -3380,7 +3392,7 @@ mod cache_form_tests {
     /// enum, and the rest of the context continues unchanged.
     #[test]
     fn parameterized_cache_form_reads_the_interval_and_closed_form_enum() {
-        for int_width in [4usize, 8] {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             push_int(&mut bytes, 0x04, 23_100, int_width);
             push_int(&mut bytes, 0x15, 2, int_width);
@@ -3423,7 +3435,7 @@ mod cache_form_tests {
     /// retained verbatim rather than misparsed.
     #[test]
     fn undefined_cache_form_is_rejected_for_verbatim_retention() {
-        for int_width in [4usize, 8] {
+        for int_width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = Vec::new();
             push_int(&mut bytes, 0x04, 23_100, int_width);
             push_int(&mut bytes, 0x15, 1, int_width);

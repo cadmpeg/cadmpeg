@@ -4502,3 +4502,318 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::stream_error::StreamError::format"
 reason = "ASM-19: one error structure owns offset and reason for both encodings"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::asm_header::stream_ref_width"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::dialect::asm_binary_row"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::edit::AsmEditSet::from_framed"
+reason = "ASM-11, ASM-12: accept RefWidth and return Self directly; unsupported integer widths are unrepresentable"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::edit::AsmEditSet::patch_knot_structure"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::edit::AsmEditSet::patch_layout_integer"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::edit::AsmEditSet::patch_tagged_integer_at"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::edit::AsmEditSet::ref_width"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::edit::AsmEditSet::required_payload_field_at"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::kernel_header::KernelHeader::width"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::kernel_header::RefWidth"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::kernel_header::RefWidth::bytes"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::core::CurvePatchLayout::int_width"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::core::SurfacePatchLayout::int_width"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::core::decode_owned_curve_cache_at"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::core::final_curve_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::core::final_surface_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::core::first_curve_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::core::surface_patch_layout_at"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::int_width"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::pcurve::final_pcurve_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::compound_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::decode_par_int_cur_isoline"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::extrusion_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::helix_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::intersection_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::projection_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::rolling_ball_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::silhouette_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::spring_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::subset_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::surface_curve_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::surface_offset_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::three_surface_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::two_sided_offset_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::vector_offset_patch_layout"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::subtypes::SubtypeTables::for_width"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::subtypes::SubtypeTables::index_of_offset"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::subtypes::subtype_span"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::toks::lex_test_span"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::toks::test_table"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::sab::frame"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::sab::frame_history"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::sab::payload_subtype_range"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::sab::payload_token_offset"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"
+
+[[change]]
+commit = "553db361ec14e27bdb68824ea7a50eca254e82c2"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::sab::payload_token_offsets"
+reason = "ASM-11, ASM-12: carry the closed Four/Eight reference width through header, framing, layout, and edit APIs"

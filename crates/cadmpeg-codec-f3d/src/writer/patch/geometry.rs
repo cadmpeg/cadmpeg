@@ -135,7 +135,7 @@ pub(crate) fn patch_framed_geometry(
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let asm_edits =
-        AsmEditSet::from_framed(records.to_vec(), stream_ref_width(bytes), header_scale)?;
+        AsmEditSet::from_framed(records.to_vec(), stream_ref_width(bytes), header_scale);
     patch_asm_geometry(bytes, &asm_edits, edits)
 }
 

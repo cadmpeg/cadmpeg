@@ -115,7 +115,13 @@ fn history_topology_decode_matches_full_brep_graph() {
     ] {
         let start = asm_header::record_stream_start(&bytes).expect("record stream start");
         let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
-        let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
+        let records = cadmpeg_asm::sab::frame(
+            &bytes,
+            start,
+            limit,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        )
+        .expect("frame BREP");
 
         let full_brep = crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT);
         let full =
@@ -1235,7 +1241,13 @@ fn decode_reports_faces_with_missing_surface_references() {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
         let limit = asm_header::solved_record_limit(&smbh).unwrap();
-        let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
+        let records = cadmpeg_asm::sab::frame(
+            &smbh,
+            start,
+            limit,
+            cadmpeg_asm::kernel_header::RefWidth::Eight,
+        )
+        .unwrap();
         let face = records
             .iter()
             .filter(|record| record.head == "face")
@@ -1302,7 +1314,13 @@ fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
     let limit = asm_header::solved_record_limit(&smbh).unwrap();
-    let records = cadmpeg_asm::sab::frame(&smbh, start, limit, 8).unwrap();
+    let records = cadmpeg_asm::sab::frame(
+        &smbh,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
     let edge = &records[10];
     let record = &mut smbh[edge.offset..edge.offset + edge.len];
     let curve_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
