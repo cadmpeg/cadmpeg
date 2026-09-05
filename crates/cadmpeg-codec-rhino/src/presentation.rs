@@ -4242,7 +4242,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
                 .iter()
                 .map(|settings| LayerPerViewportPresentationRecord {
                     viewport_uuid: settings.viewport_id.to_string(),
-                    settings_mask: settings.settings_mask,
+                    settings_mask: settings.settings_mask(),
                     color: settings.color,
                     plot_color: settings.plot_color,
                     plot_weight_mm: settings.plot_weight_mm,

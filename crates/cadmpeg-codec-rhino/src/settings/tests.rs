@@ -890,17 +890,17 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
     .expect("layer extensions payload");
     assert_eq!(values.len(), 2);
     assert_eq!(values[0].viewport_id, first_viewport);
-    assert_eq!(values[0].settings_mask, 3);
+    assert_eq!(values[0].settings_mask(), 3);
     assert_eq!(values[0].color, Some([90, 100, 110, 120]));
     assert_eq!(values[1].viewport_id, second_viewport);
-    assert_eq!(values[1].settings_mask, 63);
+    assert_eq!(values[1].settings_mask(), 63);
     assert_eq!(values[1].plot_weight_mm, Some(1.25));
     assert_eq!(values[1].visible, Some(2));
     assert_eq!(values[1].persistent_visibility, Some(2));
 
     let root_values = settings::parse_layer_extensions(&payload, &descriptor, archive, None)
         .expect("root layer extensions payload");
-    assert_eq!(root_values[1].settings_mask, 31);
+    assert_eq!(root_values[1].settings_mask(), 31);
     assert_eq!(root_values[1].persistent_visibility, None);
 }
 
