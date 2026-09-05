@@ -8503,16 +8503,10 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             .contains(&(native_stream, operand.geometry_record_index)))
             });
         let returns_start = frame.governing_owner_reference_offset.saturating_add(15);
-        let returns_valid = frame.return_members.len() == frame.return_member_offsets.len()
-            && frame
-                .return_members
-                .iter()
-                .zip(&frame.return_member_offsets)
-                .enumerate()
-                .all(|(ordinal, (record_index, offset))| {
-                    *offset == returns_start.saturating_add((ordinal as u64).saturating_mul(11))
-                        && sketch_geometry_indices.contains(&(native_stream, *record_index))
-                });
+        let returns_valid = frame.return_members.iter().enumerate().all(|(ordinal, member)| {
+            member.offset == returns_start.saturating_add((ordinal as u64).saturating_mul(11))
+                && sketch_geometry_indices.contains(&(native_stream, member.value))
+        });
         let mut operand_members = frame
             .operands
             .iter()
@@ -8520,7 +8514,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
             })
             .collect::<Vec<_>>();
-        let mut return_members = frame.return_members.clone();
+        let mut return_members = frame.return_members.iter().map(|member| member.value).collect::<Vec<_>>();
         operand_members.sort_unstable();
         return_members.sort_unstable();
         let owner_is_sketch = entities_by_suffix

@@ -3512,9 +3512,9 @@ pub(crate) fn annotation_offset_dimension_definition(
         ([first_index, second_index], [first_return, second_return])
             if frame.operands.len() == 3
                 && null_locus_count == 1
-                && first_return != second_return
-                && non_null_indices.contains(first_return)
-                && non_null_indices.contains(second_return) =>
+                && first_return.value != second_return.value
+                && non_null_indices.contains(&first_return.value)
+                && non_null_indices.contains(&second_return.value) =>
         {
             let first_curve = curve_for_index(*first_index)?;
             let second_curve = curve_for_index(*second_index)?;
@@ -3537,7 +3537,7 @@ pub(crate) fn annotation_offset_dimension_definition(
             ([source_record_index], [returned_record_index])
                 if frame.operands.len() == 2
                     && null_locus_count == 1
-                    && source_record_index == returned_record_index =>
+                    && *source_record_index == returned_record_index.value =>
             {
                 let source_curve = curve_for_index(*source_record_index)?;
                 (source_curve.secondary_id == 0).then_some((*source_record_index, None))?
