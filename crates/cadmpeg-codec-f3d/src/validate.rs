@@ -1619,37 +1619,21 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             body_owner_records
                 .entry(owner_key)
                 .or_insert(&body.owner_record);
-            let body_end = body
-                .body_record.byte_offset()
-                .checked_add(body.body_record.frame_length());
-            valid &= body_records.insert((stream, body.body_record.record_index()))
-                && entry_records.insert((stream, body.entry_name_record.record_index()))
+            valid &= body_records.insert((stream, body.placement.record().record_index()))
+                && entry_records.insert((stream, body.entry.record().record_index()))
                 && guid_records.insert((stream, body.guid.record().record_index()))
                 && wrapper_records.insert((stream, body.wrapper_record.record_index()))
                 && state_records.insert((stream, body.scene_state_record.record_index()))
                 && node_records.insert((stream, body.scene_node_record.record_index()))
                 && auxiliary_records.insert((stream, body.scene_auxiliary_record.record_index()))
                 && owner_consistent
-                && body.body_record.frame_length() >= 575
                 && body.wrapper_record.frame_length() == 40
                 && body.scene_state_record.frame_length() == 95
                 && body.scene_node_record.frame_length() == 133
-                && mesh_record_offset_is(&body.body_record, 508, body.scope_reference_offset)
-                && mesh_record_offset_is(&body.body_record, 519, body.wrapper_reference_offset)
-                && mesh_record_offset_is(&body.body_record, 530, body.owner_reference_offset)
-                && mesh_record_offset_is(&body.body_record, 541, body.guid_reference_offset)
-                && mesh_record_offset_is(&body.body_record, 553, body.scene_node_reference_offset)
-                && body_end.and_then(|end| end.checked_sub(11))
-                    == Some(body.collection_reference_offset)
                 && mesh_record_offset_is(
                     &body.wrapper_record,
                     21,
                     body.wrapper_body_reference_offset,
-                )
-                && mesh_record_offset_is(
-                    &body.entry_name_record,
-                    21,
-                    body.entry_guid_reference_offset,
                 )
                 && mesh_record_offset_is(
                     &body.scene_node_record,
@@ -1661,14 +1645,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     48,
                     body.scene_auxiliary_reference_offset,
                 )
-                && mesh_record_offset_is(&body.body_record, 42, body.transform_offsets[0])
-                && mesh_record_offset_is(&body.body_record, 171, body.transform_offsets[1])
-                && mesh_record_offset_is(&body.entry_name_record, 36, body.entry_name_offset)
-                && u64::try_from(body.entry_name.encode_utf16().count())
-                    .ok()
-                    .and_then(|units| units.checked_mul(2))
-                    .and_then(|bytes| bytes.checked_add(36))
-                    == Some(body.entry_name_record.frame_length())
                 && body.tessellation_id.as_deref().is_none_or(|id| {
                     tessellation_ids.contains(id) && projected_tessellations.insert(id)
                 });

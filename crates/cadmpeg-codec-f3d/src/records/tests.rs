@@ -864,17 +864,18 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 200
     });
     let body = serde_json::json!({
-        "body_record": identity, "entry_name_record": identity, "guid_record": identity,
+        "body_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 575},
+        "entry_name_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 62}, "guid_record": identity,
         "wrapper_record": identity, "scene_state_record": identity, "scene_node_record": identity,
         "scene_auxiliary_record": identity, "owner_record": identity,
-        "entry_name": "mesh.paramesh", "entry_name_offset": 120,
+        "entry_name": "mesh.paramesh", "entry_name_offset": 136,
         "fusion_uuid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "fusion_uuid_offset": 136,
         "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
-        "transform_offsets": [140, 160], "scope_reference_offset": 170,
-        "wrapper_reference_offset": 180, "owner_reference_offset": 190,
-        "guid_reference_offset": 200, "scene_node_reference_offset": 210,
-        "collection_reference_offset": 220, "wrapper_body_reference_offset": 230,
-        "entry_guid_reference_offset": 240, "guid_entry_reference_offset": 172,
+        "transform_offsets": [142, 271], "scope_reference_offset": 608,
+        "wrapper_reference_offset": 619, "owner_reference_offset": 630,
+        "guid_reference_offset": 641, "scene_node_reference_offset": 653,
+        "collection_reference_offset": 664, "wrapper_body_reference_offset": 230,
+        "entry_guid_reference_offset": 121, "guid_entry_reference_offset": 172,
         "scene_state_reference_offset": 260, "scene_auxiliary_reference_offset": 270
     });
     let base = serde_json::json!({
@@ -2668,4 +2669,37 @@ fn mesh_uuid_preserves_wire_and_requires_lowercase_version_four() {
     for invalid in ["AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "aaaaaaaa-bbbb-3ccc-8ddd-eeeeeeeeeeee", "aaaaaaaa-bbbb-4ccc-7ddd-eeeeeeeeeeee", ""] {
         assert!(serde_json::from_value::<super::DesignMeshUuid>(serde_json::json!(invalid)).is_err());
     }
+}
+
+#[test]
+fn mesh_entry_name_layout_uses_utf16_units_and_exact_record_end() {
+    let identity = |length| super::DesignMeshRecordIdentity::new(
+        super::DesignClassTag::try_from("256".to_owned()).unwrap(), 4, 100, length).unwrap();
+    let entry = super::DesignMeshEntryName::new(identity(42), "a😀".to_owned()).unwrap();
+    assert_eq!(entry.name_offset(), 136);
+    assert_eq!(entry.guid_reference_offset(), 121);
+    assert_eq!(entry.name(), "a😀");
+    assert!(super::DesignMeshEntryName::new(identity(40), "a😀".to_owned()).is_err());
+    assert!(super::DesignMeshEntryName::new(identity(44), "a😀".to_owned()).is_err());
+    assert!(super::DesignMeshEntryName::new(identity(36), String::new()).is_err());
+}
+
+#[test]
+fn mesh_placement_layout_requires_prefix_and_terminal_reference() {
+    let transform = super::MeshAffineTransform::try_from([
+        [1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]).unwrap();
+    let identity = |length| super::DesignMeshRecordIdentity::new(
+        super::DesignClassTag::try_from("256".to_owned()).unwrap(), 4, 100, length).unwrap();
+    for length in [575, 800] {
+        let placement = super::DesignMeshPlacement::new(identity(length), transform).unwrap();
+        assert_eq!(placement.transform_offsets(), [142, 271]);
+        assert_eq!(placement.scope_reference_offset(), 608);
+        assert_eq!(placement.wrapper_reference_offset(), 619);
+        assert_eq!(placement.owner_reference_offset(), 630);
+        assert_eq!(placement.guid_reference_offset(), 641);
+        assert_eq!(placement.scene_node_reference_offset(), 653);
+        assert_eq!(placement.collection_reference_offset(), 100 + length - 11);
+    }
+    assert!(super::DesignMeshPlacement::new(identity(574), transform).is_err());
 }

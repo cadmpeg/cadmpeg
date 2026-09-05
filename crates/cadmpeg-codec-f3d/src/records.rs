@@ -13963,6 +13963,71 @@ impl DesignMeshGuid {
     }
 }
 
+/// An entry-name record whose UTF-16 name ends at the record boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignMeshEntryName {
+    record: DesignMeshRecordIdentity,
+    name: String,
+}
+impl DesignMeshEntryName {
+    pub fn new(record: DesignMeshRecordIdentity, name: String) -> Result<Self, String> {
+        let expected = u64::try_from(name.encode_utf16().count()).ok()
+            .and_then(|units| units.checked_mul(2))
+            .and_then(|bytes| bytes.checked_add(crate::layout::paramesh_entry_name_prefix::LEN as u64 + 4));
+        if name.is_empty() || expected != Some(record.frame_length()) {
+            return Err("entry_name_record.frame_length must contain exactly its nonempty entry_name".into());
+        }
+        Ok(Self { record, name })
+    }
+    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn name(&self) -> &str { &self.name }
+    pub fn name_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_entry_name_prefix::LEN as u64 + 4
+    }
+    pub fn guid_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_entry_name_prefix::GUID_RECORD_REFERENCE as u64
+    }
+}
+
+/// Mesh-body placement and the complete prefix plus terminal collection reference.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignMeshPlacement {
+    record: DesignMeshRecordIdentity,
+    transform: MeshAffineTransform,
+}
+impl DesignMeshPlacement {
+    pub fn new(record: DesignMeshRecordIdentity, transform: MeshAffineTransform) -> Result<Self, String> {
+        if record.frame_length() < crate::layout::paramesh_mesh_body_join_prefix::LEN as u64 + 11 {
+            return Err("body_record.frame_length must contain the join prefix and final collection reference".into());
+        }
+        Ok(Self { record, transform })
+    }
+    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn transform(&self) -> MeshAffineTransform { self.transform }
+    pub fn transform_offsets(&self) -> [u64; 2] {
+        [self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::FIRST_TRANSFORM as u64,
+         self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::SECOND_TRANSFORM as u64]
+    }
+    pub fn scope_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::FEATURE_SCOPE_REFERENCE as u64
+    }
+    pub fn wrapper_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::WRAPPER_REFERENCE as u64
+    }
+    pub fn owner_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::BODY_OWNER_REFERENCE as u64
+    }
+    pub fn guid_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::CONTAINER_GUID_REFERENCE as u64
+    }
+    pub fn scene_node_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::SCENE_NODE_REFERENCE as u64
+    }
+    pub fn collection_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + self.record.frame_length() - 11
+    }
+}
+
 /// One mesh body and its complete Design identity graph.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignMeshBody {
@@ -13971,18 +14036,18 @@ pub struct DesignMeshBody {
     /// Byte offset of the collection's reference to this body.
     pub collection_body_reference_offset: u64,
     /// Mesh-body record carrying placement and graph references.
-    pub body_record: DesignMeshRecordIdentity,
+    pub placement: DesignMeshPlacement,
     /// Entry-name record joining the body to one `.paramesh` archive entry.
-    pub entry_name_record: DesignMeshRecordIdentity,
+    pub entry: DesignMeshEntryName,
     /// GUID record joining the body to the container's `fusion_uuid`.
     pub guid: DesignMeshGuid,
-    /// One-to-one `ParaMesh` wrapper around `body_record`.
+    /// One-to-one `ParaMesh` wrapper around the mesh-body record.
     pub wrapper_record: DesignMeshRecordIdentity,
     /// Fixed Scene-state record owned by this mesh body.
     pub scene_state_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-state footer; absent for its unset sentinel.
     pub scene_state_bounds: Option<DesignMeshSceneBounds>,
-    /// Scene node connecting `body_record` to its state and auxiliary cache.
+    /// Scene node connecting the mesh body to its state and auxiliary cache.
     pub scene_node_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-node footer; absent for its unset sentinel.
     pub scene_node_bounds: Option<DesignMeshSceneBounds>,
@@ -13990,36 +14055,14 @@ pub struct DesignMeshBody {
     pub scene_node_transform: Option<Located<MeshAffineTransform>>,
     /// Separately typed Scene auxiliary cache reached through the Scene node.
     pub scene_auxiliary_record: DesignMeshRecordIdentity,
-    /// Typed Design body-owner record referenced by `body_record`.
+    /// Typed Design body-owner record referenced by the mesh-body record.
     /// Multiple mesh bodies can reference the same owner.
     pub owner_record: DesignMeshRecordIdentity,
-    /// Stored `.paramesh` archive-entry basename.
-    pub entry_name: String,
-    /// Byte offset of the UTF-16LE entry-name code units.
-    pub entry_name_offset: u64,
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
     pub container_mesh_uuid: Option<DesignMeshUuid>,
-    /// Equal row-major container-to-model-centimetre affine transform.
-    pub transform: MeshAffineTransform,
-    /// Byte offsets of the two equal serialized transform blocks.
-    pub transform_offsets: [u64; 2],
-    /// Byte offset of the body-to-feature-scope reference.
-    pub scope_reference_offset: u64,
-    /// Byte offset of the body-to-wrapper reference.
-    pub wrapper_reference_offset: u64,
-    /// Byte offset of the body-to-owner reference.
-    pub owner_reference_offset: u64,
-    /// Byte offset of the body-to-GUID reference.
-    pub guid_reference_offset: u64,
-    /// Byte offset of the body-to-Scene-node reference.
-    pub scene_node_reference_offset: u64,
-    /// Byte offset of the body's final collection backlink.
-    pub collection_reference_offset: u64,
     /// Byte offset of the wrapper's reciprocal body reference.
     pub wrapper_body_reference_offset: u64,
-    /// Byte offset of the entry-name record's GUID reference.
-    pub entry_guid_reference_offset: u64,
     /// Byte offset of the Scene node's state-record reference.
     pub scene_state_reference_offset: u64,
     /// Byte offset of the Scene node's auxiliary-record reference.
@@ -14107,9 +14150,18 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
     fn from(value: DesignMeshBody) -> Self {
         let fusion_uuid_offset = value.guid.value_offset();
         let guid_entry_reference_offset = value.guid.entry_reference_offset();
+        let entry_name_offset = value.entry.name_offset();
+        let entry_guid_reference_offset = value.entry.guid_reference_offset();
+        let transform_offsets = value.placement.transform_offsets();
+        let scope_reference_offset = value.placement.scope_reference_offset();
+        let wrapper_reference_offset = value.placement.wrapper_reference_offset();
+        let owner_reference_offset = value.placement.owner_reference_offset();
+        let guid_reference_offset = value.placement.guid_reference_offset();
+        let scene_node_reference_offset = value.placement.scene_node_reference_offset();
+        let collection_reference_offset = value.placement.collection_reference_offset();
         Self {
-            body_record: value.body_record,
-            entry_name_record: value.entry_name_record,
+            body_record: value.placement.record,
+            entry_name_record: value.entry.record,
             guid_record: value.guid.record,
             wrapper_record: value.wrapper_record,
             scene_state_record: value.scene_state_record,
@@ -14120,21 +14172,21 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             scene_node_transform_offset: value.scene_node_transform.map(|located| located.offset),
             scene_auxiliary_record: value.scene_auxiliary_record,
             owner_record: value.owner_record,
-            entry_name: value.entry_name,
-            entry_name_offset: value.entry_name_offset,
+            entry_name: value.entry.name,
+            entry_name_offset,
             fusion_uuid: value.guid.value,
             container_mesh_uuid: value.container_mesh_uuid,
             fusion_uuid_offset,
-            transform: value.transform,
-            transform_offsets: value.transform_offsets,
-            scope_reference_offset: value.scope_reference_offset,
-            wrapper_reference_offset: value.wrapper_reference_offset,
-            owner_reference_offset: value.owner_reference_offset,
-            guid_reference_offset: value.guid_reference_offset,
-            scene_node_reference_offset: value.scene_node_reference_offset,
-            collection_reference_offset: value.collection_reference_offset,
+            transform: value.placement.transform,
+            transform_offsets,
+            scope_reference_offset,
+            wrapper_reference_offset,
+            owner_reference_offset,
+            guid_reference_offset,
+            scene_node_reference_offset,
+            collection_reference_offset,
             wrapper_body_reference_offset: value.wrapper_body_reference_offset,
-            entry_guid_reference_offset: value.entry_guid_reference_offset,
+            entry_guid_reference_offset,
             guid_entry_reference_offset,
             scene_state_reference_offset: value.scene_state_reference_offset,
             scene_auxiliary_reference_offset: value.scene_auxiliary_reference_offset,
@@ -14149,11 +14201,37 @@ impl DesignMeshBody {
         if value.fusion_uuid_offset != guid.value_offset() || value.guid_entry_reference_offset != guid.entry_reference_offset() {
             return Err("fusion_uuid_offset/guid_entry_reference_offset must match guid_record layout".into());
         }
+        let entry = DesignMeshEntryName::new(value.entry_name_record, value.entry_name)?;
+        if entry.name_offset() != value.entry_name_offset || entry.guid_reference_offset() != value.entry_guid_reference_offset {
+            return Err("entry_name_offset/entry_guid_reference_offset must match entry_name_record layout".into());
+        }
+        let placement = DesignMeshPlacement::new(value.body_record, value.transform)?;
+        if placement.transform_offsets() != value.transform_offsets {
+            return Err("transform_offsets must match body_record layout".into());
+        }
+        if placement.scope_reference_offset() != value.scope_reference_offset {
+            return Err("scope_reference_offset must match body_record layout".into());
+        }
+        if placement.wrapper_reference_offset() != value.wrapper_reference_offset {
+            return Err("wrapper_reference_offset must match body_record layout".into());
+        }
+        if placement.owner_reference_offset() != value.owner_reference_offset {
+            return Err("owner_reference_offset must match body_record layout".into());
+        }
+        if placement.guid_reference_offset() != value.guid_reference_offset {
+            return Err("guid_reference_offset must match body_record layout".into());
+        }
+        if placement.scene_node_reference_offset() != value.scene_node_reference_offset {
+            return Err("scene_node_reference_offset must match body_record layout".into());
+        }
+        if placement.collection_reference_offset() != value.collection_reference_offset {
+            return Err("collection_reference_offset must match body_record layout".into());
+        }
         Ok(Self {
             scope_body_reference_offset,
             collection_body_reference_offset,
-            body_record: value.body_record,
-            entry_name_record: value.entry_name_record,
+            placement,
+            entry,
             guid,
             wrapper_record: value.wrapper_record,
             scene_state_record: value.scene_state_record,
@@ -14163,19 +14241,8 @@ impl DesignMeshBody {
             scene_node_transform: Located::from_wire(value.scene_node_transform, value.scene_node_transform_offset, "scene_node_transform")?,
             scene_auxiliary_record: value.scene_auxiliary_record,
             owner_record: value.owner_record,
-            entry_name: value.entry_name,
-            entry_name_offset: value.entry_name_offset,
             container_mesh_uuid: value.container_mesh_uuid,
-            transform: value.transform,
-            transform_offsets: value.transform_offsets,
-            scope_reference_offset: value.scope_reference_offset,
-            wrapper_reference_offset: value.wrapper_reference_offset,
-            owner_reference_offset: value.owner_reference_offset,
-            guid_reference_offset: value.guid_reference_offset,
-            scene_node_reference_offset: value.scene_node_reference_offset,
-            collection_reference_offset: value.collection_reference_offset,
             wrapper_body_reference_offset: value.wrapper_body_reference_offset,
-            entry_guid_reference_offset: value.entry_guid_reference_offset,
             scene_state_reference_offset: value.scene_state_reference_offset,
             scene_auxiliary_reference_offset: value.scene_auxiliary_reference_offset,
             tessellation_id: value.tessellation_id,
@@ -14372,7 +14439,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
         let mut collection_body_reference_offsets = Vec::with_capacity(value.bodies.len());
         let mut bodies = Vec::with_capacity(value.bodies.len());
         for body in value.bodies {
-            body_record_indices.push(body.body_record.record_index());
+            body_record_indices.push(body.placement.record().record_index());
             scope_body_reference_offsets.push(body.scope_body_reference_offset);
             collection_body_reference_offsets.push(body.collection_body_reference_offset);
             bodies.push(body.into());

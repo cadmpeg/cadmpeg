@@ -32,7 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::{DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
+use crate::records::{DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -225,11 +225,8 @@ pub(crate) struct MeshDecode {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshEntryNameRecord {
-    identity: DesignMeshRecordIdentity,
+    entry: DesignMeshEntryName,
     guid_record_index: u32,
-    entry_name: String,
-    guid_reference_offset: u64,
-    entry_name_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -240,20 +237,13 @@ struct MeshGuidRecord {
 
 #[derive(Clone, Debug, PartialEq)]
 struct MeshBodyRecord {
-    identity: DesignMeshRecordIdentity,
+    placement: DesignMeshPlacement,
     guid_record_index: u32,
     scope_record_index: u32,
     wrapper_record_index: u32,
     owner_record_index: u32,
     scene_node_record_index: u32,
     collection_record_index: u32,
-    transform: MeshAffineTransform,
-    scope_reference_offset: u64,
-    wrapper_reference_offset: u64,
-    owner_reference_offset: u64,
-    guid_reference_offset: u64,
-    scene_node_reference_offset: u64,
-    collection_reference_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -547,16 +537,10 @@ fn parse_mesh_entry_name_record(
         .then_some(())?;
         let guid_record_index =
             exact_local_record_index(record, entry_name_prefix::GUID_RECORD_REFERENCE)?;
-        let (entry_name, end) = lp_utf16_bounded(record, entry_name_prefix::LEN, 1..=1024)?;
-        (end == record.len()).then_some(MeshEntryNameRecord {
-            identity,
+        let (entry_name, _) = lp_utf16_bounded(record, entry_name_prefix::LEN, 1..=1024)?;
+        Some(MeshEntryNameRecord {
+            entry: DesignMeshEntryName::new(identity, entry_name).ok()?,
             guid_record_index,
-            entry_name,
-            guid_reference_offset: source_offset(
-                frame.start,
-                entry_name_prefix::GUID_RECORD_REFERENCE,
-            )?,
-            entry_name_offset: source_offset(frame.start, entry_name_prefix::LEN.checked_add(4)?)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-entry-name", frame.entity_id))
@@ -607,6 +591,8 @@ fn parse_mesh_body_record(
     let parsed = (|| {
         (record.get(mesh_body::ZERO_RUN_10..mesh_body::ZERO_RUN_10 + 10) == Some(&[0; 10]))
             .then_some(())?;
+        let transform = mesh_body_transform(record)?;
+        let placement = DesignMeshPlacement::new(identity, transform).ok()?;
         let scope_record_index =
             exact_local_record_index(record, mesh_body::FEATURE_SCOPE_REFERENCE)?;
         let wrapper_record_index = exact_local_record_index(record, mesh_body::WRAPPER_REFERENCE)?;
@@ -616,29 +602,15 @@ fn parse_mesh_body_record(
         let scene_node_record_index =
             exact_local_record_index(record, mesh_body::SCENE_NODE_REFERENCE)?;
         let collection_reference_at = record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?;
-        (collection_reference_at
-            >= mesh_body::SCENE_NODE_REFERENCE.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?)
-        .then_some(())?;
         let collection_record_index = exact_local_record_index(record, collection_reference_at)?;
-        let transform = mesh_body_transform(record)?;
         Some(MeshBodyRecord {
-            identity,
+            placement,
             guid_record_index,
             scope_record_index,
             wrapper_record_index,
             owner_record_index,
             scene_node_record_index,
             collection_record_index,
-            transform,
-            scope_reference_offset: source_offset(frame.start, mesh_body::FEATURE_SCOPE_REFERENCE)?,
-            wrapper_reference_offset: source_offset(frame.start, mesh_body::WRAPPER_REFERENCE)?,
-            owner_reference_offset: source_offset(frame.start, mesh_body::BODY_OWNER_REFERENCE)?,
-            guid_reference_offset: source_offset(frame.start, mesh_body::CONTAINER_GUID_REFERENCE)?,
-            scene_node_reference_offset: source_offset(
-                frame.start,
-                mesh_body::SCENE_NODE_REFERENCE,
-            )?,
-            collection_reference_offset: source_offset(frame.start, collection_reference_at)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-body", frame.entity_id))
@@ -1169,7 +1141,7 @@ where
             .into_iter()
             .map(|frame| parse_mesh_entry_name_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index(),
+        |record| record.entry.record().record_index(),
         "mesh-entry-name",
     )?;
     let mut guids = unique_record_map(
@@ -1185,7 +1157,7 @@ where
             .into_iter()
             .map(|frame| parse_mesh_body_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index(),
+        |record| record.placement.record().record_index(),
         "mesh-body",
     )?;
     let collection_record_indices = collections
@@ -1391,7 +1363,7 @@ where
             })?;
             let wrapper = wrappers
                 .remove(&body.wrapper_record_index)
-                .filter(|wrapper| wrapper.body_record_index == body.identity.record_index())
+                .filter(|wrapper| wrapper.body_record_index == body.placement.record().record_index())
                 .ok_or_else(|| stream_error("each mesh body has one unused reciprocal wrapper"))?;
             let guid = guids
                 .remove(&body.guid_record_index)
@@ -1435,14 +1407,11 @@ where
                 "Body",
                 "mesh-body-owner",
             )?;
-            let body_byte_offset = usize::try_from(body.identity.byte_offset()).map_err(|_| {
-                stream_error("mesh body byte offsets fit the platform address domain")
-            })?;
             feature_bodies.push(DesignMeshBody {
                 scope_body_reference_offset: scope_reference.offset,
                 collection_body_reference_offset: collection_reference.offset,
-                body_record: body.identity,
-                entry_name_record: entry_name.identity,
+                placement: body.placement,
+                entry: entry_name.entry,
                 guid: guid.guid,
                 wrapper_record: wrapper.identity,
                 scene_state_record: scene_state.0,
@@ -1452,26 +1421,8 @@ where
                 scene_node_transform: scene_node.transform,
                 scene_auxiliary_record: scene_auxiliary,
                 owner_record: body_owner,
-                entry_name: entry_name.entry_name,
-                entry_name_offset: entry_name.entry_name_offset,
                 container_mesh_uuid: None,
-                transform: body.transform,
-                transform_offsets: [
-                    source_offset(body_byte_offset, mesh_body::FIRST_TRANSFORM).ok_or_else(
-                        || stream_error("the first mesh transform has an addressable offset"),
-                    )?,
-                    source_offset(body_byte_offset, mesh_body::SECOND_TRANSFORM).ok_or_else(
-                        || stream_error("the second mesh transform has an addressable offset"),
-                    )?,
-                ],
-                scope_reference_offset: body.scope_reference_offset,
-                wrapper_reference_offset: body.wrapper_reference_offset,
-                owner_reference_offset: body.owner_reference_offset,
-                guid_reference_offset: body.guid_reference_offset,
-                scene_node_reference_offset: body.scene_node_reference_offset,
-                collection_reference_offset: body.collection_reference_offset,
                 wrapper_body_reference_offset: wrapper.body_reference_offset,
-                entry_guid_reference_offset: entry_name.guid_reference_offset,
                 scene_state_reference_offset: scene_node.state_reference_offset,
                 scene_auxiliary_reference_offset: scene_node.auxiliary_reference_offset,
                 tessellation_id: None,
@@ -1567,7 +1518,7 @@ fn resolve_mesh_body(
         for (feature_ordinal, feature) in design.features.iter().enumerate() {
             for (body_ordinal, body) in feature.bodies.iter().enumerate() {
                 if body.tessellation_id.is_none()
-                    && body.entry_name == entry_name
+                    && body.entry.name() == entry_name
                     && body.guid.value().eq_ignore_ascii_case(fusion_uuid)
                 {
                     matches.push((design_ordinal, feature_ordinal, body_ordinal));
@@ -1619,8 +1570,8 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
         let body = &design_records[design_ordinal].features[feature_ordinal].bodies[body_ordinal];
         let projected = match MeshBody::from_container(
             &entry.name,
-            body.body_record.byte_offset(),
-            body.transform,
+            body.placement.record().byte_offset(),
+            body.placement.transform(),
             container,
         ) {
             Ok(projected) => projected,
@@ -1643,7 +1594,7 @@ pub(crate) fn decode_mesh_bodies(scan: &ContainerScan) -> Result<MeshDecode, Cod
         .filter(|body| body.tessellation_id.is_none())
     {
         outcomes.push(MeshContainerOutcome::Missing {
-            entry_name: body.entry_name.clone(),
+            entry_name: body.entry.name().to_owned(),
         });
     }
     Ok(MeshDecode {
@@ -2384,12 +2335,12 @@ mod tests {
         assert_eq!(feature.scope_record.record_index(), 109);
         assert_eq!(feature.collection_record.record_index(), 100);
         assert_eq!(feature.texture_table_record.record_index(), 101);
-        assert_eq!(feature.bodies.iter().map(|body| body.body_record.record_index()).collect::<Vec<_>>(), [104]);
+        assert_eq!(feature.bodies.iter().map(|body| body.placement.record().record_index()).collect::<Vec<_>>(), [104]);
         assert!(feature.textures.is_empty());
         let [body] = feature.bodies.as_slice() else {
             panic!("one mesh body");
         };
-        assert_eq!(body.entry_name, ENTRY_NAME);
+        assert_eq!(body.entry.name(), ENTRY_NAME);
         assert_eq!(body.guid.value(), FUSION_UUID);
         assert_eq!(body.wrapper_record.record_index(), 108);
         assert_eq!(body.scene_state_record.record_index(), 105);
@@ -2470,9 +2421,9 @@ mod tests {
             panic!("two mesh bodies");
         };
 
-        assert_eq!(feature.bodies.iter().map(|body| body.body_record.record_index()).collect::<Vec<_>>(), [104, 117]);
+        assert_eq!(feature.bodies.iter().map(|body| body.placement.record().record_index()).collect::<Vec<_>>(), [104, 117]);
         assert_eq!(first.owner_record, second.owner_record);
-        assert_ne!(first.body_record, second.body_record);
+        assert_ne!(first.placement.record(), second.placement.record());
     }
 
     #[test]
