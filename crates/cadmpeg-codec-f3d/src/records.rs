@@ -336,10 +336,7 @@ pub struct DesignParameter {
     pub record_index: u32,
     /// Parameter-family discriminator when the frame carries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub family_discriminator: Option<u64>,
-    /// Byte offset of `family_discriminator`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub family_discriminator_offset: Option<u64>,
+    pub family_discriminator: Option<Located<u64>>,
     /// Source ordering value stored by the parameter record.
     pub source_ordinal: u32,
     /// Indexed owner: user parameters have none; feature and dimension
@@ -444,8 +441,7 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag,
             record_index: wire.record_index,
-            family_discriminator: wire.family_discriminator,
-            family_discriminator_offset: wire.family_discriminator_offset,
+            family_discriminator: Located::from_wire(wire.family_discriminator, wire.family_discriminator_offset, "DesignParameter.family_discriminator")?,
             source_ordinal: wire.source_ordinal,
             owner,
             expression: wire.expression,
@@ -471,8 +467,8 @@ impl From<DesignParameter> for DesignParameterSerde {
             byte_offset: parameter.byte_offset,
             class_tag: parameter.class_tag,
             record_index: parameter.record_index,
-            family_discriminator: parameter.family_discriminator,
-            family_discriminator_offset: parameter.family_discriminator_offset,
+            family_discriminator: parameter.family_discriminator.map(|value| value.value),
+            family_discriminator_offset: parameter.family_discriminator.map(|value| value.offset),
             source_ordinal: parameter.source_ordinal,
             owner_record_index,
             expression: parameter.expression,

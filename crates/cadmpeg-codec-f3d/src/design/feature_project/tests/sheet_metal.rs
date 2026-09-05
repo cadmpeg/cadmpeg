@@ -73,7 +73,6 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             class_tag: "000".into(),
             record_index,
             family_discriminator: None,
-            family_discriminator_offset: None,
             source_ordinal: 0,
             owner: crate::records::DesignParameterOwnerKind::from_kind(
                 DesignParameterKind::Dimension,
@@ -481,7 +480,6 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             class_tag: "000".into(),
             record_index,
             family_discriminator: None,
-            family_discriminator_offset: None,
             source_ordinal: 0,
             owner: crate::records::DesignParameterOwnerKind::from_kind(
                 DesignParameterKind::Dimension,
@@ -915,7 +913,6 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             class_tag: "000".into(),
             record_index,
             family_discriminator: None,
-            family_discriminator_offset: None,
             source_ordinal: 0,
             owner: crate::records::DesignParameterOwnerKind::from_kind(
                 DesignParameterKind::Dimension,

@@ -141,8 +141,8 @@ fn compact_owned_design_parameter_has_no_family_discriminator() {
     assert_eq!(parameter.record_index, 6654);
     assert_eq!(parameter.owner_record_index(), Some(6653));
     assert_eq!(parameter.source_ordinal, 99);
-    assert_eq!(parameter.family_discriminator, None);
-    assert_eq!(parameter.family_discriminator_offset, None);
+    assert_eq!(parameter.family_discriminator.map(|value| value.value), None);
+    assert_eq!(parameter.family_discriminator.map(|value| value.offset), None);
     assert_eq!(parameter.expression, "82.00 mm");
     assert_eq!(parameter.source_kind, "Diameter");
     assert_eq!(parameter.unit.as_deref(), Some("mm"));
@@ -223,7 +223,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let mut tangency = parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
     tangency[22..30].copy_from_slice(&6u64.to_le_bytes());
     let tangency = parse_design_parameter(&tangency).expect("prefixed unitless parameter");
-    assert_eq!(tangency.family_discriminator, Some(6));
+    assert_eq!(tangency.family_discriminator.map(|value| value.value), Some(6));
     assert_eq!(tangency.unit, None);
     assert_eq!(tangency.name, "d81");
     assert_eq!(tangency.evaluated_value, 1.0);
@@ -234,7 +234,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(
         parse_design_parameter(&earlier_tangency)
             .expect("earlier tangency parameter")
-            .family_discriminator,
+            .family_discriminator.map(|value| value.value),
         Some(0)
     );
 
@@ -242,7 +242,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     let scale_factor_tail = scale_factor.len() - 12;
     scale_factor[scale_factor_tail + 2] = 16;
     let scale_factor = parse_design_parameter(&scale_factor).expect("scale-factor parameter");
-    assert_eq!(scale_factor.family_discriminator, Some(5));
+    assert_eq!(scale_factor.family_discriminator.map(|value| value.value), Some(5));
     assert_eq!(scale_factor.owner_record_index(), Some(1331));
     assert_eq!(scale_factor.unit, None);
     assert_eq!(scale_factor.evaluated_value, 1.0);
@@ -260,7 +260,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         assert_eq!(
             parse_design_parameter(&earlier_distance)
                 .expect("earlier feature parameter")
-                .family_discriminator,
+                .family_discriminator.map(|value| value.value),
             Some(discriminator)
         );
     }
@@ -283,7 +283,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(
         parse_design_parameter(&revised_distance)
             .expect("revision-six feature parameter")
-            .family_discriminator,
+            .family_discriminator.map(|value| value.value),
         Some(6)
     );
 
@@ -825,8 +825,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         byte_offset: 200,
         class_tag: "305".into(),
         record_index: 45,
-        family_discriminator: Some(0),
-        family_discriminator_offset: Some(222),
+        family_discriminator: Some(crate::records::Located { value: 0, offset: 222 }),
         source_ordinal: 0,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             crate::records::DesignParameterKind::Feature,
@@ -900,7 +899,6 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         class_tag: "305".into(),
         record_index: 20,
         family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal: 0,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Dimension,

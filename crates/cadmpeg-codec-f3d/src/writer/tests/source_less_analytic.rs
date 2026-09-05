@@ -777,8 +777,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             byte_offset: 0,
             class_tag: "305".into(),
             record_index: 700,
-            family_discriminator: Some(0),
-            family_discriminator_offset: Some(22),
+            family_discriminator: Some(crate::records::Located { value: 0, offset: 22 }),
             source_ordinal: 0,
             owner: crate::records::DesignParameterOwnerKind::from_kind(
                 crate::records::DesignParameterKind::User,
@@ -803,8 +802,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             byte_offset: 0,
             class_tag: "305".into(),
             record_index: 701,
-            family_discriminator: Some(0),
-            family_discriminator_offset: Some(22),
+            family_discriminator: Some(crate::records::Located { value: 0, offset: 22 }),
             source_ordinal: 1,
             owner: crate::records::DesignParameterOwnerKind::from_kind(
                 crate::records::DesignParameterKind::User,

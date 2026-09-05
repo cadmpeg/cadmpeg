@@ -48,7 +48,6 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         class_tag: "277".into(),
         record_index,
         family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal: record_index,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Feature,

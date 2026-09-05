@@ -8952,9 +8952,8 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
             records::DesignParameterKind::Feature
         };
         let offsets_ordered = parameter.byte_offset < parameter.expression_offset
-            && parameter.family_discriminator.is_some()
-                == parameter.family_discriminator_offset.is_some()
-            && parameter.family_discriminator_offset.is_none_or(|offset| {
+            && parameter.family_discriminator.is_none_or(|discriminator| {
+                let offset = discriminator.offset;
                 offset == parameter.byte_offset.saturating_add(22)
                     && offset < parameter.expression_offset
             })
@@ -8979,7 +8978,7 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && (parameter.family_discriminator.is_some()
                 || parameter.owner_record_index().is_some())
             && parameter.family_discriminator.is_none_or(|value| {
-                design::decode::parameters::valid_design_parameter_discriminator(value)
+                design::decode::parameters::valid_design_parameter_discriminator(value.value)
             })
             && parameter.kind() == expected_kind
             && offsets_ordered

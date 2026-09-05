@@ -718,8 +718,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        family_discriminator: Some(0),
-        family_discriminator_offset: Some(0),
+        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 4,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Dimension,

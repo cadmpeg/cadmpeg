@@ -576,10 +576,10 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             crate::design::decode::parameters::design_parameter_discriminator(
                 &parameter.source_kind,
             );
-        if parameter.family_discriminator != Some(expected_discriminator) {
+        if parameter.family_discriminator.map(|value| value.value) != Some(expected_discriminator) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
-                parameter.id, parameter.family_discriminator, parameter.source_kind
+                parameter.id, parameter.family_discriminator.map(|value| value.value), parameter.source_kind
             )));
         }
         validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;

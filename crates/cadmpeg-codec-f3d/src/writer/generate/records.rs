@@ -417,7 +417,7 @@ fn encode_document_parameter(
         &parameter
             .family_discriminator
             .expect("source-less parameter preconditions require a discriminator")
-            .to_le_bytes(),
+            .value.to_le_bytes(),
     );
     out.push(0);
     out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());

@@ -492,8 +492,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 12,
-        family_discriminator: Some(6),
-        family_discriminator_offset: Some(0),
+        family_discriminator: Some(crate::records::Located { value: 6, offset: 0 }),
         source_ordinal: 0,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Dimension,
@@ -798,8 +797,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         byte_offset: 0,
         class_tag: "305".into(),
         record_index: 20,
-        family_discriminator: Some(0),
-        family_discriminator_offset: Some(0),
+        family_discriminator: Some(crate::records::Located { value: 0, offset: 0 }),
         source_ordinal: 4,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             DesignParameterKind::Dimension,

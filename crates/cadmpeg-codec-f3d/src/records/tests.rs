@@ -104,3 +104,19 @@ fn revolve_opposite_angle_preserves_wire_and_rejects_partial_source_location() {
         assert!(error.to_string().contains("opposite_angle_offset"));
     }
 }
+
+#[test]
+fn parameter_discriminator_preserves_wire_and_rejects_partial_location() {
+    let prefix = r#"{"id":"parameter","byte_offset":0,"class_tag":"123","record_index":1"#;
+    let suffix = r#","source_ordinal":0,"owner_record_index":2,"expression":"1","expression_offset":40,"source_kind":"Distance","source_kind_offset":60,"kind":"feature","name":"d1","name_offset":80,"evaluated_value":1.0,"evaluated_value_offset":90}"#;
+    for fields in ["", ",\"family_discriminator\":0,\"family_discriminator_offset\":22"] {
+        let wire = format!("{prefix}{fields}{suffix}");
+        let value: super::DesignParameter = serde_json::from_str(&wire).expect("parameter frame");
+        assert_eq!(serde_json::to_string(&value).expect("parameter wire"), wire);
+    }
+    for fields in [",\"family_discriminator\":0", ",\"family_discriminator_offset\":22"] {
+        let error = serde_json::from_str::<super::DesignParameter>(&format!("{prefix}{fields}{suffix}"))
+            .expect_err("partial discriminator location");
+        assert!(error.to_string().contains("family_discriminator"));
+    }
+}

@@ -65,9 +65,7 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
                 }
                 parameter.id = ids::native_design_parameter_id(&entry.name, at);
                 parameter.byte_offset = at as u64;
-                parameter.family_discriminator_offset = parameter
-                    .family_discriminator_offset
-                    .map(|offset| offset + at as u64);
+                if let Some(discriminator) = &mut parameter.family_discriminator { discriminator.offset += at as u64; }
                 parameter.expression_offset += at as u64;
                 parameter.source_kind_offset += at as u64;
                 parameter.unit_offset = parameter.unit_offset.map(|offset| offset + at as u64);
@@ -203,8 +201,7 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         byte_offset: 0,
         class_tag,
         record_index,
-        family_discriminator,
-        family_discriminator_offset: family_discriminator.map(|_| 22),
+        family_discriminator: family_discriminator.map(|value| crate::records::Located { value, offset: 22 }),
         source_ordinal,
         owner: crate::records::DesignParameterOwnerKind::from_kind(kind, owner_record_index),
         expression,
@@ -286,7 +283,6 @@ fn parse_legacy_287_design_parameter(
         class_tag,
         record_index,
         family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal,
         owner: crate::records::DesignParameterOwnerKind::from_kind(kind, Some(owner_record_index)),
         expression,
@@ -346,7 +342,6 @@ fn parse_legacy_design_parameter(
         class_tag,
         record_index,
         family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal,
         owner: crate::records::DesignParameterOwnerKind::from_kind(kind, Some(owner_record_index)),
         expression,

@@ -546,7 +546,6 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
         class_tag: "301".into(),
         record_index: 7,
         family_discriminator: None,
-        family_discriminator_offset: None,
         source_ordinal: 0,
         owner: crate::records::DesignParameterOwnerKind::from_kind(
             crate::records::DesignParameterKind::Feature,
