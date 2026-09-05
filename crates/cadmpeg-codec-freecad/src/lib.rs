@@ -522,24 +522,20 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
             || node
-                .members
+                .members()
                 .iter()
                 .any(|member| !object_ids.contains(member.as_str()))
-            || node.prototype.as_ref().is_some_and(|prototype| {
-                !object_ids.contains(prototype.as_str()) && node.external_document.is_none()
+            || node.prototype().is_some_and(|prototype| {
+                !object_ids.contains(prototype) && node.external_document().is_none()
             })
             || node
-                .placement_property
-                .as_ref()
-                .is_some_and(|property| !property_ids.contains(property.as_str()))
-            || [
-                node.copy_on_change_source.as_ref(),
-                node.copy_on_change_group.as_ref(),
-            ]
-            .into_iter()
-            .flatten()
-            .chain(node.element_objects.iter())
-            .any(|object| !object_ids.contains(object.as_str()))
+                .placement_property()
+                .is_some_and(|property| !property_ids.contains(property))
+            || [node.copy_on_change_source(), node.copy_on_change_group()]
+                .into_iter()
+                .flatten()
+                .chain(node.element_objects().iter().map(String::as_str))
+                .any(|object| !object_ids.contains(object))
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
@@ -554,23 +550,22 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(node.id.clone()),
             ));
         }
-        let invalid_array_count = node.element_count.is_some_and(|count| {
+        let invalid_array_count = node.element_count().is_some_and(|count| {
             count < 0
                 || [
-                    node.element_transforms.len(),
-                    node.element_scales.len(),
-                    node.element_visibility.len(),
-                    node.element_objects.len(),
+                    node.element_transforms().len(),
+                    node.element_scales().len(),
+                    node.element_objects().len(),
                 ]
                 .into_iter()
                 .any(|length| length != 0 && i64::try_from(length).ok() != Some(count))
         });
         let non_finite_array = node
-            .element_transforms
+            .element_transforms()
             .iter()
             .flatten()
             .flatten()
-            .chain(node.element_scales.iter().flatten())
+            .chain(node.element_scales().iter().flatten())
             .any(|value| !value.is_finite());
         if invalid_array_count || non_finite_array {
             findings.push(finding(
