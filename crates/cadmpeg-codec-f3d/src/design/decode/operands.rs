@@ -1533,10 +1533,8 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
         return None;
     }
-    let opaque_index = View::u32_le_at(bytes, cursor)?;
-    if opaque_index == 0 || opaque_index >= 256 {
-        return None;
-    }
+    let opaque_index = u8::try_from(View::u32_le_at(bytes, cursor)?).ok()
+        .and_then(std::num::NonZeroU8::new)?;
     cursor = cursor.checked_add(4)?;
     let opaque_scalar = View::f64_le_at(bytes, cursor)?;
     if !opaque_scalar.is_finite() {
@@ -1544,7 +1542,7 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     }
     cursor = cursor.checked_add(8)?;
     let repeated_opaque_index = View::u32_le_at(bytes, cursor)?;
-    if repeated_opaque_index != opaque_index {
+    if repeated_opaque_index != u32::from(opaque_index.get()) {
         return None;
     }
     cursor = cursor.checked_add(4)?;
@@ -1554,7 +1552,6 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     {
         return None;
     }
-    let flags: [u8; 2] = bytes.get(cursor..cursor + 2)?.try_into().ok()?;
     cursor = cursor.checked_add(2)?;
     let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
     if cursor != start.checked_add(legacy_loft_322::LEN)? {
@@ -1597,7 +1594,6 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        owner_scope_record_index: scope.record_index,
         owner_scope_record_index_offset: u64::try_from(
             start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
         )
@@ -1609,13 +1605,11 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         opaque_index_offset: u64::try_from(start + legacy_loft_322::OPAQUE_INDEX).ok()?,
         opaque_scalar,
         opaque_scalar_offset: u64::try_from(start + legacy_loft_322::OPAQUE_SCALAR).ok()?,
-        repeated_opaque_index,
         repeated_opaque_index_offset: u64::try_from(start + legacy_loft_322::REPEATED_OPAQUE_INDEX)
             .ok()?,
         next_next_record_index,
         next_next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_NEXT_REFERENCE)
             .ok()?,
-        flags,
         flags_offset: u64::try_from(start + legacy_loft_322::FLAGS).ok()?,
         next_record_index,
         next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
