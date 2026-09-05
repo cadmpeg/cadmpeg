@@ -820,40 +820,15 @@ fn encode_sketch_relation(
     out: &mut Vec<u8>,
     relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
-    let (constraint_kinds, unknown_constraint_bits) =
-        crate::design::decode::sketch::decode_constraint_kinds(relation.state);
-    if constraint_kinds != relation.constraint_kinds
-        || unknown_constraint_bits != relation.unknown_constraint_bits
-    {
-        return Err(CodecError::malformed(format_args!(
-            "F3D sketch relation {} has a mask inconsistent with its typed constraint kinds",
-            relation.id
-        )));
-    }
-    // An authored relation may omit the ordinals; a decoded one always pairs
-    // them with its members.
-    if !relation.member_relation_ordinals.is_empty()
-        && relation.member_relation_ordinals.len() != relation.members.len()
-    {
-        return Err(CodecError::malformed(format_args!(
-            "F3D sketch relation {} has a relation-ordinal run that does not pair with its members",
-            relation.id
-        )));
-    }
     let mut record = vec![0u8; 19];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
     record.push(1);
     let member_count = u32::try_from(relation.members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
     record.extend_from_slice(&member_count.to_le_bytes());
-    for (ordinal, member) in relation.members.iter().enumerate() {
-        write_reference(&mut record, *member);
-        let relation_ordinal = relation
-            .member_relation_ordinals
-            .get(ordinal)
-            .copied()
-            .unwrap_or(0);
-        record.extend_from_slice(&relation_ordinal.to_le_bytes());
+    for member in &relation.members {
+        write_reference(&mut record, member.record_index);
+        record.extend_from_slice(&member.relation_ordinal.to_le_bytes());
     }
     // The base level's property-block presence byte, then the block when the
     // relation carries an `EntityGenesis` origin.
@@ -878,8 +853,8 @@ fn encode_sketch_relation(
     let return_count = u32::try_from(relation.return_members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many return members".into()))?;
     record.extend_from_slice(&return_count.to_le_bytes());
-    for reference in &relation.return_members {
-        write_reference(&mut record, *reference);
+    for member in &relation.return_members {
+        write_reference(&mut record, member.record_index);
     }
     record.push(0);
     record.resize(record.len().max(101), 0);

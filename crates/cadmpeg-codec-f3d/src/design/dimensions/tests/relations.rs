@@ -386,19 +386,23 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         auxiliary_references: vec![0],
         auxiliary_reference_offsets: vec![80],
         rectangular_counted_reference_count: None,
-        members: vec![1, 2, 3, 4],
-        resolved_members: Vec::new(),
-        member_offsets: vec![25, 40, 55, 70],
+        members: crate::records::zip_relation_members(
+            vec![1, 2, 3, 4],
+            vec![25, 40, 55, 70],
+            vec![3, 5, 1, 1],
+            Vec::new(),
+        )
+        .expect("member zip"),
         owner_reference_offset: 90,
         state: 0x20_0000_0000,
-        constraint_kinds: vec![SketchConstraintKind::Offset],
-        unknown_constraint_bits: 0,
-        member_relation_ordinals: vec![3, 5, 1, 1],
         entity_genesis: None,
-        pattern: None,
-        return_members: vec![1, 3, 2, 4],
-        resolved_return_members: vec![curve(1, 10), curve(3, 30), curve(2, 20), curve(4, 40)],
-        return_member_offsets: vec![120, 131, 142, 153],
+        kind: crate::records::SketchRelationKind::Unpatterned,
+        return_members: crate::records::zip_return_members(
+            vec![1, 3, 2, 4],
+            vec![120, 131, 142, 153],
+            vec![curve(1, 10), curve(3, 30), curve(2, 20), curve(4, 40)],
+        )
+        .expect("return zip"),
         raw_bytes: Vec::new(),
     };
     let projected = HashMap::from([
@@ -428,10 +432,18 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     assert_eq!(parameter, None);
 
     let mut repeated_pair = relation;
-    repeated_pair.return_members.extend([1, 3]);
-    repeated_pair
-        .resolved_return_members
-        .extend([curve(1, 10), curve(3, 30)]);
+    repeated_pair.return_members.extend([
+        crate::records::SketchRelationReturnMember {
+            record_index: 1,
+            offset: 0,
+            resolved: Some(curve(1, 10)),
+        },
+        crate::records::SketchRelationReturnMember {
+            record_index: 3,
+            offset: 0,
+            resolved: Some(curve(3, 30)),
+        },
+    ]);
     assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
 }
 

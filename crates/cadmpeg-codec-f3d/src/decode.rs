@@ -4110,10 +4110,8 @@ fn extend_related_design_records(
                 .unwrap_or(crate::ids::DEFAULT_STREAM)
                 .to_owned();
             relation
-                .members
-                .iter()
-                .chain(&relation.return_members)
-                .map(move |record_index| (scope.clone(), *record_index))
+                .all_member_indices()
+                .map(move |record_index| (scope.clone(), record_index))
         })
         .chain(native.design_parameters.iter().filter_map(|parameter| {
             Some((

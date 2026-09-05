@@ -9119,14 +9119,13 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let sketch_owner_ids = &ctx.sketch_owner_ids;
     for relation in &native.sketch_relations {
         let native_stream = design_stream(&relation.id);
-        let (constraint_kinds, unknown_constraint_bits) =
-            design::decode::sketch::decode_constraint_kinds(relation.state);
-        let offsets_fit = relation
-            .member_offsets
+        let member_offsets = relation.member_offsets();
+        let return_member_offsets = relation.return_member_offsets();
+        let offsets_fit = member_offsets
             .iter()
             .chain(&relation.auxiliary_reference_offsets)
             .chain(std::iter::once(&relation.owner_reference_offset))
-            .chain(&relation.return_member_offsets)
+            .chain(&return_member_offsets)
             .all(|offset| {
                 usize::try_from(*offset)
                     .ok()
@@ -9139,12 +9138,8 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .copied()
                 == Some(relation.owner_entity_id.as_str())
             && relation.raw_bytes.len() >= 24
-            && relation.members.len() == relation.member_offsets.len()
             && relation.auxiliary_references.len() == relation.auxiliary_reference_offsets.len()
-            && relation.return_members.len() == relation.return_member_offsets.len()
-            && offsets_fit
-            && relation.unknown_constraint_bits == unknown_constraint_bits
-            && relation.constraint_kinds == constraint_kinds;
+            && offsets_fit;
         if !valid {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,
@@ -9411,8 +9406,8 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 })
                 .collect::<Vec<_>>()
         };
-        if relation.resolved_members != resolve(&relation.members)
-            || relation.resolved_return_members != resolve(&relation.return_members)
+        if relation.resolved_members() != resolve(&relation.member_indices())
+            || relation.resolved_return_members() != resolve(&relation.return_member_indices())
         {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -9423,12 +9418,12 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 entity: Some(relation.id.clone()),
             });
         }
-        for member in relation.members.iter().chain(&relation.return_members) {
-            if !typed_sketch_records.contains(&(native_stream, *member)) {
+        for member in relation.all_member_indices() {
+            if !typed_sketch_records.contains(&(native_stream, member)) {
                 continue;
             }
             if relation_owners
-                .insert((native_stream, *member), relation.owner_reference)
+                .insert((native_stream, member), relation.owner_reference)
                 .is_some_and(|owner| owner != relation.owner_reference)
             {
                 findings.push(Finding {

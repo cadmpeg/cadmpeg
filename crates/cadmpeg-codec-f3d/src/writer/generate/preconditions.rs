@@ -522,9 +522,9 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 relation.id, relation.owner_reference
             )));
         }
-        for member in relation.members.iter().chain(&relation.return_members) {
+        for member in relation.all_member_indices() {
             if geometry_owners
-                .get(member)
+                .get(&member)
                 .is_some_and(|owner| *owner != relation.owner_reference)
             {
                 return Err(CodecError::InvalidInput(format!(
@@ -550,8 +550,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     }
     let mut reachable_headers = root_indices;
     for relation in &native.sketch_relations {
-        reachable_headers.extend(relation.members.iter().copied());
-        reachable_headers.extend(relation.return_members.iter().copied());
+        reachable_headers.extend(relation.all_member_indices());
     }
     let mut explicit_headers = BTreeSet::new();
     for header in &native.design_record_headers {

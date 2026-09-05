@@ -25,7 +25,10 @@ use crate::records::{
     DesignDimensionLocus, DesignParameterOwner, PersistentSubentityTag, SketchCurveIdentity,
     SketchPoint,
 };
-use crate::records::{SketchConstraintKind, SketchRelation};
+use crate::records::{
+    SketchConstraintKind, SketchRelation, SketchRelationKind, SketchRelationMember,
+    SketchRelationReturnMember,
+};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use cadmpeg_ir::math::Point2;
@@ -842,19 +845,23 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
         rectangular_counted_reference_count: None,
-        members: vec![175, 217],
-        resolved_members: Vec::new(),
-        member_offsets: vec![25, 40],
+        members: crate::records::zip_relation_members(
+            vec![175, 217],
+            vec![25, 40],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("members"),
         owner_reference_offset: 56,
         state: 0,
-        constraint_kinds: vec![SketchConstraintKind::Coincident],
-        unknown_constraint_bits: 0,
-        member_relation_ordinals: Vec::new(),
         entity_genesis: None,
-        pattern: None,
-        return_members: vec![217, 175],
-        resolved_return_members: Vec::new(),
-        return_member_offsets: vec![79, 90],
+        kind: SketchRelationKind::Unpatterned,
+        return_members: crate::records::zip_return_members(
+            vec![217, 175],
+            vec![79, 90],
+            Vec::new(),
+        )
+        .expect("return members"),
         raw_bytes: bytes[..101].to_vec(),
     };
     let mut relations = vec![relation_at("native", 0), relation_at("other", 0)];
