@@ -30,7 +30,7 @@ pub(in super::super) fn feature_section_sweep_semantics_conflict(
         operation.recipe_conflict
             || (operation.display_state_conflict
                 && operation.recipe.is_none()
-                && operation.kind == "Native Feature")
+                && operation.kind == crate::feature::OperationKind::Native)
     })
 }
 
@@ -121,7 +121,7 @@ pub(in super::super) fn current_feature_recipe_parent(
 ) -> Option<u32> {
     let operation = current_feature_operation(operations, feature_id)?;
     operation.recipe?;
-    operation.parent_feature_id
+    operation.parent_feature_id()
 }
 
 pub(in super::super) fn current_feature_operation(
@@ -156,7 +156,7 @@ pub(in super::super) fn resolved_feature_schema_class_from_classes(
     feature_id: u32,
 ) -> Option<u32> {
     if let Some(schema_class) = current_feature_operation(operations, feature_id)
-        .and_then(|operation| operation.root_schema_class)
+        .and_then(|operation| operation.root_schema_class())
     {
         return Some(schema_class);
     }

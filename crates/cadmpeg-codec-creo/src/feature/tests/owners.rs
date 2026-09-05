@@ -310,17 +310,12 @@ fn withholds_replay_owner_for_empty_or_ambiguous_source_joins() {
 fn operation(feature_id: u32, recipe: Option<FeatureRecipe>, offset: usize) -> FeatureOperation {
     FeatureOperation {
         feature_id,
-        kind: String::new(),
-        display_name_stored: false,
-        stored_name: None,
-        stored_name_bytes: None,
-        identifier_keyword: None,
-        stored_name_prefix: None,
+        kind: OperationKind::Stored(String::new()),
+        name: OperationName::Recipe,
         recipe,
         recipe_conflict: false,
         display_state_conflict: false,
-        root_schema_class: None,
-        parent_feature_id: None,
+        depdb: None,
         offset,
         state_offset: offset,
     }

@@ -363,23 +363,21 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
         .operations
         .push(crate::feature::FeatureOperation {
             feature_id: 917,
-            kind: "Native Feature".to_string(),
-            display_name_stored: false,
-            stored_name: None,
-            stored_name_bytes: None,
-            identifier_keyword: None,
-            stored_name_prefix: None,
+            kind: crate::feature::OperationKind::Native,
+            name: crate::feature::OperationName::Recipe,
             recipe: None,
             recipe_conflict: false,
             display_state_conflict: true,
-            root_schema_class: Some(917),
-            parent_feature_id: None,
+            depdb: Some(crate::feature::DepdbPrefix {
+                schema: 917,
+                parent: 0,
+            }),
             offset: 0,
             state_offset: 0,
         });
 
     assert!(!feature_allows_linear_extrusion(&scan, 917));
-    scan.features.operations[0].kind = "Extrude".to_string();
+    scan.features.operations[0].kind = crate::feature::OperationKind::Extrude;
     assert!(feature_allows_linear_extrusion(&scan, 917));
 }
 
@@ -390,17 +388,19 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         .operations
         .push(crate::feature::FeatureOperation {
             feature_id: 942,
-            kind: "Surface".to_string(),
-            display_name_stored: true,
-            stored_name: Some("Surface id 942".to_string()),
-            stored_name_bytes: Some(b"Surface id 942".to_vec()),
-            identifier_keyword: Some("id".to_string()),
-            stored_name_prefix: None,
+            kind: crate::feature::OperationKind::Stored("Surface".to_string()),
+            name: crate::feature::OperationName::Stored {
+                bytes: b"Surface id 942".to_vec(),
+                keyword: crate::feature::IdKeyword::Id,
+                prefix: None,
+            },
             recipe: None,
             recipe_conflict: false,
             display_state_conflict: false,
-            root_schema_class: Some(942),
-            parent_feature_id: None,
+            depdb: Some(crate::feature::DepdbPrefix {
+                schema: 942,
+                parent: 0,
+            }),
             offset: 0,
             state_offset: 0,
         });
@@ -452,17 +452,19 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
         .operations
         .push(crate::feature::FeatureOperation {
             feature_id: 942,
-            kind: "Surface".to_string(),
-            display_name_stored: true,
-            stored_name: Some("Surface id 942".to_string()),
-            stored_name_bytes: Some(b"Surface id 942".to_vec()),
-            identifier_keyword: Some("id".to_string()),
-            stored_name_prefix: None,
+            kind: crate::feature::OperationKind::Stored("Surface".to_string()),
+            name: crate::feature::OperationName::Stored {
+                bytes: b"Surface id 942".to_vec(),
+                keyword: crate::feature::IdKeyword::Id,
+                prefix: None,
+            },
             recipe: None,
             recipe_conflict: false,
             display_state_conflict: false,
-            root_schema_class: Some(942),
-            parent_feature_id: None,
+            depdb: Some(crate::feature::DepdbPrefix {
+                schema: 942,
+                parent: 0,
+            }),
             offset: 0,
             state_offset: 0,
         });
@@ -480,17 +482,19 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         .operations
         .push(crate::feature::FeatureOperation {
             feature_id: 942,
-            kind: "Surface".to_string(),
-            display_name_stored: true,
-            stored_name: Some("Surface id 942".to_string()),
-            stored_name_bytes: Some(b"Surface id 942".to_vec()),
-            identifier_keyword: Some("id".to_string()),
-            stored_name_prefix: None,
+            kind: crate::feature::OperationKind::Stored("Surface".to_string()),
+            name: crate::feature::OperationName::Stored {
+                bytes: b"Surface id 942".to_vec(),
+                keyword: crate::feature::IdKeyword::Id,
+                prefix: None,
+            },
             recipe: None,
             recipe_conflict: false,
             display_state_conflict: false,
-            root_schema_class: Some(942),
-            parent_feature_id: None,
+            depdb: Some(crate::feature::DepdbPrefix {
+                schema: 942,
+                parent: 0,
+            }),
             offset: 0,
             state_offset: 0,
         });
@@ -1525,17 +1529,15 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
 fn current_feature_state_controls_recipe_and_parent_projection() {
     let operation = |recipe, parent_feature_id, offset| crate::feature::FeatureOperation {
         feature_id: 6,
-        kind: "Sweep".to_string(),
-        display_name_stored: false,
-        stored_name: None,
-        stored_name_bytes: None,
-        identifier_keyword: None,
-        stored_name_prefix: None,
+        kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
+        name: crate::feature::OperationName::Recipe,
         recipe: Some(recipe),
         recipe_conflict: false,
         display_state_conflict: false,
-        root_schema_class: Some(917),
-        parent_feature_id: Some(parent_feature_id),
+        depdb: Some(crate::feature::DepdbPrefix {
+            schema: 917,
+            parent: parent_feature_id,
+        }),
         offset,
         state_offset: offset,
     };
@@ -1543,7 +1545,7 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
     let current = operation(crate::feature::FeatureRecipe::ProtrudeRevolve, 5, 20);
     let states = [historical, current.clone()];
     assert_ne!(states[0].recipe, states[1].recipe);
-    assert_ne!(states[0].parent_feature_id, states[1].parent_feature_id);
+    assert_ne!(states[0].parent_feature_id(), states[1].parent_feature_id());
     assert_eq!(
         current_feature_recipe(std::slice::from_ref(&current), 6),
         Some(crate::feature::FeatureRecipe::ProtrudeRevolve)

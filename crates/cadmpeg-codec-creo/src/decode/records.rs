@@ -2039,19 +2039,19 @@ pub(super) fn feature_operation_state_records(
                 state_ordinal,
                 current: !state.display_state_conflict
                     && current_offsets.get(&state.feature_id) == Some(&state.offset),
-                family: state.kind.clone(),
-                display_name_stored: state.display_name_stored,
-                stored_name: state.stored_name.clone(),
-                stored_name_bytes: state.stored_name_bytes.clone(),
-                identifier_keyword: state.identifier_keyword.clone(),
+                family: state.kind.as_str().to_string(),
+                display_name_stored: state.display_name_stored(),
+                stored_name: state.stored_name(),
+                stored_name_bytes: state.stored_name_bytes().map(ToOwned::to_owned),
+                identifier_keyword: state.identifier_keyword().map(str::to_string),
                 stored_name_prefix: state
-                    .stored_name_prefix
+                    .stored_name_prefix()
                     .map(|prefix| char::from(prefix).to_string()),
                 recipe: state.recipe.map(crate::feature::FeatureRecipe::name),
                 recipe_conflict: state.recipe_conflict.then_some(true),
                 display_state_conflict: state.display_state_conflict.then_some(true),
-                root_schema_class: state.root_schema_class,
-                parent_feature_id: state.parent_feature_id,
+                root_schema_class: state.root_schema_class(),
+                parent_feature_id: state.parent_feature_id(),
                 offset: state.offset,
                 state_offset: state.state_offset,
             }

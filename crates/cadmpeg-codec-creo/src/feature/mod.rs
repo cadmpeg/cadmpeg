@@ -41,9 +41,11 @@ pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
     FeatureEntityTableEntry,
 };
+#[allow(unused_imports)]
 pub use operations::{
-    operation_states, operations, reference_names, FeatureOperation, FeatureRecipe,
-    FeatureRecipeEffect, FeatureRecipeKind, FeatureReferenceName,
+    operation_states, operations, reference_names, DepdbPrefix, FeatureOperation, FeatureRecipe,
+    FeatureRecipeEffect, FeatureRecipeKind, FeatureReferenceName, IdKeyword, OperationKind,
+    OperationName,
 };
 pub use rows::{
     affected_ids, choice_fields, choices, geometry_tables, loop_history_entries,

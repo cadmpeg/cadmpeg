@@ -71,38 +71,173 @@ const FEATURE_RECIPES: &[(&[u8], FeatureRecipe)] = &[
     (b"cutrevolve\0", FeatureRecipe::CutRevolve),
 ];
 
+/// Stored identifier keyword, preserving `id` versus `ID`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdKeyword {
+    /// Lowercase `id`.
+    Id,
+    /// Uppercase `ID`.
+    ID,
+}
+
+impl IdKeyword {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        match bytes {
+            b"id" => Some(Self::Id),
+            b"ID" => Some(Self::ID),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::ID => "ID",
+        }
+    }
+}
+
+/// Source of a feature-operation display name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OperationName {
+    /// Stored `<Kind> id <N>` display name.
+    Stored {
+        /// Exact stored operation-name bytes excluding the NUL terminator.
+        bytes: Vec<u8>,
+        /// Stored identifier keyword.
+        keyword: IdKeyword,
+        /// Optional stored-name byte immediately preceding the family name.
+        prefix: Option<u8>,
+    },
+    /// Recipe-only state with no stored display name.
+    Recipe,
+    /// Consensus projection that dropped disagreeing stored names.
+    Consensus,
+}
+
+impl OperationName {
+    pub fn display_name_stored(&self) -> bool {
+        matches!(self, Self::Stored { .. })
+    }
+
+    pub fn stored_name(&self) -> Option<String> {
+        self.stored_name_bytes()
+            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+    }
+
+    pub fn stored_name_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Stored { bytes, .. } => Some(bytes),
+            Self::Recipe | Self::Consensus => None,
+        }
+    }
+
+    pub fn identifier_keyword(&self) -> Option<&str> {
+        match self {
+            Self::Stored { keyword, .. } => Some(keyword.as_str()),
+            Self::Recipe | Self::Consensus => None,
+        }
+    }
+
+    pub fn stored_name_prefix(&self) -> Option<u8> {
+        match self {
+            Self::Stored { prefix, .. } => *prefix,
+            Self::Recipe | Self::Consensus => None,
+        }
+    }
+}
+
+/// Operation-family kind named by a feature-state record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OperationKind {
+    /// Family name taken from a stored display name.
+    Stored(String),
+    /// Linear section-sweep family.
+    Extrude,
+    /// Rotational section-sweep family.
+    Revolve,
+    /// Consensus or conflict fallback.
+    Native,
+}
+
+impl OperationKind {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Stored(value) => value,
+            Self::Extrude => "Extrude",
+            Self::Revolve => "Revolve",
+            Self::Native => "Native Feature",
+        }
+    }
+
+    fn from_recipe(recipe: FeatureRecipe) -> Self {
+        match recipe.kind() {
+            FeatureRecipeKind::Extrude => Self::Extrude,
+            FeatureRecipeKind::Revolve => Self::Revolve,
+        }
+    }
+}
+
+/// DEPDB recipe prefix pairing a schema class with a parent feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepdbPrefix {
+    /// Root feature-definition schema class.
+    pub schema: u32,
+    /// Previous or parent feature identifier.
+    pub parent: u32,
+}
+
 /// Feature-operation family named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOperation {
     /// Numeric feature identifier following `id` in the stored name.
     pub feature_id: u32,
-    /// Stored operation-family name.
-    pub kind: String,
-    /// Whether `kind` came from a stored `<Kind> id <N>` display name.
-    pub display_name_stored: bool,
-    /// Display form of the stored operation name. Recipe-only states have no
-    /// stored name.
-    pub stored_name: Option<String>,
-    /// Exact stored operation-name bytes excluding the NUL terminator.
-    pub stored_name_bytes: Option<Vec<u8>>,
-    /// Stored identifier keyword, preserving `id` versus `ID`.
-    pub identifier_keyword: Option<String>,
-    /// Optional stored-name byte immediately preceding the family name.
-    pub stored_name_prefix: Option<u8>,
+    /// Operation-family kind.
+    pub kind: OperationKind,
+    /// Display-name source.
+    pub name: OperationName,
     /// Procedural recipe name stored in the same current-state record.
     pub recipe: Option<FeatureRecipe>,
     /// Multiple complete recipe candidates prevent a unique feature projection.
     pub recipe_conflict: bool,
     /// Multiple stored display states prevent a unique current-state selection.
     pub display_state_conflict: bool,
-    /// Root feature-definition schema class from a DEPDB recipe prefix.
-    pub root_schema_class: Option<u32>,
-    /// Previous or parent feature identifier from a DEPDB recipe prefix.
-    pub parent_feature_id: Option<u32>,
+    /// DEPDB recipe prefix, when present.
+    pub depdb: Option<DepdbPrefix>,
     /// Byte offset of the operation name in the original stream.
     pub offset: usize,
     /// Byte offset including the optional stored-name prefix.
     pub state_offset: usize,
+}
+
+impl FeatureOperation {
+    pub fn display_name_stored(&self) -> bool {
+        self.name.display_name_stored()
+    }
+
+    pub fn stored_name(&self) -> Option<String> {
+        self.name.stored_name()
+    }
+
+    pub fn stored_name_bytes(&self) -> Option<&[u8]> {
+        self.name.stored_name_bytes()
+    }
+
+    pub fn identifier_keyword(&self) -> Option<&str> {
+        self.name.identifier_keyword()
+    }
+
+    pub fn stored_name_prefix(&self) -> Option<u8> {
+        self.name.stored_name_prefix()
+    }
+
+    pub fn root_schema_class(&self) -> Option<u32> {
+        self.depdb.map(|prefix| prefix.schema)
+    }
+
+    pub fn parent_feature_id(&self) -> Option<u32> {
+        self.depdb.map(|prefix| prefix.parent)
+    }
 }
 
 /// Feature name joined to its model feature identifier by `mdl_feat_ref_info_new`.
@@ -350,27 +485,20 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
         };
         result.push(FeatureOperation {
             feature_id,
-            kind: String::from_utf8_lossy(family).into_owned(),
-            display_name_stored: true,
-            stored_name: Some(
-                String::from_utf8_lossy(
-                    &payload[state_offset..separator + separator_bytes.len() + end],
-                )
-                .into_owned(),
-            ),
-            stored_name_bytes: Some(
-                payload[state_offset..separator + separator_bytes.len() + end].to_vec(),
-            ),
-            identifier_keyword: Some(
-                String::from_utf8_lossy(&separator_bytes[1..separator_bytes.len() - 1])
-                    .into_owned(),
-            ),
-            stored_name_prefix,
+            kind: OperationKind::Stored(String::from_utf8_lossy(family).into_owned()),
+            name: OperationName::Stored {
+                bytes: payload[state_offset..separator + separator_bytes.len() + end].to_vec(),
+                keyword: IdKeyword::from_bytes(&separator_bytes[1..separator_bytes.len() - 1])
+                    .unwrap_or(IdKeyword::Id),
+                prefix: stored_name_prefix,
+            },
             recipe,
             recipe_conflict,
             display_state_conflict: false,
-            root_schema_class: bound_recipe.map(|binding| binding.root_schema_class),
-            parent_feature_id: bound_recipe.map(|binding| binding.parent_feature_id),
+            depdb: bound_recipe.map(|binding| DepdbPrefix {
+                schema: binding.root_schema_class,
+                parent: binding.parent_feature_id,
+            }),
             offset,
             state_offset,
         });
@@ -380,29 +508,23 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             && result.iter().any(|operation| {
                 operation.feature_id == feature_id
                     && operation.recipe == Some(binding.recipe)
-                    && operation.root_schema_class == Some(binding.root_schema_class)
-                    && operation.parent_feature_id == Some(binding.parent_feature_id)
+                    && operation.root_schema_class() == Some(binding.root_schema_class)
+                    && operation.parent_feature_id() == Some(binding.parent_feature_id)
             })
         {
             continue;
         }
         result.push(FeatureOperation {
             feature_id,
-            kind: match binding.recipe.kind() {
-                FeatureRecipeKind::Extrude => "Extrude",
-                FeatureRecipeKind::Revolve => "Revolve",
-            }
-            .to_string(),
-            display_name_stored: false,
-            stored_name: None,
-            stored_name_bytes: None,
-            identifier_keyword: None,
-            stored_name_prefix: None,
+            kind: OperationKind::from_recipe(binding.recipe),
+            name: OperationName::Recipe,
             recipe: Some(binding.recipe),
             recipe_conflict: conflicting_features.contains(&feature_id),
             display_state_conflict: false,
-            root_schema_class: Some(binding.root_schema_class),
-            parent_feature_id: Some(binding.parent_feature_id),
+            depdb: Some(DepdbPrefix {
+                schema: binding.root_schema_class,
+                parent: binding.parent_feature_id,
+            }),
             offset: binding.offset,
             state_offset: binding.offset,
         });
@@ -410,7 +532,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
     result.sort_by_key(|operation| operation.offset);
     let conflicting_display_features = result
         .iter()
-        .filter(|operation| operation.display_name_stored)
+        .filter(|operation| operation.display_name_stored())
         .fold(BTreeMap::<u32, usize>::new(), |mut counts, operation| {
             *counts.entry(operation.feature_id).or_default() += 1;
             counts
@@ -441,7 +563,7 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         .filter_map(|states| {
             let display_states = states
                 .iter()
-                .filter(|state| state.display_name_stored)
+                .filter(|state| state.display_name_stored())
                 .collect::<Vec<_>>();
             match display_states.as_slice() {
                 [] => states.first().cloned(),
@@ -462,25 +584,21 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
                             .or_else(|| {
                                 agreeing_value(displays.iter().map(|state| state.recipe))
                                     .flatten()
-                                    .map(|recipe| match recipe.kind() {
-                                        FeatureRecipeKind::Extrude => "Extrude".to_string(),
-                                        FeatureRecipeKind::Revolve => "Revolve".to_string(),
-                                    })
+                                    .map(OperationKind::from_recipe)
                             })
-                            .unwrap_or_else(|| "Native Feature".to_string());
-                    projection.display_name_stored = false;
-                    projection.stored_name = None;
-                    projection.stored_name_bytes = None;
-                    projection.identifier_keyword = None;
-                    projection.stored_name_prefix = None;
+                            .unwrap_or(OperationKind::Native);
+                    projection.name = OperationName::Consensus;
                     projection.recipe =
                         agreeing_value(displays.iter().map(|state| state.recipe)).flatten();
-                    projection.root_schema_class =
-                        agreeing_value(displays.iter().map(|state| state.root_schema_class))
-                            .flatten();
-                    projection.parent_feature_id =
-                        agreeing_value(displays.iter().map(|state| state.parent_feature_id))
-                            .flatten();
+                    projection.depdb = match (
+                        agreeing_value(displays.iter().map(|state| state.root_schema_class()))
+                            .flatten(),
+                        agreeing_value(displays.iter().map(|state| state.parent_feature_id()))
+                            .flatten(),
+                    ) {
+                        (Some(schema), Some(parent)) => Some(DepdbPrefix { schema, parent }),
+                        _ => None,
+                    };
                     Some(projection)
                 }
             }
@@ -492,10 +610,9 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         }
         operation.recipe = None;
         operation.recipe_conflict = true;
-        operation.root_schema_class = None;
-        operation.parent_feature_id = None;
-        if !operation.display_name_stored {
-            operation.kind = "Native Feature".to_string();
+        operation.depdb = None;
+        if !operation.display_name_stored() {
+            operation.kind = OperationKind::Native;
         }
     }
     current.sort_by_key(|operation| operation.offset);

@@ -162,7 +162,8 @@ pub(super) fn emit_model_features(
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(scan, ir, operation.feature_id);
         let mut source_properties = feature_source_properties(scan, operation.feature_id);
-        if let Some(prefix) = current_operation.and_then(|operation| operation.stored_name_prefix) {
+        if let Some(prefix) = current_operation.and_then(|operation| operation.stored_name_prefix())
+        {
             source_properties.insert(
                 "mdl_stored_name_prefix".to_string(),
                 char::from(prefix).to_string(),
@@ -179,7 +180,7 @@ pub(super) fn emit_model_features(
                             ir,
                             operation.feature_id,
                             0,
-                            &operation.kind,
+                            operation.kind.as_str(),
                         )
                     })
                     .or_else(|| {
@@ -188,7 +189,7 @@ pub(super) fn emit_model_features(
                                 scan,
                                 ir,
                                 operation.feature_id,
-                                &operation.kind,
+                                operation.kind.as_str(),
                             )
                         })
                     })
@@ -206,7 +207,7 @@ pub(super) fn emit_model_features(
                     ir,
                     operation.feature_id,
                     schema_class,
-                    &operation.kind,
+                    operation.kind.as_str(),
                 )
             },
         );
@@ -246,13 +247,13 @@ pub(super) fn emit_model_features(
             })
             .map_or("MdlStatus", |section| section.name.as_str());
         let name = current_operation.and_then(|operation| {
-            operation.display_name_stored.then_some(())?;
-            let stored_name = operation.stored_name.as_deref()?;
+            operation.display_name_stored().then_some(())?;
+            let stored_name = operation.stored_name()?;
             Some(
                 operation
-                    .stored_name_prefix
+                    .stored_name_prefix()
                     .and_then(|prefix| stored_name.strip_prefix(char::from(prefix)))
-                    .unwrap_or(stored_name)
+                    .unwrap_or(&stored_name)
                     .to_string(),
             )
         });
@@ -300,7 +301,7 @@ pub(super) fn emit_model_features(
         }
         let (operation_annotation_kind, operation_exactness) = if operation.display_state_conflict {
             ("feature_operation_state_consensus", Exactness::Derived)
-        } else if operation.display_name_stored {
+        } else if operation.display_name_stored() {
             ("feature_operation_name", Exactness::ByteExact)
         } else {
             ("feature_recipe", Exactness::ByteExact)

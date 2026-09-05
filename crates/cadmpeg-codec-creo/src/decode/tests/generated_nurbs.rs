@@ -1618,23 +1618,25 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     );
     let operation = crate::feature::FeatureOperation {
         feature_id: 6,
-        kind: "Extrude".to_string(),
-        display_name_stored: true,
-        stored_name: Some("Extrude id 6".to_string()),
-        stored_name_bytes: Some(b"Extrude id 6".to_vec()),
-        identifier_keyword: Some("id".to_string()),
-        stored_name_prefix: None,
+        kind: crate::feature::OperationKind::Extrude,
+        name: crate::feature::OperationName::Stored {
+            bytes: b"Extrude id 6".to_vec(),
+            keyword: crate::feature::IdKeyword::Id,
+            prefix: None,
+        },
         recipe: Some(crate::feature::FeatureRecipe::ProtrudeExtrude),
         recipe_conflict: false,
         display_state_conflict: false,
-        root_schema_class: Some(917),
-        parent_feature_id: None,
+        depdb: Some(crate::feature::DepdbPrefix {
+            schema: 917,
+            parent: 0,
+        }),
         offset: 10,
         state_offset: 10,
     };
     assert_eq!(
         current_feature_operation(std::slice::from_ref(&operation), 6)
-            .and_then(|current| current.root_schema_class),
+            .and_then(|current| current.root_schema_class()),
         Some(917)
     );
     assert!(current_feature_operation(&[operation.clone(), operation.clone()], 6).is_none());
@@ -1649,13 +1651,19 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         None
     );
     let mut parented_operation = operation.clone();
-    parented_operation.parent_feature_id = Some(5);
+    parented_operation.depdb = Some(crate::feature::DepdbPrefix {
+        schema: 917,
+        parent: 5,
+    });
     assert_eq!(
         current_feature_recipe_parent(std::slice::from_ref(&parented_operation), 6),
         Some(5)
     );
     let mut conflicting_parent = parented_operation.clone();
-    conflicting_parent.parent_feature_id = Some(4);
+    conflicting_parent.depdb = Some(crate::feature::DepdbPrefix {
+        schema: 917,
+        parent: 4,
+    });
     assert_eq!(
         current_feature_recipe_parent(&[parented_operation, conflicting_parent], 6),
         None
@@ -1850,22 +1858,19 @@ fn material_base_body_uses_bounded_definition_order() {
 
 #[test]
 fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
-    let operation = |feature_id, root_schema_class, recipe| crate::feature::FeatureOperation {
-        feature_id,
-        kind: "Sweep".to_string(),
-        display_name_stored: false,
-        stored_name: None,
-        stored_name_bytes: None,
-        identifier_keyword: None,
-        stored_name_prefix: None,
-        recipe,
-        recipe_conflict: false,
-        display_state_conflict: false,
-        root_schema_class,
-        parent_feature_id: None,
-        offset: feature_id as usize,
-        state_offset: feature_id as usize,
-    };
+    let operation =
+        |feature_id, root_schema_class: Option<u32>, recipe| crate::feature::FeatureOperation {
+            feature_id,
+            kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
+            name: crate::feature::OperationName::Recipe,
+            recipe,
+            recipe_conflict: false,
+            display_state_conflict: false,
+            depdb: root_schema_class
+                .map(|schema: u32| crate::feature::DepdbPrefix { schema, parent: 0 }),
+            offset: feature_id as usize,
+            state_offset: feature_id as usize,
+        };
     let definition = |id, section_offset, offset| crate::feature::FeatureDefinition {
         id,
         owner_feature_id: Some(id),
