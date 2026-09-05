@@ -1403,14 +1403,6 @@ pub(crate) fn validate_act_root_edits(
         if after == before {
             continue;
         }
-        if matches!(
-            after.registry_flag,
-            crate::records::ActRegistryFlag::Unknown(_)
-        ) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT root registry flag must be zero or one: {id}"
-            )));
-        }
         if after.entity_id.encode_utf16().count() != before.entity_id.encode_utf16().count()
             || after.display_name.encode_utf16().count()
                 != before.display_name.encode_utf16().count()

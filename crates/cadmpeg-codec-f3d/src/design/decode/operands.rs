@@ -2723,7 +2723,7 @@ pub(crate) fn parse_construction_tracking_path(
         primary_identity_offset: u64::try_from(carrier_at + 37).ok()?,
         selector,
         selector_offset: u64::try_from(carrier_at + 57).ok()?,
-        kind: crate::records::DesignConstructionTrackingPathKind::from_code(kind),
+        kind,
         kind_offset: u64::try_from(carrier_at + 61).ok()?,
         first_related_identity,
         first_related_identity_offset,
@@ -4174,7 +4174,7 @@ fn parse_sketch_profile_region_selection(
                 return None;
             }
             members.push(DesignSketchProfileRegionMember {
-                kind: crate::records::DesignSketchProfileRegionMemberKind::from_code(kind),
+                kind: crate::records::DesignSketchProfileRegionMemberKind::from_code(kind)?,
                 kind_offset: u64::try_from(kind_offset).ok()?,
                 curve_primary_id,
                 curve_primary_id_offset: u64::try_from(

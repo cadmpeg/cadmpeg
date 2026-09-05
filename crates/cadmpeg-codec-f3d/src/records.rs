@@ -4252,34 +4252,30 @@ impl DesignPatchContinuity {
 /// Native member-kind code of a sketch profile-region member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(from = "u32", into = "u32")]
+#[serde(try_from = "u32", into = "u32")]
 pub enum DesignSketchProfileRegionMemberKind {
     /// Profile-region curve member (serialized value 3).
     Curve,
-    Unknown(u32),
 }
 
 impl DesignSketchProfileRegionMemberKind {
     #[must_use]
-    pub fn from_code(code: u32) -> Self {
-        match code {
-            3 => Self::Curve,
-            code => Self::Unknown(code),
-        }
+    pub fn from_code(code: u32) -> Option<Self> {
+        (code == 3).then_some(Self::Curve)
     }
 
     #[must_use]
     pub fn code(self) -> u32 {
-        match self {
-            Self::Curve => 3,
-            Self::Unknown(code) => code,
-        }
+        3
     }
 }
 
-impl From<u32> for DesignSketchProfileRegionMemberKind {
-    fn from(code: u32) -> Self {
+impl TryFrom<u32> for DesignSketchProfileRegionMemberKind {
+    type Error = String;
+
+    fn try_from(code: u32) -> Result<Self, Self::Error> {
         Self::from_code(code)
+            .ok_or_else(|| format!("sketch profile-region member kind must be 3, not {code}"))
     }
 }
 
@@ -4292,20 +4288,19 @@ impl From<DesignSketchProfileRegionMemberKind> for u32 {
 /// ACT root-component registry flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(from = "u32", into = "u32")]
+#[serde(try_from = "u32", into = "u32")]
 pub enum ActRegistryFlag {
     Off,
     On,
-    Unknown(u32),
 }
 
 impl ActRegistryFlag {
     #[must_use]
-    pub fn from_code(code: u32) -> Self {
+    pub fn from_code(code: u32) -> Option<Self> {
         match code {
-            0 => Self::Off,
-            1 => Self::On,
-            code => Self::Unknown(code),
+            0 => Some(Self::Off),
+            1 => Some(Self::On),
+            _ => None,
         }
     }
 
@@ -4314,14 +4309,15 @@ impl ActRegistryFlag {
         match self {
             Self::Off => 0,
             Self::On => 1,
-            Self::Unknown(code) => code,
         }
     }
 }
 
-impl From<u32> for ActRegistryFlag {
-    fn from(code: u32) -> Self {
-        Self::from_code(code)
+impl TryFrom<u32> for ActRegistryFlag {
+    type Error = String;
+
+    fn try_from(code: u32) -> Result<Self, Self::Error> {
+        Self::from_code(code).ok_or_else(|| format!("act registry flag must be 0 or 1, not {code}"))
     }
 }
 
@@ -4406,40 +4402,6 @@ impl From<u8> for DesignPipeSectionShape {
 impl From<DesignPipeSectionShape> for u8 {
     fn from(shape: DesignPipeSectionShape) -> Self {
         shape.code()
-    }
-}
-
-/// Tracking-carrier kind discriminator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(from = "u32", into = "u32")]
-pub enum DesignConstructionTrackingPathKind {
-    Unknown(u32),
-}
-
-impl DesignConstructionTrackingPathKind {
-    #[must_use]
-    pub fn from_code(code: u32) -> Self {
-        Self::Unknown(code)
-    }
-
-    #[must_use]
-    pub fn code(self) -> u32 {
-        match self {
-            Self::Unknown(code) => code,
-        }
-    }
-}
-
-impl From<u32> for DesignConstructionTrackingPathKind {
-    fn from(code: u32) -> Self {
-        Self::from_code(code)
-    }
-}
-
-impl From<DesignConstructionTrackingPathKind> for u32 {
-    fn from(kind: DesignConstructionTrackingPathKind) -> Self {
-        kind.code()
     }
 }
 
@@ -7210,7 +7172,7 @@ pub struct DesignConstructionTrackingPath {
     /// Byte offset of `selector`.
     pub selector_offset: u64,
     /// Carrier-kind discriminator.
-    pub kind: DesignConstructionTrackingPathKind,
+    pub kind: u32,
     /// Byte offset of `kind`.
     pub kind_offset: u64,
     /// First optional related persistent identity.

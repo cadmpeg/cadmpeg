@@ -292,8 +292,7 @@ fn valid_sketch_profile_region_selection(
             ) else {
                 return false;
             };
-            if member.kind != crate::records::DesignSketchProfileRegionMemberKind::Curve
-                || member.kind_offset != cursor
+            if member.kind_offset != cursor
                 || member.curve_primary_id == 0
                 || member.curve_primary_id > u64::from(u32::MAX)
                 || member.curve_primary_id_offset != curve_primary_id_offset
@@ -1131,10 +1130,6 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && valid_dynamic_class_tag(&root.class_tag)
             && crate::act::is_entity_key(&root.entity_id)
             && root.tracked_entity_record == 3
-            && !matches!(
-                root.registry_flag,
-                crate::records::ActRegistryFlag::Unknown(_)
-            )
             && root.byte_offset.checked_add(7) == Some(root.record_index_offset)
             && root.byte_offset.checked_add(22) == Some(root.instance_root_record_offset)
             && root.byte_offset.checked_add(36) == Some(root.entity_id_offset)
