@@ -4,9 +4,33 @@
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
+
+fn deserialize_ignore_u32<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+    u32::deserialize(deserializer).map(|_| ())
+}
+
+fn deserialize_ignore_u8<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+    u8::deserialize(deserializer).map(|_| ())
+}
+
+fn serialize_u32_1<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u32(1)
+}
+
+fn serialize_u32_3<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u32(3)
+}
+
+fn serialize_u32_4<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u32(4)
+}
+
+fn serialize_u8_0<S: Serializer>(_: &(), serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u8(0)
+}
 
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::attributes::AttributeTarget;
@@ -3538,8 +3562,13 @@ pub struct DesignEdgeFlangeOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Uninterpreted side-reference discriminator.
-    pub reference_side_code: u32,
+    /// CADIR `reference_side_code`. Always `4` on the wire (DR-09A).
+    #[serde(
+        serialize_with = "serialize_u32_4",
+        deserialize_with = "deserialize_ignore_u32"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
+    pub(crate) reference_side_code: (),
     /// Face pair the flange height is measured from.
     pub height_datum: DesignSheetMetalHeightDatum,
     /// Bend position relative to the selected edge.
@@ -3616,20 +3645,34 @@ pub struct DesignHemOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Retained u32 at the offset once read as the hem-form discriminator. It
-    /// holds one value across every readable hem form, so it does not select the
-    /// form (DR-09A).
-    pub form_code: u32,
-    /// Retained u32 at the offset once read as the direction discriminator. It
-    /// holds one value in both authored direction states (DR-09A).
-    pub direction_code: u32,
-    /// Retained byte at the offset once read as the direction reversal. It is
-    /// clear in both authored direction states (DR-09A).
-    pub direction_reversal_byte: u8,
-    /// Retained u32 at the offset once read as the bend position. It holds one
-    /// value across every readable hem, and that value is not the code of the
-    /// authored bend position (DR-09A).
-    pub reference_side_code: u32,
+    /// CADIR `form_code`. Always `3` on the wire (DR-09A).
+    #[serde(
+        serialize_with = "serialize_u32_3",
+        deserialize_with = "deserialize_ignore_u32"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
+    pub(crate) form_code: (),
+    /// CADIR `direction_code`. Always `1` on the wire (DR-09A).
+    #[serde(
+        serialize_with = "serialize_u32_1",
+        deserialize_with = "deserialize_ignore_u32"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
+    pub(crate) direction_code: (),
+    /// CADIR `direction_reversal_byte`. Always `0` on the wire (DR-09A).
+    #[serde(
+        serialize_with = "serialize_u8_0",
+        deserialize_with = "deserialize_ignore_u8"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "u8"))]
+    pub(crate) direction_reversal_byte: (),
+    /// CADIR `reference_side_code`. Always `4` on the wire (DR-09A).
+    #[serde(
+        serialize_with = "serialize_u32_4",
+        deserialize_with = "deserialize_ignore_u32"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
+    pub(crate) reference_side_code: (),
 }
 
 /// Fixed construction carried by a uniform body-scale scope.

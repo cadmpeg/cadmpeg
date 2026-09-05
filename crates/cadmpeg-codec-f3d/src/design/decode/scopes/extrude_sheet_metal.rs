@@ -2315,7 +2315,6 @@ struct LegacyEdgeFlangeLayout {
     height_datum_offset: usize,
     angle_owner_offset: usize,
     height_owner_offset: usize,
-    reference_side_offset: usize,
     bend_radius_offset: usize,
     result_count_offset: usize,
     result_reference_start: usize,
@@ -2341,7 +2340,6 @@ const LEGACY_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlang
     height_datum_offset: edge_flange_legacy::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_legacy::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_legacy::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_legacy::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_legacy::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_legacy::RESULT_COUNT,
     result_reference_start: edge_flange_legacy::RESULT_ONE_REFERENCE,
@@ -2373,7 +2371,6 @@ const LEGACY_MULTI_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdgeFlange
     height_datum_offset: edge_flange_multi::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_multi::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_multi::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_multi::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_multi::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_multi::RESULT_COUNT,
     result_reference_start: edge_flange_multi::RESULT_ONE_REFERENCE,
@@ -2405,7 +2402,6 @@ const LEGACY_CLASS325_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     height_datum_offset: edge_flange_325_per_edge::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_325_per_edge::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_325_per_edge::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_325_per_edge::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_325_per_edge::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_325_per_edge::RESULT_COUNT,
     result_reference_start: edge_flange_325_per_edge::RESULT_ONE_REFERENCE,
@@ -2437,7 +2433,6 @@ const LEGACY_CLASS364_PER_EDGE_WIDTH_LAYOUT: LegacyEdgeFlangeLayout = LegacyEdge
     height_datum_offset: edge_flange_364_width::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_364_width::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_364_width::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_364_width::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_364_width::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_364_width::RESULT_COUNT,
     result_reference_start: edge_flange_364_width::RESULT_ONE_REFERENCE,
@@ -2469,7 +2464,6 @@ const LEGACY_CLASS286_TWO_SIDED_PER_EDGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     height_datum_offset: edge_flange_286_per_edge::HEIGHT_DATUM,
     angle_owner_offset: edge_flange_286_per_edge::ANGLE_OWNER_REFERENCE,
     height_owner_offset: edge_flange_286_per_edge::HEIGHT_OWNER_REFERENCE,
-    reference_side_offset: edge_flange_286_per_edge::REFERENCE_SIDE,
     bend_radius_offset: edge_flange_286_per_edge::INSIDE_BEND_RADIUS,
     result_count_offset: edge_flange_286_per_edge::RESULT_COUNT,
     result_reference_start: edge_flange_286_per_edge::RESULT_ONE_REFERENCE,
@@ -2495,7 +2489,6 @@ const LEGACY_CLASS286_SINGLE_EDGE_FLANGE_LAYOUT: LegacyEdgeFlangeLayout = Legacy
     height_datum_offset: 110,
     angle_owner_offset: 114,
     height_owner_offset: 125,
-    reference_side_offset: 136,
     bend_radius_offset: 142,
     result_count_offset: 150,
     result_reference_start: 154,
@@ -2558,8 +2551,6 @@ fn legacy_edge_flange_operation_at(
         marked_record_reference(bytes, start.checked_add(layout.height_owner_offset)?)?,
         &mut unclaimed,
     )?;
-    let reference_side_code =
-        View::u32_le_at(bytes, start.checked_add(layout.reference_side_offset)?)?;
     let bend_radius_offset = start.checked_add(layout.bend_radius_offset)?;
     let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
@@ -2653,7 +2644,7 @@ fn legacy_edge_flange_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        reference_side_code,
+        reference_side_code: (),
         height_datum,
         bend_position: DesignBendPosition::from_code(View::u32_le_at(
             bytes,
@@ -2711,8 +2702,6 @@ fn edge_flange_operation_at(
     let angle_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = common.checked_add(edge_flange::UNSETTLED_SIDE_REFERENCE)?;
-    let reference_side_code = View::u32_le_at(bytes, cursor)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
     let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
@@ -2770,7 +2759,7 @@ fn edge_flange_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        reference_side_code,
+        reference_side_code: (),
         height_datum,
         bend_position,
     })
@@ -2817,8 +2806,6 @@ fn edge_flange_to_object_operation_at(
     let angle_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = common.checked_add(edge_flange::UNSETTLED_SIDE_REFERENCE)?;
-    let reference_side_code = View::u32_le_at(bytes, cursor)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
     let bend_radius = View::f64_le_at(bytes, bend_radius_offset)?;
     if !bend_radius.is_finite() || bend_radius <= 0.0 {
@@ -2938,7 +2925,7 @@ fn edge_flange_to_object_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        reference_side_code,
+        reference_side_code: (),
         height_datum,
         bend_position,
     })
@@ -3125,10 +3112,10 @@ fn hem_gap_length_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: View::u32_le_at(bytes, common)?,
-        direction_code: View::u32_le_at(bytes, common.checked_add(30)?)?,
-        direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
-        reference_side_code: View::u32_le_at(bytes, common.checked_add(36)?)?,
+        form_code: (),
+        direction_code: (),
+        direction_reversal_byte: (),
+        reference_side_code: (),
     })
 }
 
@@ -3200,10 +3187,10 @@ fn hem_radius_angle_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: View::u32_le_at(bytes, common)?,
-        direction_code: View::u32_le_at(bytes, common.checked_add(30)?)?,
-        direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
-        reference_side_code: View::u32_le_at(bytes, common.checked_add(36)?)?,
+        form_code: (),
+        direction_code: (),
+        direction_reversal_byte: (),
+        reference_side_code: (),
     })
 }
 
@@ -3272,9 +3259,9 @@ fn hem_gap_length_radius_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: View::u32_le_at(bytes, common)?,
-        direction_code: View::u32_le_at(bytes, common.checked_add(30)?)?,
-        direction_reversal_byte: *bytes.get(common.checked_add(34)?)?,
-        reference_side_code: View::u32_le_at(bytes, common.checked_add(36)?)?,
+        form_code: (),
+        direction_code: (),
+        direction_reversal_byte: (),
+        reference_side_code: (),
     })
 }
