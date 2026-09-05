@@ -127,7 +127,7 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
     );
     // The one table entry no slot claims is the width-distance owner, which
     // makes this the symmetric edge-width mode.
-    assert_eq!(operation.width_distance_owner_record_indices, [221]);
+    assert_eq!(operation.width_distance_owner_record_indices(), vec![221]);
     assert_eq!(
         operation.edge_width_mode(),
         crate::records::DesignEdgeWidthMode::Symmetric
@@ -176,7 +176,7 @@ fn edge_flange_scope_reads_the_shifted_header_form() {
             operation.edge_width_mode(),
             crate::records::DesignEdgeWidthMode::FullEdge
         );
-        assert!(operation.width_distance_owner_record_indices.is_empty());
+        assert!(operation.width_distance_owner_record_indices().is_empty());
     }
 }
 
@@ -285,7 +285,10 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
     assert_eq!(operation.aggregate_operand_record_indices, [234, 237]);
     assert_eq!(operation.height_owner_record_index, 225);
     assert_eq!(operation.angle_owner_record_index, 228);
-    assert_eq!(operation.width_distance_owner_record_indices, [210, 222]);
+    assert_eq!(
+        operation.width_distance_owner_record_indices(),
+        vec![210, 222]
+    );
     assert_eq!(operation.settings_record_index, 240);
     assert_eq!(
         operation.edge_width_mode(),
@@ -320,12 +323,12 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
         assert_eq!(operation.aggregate_group_record_index, 231);
         assert_eq!(operation.aggregate_operand_record_indices, [243, 246]);
         assert_eq!(
-            operation.width_distance_owner_record_indices,
-            [210, 222, 234, 237]
+            operation.width_distance_owner_record_indices(),
+            vec![210, 222, 234, 237]
         );
         assert_eq!(
-            operation.width_distance_owner_record_indices_by_edge,
-            [[210, 222], [234, 237]]
+            operation.width_distance_owner_record_indices_by_edge(),
+            vec![[210, 222], [234, 237]]
         );
         assert_eq!(operation.height_owner_record_index, 225);
         assert_eq!(operation.angle_owner_record_index, 228);
@@ -375,7 +378,7 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
         operation.edge_width_mode(),
         crate::records::DesignEdgeWidthMode::FullEdge
     );
-    assert!(operation.width_distance_owner_record_indices.is_empty());
+    assert!(operation.width_distance_owner_record_indices().is_empty());
 }
 
 #[test]
@@ -403,12 +406,12 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
     assert_eq!(operation.aggregate_group_record_index, 231);
     assert_eq!(operation.aggregate_operand_record_indices, [279, 282]);
     assert_eq!(
-        operation.width_distance_owner_record_indices,
-        [210, 222, 234, 237]
+        operation.width_distance_owner_record_indices(),
+        vec![210, 222, 234, 237]
     );
     assert_eq!(
-        operation.width_distance_owner_record_indices_by_edge,
-        [[210, 222], [234, 237]]
+        operation.width_distance_owner_record_indices_by_edge(),
+        vec![[210, 222], [234, 237]]
     );
     assert_eq!(
         operation.auxiliary_reference_record_indices,
@@ -479,7 +482,7 @@ fn edge_flange_scope_reads_the_single_edge_to_object_form() {
             )
             .expect("fixed to-object EdgeFlange operation");
         assert_eq!(
-            operation.width_distance_owner_record_indices,
+            operation.width_distance_owner_record_indices(),
             Vec::<u32>::new()
         );
         assert_eq!(operation.edge_group_record_indices, [251]);

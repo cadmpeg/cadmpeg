@@ -2636,9 +2636,12 @@ fn legacy_edge_flange_operation_at(
         height_owner_record_index,
         height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
-        width_mode: Some(layout.width_mode),
-        width_distance_owner_record_indices,
-        width_distance_owner_record_indices_by_edge,
+        width: crate::records::DesignEdgeWidth::from_wire(
+            Some(layout.width_mode),
+            width_distance_owner_record_indices,
+            width_distance_owner_record_indices_by_edge,
+        )
+        .ok()?,
         auxiliary_reference_record_indices,
         width_parameter_source: layout.width_parameter_source,
         settings_record_index,
@@ -2751,9 +2754,12 @@ fn edge_flange_operation_at(
         height_owner_record_index,
         height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
-        width_mode: None,
-        width_distance_owner_record_indices,
-        width_distance_owner_record_indices_by_edge: Vec::new(),
+        width: crate::records::DesignEdgeWidth::from_wire(
+            None,
+            width_distance_owner_record_indices,
+            Vec::new(),
+        )
+        .ok()?,
         auxiliary_reference_record_indices: Vec::new(),
         width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index,
@@ -2917,9 +2923,8 @@ fn edge_flange_to_object_operation_at(
             reference_record_indices,
         },
         angle_owner_record_index,
-        width_mode: None,
-        width_distance_owner_record_indices: Vec::new(),
-        width_distance_owner_record_indices_by_edge: Vec::new(),
+        width: crate::records::DesignEdgeWidth::from_wire(None, Vec::new(), Vec::new())
+            .expect("edge flange width"),
         auxiliary_reference_record_indices: Vec::new(),
         width_parameter_source: DesignEdgeFlangeWidthParameterSource::EdgeWidth,
         settings_record_index,
