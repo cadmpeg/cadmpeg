@@ -15,6 +15,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
+use self::implementation_level::ImplementationLevel;
+
+pub(crate) mod implementation_level;
+
 use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
 use crate::parse::schema_identifier::{
     split_schema_identifier, valid_schema_identifier, AdmittedSchemaIdentifier,
@@ -191,7 +195,6 @@ pub struct Exchange {
     pub records: BTreeMap<u64, RawRecord>,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
     implementation_level: String,
-    implementation_grammar: ImplementationLevel,
     entity_ids: EntityIndex,
 }
 
@@ -258,9 +261,14 @@ impl Exchange {
         &self.implementation_level
     }
 
-    /// Whether the admitted parse grammar uses edition-3 UTF-8 strings.
-    pub(crate) fn uses_utf8_strings(&self) -> bool {
-        self.implementation_grammar.is_edition3()
+    pub(crate) fn decode_string(
+        &self,
+        bytes: &[u8],
+    ) -> Result<String, crate::strings::StringError> {
+        crate::strings::decode_with_level(
+            bytes,
+            ImplementationLevel::for_declaration(&self.implementation_level),
+        )
     }
 
     /// Release semantic source structures before retained opaque bytes are copied.
@@ -272,7 +280,6 @@ impl Exchange {
         self.signatures.clear();
         self.records.clear();
         self.schema_identifiers.clear();
-        self.implementation_level.clear();
         self.entity_ids = EntityIndex::default();
     }
 
@@ -467,36 +474,9 @@ struct Parser<'input, 'ctx, 'arena> {
     budget: Option<&'ctx DecodeContext<'arena>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ImplementationLevel {
-    LegacyEdition1,
-    LegacyEdition2,
-    Edition3Class1,
-    Edition3Class2,
-    Edition3Class3,
-}
-
 struct HeaderAdmission {
-    grammar: ImplementationLevel,
     implementation_level: String,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
-}
-
-impl ImplementationLevel {
-    fn is_edition3(self) -> bool {
-        matches!(
-            self,
-            Self::Edition3Class1 | Self::Edition3Class2 | Self::Edition3Class3
-        )
-    }
-
-    fn allows_edition3_sections(self) -> bool {
-        matches!(self, Self::Edition3Class2 | Self::Edition3Class3)
-    }
-
-    fn allows_class3_occurrences(self) -> bool {
-        matches!(self, Self::Edition3Class3)
-    }
 }
 
 /// Return whether a simple geometry, topology, or representation carrier
@@ -655,7 +635,8 @@ impl Parser<'_, '_, '_> {
             Ok(admitted) => admitted,
             Err(message) => return self.err(message),
         };
-        let implementation_level = header_admission.grammar;
+        let implementation_level =
+            ImplementationLevel::for_declaration(&header_admission.implementation_level);
         self.diagnostics.extend(header_diagnostic);
         self.diagnostics
             .extend(schema_object_identifier_diagnostics(
@@ -670,17 +651,10 @@ impl Parser<'_, '_, '_> {
             return self.err(message);
         }
         let mut anchors = Vec::new();
-        if !implementation_level.allows_edition3_sections()
-            && (self.peek_name("ANCHOR") || self.peek_name("REFERENCE"))
-        {
-            return self.err(match implementation_level {
-                ImplementationLevel::LegacyEdition1 => "2;1 forbids ANCHOR and REFERENCE sections",
-                ImplementationLevel::LegacyEdition2 => "3;1 forbids ANCHOR and REFERENCE sections",
-                ImplementationLevel::Edition3Class1 => "4;1 forbids ANCHOR and REFERENCE sections",
-                ImplementationLevel::Edition3Class2 | ImplementationLevel::Edition3Class3 => {
-                    unreachable!()
-                }
-            });
+        if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
+            if self.peek_name("ANCHOR") || self.peek_name("REFERENCE") {
+                return self.err(&format!("{level} forbids ANCHOR and REFERENCE sections"));
+            }
         }
         if self.peek_name("ANCHOR") {
             self.lexer.set_allow_print_controls(false);
@@ -844,15 +818,10 @@ impl Parser<'_, '_, '_> {
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         let mut signatures = Vec::new();
-        if !implementation_level.allows_edition3_sections() && self.peek_name("SIGNATURE") {
-            return self.err(match implementation_level {
-                ImplementationLevel::LegacyEdition1 => "2;1 forbids SIGNATURE sections",
-                ImplementationLevel::LegacyEdition2 => "3;1 forbids SIGNATURE sections",
-                ImplementationLevel::Edition3Class1 => "4;1 forbids SIGNATURE sections",
-                ImplementationLevel::Edition3Class2 | ImplementationLevel::Edition3Class3 => {
-                    unreachable!()
-                }
-            });
+        if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
+            if self.peek_name("SIGNATURE") {
+                return self.err(&format!("{level} forbids SIGNATURE sections"));
+            }
         }
         while self.peek_name("SIGNATURE") {
             let start = self.current_offset();
@@ -923,23 +892,26 @@ impl Parser<'_, '_, '_> {
         }
         // Validate the source occurrence class before local REFERENCES can
         // replace a forbidden token with an ordinary value.
-        let contains_forbidden_class3_occurrence =
-            !implementation_level.allows_class3_occurrences()
-                && (header
-                    .iter()
-                    .any(|record| record.parameters.iter().any(contains_class3_occurrence))
-                    || anchors.iter().any(|anchor| {
-                        contains_class3_occurrence(&anchor.value)
-                            || anchor
-                                .tags
-                                .iter()
-                                .any(|tag| contains_class3_occurrence(&tag.value))
-                    })
-                    || records.values().any(|record| {
-                        record.partials.iter().any(|partial| {
-                            partial.parameters.iter().any(contains_class3_occurrence)
+        let class3_restriction =
+            implementation_level
+                .class3_occurrence_restriction()
+                .filter(|_| {
+                    header
+                        .iter()
+                        .any(|record| record.parameters.iter().any(contains_class3_occurrence))
+                        || anchors.iter().any(|anchor| {
+                            contains_class3_occurrence(&anchor.value)
+                                || anchor
+                                    .tags
+                                    .iter()
+                                    .any(|tag| contains_class3_occurrence(&tag.value))
                         })
-                    }));
+                        || records.values().any(|record| {
+                            record.partials.iter().any(|partial| {
+                                partial.parameters.iter().any(contains_class3_occurrence)
+                            })
+                        })
+                });
         resolve_local_references(&mut anchors, &mut records, &reference_entries, self.budget)
             .map_err(|error| error.into_parse_error(0))?;
         for record in records.values_mut() {
@@ -1022,16 +994,8 @@ impl Parser<'_, '_, '_> {
                 return Self::err_at(record.span.start, "unresolved value instance reference");
             }
         }
-        if contains_forbidden_class3_occurrence {
-            return self.err(match implementation_level {
-                ImplementationLevel::LegacyEdition1 | ImplementationLevel::LegacyEdition2 => {
-                    "historical implementation levels forbid edition-3 occurrence names"
-                }
-                ImplementationLevel::Edition3Class1 | ImplementationLevel::Edition3Class2 => {
-                    "this implementation level forbids value instances and EXPRESS constants"
-                }
-                ImplementationLevel::Edition3Class3 => unreachable!(),
-            });
+        if let Some(message) = class3_restriction {
+            return self.err(message);
         }
         let has_resource_value = header
             .iter()
@@ -1074,7 +1038,6 @@ impl Parser<'_, '_, '_> {
                 records,
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
-                implementation_grammar: implementation_level,
                 entity_ids: EntityIndex::default(),
             },
             self.diagnostics,
@@ -1447,14 +1410,7 @@ fn validate_header(
                 let Ok(level) = crate::strings::decode(value) else {
                     return Err("FILE_DESCRIPTION has an unsupported implementation level");
                 };
-                let known = match level.as_str() {
-                    "1" | "2" | "2;1" | "2;2" => Some(ImplementationLevel::LegacyEdition1),
-                    "3;1" | "3;2" => Some(ImplementationLevel::LegacyEdition2),
-                    "4;1" => Some(ImplementationLevel::Edition3Class1),
-                    "4;2" => Some(ImplementationLevel::Edition3Class2),
-                    "4;3" => Some(ImplementationLevel::Edition3Class3),
-                    _ => None,
-                };
+                let known = ImplementationLevel::known(&level);
                 match known {
                     Some(known) => (known, level, None),
                     None => (
@@ -1576,7 +1532,7 @@ fn validate_header(
         let Value::String(bytes) = value else {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        let Ok(identifier) = decode_string(bytes, implementation_level) else {
+        let Ok(identifier) = crate::strings::decode_with_level(bytes, implementation_level) else {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
         if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
@@ -1589,7 +1545,6 @@ fn validate_header(
     }
     Ok((
         HeaderAdmission {
-            grammar: implementation_level,
             implementation_level: implementation_level_text,
             schema_identifiers: admitted,
         },
@@ -1635,18 +1590,14 @@ fn validate_header_sections(
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_CONTEXT") {
         return Err("2;1 forbids SECTION_CONTEXT in HEADER");
     }
-    if matches!(
-        implementation_level,
-        ImplementationLevel::LegacyEdition2 | ImplementationLevel::Edition3Class1
-    ) && has("SCHEMA_POPULATION")
-    {
-        return Err(match implementation_level {
-            ImplementationLevel::LegacyEdition2 => "3;1 forbids SCHEMA_POPULATION in HEADER",
-            ImplementationLevel::Edition3Class1 => "4;1 forbids SCHEMA_POPULATION in HEADER",
-            ImplementationLevel::LegacyEdition1
-            | ImplementationLevel::Edition3Class2
-            | ImplementationLevel::Edition3Class3 => unreachable!(),
-        });
+    match implementation_level {
+        ImplementationLevel::LegacyEdition2 if has("SCHEMA_POPULATION") => {
+            return Err("3;1 forbids SCHEMA_POPULATION in HEADER");
+        }
+        ImplementationLevel::Edition3Class1 if has("SCHEMA_POPULATION") => {
+            return Err("4;1 forbids SCHEMA_POPULATION in HEADER");
+        }
+        _ => {}
     }
 
     let mut user_defined = false;
@@ -2001,7 +1952,7 @@ fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> O
 }
 
 fn decoded_bytes(bytes: &[u8], implementation_level: ImplementationLevel) -> Option<String> {
-    decode_string(bytes, implementation_level).ok()
+    crate::strings::decode_with_level(bytes, implementation_level).ok()
 }
 
 fn schema_identifier_matches(schema_identifiers: &[String], schema_name: &str) -> bool {
@@ -2080,12 +2031,12 @@ fn valid_data_parameters(
     let [Value::String(schema_name)] = schema.as_slice() else {
         return Err("DATA section parameters must contain a name and one schema");
     };
-    let section_name = decode_string(section_name, implementation_level)
+    let section_name = crate::strings::decode_with_level(section_name, implementation_level)
         .map_err(|_| "DATA section parameters contain an invalid string")?;
     if !section_names.insert(section_name) {
         return Err("DATA section names must be unique");
     }
-    let schema_name = decode_string(schema_name, implementation_level)
+    let schema_name = crate::strings::decode_with_level(schema_name, implementation_level)
         .map_err(|_| "DATA section parameters contain an invalid string")?;
     if !valid_schema_identifier(&schema_name)
         || !schema_identifier_matches(schema_identifiers, &schema_name)
@@ -2101,20 +2052,6 @@ fn schema_names_for_matching(admitted: &[AdmittedSchemaIdentifier]) -> Vec<Strin
         .iter()
         .map(|identifier| identifier.text().to_ascii_uppercase())
         .collect()
-}
-
-fn decode_string(
-    bytes: &[u8],
-    implementation_level: ImplementationLevel,
-) -> Result<String, crate::strings::StringError> {
-    match implementation_level {
-        ImplementationLevel::LegacyEdition1 | ImplementationLevel::LegacyEdition2 => {
-            crate::strings::decode(bytes)
-        }
-        ImplementationLevel::Edition3Class1
-        | ImplementationLevel::Edition3Class2
-        | ImplementationLevel::Edition3Class3 => crate::strings::decode_utf8(bytes),
-    }
 }
 
 fn is_string_list(value: Option<&Value>) -> bool {
