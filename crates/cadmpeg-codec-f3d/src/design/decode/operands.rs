@@ -972,31 +972,18 @@ pub fn decode_face_source_groups(
             ) else {
                 continue;
             };
-            let mut source_members = Vec::with_capacity(source_reference_offsets.len());
-            for (_, source_record_index) in &source_reference_offsets {
-                let Some(source_byte_offset) = records.first_at_or_after(
+            let Some(source_members) = source_reference_offsets.into_iter().map(|(offset, source_record_index)| {
+                let source_byte_offset = records.first_at_or_after(
                     carrier_byte_offset.saturating_add(indexed_header::LEN),
-                    *source_record_index,
-                ) else {
-                    source_members.clear();
-                    break;
-                };
-                let Some((source_class_tag, _)) =
-                    lp_ascii_filtered(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit)
-                else {
-                    source_members.clear();
-                    break;
-                };
-                let Some(member) = parse_extrude_identity_member(bytes, source_byte_offset) else {
-                    source_members.clear();
-                    break;
-                };
-                let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else {
-                    source_members.clear();
-                    break;
-                };
-                source_members.push(DesignFaceSourceMember {
-                    record_index: *source_record_index,
+                    source_record_index,
+                )?;
+                let (source_class_tag, _) = lp_ascii_filtered(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit)?;
+                let member = parse_extrude_identity_member(bytes, source_byte_offset)?;
+                let source_byte_offset_u64 = u64::try_from(source_byte_offset).ok()?;
+                Some(crate::records::Located {
+                    offset: u64::try_from(offset).ok()?,
+                value: DesignFaceSourceMember {
+                    record_index: source_record_index,
                     byte_offset: source_byte_offset_u64,
                     class_tag: source_class_tag,
                     persistent_identity: DesignConstructionPersistentIdentity {
@@ -1011,26 +998,21 @@ pub fn decode_face_source_groups(
                         next_record_index: member.next_record_index,
                         next_byte_offset: member.next_byte_offset,
                     },
-                });
-            }
-            if source_members.len() != source_reference_offsets.len() {
+                },
+                })
+            }).collect::<Option<Vec<_>>>() else {
                 continue;
-            }
+            };
             let Ok(carrier_reference_ordinal) = u32::try_from(carrier_ordinal) else {
                 continue;
             };
-            let (Ok(carrier_byte_offset_u64), Ok(carrier_frame_length), Ok(paired_byte_offset_u64)) = (
+            let (Ok(carrier_start), Ok(carrier_end)) = (
                 u64::try_from(*carrier_byte_offset),
-                u64::try_from(paired_byte_offset.saturating_sub(*carrier_byte_offset)),
                 u64::try_from(*paired_byte_offset),
             ) else {
                 continue;
             };
-            let Ok(source_reference_offsets) = source_reference_offsets
-                .iter()
-                .map(|(offset, _)| u64::try_from(*offset))
-                .collect::<Result<Vec<_>, _>>()
-            else {
+            let Some(carrier_span) = crate::records::NonEmptyByteSpan::new(carrier_start, carrier_end) else {
                 continue;
             };
             out.push(DesignFaceSourceGroup {
@@ -1038,13 +1020,10 @@ pub fn decode_face_source_groups(
                 scope_record_index: scope.record_index,
                 carrier_reference_ordinal,
                 carrier_record_index: *carrier_record_index,
-                carrier_byte_offset: carrier_byte_offset_u64,
+                carrier_span,
                 carrier_class_tag: carrier_class_tag.clone(),
-                carrier_frame_length,
                 paired_record_index: *paired_record_index,
-                paired_byte_offset: paired_byte_offset_u64,
                 paired_class_tag: paired_class_tag.clone(),
-                source_reference_offsets,
                 source_members,
             });
         }

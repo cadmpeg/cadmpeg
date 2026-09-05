@@ -871,3 +871,35 @@ fn empty_reference_runs_compare_equal_across_wire_round_trip() {
     let decoded: super::DesignEntityHeader = serde_json::from_str(&serialized).expect("empty run wire");
     assert_eq!(decoded, header);
 }
+
+#[test]
+fn face_source_rows_preserve_wire_and_reject_unequal_offsets() {
+    let prefix = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":0,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":80,"paired_class_tag":"303"#;
+    let member = r#"{"record_index":100,"byte_offset":1000,"class_tag":"304","persistent_identity":{"local_id":1,"local_id_offset":1021,"asset_id":"AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE","asset_id_offset":1033,"context_id":"11111111-2222-4333-8444-555555555555","context_id_offset":1109,"tail_slot_present":false,"tail_slot_offset":1185,"next_record_index":101,"next_byte_offset":1190}}"#;
+    for (members, offsets) in [
+        ("[]".to_owned(), "[]"),
+        (format!("[{member}]"), "[25]"),
+        (format!("[{member},{member}]"), "[25,36]"),
+    ] {
+        let wire = format!("{prefix},\"source_reference_offsets\":{offsets},\"source_members\":{members}}}");
+        let group: super::DesignFaceSourceGroup = serde_json::from_str(&wire).expect("Face source rows");
+        assert_eq!(serde_json::to_string(&group).expect("Face source wire"), wire);
+        let invalid = wire.replace(&format!("\"source_reference_offsets\":{offsets}"), "\"source_reference_offsets\":[25,36,47]");
+        let error = serde_json::from_str::<super::DesignFaceSourceGroup>(&invalid).expect_err("unequal source arrays").to_string();
+        assert!(error.contains("source_members"));
+        assert!(error.contains("source_reference_offsets"));
+    }
+}
+
+#[test]
+fn face_source_span_rejects_empty_reversed_and_conflicting_lengths() {
+    let wire = r#"{"id":"face-source","scope_record_index":1,"carrier_reference_ordinal":0,"carrier_record_index":2,"carrier_byte_offset":10,"carrier_class_tag":"302","carrier_frame_length":80,"paired_record_index":3,"paired_byte_offset":90,"paired_class_tag":"303","source_reference_offsets":[],"source_members":[]}"#;
+    for (field, value) in [("paired_byte_offset", 10), ("paired_byte_offset", 9), ("carrier_frame_length", 79)] {
+        let mut invalid: serde_json::Value = serde_json::from_str(wire).expect("Face source wire");
+        invalid[field] = value.into();
+        let error = serde_json::from_value::<super::DesignFaceSourceGroup>(invalid).expect_err("invalid carrier span").to_string();
+        assert!(error.contains(field));
+    }
+    let group: super::DesignFaceSourceGroup = serde_json::from_str(wire).expect("positive carrier span");
+    assert_eq!(serde_json::to_string(&group).expect("Face source wire"), wire);
+}
