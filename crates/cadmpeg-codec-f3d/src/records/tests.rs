@@ -1174,10 +1174,8 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             wrapper_byte_offset: 200, path_reference_offset: 211,
         },
         record_index: 30, class_tag: "386".into(), byte_offset: 300,
-        occurrence_guids: vec!["11111111-1111-4111-8111-111111111111".into()],
-        occurrence_guid_offsets: vec![311],
-        identity_guids: vec!["22222222-2222-4222-8222-222222222222".into()],
-        identity_guid_offsets: vec![322],
+        occurrence_guids: vec![super::Located { value: "11111111-1111-4111-8111-111111111111".into(), offset: 311 }],
+        identity_guids: vec![super::Located { value: "22222222-2222-4222-8222-222222222222".into(), offset: 322 }],
     };
     let limits = super::DesignAssemblyLimits {
         kind: super::DesignAssemblyLimitKind::Angular,
@@ -1297,6 +1295,47 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             let mut invalid = value;
             invalid["operand_frames"][0]["transform"][0][3] = serde_json::json!(99.0);
             assert!(serde_json::from_value::<super::DesignAssemblyAlignment>(invalid).unwrap_err().to_string().contains("operand_frames"));
+        }
+    }
+}
+
+#[test]
+fn assembly_path_wire_pairs_guid_locations() {
+    for count in [0, 1, 3] {
+        let values: Vec<_> = (0..count).map(|index| format!("guid-{index}")).collect();
+        let offsets: Vec<_> = (0..count).map(|index| 300 + index * 80).collect();
+        let wire = serde_json::json!({
+            "link": {
+                "locator_reference_offset": 11, "locator_record_index": 10,
+                "locator_class_tag": "363", "locator_byte_offset": 100,
+                "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
+                "wrapper_reference_offset": 122, "wrapper_class_tag": "388",
+                "wrapper_byte_offset": 200, "path_reference_offset": 211
+            },
+            "record_index": 30, "class_tag": "386", "byte_offset": 300,
+            "occurrence_guids": values, "occurrence_guid_offsets": offsets
+        });
+        for identities in [false, true] {
+            let mut wire = wire.clone();
+            if identities && count != 0 {
+                wire["identity_guids"] = wire["occurrence_guids"].clone();
+                wire["identity_guid_offsets"] = wire["occurrence_guid_offsets"].clone();
+            }
+            let path: super::DesignAssemblyOperandPath = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(path.occurrence_guids.len(), count);
+            assert_eq!(serde_json::to_value(&path).unwrap(), wire);
+            for (value_field, offset_field) in [
+                ("occurrence_guids", "occurrence_guid_offsets"),
+                ("identity_guids", "identity_guid_offsets"),
+            ] {
+                let mut invalid = wire.clone();
+                let mut bad_offsets = invalid.get(offset_field).and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+                bad_offsets.push(serde_json::json!(999));
+                invalid[offset_field] = serde_json::Value::Array(bad_offsets);
+                let error = serde_json::from_value::<super::DesignAssemblyOperandPath>(invalid).unwrap_err().to_string();
+                assert!(error.contains(value_field));
+                assert!(error.contains(offset_field));
+            }
         }
     }
 }

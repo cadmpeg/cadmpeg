@@ -3260,25 +3260,76 @@ pub struct DesignAssemblyOperandPathLink {
 /// Counted occurrence path qualifying one assembly operand construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignAssemblyOperandPathWire"))]
+#[serde(try_from = "DesignAssemblyOperandPathWire", into = "DesignAssemblyOperandPathWire")]
 pub struct DesignAssemblyOperandPath {
-    /// Exact ordered scope-to-locator-to-wrapper reference chain.
     pub link: DesignAssemblyOperandPathLink,
-    /// Path-record index.
     pub record_index: u32,
-    /// Indexed-record class carrying this path.
     pub class_tag: String,
-    /// Byte offset of the indexed header.
     pub byte_offset: u64,
+    /// Ordered occurrence GUIDs and their UTF-16 code-unit locations.
+    pub occurrence_guids: Vec<Located<String>>,
+    /// Ordered identity GUIDs and their UTF-16 code-unit locations.
+    pub identity_guids: Vec<Located<String>>,
+}
+
+/// Counted occurrence path qualifying one assembly operand construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignAssemblyOperandPathWire {
+    /// Exact ordered scope-to-locator-to-wrapper reference chain.
+    link: DesignAssemblyOperandPathLink,
+    /// Path-record index.
+    record_index: u32,
+    /// Indexed-record class carrying this path.
+    class_tag: String,
+    /// Byte offset of the indexed header.
+    byte_offset: u64,
     /// Ordered occurrence GUIDs from the outermost occurrence to the selected occurrence.
-    pub occurrence_guids: Vec<String>,
+    occurrence_guids: Vec<String>,
     /// Byte offsets of the UTF-16 GUID code units parallel to `occurrence_guids`.
-    pub occurrence_guid_offsets: Vec<u64>,
+    occurrence_guid_offsets: Vec<u64>,
     /// Four ordered identity GUIDs following a class-390 occurrence path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub identity_guids: Vec<String>,
+    identity_guids: Vec<String>,
     /// Byte offsets parallel to `identity_guids`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub identity_guid_offsets: Vec<u64>,
+    identity_guid_offsets: Vec<u64>,
+}
+
+impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
+    type Error = String;
+
+    fn try_from(wire: DesignAssemblyOperandPathWire) -> Result<Self, Self::Error> {
+        if wire.occurrence_guids.len() != wire.occurrence_guid_offsets.len() {
+            return Err("occurrence_guids and occurrence_guid_offsets must have equal lengths".into());
+        }
+        if wire.identity_guids.len() != wire.identity_guid_offsets.len() {
+            return Err("identity_guids and identity_guid_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            link: wire.link, record_index: wire.record_index,
+            class_tag: wire.class_tag, byte_offset: wire.byte_offset,
+            occurrence_guids: wire.occurrence_guids.into_iter().zip(wire.occurrence_guid_offsets)
+                .map(|(value, offset)| Located { value, offset }).collect(),
+            identity_guids: wire.identity_guids.into_iter().zip(wire.identity_guid_offsets)
+                .map(|(value, offset)| Located { value, offset }).collect(),
+        })
+    }
+}
+
+impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
+    fn from(path: DesignAssemblyOperandPath) -> Self {
+        let (occurrence_guids, occurrence_guid_offsets) = path.occurrence_guids.into_iter()
+            .map(|guid| (guid.value, guid.offset)).unzip();
+        let (identity_guids, identity_guid_offsets) = path.identity_guids.into_iter()
+            .map(|guid| (guid.value, guid.offset)).unzip();
+        Self {
+            link: path.link, record_index: path.record_index,
+            class_tag: path.class_tag, byte_offset: path.byte_offset,
+            occurrence_guids, occurrence_guid_offsets, identity_guids, identity_guid_offsets,
+        }
+    }
 }
 
 /// One exact native qualifier for an assembly operand construction.

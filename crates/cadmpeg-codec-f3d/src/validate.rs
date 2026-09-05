@@ -182,13 +182,11 @@ fn valid_class_363_operand_path_link(
         && link.locator_reference_offset < scope.paired_byte_offset
         && path.byte_offset < link.locator_byte_offset
         && path.occurrence_guids.len() == 1
-        && path.occurrence_guid_offsets.len() == 1
         && path.identity_guids.len() == 1
-        && path.identity_guid_offsets.len() == 1
-        && path.occurrence_guid_offsets[0] == link.path_reference_offset
-        && path.identity_guid_offsets[0] > path.occurrence_guid_offsets[0]
-        && crate::bytes::is_guid_relaxed(&path.occurrence_guids[0])
-        && crate::bytes::is_guid_relaxed(&path.identity_guids[0])
+        && path.occurrence_guids[0].offset == link.path_reference_offset
+        && path.identity_guids[0].offset > path.occurrence_guids[0].offset
+        && crate::bytes::is_guid_relaxed(&path.occurrence_guids[0].value)
+        && crate::bytes::is_guid_relaxed(&path.identity_guids[0].value)
 }
 
 fn valid_class_307_joint_origin_qualifier(
@@ -2750,8 +2748,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 if !(first_start < second_end && second_start < first_end))
                                     && paths.iter().all(|path| {
                                         !path.occurrence_guids.is_empty()
-                                            && path.occurrence_guids.len()
-                                                == path.occurrence_guid_offsets.len()
                                             && matches!(
                                                 path.class_tag.as_str(),
                                                 "294"
@@ -2762,8 +2758,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                                     | "386"
                                                     | "390"
                                             )
-                                            && path.identity_guids.len()
-                                                == path.identity_guid_offsets.len()
                                             && match path.class_tag.as_str() {
                                                 "294" | "299" | "307" | "386" | "390" => {
                                                     path.identity_guids.len() == 4
@@ -2784,23 +2778,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                             && path
                                                 .identity_guids
                                                 .iter()
-                                                .all(|guid| crate::bytes::is_guid_relaxed(guid))
+                                                .all(|guid| crate::bytes::is_guid_relaxed(&guid.value))
                                             && path
-                                                .identity_guid_offsets
+                                                .identity_guids
                                                 .windows(2)
-                                                .all(|offsets| offsets[0] < offsets[1])
+                                                .all(|offsets| offsets[0].offset < offsets[1].offset)
                                             && path
-                                                .identity_guid_offsets
+                                                .identity_guids
                                                 .iter()
-                                                .all(|offset| *offset > path.byte_offset)
+                                                .all(|offset| offset.offset > path.byte_offset)
                                             && path
-                                                .occurrence_guid_offsets
+                                                .occurrence_guids
                                                 .windows(2)
-                                                .all(|offsets| offsets[0] < offsets[1])
+                                                .all(|offsets| offsets[0].offset < offsets[1].offset)
                                             && path
-                                                .occurrence_guid_offsets
+                                                .occurrence_guids
                                                 .iter()
-                                                .all(|offset| *offset > path.byte_offset)
+                                                .all(|offset| offset.offset > path.byte_offset)
                                             && (matches!(
                                                 path.class_tag.as_str(),
                                                 "294" | "299" | "307" | "330" | "386"
@@ -2814,7 +2808,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                                                 == native_stream
                                                                 && occurrence
                                                                     .occurrence_guid
-                                                                    .eq_ignore_ascii_case(guid)
+                                                                    .eq_ignore_ascii_case(&guid.value)
                                                         })
                                                         .count()
                                                         == 1

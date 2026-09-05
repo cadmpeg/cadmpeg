@@ -3414,10 +3414,8 @@ fn exact_legacy_class_383_operand_path(
         record_index: leading_identity_record_index,
         class_tag: "386".into(),
         byte_offset: u64::try_from(leading_identity_at).ok()?,
-        occurrence_guids: vec![leading_occurrence_guid],
-        occurrence_guid_offsets: vec![occurrence_guid_offset],
-        identity_guids: vec![leading_identity_guid],
-        identity_guid_offsets: vec![identity_guid_offset],
+        occurrence_guids: vec![crate::records::Located { value: leading_occurrence_guid, offset: occurrence_guid_offset }],
+        identity_guids: vec![crate::records::Located { value: leading_identity_guid, offset: identity_guid_offset }],
     })
 }
 
@@ -3466,10 +3464,8 @@ fn exact_legacy_class_383_identity_guids(
 struct LegacyClass412Path {
     record_index: u32,
     byte_offset: u64,
-    occurrence_guid: String,
-    occurrence_guid_offset: u64,
-    identity_guids: Vec<String>,
-    identity_guid_offsets: Vec<u64>,
+    occurrence_guid: crate::records::Located<String>,
+    identity_guids: Vec<crate::records::Located<String>>,
 }
 
 fn exact_legacy_class_388_operand_paths(
@@ -3667,11 +3663,6 @@ fn exact_legacy_class_388_operand_path_envelope(
         .map(|path| path.occurrence_guid.clone())
         .chain(std::iter::once(final_path.occurrence_guid.clone()))
         .collect::<Vec<_>>();
-    let occurrence_guid_offsets = path_records
-        .iter()
-        .map(|path| path.occurrence_guid_offset)
-        .chain(std::iter::once(final_path.occurrence_guid_offset))
-        .collect::<Vec<_>>();
     Some(DesignAssemblyOperandPath {
         link: DesignAssemblyOperandPathLink {
             locator_reference_offset,
@@ -3689,9 +3680,7 @@ fn exact_legacy_class_388_operand_path_envelope(
         class_tag: "412".into(),
         byte_offset: final_path.byte_offset,
         occurrence_guids,
-        occurrence_guid_offsets,
         identity_guids: final_path.identity_guids,
-        identity_guid_offsets: final_path.identity_guid_offsets,
     })
 }
 
@@ -3738,7 +3727,6 @@ fn exact_legacy_class_412_path(
         class_412_path::FOURTH_IDENTITY_GUID,
     ];
     let mut identity_guids = Vec::with_capacity(identity_offsets.len());
-    let mut identity_guid_offsets = Vec::with_capacity(identity_offsets.len());
     for (ordinal, relative_offset) in identity_offsets.iter().copied().enumerate() {
         let identity_at = start.checked_add(relative_offset)?;
         let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
@@ -3755,19 +3743,15 @@ fn exact_legacy_class_412_path(
         if identity_end != start.checked_add(expected_end)? {
             return None;
         }
-        identity_guid_offsets.push(u64::try_from(identity_at.checked_add(4)?).ok()?);
-        identity_guids.push(identity_guid);
+        identity_guids.push(crate::records::Located { value: identity_guid, offset: u64::try_from(identity_at.checked_add(4)?).ok()? });
     }
     Some(LegacyClass412Path {
         record_index,
         byte_offset: u64::try_from(start).ok()?,
-        occurrence_guid,
-        occurrence_guid_offset: u64::try_from(
+        occurrence_guid: crate::records::Located { value: occurrence_guid, offset: u64::try_from(
             start.checked_add(class_412_path::OCCURRENCE_GUID + 4)?,
-        )
-        .ok()?,
+        ).ok()? },
         identity_guids,
-        identity_guid_offsets,
     })
 }
 
@@ -4030,11 +4014,7 @@ fn exact_assembly_operand_path_envelope(
             return None;
         }
         path.occurrence_guids.extend(continuation.occurrence_guids);
-        path.occurrence_guid_offsets
-            .extend(continuation.occurrence_guid_offsets);
         path.identity_guids.extend(continuation.identity_guids);
-        path.identity_guid_offsets
-            .extend(continuation.identity_guid_offsets);
     }
     Some(path)
 }
@@ -4051,9 +4031,7 @@ fn exact_assembly_operand_path(
         return None;
     }
     let mut occurrence_guids = Vec::new();
-    let mut occurrence_guid_offsets = Vec::new();
     let mut identity_guids = Vec::new();
-    let mut identity_guid_offsets = Vec::new();
     match class_tag.as_str() {
         "294" | "299" | "307" => {
             let end = next_indexed_record_offset(bytes, start + 1)?;
@@ -4070,16 +4048,14 @@ fn exact_assembly_operand_path(
             if !crate::bytes::is_guid_relaxed(&occurrence) {
                 return None;
             }
-            occurrence_guid_offsets.push(u64::try_from(position + 4).ok()?);
-            occurrence_guids.push(occurrence);
+            occurrence_guids.push(crate::records::Located { value: occurrence, offset: u64::try_from(position + 4).ok()? });
             position = after_occurrence;
             for _ in 0..2 {
                 let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
                 if !crate::bytes::is_guid_relaxed(&guid) {
                     return None;
                 }
-                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                identity_guids.push(guid);
+                identity_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
                 position = after_guid;
             }
             if View::u64_le_at(bytes, position)? != 2 {
@@ -4091,8 +4067,7 @@ fn exact_assembly_operand_path(
                 if !crate::bytes::is_guid_relaxed(&guid) {
                     return None;
                 }
-                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                identity_guids.push(guid);
+                identity_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
                 position = after_guid;
             }
             if View::u32_le_at(bytes, position)? != 2
@@ -4115,8 +4090,7 @@ fn exact_assembly_operand_path(
                 if !crate::bytes::is_guid_relaxed(&guid) {
                     return None;
                 }
-                occurrence_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                occurrence_guids.push(guid);
+                occurrence_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
                 position = after_guid;
             }
             if position == limit {
@@ -4130,8 +4104,7 @@ fn exact_assembly_operand_path(
                     if !crate::bytes::is_guid_relaxed(&guid) {
                         return None;
                     }
-                    identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                    identity_guids.push(guid);
+                    identity_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
                     position = after_guid;
                 }
                 if View::u64_le_at(bytes, position)? != 2 {
@@ -4144,8 +4117,7 @@ fn exact_assembly_operand_path(
                     if !crate::bytes::is_guid_relaxed(&guid) {
                         return None;
                     }
-                    identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
-                    identity_guids.push(guid);
+                    identity_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
                     position = after_guid;
                 }
                 if View::u32_le_at(bytes, position)? != 2
@@ -4166,9 +4138,7 @@ fn exact_assembly_operand_path(
         class_tag,
         byte_offset: u64::try_from(start).ok()?,
         occurrence_guids,
-        occurrence_guid_offsets,
         identity_guids,
-        identity_guid_offsets,
     })
 }
 

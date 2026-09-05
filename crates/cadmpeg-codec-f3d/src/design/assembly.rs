@@ -355,7 +355,7 @@ fn project_qualified_operands(
 ) -> Option<[JointOperand; 2]> {
     let projected = qualifiers.map(|qualifier| match qualifier {
             DesignAssemblyOperandQualifier::OccurrencePath { path } => {
-                let root_guid = path.occurrence_guids.first()?;
+                let root_guid = &path.occurrence_guids.first()?.value;
                 let occurrence = occurrences
                     .get(&(stream, root_guid.to_ascii_lowercase()))
                     .copied()
@@ -366,7 +366,7 @@ fn project_qualified_operands(
                 let object = root_guid.to_ascii_lowercase();
                 let subelements = path.occurrence_guids[1..]
                     .iter()
-                    .map(|guid| guid.to_ascii_lowercase())
+                    .map(|guid| guid.value.to_ascii_lowercase())
                     .collect();
                 Some(match occurrence {
                     Some(_) => JointOperand::occurrence(
@@ -376,7 +376,7 @@ fn project_qualified_operands(
                     ),
                     None => JointOperand::external(
                         ExternalDocumentReference::document_id(
-                            path.identity_guids.first()?.clone(),
+                            path.identity_guids.first()?.value.clone(),
                         ),
                         object,
                         subelements,
