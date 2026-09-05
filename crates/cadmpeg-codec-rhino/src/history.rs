@@ -989,7 +989,11 @@ fn extended_geometry_json(
         serde_json::json!({
             "kind": "extrusion",
             "boundaries": boundaries,
-            "laterals": extrusion.laterals,
+            "laterals": extrusion
+                .boundaries
+                .iter()
+                .map(|boundary| boundary.lateral.clone())
+                .collect::<Vec<_>>(),
             "direction": extrusion.direction,
             "cap_origins": extrusion.cap_origins,
             "cap_normals": extrusion.cap_normals,

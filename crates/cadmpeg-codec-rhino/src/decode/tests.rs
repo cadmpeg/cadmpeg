@@ -849,10 +849,12 @@ fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     };
     crate::extrusion::ExtrusionBoundary {
         start_curve: decoded_nurbs(start.clone()),
-        start_nurbs: start,
-        end_nurbs: end,
+        start_nurbs: start.clone(),
+        end_nurbs: end.clone(),
         start_pcurve: pcurve.clone(),
         end_pcurve: pcurve,
+        lateral: crate::surfaces::extrusion_nurbs(&start, &end, [0.0, 5.0], false, 0)
+            .expect("valid cap lateral"),
     }
 }
 
@@ -873,7 +875,6 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
     ]);
     crate::extrusion::DecodedExtrusion {
         boundaries: vec![outer, inner],
-        laterals: Vec::new(),
         direction: Vector3::new(0.0, 0.0, 5.0),
         cap_origins: [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 5.0)],
         cap_normals: [Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 0.0, 1.0)],
