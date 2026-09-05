@@ -326,7 +326,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         byte_offset: 0,
 
         entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned()).expect("valid entity ID"),
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),
@@ -480,7 +480,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         byte_offset: 0,
 
         entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned()).expect("valid entity ID"),
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(584),

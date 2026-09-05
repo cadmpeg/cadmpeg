@@ -292,7 +292,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         byte_offset: 0,
 
         entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
-        class_tag: "281".into(),
+        class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
@@ -303,7 +303,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     };
     let records = IndexedRecordOffsets::build(&bytes);
     let placement =
-        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity, &records)
+        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, entity.byte_offset, &entity.entity_id, &records)
             .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
     assert_eq!(placement.byte_offset(), head_at as u64);
@@ -331,7 +331,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(&201u32.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
     let compact =
-        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, &entity, &records)
+        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, entity.byte_offset, &entity.entity_id, &records)
             .expect("compact identity sketch placement");
     assert_eq!(compact.frame_length(), 34);
     assert_eq!(*compact.transform(), identity_matrix());
@@ -748,7 +748,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
         byte_offset: suffix,
 
         entity_id: crate::records::DesignEntityId::try_from(format!("0_{suffix}")).expect("valid entity ID"),
-        class_tag: "281".into(),
+        class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,

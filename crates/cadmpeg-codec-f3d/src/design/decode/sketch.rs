@@ -210,7 +210,7 @@ pub fn decode_sketch_placements(
         let Some(records) = record_offsets.get(stream) else {
             continue;
         };
-        let Some(mut placement) = parse_member_run_head_placement(bytes, entity, records) else {
+        let Some(mut placement) = parse_member_run_head_placement(bytes, entity.byte_offset, &entity.entity_id, records) else {
             continue;
         };
         let next_entity_offset = entities
@@ -394,12 +394,13 @@ pub(crate) const MEMBER_RUN_HEAD_FRAME: usize = 162;
 /// local-to-model transform at offset 22.
 pub(crate) fn parse_member_run_head_placement(
     bytes: &[u8],
-    entity: &DesignEntityHeader,
+    entity_byte_offset: u64,
+    entity_id: &crate::records::DesignEntityId,
     records: &IndexedRecordOffsets,
 ) -> Option<DesignSketchPlacement> {
-    let start = usize::try_from(entity.byte_offset).ok()?;
+    let start = usize::try_from(entity_byte_offset).ok()?;
     // Locate the paired same-index record after the entity header.
-    let entity_index = u32::try_from(entity.entity_id.suffix()).ok()?;
+    let entity_index = u32::try_from(entity_id.suffix()).ok()?;
     let paired_at = records.first_at_or_after(start.checked_add(1)?, entity_index)?;
     let (paired_class_tag, paired_after_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
@@ -449,7 +450,7 @@ pub(crate) fn parse_member_run_head_placement(
     Some(DesignSketchPlacement {
         id: String::new(),
         scope_record_index: None,
-        entity_id: entity.entity_id.clone(),
+        entity_id: entity_id.clone(),
 
         visibility: None,
         frame: DesignSketchFrame::new(head_at as u64, form).ok()?,
@@ -874,21 +875,8 @@ pub(crate) fn parse_legacy_sketch_container_members(
     if let Some(members) = parse_legacy_sketch_member_run(bytes, primary_at, entity_suffix) {
         return Some(members);
     }
-    let entity = DesignEntityHeader {
-        id: String::new(),
-        byte_offset: primary_at as u64,
-
-        entity_id: crate::records::DesignEntityId::from_parts("Sketch", u64::from(entity_suffix)),
-        class_tag: String::new(),
-        optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        reference_count_present: false,
-        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
-    };
-    parse_member_run_head_placement(bytes, &entity, records)?;
+    let entity_id = crate::records::DesignEntityId::from_parts("Sketch", u64::from(entity_suffix));
+    parse_member_run_head_placement(bytes, primary_at as u64, &entity_id, records)?;
     Some(Vec::new())
 }
 
@@ -947,9 +935,10 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .and_then(|meta_scope| entity_modules.get(&meta_scope));
         let indexed_offsets = indexed_record_offsets(bytes).collect::<Vec<_>>();
         for &start in &indexed_offsets {
-            let Some(class_tag) = bytes.get(start + 4..start + 7) else {
+            let Some(class_tag) = bytes.get(start + 4..start + 7).and_then(|bytes| std::str::from_utf8(bytes).ok()) else {
                 continue;
             };
+            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag.to_owned()) else { continue; };
             let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
             let Some((entity_id, optional_slot_present, end)) =
@@ -980,7 +969,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 byte_offset: start as u64,
 
                 entity_id,
-                class_tag: String::from_utf8_lossy(class_tag).into_owned(),
+                class_tag,
                 optional_slot_present,
                 module,
                 record_reference,
@@ -1022,10 +1011,8 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             else {
                 continue;
             };
-            if after_tag != start + 7
-                || class_tag.len() != 3
-                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            {
+            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else { continue; };
+            if after_tag != start + 7 {
                 continue;
             }
             let Some(members) =

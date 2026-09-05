@@ -2316,6 +2316,11 @@ fn entity_header_identity_preserves_wire_spelling_and_rejects_a_conflicting_suff
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
     let mismatched = wire.replace("\"entity_suffix\":1", "\"entity_suffix\":2");
     assert!(serde_json::from_str::<super::DesignEntityHeader>(&mismatched).expect_err("mismatched suffix").to_string().contains("entity_suffix"));
+    for class_tag in ["", "25", "25x", "2560", "٢٥٦"] {
+        let mut invalid = serde_json::to_value(&header).unwrap();
+        invalid["class_tag"] = class_tag.into();
+        assert!(serde_json::from_value::<super::DesignEntityHeader>(invalid).unwrap_err().to_string().contains("class_tag"));
+    }
 }
 
 #[test]

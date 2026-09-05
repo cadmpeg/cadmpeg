@@ -231,7 +231,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         byte_offset: 0,
 
         entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100")).expect("valid entity ID"),
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         optional_slot_present: true,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,

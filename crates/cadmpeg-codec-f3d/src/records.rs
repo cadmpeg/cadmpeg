@@ -13523,7 +13523,7 @@ pub struct DesignEntityHeader {
     /// Full UTF-16LE-decoded design-entity id string for this header.
     pub entity_id: DesignEntityId,
     /// Source per-file dynamic three-digit ASCII class tag naming this header's record type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Whether the flag-selected four-byte optional slot is present.
     pub optional_slot_present: bool,
     /// Add-in module of the `MetaStream` type whose entity-id list contains this
@@ -13613,7 +13613,7 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
             id: wire.id,
             byte_offset: wire.byte_offset,
             entity_id,
-            class_tag: wire.class_tag,
+            class_tag: DesignClassTag::try_from(wire.class_tag)?,
             optional_slot_present: wire.optional_slot_present,
             module: wire.module,
             record_reference: wire.record_reference,
@@ -13637,7 +13637,7 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             byte_offset: header.byte_offset,
             entity_suffix: header.entity_id.suffix(),
             entity_id: header.entity_id.0,
-            class_tag: header.class_tag,
+            class_tag: header.class_tag.into(),
             optional_slot_present: header.optional_slot_present,
             module: header.module,
             record_reference: header.record_reference,

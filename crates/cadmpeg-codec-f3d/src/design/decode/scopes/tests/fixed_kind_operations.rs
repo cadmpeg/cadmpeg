@@ -1707,7 +1707,7 @@ pub(super) fn continue_fixed_kind_operations(
         byte_offset: 70,
 
         entity_id: crate::records::DesignEntityId::try_from("Sketch_99".to_owned()).expect("valid entity ID"),
-        class_tag: "366".into(),
+        class_tag: crate::records::DesignClassTag::try_from("366".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some("MSketch".into()),
         record_reference: None,

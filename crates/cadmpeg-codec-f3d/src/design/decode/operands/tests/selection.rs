@@ -39,7 +39,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         byte_offset: 1000,
 
         entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity ID"),
-        class_tag: "269".into(),
+        class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: Some(200),
@@ -146,7 +146,7 @@ fn generated_base_flange_profile_frame_resolves() {
         byte_offset: 0,
 
         entity_id: crate::records::DesignEntityId::try_from("Sketch_800".to_owned()).expect("valid entity ID"),
-        class_tag: "365".into(),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
