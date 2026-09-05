@@ -107,11 +107,11 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
             &references,
         )
         .expect("fixed EdgeFlange operation");
-    assert_eq!(operation.edge_wrapper_record_indices, [201]);
-    assert_eq!(operation.edge_group_record_indices, [251]);
-    assert_eq!(operation.edge_operand_record_indices, [254]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.wrapper_record_index).collect::<Vec<_>>(), [201]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.group_record_index).collect::<Vec<_>>(), [251]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.operand_record_index).collect::<Vec<_>>(), [254]);
     assert_eq!(operation.aggregate_group_record_index, 240);
-    assert_eq!(operation.aggregate_operand_record_indices, [243]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.aggregate_operand_record_index).collect::<Vec<_>>(), [243]);
     assert_eq!(operation.height_owner_record_index, 204);
     assert_eq!(operation.angle_owner_record_index, 218);
     assert_eq!(operation.settings_record_index, 207);
@@ -195,11 +195,11 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
                 &references,
             )
             .expect("legacy classed EdgeFlange operation");
-        assert_eq!(operation.edge_wrapper_record_indices, [201]);
-        assert_eq!(operation.edge_group_record_indices, [251]);
-        assert_eq!(operation.edge_operand_record_indices, [254]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.wrapper_record_index).collect::<Vec<_>>(), [201]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.group_record_index).collect::<Vec<_>>(), [251]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.operand_record_index).collect::<Vec<_>>(), [254]);
         assert_eq!(operation.aggregate_group_record_index, 240);
-        assert_eq!(operation.aggregate_operand_record_indices, [243]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.aggregate_operand_record_index).collect::<Vec<_>>(), [243]);
         assert_eq!(operation.height_owner_record_index, 204);
         assert_eq!(operation.angle_owner_record_index, 218);
         assert_eq!(operation.settings_record_index, 207);
@@ -235,11 +235,11 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
                 &references,
             )
             .expect("legacy classed multi-edge EdgeFlange operation");
-        assert_eq!(operation.edge_wrapper_record_indices, [201, 210]);
-        assert_eq!(operation.edge_group_record_indices, [204, 213]);
-        assert_eq!(operation.edge_operand_record_indices, [207, 216]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.wrapper_record_index).collect::<Vec<_>>(), [201, 210]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.group_record_index).collect::<Vec<_>>(), [204, 213]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.operand_record_index).collect::<Vec<_>>(), [207, 216]);
         assert_eq!(operation.aggregate_group_record_index, 225);
-        assert_eq!(operation.aggregate_operand_record_indices, [228, 231]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.aggregate_operand_record_index).collect::<Vec<_>>(), [228, 231]);
         assert_eq!(operation.height_owner_record_index, 219);
         assert_eq!(operation.angle_owner_record_index, 222);
         assert_eq!(operation.settings_record_index, 234);
@@ -278,11 +278,11 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
             &references,
         )
         .expect("legacy class-364 per-edge width EdgeFlange operation");
-    assert_eq!(operation.edge_wrapper_record_indices, [201, 213]);
-    assert_eq!(operation.edge_group_record_indices, [204, 216]);
-    assert_eq!(operation.edge_operand_record_indices, [207, 219]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.wrapper_record_index).collect::<Vec<_>>(), [201, 213]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.group_record_index).collect::<Vec<_>>(), [204, 216]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.operand_record_index).collect::<Vec<_>>(), [207, 219]);
     assert_eq!(operation.aggregate_group_record_index, 231);
-    assert_eq!(operation.aggregate_operand_record_indices, [234, 237]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.aggregate_operand_record_index).collect::<Vec<_>>(), [234, 237]);
     assert_eq!(operation.height_owner_record_index, 225);
     assert_eq!(operation.angle_owner_record_index, 228);
     assert_eq!(
@@ -317,11 +317,11 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
                 &references,
             )
             .expect("legacy two-sided per-edge EdgeFlange operation");
-        assert_eq!(operation.edge_wrapper_record_indices, [201, 213]);
-        assert_eq!(operation.edge_group_record_indices, [204, 216]);
-        assert_eq!(operation.edge_operand_record_indices, [207, 219]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.wrapper_record_index).collect::<Vec<_>>(), [201, 213]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.group_record_index).collect::<Vec<_>>(), [204, 216]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.operand_record_index).collect::<Vec<_>>(), [207, 219]);
         assert_eq!(operation.aggregate_group_record_index, 231);
-        assert_eq!(operation.aggregate_operand_record_indices, [243, 246]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.aggregate_operand_record_index).collect::<Vec<_>>(), [243, 246]);
         assert_eq!(
             operation.width_distance_owner_record_indices(),
             vec![210, 222, 234, 237]
@@ -356,11 +356,11 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
             &references,
         )
         .expect("legacy class-286 EdgeFlange operation");
-    assert_eq!(operation.edge_wrapper_record_indices, [201]);
-    assert_eq!(operation.edge_group_record_indices, [251]);
-    assert_eq!(operation.edge_operand_record_indices, [254]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.wrapper_record_index).collect::<Vec<_>>(), [201]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.group_record_index).collect::<Vec<_>>(), [251]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.operand_record_index).collect::<Vec<_>>(), [254]);
     assert_eq!(operation.aggregate_group_record_index, 240);
-    assert_eq!(operation.aggregate_operand_record_indices, [243]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.aggregate_operand_record_index).collect::<Vec<_>>(), [243]);
     assert_eq!(operation.height_owner_record_index, 204);
     assert_eq!(operation.angle_owner_record_index, 218);
     assert_eq!(operation.settings_record_index, 207);
@@ -400,11 +400,11 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
             &references,
         )
         .expect("legacy extended class-286 EdgeFlange operation");
-    assert_eq!(operation.edge_wrapper_record_indices, [201, 213]);
-    assert_eq!(operation.edge_group_record_indices, [204, 216]);
-    assert_eq!(operation.edge_operand_record_indices, [207, 219]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.wrapper_record_index).collect::<Vec<_>>(), [201, 213]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.group_record_index).collect::<Vec<_>>(), [204, 216]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.operand_record_index).collect::<Vec<_>>(), [207, 219]);
     assert_eq!(operation.aggregate_group_record_index, 231);
-    assert_eq!(operation.aggregate_operand_record_indices, [279, 282]);
+    assert_eq!(operation.edges.iter().map(|edge| edge.aggregate_operand_record_index).collect::<Vec<_>>(), [279, 282]);
     assert_eq!(
         operation.width_distance_owner_record_indices(),
         vec![210, 222, 234, 237]
@@ -485,8 +485,8 @@ fn edge_flange_scope_reads_the_single_edge_to_object_form() {
             operation.width_distance_owner_record_indices(),
             Vec::<u32>::new()
         );
-        assert_eq!(operation.edge_group_record_indices, [251]);
-        assert_eq!(operation.edge_operand_record_indices, [254]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.group_record_index).collect::<Vec<_>>(), [251]);
+        assert_eq!(operation.edges.iter().map(|edge| edge.operand_record_index).collect::<Vec<_>>(), [254]);
         assert_eq!(
             operation.height_extent,
             DesignEdgeFlangeHeightExtent::ToObject {

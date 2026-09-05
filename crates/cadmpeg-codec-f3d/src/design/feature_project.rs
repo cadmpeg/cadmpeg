@@ -3546,7 +3546,7 @@ pub(crate) fn project_edge_flange(
             width: design_length(parameter(*owner, "EdgeWidth")?)?,
         },
         crate::records::DesignEdgeWidth::SymmetricPerEdge(owners)
-            if owners.len() == operation.edge_group_record_indices.len() =>
+            if owners.len() == operation.edges.len() =>
         {
             let widths = owners
                 .iter()
@@ -3561,7 +3561,7 @@ pub(crate) fn project_edge_flange(
             SheetMetalFlangeWidth::Symmetric { width: *first }
         }
         crate::records::DesignEdgeWidth::TwoSidesPerEdge(pairs)
-            if pairs.len() == operation.edge_group_record_indices.len() =>
+            if pairs.len() == operation.edges.len() =>
         {
             let widths = pairs
                 .iter()
@@ -3598,17 +3598,17 @@ pub(crate) fn project_edge_flange(
 
     // Each role-`0x08` group carries one selected edge. The aggregate role-`0x43`
     // group repeats them, so it contributes no separate selection.
-    if operation.edge_group_record_indices.is_empty() {
+    if operation.edges.is_empty() {
         return None;
     }
     let selections = operation
-        .edge_group_record_indices
+        .edges
         .iter()
-        .map(|edge_group_record_index| {
+        .map(|edge| {
             let mut matching = groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
-                    && group.record_index == *edge_group_record_index
+                    && group.record_index == edge.group_record_index
             });
             let edge_group = matching.next()?;
             if matching.next().is_some()
