@@ -6,14 +6,18 @@ use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::SourceProvenance;
+use serde::Serialize;
 use std::collections::BTreeMap;
 
 /// Four two-digit fields in the Directory Entry status number.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) struct Status {
+    #[serde(rename = "blank_status")]
     pub(crate) blank: u8,
+    #[serde(rename = "subordinate_status")]
     pub(crate) subordinate: u8,
     pub(crate) use_flag: u8,
+    #[serde(rename = "hierarchy_status")]
     pub(crate) hierarchy: u8,
 }
 
