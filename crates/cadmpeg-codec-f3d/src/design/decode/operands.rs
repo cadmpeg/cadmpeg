@@ -2767,9 +2767,9 @@ pub(crate) fn parse_construction_tracking_path(
     let selector = View::i32_le_at(bytes, carrier_at + 57)?;
     let kind = View::u32_le_at(bytes, carrier_at + 61)?;
     let mut cursor = carrier_at.checked_add(73)?;
-    let (first_related_identity, first_related_identity_offset) =
+    let first_related_identity =
         take_optional_tracking_identity(bytes, &mut cursor)?;
-    let (second_related_identity, second_related_identity_offset) =
+    let second_related_identity =
         take_optional_tracking_identity(bytes, &mut cursor)?;
     let following_at = cursor;
     let (following_class_tag, after_following_tag) =
@@ -2792,9 +2792,7 @@ pub(crate) fn parse_construction_tracking_path(
         kind,
         kind_offset: u64::try_from(carrier_at + 61).ok()?,
         first_related_identity,
-        first_related_identity_offset,
         second_related_identity,
-        second_related_identity_offset,
         following_record_index,
         following_byte_offset: u64::try_from(following_at).ok()?,
         following_class_tag,
@@ -2804,17 +2802,17 @@ pub(crate) fn parse_construction_tracking_path(
 fn take_optional_tracking_identity(
     bytes: &[u8],
     cursor: &mut usize,
-) -> Option<(Option<u64>, Option<u64>)> {
+) -> Option<Option<crate::records::Located<u64>>> {
     match View::u32_le_at(bytes, *cursor)? {
         0 => {
             *cursor = (*cursor).checked_add(4)?;
-            Some((None, None))
+            Some(None)
         }
         1 => {
             let value_at = (*cursor).checked_add(4)?;
             let value = View::u64_le_at(bytes, value_at)?;
             *cursor = value_at.checked_add(8)?;
-            Some((Some(value), Some(u64::try_from(value_at).ok()?)))
+            Some(Some(crate::records::Located { value, offset: u64::try_from(value_at).ok()? }))
         }
         _ => None,
     }

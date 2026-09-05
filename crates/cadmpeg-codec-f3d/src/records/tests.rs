@@ -120,3 +120,19 @@ fn parameter_discriminator_preserves_wire_and_rejects_partial_location() {
         assert!(error.to_string().contains("family_discriminator"));
     }
 }
+
+#[test]
+fn tracking_identities_preserve_wire_and_reject_partial_locations() {
+    let prefix = r#"{"wrapper_record_index":300,"wrapper_byte_offset":0,"wrapper_class_tag":"361","carrier_record_index":301,"carrier_byte_offset":33,"carrier_class_tag":"362","primary_identity":268,"primary_identity_offset":70,"selector":-1,"selector_offset":90,"kind":3,"kind_offset":94"#;
+    let suffix = r#","following_record_index":302,"following_byte_offset":130,"following_class_tag":"363"}"#;
+    for fields in ["", ",\"first_related_identity\":113,\"first_related_identity_offset\":110,\"second_related_identity\":119,\"second_related_identity_offset\":122"] {
+        let wire = format!("{prefix}{fields}{suffix}");
+        let value: super::DesignConstructionTrackingPath = serde_json::from_str(&wire).expect("tracking path");
+        assert_eq!(serde_json::to_string(&value).expect("tracking wire"), wire);
+    }
+    for field in ["first_related_identity", "first_related_identity_offset", "second_related_identity", "second_related_identity_offset"] {
+        let error = serde_json::from_str::<super::DesignConstructionTrackingPath>(&format!("{prefix},\"{field}\":1{suffix}"))
+            .expect_err("partial identity location");
+        assert!(error.to_string().contains(field));
+    }
+}
