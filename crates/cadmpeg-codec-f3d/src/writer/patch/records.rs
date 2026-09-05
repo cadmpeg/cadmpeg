@@ -11,8 +11,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 
 use super::edits::{
-    ActGuidEdit, BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
-    HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit, SketchRelationEdit,
+    BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, Edit, EntityHeaderEdit, HistoryEdits,
+    PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit,
 };
 use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -112,7 +112,7 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
     Ok(())
 }
 
-pub(crate) fn patch_act_guids(bytes: &mut [u8], edits: &[ActGuidEdit]) -> Result<(), CodecError> {
+pub(crate) fn patch_act_guids(bytes: &mut [u8], edits: &[Edit<Vec<u8>>]) -> Result<(), CodecError> {
     for edit in edits {
         patch_bytes_at(bytes, edit.offset, &edit.value, "ACT GUID")?;
     }
@@ -761,7 +761,7 @@ fn patch_sketch_nurbs(
 
 pub(crate) fn patch_sketch_relations(
     bytes: &mut [u8],
-    edits: &[SketchRelationEdit],
+    edits: &[Vec<Edit<Vec<u8>>>],
 ) -> Result<(), CodecError> {
     for edit in edits {
         for member in edit {

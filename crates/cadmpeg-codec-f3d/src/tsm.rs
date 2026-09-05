@@ -421,9 +421,7 @@ fn build_fan(
     face_live: &[bool],
 ) -> Result<Vec<FanSlot>, CodecError> {
     let root_id = HalfEdgeId(root);
-    let root_half = half_edges
-        .get(root)
-        .ok_or_else(|| malformed(name, "vertex root names a deleted half-edge"))?;
+    let root_half = &half_edges[root];
     if root_half.vertex != vertex {
         return Err(malformed(
             name,
@@ -444,9 +442,7 @@ fn build_fan(
                 "vertex half-edge fan repeats before its root",
             ));
         }
-        let half = half_edges
-            .get(current.index())
-            .ok_or_else(|| malformed(name, "vertex half-edge fan names a deleted slot"))?;
+        let half = &half_edges[current.index()];
         if half.vertex != vertex {
             return Err(malformed(
                 name,
@@ -470,12 +466,8 @@ fn build_fan(
             face,
         });
 
-        let next = half_edges
-            .get(half.next.index())
-            .ok_or_else(|| malformed(name, "vertex fan next half-edge is deleted"))?;
-        let mate = half_edges
-            .get(next.mate.index())
-            .ok_or_else(|| malformed(name, "vertex fan mate half-edge is deleted"))?;
+        let next = &half_edges[half.next.index()];
+        let mate = &half_edges[next.mate.index()];
         let Some(rotated) = (mate.vertex == vertex).then_some(next.mate) else {
             return Err(malformed(
                 name,
@@ -1226,15 +1218,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     }
     for (index, half) in half_edges.iter().enumerate() {
         let id = HalfEdgeId(index);
-        let mate = half_edges
-            .get(half.mate.index())
-            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))?;
-        let next = half_edges
-            .get(half.next.index())
-            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))?;
-        let previous = half_edges
-            .get(half.previous.index())
-            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))?;
+        let mate = &half_edges[half.mate.index()];
+        let next = &half_edges[half.next.index()];
+        let previous = &half_edges[half.previous.index()];
         if mate.mate != id
             || next.previous != id
             || previous.next != id
@@ -1341,12 +1327,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut edge_by_half =
         ctx.alloc_filled(half_edges.len(), None, "f3d subd half-edge ownership")?;
     let mut edge_vertices = Vec::with_capacity(live_vertices);
-    for (edge_slot, root) in edge_roots.iter().copied().enumerate() {
-        let Some(root) = root else { continue };
-        let half = half_edges
-            .get(root)
-            .ok_or_else(|| malformed(name, "edge root names a deleted slot"))?;
-        let edge = edge_ir[edge_slot].expect("invariant: compact() populated this edge slot");
+    for (edge, root) in (0_u32..).zip(edge_roots.iter().copied().flatten()) {
+        let half = &half_edges[root];
         if edge_by_half[root].replace((edge, false)).is_some()
             || edge_by_half[half.mate.index()]
                 .replace((edge, true))
@@ -1354,9 +1336,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         {
             return Err(malformed(name, "edge roots reuse a half-edge"));
         }
-        let mate = half_edges
-            .get(half.mate.index())
-            .ok_or_else(|| malformed(name, "half-edge names a deleted slot"))?;
+        let mate = &half_edges[half.mate.index()];
         edge_vertices.push([vertex_of(mate.vertex)?, vertex_of(half.vertex)?]);
     }
     if edge_by_half.iter().any(Option::is_none) {
@@ -1390,9 +1370,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         let mut ring = Vec::new();
         let mut current = start_id;
         loop {
-            let half = half_edges
-                .get(current.index())
-                .ok_or_else(|| malformed(name, "face root names a deleted slot"))?;
+            let half = &half_edges[current.index()];
             if half.face != face_slot as i64 {
                 return Err(malformed(name, "face ring carries a different face index"));
             }

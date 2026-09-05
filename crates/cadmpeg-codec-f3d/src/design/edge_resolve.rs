@@ -1605,8 +1605,6 @@ pub(crate) struct EdgeGroupMember {
     pub(crate) deleted_boundary_edges: Vec<i64>,
 }
 
-type EdgeGroupMembers = Vec<EdgeGroupMember>;
-
 fn scope_partition_edge_group_candidates(
     target: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
@@ -1655,7 +1653,7 @@ fn scope_partition_edge_group_candidates(
 
 pub(crate) fn partition_unique_incomplete_edge_group(
     target_ordinal: usize,
-    groups: &[EdgeGroupMembers],
+    groups: &[Vec<EdgeGroupMember>],
 ) -> Option<Vec<i64>> {
     if groups.len() < 2 || target_ordinal >= groups.len() {
         return None;
