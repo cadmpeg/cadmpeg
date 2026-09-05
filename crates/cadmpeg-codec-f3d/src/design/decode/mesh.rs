@@ -32,7 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::{DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
+use crate::records::{DesignMeshSceneNode, DesignMeshSceneState, DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -291,13 +291,9 @@ struct MeshWrapperRecord {
 
 #[derive(Clone, Debug, PartialEq)]
 struct MeshSceneNodeRecord {
-    identity: DesignMeshRecordIdentity,
-    bounds: Option<DesignMeshSceneBounds>,
-    transform: Option<crate::records::Located<MeshAffineTransform>>,
+    node: DesignMeshSceneNode,
     state_record_index: u32,
-    state_reference_offset: u64,
     auxiliary_record_index: u32,
-    auxiliary_reference_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -800,18 +796,16 @@ fn scene_state_mask_is_exact(mask: &[u8]) -> bool {
 fn parse_scene_footer(
     record: &[u8],
     at: usize,
-    frame_start: usize,
 ) -> Option<Option<DesignMeshSceneBounds>> {
     (at.checked_add(SCENE_FOOTER_BYTES) == Some(record.len()) && record.get(at) == Some(&1))
         .then_some(())?;
-    parse_scene_bounds_payload(record, at.checked_add(1)?, frame_start)
+    parse_scene_bounds_payload(record, at.checked_add(1)?)
 }
 
 #[allow(clippy::option_option)] // Distinguish an invalid payload from the exact no-bounds state mask.
 fn parse_scene_bounds_payload(
     record: &[u8],
     payload_at: usize,
-    frame_start: usize,
 ) -> Option<Option<DesignMeshSceneBounds>> {
     let payload = record.get(payload_at..)?;
     if scene_state_mask_is_exact(payload) {
@@ -825,14 +819,14 @@ fn parse_scene_bounds_payload(
     let maximum = [values[0], values[1], values[2]];
     let minimum = [values[3], values[4], values[5]];
     Some(Some(DesignMeshSceneBounds::new(
-        maximum, minimum, source_offset(frame_start, payload_at)?,
+        maximum, minimum,
     ).ok()?))
 }
 
 fn parse_mesh_scene_state_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
-) -> Result<(DesignMeshFixedRecord<{scene_state::LEN as u64}>, Option<DesignMeshSceneBounds>), CodecError> {
+) -> Result<DesignMeshSceneState, CodecError> {
     validate_mesh_registration(
         frame,
         MESH_SCENE_STATE_TYPE_VERSION,
@@ -844,10 +838,10 @@ fn parse_mesh_scene_state_record(
     let identity = DesignMeshFixedRecord::try_from(record_identity(record, frame, "mesh-scene-state")?)
         .map_err(|_| malformed_frame("mesh-scene-state", frame.entity_id))?;
     let bounds = (record.get(scene_state::ZERO_RUN_34..scene_state::FOOTER_MARKER) == Some(&[0; 34]))
-    .then(|| parse_scene_footer(record, scene_state::FOOTER_MARKER, frame.start))
+    .then(|| parse_scene_footer(record, scene_state::FOOTER_MARKER))
     .flatten()
     .ok_or_else(|| malformed_frame("mesh-scene-state", frame.entity_id))?;
-    Ok((identity, bounds))
+    Ok(DesignMeshSceneState::new(identity, bounds))
 }
 
 fn parse_scene_node_record(
@@ -873,7 +867,7 @@ fn parse_scene_node_record(
             && record.get(scene_node::ZERO_RUN_24..scene_node::FOOTER_MARKER) == Some(&[0; 24])
         {
             (
-                parse_scene_footer(record, scene_node::FOOTER_MARKER, frame.start)?,
+                parse_scene_footer(record, scene_node::FOOTER_MARKER)?,
                 None,
             )
         } else if record.len() == placed_scene_node::LEN
@@ -881,30 +875,20 @@ fn parse_scene_node_record(
                 == Some(&[0; 25])
         {
             (
-                parse_scene_bounds_payload(record, placed_scene_node::FOOTER_MASK, frame.start)?,
-                Some(crate::records::Located {
-                    value: MeshAffineTransform::parse(record, placed_scene_node::TRANSFORM)?,
-                    offset: source_offset(frame.start, placed_scene_node::TRANSFORM)?,
-                }),
+                parse_scene_bounds_payload(record, placed_scene_node::FOOTER_MASK)?,
+                Some(MeshAffineTransform::parse(record, placed_scene_node::TRANSFORM)?),
             )
         } else {
             return None;
         };
         Some(MeshSceneNodeRecord {
-            identity,
-            bounds,
-            transform,
+            node: DesignMeshSceneNode::new(identity, bounds, transform).ok()?,
             state_record_index: exact_local_record_index(
                 record,
                 scene_node::SCENE_STATE_REFERENCE,
             )?,
-            state_reference_offset: source_offset(frame.start, scene_node::SCENE_STATE_REFERENCE)?,
             auxiliary_record_index: exact_local_record_index(
                 record,
-                scene_node::AUXILIARY_RECORD_REFERENCE,
-            )?,
-            auxiliary_reference_offset: source_offset(
-                frame.start,
                 scene_node::AUXILIARY_RECORD_REFERENCE,
             )?,
         })
@@ -1201,7 +1185,7 @@ where
             .into_iter()
             .map(|frame| parse_mesh_scene_state_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.0.record_index(),
+        |record| record.record().record_index(),
         "mesh-scene-state",
     )?;
     let mut scene_nodes = unique_record_map(
@@ -1209,7 +1193,7 @@ where
             .into_iter()
             .map(|frame| parse_scene_node_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index(),
+        |record| record.node.record_index(),
         "mesh-scene-node",
     )?;
     let scene_auxiliary_frames = typed_frame_map(
@@ -1412,16 +1396,11 @@ where
                 entry: entry_name.entry,
                 guid: guid.guid,
                 wrapper_record: wrapper.identity,
-                scene_state_record: scene_state.0,
-                scene_state_bounds: scene_state.1,
-                scene_node_record: scene_node.identity,
-                scene_node_bounds: scene_node.bounds,
-                scene_node_transform: scene_node.transform,
+                scene_state,
+                scene_node: scene_node.node,
                 scene_auxiliary_record: scene_auxiliary,
                 owner_record: body_owner,
                 container_mesh_uuid: None,
-                scene_state_reference_offset: scene_node.state_reference_offset,
-                scene_auxiliary_reference_offset: scene_node.auxiliary_reference_offset,
                 tessellation_id: None,
             });
         }
@@ -2340,8 +2319,8 @@ mod tests {
         assert_eq!(body.entry.name(), ENTRY_NAME);
         assert_eq!(body.guid.value(), FUSION_UUID);
         assert_eq!(body.wrapper_record.record_index(), 108);
-        assert_eq!(body.scene_state_record.record_index(), 105);
-        assert_eq!(body.scene_node_record.record_index(), 107);
+        assert_eq!(body.scene_state.record().record_index(), 105);
+        assert_eq!(body.scene_node.record_index(), 107);
         assert_eq!(body.scene_auxiliary_record.record_index(), 106);
         assert_eq!(body.owner_record.record_index(), 111);
         assert_eq!(
@@ -2586,11 +2565,11 @@ mod tests {
         let frame = sole_typed_frame(&graph, SCENE_NODE_TYPE_GUID);
 
         let parsed = parse_scene_node_record(&graph.bytes, frame).expect("finite Scene bounds");
-        let bounds = parsed.bounds.expect("present bounds");
+        let bounds = parsed.node.bounds().expect("present bounds");
         assert_eq!(bounds.maximum(), [1.0, 2.0, 3.0]);
         assert_eq!(bounds.minimum(), [-4.0, -5.0, -6.0]);
         assert_eq!(
-            bounds.offsets(),
+            parsed.node.bounds_offsets(),
             [
                 u64::try_from(payload_at).unwrap(),
                 u64::try_from(payload_at + 24).unwrap()
@@ -2629,12 +2608,12 @@ mod tests {
         };
 
         let parsed = parse_scene_node_record(&bytes, frame).expect("placed Scene node");
-        assert_eq!(parsed.transform.expect("placed transform").value.cells(), transform);
+        assert_eq!(parsed.node.transform().expect("placed transform").value.cells(), transform);
         assert_eq!(
-            parsed.transform.map(|located| located.offset),
+            parsed.node.transform().map(|located| located.offset),
             Some(placed_scene_node::TRANSFORM as u64)
         );
-        let bounds = parsed.bounds.expect("placed bounds");
+        let bounds = parsed.node.bounds().expect("placed bounds");
         assert_eq!(bounds.maximum(), [4.0, 5.0, 6.0]);
         assert_eq!(bounds.minimum(), [1.0, 2.0, 3.0]);
     }

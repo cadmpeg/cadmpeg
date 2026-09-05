@@ -1623,21 +1623,11 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && entry_records.insert((stream, body.entry.record().record_index()))
                 && guid_records.insert((stream, body.guid.record().record_index()))
                 && wrapper_records.insert((stream, body.wrapper_record.record_index()))
-                && state_records.insert((stream, body.scene_state_record.record_index()))
-                && node_records.insert((stream, body.scene_node_record.record_index()))
+                && state_records.insert((stream, body.scene_state.record().record_index()))
+                && node_records.insert((stream, body.scene_node.record_index()))
                 && auxiliary_records.insert((stream, body.scene_auxiliary_record.record_index()))
                 && owner_consistent
-                && body.scene_node_record.frame_length() == 133
-                && mesh_record_offset_is(
-                    &body.scene_node_record,
-                    33,
-                    body.scene_state_reference_offset,
-                )
-                && mesh_record_offset_is(
-                    &body.scene_node_record,
-                    48,
-                    body.scene_auxiliary_reference_offset,
-                )
+                && body.scene_node.frame_length() == 133
                 && body.tessellation_id.as_deref().is_none_or(|id| {
                     tessellation_ids.contains(id) && projected_tessellations.insert(id)
                 });

@@ -13888,30 +13888,32 @@ impl From<DesignMeshTextureResource> for DesignMeshTextureResourceWire {
 }
 
 /// One finite axis-aligned bound stored by a mesh Scene record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignMeshSceneBoundsWire"))]
-#[serde(try_from = "DesignMeshSceneBoundsWire", into = "DesignMeshSceneBoundsWire")]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DesignMeshSceneBounds {
     maximum: [f64; 3],
     minimum: [f64; 3],
-    byte_offset: u64,
 }
-
 impl DesignMeshSceneBounds {
-    pub fn new(maximum: [f64; 3], minimum: [f64; 3], byte_offset: u64) -> Result<Self, String> {
+    pub fn new(maximum: [f64; 3], minimum: [f64; 3]) -> Result<Self, String> {
         if !maximum.iter().chain(&minimum).all(|value| value.is_finite()) {
             return Err("scene bounds maximum and minimum must be finite".into());
         }
         if minimum.iter().zip(maximum).any(|(minimum, maximum)| *minimum > maximum) {
             return Err("scene bounds minimum exceeds maximum".into());
         }
-        byte_offset.checked_add(24).ok_or("scene bounds offsets overflow")?;
-        Ok(Self { maximum, minimum, byte_offset })
+        Ok(Self { maximum, minimum })
     }
     pub fn maximum(&self) -> [f64; 3] { self.maximum }
     pub fn minimum(&self) -> [f64; 3] { self.minimum }
-    pub fn offsets(&self) -> [u64; 2] { [self.byte_offset, self.byte_offset + 24] }
+    fn from_wire(wire: DesignMeshSceneBoundsWire, offsets: [u64; 2]) -> Result<Self, String> {
+        if wire.offsets != offsets {
+            return Err("scene bounds offsets must match their owning record".into());
+        }
+        Self::new(wire.maximum, wire.minimum)
+    }
+    fn into_wire(self, offsets: [u64; 2]) -> DesignMeshSceneBoundsWire {
+        DesignMeshSceneBoundsWire { maximum: self.maximum(), minimum: self.minimum(), offsets }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -13925,19 +13927,113 @@ struct DesignMeshSceneBoundsWire {
     offsets: [u64; 2],
 }
 
-impl TryFrom<DesignMeshSceneBoundsWire> for DesignMeshSceneBounds {
-    type Error = String;
-    fn try_from(wire: DesignMeshSceneBoundsWire) -> Result<Self, Self::Error> {
-        let bounds = Self::new(wire.maximum, wire.minimum, wire.offsets[0])?;
-        if bounds.offsets() != wire.offsets {
-            return Err("scene bounds offsets must differ by 24 bytes".into());
-        }
-        Ok(bounds)
+/// A fixed Scene-state record and its optional finite bounds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignMeshSceneState {
+    record: DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }>,
+    bounds: Option<DesignMeshSceneBounds>,
+}
+impl DesignMeshSceneState {
+    pub fn new(record: DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }>, bounds: Option<DesignMeshSceneBounds>) -> Self {
+        Self { record, bounds }
+    }
+    pub fn record(&self) -> &DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }> { &self.record }
+    fn bounds_offsets(&self) -> [u64; 2] {
+        let start = self.record.byte_offset() + crate::layout::paramesh_scene_state::FOOTER_MASK as u64;
+        [start, start + 24]
+    }
+    fn from_wire(record: DesignMeshRecordIdentity, bounds: Option<DesignMeshSceneBoundsWire>) -> Result<Self, String> {
+        let record = DesignMeshFixedRecord::try_from(record)?;
+        let mut state = Self::new(record, None);
+        state.bounds = bounds.map(|bounds| DesignMeshSceneBounds::from_wire(bounds, state.bounds_offsets())).transpose()?;
+        Ok(state)
+    }
+    fn into_wire(self) -> (DesignMeshRecordIdentity, Option<DesignMeshSceneBoundsWire>) {
+        let bounds = self.bounds.map(|bounds| bounds.into_wire(self.bounds_offsets()));
+        (self.record.into(), bounds)
     }
 }
-impl From<DesignMeshSceneBounds> for DesignMeshSceneBoundsWire {
-    fn from(bounds: DesignMeshSceneBounds) -> Self {
-        Self { maximum: bounds.maximum(), minimum: bounds.minimum(), offsets: bounds.offsets() }
+
+/// A compact or placed Scene-node record with bounds at the form's fixed location.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignMeshSceneNode {
+    form: DesignMeshSceneNodeForm,
+    bounds: Option<DesignMeshSceneBounds>,
+}
+#[derive(Debug, Clone, PartialEq)]
+enum DesignMeshSceneNodeForm {
+    Compact(DesignMeshFixedRecord<{ crate::layout::paramesh_scene_node::LEN as u64 }>),
+    Placed {
+        record: DesignMeshFixedRecord<{ crate::layout::paramesh_scene_node_placed::LEN as u64 }>,
+        transform: MeshAffineTransform,
+    },
+}
+impl DesignMeshSceneNode {
+    pub fn new(record: DesignMeshRecordIdentity, bounds: Option<DesignMeshSceneBounds>, transform: Option<MeshAffineTransform>) -> Result<Self, String> {
+        let form = match transform {
+            None => DesignMeshSceneNodeForm::Compact(record.try_into()?),
+            Some(transform) => DesignMeshSceneNodeForm::Placed { record: record.try_into()?, transform },
+        };
+        Ok(Self { form, bounds })
+    }
+    pub fn record_index(&self) -> u32 {
+        match &self.form {
+            DesignMeshSceneNodeForm::Compact(record) => record.record_index(),
+            DesignMeshSceneNodeForm::Placed { record, .. } => record.record_index(),
+        }
+    }
+    pub fn byte_offset(&self) -> u64 {
+        match &self.form {
+            DesignMeshSceneNodeForm::Compact(record) => record.byte_offset(),
+            DesignMeshSceneNodeForm::Placed { record, .. } => record.byte_offset(),
+        }
+    }
+    pub fn frame_length(&self) -> u64 {
+        match &self.form {
+            DesignMeshSceneNodeForm::Compact(_) => crate::layout::paramesh_scene_node::LEN as u64,
+            DesignMeshSceneNodeForm::Placed { .. } => crate::layout::paramesh_scene_node_placed::LEN as u64,
+        }
+    }
+    pub fn bounds(&self) -> Option<&DesignMeshSceneBounds> { self.bounds.as_ref() }
+    pub fn bounds_offsets(&self) -> [u64; 2] {
+        let relative = match &self.form {
+            DesignMeshSceneNodeForm::Compact(_) => crate::layout::paramesh_scene_node::FOOTER_MASK,
+            DesignMeshSceneNodeForm::Placed { .. } => crate::layout::paramesh_scene_node_placed::FOOTER_MASK,
+        };
+        let start = self.byte_offset() + relative as u64;
+        [start, start + 24]
+    }
+    pub fn transform(&self) -> Option<Located<MeshAffineTransform>> {
+        match &self.form {
+            DesignMeshSceneNodeForm::Compact(_) => None,
+            DesignMeshSceneNodeForm::Placed { record, transform } => Some(Located {
+                value: *transform,
+                offset: record.byte_offset() + crate::layout::paramesh_scene_node_placed::TRANSFORM as u64,
+            }),
+        }
+    }
+    pub fn state_reference_offset(&self) -> u64 {
+        self.byte_offset() + crate::layout::paramesh_scene_node::SCENE_STATE_REFERENCE as u64
+    }
+    pub fn auxiliary_reference_offset(&self) -> u64 {
+        self.byte_offset() + crate::layout::paramesh_scene_node::AUXILIARY_RECORD_REFERENCE as u64
+    }
+    fn from_wire(record: DesignMeshRecordIdentity, bounds: Option<DesignMeshSceneBoundsWire>, transform: Option<Located<MeshAffineTransform>>) -> Result<Self, String> {
+        let mut node = Self::new(record, None, transform.map(|located| located.value))?;
+        if node.transform().map(|located| located.offset) != transform.map(|located| located.offset) {
+            return Err("scene_node_transform_offset must match the placed record layout".into());
+        }
+        node.bounds = bounds.map(|bounds| DesignMeshSceneBounds::from_wire(bounds, node.bounds_offsets())).transpose()?;
+        Ok(node)
+    }
+    fn into_wire(self) -> (DesignMeshRecordIdentity, Option<DesignMeshSceneBoundsWire>, Option<Located<MeshAffineTransform>>) {
+        let transform = self.transform();
+        let bounds = self.bounds().copied().map(|bounds| bounds.into_wire(self.bounds_offsets()));
+        let record = match self.form {
+            DesignMeshSceneNodeForm::Compact(record) => record.into(),
+            DesignMeshSceneNodeForm::Placed { record, .. } => record.into(),
+        };
+        (record, bounds, transform)
     }
 }
 
@@ -14069,16 +14165,10 @@ pub struct DesignMeshBody {
     pub guid: DesignMeshGuid,
     /// One-to-one `ParaMesh` wrapper around the mesh-body record.
     pub wrapper_record: DesignMeshFixedRecord<{ crate::layout::paramesh_body_wrapper::LEN as u64 }>,
-    /// Fixed Scene-state record owned by this mesh body.
-    pub scene_state_record: DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }>,
-    /// Finite bound carried by the Scene-state footer; absent for its unset sentinel.
-    pub scene_state_bounds: Option<DesignMeshSceneBounds>,
-    /// Scene node connecting the mesh body to its state and auxiliary cache.
-    pub scene_node_record: DesignMeshRecordIdentity,
-    /// Finite bound carried by the Scene-node footer; absent for its unset sentinel.
-    pub scene_node_bounds: Option<DesignMeshSceneBounds>,
-    /// Optional row-major affine transform carried by the placed Scene-node form.
-    pub scene_node_transform: Option<Located<MeshAffineTransform>>,
+    /// Fixed Scene-state record and optional bounds.
+    pub scene_state: DesignMeshSceneState,
+    /// Compact or placed Scene node with its optional bounds.
+    pub scene_node: DesignMeshSceneNode,
     /// Separately typed Scene auxiliary cache reached through the Scene node.
     pub scene_auxiliary_record: DesignMeshRecordIdentity,
     /// Typed Design body-owner record referenced by the mesh-body record.
@@ -14087,10 +14177,6 @@ pub struct DesignMeshBody {
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
     pub container_mesh_uuid: Option<DesignMeshUuid>,
-    /// Byte offset of the Scene node's state-record reference.
-    pub scene_state_reference_offset: u64,
-    /// Byte offset of the Scene node's auxiliary-record reference.
-    pub scene_auxiliary_reference_offset: u64,
     /// Neutral tessellation projected from the joined container, when present.
     pub tessellation_id: Option<String>,
 }
@@ -14110,12 +14196,12 @@ struct DesignMeshBodyWire {
     scene_state_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-state footer; absent for its unset sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    scene_state_bounds: Option<DesignMeshSceneBounds>,
+    scene_state_bounds: Option<DesignMeshSceneBoundsWire>,
     /// Scene node connecting `body_record` to its state and auxiliary cache.
     scene_node_record: DesignMeshRecordIdentity,
     /// Finite bound carried by the Scene-node footer; absent for its unset sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    scene_node_bounds: Option<DesignMeshSceneBounds>,
+    scene_node_bounds: Option<DesignMeshSceneBoundsWire>,
     /// Optional row-major affine transform carried by the placed Scene-node form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     scene_node_transform: Option<MeshAffineTransform>,
@@ -14184,17 +14270,21 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
         let guid_reference_offset = value.placement.guid_reference_offset();
         let scene_node_reference_offset = value.placement.scene_node_reference_offset();
         let collection_reference_offset = value.placement.collection_reference_offset();
+        let scene_state_reference_offset = value.scene_node.state_reference_offset();
+        let scene_auxiliary_reference_offset = value.scene_node.auxiliary_reference_offset();
+        let (scene_state_record, scene_state_bounds) = value.scene_state.into_wire();
+        let (scene_node_record, scene_node_bounds, scene_node_transform) = value.scene_node.into_wire();
         Self {
             body_record: value.placement.record,
             entry_name_record: value.entry.record,
             guid_record: value.guid.record,
             wrapper_record: value.wrapper_record.into(),
-            scene_state_record: value.scene_state_record.into(),
-            scene_state_bounds: value.scene_state_bounds,
-            scene_node_record: value.scene_node_record,
-            scene_node_bounds: value.scene_node_bounds,
-            scene_node_transform: value.scene_node_transform.map(|located| located.value),
-            scene_node_transform_offset: value.scene_node_transform.map(|located| located.offset),
+            scene_state_record,
+            scene_state_bounds,
+            scene_node_record,
+            scene_node_bounds,
+            scene_node_transform: scene_node_transform.map(|located| located.value),
+            scene_node_transform_offset: scene_node_transform.map(|located| located.offset),
             scene_auxiliary_record: value.scene_auxiliary_record,
             owner_record: value.owner_record,
             entry_name: value.entry.name,
@@ -14213,8 +14303,8 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             wrapper_body_reference_offset,
             entry_guid_reference_offset,
             guid_entry_reference_offset,
-            scene_state_reference_offset: value.scene_state_reference_offset,
-            scene_auxiliary_reference_offset: value.scene_auxiliary_reference_offset,
+            scene_state_reference_offset,
+            scene_auxiliary_reference_offset,
             tessellation_id: value.tessellation_id,
         }
     }
@@ -14229,7 +14319,12 @@ impl DesignMeshBody {
         if wrapper_record.byte_offset() + crate::layout::paramesh_body_wrapper::BODY_REFERENCE as u64 != value.wrapper_body_reference_offset {
             return Err("wrapper_body_reference_offset must match wrapper_record layout".into());
         }
-        let scene_state_record = DesignMeshFixedRecord::try_from(value.scene_state_record)?;
+        let scene_state = DesignMeshSceneState::from_wire(value.scene_state_record, value.scene_state_bounds)?;
+        let scene_node = DesignMeshSceneNode::from_wire(value.scene_node_record, value.scene_node_bounds,
+            Located::from_wire(value.scene_node_transform, value.scene_node_transform_offset, "scene_node_transform")?)?;
+        if scene_node.state_reference_offset() != value.scene_state_reference_offset || scene_node.auxiliary_reference_offset() != value.scene_auxiliary_reference_offset {
+            return Err("scene_state_reference_offset/scene_auxiliary_reference_offset must match scene_node_record layout".into());
+        }
         let guid = DesignMeshGuid::new(value.guid_record, value.fusion_uuid)?;
         if value.fusion_uuid_offset != guid.value_offset() || value.guid_entry_reference_offset != guid.entry_reference_offset() {
             return Err("fusion_uuid_offset/guid_entry_reference_offset must match guid_record layout".into());
@@ -14267,16 +14362,11 @@ impl DesignMeshBody {
             entry,
             guid,
             wrapper_record,
-            scene_state_record,
-            scene_state_bounds: value.scene_state_bounds,
-            scene_node_record: value.scene_node_record,
-            scene_node_bounds: value.scene_node_bounds,
-            scene_node_transform: Located::from_wire(value.scene_node_transform, value.scene_node_transform_offset, "scene_node_transform")?,
+            scene_state,
+            scene_node,
             scene_auxiliary_record: value.scene_auxiliary_record,
             owner_record: value.owner_record,
             container_mesh_uuid: value.container_mesh_uuid,
-            scene_state_reference_offset: value.scene_state_reference_offset,
-            scene_auxiliary_reference_offset: value.scene_auxiliary_reference_offset,
             tessellation_id: value.tessellation_id,
         })
     }

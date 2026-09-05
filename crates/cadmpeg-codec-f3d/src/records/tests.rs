@@ -867,7 +867,7 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "body_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 575},
         "entry_name_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 62}, "guid_record": identity,
         "wrapper_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 40},
-        "scene_state_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 95}, "scene_node_record": identity,
+        "scene_state_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 95}, "scene_node_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 133},
         "scene_auxiliary_record": identity, "owner_record": identity,
         "entry_name": "mesh.paramesh", "entry_name_offset": 136,
         "fusion_uuid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", "fusion_uuid_offset": 136,
@@ -877,7 +877,7 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "guid_reference_offset": 641, "scene_node_reference_offset": 653,
         "collection_reference_offset": 664, "wrapper_body_reference_offset": 121,
         "entry_guid_reference_offset": 121, "guid_entry_reference_offset": 172,
-        "scene_state_reference_offset": 260, "scene_auxiliary_reference_offset": 270
+        "scene_state_reference_offset": 133, "scene_auxiliary_reference_offset": 148
     });
     let base = serde_json::json!({
         "id": "mesh-feature", "scope_record": identity, "scope_base_record": identity,
@@ -2537,23 +2537,23 @@ fn timeline_frame_rejects_invalid_source_spans() {
 #[test]
 fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
     let wire = r#"{"maximum":[1.0,2.0,3.0],"minimum":[-4.0,-5.0,-6.0],"offsets":[100,124]}"#;
-    let bounds: super::DesignMeshSceneBounds = serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&bounds).unwrap(), wire);
-    assert_eq!(bounds.offsets(), [100, 124]);
+    let bounds = super::DesignMeshSceneBounds::from_wire(serde_json::from_str(wire).unwrap(), [100, 124]).unwrap();
+    assert_eq!(serde_json::to_string(&bounds.into_wire([100, 124])).unwrap(), wire);
+    assert_eq!(bounds.into_wire([100, 124]).offsets, [100, 124]);
     for (field, bad) in [
         ("minimum", serde_json::json!([2.0, -5.0, -6.0])),
         ("maximum", serde_json::json!([-5.0, 2.0, 3.0])),
         ("offsets", serde_json::json!([100, 125])),
         ("offsets", serde_json::json!([u64::MAX, 0])),
     ] {
-        let mut invalid = serde_json::to_value(&bounds).unwrap();
+        let mut invalid = serde_json::to_value(bounds.into_wire([100, 124])).unwrap();
         invalid[field] = bad;
-        assert!(serde_json::from_value::<super::DesignMeshSceneBounds>(invalid).unwrap_err().to_string().contains(field));
+        assert!(super::DesignMeshSceneBounds::from_wire(serde_json::from_value(invalid).unwrap(), [100, 124]).unwrap_err().to_string().contains(field));
     }
-    assert!(super::DesignMeshSceneBounds::new([0.0; 3], [0.0; 3], 0).is_ok());
+    assert!(super::DesignMeshSceneBounds::new([0.0; 3], [0.0; 3]).is_ok());
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(super::DesignMeshSceneBounds::new([value, 1.0, 1.0], [0.0; 3], 0).is_err());
-        assert!(super::DesignMeshSceneBounds::new([1.0; 3], [value, 0.0, 0.0], 0).is_err());
+        assert!(super::DesignMeshSceneBounds::new([value, 1.0, 1.0], [0.0; 3]).is_err());
+        assert!(super::DesignMeshSceneBounds::new([1.0; 3], [value, 0.0, 0.0]).is_err());
     }
 }
 
@@ -2716,4 +2716,39 @@ fn mesh_fixed_record_derives_length_and_rejects_another_layout() {
     assert_eq!(roundtrip, identity(40));
     assert!(super::DesignMeshFixedRecord::<40>::try_from(identity(95)).is_err());
     assert!(super::DesignMeshFixedRecord::<95>::try_from(identity(40)).is_err());
+}
+
+#[test]
+fn mesh_scene_forms_derive_bounds_and_transform_locations() {
+    let identity = |length| super::DesignMeshRecordIdentity::new(
+        super::DesignClassTag::try_from("256".to_owned()).unwrap(), 4, 200, length).unwrap();
+    let bounds = super::DesignMeshSceneBounds::new([1.0, 2.0, 3.0], [-1.0, -2.0, -3.0]).unwrap();
+    let transform = super::MeshAffineTransform::try_from([
+        [1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]).unwrap();
+    for (length, placement, offsets) in [(133, None, [284, 308]), (261, Some(transform), [412, 436])] {
+        let node = super::DesignMeshSceneNode::new(identity(length), Some(bounds), placement).unwrap();
+        assert_eq!(node.bounds_offsets(), offsets);
+        assert_eq!(node.state_reference_offset(), 233);
+        assert_eq!(node.auxiliary_reference_offset(), 248);
+        assert_eq!(node.transform().map(|located| located.offset), placement.map(|_| 284));
+        let (record, bound_wire, transform_wire) = node.clone().into_wire();
+        assert_eq!(record, identity(length));
+        assert_eq!(bound_wire.as_ref().unwrap().offsets, offsets);
+        assert_eq!(super::DesignMeshSceneNode::from_wire(record.clone(), bound_wire.clone(), transform_wire).unwrap(), node);
+        let mut bad_bounds = bound_wire.unwrap();
+        bad_bounds.offsets[0] += 1;
+        assert!(super::DesignMeshSceneNode::from_wire(record, Some(bad_bounds), transform_wire).is_err());
+    }
+    assert!(super::DesignMeshSceneNode::new(identity(133), None, Some(transform)).is_err());
+    assert!(super::DesignMeshSceneNode::new(identity(261), None, None).is_err());
+    assert!(super::DesignMeshSceneNode::from_wire(identity(261), None,
+        Some(super::Located { value: transform, offset: 285 })).is_err());
+    let state = super::DesignMeshSceneState::new(identity(95).try_into().unwrap(), Some(bounds));
+    let (record, bound_wire) = state.clone().into_wire();
+    assert_eq!(bound_wire.as_ref().unwrap().offsets, [246, 270]);
+    assert_eq!(super::DesignMeshSceneState::from_wire(record.clone(), bound_wire.clone()).unwrap(), state);
+    let mut bad_bounds = bound_wire.unwrap();
+    bad_bounds.offsets = [247, 271];
+    assert!(super::DesignMeshSceneState::from_wire(record, Some(bad_bounds)).is_err());
 }
