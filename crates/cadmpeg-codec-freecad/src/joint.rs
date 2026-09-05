@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::native::{JointRecord, ObjectRecord, PropertyRecord};
+use crate::native::{JointBody, JointConnectorRecord, JointRecord, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
@@ -63,37 +63,40 @@ pub(crate) fn transfer(
         if !grounded && joint_type.is_none() {
             continue;
         }
-        let (references, placements, offsets) = if grounded {
-            let placement = placement(&owned, "Placement")?;
-            (
-                links(&owned, "ObjectToGround"),
-                placement.into_iter().collect(),
-                Vec::new(),
-            )
+        let body = if grounded {
+            let placement =
+                placement(&owned, "Placement")?.unwrap_or_else(crate::product::identity);
+            let reference = links(&owned, "ObjectToGround")
+                .into_iter()
+                .next()
+                .unwrap_or_else(crate::native::empty_link_target);
+            JointBody::Grounded {
+                reference,
+                placement,
+            }
         } else {
-            let placement1 = placement(&owned, "Placement1")?;
-            let offset1 = placement(&owned, "Offset1")?;
-            let placement2 = placement(&owned, "Placement2")?;
-            let offset2 = placement(&owned, "Offset2")?;
-            let reference1 = connector(&owned, "Reference1")?;
-            let reference2 = connector(&owned, "Reference2")?;
-            let slots = [
-                (reference1, placement1, offset1),
-                (reference2, placement2, offset2),
-            ];
-            let references = slots
-                .iter()
-                .flat_map(|(references, _, _)| references.iter().cloned())
-                .collect();
-            let placements = slots
-                .iter()
-                .map(|(_, placement, _)| placement.unwrap_or_else(crate::product::identity))
-                .collect();
-            let offsets = slots
-                .iter()
-                .map(|(_, _, offset)| offset.unwrap_or_else(crate::product::identity))
-                .collect();
-            (references, placements, offsets)
+            let connector_record = |owned: &[&PropertyRecord],
+                                    reference_name: &str,
+                                    placement_name: &str,
+                                    offset_name: &str|
+             -> Result<JointConnectorRecord, CodecError> {
+                Ok(JointConnectorRecord {
+                    reference: connector(owned, reference_name)?
+                        .into_iter()
+                        .next()
+                        .unwrap_or_else(crate::native::empty_link_target),
+                    placement: placement(owned, placement_name)?
+                        .unwrap_or_else(crate::product::identity),
+                    offset: placement(owned, offset_name)?.unwrap_or_else(crate::product::identity),
+                })
+            };
+            JointBody::Pair {
+                kind: joint_type.unwrap_or_else(|| "unknown".into()),
+                connectors: [
+                    connector_record(&owned, "Reference1", "Placement1", "Offset1")?,
+                    connector_record(&owned, "Reference2", "Placement2", "Offset2")?,
+                ],
+            }
         };
         let parameters = owned
             .iter()
@@ -127,14 +130,7 @@ pub(crate) fn transfer(
         output.push(JointRecord {
             id: crate::native::native_id("joint", &object.name),
             object: object.id.clone(),
-            kind: if grounded {
-                "grounded".into()
-            } else {
-                joint_type.unwrap_or_else(|| "unknown".into())
-            },
-            references,
-            placements,
-            offsets,
+            body,
             parameters,
         });
     }
@@ -182,8 +178,8 @@ pub(crate) fn transfer_neutral(
                     JointLimits::new(minimum, maximum)
                 };
             let operands = record
-                .references
-                .iter()
+                .references()
+                .into_iter()
                 .map(|reference| {
                     let object = reference.object.clone()?;
                     let subelements = reference
@@ -213,15 +209,13 @@ pub(crate) fn transfer_neutral(
                 })
                 .collect::<Option<Vec<_>>>()?;
             let frames = record
-                .placements
-                .iter()
-                .copied()
+                .placements()
+                .into_iter()
                 .map(|rows| Transform::from_rows(rows).expect("affine transform"))
                 .collect::<Vec<_>>();
             let offsets = record
-                .offsets
-                .iter()
-                .copied()
+                .offsets()
+                .into_iter()
                 .map(|rows| Transform::from_rows(rows).expect("affine transform"))
                 .collect::<Vec<_>>();
             let id = JointId(crate::native::model_id(
@@ -229,7 +223,7 @@ pub(crate) fn transfer_neutral(
                 &record.object,
                 "constraint",
             ));
-            let kind = joint_kind(&record.kind);
+            let kind = joint_kind(record.kind());
             let angle = scalar("Angle").map(f64::to_radians);
             let distance = scalar("Distance");
             let distance2 = scalar("Distance2");
@@ -704,14 +698,17 @@ pub(crate) mod tests {
             .arena_as::<crate::native::JointRecord>("joints")
             .expect("joints");
         assert_eq!(joints.len(), 1);
-        assert_eq!(joints[0].kind, "Revolute");
-        assert_eq!(joints[0].references.len(), 2);
+        assert_eq!(joints[0].kind(), "Revolute");
+        assert_eq!(joints[0].references().len(), 2);
         assert_eq!(
-            joints[0].references[0].object.as_deref(),
+            joints[0].references()[0].object.as_deref(),
             Some("fcstd:native:object#Assembly")
         );
-        assert_eq!(joints[0].references[0].subelements, ["A.Face1", "A.Edge2"]);
-        assert_eq!(joints[0].placements[1][0][3], 2.0);
+        assert_eq!(
+            joints[0].references()[0].subelements,
+            ["A.Face1", "A.Edge2"]
+        );
+        assert_eq!(joints[0].placements()[1][0][3], 2.0);
         assert_eq!(
             joints[0].parameters.get("Suppressed").map(String::as_str),
             Some("true")
