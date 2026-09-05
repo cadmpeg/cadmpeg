@@ -1288,8 +1288,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 let authored = authored_scopes.as_ref().map_or_else(
                     || {
                         scope
-                            .assembly_alignment
-                            .as_ref()
+                            .assembly_alignment()
                             .and_then(|alignment| alignment.joint_origin_scope_record_index)
                             .is_none()
                     },
@@ -4248,7 +4247,7 @@ fn extend_related_design_records(
                     byte_offset: scope.byte_offset,
                 });
         }
-        if let Some(operation) = &scope.copy_paste_bodies_operation {
+        if let Some(operation) = scope.copy_paste_bodies_operation() {
             if existing.insert((stream.to_owned(), operation.relation_record_index)) {
                 native
                     .design_record_headers

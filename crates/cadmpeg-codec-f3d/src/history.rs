@@ -1070,7 +1070,7 @@ pub(crate) fn bind_feature_body_selections(
             let Some(stream) = crate::ids::native_stream(&scope.id) else {
                 continue;
             };
-            let Some(operation) = scope.combine_operation.as_ref() else {
+            let Some(operation) = scope.combine_operation() else {
                 continue;
             };
             let mut native_tools = operation
@@ -1444,7 +1444,7 @@ fn combine_recipe_family_tool_slots(
 fn combine_external_local_tools(
     scope: &crate::records::DesignParameterScope,
 ) -> Option<cadmpeg_ir::features::BodySelection> {
-    let operation = scope.combine_operation.as_ref()?;
+    let operation = scope.combine_operation()?;
     let bodies = operation
         .tools
         .iter()
@@ -2372,7 +2372,7 @@ fn bind_hole_face_selection(
     let FaceSelection::Native(native_id) = selection else {
         return;
     };
-    let Some(construction) = &scope.hole_construction else {
+    let Some(construction) = scope.hole_construction() else {
         return;
     };
     let Some(face_selection) = &construction.face_selection else {
@@ -2654,7 +2654,8 @@ pub(crate) fn bind_vertex_recipe_history(
         .collect::<HashMap<_, _>>();
 
     for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPoint") {
-        let Some(construction) = &mut scope.work_point_construction else {
+        let scope_id = scope.id.clone();
+        let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
         let solved_position = cadmpeg_ir::math::Point3::new(
@@ -2670,7 +2671,7 @@ pub(crate) fn bind_vertex_recipe_history(
             };
             recipe.recipe_state_id = None;
             recipe.resolved_vertex_slot = None;
-            let Some(state_id) = input_states.get(&scope.id).copied() else {
+            let Some(state_id) = input_states.get(&scope_id).copied() else {
                 continue;
             };
             let Some((_, state)) = unique_history_state(histories, state_id) else {
@@ -3394,7 +3395,7 @@ pub(crate) fn bind_scope_histories(
                 continue;
             }
         }
-        let Some(construction) = &scope.base_feature_construction else {
+        let Some(construction) = scope.base_feature_construction() else {
             continue;
         };
         let mut referenced_histories =
@@ -3845,7 +3846,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                         && group.extrude_face_role
                             == Some(crate::records::DesignExtrudeFaceRole::Termination)
                 });
-        operand.resolved_face_slots = match scope.direct_face_operation {
+        operand.resolved_face_slots = match scope.direct_face_operation() {
             Some(crate::records::DesignDirectFaceOperation::OffsetFaces { .. }) => {
                 let direct = resolve_direct_face_recipe_clauses(
                     &operand.recipe_references,
@@ -4236,7 +4237,7 @@ fn resolve_thread_face_by_transition(
     topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
 ) -> Option<i64> {
-    let construction = scope.thread_construction.as_ref()?;
+    let construction = scope.thread_construction()?;
     let source = historical_brep_source(&history.id)?;
     let mut source_candidates = candidates
         .iter()
@@ -6906,7 +6907,9 @@ pub(crate) fn bind_hole_selection_history(
     histories: &[AsmHistory],
 ) {
     for scope in scopes {
-        let Some(construction) = &mut scope.hole_construction else {
+        let history_state_id = scope.history_state_id;
+        let previous_history_state_id = scope.previous_history_state_id;
+        let Some(construction) = scope.hole_construction_mut() else {
             continue;
         };
         let Some(selection) = &mut construction.face_selection else {
@@ -6921,8 +6924,8 @@ pub(crate) fn bind_hole_selection_history(
                 selection.secondary_identity,
                 construction.position,
                 construction.direction,
-                scope.history_state_id,
-                scope.previous_history_state_id,
+                history_state_id,
+                previous_history_state_id,
                 histories,
             ) {
                 selection.historical_face_candidates.push(candidate);
@@ -7098,7 +7101,7 @@ pub(crate) fn bind_circular_pattern_axes(
         };
         let input_state_id =
             effective_scope_previous_history_state_id(scope, std::slice::from_ref(*history));
-        let Some(construction) = &mut scope.circular_pattern_construction else {
+        let Some(construction) = scope.circular_pattern_construction_mut() else {
             continue;
         };
         let DesignCircularPatternAxis::HistoricalEdge {
@@ -7319,16 +7322,19 @@ pub(crate) fn bind_mirror_selection_planes(
     histories: &[AsmHistory],
 ) {
     for scope in scopes {
-        let stream = crate::ids::native_stream(&scope.id);
-        let Some(construction) = scope.mirror_construction.as_mut() else {
+        let stream = crate::ids::native_stream(&scope.id).map(str::to_owned);
+        let record_index = scope.record_index;
+        let history_state_id = scope.history_state_id;
+        let previous_history_state_id = scope.previous_history_state_id;
+        let Some(construction) = scope.mirror_construction_mut() else {
             continue;
         };
         construction.plane_origin = None;
         construction.plane_normal = None;
         let (Some(selection_record_index), Some(state_id), Some(previous_state_id)) = (
             construction.plane_selection_record_index,
-            scope.history_state_id,
-            scope.previous_history_state_id,
+            history_state_id,
+            previous_history_state_id,
         ) else {
             continue;
         };
@@ -7338,8 +7344,8 @@ pub(crate) fn bind_mirror_selection_planes(
             continue;
         };
         let mut matching_groups = groups.iter().filter(|group| {
-            crate::ids::native_stream(&group.id) == stream
-                && group.scope_record_index == scope.record_index
+            crate::ids::native_stream(&group.id) == stream.as_deref()
+                && group.scope_record_index == record_index
                 && group.record_index == construction.plane_group_record_index
                 && group.role == 0x0000_0005_0000_0000
                 && group.members == [selection_record_index]
@@ -7353,8 +7359,8 @@ pub(crate) fn bind_mirror_selection_planes(
         let matching_operands = operands
             .iter()
             .filter(|operand| {
-                crate::ids::native_stream(&operand.id) == stream
-                    && operand.scope_record_index == scope.record_index
+                crate::ids::native_stream(&operand.id) == stream.as_deref()
+                    && operand.scope_record_index == record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == 0
                     && operand.record_index == selection_record_index
@@ -7363,8 +7369,8 @@ pub(crate) fn bind_mirror_selection_planes(
         let matching_face_operands = face_operands
             .iter()
             .filter(|operand| {
-                crate::ids::native_stream(&operand.id) == stream
-                    && operand.scope_record_index == scope.record_index
+                crate::ids::native_stream(&operand.id) == stream.as_deref()
+                    && operand.scope_record_index == record_index
                     && operand.group_record_index == Some(group.record_index)
                     && operand.group_member_ordinal == Some(0)
                     && operand.record_index == selection_record_index
@@ -7378,7 +7384,7 @@ pub(crate) fn bind_mirror_selection_planes(
                 continue;
             }
             let mut matching_identities = identities.iter().filter(|identity| {
-                crate::ids::native_stream(&identity.id) == stream
+                crate::ids::native_stream(&identity.id) == stream.as_deref()
                     && identity.group_record_index == group.record_index
             });
             let identity = matching_identities.next();

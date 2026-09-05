@@ -15,6 +15,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::records::DesignScopePayload;
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -82,7 +83,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     scope.feature_ordinal_offset = 284;
     scope.history_state_id_offset = 244;
     scope.previous_history_state_id_offset = 315;
-    scope.component_insert_construction = Some(DesignComponentInsertConstruction {
+    scope.set_component_insert_construction(Some(DesignComponentInsertConstruction {
         relation_record_index: 167,
         carrier_record_index: 166,
         occurrence_identity: Some(17),
@@ -96,7 +97,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
         ],
         transform_offset: None,
         carrier_transform_offset: None,
-    });
+    }));
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     {
@@ -321,7 +322,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         } else {
             vec![1, 2, 3, 4, 5, operand_record_index]
         };
-        scope.combine_operation = (!hole_scope).then_some(DesignCombineOperation {
+        scope.set_combine_operation((!hole_scope).then_some(DesignCombineOperation {
             form: DesignCombineForm::Standard,
             operation: DesignExtrudeOperation::Join,
             operation_offset: 0,
@@ -343,7 +344,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 },
                 external_identity: None,
             }],
-        });
+        }));
         scopes.push(scope);
         headers.push(DesignRecordHeader {
             id: format!("{stream}:design-record-header#{operand_record_index}"),
@@ -1023,7 +1024,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 210,
-        extrude: Some(crate::records::DesignExtrudeScope {
+        payload: DesignScopePayload::Extrude(crate::records::DesignExtrudeScope {
             extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::NewBody,
@@ -1044,7 +1045,6 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             extrude_profile: Some(profile),
             ..crate::records::DesignExtrudeScope::default()
         }),
-        coil: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 220,
         history_state_id: None,
@@ -1054,40 +1054,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         reference_count_offset: 180,
         reference_members: vec![20, 30],
         reference_member_offsets: vec![184, 195],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_frame: None,
-        work_axis_construction: None,
-        joint_origin_frame: None,
-        work_point_construction: None,
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        sketch_entity: None,
         paired_class_tag: "261".into(),
         paired_byte_offset: 300,
     };

@@ -38,8 +38,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         frame_length: 200,
         kind: "Extrude".into(),
         kind_offset: 1100,
-        extrude: None,
-        coil: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -49,40 +47,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         reference_count_offset: 1080,
         reference_members: vec![100, 200, 201],
         reference_member_offsets: vec![1085, 1096, 1107],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_frame: None,
-        work_axis_construction: None,
-        joint_origin_frame: None,
-        work_point_construction: None,
+        payload: DesignScopePayload::Empty,
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        sketch_entity: None,
         paired_class_tag: "261".into(),
         paired_byte_offset: 1200,
     };
@@ -957,12 +923,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut stitch_scope = scope;
     stitch_scope.kind = "SurfaceStitch".into();
     stitch_scope.reference_members = vec![100, 200, 300, 301];
-    stitch_scope.surface_stitch_operation = Some(DesignSurfaceStitchOperation {
+    stitch_scope.set_surface_stitch_operation(Some(DesignSurfaceStitchOperation {
         gap_tolerance: 0.01,
         gap_tolerance_offset: 40,
         tolerance_record_index: 300,
         settings_record_index: 301,
-    });
+    }));
     let mut stitch_group = remove_group;
     stitch_group.members = vec![200];
     stitch_group.role = 0x0000_0005_0000_0000;

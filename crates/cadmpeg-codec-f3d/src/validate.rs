@@ -73,7 +73,7 @@ fn body_recipe_reference_table_is_admitted(
             records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
         ) && scope.is_some_and(|scope| {
             scope.kind == "Combine"
-                && scope.combine_operation.as_ref().is_some_and(|operation| {
+                && scope.combine_operation().is_some_and(|operation| {
                     operation
                         .tools
                         .iter()
@@ -510,14 +510,13 @@ fn valid_axial_assembly_targets(
                         design_stream(&target_scope.id) == stream
                             && target_scope.kind == "Component Insert"
                             && target_scope.record_index == *component_insert_scope_record_index
-                            && target_scope
-                                .component_insert_construction
-                                .as_ref()
-                                .is_some_and(|construction| {
+                            && target_scope.component_insert_construction().is_some_and(
+                                |construction| {
                                     construction
                                         .neutron_role
                                         .eq_ignore_ascii_case(&selectors[0].occurrence_role)
-                                })
+                                },
+                            )
                     })
                     .count();
                 frame.reference_record_index == *construction_record_index
@@ -2244,7 +2243,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for scope in &native.design_parameter_scopes {
         let native_stream = design_stream(&scope.id);
         let unique_index = scope_indices.insert((native_stream, scope.record_index));
-        let entity_link = scope.sketch_entity.as_ref().map(|binding| {
+        let entity_link = scope.sketch_entity().map(|binding| {
             entities_by_suffix
                 .get(&(native_stream, binding.entity_suffix))
                 .is_some_and(|entity| {
@@ -2318,7 +2317,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && operation.thickness_offset < scope.paired_byte_offset
             }
         };
-        let edge_flange_link = match (&scope.edge_flange_operation, scope.kind.as_str()) {
+        let edge_flange_link = match (scope.edge_flange_operation(), scope.kind.as_str()) {
             (None, _) => true,
             (Some(_), kind) if kind != "EdgeFlange" => false,
             (Some(operation), _) => {
@@ -2423,7 +2422,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
         };
-        let hem_link = match (&scope.hem_operation, scope.kind.as_str()) {
+        let hem_link = match (scope.hem_operation(), scope.kind.as_str()) {
             (None, _) => true,
             (Some(_), kind) if kind != "Hem" => false,
             (Some(operation), _) => {
@@ -2472,7 +2471,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
         };
-        let copy_paste_link = match (&scope.copy_paste_bodies_operation, scope.kind.as_str()) {
+        let copy_paste_link = match (scope.copy_paste_bodies_operation(), scope.kind.as_str()) {
             (None, kind) => kind != "CopyPasteBodies",
             (Some(_), kind) if kind != "CopyPasteBodies" => false,
             (Some(operation), _) => {
@@ -2537,7 +2536,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     })
             }
         };
-        let rectangular_pattern_link = match &scope.rectangular_pattern_construction {
+        let rectangular_pattern_link = match scope.rectangular_pattern_construction() {
             None => {
                 design::design_feature_family(&scope.kind)
                     != Some(design::DesignFeatureFamily::RectangularPattern)
@@ -2675,7 +2674,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
             }
         };
-        let assembly_alignment_link = match &scope.assembly_alignment {
+        let assembly_alignment_link = match scope.assembly_alignment() {
             None => {
                 design::design_feature_family(&scope.kind)
                     != Some(design::DesignFeatureFamily::Assemble)
@@ -3215,7 +3214,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && alignment_scalars_link
             }
         };
-        let component_insert_link = match &scope.component_insert_construction {
+        let component_insert_link = match scope.component_insert_construction() {
             None => scope.kind != "Component Insert",
             Some(construction) => {
                 let relation =
@@ -3334,7 +3333,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         }))
             }
         };
-        let copy_paste_component_link = match &scope.copy_paste_component_operation {
+        let copy_paste_component_link = match scope.copy_paste_component_operation() {
             None => scope.kind != "CopyPaste",
             Some(operation) => {
                 let source = native
@@ -3386,7 +3385,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
         };
         let draft_link = match (
-            scope.draft_operation.as_ref(),
+            scope.draft_operation(),
             design::design_feature_family(&scope.kind),
         ) {
             (None, family) => family != Some(design::DesignFeatureFamily::Draft),
@@ -3409,7 +3408,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
         };
         let combine_link = match (
-            scope.combine_operation.as_ref(),
+            scope.combine_operation(),
             design::design_feature_family(&scope.kind),
         ) {
             (None, _) => true,
@@ -3568,7 +3567,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
         };
         let thread_link = match (
-            scope.thread_construction.as_ref(),
+            scope.thread_construction(),
             design::design_feature_family(&scope.kind),
         ) {
             (None, _) => true,
@@ -3701,18 +3700,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let assembly_operand = native.design_parameter_scopes.iter().any(|assembly| {
                     design_stream(&assembly.id) == native_stream
                         && assembly.kind == "Assemble"
-                        && assembly
-                            .assembly_alignment
-                            .as_ref()
-                            .is_some_and(|alignment| {
-                                alignment.operand_frames.as_ref().is_some_and(|frames| {
-                                    frames.iter().any(|frame| {
-                                        frame.reference_record_index == scope.record_index
-                                            && frame.transform == transform
-                                            && frame.transform_offset == transform_offset
-                                    })
+                        && assembly.assembly_alignment().is_some_and(|alignment| {
+                            alignment.operand_frames.as_ref().is_some_and(|frames| {
+                                frames.iter().any(|frame| {
+                                    frame.reference_record_index == scope.record_index
+                                        && frame.transform == transform
+                                        && frame.transform_offset == transform_offset
                                 })
                             })
+                        })
                         && reference.is_none()
                         && reference_offset.is_none()
                 });
@@ -4419,7 +4415,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (true | false, None) => true,
                 _ => false,
             }
-            && match (scope.kind.as_str(), scope.surface_stitch_operation.as_ref()) {
+            && match (scope.kind.as_str(), scope.surface_stitch_operation()) {
                 ("SurfaceStitch", Some(operation)) => {
                     operation.gap_tolerance.is_finite()
                         && operation.gap_tolerance > 0.0
@@ -4434,7 +4430,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (_, None) => true,
                 (_, Some(_)) => false,
             }
-            && match (scope.kind.as_str(), scope.ruled_surface_operation.as_ref()) {
+            && match (scope.kind.as_str(), scope.ruled_surface_operation()) {
                 ("SurfaceRuled", Some(operation)) => {
                     operation.method_offset == scope.byte_offset.saturating_add(20)
                         && operation.alternate_face_offset == scope.byte_offset.saturating_add(27)
@@ -4561,7 +4557,7 @@ fn valid_work_point_construction(
     scope: &records::DesignParameterScope,
     native_stream: &str,
 ) -> bool {
-    let Some(construction) = &scope.work_point_construction else {
+    let Some(construction) = scope.work_point_construction() else {
         return true;
     };
     let native = ctx.native;
@@ -4685,7 +4681,7 @@ fn valid_work_plane_construction(
     let [placement, first, second, third, extra_offset] = scope.reference_members.as_slice() else {
         return false;
     };
-    let Some(frame) = scope.work_plane_frame.as_ref() else {
+    let Some(frame) = scope.work_plane_frame() else {
         return false;
     };
     let Some(placement_header) = ctx
@@ -4715,8 +4711,7 @@ fn valid_work_plane_construction(
         ] == [*first, *second, *third]
         && scope.work_plane_reference() == Some(*extra_offset)
         && scope
-            .work_plane_frame
-            .as_ref()
+            .work_plane_frame()
             .and_then(|frame| frame.reference.as_ref())
             .is_some()
         && design::decode::sketch::valid_sketch_transform(&transform)
@@ -5340,14 +5335,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         group.role == 0x0000_0008_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
-                            && scope
-                                .ruled_surface_operation
-                                .as_ref()
-                                .is_some_and(|operation| {
-                                    operation
-                                        .edge_group_record_indices
-                                        .contains(&group.record_index)
-                                })
+                            && scope.ruled_surface_operation().is_some_and(|operation| {
+                                operation
+                                    .edge_group_record_indices
+                                    .contains(&group.record_index)
+                            })
                     }
                     Some(design::DesignFeatureFamily::BoundaryFill) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
@@ -5380,14 +5372,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         group.role == 0x0000_0010_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
-                            && scope
-                                .thread_construction
-                                .as_ref()
-                                .is_some_and(|construction| {
-                                    construction
-                                        .face_group_record_indices
-                                        .contains(&group.record_index)
-                                })
+                            && scope.thread_construction().is_some_and(|construction| {
+                                construction
+                                    .face_group_record_indices
+                                    .contains(&group.record_index)
+                            })
                     }
                     Some(design::DesignFeatureFamily::SheetMetalEdgeFlange) => {
                         matches!(
@@ -6334,12 +6323,7 @@ fn validate_fillet_operand_groups<'a>(
             continue;
         }
         let has_fixed_assignment = scope
-            .and_then(|scope| {
-                scope
-                    .fixed_fillet_parameters
-                    .as_ref()
-                    .map(|fixed| (scope, fixed))
-            })
+            .and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed)))
             .is_some_and(|(scope, fixed)| {
                 fixed.groups.iter().all(|group| {
                     let radius_count = group.radii.len();
@@ -6765,7 +6749,7 @@ fn validate_body_recipe_operands<'a>(
             } => {
                 (scope.kind == "Hole"
                     || (!scope_reference_ordinal.is_multiple_of(2)
-                        && scope.combine_operation.as_ref().is_some_and(|operation| {
+                        && scope.combine_operation().is_some_and(|operation| {
                             operation.target.record_index == operand.record_index
                                 || operation
                                     .tools
@@ -7865,7 +7849,7 @@ fn validate_face_operands<'a>(
                                 Some(design::DesignFeatureFamily::Thread) => {
                                     group.is_some_and(|group| {
                                         group.role == 0x0000_0010_0000_0000
-                                            && scope.thread_construction.as_ref().is_some_and(
+                                            && scope.thread_construction().is_some_and(
                                                 |construction| {
                                                     construction
                                                         .face_group_record_indices
@@ -8220,7 +8204,7 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && scope.is_some_and(|scope| {
                     design::design_feature_family(&scope.kind)
                         == Some(design::DesignFeatureFamily::Sketch)
-                        && scope.sketch_entity.as_ref().is_some_and(|binding| {
+                        && scope.sketch_entity().is_some_and(|binding| {
                             binding.entity_id == placement.entity_id
                                 && binding.entity_suffix == placement.entity_suffix
                         })

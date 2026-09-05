@@ -317,7 +317,7 @@ pub fn bind_component_insert_features(
     table: &XrefTable,
 ) {
     for scope in scopes {
-        let Some(construction) = &scope.component_insert_construction else {
+        let Some(construction) = scope.component_insert_construction() else {
             continue;
         };
         let mut matches = table.references.iter().filter(|reference| {
@@ -395,7 +395,7 @@ fn bind_occurrences(
             let direct = select_component_insert_transforms(
                 scopes.iter().filter_map(|scope| {
                     let stream = crate::ids::native_stream(&scope.id)?;
-                    let construction = scope.component_insert_construction.as_ref()?;
+                    let construction = scope.component_insert_construction()?;
                     Some((stream, construction))
                 }),
                 stream,
@@ -417,7 +417,7 @@ fn bind_occurrences(
                 let direct = select_component_insert_transforms(
                     scopes.iter().filter_map(|scope| {
                         let stream = crate::ids::native_stream(&scope.id)?;
-                        let construction = scope.component_insert_construction.as_ref()?;
+                        let construction = scope.component_insert_construction()?;
                         Some((stream, construction))
                     }),
                     stream,

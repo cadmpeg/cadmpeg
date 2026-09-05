@@ -3032,13 +3032,13 @@ pub(super) fn bind_hem_operation_from_parameters(
     let Some(paired_at) = usize::try_from(scope.paired_byte_offset).ok() else {
         return;
     };
-    scope.hem_operation = exact_hem_operation(
+    scope.set_hem_operation(exact_hem_operation(
         bytes,
         start,
         paired_at,
         &scope.reference_members,
         &parameter_source_kinds,
-    );
+    ));
 }
 
 /// Read the gap-and-length `Hem` fixed operation section for one candidate header

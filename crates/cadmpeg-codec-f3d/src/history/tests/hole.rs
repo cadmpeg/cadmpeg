@@ -146,7 +146,7 @@ fn hole_scope() -> crate::records::DesignParameterScope {
     let mut scope = crate::records::DesignParameterScope::empty("f3d:scope#5", "Hole", 5);
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.hole_construction = Some(construction);
+    scope.set_hole_construction(Some(construction));
     scope
 }
 
@@ -159,8 +159,7 @@ fn edge_backed_hole_selection_uses_the_oriented_updated_support_plane() {
 
     assert_eq!(
         scope
-            .hole_construction
-            .as_ref()
+            .hole_construction()
             .and_then(|construction| construction.face_selection.as_ref())
             .map(|selection| selection.historical_face_candidates.as_slice()),
         Some(
@@ -195,8 +194,7 @@ fn edge_backed_hole_selection_rejects_ambiguous_support_planes() {
     bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
 
     assert!(scope
-        .hole_construction
-        .as_ref()
+        .hole_construction()
         .and_then(|construction| construction.face_selection.as_ref())
         .is_some_and(|selection| selection.historical_face_candidates.is_empty()));
 }

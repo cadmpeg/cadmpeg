@@ -52,8 +52,6 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         frame_length: 200,
         kind: kind.into(),
         kind_offset: byte_offset + 100,
-        extrude: None,
-        coil: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -63,40 +61,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         reference_count_offset: byte_offset + 80,
         reference_members: vec![record_index + 1],
         reference_member_offsets: vec![byte_offset + 85],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_frame: None,
-        work_axis_construction: None,
-        joint_origin_frame: None,
-        work_point_construction: None,
+        payload: DesignScopePayload::Empty,
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        sketch_entity: None,
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
     };
@@ -105,7 +71,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         scope(22, 400, "Chamfer"),
         scope(32, 700, "Hole"),
     ];
-    scopes[2].hole_construction = Some(DesignHoleConstruction {
+    scopes[2].set_hole_construction(Some(DesignHoleConstruction {
         point_record_index: 378,
         point_record_byte_offset: 10,
         position: [1.25, -2.5, 3.75],
@@ -122,7 +88,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         input_record_indices: vec![378],
         input_record_offsets: vec![129],
         face_selection: None,
-    });
+    }));
     scopes[2].reference_members = vec![0, 363, 0, 370, 0, 378];
     let hole_face_operand = |record_index, scope_reference_ordinal| DesignFaceOperand {
         id: format!("f3d:native:face-operand#{record_index}"),
@@ -596,6 +562,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         AsmHistoricalEntityKind, DesignConstructionOperandGroup,
         DesignConstructionOperandGroupFrame, DesignDraftOperation,
         DesignEntitySelectionFaceCandidate, DesignEntitySelectionOperand, DesignParameterScope,
+        DesignScopePayload,
     };
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
@@ -608,13 +575,13 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     scope.feature_ordinal = 1;
     scope.previous_history_state_id = Some(7);
     scope.reference_members = vec![101, 111, 102, 112];
-    scope.draft_operation = Some(DesignDraftOperation {
+    scope.set_draft_operation(Some(DesignDraftOperation {
         angle: -0.25,
         angle_record_index: 90,
         angle_offset: 0,
         opposite_angle_record_index: 91,
         opposite_angle_offset: 0,
-    });
+    }));
     let group = |record_index, member, role| DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#{record_index}"),
         scope_record_index: 100,
@@ -916,8 +883,6 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         frame_length: 200,
         kind: "Congé".into(),
         kind_offset: 210,
-        extrude: None,
-        coil: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -927,40 +892,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         reference_count_offset: 180,
         reference_members: vec![100, 101],
         reference_member_offsets: vec![185, 196],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_frame: None,
-        work_axis_construction: None,
-        joint_origin_frame: None,
-        work_point_construction: None,
+        payload: DesignScopePayload::Empty,
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        sketch_entity: None,
         paired_class_tag: "261".into(),
         paired_byte_offset: 300,
     };
@@ -1037,7 +970,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         owner(40, 41, 3),
     ];
     let mut indexed_scope = scope.clone();
-    indexed_scope.fixed_fillet_parameters = Some(crate::records::DesignFixedFilletParameters {
+    indexed_scope.set_fixed_fillet_parameters(Some(crate::records::DesignFixedFilletParameters {
         groups: vec![crate::records::DesignFixedFilletGroup {
             tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
                 value: 1.0,
@@ -1051,12 +984,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             intermediate_parameter_record_indexes: Vec::new(),
             intermediate_parameter_offsets: Vec::new(),
         }],
-    });
+    }));
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         std::slice::from_mut(&mut indexed_scope),
         &owners,
     );
-    assert_eq!(indexed_scope.fixed_fillet_parameters, None);
+    assert_eq!(indexed_scope.fixed_fillet_parameters(), None);
 
     let assignments = decode_fillet_radius_groups(
         std::slice::from_ref(&scope),
@@ -1339,7 +1272,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             model_reference,
         }
     };
-    patch_scope.surface_patch_boundaries = vec![patch_boundary(2, 300, 100)];
+    patch_scope.set_surface_patch_boundaries(vec![patch_boundary(2, 300, 100)]);
     let mut patch_group = group(100, 0, vec![200]);
     patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
@@ -1366,8 +1299,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
     patch_scope.frame_length = 398;
     patch_scope.reference_members = vec![100, 200, 300, 101, 201, 301, 102];
-    patch_scope.surface_patch_boundaries =
-        vec![patch_boundary(2, 300, 100), patch_boundary(5, 301, 101)];
+    patch_scope.set_surface_patch_boundaries(vec![
+        patch_boundary(2, 300, 100),
+        patch_boundary(5, 301, 101),
+    ]);
     let mut second_patch_group = group(101, 3, vec![201]);
     second_patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
@@ -1435,7 +1370,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
     patch_scope.frame_length = 339;
     patch_scope.reference_members = vec![100, 200, 300];
-    patch_scope.surface_patch_boundaries = vec![patch_boundary(2, 300, 100)];
+    patch_scope.set_surface_patch_boundaries(vec![patch_boundary(2, 300, 100)]);
     patch_group.role = 0x0000_0041_0000_0000;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
@@ -1466,7 +1401,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
     patch_scope.frame_length = 340;
     patch_scope.reference_members = vec![100, 200, 300, 301];
-    patch_scope.surface_patch_boundaries = vec![patch_boundary(2, 300, 100)];
+    patch_scope.set_surface_patch_boundaries(vec![patch_boundary(2, 300, 100)]);
     patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
@@ -1488,7 +1423,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
     patch_scope.frame_length = 343;
     patch_scope.reference_members = vec![100, 200, 201, 202, 203, 300];
-    patch_scope.surface_patch_boundaries.clear();
+    patch_scope.surface_patch_boundaries_mut().clear();
     patch_group.members = vec![200, 201, 202, 203];
     let grouped_projection = crate::design::feature_project::project_surface_patch(
         &patch_scope,

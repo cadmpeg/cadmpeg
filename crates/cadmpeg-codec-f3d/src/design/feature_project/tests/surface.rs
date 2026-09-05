@@ -17,7 +17,7 @@ fn dispatcher_projects_perpendicular_surface_extend() {
         "SurfaceExtend",
         12,
     );
-    scope.surface_extend_operation = Some(DesignSurfaceExtendOperation {
+    scope.set_surface_extend_operation(Some(DesignSurfaceExtendOperation {
         distance: 0.04,
         distance_offset: 40,
         distance_record_index: 400,
@@ -29,7 +29,7 @@ fn dispatcher_projects_perpendicular_surface_extend() {
         edge_record_indices: vec![503, 507],
         tolerance: f64::EPSILON,
         tolerance_offset: 139,
-    });
+    }));
     let (features, _) = project_parameter_design(&[], &[], &[scope], &[], &[], &[], &[], &[]);
 
     let [Feature {

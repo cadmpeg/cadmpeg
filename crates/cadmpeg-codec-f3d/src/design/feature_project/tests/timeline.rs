@@ -329,7 +329,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         "Assemble",
         10,
     );
-    assembly.assembly_alignment = Some(DesignAssemblyAlignment {
+    assembly.set_assembly_alignment(Some(DesignAssemblyAlignment {
         angle: 0.0,
         offset: [0.0; 3],
         owner_record_indices: Vec::new(),
@@ -340,7 +340,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         operand_qualifiers: None,
         limits: None,
         joint_origin_scope_record_index: Some(20),
-    });
+    }));
     let mut origin = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#20"),
         "JointOrigin",
@@ -448,7 +448,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
             "Assemble",
             record_index,
         );
-        scope.assembly_alignment = Some(DesignAssemblyAlignment {
+        scope.set_assembly_alignment(Some(DesignAssemblyAlignment {
             angle: 0.0,
             offset: [0.0; 3],
             owner_record_indices: Vec::new(),
@@ -459,7 +459,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
             operand_qualifiers: None,
             limits: None,
             joint_origin_scope_record_index: Some(20),
-        });
+        }));
         scope
     };
     let mut origin = DesignParameterScope::empty(
@@ -716,8 +716,6 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         frame_length: 200,
         kind: kind.into(),
         kind_offset: byte_offset + 100,
-        extrude: None,
-        coil: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: current,
@@ -727,40 +725,8 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         reference_count_offset: byte_offset + 80,
         reference_members: Vec::new(),
         reference_member_offsets: Vec::new(),
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_frame: None,
-        work_axis_construction: None,
-        joint_origin_frame: None,
-        work_point_construction: None,
+        payload: DesignScopePayload::Empty,
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        sketch_entity: None,
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
     };

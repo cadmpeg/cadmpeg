@@ -26,7 +26,7 @@ fn dispatcher_projects_datum_feature_scopes() {
 
     let mut work_point =
         DesignParameterScope::empty("f3d:native:parameter-scope#3", "WorkPoint", 3);
-    work_point.work_point_construction = Some(crate::records::DesignWorkPointConstruction {
+    work_point.set_work_point_construction(Some(crate::records::DesignWorkPointConstruction {
         point_record_index: 4,
         point_record_byte_offset: 0,
         position: [4.0, 5.0, 6.0],
@@ -36,7 +36,7 @@ fn dispatcher_projects_datum_feature_scopes() {
             inputs: Vec::new(),
         },
         reference_type_offset: 0,
-    });
+    }));
 
     let scopes = vec![joint_origin, work_plane, work_point];
     let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
@@ -66,14 +66,14 @@ fn dispatcher_projects_datum_feature_scopes() {
 #[test]
 fn dispatcher_projects_scale_point_center_in_neutral_units() {
     let mut scale = DesignParameterScope::empty("f3d:native:parameter-scope#4", "Scale", 4);
-    scale.scale_operation = Some(DesignScaleOperation {
+    scale.set_scale_operation(Some(DesignScaleOperation {
         body_group_record_index: 5,
         center_record_index: 6,
         center_position: Some([1.25, -2.5, 3.75]),
         center_position_offset: Some(40),
         uniform_factor: 2.5,
         uniform_factor_offset: 20,
-    });
+    }));
 
     let (features, _) = project_parameter_design(&[], &[], &[scale], &[], &[], &[], &[], &[]);
     let FeatureDefinition::Scale {
@@ -147,7 +147,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
     };
     let mut plane = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPlane", 20);
     plane.with_work_plane_transform(identity_matrix());
-    if let Some(frame) = &mut plane.work_plane_frame {
+    if let Some(frame) = plane.work_plane_frame_mut() {
         frame.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
             placement_record_index: 21,
             inputs: Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
@@ -203,7 +203,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         })),
     };
     let mut point = DesignParameterScope::empty("f3d:native:parameter-scope#40", "WorkPoint", 40);
-    point.work_point_construction = Some(DesignWorkPointConstruction {
+    point.set_work_point_construction(Some(DesignWorkPointConstruction {
         point_record_index: 41,
         point_record_byte_offset: 0,
         position: [1.0, 2.0, 3.0],
@@ -212,7 +212,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             inputs: [input(42, 10), input(46, 20), input(50, 30)],
         },
         reference_type_offset: 0,
-    });
+    }));
     let mut scopes = planes.to_vec();
     scopes.push(point);
 
@@ -275,7 +275,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         next_byte_offset: 5,
     };
     let mut point = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPoint", 20);
-    point.work_point_construction = Some(DesignWorkPointConstruction {
+    point.set_work_point_construction(Some(DesignWorkPointConstruction {
         point_record_index: 21,
         point_record_byte_offset: 0,
         position: [4.0, 3.0, 0.0],
@@ -290,7 +290,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             },
         },
         reference_type_offset: 0,
-    });
+    }));
     let timeline = DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
         byte_offset: 0,
@@ -454,16 +454,16 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         30,
     );
     surface_stitch.reference_members = vec![300, 301, 302, 303];
-    surface_stitch.surface_stitch_operation = Some(DesignSurfaceStitchOperation {
+    surface_stitch.set_surface_stitch_operation(Some(DesignSurfaceStitchOperation {
         gap_tolerance: 0.01,
         gap_tolerance_offset: 0,
         tolerance_record_index: 302,
         settings_record_index: 303,
-    });
+    }));
 
     let mut copy_paste =
         DesignParameterScope::empty(&format!("{stream}:scope#copy-paste"), "CopyPaste", 40);
-    copy_paste.copy_paste_component_operation = Some(DesignCopyPasteComponentOperation {
+    copy_paste.set_copy_paste_component_operation(Some(DesignCopyPasteComponentOperation {
         relation_record_index: 401,
         source_occurrence_record_index: 402,
         copied_occurrence_record_index: 403,
@@ -474,14 +474,14 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         source_transform_offset: 0,
         copied_transform: identity_matrix(),
         copied_transform_offset: 0,
-    });
+    }));
 
     let mut copy_paste_bodies = DesignParameterScope::empty(
         &format!("{stream}:scope#copy-paste-bodies"),
         "CopyPasteBodies",
         50,
     );
-    copy_paste_bodies.copy_paste_bodies_operation = Some(DesignCopyPasteBodiesOperation {
+    copy_paste_bodies.set_copy_paste_bodies_operation(Some(DesignCopyPasteBodiesOperation {
         body_group_record_index: 501,
         body_group_class_tag: "264".into(),
         body_group_byte_offset: 0,
@@ -494,11 +494,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         source_body_entity_suffix_offsets: vec![0],
         copied_body_entity_suffixes: vec![12],
         copied_body_entity_suffix_offsets: vec![0],
-    });
+    }));
 
     let mut base_feature =
         DesignParameterScope::empty(&format!("{stream}:scope#base-feature"), "Base Feature", 60);
-    base_feature.base_feature_construction = Some(DesignBaseFeatureConstruction::ResultBodies {
+    base_feature.set_base_feature_construction(Some(DesignBaseFeatureConstruction::ResultBodies {
         body_entity_suffixes: vec![21],
         body_entity_suffix_offsets: vec![0],
         body_entity_fields: vec![[0; 6]],
@@ -512,10 +512,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         result_records: vec![603],
         result_record_offsets: vec![0],
         result_fields: vec![[0; 6]],
-    });
+    }));
 
     let mut thread = DesignParameterScope::empty(&format!("{stream}:scope#thread"), "Thread", 70);
-    thread.thread_construction = Some(DesignThreadConstruction {
+    thread.set_thread_construction(Some(DesignThreadConstruction {
         form: DesignThreadForm::Compact,
         designation_offset: 0,
         designation: "M3.5x0.6".into(),
@@ -529,7 +529,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         trailing_reference_record_index: None,
         trailing_reference_offset: None,
         face_group_record_indices: vec![701],
-    });
+    }));
     thread.reference_members = vec![701, 702];
 
     let scopes = vec![

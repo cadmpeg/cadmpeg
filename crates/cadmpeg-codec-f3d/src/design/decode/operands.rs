@@ -99,10 +99,10 @@ pub fn decode_edge_operands(
             })
             .flat_map(|group| group.members.iter().copied())
             .collect::<HashSet<_>>();
-        if let Some(operation) = &scope.surface_extend_operation {
+        if let Some(operation) = scope.surface_extend_operation() {
             member_indices.extend(operation.edge_record_indices.iter().copied());
         }
-        if let Some(operation) = &scope.surface_offset_operation {
+        if let Some(operation) = scope.surface_offset_operation() {
             if let DesignSurfaceOffsetSupport::BoundaryCarrier {
                 edge_record_indices,
                 ..
@@ -111,7 +111,7 @@ pub fn decode_edge_operands(
                 member_indices.extend(edge_record_indices.iter().copied());
             }
         }
-        if let Some(construction) = &scope.work_point_construction {
+        if let Some(construction) = scope.work_point_construction() {
             member_indices.extend(
                 construction
                     .rule
@@ -297,7 +297,7 @@ pub fn bind_work_point_input_carriers(
             .entry(stream.clone())
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         let scope_record_index = scope.record_index;
-        let Some(construction) = &mut scope.work_point_construction else {
+        let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
         for input in construction.rule.inputs_mut() {
@@ -424,7 +424,7 @@ pub fn bind_work_plane_constructions(
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
-        if let Some(frame) = &mut scope.work_plane_frame {
+        if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = None;
         }
         let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
@@ -442,7 +442,8 @@ pub fn bind_work_plane_constructions(
         else {
             continue;
         };
-        if scope.work_plane_frame.is_none() || scope.work_plane_reference() != Some(*extra_offset) {
+        if scope.work_plane_frame().is_none() || scope.work_plane_reference() != Some(*extra_offset)
+        {
             continue;
         }
         let Some(owner) = owners.iter().find(|owner| {
@@ -482,9 +483,10 @@ pub fn bind_work_plane_constructions(
         let Ok(inputs) = inputs.try_into() else {
             continue;
         };
-        if let Some(frame) = &mut scope.work_plane_frame {
+        let placement_record_index = *placement_record_index;
+        if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
-                placement_record_index: *placement_record_index,
+                placement_record_index,
                 inputs: Box::new(inputs),
             });
         }
@@ -508,7 +510,7 @@ pub fn bind_vertex_recipe_candidates(
                 }
             }
         }
-        let Some(construction) = &mut scope.work_point_construction else {
+        let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
         for recipe in construction
@@ -525,7 +527,7 @@ pub fn bind_vertex_recipe_candidates(
             })
         {
             for reference in &mut recipe.recipe_references {
-                bind_recipe_reference_candidates(reference, tags, Some(&scope.id));
+                bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
             }
         }
     }
@@ -1842,7 +1844,7 @@ pub fn disambiguate_fixed_fillet_parameters(
             continue;
         };
         if indexed_scopes.contains(&(stream.to_owned(), scope.record_index)) {
-            scope.fixed_fillet_parameters = None;
+            scope.set_fixed_fillet_parameters(None);
         }
     }
 }
@@ -3351,7 +3353,7 @@ pub fn decode_body_recipe_operands(
     }
     for scope in scopes
         .iter()
-        .filter(|scope| scope.combine_operation.is_some() || scope.kind == "Hole")
+        .filter(|scope| scope.combine_operation().is_some() || scope.kind == "Hole")
     {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -3363,7 +3365,7 @@ pub fn decode_body_recipe_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        let combine_record_indexes = scope.combine_operation.as_ref().map(|operation| {
+        let combine_record_indexes = scope.combine_operation().map(|operation| {
             std::iter::once(operation.target.record_index)
                 .chain(operation.tools.iter().map(|tool| tool.record_index))
                 .collect::<Vec<_>>()
@@ -3383,8 +3385,7 @@ pub fn decode_body_recipe_operands(
             };
             if ordinals.next().is_some()
                 || scope
-                    .combine_operation
-                    .as_ref()
+                    .combine_operation()
                     .is_some_and(|_| scope_reference_ordinal.is_multiple_of(2))
             {
                 continue;
@@ -3677,7 +3678,7 @@ pub fn bind_body_recipe_operand_candidates(
                     && native_stream(&scope.id) == native_stream(&operand.id)
             });
             match (matching_scopes.next(), matching_scopes.next()) {
-                (Some(scope), None) => scope.combine_operation.is_some(),
+                (Some(scope), None) => scope.combine_operation().is_some(),
                 _ => true,
             }
         };

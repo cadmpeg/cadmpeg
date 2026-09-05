@@ -184,7 +184,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
 
     let mut combine_scope =
         DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#80", "Combine", 80);
-    combine_scope.combine_operation = Some(crate::records::DesignCombineOperation {
+    combine_scope.set_combine_operation(Some(crate::records::DesignCombineOperation {
         form: crate::records::DesignCombineForm::Standard,
         operation: crate::records::DesignExtrudeOperation::Join,
         operation_offset: 0,
@@ -195,7 +195,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             external_identity: None,
         },
         tools: Vec::new(),
-    });
+    }));
     let combine_recipe = ConstructionRecipe {
         design_selector: Some(crate::records::ConstructionRecipeSelector {
             value: 1,
@@ -375,8 +375,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         frame_length: 200,
         kind: "Fillet".into(),
         kind_offset: 1100,
-        extrude: None,
-        coil: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -386,40 +384,8 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         reference_count_offset: 1080,
         reference_members: vec![100],
         reference_member_offsets: vec![1085],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_frame: None,
-        work_axis_construction: None,
-        joint_origin_frame: None,
-        work_point_construction: None,
+        payload: DesignScopePayload::Empty,
         unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        derived_instance_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        sketch_entity: None,
         paired_class_tag: "261".into(),
         paired_byte_offset: 1200,
     };

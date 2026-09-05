@@ -2902,10 +2902,251 @@ design_feature_kinds! {
     CopyPasteBodies => "CopyPasteBodies",
 }
 
+/// Rejected CADIR payload that names more than one family or disagrees with `kind`.
+#[derive(Debug)]
+pub(crate) struct DesignParameterScopePayloadError(String);
+
+impl std::fmt::Display for DesignParameterScopePayloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for DesignParameterScopePayloadError {}
+
+/// Per-kind construction records carried by a parameter scope.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum DesignScopePayload {
+    /// No family-specific construction records.
+    #[default]
+    Empty,
+    /// `extrude` records.
+    Extrude(DesignExtrudeScope),
+    /// `coil` records.
+    Coil(DesignCoilScope),
+    /// `base_flange` records.
+    BaseFlange(DesignBaseFlangeScope),
+    /// `path_feature` records.
+    PathFeature(DesignPathFeatureScope),
+    /// `work_plane_frame` records.
+    WorkPlane(DesignWorkPlaneTransform),
+    /// `joint_origin_frame` records.
+    JointOrigin(DesignJointOriginTransform),
+    /// `sketch_entity` records.
+    Sketch(DesignSketchEntityBinding),
+    /// `solid_primitive` records.
+    SolidPrimitive(DesignSolidPrimitive),
+    /// `direct_face_operation` records.
+    DirectFace(DesignDirectFaceOperation),
+    /// `move_operation` records.
+    Move(DesignMoveOperation),
+    /// `scale_operation` records.
+    Scale(DesignScaleOperation),
+    /// `surface_stitch_operation` records.
+    SurfaceStitch(DesignSurfaceStitchOperation),
+    /// `surface_extend_operation` records.
+    SurfaceExtend(DesignSurfaceExtendOperation),
+    /// `surface_offset_operation` records.
+    SurfaceOffset(DesignSurfaceOffsetOperation),
+    /// `ruled_surface_operation` records.
+    RuledSurface(DesignRuledSurfaceOperation),
+    /// `surface_patch_boundaries` records.
+    SurfacePatch(Vec<DesignSurfacePatchBoundary>),
+    /// `edge_flange_operation` records.
+    EdgeFlange(DesignEdgeFlangeOperation),
+    /// `hem_operation` records.
+    Hem(DesignHemOperation),
+    /// `fixed_fillet_parameters` records.
+    Fillet(DesignFixedFilletParameters),
+    /// `fixed_chamfer_parameters` records.
+    Chamfer(DesignFixedChamferParameters),
+    /// `combine_operation` records.
+    Combine(DesignCombineOperation),
+    /// `thread_construction` records.
+    Thread(DesignThreadConstruction),
+    /// `draft_operation` records.
+    Draft(DesignDraftOperation),
+    /// `circular_pattern_construction` records.
+    CircularPattern(DesignCircularPatternConstruction),
+    /// `rectangular_pattern_construction` records.
+    RectangularPattern(DesignRectangularPatternConstruction),
+    /// `assembly_alignment` records.
+    Assemble(DesignAssemblyAlignment),
+    /// `component_insert_construction` records.
+    ComponentInsert(DesignComponentInsertConstruction),
+    /// `derived_instance_construction` records.
+    DerivedInstance(DesignDerivedInstanceConstruction),
+    /// `copy_paste_component_operation` records.
+    CopyPasteComponent(DesignCopyPasteComponentOperation),
+    /// `copy_paste_bodies_operation` records.
+    CopyPasteBodies(DesignCopyPasteBodiesOperation),
+    /// `mirror_construction` records.
+    Mirror(DesignMirrorConstruction),
+    /// `base_feature_construction` records.
+    BaseFeature(DesignBaseFeatureConstruction),
+    /// `work_axis_construction` records.
+    WorkAxis(DesignWorkAxisConstruction),
+    /// `work_point_construction` records.
+    WorkPoint(DesignWorkPointConstruction),
+    /// `hole_construction` records.
+    Hole(DesignHoleConstruction),
+}
+
+impl DesignScopePayload {
+    fn agrees_with_kind(&self, kind: &DesignFeatureKind) -> bool {
+        match self {
+            Self::Empty => true,
+            Self::Extrude(_) => matches!(
+                kind,
+                DesignFeatureKind::Extrude
+                    | DesignFeatureKind::Extrusion
+                    | DesignFeatureKind::Extrusao
+            ),
+            Self::Coil(_) => matches!(
+                kind,
+                DesignFeatureKind::SpirePrimitive | DesignFeatureKind::CoilPrimitive
+            ),
+            Self::BaseFlange(_) => matches!(kind, DesignFeatureKind::BaseFlange),
+            Self::PathFeature(_) => matches!(
+                kind,
+                DesignFeatureKind::Loft
+                    | DesignFeatureKind::Sweep
+                    | DesignFeatureKind::Revolve
+                    | DesignFeatureKind::Pipe
+            ),
+            Self::WorkPlane(_) => matches!(kind, DesignFeatureKind::WorkPlane),
+            Self::JointOrigin(_) => matches!(kind, DesignFeatureKind::JointOrigin),
+            Self::Sketch(_) => matches!(
+                kind,
+                DesignFeatureKind::Sketch
+                    | DesignFeatureKind::Esquisse
+                    | DesignFeatureKind::Skizze
+                    | DesignFeatureKind::Esboco
+            ),
+            Self::SolidPrimitive(_) => true,
+            Self::DirectFace(_) => matches!(
+                kind,
+                DesignFeatureKind::ReplaceFace
+                    | DesignFeatureKind::OffsetFaces
+                    | DesignFeatureKind::DecalerLesFaces
+                    | DesignFeatureKind::Shell
+                    | DesignFeatureKind::Schale
+                    | DesignFeatureKind::Thicken
+            ),
+            Self::Move(_) => matches!(kind, DesignFeatureKind::Move),
+            Self::Scale(_) => {
+                matches!(kind, DesignFeatureKind::Scale | DesignFeatureKind::Massstab)
+            }
+            Self::SurfaceStitch(_) => matches!(kind, DesignFeatureKind::SurfaceStitch),
+            Self::SurfaceExtend(_) => matches!(kind, DesignFeatureKind::SurfaceExtend),
+            Self::SurfaceOffset(_) => matches!(kind, DesignFeatureKind::SurfaceOffset),
+            Self::RuledSurface(_) => matches!(kind, DesignFeatureKind::SurfaceRuled),
+            Self::SurfacePatch(_) => matches!(kind, DesignFeatureKind::SurfacePatch),
+            Self::EdgeFlange(_) => matches!(kind, DesignFeatureKind::EdgeFlange),
+            Self::Hem(_) => matches!(kind, DesignFeatureKind::Hem),
+            Self::Fillet(_) => matches!(
+                kind,
+                DesignFeatureKind::Fillet
+                    | DesignFeatureKind::Conge
+                    | DesignFeatureKind::Abrundung
+                    | DesignFeatureKind::Arredondamento
+            ),
+            Self::Chamfer(_) => matches!(
+                kind,
+                DesignFeatureKind::Chamfer | DesignFeatureKind::Chanfrein
+            ),
+            Self::Combine(_) => matches!(kind, DesignFeatureKind::Combine),
+            Self::Thread(_) => matches!(kind, DesignFeatureKind::Thread),
+            Self::Draft(_) => matches!(kind, DesignFeatureKind::Draft),
+            Self::CircularPattern(_) => matches!(
+                kind,
+                DesignFeatureKind::CPattern
+                    | DesignFeatureKind::CircularPattern
+                    | DesignFeatureKind::ReseauC
+            ),
+            Self::RectangularPattern(_) => matches!(
+                kind,
+                DesignFeatureKind::RPattern | DesignFeatureKind::RectangularPattern
+            ),
+            Self::Assemble(_) => matches!(
+                kind,
+                DesignFeatureKind::Assemble | DesignFeatureKind::AsBuilt
+            ),
+            Self::ComponentInsert(_) => matches!(kind, DesignFeatureKind::ComponentInsert),
+            Self::DerivedInstance(_) => matches!(kind, DesignFeatureKind::DerivedInstance),
+            Self::CopyPasteComponent(_) => matches!(kind, DesignFeatureKind::CopyPaste),
+            Self::CopyPasteBodies(_) => matches!(kind, DesignFeatureKind::CopyPasteBodies),
+            Self::Mirror(_) => matches!(
+                kind,
+                DesignFeatureKind::Mirror | DesignFeatureKind::SymetrieMiroir
+            ),
+            Self::BaseFeature(_) => matches!(kind, DesignFeatureKind::BaseFeature),
+            Self::WorkAxis(_) => matches!(kind, DesignFeatureKind::WorkAxis),
+            Self::WorkPoint(_) => matches!(kind, DesignFeatureKind::WorkPoint),
+            Self::Hole(_) => matches!(kind, DesignFeatureKind::Hole),
+        }
+    }
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignParameterScopeSerde"))]
+#[serde(
+    try_from = "DesignParameterScopeSerde",
+    into = "DesignParameterScopeSerde"
+)]
 pub struct DesignParameterScope {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the primary indexed record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
+    /// Shared logical record identity.
+    pub record_index: u32,
+    /// Byte length from the primary header to the paired header.
+    pub frame_length: u64,
+    /// Source feature-family name.
+    pub kind: DesignFeatureKind,
+    /// Byte offset of the kind's UTF-16LE code units.
+    pub kind_offset: u64,
+    /// One-based ordinal among scopes of the same feature family.
+    pub feature_ordinal: u32,
+    /// Byte offset of `feature_ordinal`.
+    pub feature_ordinal_offset: u64,
+    /// ASM delta-state identity produced by this scope, when active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_state_id: Option<i64>,
+    /// Byte offset of the encoded history-state identity or null sentinel.
+    pub history_state_id_offset: u64,
+    /// ASM delta-state identity immediately preceding this scope, when active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_history_state_id: Option<i64>,
+    /// Byte offset of the encoded preceding-state identity or null sentinel.
+    pub previous_history_state_id_offset: u64,
+    /// Byte offset of the ordered reference-table count.
+    pub reference_count_offset: u64,
+    /// Ordered indexed-record references carried by the scope.
+    pub reference_members: Vec<u32>,
+    /// Byte offsets parallel to `reference_members`.
+    pub reference_member_offsets: Vec<u64>,
+    /// Family-specific construction records.
+    pub payload: DesignScopePayload,
+    /// Reference members whose records open a construction-operand group the
+    /// group grammar does not close.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unclosed_construction_operand_groups: Vec<u32>,
+    /// Per-file dynamic class tag of the paired header.
+    pub paired_class_tag: String,
+    /// Byte offset of the paired indexed record header.
+    pub paired_byte_offset: u64,
+}
+
+/// Wire form of [`DesignParameterScope`] with the historical flat field set.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub(crate) struct DesignParameterScopeSerde {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Byte offset of the primary indexed record header.
@@ -3682,248 +3923,256 @@ pub enum DesignEdgeFlangeWidthParameterSource {
     EdgeOffset,
 }
 
-impl DesignParameterScope {
-    /// The WorkPlane frame matrix, when the scope carries one.
-    pub(crate) fn ensure_base_flange(&mut self) -> &mut DesignBaseFlangeScope {
-        self.base_flange
-            .get_or_insert_with(DesignBaseFlangeScope::default)
-    }
+impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
+    type Error = DesignParameterScopePayloadError;
 
-    pub(crate) fn base_flange_operation(&self) -> Option<&DesignBaseFlangeOperation> {
-        self.base_flange
-            .as_ref()
-            .and_then(|base_flange| base_flange.base_flange_operation.as_ref())
-    }
-
-    pub(crate) fn base_flange_profile(&self) -> Option<&DesignSketchProfileOperand> {
-        self.base_flange
-            .as_ref()
-            .and_then(|base_flange| base_flange.base_flange_profile.as_ref())
-    }
-
-    pub(crate) fn ensure_coil(&mut self) -> &mut DesignCoilScope {
-        self.coil.get_or_insert_with(DesignCoilScope::default)
-    }
-
-    pub(crate) fn coil_operation(&self) -> Option<DesignExtrudeOperation> {
-        self.coil.as_ref().and_then(|coil| coil.coil_operation)
-    }
-
-    pub(crate) fn coil_operation_offset(&self) -> Option<u64> {
-        self.coil
-            .as_ref()
-            .and_then(|coil| coil.coil_operation_offset)
-    }
-
-    pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {
-        self.coil.as_ref().and_then(|coil| coil.coil_extent)
-    }
-
-    pub(crate) fn coil_section(&self) -> Option<DesignCoilSection> {
-        self.coil.as_ref().and_then(|coil| coil.coil_section)
-    }
-
-    pub(crate) fn coil_section_placement(&self) -> Option<DesignCoilSectionPlacement> {
-        self.coil
-            .as_ref()
-            .and_then(|coil| coil.coil_section_placement)
-    }
-
-    pub(crate) fn coil_clockwise(&self) -> Option<bool> {
-        self.coil.as_ref().and_then(|coil| coil.coil_clockwise)
-    }
-
-    pub(crate) fn coil_extent_offset(&self) -> Option<u64> {
-        self.coil.as_ref().and_then(|coil| coil.coil_extent_offset)
-    }
-
-    pub(crate) fn coil_section_offset(&self) -> Option<u64> {
-        self.coil.as_ref().and_then(|coil| coil.coil_section_offset)
-    }
-
-    pub(crate) fn coil_section_placement_offset(&self) -> Option<u64> {
-        self.coil
-            .as_ref()
-            .and_then(|coil| coil.coil_section_placement_offset)
-    }
-
-    pub(crate) fn coil_clockwise_offset(&self) -> Option<u64> {
-        self.coil
-            .as_ref()
-            .and_then(|coil| coil.coil_clockwise_offset)
-    }
-
-    pub(crate) fn coil_placement(&self) -> Option<&DesignCoilPlacement> {
-        self.coil
-            .as_ref()
-            .and_then(|coil| coil.coil_placement.as_ref())
-    }
-
-    pub(crate) fn coil_transform(&self) -> Option<&DesignCoilTransform> {
-        self.coil
-            .as_ref()
-            .and_then(|coil| coil.coil_transform.as_ref())
-    }
-
-    pub(crate) fn ensure_path_feature(&mut self) -> &mut DesignPathFeatureScope {
-        self.path_feature
-            .get_or_insert_with(DesignPathFeatureScope::default)
-    }
-
-    pub(crate) fn path_feature_construction(&self) -> Option<&DesignPathFeatureConstruction> {
-        self.path_feature
-            .as_ref()
-            .and_then(|path_feature| path_feature.path_feature_construction.as_ref())
-    }
-
-    pub(crate) fn sweep_profile(&self) -> Option<&DesignSketchProfileOperand> {
-        self.path_feature
-            .as_ref()
-            .and_then(|path_feature| path_feature.sweep_profile.as_ref())
-    }
-
-    pub(crate) fn ensure_extrude(&mut self) -> &mut DesignExtrudeScope {
-        self.extrude.get_or_insert_with(DesignExtrudeScope::default)
-    }
-
-    pub(crate) fn extrude_prologue(&self) -> Option<DesignExtrudePrologue> {
-        self.extrude
-            .as_ref()
-            .and_then(|extrude| extrude.extrude_prologue)
-    }
-
-    pub(crate) fn extrude_prologue_mut(&mut self) -> Option<&mut DesignExtrudePrologue> {
-        self.extrude
-            .as_mut()
-            .and_then(|extrude| extrude.extrude_prologue.as_mut())
-    }
-
-    pub(crate) fn extrude_profile(&self) -> Option<&DesignSketchProfileOperand> {
-        self.extrude
-            .as_ref()
-            .and_then(|extrude| extrude.extrude_profile.as_ref())
-    }
-
-    pub(crate) fn extrude_profile_mut(&mut self) -> Option<&mut DesignSketchProfileOperand> {
-        self.extrude
-            .as_mut()
-            .and_then(|extrude| extrude.extrude_profile.as_mut())
-    }
-
-    pub(crate) fn fixed_extrude_parameters(&self) -> Option<&DesignFixedExtrudeParameters> {
-        self.extrude
-            .as_ref()
-            .and_then(|extrude| extrude.fixed_extrude_parameters.as_ref())
-    }
-
-    pub(crate) fn work_plane_transform(&self) -> Option<[[f64; 4]; 4]> {
-        self.work_plane_frame
-            .as_ref()
-            .map(|frame| frame.work_plane_transform)
-    }
-
-    pub(crate) fn work_plane_reference(&self) -> Option<u32> {
-        self.work_plane_frame
-            .as_ref()
-            .and_then(|frame| frame.reference.as_ref().map(|r| r.work_plane_reference))
-    }
-
-    pub(crate) fn work_plane_construction(&self) -> Option<&DesignWorkPlaneConstruction> {
-        self.work_plane_frame
-            .as_ref()
-            .and_then(|frame| frame.work_plane_construction.as_ref())
-    }
-
-    pub(crate) fn work_plane_construction_mut(
-        &mut self,
-    ) -> Option<&mut DesignWorkPlaneConstruction> {
-        self.work_plane_frame
-            .as_mut()
-            .and_then(|frame| frame.work_plane_construction.as_mut())
-    }
-
-    /// The JointOrigin frame matrix, when the scope carries one.
-    pub(crate) fn joint_origin_transform(&self) -> Option<[[f64; 4]; 4]> {
-        self.joint_origin_frame
-            .as_ref()
-            .map(|frame| frame.joint_origin_transform)
-    }
-
-    /// Byte offset of the JointOrigin frame matrix, when the scope carries one.
-    pub(crate) fn joint_origin_transform_offset(&self) -> Option<u64> {
-        self.joint_origin_frame
-            .as_ref()
-            .map(|frame| frame.joint_origin_transform_offset)
-    }
-
-    pub(crate) fn joint_origin_reference(&self) -> Option<u32> {
-        self.joint_origin_frame.as_ref().and_then(|frame| {
-            frame
-                .reference
-                .as_ref()
-                .map(|reference| reference.joint_origin_reference)
-        })
-    }
-
-    pub(crate) fn joint_origin_reference_offset(&self) -> Option<u64> {
-        self.joint_origin_frame.as_ref().and_then(|frame| {
-            frame
-                .reference
-                .as_ref()
-                .map(|reference| reference.joint_origin_reference_offset)
+    fn try_from(wire: DesignParameterScopeSerde) -> Result<Self, Self::Error> {
+        let mut present: Vec<(&str, DesignScopePayload)> = Vec::new();
+        if !extrude_scope_is_absent(&wire.extrude) {
+            present.push((
+                "extrude",
+                DesignScopePayload::Extrude(
+                    wire.extrude
+                        .expect("extrude is present after the absence check"),
+                ),
+            ));
+        }
+        if !coil_scope_is_absent(&wire.coil) {
+            present.push((
+                "coil",
+                DesignScopePayload::Coil(
+                    wire.coil.expect("coil is present after the absence check"),
+                ),
+            ));
+        }
+        if !base_flange_scope_is_absent(&wire.base_flange) {
+            present.push((
+                "base_flange",
+                DesignScopePayload::BaseFlange(
+                    wire.base_flange
+                        .expect("base_flange is present after the absence check"),
+                ),
+            ));
+        }
+        if !path_feature_scope_is_absent(&wire.path_feature) {
+            present.push((
+                "path_feature",
+                DesignScopePayload::PathFeature(
+                    wire.path_feature
+                        .expect("path_feature is present after the absence check"),
+                ),
+            ));
+        }
+        if let Some(value) = wire.work_plane_frame {
+            present.push(("work_plane_frame", DesignScopePayload::WorkPlane(value)));
+        }
+        if let Some(value) = wire.joint_origin_frame {
+            present.push(("joint_origin_frame", DesignScopePayload::JointOrigin(value)));
+        }
+        if let Some(value) = wire.sketch_entity {
+            present.push(("sketch_entity", DesignScopePayload::Sketch(value)));
+        }
+        if let Some(value) = wire.solid_primitive {
+            present.push(("solid_primitive", DesignScopePayload::SolidPrimitive(value)));
+        }
+        if let Some(value) = wire.direct_face_operation {
+            present.push((
+                "direct_face_operation",
+                DesignScopePayload::DirectFace(value),
+            ));
+        }
+        if let Some(value) = wire.move_operation {
+            present.push(("move_operation", DesignScopePayload::Move(value)));
+        }
+        if let Some(value) = wire.scale_operation {
+            present.push(("scale_operation", DesignScopePayload::Scale(value)));
+        }
+        if let Some(value) = wire.surface_stitch_operation {
+            present.push((
+                "surface_stitch_operation",
+                DesignScopePayload::SurfaceStitch(value),
+            ));
+        }
+        if let Some(value) = wire.surface_extend_operation {
+            present.push((
+                "surface_extend_operation",
+                DesignScopePayload::SurfaceExtend(value),
+            ));
+        }
+        if let Some(value) = wire.surface_offset_operation {
+            present.push((
+                "surface_offset_operation",
+                DesignScopePayload::SurfaceOffset(value),
+            ));
+        }
+        if let Some(value) = wire.ruled_surface_operation {
+            present.push((
+                "ruled_surface_operation",
+                DesignScopePayload::RuledSurface(value),
+            ));
+        }
+        if !wire.surface_patch_boundaries.is_empty() {
+            present.push((
+                "surface_patch_boundaries",
+                DesignScopePayload::SurfacePatch(wire.surface_patch_boundaries),
+            ));
+        }
+        if let Some(value) = wire.edge_flange_operation {
+            present.push((
+                "edge_flange_operation",
+                DesignScopePayload::EdgeFlange(value),
+            ));
+        }
+        if let Some(value) = wire.hem_operation {
+            present.push(("hem_operation", DesignScopePayload::Hem(value)));
+        }
+        if let Some(value) = wire.fixed_fillet_parameters {
+            present.push(("fixed_fillet_parameters", DesignScopePayload::Fillet(value)));
+        }
+        if let Some(value) = wire.fixed_chamfer_parameters {
+            present.push((
+                "fixed_chamfer_parameters",
+                DesignScopePayload::Chamfer(value),
+            ));
+        }
+        if let Some(value) = wire.combine_operation {
+            present.push(("combine_operation", DesignScopePayload::Combine(value)));
+        }
+        if let Some(value) = wire.thread_construction {
+            present.push(("thread_construction", DesignScopePayload::Thread(value)));
+        }
+        if let Some(value) = wire.draft_operation {
+            present.push(("draft_operation", DesignScopePayload::Draft(value)));
+        }
+        if let Some(value) = wire.circular_pattern_construction {
+            present.push((
+                "circular_pattern_construction",
+                DesignScopePayload::CircularPattern(value),
+            ));
+        }
+        if let Some(value) = wire.rectangular_pattern_construction {
+            present.push((
+                "rectangular_pattern_construction",
+                DesignScopePayload::RectangularPattern(value),
+            ));
+        }
+        if let Some(value) = wire.assembly_alignment {
+            present.push(("assembly_alignment", DesignScopePayload::Assemble(value)));
+        }
+        if let Some(value) = wire.component_insert_construction {
+            present.push((
+                "component_insert_construction",
+                DesignScopePayload::ComponentInsert(value),
+            ));
+        }
+        if let Some(value) = wire.derived_instance_construction {
+            present.push((
+                "derived_instance_construction",
+                DesignScopePayload::DerivedInstance(value),
+            ));
+        }
+        if let Some(value) = wire.copy_paste_component_operation {
+            present.push((
+                "copy_paste_component_operation",
+                DesignScopePayload::CopyPasteComponent(value),
+            ));
+        }
+        if let Some(value) = wire.copy_paste_bodies_operation {
+            present.push((
+                "copy_paste_bodies_operation",
+                DesignScopePayload::CopyPasteBodies(value),
+            ));
+        }
+        if let Some(value) = wire.mirror_construction {
+            present.push(("mirror_construction", DesignScopePayload::Mirror(value)));
+        }
+        if let Some(value) = wire.base_feature_construction {
+            present.push((
+                "base_feature_construction",
+                DesignScopePayload::BaseFeature(value),
+            ));
+        }
+        if let Some(value) = wire.work_axis_construction {
+            present.push((
+                "work_axis_construction",
+                DesignScopePayload::WorkAxis(value),
+            ));
+        }
+        if let Some(value) = wire.work_point_construction {
+            present.push((
+                "work_point_construction",
+                DesignScopePayload::WorkPoint(value),
+            ));
+        }
+        if let Some(value) = wire.hole_construction {
+            present.push(("hole_construction", DesignScopePayload::Hole(value)));
+        }
+        let payload = match present.len() {
+            0 => DesignScopePayload::Empty,
+            1 => present.pop().expect("len is 1").1,
+            _ => {
+                let names = present
+                    .iter()
+                    .map(|(name, _)| *name)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(DesignParameterScopePayloadError(format!(
+                    "design parameter scope carries more than one payload family: {names}"
+                )));
+            }
+        };
+        if !payload.agrees_with_kind(&wire.kind) {
+            return Err(DesignParameterScopePayloadError(format!(
+                "design parameter scope payload disagrees with kind {}",
+                wire.kind
+            )));
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            record_index: wire.record_index,
+            frame_length: wire.frame_length,
+            kind: wire.kind,
+            kind_offset: wire.kind_offset,
+            feature_ordinal: wire.feature_ordinal,
+            feature_ordinal_offset: wire.feature_ordinal_offset,
+            history_state_id: wire.history_state_id,
+            history_state_id_offset: wire.history_state_id_offset,
+            previous_history_state_id: wire.previous_history_state_id,
+            previous_history_state_id_offset: wire.previous_history_state_id_offset,
+            reference_count_offset: wire.reference_count_offset,
+            reference_members: wire.reference_members,
+            reference_member_offsets: wire.reference_member_offsets,
+            payload,
+            unclosed_construction_operand_groups: wire.unclosed_construction_operand_groups,
+            paired_class_tag: wire.paired_class_tag,
+            paired_byte_offset: wire.paired_byte_offset,
         })
     }
 }
 
-#[cfg(test)]
-impl DesignParameterScope {
-    /// Build a scope carrying only its identity, kind, and record index.
-    pub(crate) fn with_work_plane_transform(&mut self, transform: [[f64; 4]; 4]) {
-        self.work_plane_frame = Some(DesignWorkPlaneTransform {
-            work_plane_transform: transform,
-            work_plane_transform_offset: 0,
-            reference: None,
-            work_plane_construction: None,
-        });
-    }
-
-    pub(crate) fn with_work_plane_reference(&mut self, record_index: u32) {
-        if let Some(frame) = &mut self.work_plane_frame {
-            frame.reference = Some(DesignWorkPlaneReference {
-                work_plane_reference: record_index,
-                work_plane_reference_offset: 0,
-            });
-        }
-    }
-
-    pub(crate) fn with_joint_origin_transform(&mut self, transform: [[f64; 4]; 4]) {
-        self.joint_origin_frame = Some(DesignJointOriginTransform {
-            joint_origin_transform: transform,
-            joint_origin_transform_offset: 0,
-            reference: None,
-        });
-    }
-
-    pub(crate) fn empty(id: &str, kind: &str, record_index: u32) -> Self {
-        Self {
-            id: id.to_string(),
-            byte_offset: 0,
-            class_tag: String::new(),
-            record_index,
-            frame_length: 0,
-            kind: kind.into(),
-            kind_offset: 0,
+impl From<DesignParameterScope> for DesignParameterScopeSerde {
+    fn from(scope: DesignParameterScope) -> Self {
+        let mut wire = DesignParameterScopeSerde {
+            id: scope.id,
+            byte_offset: scope.byte_offset,
+            class_tag: scope.class_tag,
+            record_index: scope.record_index,
+            frame_length: scope.frame_length,
+            kind: scope.kind,
+            kind_offset: scope.kind_offset,
             extrude: None,
             coil: None,
-            feature_ordinal: 0,
-            feature_ordinal_offset: 0,
-            history_state_id: None,
-            history_state_id_offset: 0,
-            previous_history_state_id: None,
-            previous_history_state_id_offset: 0,
-            reference_count_offset: 0,
-            reference_members: Vec::new(),
-            reference_member_offsets: Vec::new(),
+            feature_ordinal: scope.feature_ordinal,
+            feature_ordinal_offset: scope.feature_ordinal_offset,
+            history_state_id: scope.history_state_id,
+            history_state_id_offset: scope.history_state_id_offset,
+            previous_history_state_id: scope.previous_history_state_id,
+            previous_history_state_id_offset: scope.previous_history_state_id_offset,
+            reference_count_offset: scope.reference_count_offset,
+            reference_members: scope.reference_members,
+            reference_member_offsets: scope.reference_member_offsets,
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
@@ -3948,16 +4197,1262 @@ impl DesignParameterScope {
             component_insert_construction: None,
             derived_instance_construction: None,
             copy_paste_component_operation: None,
-            mirror_construction: None,
             copy_paste_bodies_operation: None,
+            mirror_construction: None,
             base_feature_construction: None,
             work_plane_frame: None,
             work_axis_construction: None,
             joint_origin_frame: None,
             work_point_construction: None,
-            unclosed_construction_operand_groups: Vec::new(),
+            unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups,
             hole_construction: None,
             sketch_entity: None,
+            paired_class_tag: scope.paired_class_tag,
+            paired_byte_offset: scope.paired_byte_offset,
+        };
+        match scope.payload {
+            DesignScopePayload::Empty => {}
+            DesignScopePayload::Extrude(value) => wire.extrude = Some(value),
+            DesignScopePayload::Coil(value) => wire.coil = Some(value),
+            DesignScopePayload::BaseFlange(value) => wire.base_flange = Some(value),
+            DesignScopePayload::PathFeature(value) => wire.path_feature = Some(value),
+            DesignScopePayload::WorkPlane(value) => wire.work_plane_frame = Some(value),
+            DesignScopePayload::JointOrigin(value) => wire.joint_origin_frame = Some(value),
+            DesignScopePayload::Sketch(value) => wire.sketch_entity = Some(value),
+            DesignScopePayload::SolidPrimitive(value) => wire.solid_primitive = Some(value),
+            DesignScopePayload::DirectFace(value) => wire.direct_face_operation = Some(value),
+            DesignScopePayload::Move(value) => wire.move_operation = Some(value),
+            DesignScopePayload::Scale(value) => wire.scale_operation = Some(value),
+            DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
+            DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = Some(value),
+            DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = Some(value),
+            DesignScopePayload::RuledSurface(value) => wire.ruled_surface_operation = Some(value),
+            DesignScopePayload::SurfacePatch(value) => wire.surface_patch_boundaries = value,
+            DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = Some(value),
+            DesignScopePayload::Hem(value) => wire.hem_operation = Some(value),
+            DesignScopePayload::Fillet(value) => wire.fixed_fillet_parameters = Some(value),
+            DesignScopePayload::Chamfer(value) => wire.fixed_chamfer_parameters = Some(value),
+            DesignScopePayload::Combine(value) => wire.combine_operation = Some(value),
+            DesignScopePayload::Thread(value) => wire.thread_construction = Some(value),
+            DesignScopePayload::Draft(value) => wire.draft_operation = Some(value),
+            DesignScopePayload::CircularPattern(value) => {
+                wire.circular_pattern_construction = Some(value)
+            }
+            DesignScopePayload::RectangularPattern(value) => {
+                wire.rectangular_pattern_construction = Some(value)
+            }
+            DesignScopePayload::Assemble(value) => wire.assembly_alignment = Some(value),
+            DesignScopePayload::ComponentInsert(value) => {
+                wire.component_insert_construction = Some(value)
+            }
+            DesignScopePayload::DerivedInstance(value) => {
+                wire.derived_instance_construction = Some(value)
+            }
+            DesignScopePayload::CopyPasteComponent(value) => {
+                wire.copy_paste_component_operation = Some(value)
+            }
+            DesignScopePayload::CopyPasteBodies(value) => {
+                wire.copy_paste_bodies_operation = Some(value)
+            }
+            DesignScopePayload::Mirror(value) => wire.mirror_construction = Some(value),
+            DesignScopePayload::BaseFeature(value) => wire.base_feature_construction = Some(value),
+            DesignScopePayload::WorkAxis(value) => wire.work_axis_construction = Some(value),
+            DesignScopePayload::WorkPoint(value) => wire.work_point_construction = Some(value),
+            DesignScopePayload::Hole(value) => wire.hole_construction = Some(value),
+        }
+        wire
+    }
+}
+
+impl DesignParameterScope {
+    pub(crate) fn extrude(&self) -> Option<&DesignExtrudeScope> {
+        match &self.payload {
+            DesignScopePayload::Extrude(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn extrude_mut(&mut self) -> Option<&mut DesignExtrudeScope> {
+        match &mut self.payload {
+            DesignScopePayload::Extrude(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_extrude(&mut self, value: Option<DesignExtrudeScope>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Extrude(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Extrude(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn ensure_extrude(&mut self) -> &mut DesignExtrudeScope {
+        if !matches!(self.payload, DesignScopePayload::Extrude(_)) {
+            self.payload = DesignScopePayload::Extrude(DesignExtrudeScope::default());
+        }
+        match &mut self.payload {
+            DesignScopePayload::Extrude(value) => value,
+            _ => unreachable!("payload just set to Extrude"),
+        }
+    }
+
+    pub(crate) fn coil(&self) -> Option<&DesignCoilScope> {
+        match &self.payload {
+            DesignScopePayload::Coil(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn coil_mut(&mut self) -> Option<&mut DesignCoilScope> {
+        match &mut self.payload {
+            DesignScopePayload::Coil(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_coil(&mut self, value: Option<DesignCoilScope>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Coil(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Coil(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn ensure_coil(&mut self) -> &mut DesignCoilScope {
+        if !matches!(self.payload, DesignScopePayload::Coil(_)) {
+            self.payload = DesignScopePayload::Coil(DesignCoilScope::default());
+        }
+        match &mut self.payload {
+            DesignScopePayload::Coil(value) => value,
+            _ => unreachable!("payload just set to Coil"),
+        }
+    }
+
+    pub(crate) fn base_flange(&self) -> Option<&DesignBaseFlangeScope> {
+        match &self.payload {
+            DesignScopePayload::BaseFlange(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn base_flange_mut(&mut self) -> Option<&mut DesignBaseFlangeScope> {
+        match &mut self.payload {
+            DesignScopePayload::BaseFlange(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_base_flange(&mut self, value: Option<DesignBaseFlangeScope>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::BaseFlange(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::BaseFlange(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn ensure_base_flange(&mut self) -> &mut DesignBaseFlangeScope {
+        if !matches!(self.payload, DesignScopePayload::BaseFlange(_)) {
+            self.payload = DesignScopePayload::BaseFlange(DesignBaseFlangeScope::default());
+        }
+        match &mut self.payload {
+            DesignScopePayload::BaseFlange(value) => value,
+            _ => unreachable!("payload just set to BaseFlange"),
+        }
+    }
+
+    pub(crate) fn path_feature(&self) -> Option<&DesignPathFeatureScope> {
+        match &self.payload {
+            DesignScopePayload::PathFeature(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn path_feature_mut(&mut self) -> Option<&mut DesignPathFeatureScope> {
+        match &mut self.payload {
+            DesignScopePayload::PathFeature(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_path_feature(&mut self, value: Option<DesignPathFeatureScope>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::PathFeature(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::PathFeature(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn ensure_path_feature(&mut self) -> &mut DesignPathFeatureScope {
+        if !matches!(self.payload, DesignScopePayload::PathFeature(_)) {
+            self.payload = DesignScopePayload::PathFeature(DesignPathFeatureScope::default());
+        }
+        match &mut self.payload {
+            DesignScopePayload::PathFeature(value) => value,
+            _ => unreachable!("payload just set to PathFeature"),
+        }
+    }
+
+    pub(crate) fn work_plane_frame(&self) -> Option<&DesignWorkPlaneTransform> {
+        match &self.payload {
+            DesignScopePayload::WorkPlane(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn work_plane_frame_mut(&mut self) -> Option<&mut DesignWorkPlaneTransform> {
+        match &mut self.payload {
+            DesignScopePayload::WorkPlane(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_work_plane_frame(&mut self, value: Option<DesignWorkPlaneTransform>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::WorkPlane(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::WorkPlane(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn joint_origin_frame(&self) -> Option<&DesignJointOriginTransform> {
+        match &self.payload {
+            DesignScopePayload::JointOrigin(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn joint_origin_frame_mut(&mut self) -> Option<&mut DesignJointOriginTransform> {
+        match &mut self.payload {
+            DesignScopePayload::JointOrigin(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_joint_origin_frame(&mut self, value: Option<DesignJointOriginTransform>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::JointOrigin(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::JointOrigin(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn sketch_entity(&self) -> Option<&DesignSketchEntityBinding> {
+        match &self.payload {
+            DesignScopePayload::Sketch(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn sketch_entity_mut(&mut self) -> Option<&mut DesignSketchEntityBinding> {
+        match &mut self.payload {
+            DesignScopePayload::Sketch(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_sketch_entity(&mut self, value: Option<DesignSketchEntityBinding>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Sketch(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Sketch(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn solid_primitive(&self) -> Option<&DesignSolidPrimitive> {
+        match &self.payload {
+            DesignScopePayload::SolidPrimitive(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn solid_primitive_mut(&mut self) -> Option<&mut DesignSolidPrimitive> {
+        match &mut self.payload {
+            DesignScopePayload::SolidPrimitive(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_solid_primitive(&mut self, value: Option<DesignSolidPrimitive>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::SolidPrimitive(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::SolidPrimitive(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn direct_face_operation(&self) -> Option<&DesignDirectFaceOperation> {
+        match &self.payload {
+            DesignScopePayload::DirectFace(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn direct_face_operation_mut(&mut self) -> Option<&mut DesignDirectFaceOperation> {
+        match &mut self.payload {
+            DesignScopePayload::DirectFace(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_direct_face_operation(&mut self, value: Option<DesignDirectFaceOperation>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::DirectFace(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::DirectFace(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn move_operation(&self) -> Option<&DesignMoveOperation> {
+        match &self.payload {
+            DesignScopePayload::Move(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn move_operation_mut(&mut self) -> Option<&mut DesignMoveOperation> {
+        match &mut self.payload {
+            DesignScopePayload::Move(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_move_operation(&mut self, value: Option<DesignMoveOperation>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Move(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Move(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn scale_operation(&self) -> Option<&DesignScaleOperation> {
+        match &self.payload {
+            DesignScopePayload::Scale(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn scale_operation_mut(&mut self) -> Option<&mut DesignScaleOperation> {
+        match &mut self.payload {
+            DesignScopePayload::Scale(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_scale_operation(&mut self, value: Option<DesignScaleOperation>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Scale(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Scale(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn surface_stitch_operation(&self) -> Option<&DesignSurfaceStitchOperation> {
+        match &self.payload {
+            DesignScopePayload::SurfaceStitch(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn surface_stitch_operation_mut(
+        &mut self,
+    ) -> Option<&mut DesignSurfaceStitchOperation> {
+        match &mut self.payload {
+            DesignScopePayload::SurfaceStitch(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_surface_stitch_operation(
+        &mut self,
+        value: Option<DesignSurfaceStitchOperation>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::SurfaceStitch(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::SurfaceStitch(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn surface_extend_operation(&self) -> Option<&DesignSurfaceExtendOperation> {
+        match &self.payload {
+            DesignScopePayload::SurfaceExtend(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn surface_extend_operation_mut(
+        &mut self,
+    ) -> Option<&mut DesignSurfaceExtendOperation> {
+        match &mut self.payload {
+            DesignScopePayload::SurfaceExtend(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_surface_extend_operation(
+        &mut self,
+        value: Option<DesignSurfaceExtendOperation>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::SurfaceExtend(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::SurfaceExtend(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn surface_offset_operation(&self) -> Option<&DesignSurfaceOffsetOperation> {
+        match &self.payload {
+            DesignScopePayload::SurfaceOffset(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn surface_offset_operation_mut(
+        &mut self,
+    ) -> Option<&mut DesignSurfaceOffsetOperation> {
+        match &mut self.payload {
+            DesignScopePayload::SurfaceOffset(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_surface_offset_operation(
+        &mut self,
+        value: Option<DesignSurfaceOffsetOperation>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::SurfaceOffset(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::SurfaceOffset(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn ruled_surface_operation(&self) -> Option<&DesignRuledSurfaceOperation> {
+        match &self.payload {
+            DesignScopePayload::RuledSurface(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn ruled_surface_operation_mut(
+        &mut self,
+    ) -> Option<&mut DesignRuledSurfaceOperation> {
+        match &mut self.payload {
+            DesignScopePayload::RuledSurface(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_ruled_surface_operation(
+        &mut self,
+        value: Option<DesignRuledSurfaceOperation>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::RuledSurface(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::RuledSurface(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn surface_patch_boundaries(&self) -> &[DesignSurfacePatchBoundary] {
+        match &self.payload {
+            DesignScopePayload::SurfacePatch(value) => value,
+            _ => &[],
+        }
+    }
+
+    pub(crate) fn surface_patch_boundaries_mut(&mut self) -> &mut Vec<DesignSurfacePatchBoundary> {
+        if !matches!(self.payload, DesignScopePayload::SurfacePatch(_)) {
+            self.payload = DesignScopePayload::SurfacePatch(Vec::new());
+        }
+        match &mut self.payload {
+            DesignScopePayload::SurfacePatch(value) => value,
+            _ => unreachable!("payload just set to SurfacePatch"),
+        }
+    }
+
+    pub(crate) fn set_surface_patch_boundaries(&mut self, value: Vec<DesignSurfacePatchBoundary>) {
+        self.payload = if value.is_empty() {
+            DesignScopePayload::Empty
+        } else {
+            DesignScopePayload::SurfacePatch(value)
+        };
+    }
+
+    pub(crate) fn edge_flange_operation(&self) -> Option<&DesignEdgeFlangeOperation> {
+        match &self.payload {
+            DesignScopePayload::EdgeFlange(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn edge_flange_operation_mut(&mut self) -> Option<&mut DesignEdgeFlangeOperation> {
+        match &mut self.payload {
+            DesignScopePayload::EdgeFlange(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_edge_flange_operation(&mut self, value: Option<DesignEdgeFlangeOperation>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::EdgeFlange(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::EdgeFlange(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn hem_operation(&self) -> Option<&DesignHemOperation> {
+        match &self.payload {
+            DesignScopePayload::Hem(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn hem_operation_mut(&mut self) -> Option<&mut DesignHemOperation> {
+        match &mut self.payload {
+            DesignScopePayload::Hem(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_hem_operation(&mut self, value: Option<DesignHemOperation>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Hem(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Hem(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn fixed_fillet_parameters(&self) -> Option<&DesignFixedFilletParameters> {
+        match &self.payload {
+            DesignScopePayload::Fillet(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn fixed_fillet_parameters_mut(
+        &mut self,
+    ) -> Option<&mut DesignFixedFilletParameters> {
+        match &mut self.payload {
+            DesignScopePayload::Fillet(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_fixed_fillet_parameters(
+        &mut self,
+        value: Option<DesignFixedFilletParameters>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Fillet(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Fillet(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn fixed_chamfer_parameters(&self) -> Option<&DesignFixedChamferParameters> {
+        match &self.payload {
+            DesignScopePayload::Chamfer(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn fixed_chamfer_parameters_mut(
+        &mut self,
+    ) -> Option<&mut DesignFixedChamferParameters> {
+        match &mut self.payload {
+            DesignScopePayload::Chamfer(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_fixed_chamfer_parameters(
+        &mut self,
+        value: Option<DesignFixedChamferParameters>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Chamfer(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Chamfer(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn combine_operation(&self) -> Option<&DesignCombineOperation> {
+        match &self.payload {
+            DesignScopePayload::Combine(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn combine_operation_mut(&mut self) -> Option<&mut DesignCombineOperation> {
+        match &mut self.payload {
+            DesignScopePayload::Combine(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_combine_operation(&mut self, value: Option<DesignCombineOperation>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Combine(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Combine(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn thread_construction(&self) -> Option<&DesignThreadConstruction> {
+        match &self.payload {
+            DesignScopePayload::Thread(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn thread_construction_mut(&mut self) -> Option<&mut DesignThreadConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::Thread(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_thread_construction(&mut self, value: Option<DesignThreadConstruction>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Thread(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Thread(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn draft_operation(&self) -> Option<&DesignDraftOperation> {
+        match &self.payload {
+            DesignScopePayload::Draft(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn draft_operation_mut(&mut self) -> Option<&mut DesignDraftOperation> {
+        match &mut self.payload {
+            DesignScopePayload::Draft(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_draft_operation(&mut self, value: Option<DesignDraftOperation>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Draft(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Draft(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn circular_pattern_construction(
+        &self,
+    ) -> Option<&DesignCircularPatternConstruction> {
+        match &self.payload {
+            DesignScopePayload::CircularPattern(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn circular_pattern_construction_mut(
+        &mut self,
+    ) -> Option<&mut DesignCircularPatternConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::CircularPattern(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_circular_pattern_construction(
+        &mut self,
+        value: Option<DesignCircularPatternConstruction>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::CircularPattern(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::CircularPattern(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn rectangular_pattern_construction(
+        &self,
+    ) -> Option<&DesignRectangularPatternConstruction> {
+        match &self.payload {
+            DesignScopePayload::RectangularPattern(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn rectangular_pattern_construction_mut(
+        &mut self,
+    ) -> Option<&mut DesignRectangularPatternConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::RectangularPattern(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_rectangular_pattern_construction(
+        &mut self,
+        value: Option<DesignRectangularPatternConstruction>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::RectangularPattern(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::RectangularPattern(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn assembly_alignment(&self) -> Option<&DesignAssemblyAlignment> {
+        match &self.payload {
+            DesignScopePayload::Assemble(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn assembly_alignment_mut(&mut self) -> Option<&mut DesignAssemblyAlignment> {
+        match &mut self.payload {
+            DesignScopePayload::Assemble(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_assembly_alignment(&mut self, value: Option<DesignAssemblyAlignment>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Assemble(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Assemble(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn component_insert_construction(
+        &self,
+    ) -> Option<&DesignComponentInsertConstruction> {
+        match &self.payload {
+            DesignScopePayload::ComponentInsert(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn component_insert_construction_mut(
+        &mut self,
+    ) -> Option<&mut DesignComponentInsertConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::ComponentInsert(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_component_insert_construction(
+        &mut self,
+        value: Option<DesignComponentInsertConstruction>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::ComponentInsert(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::ComponentInsert(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn derived_instance_construction(
+        &self,
+    ) -> Option<&DesignDerivedInstanceConstruction> {
+        match &self.payload {
+            DesignScopePayload::DerivedInstance(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn derived_instance_construction_mut(
+        &mut self,
+    ) -> Option<&mut DesignDerivedInstanceConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::DerivedInstance(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_derived_instance_construction(
+        &mut self,
+        value: Option<DesignDerivedInstanceConstruction>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::DerivedInstance(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::DerivedInstance(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn copy_paste_component_operation(
+        &self,
+    ) -> Option<&DesignCopyPasteComponentOperation> {
+        match &self.payload {
+            DesignScopePayload::CopyPasteComponent(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn copy_paste_component_operation_mut(
+        &mut self,
+    ) -> Option<&mut DesignCopyPasteComponentOperation> {
+        match &mut self.payload {
+            DesignScopePayload::CopyPasteComponent(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_copy_paste_component_operation(
+        &mut self,
+        value: Option<DesignCopyPasteComponentOperation>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::CopyPasteComponent(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::CopyPasteComponent(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn copy_paste_bodies_operation(&self) -> Option<&DesignCopyPasteBodiesOperation> {
+        match &self.payload {
+            DesignScopePayload::CopyPasteBodies(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn copy_paste_bodies_operation_mut(
+        &mut self,
+    ) -> Option<&mut DesignCopyPasteBodiesOperation> {
+        match &mut self.payload {
+            DesignScopePayload::CopyPasteBodies(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_copy_paste_bodies_operation(
+        &mut self,
+        value: Option<DesignCopyPasteBodiesOperation>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::CopyPasteBodies(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::CopyPasteBodies(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn mirror_construction(&self) -> Option<&DesignMirrorConstruction> {
+        match &self.payload {
+            DesignScopePayload::Mirror(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn mirror_construction_mut(&mut self) -> Option<&mut DesignMirrorConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::Mirror(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_mirror_construction(&mut self, value: Option<DesignMirrorConstruction>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Mirror(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Mirror(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn base_feature_construction(&self) -> Option<&DesignBaseFeatureConstruction> {
+        match &self.payload {
+            DesignScopePayload::BaseFeature(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn base_feature_construction_mut(
+        &mut self,
+    ) -> Option<&mut DesignBaseFeatureConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::BaseFeature(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_base_feature_construction(
+        &mut self,
+        value: Option<DesignBaseFeatureConstruction>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::BaseFeature(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::BaseFeature(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn work_axis_construction(&self) -> Option<&DesignWorkAxisConstruction> {
+        match &self.payload {
+            DesignScopePayload::WorkAxis(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn work_axis_construction_mut(&mut self) -> Option<&mut DesignWorkAxisConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::WorkAxis(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_work_axis_construction(&mut self, value: Option<DesignWorkAxisConstruction>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::WorkAxis(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::WorkAxis(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn work_point_construction(&self) -> Option<&DesignWorkPointConstruction> {
+        match &self.payload {
+            DesignScopePayload::WorkPoint(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn work_point_construction_mut(
+        &mut self,
+    ) -> Option<&mut DesignWorkPointConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::WorkPoint(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_work_point_construction(
+        &mut self,
+        value: Option<DesignWorkPointConstruction>,
+    ) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::WorkPoint(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::WorkPoint(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn hole_construction(&self) -> Option<&DesignHoleConstruction> {
+        match &self.payload {
+            DesignScopePayload::Hole(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn hole_construction_mut(&mut self) -> Option<&mut DesignHoleConstruction> {
+        match &mut self.payload {
+            DesignScopePayload::Hole(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn set_hole_construction(&mut self, value: Option<DesignHoleConstruction>) {
+        match value {
+            Some(value) => self.payload = DesignScopePayload::Hole(value),
+            None => {
+                if matches!(self.payload, DesignScopePayload::Hole(_)) {
+                    self.payload = DesignScopePayload::Empty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn extrude_prologue(&self) -> Option<DesignExtrudePrologue> {
+        self.extrude().and_then(|extrude| extrude.extrude_prologue)
+    }
+
+    pub(crate) fn extrude_prologue_mut(&mut self) -> Option<&mut DesignExtrudePrologue> {
+        self.extrude_mut()
+            .and_then(|extrude| extrude.extrude_prologue.as_mut())
+    }
+
+    pub(crate) fn extrude_profile(&self) -> Option<&DesignSketchProfileOperand> {
+        self.extrude()
+            .and_then(|extrude| extrude.extrude_profile.as_ref())
+    }
+
+    pub(crate) fn extrude_profile_mut(&mut self) -> Option<&mut DesignSketchProfileOperand> {
+        self.extrude_mut()
+            .and_then(|extrude| extrude.extrude_profile.as_mut())
+    }
+
+    pub(crate) fn fixed_extrude_parameters(&self) -> Option<&DesignFixedExtrudeParameters> {
+        self.extrude()
+            .and_then(|extrude| extrude.fixed_extrude_parameters.as_ref())
+    }
+
+    pub(crate) fn base_flange_operation(&self) -> Option<&DesignBaseFlangeOperation> {
+        self.base_flange()
+            .and_then(|base_flange| base_flange.base_flange_operation.as_ref())
+    }
+
+    pub(crate) fn base_flange_profile(&self) -> Option<&DesignSketchProfileOperand> {
+        self.base_flange()
+            .and_then(|base_flange| base_flange.base_flange_profile.as_ref())
+    }
+
+    pub(crate) fn coil_operation(&self) -> Option<DesignExtrudeOperation> {
+        self.coil().and_then(|coil| coil.coil_operation)
+    }
+
+    pub(crate) fn coil_operation_offset(&self) -> Option<u64> {
+        self.coil().and_then(|coil| coil.coil_operation_offset)
+    }
+
+    pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {
+        self.coil().and_then(|coil| coil.coil_extent)
+    }
+
+    pub(crate) fn coil_section(&self) -> Option<DesignCoilSection> {
+        self.coil().and_then(|coil| coil.coil_section)
+    }
+
+    pub(crate) fn coil_section_placement(&self) -> Option<DesignCoilSectionPlacement> {
+        self.coil().and_then(|coil| coil.coil_section_placement)
+    }
+
+    pub(crate) fn coil_clockwise(&self) -> Option<bool> {
+        self.coil().and_then(|coil| coil.coil_clockwise)
+    }
+
+    pub(crate) fn coil_extent_offset(&self) -> Option<u64> {
+        self.coil().and_then(|coil| coil.coil_extent_offset)
+    }
+
+    pub(crate) fn coil_section_offset(&self) -> Option<u64> {
+        self.coil().and_then(|coil| coil.coil_section_offset)
+    }
+
+    pub(crate) fn coil_section_placement_offset(&self) -> Option<u64> {
+        self.coil()
+            .and_then(|coil| coil.coil_section_placement_offset)
+    }
+
+    pub(crate) fn coil_clockwise_offset(&self) -> Option<u64> {
+        self.coil().and_then(|coil| coil.coil_clockwise_offset)
+    }
+
+    pub(crate) fn coil_placement(&self) -> Option<&DesignCoilPlacement> {
+        self.coil().and_then(|coil| coil.coil_placement.as_ref())
+    }
+
+    pub(crate) fn coil_transform(&self) -> Option<&DesignCoilTransform> {
+        self.coil().and_then(|coil| coil.coil_transform.as_ref())
+    }
+
+    pub(crate) fn path_feature_construction(&self) -> Option<&DesignPathFeatureConstruction> {
+        self.path_feature()
+            .and_then(|path_feature| path_feature.path_feature_construction.as_ref())
+    }
+
+    pub(crate) fn sweep_profile(&self) -> Option<&DesignSketchProfileOperand> {
+        self.path_feature()
+            .and_then(|path_feature| path_feature.sweep_profile.as_ref())
+    }
+
+    pub(crate) fn work_plane_transform(&self) -> Option<[[f64; 4]; 4]> {
+        self.work_plane_frame()
+            .map(|frame| frame.work_plane_transform)
+    }
+
+    pub(crate) fn work_plane_reference(&self) -> Option<u32> {
+        self.work_plane_frame()
+            .and_then(|frame| frame.reference.as_ref().map(|r| r.work_plane_reference))
+    }
+
+    pub(crate) fn work_plane_construction(&self) -> Option<&DesignWorkPlaneConstruction> {
+        self.work_plane_frame()
+            .and_then(|frame| frame.work_plane_construction.as_ref())
+    }
+
+    pub(crate) fn work_plane_construction_mut(
+        &mut self,
+    ) -> Option<&mut DesignWorkPlaneConstruction> {
+        self.work_plane_frame_mut()
+            .and_then(|frame| frame.work_plane_construction.as_mut())
+    }
+
+    pub(crate) fn joint_origin_transform(&self) -> Option<[[f64; 4]; 4]> {
+        self.joint_origin_frame()
+            .map(|frame| frame.joint_origin_transform)
+    }
+
+    pub(crate) fn joint_origin_transform_offset(&self) -> Option<u64> {
+        self.joint_origin_frame()
+            .map(|frame| frame.joint_origin_transform_offset)
+    }
+
+    pub(crate) fn joint_origin_reference(&self) -> Option<u32> {
+        self.joint_origin_frame().and_then(|frame| {
+            frame
+                .reference
+                .as_ref()
+                .map(|reference| reference.joint_origin_reference)
+        })
+    }
+
+    pub(crate) fn joint_origin_reference_offset(&self) -> Option<u64> {
+        self.joint_origin_frame().and_then(|frame| {
+            frame
+                .reference
+                .as_ref()
+                .map(|reference| reference.joint_origin_reference_offset)
+        })
+    }
+}
+
+#[cfg(test)]
+impl DesignParameterScope {
+    /// Build a scope carrying only its identity, kind, and record index.
+    pub(crate) fn with_work_plane_transform(&mut self, transform: [[f64; 4]; 4]) {
+        self.payload = DesignScopePayload::WorkPlane(DesignWorkPlaneTransform {
+            work_plane_transform: transform,
+            work_plane_transform_offset: 0,
+            reference: None,
+            work_plane_construction: None,
+        });
+    }
+
+    pub(crate) fn with_work_plane_reference(&mut self, record_index: u32) {
+        if let Some(frame) = self.work_plane_frame_mut() {
+            frame.reference = Some(DesignWorkPlaneReference {
+                work_plane_reference: record_index,
+                work_plane_reference_offset: 0,
+            });
+        }
+    }
+
+    pub(crate) fn with_joint_origin_transform(&mut self, transform: [[f64; 4]; 4]) {
+        self.payload = DesignScopePayload::JointOrigin(DesignJointOriginTransform {
+            joint_origin_transform: transform,
+            joint_origin_transform_offset: 0,
+            reference: None,
+        });
+    }
+
+    pub(crate) fn empty(id: &str, kind: &str, record_index: u32) -> Self {
+        Self {
+            id: id.to_string(),
+            byte_offset: 0,
+            class_tag: String::new(),
+            record_index,
+            frame_length: 0,
+            kind: kind.into(),
+            kind_offset: 0,
+            feature_ordinal: 0,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
+            reference_count_offset: 0,
+            reference_members: Vec::new(),
+            reference_member_offsets: Vec::new(),
+            payload: DesignScopePayload::Empty,
+            unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: String::new(),
             paired_byte_offset: 0,
         }

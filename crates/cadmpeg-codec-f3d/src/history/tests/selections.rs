@@ -179,14 +179,13 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         face_selection: Some(face_selection),
     };
     let mut scope = crate::records::DesignParameterScope::empty("f3d:scope#42", "Hole", 42);
-    scope.hole_construction = Some(construction);
+    scope.set_hole_construction(Some(construction));
 
     bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
 
     assert_eq!(
         scope
-            .hole_construction
-            .as_ref()
+            .hole_construction()
             .and_then(|construction| construction.face_selection.as_ref())
             .map(|selection| selection.historical_face_candidates.as_slice()),
         Some(
@@ -582,7 +581,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         "Combine",
         10,
     );
-    scope.combine_operation = Some(crate::records::DesignCombineOperation {
+    scope.set_combine_operation(Some(crate::records::DesignCombineOperation {
         form: crate::records::DesignCombineForm::ExtendedReference,
         operation: crate::records::DesignExtrudeOperation::Join,
         operation_offset: 0,
@@ -593,7 +592,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
             external_identity: None,
         },
         tools: vec![tool(12, 500), tool(13, 501)],
-    });
+    }));
     let BodySelection::Local { bodies, native } =
         super::super::combine_external_local_tools(&scope).expect("complete local tool identity")
     else {
@@ -604,8 +603,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     assert_eq!(native, scope.id);
 
     scope
-        .combine_operation
-        .as_mut()
+        .combine_operation_mut()
         .expect("Combine operation")
         .tools[1] = tool(13, 500);
     assert!(super::super::combine_external_local_tools(&scope).is_none());
@@ -1597,7 +1595,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.mirror_construction = Some(
+    scope.set_mirror_construction(Some(
         serde_json::from_value(serde_json::json!({
             "count": 2, "count_record_index": 11, "count_offset": 0,
             "stitch_tolerance": 0.001, "stitch_tolerance_record_index": 12,
@@ -1606,7 +1604,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             "plane_origin": null, "plane_normal": null
         }))
         .expect("mirror construction"),
-    );
+    ));
     let group: crate::records::DesignConstructionOperandGroup =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
@@ -1695,10 +1693,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         std::slice::from_ref(&history),
     );
 
-    let construction = scope
-        .mirror_construction
-        .as_ref()
-        .expect("mirror construction");
+    let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(construction.plane_origin, Some(Point3::new(1.0, 2.0, 3.0)));
     assert_eq!(construction.plane_normal, Some(Vector3::new(0.0, 0.0, 1.0)));
 
@@ -1712,10 +1707,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         std::slice::from_ref(&history),
     );
 
-    let construction = scope
-        .mirror_construction
-        .as_ref()
-        .expect("mirror construction");
+    let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(construction.plane_origin, Some(Point3::new(0.0, 0.0, 0.0)));
     assert_eq!(construction.plane_normal, Some(Vector3::new(1.0, 0.0, 0.0)));
 }
