@@ -22,7 +22,7 @@ fn dispatcher_projects_datum_feature_scopes() {
 
     let mut work_plane =
         DesignParameterScope::empty("f3d:native:parameter-scope#2", "WorkPlane", 2);
-    work_plane.work_plane_transform = Some(transform);
+    work_plane.with_work_plane_transform(transform);
 
     let mut work_point =
         DesignParameterScope::empty("f3d:native:parameter-scope#3", "WorkPoint", 3);
@@ -105,7 +105,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
 fn dispatcher_projects_referenced_work_plane_frame() {
     let mut referenced =
         DesignParameterScope::empty("f3d:native:parameter-scope#10", "WorkPlane", 10);
-    referenced.work_plane_transform = Some(identity_matrix());
+    referenced.with_work_plane_transform(identity_matrix());
     referenced.work_plane_reference = Some(11);
 
     let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
@@ -146,7 +146,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         next_byte_offset: 5,
     };
     let mut plane = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPlane", 20);
-    plane.work_plane_transform = Some(identity_matrix());
+    plane.with_work_plane_transform(identity_matrix());
     plane.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
         placement_record_index: 21,
         inputs: Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
@@ -177,7 +177,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let planes = [10, 20, 30].map(|record_index| {
         let id = format!("f3d:native:parameter-scope#{record_index}");
         let mut scope = DesignParameterScope::empty(&id, "WorkPlane", record_index);
-        scope.work_plane_transform = Some(identity_matrix());
+        scope.with_work_plane_transform(identity_matrix());
         scope
     });
     let input = |record_index, work_plane_scope_record_index| DesignWorkPointInput {

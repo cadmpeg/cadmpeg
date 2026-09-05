@@ -81,8 +81,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
-        work_plane_transform: None,
-        work_plane_transform_offset: None,
+        work_plane_frame: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
         work_plane_construction: None,
@@ -406,7 +405,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut first_plane =
         DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#601", "WorkPlane", 601);
     first_plane.feature_ordinal = 0;
-    first_plane.work_plane_transform = Some([
+    first_plane.with_work_plane_transform([
         [1.0, 0.0, 0.0, -0.8],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
@@ -415,7 +414,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut second_plane =
         DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#701", "WorkPlane", 701);
     second_plane.feature_ordinal = 1;
-    second_plane.work_plane_transform = Some([
+    second_plane.with_work_plane_transform([
         [1.0, 0.0, 0.0, -1.4],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],

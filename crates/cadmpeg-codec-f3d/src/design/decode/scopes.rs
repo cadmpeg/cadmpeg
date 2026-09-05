@@ -262,8 +262,10 @@ pub fn decode_parameter_scopes(
             }
             if scope.kind == "WorkPlane" {
                 if let Some(frame) = exact_work_plane_frame(bytes, &records, &scope) {
-                    scope.work_plane_transform = Some(frame.transform);
-                    scope.work_plane_transform_offset = Some(frame.transform_offset);
+                    scope.work_plane_frame = Some(crate::records::DesignWorkPlaneTransform {
+                        work_plane_transform: frame.transform,
+                        work_plane_transform_offset: frame.transform_offset,
+                    });
                     if let Some((reference, reference_offset)) = frame.reference {
                         scope.work_plane_reference = Some(reference);
                         scope.work_plane_reference_offset = Some(reference_offset);
@@ -4855,7 +4857,7 @@ pub fn bind_mirror_constructions(
                             native_stream(&scope.id) == Some(stream)
                                 && scope.record_index == *record_index
                                 && scope.kind == "WorkPlane"
-                                && scope.work_plane_transform.is_some()
+                                && scope.work_plane_frame.is_some()
                         })
                     })
                     .map(|record_index| (record_index, plane_reference_offset))
@@ -9109,8 +9111,7 @@ pub(crate) fn parse_parameter_scope(
         draft_operation: None,
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
-        work_plane_transform: None,
-        work_plane_transform_offset: None,
+        work_plane_frame: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
         work_plane_construction: None,

@@ -568,7 +568,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         "WorkPlane",
         320,
     );
-    target_scope.work_plane_transform = Some([
+    target_scope.with_work_plane_transform([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],

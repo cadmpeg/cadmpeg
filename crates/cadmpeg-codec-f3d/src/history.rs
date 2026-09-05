@@ -2691,6 +2691,7 @@ pub(crate) fn bind_vertex_recipe_history(
     }
 
     for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
+        let transform = scope.work_plane_transform();
         let Some(crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
             &mut scope.work_plane_construction
         else {
@@ -2724,7 +2725,7 @@ pub(crate) fn bind_vertex_recipe_history(
         if first.0 == second.0
             || first.0 == third.0
             || second.0 == third.0
-            || !three_point_plane_matches(scope.work_plane_transform, [first.1, second.1, third.1])
+            || !three_point_plane_matches(transform, [first.1, second.1, third.1])
         {
             continue;
         }

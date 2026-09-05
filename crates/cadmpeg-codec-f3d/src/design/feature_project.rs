@@ -1258,7 +1258,7 @@ pub fn project_parameter_design_with_edge_identities(
                             },
                         )
                     } else if scope.kind == "WorkPlane" {
-                        scope.work_plane_transform.map_or_else(
+                        scope.work_plane_transform().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind.as_str().into(),
                                 parameters: parameters
@@ -2877,7 +2877,7 @@ fn project_draft(
             if let Some(neutral_plane) =
                 selected_work_plane(scope, neutral_plane, entity_selection_operands, scopes)
             {
-                let transform = neutral_plane.work_plane_transform?;
+                let transform = neutral_plane.work_plane_transform()?;
                 let pull_direction =
                     Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
                 return Some(FeatureDefinition::Draft {
@@ -2937,7 +2937,7 @@ fn project_draft(
                 }
                 _ => return None,
             };
-            let transform = pull_plane.work_plane_transform?;
+            let transform = pull_plane.work_plane_transform()?;
             let pull_direction =
                 Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
             Some(FeatureDefinition::Draft {
@@ -3145,7 +3145,7 @@ fn selected_work_planes<'a>(
             native_stream(&candidate.id) == Some(stream)
                 && candidate.record_index == target_record_index
                 && candidate.kind == "WorkPlane"
-                && candidate.work_plane_transform.is_some()
+                && candidate.work_plane_transform().is_some()
         });
         let target = target_scopes.next()?;
         if target_scopes.next().is_some() {
@@ -6517,13 +6517,13 @@ pub(crate) fn project_mirror(
                         native_stream(&candidate.id) == Some(stream)
                             && candidate.record_index == plane_scope_record_index
                             && candidate.kind == "WorkPlane"
-                            && candidate.work_plane_transform.is_some()
+                            && candidate.work_plane_transform().is_some()
                     })
                     .collect::<Vec<_>>();
                 let [plane] = matching_planes.as_slice() else {
                     return None;
                 };
-                let transform = plane.work_plane_transform?;
+                let transform = plane.work_plane_transform()?;
                 (
                     Point3::new(transform[0][3], transform[1][3], transform[2][3]),
                     Vector3::new(transform[0][2], transform[1][2], transform[2][2]),

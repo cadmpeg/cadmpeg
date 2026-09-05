@@ -4687,7 +4687,7 @@ fn valid_work_plane_construction(
     let [placement, first, second, third, extra_offset] = scope.reference_members.as_slice() else {
         return false;
     };
-    let Some(transform) = scope.work_plane_transform else {
+    let Some(frame) = scope.work_plane_frame.as_ref() else {
         return false;
     };
     let Some(placement_header) = ctx
@@ -4696,9 +4696,8 @@ fn valid_work_plane_construction(
     else {
         return false;
     };
-    let Some(transform_offset) = scope.work_plane_transform_offset else {
-        return false;
-    };
+    let transform = frame.work_plane_transform;
+    let transform_offset = frame.work_plane_transform_offset;
     let Some(owner) = ctx.native.design_parameter_owners.iter().find(|owner| {
         design_stream(&owner.id) == native_stream
             && owner.record_index == *extra_offset
