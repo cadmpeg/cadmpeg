@@ -43,8 +43,7 @@ use crate::psb;
 use crate::reference::{self, ReferenceCircle, ReferenceConic, ReferenceEllipse, ReferenceLine};
 use crate::surface::{
     self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceContourRecord,
-    SurfaceParameterRecord, SurfacePrototype, SurfacePrototypeRecord, SurfaceRow,
-    TabulatedCylinderCurveReplay,
+    SurfaceParameterRecord, SurfacePrototypeRecord, SurfaceRow, TabulatedCylinderCurveReplay,
 };
 use crate::topology::{
     self, FaceComponent, HalfEdge, HalfEdgeVertexIncidence, Loop, TopologicalVertex,
@@ -338,8 +337,8 @@ pub struct SurfaceScan {
     /// Complete positional contour-chain entries from DEPDB cross-section
     /// geometry.
     pub cross_section_contours: Vec<SurfaceContourRecord>,
-    /// Labeled surface prototypes with fully decoded scalar fields.
-    pub prototypes: Vec<SurfacePrototype>,
+    /// Count of labeled known-family prototypes plus unlabeled `geom_type` records.
+    pub prototype_count: usize,
     /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
     pub prototype_records: Vec<SurfacePrototypeRecord>,
     /// Bounded named surface-prototype records from the separate invisible
@@ -1184,21 +1183,14 @@ fn cross_section_surface_rows(data: &[u8], sections: &[Section]) -> Vec<SurfaceR
     rows
 }
 
-fn surface_prototypes(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototype> {
-    let mut prototypes = Vec::new();
-    for section in sections {
-        let end = (section.offset + section.length).min(data.len());
-        prototypes.extend(
-            surface::prototypes(&data[section.offset..end])
-                .into_iter()
-                .map(|mut prototype| {
-                    prototype.offset += section.offset;
-                    prototype
-                }),
-        );
-    }
-    prototypes.sort_by_key(|prototype| prototype.offset);
-    prototypes
+fn surface_prototype_count(data: &[u8], sections: &[Section]) -> usize {
+    sections
+        .iter()
+        .map(|section| {
+            let end = (section.offset + section.length).min(data.len());
+            surface::prototype_count(&data[section.offset..end])
+        })
+        .sum()
 }
 
 fn surface_prototype_records(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototypeRecord> {
@@ -2475,7 +2467,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         &cross_section_plane_envelopes,
         &cross_section_plane_local_systems,
     );
-    let surface_prototypes = surface_prototypes(&data, &model_geometry_sections);
+    let surface_prototype_count = surface_prototype_count(&data, &model_geometry_sections);
     let nonvisible_surface_prototype_records =
         surface_prototype_records(&data, &nonvisible_geometry_sections);
     let surface_prototype_records = surface_prototype_records(&data, &model_geometry_sections);
@@ -2690,7 +2682,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             contours: surface_contours,
             nonvisible_contours: nonvisible_surface_contours,
             cross_section_contours: cross_section_surface_contours,
-            prototypes: surface_prototypes,
+            prototype_count: surface_prototype_count,
             prototype_records: surface_prototype_records,
             nonvisible_prototype_records: nonvisible_surface_prototype_records,
             legacy_carriers: legacy_geometry.carriers,

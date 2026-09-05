@@ -377,7 +377,7 @@ pub(in super::super) fn source_meta(
     );
     coverage.record(
         crate::coverage::DECODED_SURFACE_PROTOTYPE_COUNT,
-        scan.surfaces.prototypes.len(),
+        scan.surfaces.prototype_count,
     );
     coverage.record(
         crate::coverage::DECODED_NAMED_SURFACE_PROTOTYPE_COUNT,
