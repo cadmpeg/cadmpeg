@@ -32,7 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::{DesignMeshCollectionOwner, DesignMeshSceneNode, DesignMeshSceneState, DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureTable, MeshAffineTransform};
+use crate::records::{DesignMeshScope, DesignMeshCollectionOwner, DesignMeshSceneNode, DesignMeshSceneState, DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureTable, MeshAffineTransform};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -294,12 +294,9 @@ struct MeshSceneNodeRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshScopeRecord {
-    identity: DesignMeshRecordIdentity,
-    base_record: DesignMeshRecordIdentity,
+    scope: DesignMeshScope,
     body_records: Vec<crate::records::Located<u32>>,
     body_count_offset: u64,
-    owner_record_index: u32,
-    owner_reference_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -957,12 +954,9 @@ fn parse_mesh_scope_record(
         let owner_at = paired_relative.checked_add(feature_scope_base::SCOPE_OWNER_REFERENCE)?;
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         Some(MeshScopeRecord {
-            identity,
-            base_record,
+            scope: DesignMeshScope::new(identity, base_record, owner_record_index).ok()?,
             body_records,
             body_count_offset: source_offset(frame.start, feature_scope::BODY_COUNT)?,
-            owner_record_index,
-            owner_reference_offset: source_offset(frame.start, owner_at)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-feature-scope", frame.entity_id))
@@ -1165,7 +1159,7 @@ where
         .into_iter()
         .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
         .collect::<Result<Vec<_>, _>>()?,
-        |record| record.identity.record_index(),
+        |record| record.scope.record().record_index(),
         "mesh-feature-scope",
     )?;
     let mut states = unique_record_map(
@@ -1390,13 +1384,12 @@ where
                 tessellation_id: None,
             });
         }
-        let scope_offset = usize::try_from(scope.identity.byte_offset()).map_err(|_| {
+        let scope_offset = usize::try_from(scope.scope.record().byte_offset()).map_err(|_| {
             stream_error("mesh feature scope byte offsets fit the platform address domain")
         })?;
         features.push(DesignMeshFeature {
             id: ids::native_design_mesh_feature_id(source_entry_name, scope_offset),
-            scope_record: scope.identity,
-            scope_base_record: scope.base_record,
+            scope: scope.scope,
             collection_record: collection.identity,
             collection_base_record: collection.base_record,
             texture_table: DesignMeshTextureTable::new(texture_table.identity, textures)
@@ -1409,8 +1402,6 @@ where
             texture_table_reference_offset: collection.texture_reference_offset,
             collection_owner: collection_owner.owner.clone(),
             collection_owner_reference_offset: collection.owner_reference_offset,
-            scope_owner_record_index: scope.owner_record_index,
-            scope_owner_reference_offset: scope.owner_reference_offset,
             bodies: feature_bodies,
         });
     }
@@ -2291,7 +2282,7 @@ mod tests {
         let [feature] = design.features.as_slice() else {
             panic!("one mesh feature");
         };
-        assert_eq!(feature.scope_record.record_index(), 109);
+        assert_eq!(feature.scope.record().record_index(), 109);
         assert_eq!(feature.collection_record.record_index(), 100);
         assert_eq!(feature.texture_table.record().record_index(), 101);
         assert_eq!(feature.bodies.iter().map(|body| body.placement.record().record_index()).collect::<Vec<_>>(), [104]);

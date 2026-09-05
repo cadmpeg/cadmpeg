@@ -1472,7 +1472,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let stream = design_stream(&feature.id);
         let scope = ctx
             .scopes_by_index
-            .get(&(stream, feature.scope_record.record_index()));
+            .get(&(stream, feature.scope.record().record_index()));
         let body_count = feature.bodies.len();
         let body_count_u64 = u64::try_from(body_count).unwrap_or(u64::MAX);
         let expected_collection_length = body_count_u64
@@ -1487,7 +1487,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 u64::try_from(ordinal)
                     .ok()?
                     .checked_mul(11)?
-                    .checked_add(feature.scope_record.byte_offset().checked_add(25)?)
+                    .checked_add(feature.scope.record().byte_offset().checked_add(25)?)
             });
         let expected_collection_offsets = (0..body_count)
             .filter_map(|ordinal| {
@@ -1497,25 +1497,14 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .checked_add(feature.collection_record.byte_offset().checked_add(62)?)
             });
         let mut valid = feature_ids.insert(feature.id.as_str())
-            && scope_records.insert((stream, feature.scope_record.record_index()))
+            && scope_records.insert((stream, feature.scope.record().record_index()))
             && collection_records.insert((stream, feature.collection_record.record_index()))
             && texture_table_records.insert((stream, feature.texture_table.record().record_index()))
             && collection_owner_records
                 .insert((stream, feature.collection_owner.record().record_index()))
-            && feature.scope_base_record.record_index() == feature.scope_record.record_index()
-            && feature.collection_base_record.record_index()
-                == feature.collection_record.record_index()
-            && feature
-                .scope_record.byte_offset()
-                .checked_add(scope.map_or(0, |scope| scope.frame_length))
-                == Some(feature.scope_base_record.byte_offset())
-            && feature.scope_base_record.frame_length() == 30
-            && feature
-                .scope_base_record.byte_offset()
-                .checked_add(feature.scope_base_record.frame_length())
-                == feature
-                    .scope_record.byte_offset()
-                    .checked_add(feature.scope_record.frame_length())
+            && feature.collection_base_record.record_index() == feature.collection_record.record_index()
+            && feature.scope.record().byte_offset().checked_add(scope.map_or(0, |scope| scope.frame_length))
+                == Some(feature.scope.base_record().byte_offset())
             && feature.collection_record.byte_offset().checked_add(38)
                 == Some(feature.collection_base_record.byte_offset())
             && feature
@@ -1525,7 +1514,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .collection_record.byte_offset()
                     .checked_add(feature.collection_record.frame_length())
             && Some(feature.collection_record.frame_length()) == expected_collection_length
-            && mesh_record_offset_is(&feature.scope_record, 21, feature.body_count_offsets[0])
+            && mesh_record_offset_is(feature.scope.record(), 21, feature.body_count_offsets[0])
             && mesh_record_offset_is(
                 &feature.collection_record,
                 21,
@@ -1550,16 +1539,10 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 262,
                 feature.collection_owner.backlink_offset(),
             )
-            && mesh_record_offset_is(
-                &feature.scope_base_record,
-                19,
-                feature.scope_owner_reference_offset,
-            )
-            && feature.scope_owner_record_index != 0
             && scope.is_some_and(|scope| {
                 scope.kind() == crate::records::DesignFeatureKind::BaseMeshFeature
-                    && scope.byte_offset == feature.scope_record.byte_offset()
-                    && scope.paired_byte_offset == feature.scope_base_record.byte_offset()
+                    && scope.byte_offset == feature.scope.record().byte_offset()
+                    && scope.paired_byte_offset == feature.scope.base_record().byte_offset()
             });
 
         let mut resources = feature.texture_table.resources().iter().collect::<Vec<_>>();

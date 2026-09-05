@@ -14507,6 +14507,44 @@ impl DesignMeshCollectionOwner {
     }
 }
 
+/// Feature-scope record with its same-index closing base and owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignMeshScope {
+    record: DesignMeshRecordIdentity,
+    base_class_tag: DesignClassTag,
+    owner_record_index: std::num::NonZeroU32,
+}
+impl DesignMeshScope {
+    pub fn new(record: DesignMeshRecordIdentity, base_record: DesignMeshRecordIdentity, owner_record_index: u32) -> Result<Self, String> {
+        let base_length = crate::layout::paramesh_feature_scope_base::LEN as u64;
+        if record.frame_length() < crate::layout::paramesh_feature_scope_prefix::LEN as u64 + base_length {
+            return Err("scope_record.frame_length must contain the prefix and closing base".into());
+        }
+        if base_record.record_index() != record.record_index()
+            || base_record.frame_length() != base_length
+            || base_record.byte_offset() != record.byte_offset() + record.frame_length() - base_length {
+            return Err("scope_base_record must be the same-index closing base of scope_record".into());
+        }
+        let owner_record_index = std::num::NonZeroU32::new(owner_record_index).ok_or("scope_owner_record_index must be nonzero")?;
+        Ok(Self { record, base_class_tag: base_record.class_tag, owner_record_index })
+    }
+    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn base_record(&self) -> DesignMeshRecordIdentity {
+        let frame_length = crate::layout::paramesh_feature_scope_base::LEN as u64;
+        DesignMeshRecordIdentity {
+            class_tag: self.base_class_tag.clone(), record_index: self.record.record_index,
+            byte_offset: self.record.byte_offset() + self.record.frame_length() - frame_length,
+            frame_length,
+        }
+    }
+    pub fn owner_record_index(&self) -> u32 { self.owner_record_index.get() }
+    pub fn owner_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + self.record.frame_length()
+            - crate::layout::paramesh_feature_scope_base::LEN as u64
+            + crate::layout::paramesh_feature_scope_base::SCOPE_OWNER_REFERENCE as u64
+    }
+}
+
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -14515,10 +14553,8 @@ impl DesignMeshCollectionOwner {
 pub struct DesignMeshFeature {
     /// Globally unique deterministic identity keyed by the feature-scope record.
     pub id: String,
-    /// Typed `Base Mesh Feature` scope record.
-    pub scope_record: DesignMeshRecordIdentity,
-    /// Paired same-index base record closing the feature scope.
-    pub scope_base_record: DesignMeshRecordIdentity,
+    /// Feature scope and its closing owner reference.
+    pub scope: DesignMeshScope,
     /// Typed `ParaMesh` body-collection record.
     pub collection_record: DesignMeshRecordIdentity,
     /// Paired same-index base record inside the collection.
@@ -14533,10 +14569,6 @@ pub struct DesignMeshFeature {
     pub collection_owner: DesignMeshCollectionOwner,
     /// Byte offset of the collection's owner reference.
     pub collection_owner_reference_offset: u64,
-    /// Design owner of the feature scope.
-    pub scope_owner_record_index: u32,
-    /// Byte offset of the paired scope record's owner reference.
-    pub scope_owner_reference_offset: u64,
     /// Mesh bodies in the source collection order.
     pub bodies: Vec<DesignMeshBody>,
 }
@@ -14602,11 +14634,14 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         let bodies = wire.bodies.into_iter().zip(wire.scope_body_reference_offsets).zip(wire.collection_body_reference_offsets)
             .map(|((body, scope_offset), collection_offset)| DesignMeshBody::from_wire(body, scope_offset, collection_offset))
             .collect::<Result<Vec<_>, _>>()?;
+        let scope = DesignMeshScope::new(wire.scope_record, wire.scope_base_record, wire.scope_owner_record_index)?;
+        if scope.owner_reference_offset() != wire.scope_owner_reference_offset {
+            return Err("scope_owner_reference_offset must locate the closing base owner reference".into());
+        }
         Ok(Self {
             bodies,
             id: wire.id,
-            scope_record: wire.scope_record,
-            scope_base_record: wire.scope_base_record,
+            scope,
             collection_record: wire.collection_record,
             collection_base_record: wire.collection_base_record,
             texture_table: DesignMeshTextureTable::from_wire(wire.texture_table_record, wire.texture_flags_count_offset, wire.texture_filename_count_offset, wire.textures)?,
@@ -14614,8 +14649,6 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             texture_table_reference_offset: wire.texture_table_reference_offset,
             collection_owner: DesignMeshCollectionOwner::new(wire.collection_owner_record, wire.collection_owner_backlink_offset)?,
             collection_owner_reference_offset: wire.collection_owner_reference_offset,
-            scope_owner_record_index: wire.scope_owner_record_index,
-            scope_owner_reference_offset: wire.scope_owner_reference_offset,
         })
     }
 }
@@ -14640,8 +14673,8 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_body_reference_offsets,
             bodies,
             id: value.id,
-            scope_record: value.scope_record,
-            scope_base_record: value.scope_base_record,
+            scope_record: value.scope.record().clone(),
+            scope_base_record: value.scope.base_record(),
             collection_record: value.collection_record,
             collection_base_record: value.collection_base_record,
             texture_table_record,
@@ -14650,8 +14683,8 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_owner_record: value.collection_owner.record,
             collection_owner_reference_offset: value.collection_owner_reference_offset,
             collection_owner_backlink_offset,
-            scope_owner_record_index: value.scope_owner_record_index,
-            scope_owner_reference_offset: value.scope_owner_reference_offset,
+            scope_owner_record_index: value.scope.owner_record_index(),
+            scope_owner_reference_offset: value.scope.owner_reference_offset(),
             texture_flags_count_offset,
             texture_filename_count_offset,
             textures,

@@ -3350,7 +3350,7 @@ fn project_mesh_bodies(
             .to_owned();
         if projection
             .tessellations_by_scope
-            .insert((stream, feature.scope_record.record_index()), tessellations)
+            .insert((stream, feature.scope.record().record_index()), tessellations)
             .is_some()
         {
             return Err(CodecError::Malformed(

@@ -880,14 +880,14 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         "scene_state_reference_offset": 133, "scene_auxiliary_reference_offset": 148
     });
     let base = serde_json::json!({
-        "id": "mesh-feature", "scope_record": identity, "scope_base_record": identity,
+        "id": "mesh-feature", "scope_record": identity, "scope_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 270, "frame_length": 30},
         "collection_record": identity, "collection_base_record": identity,
         "texture_table_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 29}, "body_count_offsets": [21, 31, 41],
         "body_record_indices": [104, 104], "scope_body_reference_offsets": [25, 36],
         "collection_body_reference_offsets": [62, 73], "texture_table_reference_offset": 52,
         "collection_owner_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 273}, "collection_owner_reference_offset": 84,
         "collection_owner_backlink_offset": 362, "scope_owner_record_index": 109,
-        "scope_owner_reference_offset": 105, "texture_flags_count_offset": 121,
+        "scope_owner_reference_offset": 289, "texture_flags_count_offset": 121,
         "texture_filename_count_offset": 125, "bodies": [body, body], "textures": []
     });
     for count in 0..=2 {
@@ -2814,4 +2814,20 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
     assert!(super::DesignMeshTextureTable::from_wire(record(218), 21, 113, serde_json::from_value(rows.clone()).unwrap()).is_err());
     assert!(super::DesignMeshTextureTable::from_wire(record(219), 21, 112, serde_json::from_value(rows).unwrap()).is_err());
     assert!(super::DesignMeshTextureTable::new(record(29), Vec::new()).is_ok());
+}
+
+#[test]
+fn mesh_scope_constructs_only_same_index_closing_bases() {
+    let identity = |index, offset, length| super::DesignMeshRecordIdentity::new(
+        super::DesignClassTag::try_from("256".to_owned()).expect("class tag"), index, offset, length,
+    ).expect("record identity");
+    let scope = super::DesignMeshScope::new(identity(104, 100, 200), identity(104, 270, 30), 109).expect("scope");
+    assert_eq!(scope.base_record(), identity(104, 270, 30));
+    assert_eq!(scope.owner_reference_offset(), 289);
+    assert_eq!(scope.owner_record_index(), 109);
+    for base in [identity(105, 270, 30), identity(104, 269, 30), identity(104, 270, 31)] {
+        assert!(super::DesignMeshScope::new(identity(104, 100, 200), base, 109).is_err());
+    }
+    assert!(super::DesignMeshScope::new(identity(104, 100, 200), identity(104, 270, 30), 0).is_err());
+    assert!(super::DesignMeshScope::new(identity(104, 100, 54), identity(104, 124, 30), 109).is_err());
 }
