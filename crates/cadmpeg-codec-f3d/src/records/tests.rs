@@ -3520,4 +3520,33 @@ fn act_root_component_rejects_nonroot_tracking_on_the_wire() {
         let error = serde_json::from_value::<super::ActRootComponent>(invalid).unwrap_err();
         assert!(error.to_string().contains("tracked_entity_record"));
     }
+    for field in [
+        "record_index_offset", "instance_root_record_offset", "entity_id_offset",
+        "tracked_entity_record_offset", "registry_flag_offset", "display_name_offset",
+        "components_root_record_offset",
+    ] {
+        let mut invalid = wire.clone();
+        invalid[field] = serde_json::json!(0);
+        assert!(serde_json::from_value::<super::ActRootComponent>(invalid).is_err(), "{field}");
+    }
+
+}
+
+#[test]
+fn act_root_layout_derives_utf16_offsets_and_bounds_padding() {
+    use super::ActRootLayout;
+    let layout = ActRootLayout::new(100, "0_3".into(), "😀".into(), 8).unwrap();
+    assert_eq!(layout.record_index_offset(), 107);
+    assert_eq!(layout.instance_root_record_offset(), 122);
+    assert_eq!(layout.entity_id_offset(), 136);
+    assert_eq!(layout.tracked_entity_record_offset(), 143);
+    assert_eq!(layout.registry_flag_offset(), 153);
+    assert_eq!(layout.display_name_offset(), 161);
+    assert_eq!(layout.components_root_record_offset(), 174);
+    for padding in [0, 9, u64::MAX] {
+        assert!(ActRootLayout::new(0, "0_3".into(), "".into(), padding).is_err());
+    }
+    assert!(ActRootLayout::new(u64::MAX - 63, "0_3".into(), "".into(), 1).is_ok());
+    assert!(ActRootLayout::new(u64::MAX - 62, "0_3".into(), "".into(), 1).is_err());
+    assert!(ActRootLayout::new(0, "".into(), "".into(), 1).is_err());
 }

@@ -944,11 +944,11 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(f3d_native(result.ir()).act_entities[0].in_table());
     assert_eq!(f3d_native(result.ir()).act_root_components.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].entity_id,
+        f3d_native(result.ir()).act_root_components[0].layout.entity_id(),
         "0_3"
     );
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].display_name,
+        f3d_native(result.ir()).act_root_components[0].layout.display_name(),
         "(Unsaved)"
     );
     assert_eq!(

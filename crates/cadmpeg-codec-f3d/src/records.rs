@@ -17756,37 +17756,18 @@ pub struct ActRegistryChannel {
 pub struct ActRootComponent {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Byte offset of this record in the ACT `BulkStream`.
-    pub byte_offset: u64,
     /// Index of this record within the ACT `BulkStream`.
     pub record_index: u32,
-    /// Byte offset of `record_index`.
-    pub record_index_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
     pub class_tag: String,
     /// Record index of the instance registry root.
     pub instance_root_record: u32,
-    /// Byte offset of `instance_root_record`.
-    pub instance_root_record_offset: u64,
-    /// Byte offset of `tracked_entity_record`.
-    #[serde(default)]
-    pub tracked_entity_record_offset: u64,
     /// Record index of the components registry root.
     pub components_root_record: u32,
-    /// Byte offset of `components_root_record`.
-    pub components_root_record_offset: u64,
     /// Source counter/registry flag; 0 and 1 are both valid.
     pub registry_flag: ActRegistryFlag,
-    /// Byte offset of `registry_flag`.
-    pub registry_flag_offset: u64,
-    /// UTF-16LE-decoded design-entity id of the document root entity.
-    pub entity_id: String,
-    /// Byte offset of the UTF-16 `entity_id` code units.
-    pub entity_id_offset: u64,
-    /// Document display name as stored alongside this root-component link.
-    pub display_name: String,
-    /// Byte offset of the UTF-16 `display_name` code units.
-    pub display_name_offset: u64,
+    /// Checked source layout and the two variable-length strings.
+    pub layout: ActRootLayout,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -17838,23 +17819,40 @@ impl TryFrom<ActRootComponentWire> for ActRootComponent {
         if wire.tracked_entity_record != 3 {
             return Err("tracked_entity_record must identify document root record 3".into());
         }
+        let display_bytes = u64::try_from(wire.display_name.encode_utf16().count())
+            .ok().and_then(|length| length.checked_mul(2))
+            .ok_or("display_name length overflows")?;
+        let padding = wire.display_name_offset.checked_add(display_bytes)
+            .and_then(|end| wire.components_root_record_offset.checked_sub(end))
+            .and_then(|gap| gap.checked_sub(1))
+            .ok_or("components_root_record_offset does not follow display_name")?;
+        let layout = ActRootLayout::new(wire.byte_offset, wire.entity_id, wire.display_name, padding)?;
+        if wire.record_index_offset != layout.record_index_offset() {
+            return Err("record_index_offset disagrees with ACT root layout".into());
+        }
+        if wire.instance_root_record_offset != layout.instance_root_record_offset() {
+            return Err("instance_root_record_offset disagrees with ACT root layout".into());
+        }
+        if wire.tracked_entity_record_offset != layout.tracked_entity_record_offset() {
+            return Err("tracked_entity_record_offset disagrees with ACT root layout".into());
+        }
+        if wire.registry_flag_offset != layout.registry_flag_offset() {
+            return Err("registry_flag_offset disagrees with ACT root layout".into());
+        }
+        if wire.entity_id_offset != layout.entity_id_offset() {
+            return Err("entity_id_offset disagrees with ACT root layout".into());
+        }
+        if wire.display_name_offset != layout.display_name_offset() {
+            return Err("display_name_offset disagrees with ACT root layout".into());
+        }
         Ok(Self {
             id: wire.id,
-            byte_offset: wire.byte_offset,
             record_index: wire.record_index,
-            record_index_offset: wire.record_index_offset,
             class_tag: wire.class_tag,
             instance_root_record: wire.instance_root_record,
-            instance_root_record_offset: wire.instance_root_record_offset,
-            tracked_entity_record_offset: wire.tracked_entity_record_offset,
             components_root_record: wire.components_root_record,
-            components_root_record_offset: wire.components_root_record_offset,
             registry_flag: wire.registry_flag,
-            registry_flag_offset: wire.registry_flag_offset,
-            entity_id: wire.entity_id,
-            entity_id_offset: wire.entity_id_offset,
-            display_name: wire.display_name,
-            display_name_offset: wire.display_name_offset,
+            layout,
         })
     }
 }
@@ -17863,23 +17861,70 @@ impl From<ActRootComponent> for ActRootComponentWire {
     fn from(root: ActRootComponent) -> Self {
         Self {
             id: root.id,
-            byte_offset: root.byte_offset,
             record_index: root.record_index,
-            record_index_offset: root.record_index_offset,
             class_tag: root.class_tag,
             instance_root_record: root.instance_root_record,
-            instance_root_record_offset: root.instance_root_record_offset,
-            tracked_entity_record: 3,
-            tracked_entity_record_offset: root.tracked_entity_record_offset,
             components_root_record: root.components_root_record,
-            components_root_record_offset: root.components_root_record_offset,
             registry_flag: root.registry_flag,
-            registry_flag_offset: root.registry_flag_offset,
-            entity_id: root.entity_id,
-            entity_id_offset: root.entity_id_offset,
-            display_name: root.display_name,
-            display_name_offset: root.display_name_offset,
+            record_index_offset: root.layout.record_index_offset(),
+            instance_root_record_offset: root.layout.instance_root_record_offset(),
+            tracked_entity_record_offset: root.layout.tracked_entity_record_offset(),
+            registry_flag_offset: root.layout.registry_flag_offset(),
+            entity_id_offset: root.layout.entity_id_offset(),
+            display_name_offset: root.layout.display_name_offset(),
+            components_root_record_offset: root.layout.components_root_record_offset(),
+            tracked_entity_record: 3,
+            byte_offset: root.layout.byte_offset,
+            entity_id: root.layout.entity_id,
+            display_name: root.layout.display_name,
         }
+    }
+}
+
+/// Source extent of an ACT root link. Offsets follow its fixed grammar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActRootLayout {
+    byte_offset: u64,
+    entity_id: String,
+    display_name: String,
+    padding: u64,
+}
+
+impl ActRootLayout {
+    pub fn new(byte_offset: u64, entity_id: String, display_name: String, padding: u64) -> Result<Self, String> {
+        if !crate::act::is_entity_key(&entity_id) {
+            return Err("entity_id must be an ACT entity key".into());
+        }
+        if !(1..=8).contains(&padding) {
+            return Err("components_root_record_offset requires one through eight padding bytes".into());
+        }
+        let string_bytes = entity_id.encode_utf16().count().checked_add(display_name.encode_utf16().count())
+            .and_then(|length| u64::try_from(length).ok())
+            .and_then(|length| length.checked_mul(2))
+            .ok_or("ACT root string lengths overflow")?;
+        byte_offset.checked_add(56).and_then(|offset| offset.checked_add(string_bytes))
+            .and_then(|offset| offset.checked_add(padding))
+            .ok_or("components_root_record_offset overflows ACT root layout")?;
+        Ok(Self { byte_offset, entity_id, display_name, padding })
+    }
+
+    pub fn with_strings(&self, entity_id: String, display_name: String) -> Result<Self, String> {
+        Self::new(self.byte_offset, entity_id, display_name, self.padding)
+    }
+
+    pub fn byte_offset(&self) -> u64 { self.byte_offset }
+    pub fn entity_id(&self) -> &str { &self.entity_id }
+    pub fn display_name(&self) -> &str { &self.display_name }
+    pub fn record_index_offset(&self) -> u64 { self.byte_offset + 7 }
+    pub fn instance_root_record_offset(&self) -> u64 { self.byte_offset + 22 }
+    pub fn entity_id_offset(&self) -> u64 { self.byte_offset + 36 }
+    pub fn tracked_entity_record_offset(&self) -> u64 {
+        self.entity_id_offset() + self.entity_id.encode_utf16().count() as u64 * 2 + 1
+    }
+    pub fn registry_flag_offset(&self) -> u64 { self.tracked_entity_record_offset() + 10 }
+    pub fn display_name_offset(&self) -> u64 { self.registry_flag_offset() + 8 }
+    pub fn components_root_record_offset(&self) -> u64 {
+        self.display_name_offset() + self.display_name.encode_utf16().count() as u64 * 2 + self.padding + 1
     }
 }
 

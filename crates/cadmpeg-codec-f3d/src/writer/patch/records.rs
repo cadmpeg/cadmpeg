@@ -123,17 +123,17 @@ pub(crate) fn patch_act_roots(
     for root in edits {
         for (offset, value, field) in [
             (
-                root.instance_root_record_offset,
+                root.layout.instance_root_record_offset(),
                 root.instance_root_record,
                 "ACT instance-root reference",
             ),
             (
-                root.components_root_record_offset,
+                root.layout.components_root_record_offset(),
                 root.components_root_record,
                 "ACT components-root reference",
             ),
             (
-                root.registry_flag_offset,
+                root.layout.registry_flag_offset(),
                 root.registry_flag.code(),
                 "ACT registry flag",
             ),
@@ -142,14 +142,14 @@ pub(crate) fn patch_act_roots(
         }
         patch_utf16_if_changed(
             bytes,
-            root.entity_id_offset,
-            &root.entity_id,
+            root.layout.entity_id_offset(),
+            root.layout.entity_id(),
             "ACT root entity id",
         )?;
         patch_utf16_if_changed(
             bytes,
-            root.display_name_offset,
-            &root.display_name,
+            root.layout.display_name_offset(),
+            root.layout.display_name(),
             "ACT root display name",
         )?;
     }

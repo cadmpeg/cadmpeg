@@ -1074,35 +1074,16 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
 
     let mut root_counts = HashMap::<&str, usize>::new();
     for root in &native.act_root_components {
-        let stream = act_stream_for_id(&root.id, "act-root-component", root.byte_offset);
+        let stream = act_stream_for_id(&root.id, "act-root-component", root.layout.byte_offset());
         if let Some(stream) = stream {
             streams.entry(stream).or_insert(&root.id);
             *root_counts.entry(stream).or_default() += 1;
         }
         let unique_record_index =
             stream.is_some_and(|stream| record_indices.insert((stream, root.record_index)));
-        let entity_code_units = u64::try_from(root.entity_id.encode_utf16().count()).ok();
-        let display_code_units = u64::try_from(root.display_name.encode_utf16().count()).ok();
-        let expected_tracked_offset = entity_code_units
-            .and_then(|length| length.checked_mul(2))
-            .and_then(|length| root.entity_id_offset.checked_add(length))
-            .and_then(|end| end.checked_add(1));
-        let display_end = display_code_units
-            .and_then(|length| length.checked_mul(2))
-            .and_then(|length| root.display_name_offset.checked_add(length));
-        let components_gap =
-            display_end.and_then(|end| root.components_root_record_offset.checked_sub(end));
         let valid = stream.is_some()
             && unique_record_index
-            && valid_dynamic_class_tag(&root.class_tag)
-            && crate::act::is_entity_key(&root.entity_id)
-            && root.byte_offset.checked_add(7) == Some(root.record_index_offset)
-            && root.byte_offset.checked_add(22) == Some(root.instance_root_record_offset)
-            && root.byte_offset.checked_add(36) == Some(root.entity_id_offset)
-            && expected_tracked_offset == Some(root.tracked_entity_record_offset)
-            && root.tracked_entity_record_offset.checked_add(10) == Some(root.registry_flag_offset)
-            && root.registry_flag_offset.checked_add(8) == Some(root.display_name_offset)
-            && components_gap.is_some_and(|gap| (2..=9).contains(&gap));
+            && valid_dynamic_class_tag(&root.class_tag);
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,

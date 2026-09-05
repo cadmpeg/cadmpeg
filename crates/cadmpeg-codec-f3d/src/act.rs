@@ -581,22 +581,17 @@ fn decode_component_link(
     if cursor > frame.end || bytes.get(frame.payload_offset..cursor)? != [0; 10] {
         return None;
     }
-    let instance_root_record_offset = cursor.checked_add(1)?;
     let (instance_root_record, next) = marker_ref(bytes, cursor, 6, frame.end)?;
     cursor = next;
-    let entity_id_offset = cursor.checked_add(4)?;
     let (entity_id, next) = lp_utf16_bounded(bytes, cursor, 1..=1024)?;
     if next > frame.end || !is_entity_key(&entity_id) {
         return None;
     }
     cursor = next;
-    let tracked_entity_record_offset = cursor.checked_add(1)?;
     let (tracked_entity_record, next) = marker_ref(bytes, cursor, 5, frame.end)?;
     cursor = next;
-    let registry_flag_offset = cursor.checked_add(1)?;
     let (registry_flag, next) = marker_ref(bytes, cursor, 0, frame.end)?;
     cursor = next;
-    let display_name_offset = cursor.checked_add(4)?;
     let (display_name, next) = lp_utf16_bounded(bytes, cursor, 0..=1024)?;
     if next > frame.end {
         return None;
@@ -620,23 +615,17 @@ fn decode_component_link(
     if tracked_entity_record != 3 {
         return Some(ComponentLink::NonRoot);
     }
+    let layout = crate::records::ActRootLayout::new(
+        frame.start as u64, entity_id, display_name, (components_marker - cursor) as u64,
+    ).ok()?;
     Some(ComponentLink::Root(ActRootComponent {
         id: crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
-        byte_offset: frame.start as u64,
         record_index: frame.record_index,
-        record_index_offset: frame.record_index_offset as u64,
         class_tag: frame.class_tag.clone(),
         instance_root_record,
-        instance_root_record_offset: instance_root_record_offset as u64,
-        tracked_entity_record_offset: tracked_entity_record_offset as u64,
         components_root_record,
-        components_root_record_offset: (components_marker + 1) as u64,
         registry_flag,
-        registry_flag_offset: registry_flag_offset as u64,
-        entity_id,
-        entity_id_offset: entity_id_offset as u64,
-        display_name,
-        display_name_offset: display_name_offset as u64,
+        layout,
     }))
 }
 

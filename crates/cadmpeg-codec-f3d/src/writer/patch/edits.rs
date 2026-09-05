@@ -1386,8 +1386,9 @@ pub(crate) fn validate_act_root_edits(
         normalized.instance_root_record = before.instance_root_record;
         normalized.components_root_record = before.components_root_record;
         normalized.registry_flag = before.registry_flag;
-        normalized.entity_id.clone_from(&before.entity_id);
-        normalized.display_name.clone_from(&before.display_name);
+        normalized.layout = normalized.layout.with_strings(
+            before.layout.entity_id().into(), before.layout.display_name().into(),
+        ).map_err(CodecError::NotImplemented)?;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT root edit changes fields outside supported graph links and fixed-length strings: {id}"
@@ -1396,9 +1397,9 @@ pub(crate) fn validate_act_root_edits(
         if after == before {
             continue;
         }
-        if after.entity_id.encode_utf16().count() != before.entity_id.encode_utf16().count()
-            || after.display_name.encode_utf16().count()
-                != before.display_name.encode_utf16().count()
+        if after.layout.entity_id().encode_utf16().count() != before.layout.entity_id().encode_utf16().count()
+            || after.layout.display_name().encode_utf16().count()
+                != before.layout.display_name().encode_utf16().count()
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT root strings must retain their UTF-16 lengths: {id}"

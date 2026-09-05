@@ -89,8 +89,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
     act_root.registry_flag = crate::records::ActRegistryFlag::Off;
-    act_root.entity_id = "1_3".into();
-    act_root.display_name = "(Renamed)".into();
+    act_root.layout = act_root.layout.with_strings("1_3".into(), "(Renamed)".into()).unwrap();
     let act_entity = &mut native.act_entities[0];
     assert!(act_entity.table_entity_id_offset().is_some());
     assert!(act_entity.channel_entity_id_offset().is_some());
@@ -195,8 +194,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(act_root.instance_root_record, 71);
     assert_eq!(act_root.components_root_record, 72);
     assert_eq!(act_root.registry_flag, crate::records::ActRegistryFlag::Off);
-    assert_eq!(act_root.entity_id, "1_3");
-    assert_eq!(act_root.display_name, "(Renamed)");
+    assert_eq!(act_root.layout.entity_id(), "1_3");
+    assert_eq!(act_root.layout.display_name(), "(Renamed)");
     assert_eq!(
         f3d_native(round_trip.ir()).act_registry_channels[0].guid,
         "dddddddd-1111-2222-3333-eeeeeeeeeeee"
