@@ -17752,6 +17752,7 @@ pub struct ActRegistryChannel {
 /// ACT link from the document root entity to the instance/component registries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ActRootComponentWire", into = "ActRootComponentWire")]
 pub struct ActRootComponent {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -17767,10 +17768,6 @@ pub struct ActRootComponent {
     pub instance_root_record: u32,
     /// Byte offset of `instance_root_record`.
     pub instance_root_record_offset: u64,
-    /// Record index of the Design entity tracked by this link. Value `3`
-    /// identifies the document root.
-    #[serde(default)]
-    pub tracked_entity_record: u32,
     /// Byte offset of `tracked_entity_record`.
     #[serde(default)]
     pub tracked_entity_record_offset: u64,
@@ -17791,6 +17788,101 @@ pub struct ActRootComponent {
     /// Byte offset of the UTF-16 `display_name` code units.
     pub display_name_offset: u64,
 }
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ActRootComponentWire {
+    /// Globally unique deterministic identifier for this native record.
+    id: String,
+    /// Byte offset of this record in the ACT `BulkStream`.
+    byte_offset: u64,
+    /// Index of this record within the ACT `BulkStream`.
+    record_index: u32,
+    /// Byte offset of `record_index`.
+    record_index_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
+    class_tag: String,
+    /// Record index of the instance registry root.
+    instance_root_record: u32,
+    /// Byte offset of `instance_root_record`.
+    instance_root_record_offset: u64,
+    /// Record index of the Design entity tracked by this link. Value `3`
+    /// identifies the document root.
+    #[serde(default)]
+    tracked_entity_record: u32,
+    /// Byte offset of `tracked_entity_record`.
+    #[serde(default)]
+    tracked_entity_record_offset: u64,
+    /// Record index of the components registry root.
+    components_root_record: u32,
+    /// Byte offset of `components_root_record`.
+    components_root_record_offset: u64,
+    /// Source counter/registry flag; 0 and 1 are both valid.
+    registry_flag: ActRegistryFlag,
+    /// Byte offset of `registry_flag`.
+    registry_flag_offset: u64,
+    /// UTF-16LE-decoded design-entity id of the document root entity.
+    entity_id: String,
+    /// Byte offset of the UTF-16 `entity_id` code units.
+    entity_id_offset: u64,
+    /// Document display name as stored alongside this root-component link.
+    display_name: String,
+    /// Byte offset of the UTF-16 `display_name` code units.
+    display_name_offset: u64,
+}
+
+impl TryFrom<ActRootComponentWire> for ActRootComponent {
+    type Error = String;
+
+    fn try_from(wire: ActRootComponentWire) -> Result<Self, Self::Error> {
+        if wire.tracked_entity_record != 3 {
+            return Err("tracked_entity_record must identify document root record 3".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            record_index: wire.record_index,
+            record_index_offset: wire.record_index_offset,
+            class_tag: wire.class_tag,
+            instance_root_record: wire.instance_root_record,
+            instance_root_record_offset: wire.instance_root_record_offset,
+            tracked_entity_record_offset: wire.tracked_entity_record_offset,
+            components_root_record: wire.components_root_record,
+            components_root_record_offset: wire.components_root_record_offset,
+            registry_flag: wire.registry_flag,
+            registry_flag_offset: wire.registry_flag_offset,
+            entity_id: wire.entity_id,
+            entity_id_offset: wire.entity_id_offset,
+            display_name: wire.display_name,
+            display_name_offset: wire.display_name_offset,
+        })
+    }
+}
+
+impl From<ActRootComponent> for ActRootComponentWire {
+    fn from(root: ActRootComponent) -> Self {
+        Self {
+            id: root.id,
+            byte_offset: root.byte_offset,
+            record_index: root.record_index,
+            record_index_offset: root.record_index_offset,
+            class_tag: root.class_tag,
+            instance_root_record: root.instance_root_record,
+            instance_root_record_offset: root.instance_root_record_offset,
+            tracked_entity_record: 3,
+            tracked_entity_record_offset: root.tracked_entity_record_offset,
+            components_root_record: root.components_root_record,
+            components_root_record_offset: root.components_root_record_offset,
+            registry_flag: root.registry_flag,
+            registry_flag_offset: root.registry_flag_offset,
+            entity_id: root.entity_id,
+            entity_id_offset: root.entity_id_offset,
+            display_name: root.display_name,
+            display_name_offset: root.display_name_offset,
+        }
+    }
+}
+
 
 /// One design entry of the top-level `RedirectionsStream.dat` table
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).

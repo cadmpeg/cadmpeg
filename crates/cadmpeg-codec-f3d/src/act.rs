@@ -213,7 +213,7 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
             .collect::<Vec<_>>();
         let stream_roots = links
             .iter()
-            .filter(|link| link.tracked_entity_record == 3)
+            .filter(|link| matches!(link, ComponentLink::Root(_)))
             .count();
         if !links.is_empty() && stream_roots != 1 {
             return Err(CodecError::malformed(format_args!(
@@ -229,7 +229,10 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
         root_components.extend(
             links
                 .into_iter()
-                .filter(|link| link.tracked_entity_record == 3),
+                .filter_map(|link| match link {
+                    ComponentLink::Root(root) => Some(root),
+                    ComponentLink::NonRoot => None,
+                }),
         );
 
         entities.extend(merge_entities(&entry.name, table, groups)?);
@@ -564,11 +567,16 @@ fn decode_channel_group(
     }))
 }
 
+enum ComponentLink {
+    Root(ActRootComponent),
+    NonRoot,
+}
+
 fn decode_component_link(
     bytes: &[u8],
     frame: &RecordFrame,
     stream: &str,
-) -> Option<ActRootComponent> {
+) -> Option<ComponentLink> {
     let mut cursor = frame.payload_offset.checked_add(10)?;
     if cursor > frame.end || bytes.get(frame.payload_offset..cursor)? != [0; 10] {
         return None;
@@ -608,7 +616,11 @@ fn decode_component_link(
     if !bytes.get(end..frame.end)?.iter().all(|byte| *byte == 0) {
         return None;
     }
-    Some(ActRootComponent {
+    let registry_flag = crate::records::ActRegistryFlag::from_code(registry_flag)?;
+    if tracked_entity_record != 3 {
+        return Some(ComponentLink::NonRoot);
+    }
+    Some(ComponentLink::Root(ActRootComponent {
         id: crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
         byte_offset: frame.start as u64,
         record_index: frame.record_index,
@@ -616,17 +628,16 @@ fn decode_component_link(
         class_tag: frame.class_tag.clone(),
         instance_root_record,
         instance_root_record_offset: instance_root_record_offset as u64,
-        tracked_entity_record,
         tracked_entity_record_offset: tracked_entity_record_offset as u64,
         components_root_record,
         components_root_record_offset: (components_marker + 1) as u64,
-        registry_flag: crate::records::ActRegistryFlag::from_code(registry_flag)?,
+        registry_flag,
         registry_flag_offset: registry_flag_offset as u64,
         entity_id,
         entity_id_offset: entity_id_offset as u64,
         display_name,
         display_name_offset: display_name_offset as u64,
-    })
+    }))
 }
 
 /// Whether `key` has the ACT entity-key form `<segment id>_<entity id>`.

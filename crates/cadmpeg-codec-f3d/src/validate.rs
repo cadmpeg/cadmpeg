@@ -1096,7 +1096,6 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && unique_record_index
             && valid_dynamic_class_tag(&root.class_tag)
             && crate::act::is_entity_key(&root.entity_id)
-            && root.tracked_entity_record == 3
             && root.byte_offset.checked_add(7) == Some(root.record_index_offset)
             && root.byte_offset.checked_add(22) == Some(root.instance_root_record_offset)
             && root.byte_offset.checked_add(36) == Some(root.entity_id_offset)

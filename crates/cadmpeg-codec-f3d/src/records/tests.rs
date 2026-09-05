@@ -3499,3 +3499,25 @@ fn act_table_row_derives_the_entity_offset_and_rejects_wire_drift() {
     assert!(super::ActTableRow::new(u64::MAX - 13).is_err());
     assert!(super::ActTableRow::new(u64::MAX - 14).is_ok());
 }
+
+#[test]
+fn act_root_component_rejects_nonroot_tracking_on_the_wire() {
+    let wire = serde_json::json!({
+        "id": "stream:act-root-component#0", "byte_offset": 0,
+        "record_index": 1, "record_index_offset": 7, "class_tag": "261",
+        "instance_root_record": 2, "instance_root_record_offset": 22,
+        "tracked_entity_record": 3, "tracked_entity_record_offset": 43,
+        "components_root_record": 4, "components_root_record_offset": 63,
+        "registry_flag": 0, "registry_flag_offset": 53,
+        "entity_id": "0_3", "entity_id_offset": 36,
+        "display_name": "", "display_name_offset": 61
+    });
+    let root: super::ActRootComponent = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(root).unwrap(), wire);
+    for record in [0, 1, 2, 4, u32::MAX] {
+        let mut invalid = wire.clone();
+        invalid["tracked_entity_record"] = serde_json::json!(record);
+        let error = serde_json::from_value::<super::ActRootComponent>(invalid).unwrap_err();
+        assert!(error.to_string().contains("tracked_entity_record"));
+    }
+}
