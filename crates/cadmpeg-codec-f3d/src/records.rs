@@ -7227,6 +7227,8 @@ pub struct DesignConstructionOperandIdentity {
 /// Entity-tracking path embedded in a construction-operand identity chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignConstructionTrackingPathWire"))]
+#[serde(try_from = "DesignConstructionTrackingPathWire", into = "DesignConstructionTrackingPathWire")]
 pub struct DesignConstructionTrackingPath {
     /// Outer tracking-wrapper record identity.
     pub wrapper_record_index: u32,
@@ -7254,16 +7256,10 @@ pub struct DesignConstructionTrackingPath {
     pub kind_offset: u64,
     /// First optional related persistent identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_related_identity: Option<u64>,
-    /// Byte offset of the first related identity value.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_related_identity_offset: Option<u64>,
+    pub first_related_identity: Option<Located<u64>>,
     /// Second optional related persistent identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub second_related_identity: Option<u64>,
-    /// Byte offset of the second related identity value.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub second_related_identity_offset: Option<u64>,
+    pub second_related_identity: Option<Located<u64>>,
     /// Indexed record immediately following the carrier.
     pub following_record_index: u32,
     /// Following-record header byte offset.
@@ -7271,6 +7267,86 @@ pub struct DesignConstructionTrackingPath {
     /// Following-record dynamic class tag.
     pub following_class_tag: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignConstructionTrackingPathWire {
+    wrapper_record_index: u32,
+    wrapper_byte_offset: u64,
+    wrapper_class_tag: String,
+    carrier_record_index: u32,
+    carrier_byte_offset: u64,
+    carrier_class_tag: String,
+    primary_identity: u64,
+    primary_identity_offset: u64,
+    selector: i32,
+    selector_offset: u64,
+    kind: u32,
+    kind_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_related_identity: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_related_identity_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    second_related_identity: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    second_related_identity_offset: Option<u64>,
+    following_record_index: u32,
+    following_byte_offset: u64,
+    following_class_tag: String,
+}
+
+impl TryFrom<DesignConstructionTrackingPathWire> for DesignConstructionTrackingPath {
+    type Error = String;
+    fn try_from(wire: DesignConstructionTrackingPathWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            wrapper_record_index: wire.wrapper_record_index,
+            wrapper_byte_offset: wire.wrapper_byte_offset,
+            wrapper_class_tag: wire.wrapper_class_tag,
+            carrier_record_index: wire.carrier_record_index,
+            carrier_byte_offset: wire.carrier_byte_offset,
+            carrier_class_tag: wire.carrier_class_tag,
+            primary_identity: wire.primary_identity,
+            primary_identity_offset: wire.primary_identity_offset,
+            selector: wire.selector,
+            selector_offset: wire.selector_offset,
+            kind: wire.kind,
+            kind_offset: wire.kind_offset,
+            first_related_identity: Located::from_wire(wire.first_related_identity, wire.first_related_identity_offset, "first_related_identity")?,
+            second_related_identity: Located::from_wire(wire.second_related_identity, wire.second_related_identity_offset, "second_related_identity")?,
+            following_record_index: wire.following_record_index,
+            following_byte_offset: wire.following_byte_offset,
+            following_class_tag: wire.following_class_tag,
+        })
+    }
+}
+
+impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire {
+    fn from(value: DesignConstructionTrackingPath) -> Self {
+        Self {
+            wrapper_record_index: value.wrapper_record_index,
+            wrapper_byte_offset: value.wrapper_byte_offset,
+            wrapper_class_tag: value.wrapper_class_tag,
+            carrier_record_index: value.carrier_record_index,
+            carrier_byte_offset: value.carrier_byte_offset,
+            carrier_class_tag: value.carrier_class_tag,
+            primary_identity: value.primary_identity,
+            primary_identity_offset: value.primary_identity_offset,
+            selector: value.selector,
+            selector_offset: value.selector_offset,
+            kind: value.kind,
+            kind_offset: value.kind_offset,
+            first_related_identity: value.first_related_identity.map(|located| located.value),
+            first_related_identity_offset: value.first_related_identity.map(|located| located.offset),
+            second_related_identity: value.second_related_identity.map(|located| located.value),
+            second_related_identity_offset: value.second_related_identity.map(|located| located.offset),
+            following_record_index: value.following_record_index,
+            following_byte_offset: value.following_byte_offset,
+            following_class_tag: value.following_class_tag,
+        }
+    }
+}
+
 
 /// Fixed-width persistent identity following a construction-operand identity chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

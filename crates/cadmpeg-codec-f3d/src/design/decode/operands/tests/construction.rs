@@ -1397,10 +1397,10 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     let present = tracking_path(Some(113), Some(119));
     let present = parse_construction_tracking_path(&present, 0, 300, "361")
         .expect("tracking path with related identities");
-    assert_eq!(present.first_related_identity, Some(113));
-    assert_eq!(present.first_related_identity_offset, Some(110));
-    assert_eq!(present.second_related_identity, Some(119));
-    assert_eq!(present.second_related_identity_offset, Some(122));
+    assert_eq!(present.first_related_identity.map(|identity| identity.value), Some(113));
+    assert_eq!(present.first_related_identity.map(|identity| identity.offset), Some(110));
+    assert_eq!(present.second_related_identity.map(|identity| identity.value), Some(119));
+    assert_eq!(present.second_related_identity.map(|identity| identity.offset), Some(122));
     assert_eq!(present.following_byte_offset, 130);
 }
 

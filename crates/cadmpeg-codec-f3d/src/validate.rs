@@ -6350,22 +6350,22 @@ fn validate_construction_operand_identities<'a>(
         let transform = group.and_then(|group| group.frame.trailing_transforms.first());
         let tracking_shape = identity.tracking_path.as_ref().is_none_or(|path| {
             let mut cursor = path.carrier_byte_offset.saturating_add(73);
-            let first_offset = path.first_related_identity.map(|_| {
+            let first_located = if let Some(identity) = path.first_related_identity {
                 let offset = cursor.saturating_add(4);
                 cursor = cursor.saturating_add(12);
-                offset
-            });
-            if path.first_related_identity.is_none() {
+                identity.offset == offset
+            } else {
                 cursor = cursor.saturating_add(4);
-            }
-            let second_offset = path.second_related_identity.map(|_| {
+                true
+            };
+            let second_located = if let Some(identity) = path.second_related_identity {
                 let offset = cursor.saturating_add(4);
                 cursor = cursor.saturating_add(12);
-                offset
-            });
-            if path.second_related_identity.is_none() {
+                identity.offset == offset
+            } else {
                 cursor = cursor.saturating_add(4);
-            }
+                true
+            };
             path.carrier_record_index == path.wrapper_record_index.saturating_add(1)
                 && path.carrier_byte_offset == path.wrapper_byte_offset.saturating_add(33)
                 && records_by_index
@@ -6383,8 +6383,8 @@ fn validate_construction_operand_identities<'a>(
                 && path.primary_identity_offset == path.carrier_byte_offset.saturating_add(37)
                 && path.selector_offset == path.carrier_byte_offset.saturating_add(57)
                 && path.kind_offset == path.carrier_byte_offset.saturating_add(61)
-                && path.first_related_identity_offset == first_offset
-                && path.second_related_identity_offset == second_offset
+                && first_located
+                && second_located
                 && path.following_record_index == path.carrier_record_index.saturating_add(1)
                 && path.following_byte_offset == cursor
                 && records_by_index
