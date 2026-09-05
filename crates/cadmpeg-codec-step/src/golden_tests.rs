@@ -37,14 +37,14 @@ fn harness() -> Harness {
 /// The branches every fixture passes through, in golden-directory order.
 fn branches() -> [Branch; 2] {
     [
-        Branch::new("inspect", inspect_snapshot),
-        Branch::new("decode", decode_snapshot),
+        Branch::named("inspect", inspect_snapshot),
+        Branch::named("decode", decode_snapshot),
     ]
 }
 
 /// The single encode branch, run over [`ENCODE_FIXTURES`].
 fn encode_branch() -> [Branch; 1] {
-    [Branch::new("encode", encode_snapshot)]
+    [Branch::named("encode", encode_snapshot)]
 }
 
 /// Fixture stems the encode branch covers.

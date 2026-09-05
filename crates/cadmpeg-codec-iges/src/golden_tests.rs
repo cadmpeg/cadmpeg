@@ -32,9 +32,9 @@ fn harness() -> Harness {
 /// The branches this codec pins, in golden-directory order.
 fn branches() -> [Branch; 3] {
     [
-        Branch::new("inspect", inspect_snapshot),
-        Branch::new("decode", decode_snapshot),
-        Branch::new("encode", encode_snapshot),
+        Branch::named("inspect", inspect_snapshot),
+        Branch::named("decode", decode_snapshot),
+        Branch::named("encode", encode_snapshot),
     ]
 }
 
