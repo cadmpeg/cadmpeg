@@ -5020,3 +5020,52 @@ crate = "cadmpeg-asm"
 kind = "variant"
 item = "cadmpeg_asm::nurbs::proc_curve::SupportSlot"
 reason = "ASM-08: replace independent support-presence flags and geometry options with exclusive native support slots"
+
+[[change]]
+commit = "1bbd509697aa569172ee0fec74c15cc5fcd2abcb"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ExplicitFormula"
+reason = "ASM-07: share the explicit sweep profile and path and retain only form-specific fields in SweepTail"
+
+[[change]]
+commit = "1bbd509697aa569172ee0fec74c15cc5fcd2abcb"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ExplicitGuide"
+reason = "ASM-07: share the explicit sweep profile and path and retain only form-specific fields in SweepTail"
+
+[[change]]
+commit = "1bbd509697aa569172ee0fec74c15cc5fcd2abcb"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::ExplicitSurface"
+reason = "ASM-07: share the explicit sweep profile and path and retain only form-specific fields in SweepTail"
+
+[[change]]
+commit = "1bbd509697aa569172ee0fec74c15cc5fcd2abcb"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::LawDriven"
+reason = "ASM-07: share the explicit sweep profile and path and retain only form-specific fields in SweepTail"
+
+[[change]]
+commit = "1bbd509697aa569172ee0fec74c15cc5fcd2abcb"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Sweep"
+reason = "ASM-07: share the explicit sweep profile and path and retain only form-specific fields in SweepTail"
+
+[[change]]
+commit = "1bbd509697aa569172ee0fec74c15cc5fcd2abcb"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::nurbs::proc_surface::SweepTail"
+reason = "ASM-07: share the explicit sweep profile and path and retain only form-specific fields in SweepTail"
+
+[[change]]
+commit = "1bbd509697aa569172ee0fec74c15cc5fcd2abcb"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::SweepProfile"
+reason = "ASM-07: share the explicit sweep profile and path and retain only form-specific fields in SweepTail"
