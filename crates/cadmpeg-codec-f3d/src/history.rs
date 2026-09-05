@@ -5770,9 +5770,7 @@ fn surface_patch_edge_operand_slot(
     topology: &AsmHistoricalTopology,
 ) -> Option<i64> {
     let structure = structure?;
-    let [first, second] = structure.clauses.as_slice() else {
-        return None;
-    };
+    let [first, second] = &structure.clauses;
     let common_edge_reference = common_surface_patch_reference(
         first.edge_reference_ordinals,
         second.edge_reference_ordinals,

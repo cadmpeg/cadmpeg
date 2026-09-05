@@ -2337,3 +2337,19 @@ fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
     assert!(serde_json::from_value::<super::DesignTopologyRecipeEntry>(invalid)
         .unwrap_err().to_string().contains("common_incident_edge_ordinal"));
 }
+
+#[test]
+fn surface_patch_recipe_requires_two_clauses_and_preserves_root_wire() {
+    let clause = r#"{"fields":[[0],[0],[2,0],[0,0],[0],[0,0]],"face_reference_ordinals":[0,0],"edge_reference_ordinals":[0,0],"payload_entry_count":0,"entries":[]}"#;
+    let wire = format!(r#"{{"root":2,"clauses":[{clause},{clause}]}}"#);
+    let structure: super::DesignSurfacePatchRecipeStructure = serde_json::from_str(&wire).unwrap();
+    assert_eq!(serde_json::to_string(&structure).unwrap(), wire);
+    let invalid_root = wire.replace("\"root\":2", "\"root\":1");
+    assert!(serde_json::from_str::<super::DesignSurfacePatchRecipeStructure>(&invalid_root)
+        .unwrap_err().to_string().contains("root"));
+    for clauses in [String::new(), clause.to_owned(), format!("{clause},{clause},{clause}")] {
+        let invalid = format!(r#"{{"root":2,"clauses":[{clauses}]}}"#);
+        assert!(serde_json::from_str::<super::DesignSurfacePatchRecipeStructure>(&invalid)
+            .unwrap_err().to_string().contains("clauses"));
+    }
+}
