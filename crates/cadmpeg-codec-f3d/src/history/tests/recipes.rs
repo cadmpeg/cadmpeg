@@ -58,7 +58,6 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     use crate::records::{
         DesignFeatureTimeline, DesignRecipeReference, DesignVertexRecipe,
         DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier,
-        DesignWorkPointRule,
     };
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::Point3;
@@ -113,7 +112,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             point_record_byte_offset: 0,
             position: [4.0, 3.0, 0.0],
             position_offset: 0,
-            rule: DesignWorkPointRule::Vertex {
+            rule: crate::records::DesignWorkPointRule::try_from(crate::records::DesignWorkPointRuleForm::Vertex {
                 input: DesignWorkPointInput {
                     record_index: 202,
                     reference_offset: 0,
@@ -121,7 +120,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
                         recipe,
                     })),
                 },
-            },
+            }).expect("compatible WorkPoint rule"),
             reference_type_offset: 0,
         });
     }
@@ -239,7 +238,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let construction = scopes[1]
         .work_point_construction()
         .expect("WorkPoint construction");
-    let DesignWorkPointRule::Vertex { input } = &construction.rule else {
+    let crate::records::DesignWorkPointRuleForm::Vertex { input } = construction.rule.form() else {
         unreachable!("test construction is vertex-based")
     };
     let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()
@@ -253,13 +252,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let construction = ambiguous[1]
         .work_point_construction_mut()
         .expect("WorkPoint construction");
-    let DesignWorkPointRule::Vertex { input } = &mut construction.rule else {
-        unreachable!("test construction is vertex-based")
-    };
-    let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref_mut()
-    else {
-        unreachable!("test input carries a vertex recipe")
-    };
+    let recipe = construction.rule.vertex_recipes_mut().next().expect("vertex recipe");
     recipe.recipe_references[0]
         .candidate_faces
         .push(FaceId::mint(crate::ids::brep_entity_id(11)).expect("identity grammar"));
@@ -272,7 +265,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let construction = ambiguous[1]
         .work_point_construction()
         .expect("WorkPoint construction");
-    let DesignWorkPointRule::Vertex { input } = &construction.rule else {
+    let crate::records::DesignWorkPointRuleForm::Vertex { input } = construction.rule.form() else {
         unreachable!("test construction is vertex-based")
     };
     let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref()

@@ -1212,14 +1212,14 @@ fn work_point_rule_codes_select_typed_input_arities() {
         .expect("work point frame");
         assert_eq!(frame.rule.reference_type(), reference_type);
         assert_eq!(u32::try_from(frame.rule.inputs().len()).unwrap(), arity);
-        assert!(match frame.rule {
-            DesignWorkPointRule::CircleCenter { .. } => reference_type == 5,
-            DesignWorkPointRule::TwoEdgeIntersection { .. } => reference_type == 7,
-            DesignWorkPointRule::ThreePlaneIntersection { .. } => reference_type == 8,
-            DesignWorkPointRule::Vertex { .. } => reference_type == 10,
-            DesignWorkPointRule::EdgePlaneIntersection { .. } => reference_type == 14,
-            DesignWorkPointRule::DistanceOnEdge { .. } => reference_type == 20,
-            DesignWorkPointRule::Native { .. } => false,
+        assert!(match frame.rule.form() {
+            crate::records::DesignWorkPointRuleForm::CircleCenter { .. } => reference_type == 5,
+            crate::records::DesignWorkPointRuleForm::TwoEdgeIntersection { .. } => reference_type == 7,
+            crate::records::DesignWorkPointRuleForm::ThreePlaneIntersection { .. } => reference_type == 8,
+            crate::records::DesignWorkPointRuleForm::Vertex { .. } => reference_type == 10,
+            crate::records::DesignWorkPointRuleForm::EdgePlaneIntersection { .. } => reference_type == 14,
+            crate::records::DesignWorkPointRuleForm::DistanceOnEdge { .. } => reference_type == 20,
+            crate::records::DesignWorkPointRuleForm::Native { .. } => false,
         });
     }
 }
@@ -1236,8 +1236,8 @@ fn work_point_rule_code_with_wrong_arity_remains_native() {
     .expect("work point frame");
 
     assert!(matches!(
-        frame.rule,
-        DesignWorkPointRule::Native {
+        frame.rule.form(),
+        crate::records::DesignWorkPointRuleForm::Native {
             reference_type: 5,
             ref inputs,
         } if inputs.len() == 2
@@ -1247,19 +1247,19 @@ fn work_point_rule_code_with_wrong_arity_remains_native() {
 #[test]
 fn work_point_rule_rejects_an_incompatible_input_carrier() {
     let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
-    let mut frame = exact_work_point_construction(
+    let frame = exact_work_point_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &scope,
         &HashMap::new(),
     )
     .expect("work point frame");
-    assert!(frame.rule.carriers_are_compatible());
+    let mut wire = serde_json::to_value(&frame.rule).expect("serialize valid rule");
 
-    frame.rule.inputs_mut()[1].carrier = Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
-        operand_id: "f3d:native:edge-operand#wrong-role".into(),
-    }));
-    assert!(!frame.rule.carriers_are_compatible());
+    wire["inputs"][1]["carrier"] = serde_json::json!({
+        "kind": "edge_recipe", "operand_id": "f3d:native:edge-operand#wrong-role"
+    });
+    assert!(serde_json::from_value::<DesignWorkPointRule>(wire).is_err());
 }
 
 fn work_point_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {

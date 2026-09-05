@@ -1829,7 +1829,7 @@ fn project_work_point_construction(
     edge_operands: &[DesignEdgeOperand],
     scope_ids: &HashMap<(&str, u32), cadmpeg_ir::features::FeatureId>,
 ) -> Option<cadmpeg_ir::features::DatumPointConstruction> {
-    use crate::records::{DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule};
+    use crate::records::{DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRuleForm};
     use cadmpeg_ir::features::{
         DatumPlaneReference, DatumPointConstruction, EdgeSelection, VertexSelection,
     };
@@ -1865,21 +1865,21 @@ fn project_work_point_construction(
             .map(DatumPlaneReference::Feature)
     };
 
-    Some(match &construction.rule {
-        DesignWorkPointRule::CircleCenter { input } => {
+    Some(match construction.rule.form() {
+        DesignWorkPointRuleForm::CircleCenter { input } => {
             DatumPointConstruction::CircleCenter { edge: edge(input)? }
         }
-        DesignWorkPointRule::TwoEdgeIntersection { inputs } => {
+        DesignWorkPointRuleForm::TwoEdgeIntersection { inputs } => {
             DatumPointConstruction::TwoEdgeIntersection {
                 edges: [edge(&inputs[0])?, edge(&inputs[1])?],
             }
         }
-        DesignWorkPointRule::ThreePlaneIntersection { inputs } => {
+        DesignWorkPointRuleForm::ThreePlaneIntersection { inputs } => {
             DatumPointConstruction::ThreePlaneIntersection {
                 planes: Box::new([plane(&inputs[0])?, plane(&inputs[1])?, plane(&inputs[2])?]),
             }
         }
-        DesignWorkPointRule::Vertex { input } => {
+        DesignWorkPointRuleForm::Vertex { input } => {
             let DesignWorkPointInputCarrier::VertexRecipe { recipe } = input.carrier.as_deref()?
             else {
                 return None;
@@ -1906,13 +1906,13 @@ fn project_work_point_construction(
                 );
             DatumPointConstruction::Vertex { vertex }
         }
-        DesignWorkPointRule::EdgePlaneIntersection { inputs } => {
+        DesignWorkPointRuleForm::EdgePlaneIntersection { inputs } => {
             DatumPointConstruction::EdgePlaneIntersection {
                 edge: edge(&inputs[0])?,
                 plane: plane(&inputs[1])?,
             }
         }
-        DesignWorkPointRule::DistanceOnEdge { input } => {
+        DesignWorkPointRuleForm::DistanceOnEdge { input } => {
             let mut distances = parameters
                 .iter()
                 .map(|(_, parameter)| *parameter)
@@ -1926,7 +1926,7 @@ fn project_work_point_construction(
                 fraction: distance.evaluated_value,
             }
         }
-        DesignWorkPointRule::Native { .. } => return None,
+        DesignWorkPointRuleForm::Native { .. } => return None,
     })
 }
 
@@ -2689,19 +2689,14 @@ pub fn bind_work_point_sketch_point_constructions(
         if construction.is_some() {
             continue;
         }
-        let Some(crate::records::DesignWorkPointConstruction {
-            rule:
-                crate::records::DesignWorkPointRule::Vertex {
-                    input:
-                        crate::records::DesignWorkPointInput {
-                            carrier: Some(carrier),
-                            record_index,
-                            ..
-                        },
-                },
-            ..
-        }) = scope.work_point_construction()
-        else {
+        let Some(point) = scope.work_point_construction() else {
+            continue;
+        };
+        let crate::records::DesignWorkPointRuleForm::Vertex {
+            input: crate::records::DesignWorkPointInput {
+                carrier: Some(carrier), record_index, ..
+            },
+        } = point.rule.form() else {
             continue;
         };
         let crate::records::DesignWorkPointInputCarrier::SketchPoint { selection } =

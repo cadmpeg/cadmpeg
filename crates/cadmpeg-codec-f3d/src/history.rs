@@ -2665,12 +2665,7 @@ pub(crate) fn bind_vertex_recipe_history(
             construction.position[1] * 10.0,
             construction.position[2] * 10.0,
         );
-        for input in construction.rule.inputs_mut() {
-            let Some(crate::records::DesignWorkPointInputCarrier::VertexRecipe { recipe }) =
-                input.carrier.as_deref_mut()
-            else {
-                continue;
-            };
+        for recipe in construction.rule.vertex_recipes_mut() {
             recipe.resolution = None;
             let Some(state_id) = input_states.get(&scope_id).copied() else {
                 continue;

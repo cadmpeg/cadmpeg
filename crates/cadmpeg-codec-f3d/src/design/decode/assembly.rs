@@ -299,23 +299,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
 }
 
 fn point_rule_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
-    match rule {
-        DesignWorkPointRule::CircleCenter { input }
-        | DesignWorkPointRule::Vertex { input }
-        | DesignWorkPointRule::DistanceOnEdge { input } => vec![input.record_index],
-        DesignWorkPointRule::TwoEdgeIntersection { inputs } => {
-            inputs.iter().map(|input| input.record_index).collect()
-        }
-        DesignWorkPointRule::ThreePlaneIntersection { inputs } => {
-            inputs.iter().map(|input| input.record_index).collect()
-        }
-        DesignWorkPointRule::EdgePlaneIntersection { inputs } => {
-            inputs.iter().map(|input| input.record_index).collect()
-        }
-        DesignWorkPointRule::Native { inputs, .. } => {
-            inputs.iter().map(|input| input.record_index).collect()
-        }
-    }
+    rule.inputs().iter().map(|input| input.record_index).collect()
 }
 
 fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {

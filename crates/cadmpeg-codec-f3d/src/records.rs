@@ -5389,11 +5389,108 @@ pub struct DesignWorkPointSketchPointSelection {
     pub next_byte_offset: u64,
 }
 
+/// Construction rule whose input arity and decoded carrier roles agree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignWorkPointRuleForm", into = "DesignWorkPointRuleForm")]
+pub struct DesignWorkPointRule {
+    form: DesignWorkPointRuleForm,
+}
+
+impl DesignWorkPointRule {
+    pub(crate) fn from_serialized(reference_type: u32, inputs: Vec<DesignWorkPointInput>) -> Result<Self, String> {
+        let form = match (reference_type, inputs.as_slice()) {
+            (5, [input]) => DesignWorkPointRuleForm::CircleCenter {
+                input: input.clone(),
+            },
+            (7, [first, second]) => DesignWorkPointRuleForm::TwoEdgeIntersection {
+                inputs: [first.clone(), second.clone()],
+            },
+            (8, [first, second, third]) => DesignWorkPointRuleForm::ThreePlaneIntersection {
+                inputs: [first.clone(), second.clone(), third.clone()],
+            },
+            (10, [input]) => DesignWorkPointRuleForm::Vertex {
+                input: input.clone(),
+            },
+            (14, [first, second]) => DesignWorkPointRuleForm::EdgePlaneIntersection {
+                inputs: [first.clone(), second.clone()],
+            },
+            (20, [input]) => DesignWorkPointRuleForm::DistanceOnEdge {
+                input: input.clone(),
+            },
+            _ => DesignWorkPointRuleForm::Native {
+                reference_type,
+                inputs,
+            },
+        };
+        let is_edge = |input: &DesignWorkPointInput| {
+            input.carrier.as_deref().is_none_or(|carrier| matches!(carrier, DesignWorkPointInputCarrier::EdgeRecipe { .. }))
+        };
+        let is_vertex = |input: &DesignWorkPointInput| {
+            input.carrier.as_deref().is_none_or(|carrier| matches!(carrier, DesignWorkPointInputCarrier::VertexRecipe { .. } | DesignWorkPointInputCarrier::SketchPoint { .. }))
+        };
+        let is_plane = |input: &DesignWorkPointInput| {
+            input.carrier.as_deref().is_none_or(|carrier| matches!(carrier, DesignWorkPointInputCarrier::WorkPlane { .. }))
+        };
+        let compatible = match &form {
+            DesignWorkPointRuleForm::CircleCenter { input } | DesignWorkPointRuleForm::DistanceOnEdge { input } => is_edge(input),
+            DesignWorkPointRuleForm::TwoEdgeIntersection { inputs } => inputs.iter().all(is_edge),
+            DesignWorkPointRuleForm::ThreePlaneIntersection { inputs } => inputs.iter().all(is_plane),
+            DesignWorkPointRuleForm::Vertex { input } => is_vertex(input),
+            DesignWorkPointRuleForm::EdgePlaneIntersection { inputs } => is_edge(&inputs[0]) && is_plane(&inputs[1]),
+            DesignWorkPointRuleForm::Native { .. } => true,
+        };
+        if !compatible {
+            return Err("WorkPoint rule input carrier conflicts with its reference_type role".into());
+        }
+        Ok(Self { form })
+    }
+
+    pub fn form(&self) -> &DesignWorkPointRuleForm {
+        &self.form
+    }
+
+    pub fn reference_type(&self) -> u32 {
+        self.form.reference_type()
+    }
+
+    pub fn inputs(&self) -> &[DesignWorkPointInput] {
+        self.form.inputs()
+    }
+
+    pub(crate) fn vertex_recipes_mut(&mut self) -> impl Iterator<Item = &mut DesignVertexRecipe> {
+        self.form.inputs_mut().iter_mut().filter_map(|input| {
+            match input.carrier.as_deref_mut()? {
+                DesignWorkPointInputCarrier::VertexRecipe { recipe } => Some(recipe),
+                _ => None,
+            }
+        })
+    }
+}
+
+impl From<DesignWorkPointRule> for DesignWorkPointRuleForm {
+    fn from(value: DesignWorkPointRule) -> Self {
+        value.form
+    }
+}
+
+impl TryFrom<DesignWorkPointRuleForm> for DesignWorkPointRule {
+    type Error = String;
+
+    fn try_from(value: DesignWorkPointRuleForm) -> Result<Self, Self::Error> {
+        let canonical = Self::from_serialized(value.reference_type(), value.inputs().to_vec())?;
+        if std::mem::discriminant(&value) != std::mem::discriminant(canonical.form()) {
+            return Err("WorkPoint native rule reference_type and input arity identify a supported rule".into());
+        }
+        Ok(canonical)
+    }
+}
+
 /// Construction rule and exact input arity carried by a `WorkPoint` point-data record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DesignWorkPointRule {
+pub enum DesignWorkPointRuleForm {
     /// Center of one selected circular edge.
     CircleCenter {
         /// Selected circular-edge carrier.
@@ -5433,34 +5530,7 @@ pub enum DesignWorkPointRule {
     },
 }
 
-impl DesignWorkPointRule {
-    pub(crate) fn from_serialized(reference_type: u32, inputs: Vec<DesignWorkPointInput>) -> Self {
-        match (reference_type, inputs.as_slice()) {
-            (5, [input]) => Self::CircleCenter {
-                input: input.clone(),
-            },
-            (7, [first, second]) => Self::TwoEdgeIntersection {
-                inputs: [first.clone(), second.clone()],
-            },
-            (8, [first, second, third]) => Self::ThreePlaneIntersection {
-                inputs: [first.clone(), second.clone(), third.clone()],
-            },
-            (10, [input]) => Self::Vertex {
-                input: input.clone(),
-            },
-            (14, [first, second]) => Self::EdgePlaneIntersection {
-                inputs: [first.clone(), second.clone()],
-            },
-            (20, [input]) => Self::DistanceOnEdge {
-                input: input.clone(),
-            },
-            _ => Self::Native {
-                reference_type,
-                inputs,
-            },
-        }
-    }
-
+impl DesignWorkPointRuleForm {
     /// Return the serialized `refType` value.
     pub fn reference_type(&self) -> u32 {
         match self {
@@ -5486,7 +5556,7 @@ impl DesignWorkPointRule {
         }
     }
 
-    pub(crate) fn inputs_mut(&mut self) -> &mut [DesignWorkPointInput] {
+    fn inputs_mut(&mut self) -> &mut [DesignWorkPointInput] {
         match self {
             Self::CircleCenter { input }
             | Self::Vertex { input }
@@ -5497,35 +5567,6 @@ impl DesignWorkPointRule {
         }
     }
 
-    pub(crate) fn carriers_are_compatible(&self) -> bool {
-        let is_edge = |input: &DesignWorkPointInput| {
-            input.carrier.as_deref().is_none_or(|carrier| {
-                matches!(carrier, DesignWorkPointInputCarrier::EdgeRecipe { .. })
-            })
-        };
-        let is_vertex = |input: &DesignWorkPointInput| {
-            input.carrier.as_deref().is_none_or(|carrier| {
-                matches!(
-                    carrier,
-                    DesignWorkPointInputCarrier::VertexRecipe { .. }
-                        | DesignWorkPointInputCarrier::SketchPoint { .. }
-                )
-            })
-        };
-        let is_plane = |input: &DesignWorkPointInput| {
-            input.carrier.as_deref().is_none_or(|carrier| {
-                matches!(carrier, DesignWorkPointInputCarrier::WorkPlane { .. })
-            })
-        };
-        match self {
-            Self::CircleCenter { input } | Self::DistanceOnEdge { input } => is_edge(input),
-            Self::TwoEdgeIntersection { inputs } => inputs.iter().all(is_edge),
-            Self::ThreePlaneIntersection { inputs } => inputs.iter().all(is_plane),
-            Self::Vertex { input } => is_vertex(input),
-            Self::EdgePlaneIntersection { inputs } => is_edge(&inputs[0]) && is_plane(&inputs[1]),
-            Self::Native { .. } => true,
-        }
-    }
 }
 
 /// Exact solved construction carried by a `WorkPoint` scope.

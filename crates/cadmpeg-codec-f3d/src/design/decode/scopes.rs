@@ -8050,7 +8050,7 @@ pub(crate) fn exact_point_data_construction<'a>(
                     rule: DesignWorkPointRule::from_serialized(
                         level.reference_type,
                         level.inputs.clone(),
-                    ),
+                    ).ok()?,
                     reference_type_offset: u64::try_from(level.reference_type_at).ok()?,
                 });
             }
