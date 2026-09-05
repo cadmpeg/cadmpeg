@@ -80,33 +80,77 @@ pub enum ByteTool {
     Cmp(CmpArgs),
 }
 
-/// The file a single-input byte tool reads, under either spelling.
-///
-/// The positional form is canonical; `--input FILE` is a tolerated guessed
-/// spelling. Exactly one of the pair must be present, and giving both is a
-/// clap conflict error.
-#[derive(Debug, Args)]
+/// One resolved input file and any positional search pattern caught beside it.
+#[derive(Debug)]
 pub struct FileArg {
-    /// File to read.
-    #[arg(value_name = "FILE", required_unless_present = "input_flag")]
-    pub file: Option<PathBuf>,
-    /// Tolerated spelling of the positional file.
-    #[arg(
-        long = "input",
-        value_name = "FILE",
-        hide = true,
-        conflicts_with = "file"
-    )]
-    pub input_flag: Option<PathBuf>,
+    path: PathBuf,
+    misplaced: Option<PathBuf>,
 }
 
 impl FileArg {
-    /// Returns the file under whichever spelling was given.
+    /// Returns the resolved input path.
     pub fn path(&self) -> &Path {
-        self.file
-            .as_deref()
-            .or(self.input_flag.as_deref())
-            .expect("clap requires one file spelling")
+        &self.path
+    }
+}
+
+impl clap::Args for FileArg {
+    fn augment_args(command: clap::Command) -> clap::Command {
+        let input = clap::Arg::new("input_flag")
+            .long("input")
+            .value_name("FILE")
+            .help("Tolerated spelling of the positional file")
+            .hide(true)
+            .value_parser(clap::value_parser!(PathBuf));
+        let input = if command.get_name() == "find" {
+            input
+        } else {
+            input.conflicts_with("file")
+        };
+        let help = if command.get_name() == "find" {
+            "File to search"
+        } else {
+            "File to read"
+        };
+        command
+            .arg(
+                clap::Arg::new("file")
+                    .value_name("FILE")
+                    .help(help)
+                    .required_unless_present("input_flag")
+                    .value_parser(clap::value_parser!(PathBuf)),
+            )
+            .arg(input)
+    }
+
+    fn augment_args_for_update(command: clap::Command) -> clap::Command {
+        Self::augment_args(command)
+    }
+}
+
+impl clap::FromArgMatches for FileArg {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        let file = matches.get_one::<PathBuf>("file");
+        let flag = matches.get_one::<PathBuf>("input_flag");
+        match (file, flag) {
+            (Some(path), None) | (None, Some(path)) => Ok(Self {
+                path: path.clone(),
+                misplaced: None,
+            }),
+            (Some(stray), Some(path)) => Ok(Self {
+                path: path.clone(),
+                misplaced: Some(stray.clone()),
+            }),
+            (None, None) => Err(clap::Error::raw(
+                clap::error::ErrorKind::MissingRequiredArgument,
+                "file is required",
+            )),
+        }
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
     }
 }
 
@@ -155,14 +199,8 @@ pub struct ReadArgs {
 #[derive(Debug, Args)]
 #[command(group(clap::ArgGroup::new("needle").args(["hex", "ascii", "utf16le"])))]
 pub struct FindArgs {
-    /// File to search.
-    #[arg(value_name = "FILE", required_unless_present = "input_flag")]
-    pub file: Option<PathBuf>,
-    /// Tolerated spelling of the positional file. Deliberately not a clap
-    /// conflict with the positional: when both appear, the positional slot
-    /// caught a misplaced search pattern, and the runner explains that.
-    #[arg(long = "input", value_name = "FILE", hide = true)]
-    pub input_flag: Option<PathBuf>,
+    #[command(flatten)]
+    pub file: FileArg,
     /// Rejected placeholder: the pattern belongs to `--hex`, `--ascii`, or
     /// `--utf16le`, because a bare word cannot say how to encode it.
     #[arg(hide = true)]
@@ -200,24 +238,14 @@ enum Needle<'a> {
 }
 
 impl FindArgs {
-    /// File under whichever spelling was given.
-    ///
-    /// `mode` rejects the both-present case first: `--input FILE` plus a
-    /// leftover positional is a misplaced search pattern, not a clap conflict.
-    fn path(&self) -> &Path {
-        self.file
-            .as_deref()
-            .or(self.input_flag.as_deref())
-            .expect("clap requires one file spelling")
-    }
-
     /// Resolves the flat clap fields into one search mode.
     fn mode(&self) -> Result<Needle<'_>> {
-        let misplaced = match (&self.input_flag, &self.file) {
-            (Some(_), Some(stray)) => Some(stray.display().to_string()),
-            (Some(_), None) | (None, Some(_)) => self.misplaced_pattern.clone(),
-            (None, None) => unreachable!("clap requires one file spelling"),
-        };
+        let misplaced = self
+            .file
+            .misplaced
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .or_else(|| self.misplaced_pattern.clone());
         if let Some(stray) = misplaced {
             bail!(
                 "`{stray}` is an extra positional argument; the search pattern is named by a flag \
@@ -463,7 +491,7 @@ fn read(args: &ReadArgs, endian: numeric::Endian) -> Result<()> {
 }
 
 fn find(args: &FindArgs, needle: Needle<'_>) -> Result<()> {
-    let file = args.path();
+    let file = args.file.path();
     let (pattern, described) = match needle {
         Needle::Hex(text) => (search::parse_pattern(text), format!("hex {text}")),
         Needle::Ascii(text) => (search::ascii_pattern(text), format!("ascii {text:?}")),
