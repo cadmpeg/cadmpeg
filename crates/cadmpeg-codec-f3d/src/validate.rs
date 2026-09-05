@@ -936,7 +936,6 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .channels
                         .keys()
                         .all(|name| !name.is_empty() && name.len() <= 128 && name.is_ascii())
-                    && group.channels.values().all(|guid| valid_design_guid(&guid.value))
                     && group.entity_id_offset.is_some_and(|entity_offset| {
                         group.channels.values().all(|guid| {
                                 let guid_offset = guid.offset;

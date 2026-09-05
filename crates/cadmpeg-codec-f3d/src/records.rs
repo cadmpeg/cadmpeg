@@ -17459,7 +17459,7 @@ pub struct ActChannelGroup {
     pub record_index_offset: u64,
     pub entity_id_offset: Option<u64>,
     pub class_tag: String,
-    pub channels: BTreeMap<String, Located<String>>,
+    pub channels: BTreeMap<String, Located<DesignGuidText>>,
     pub class_tail: Option<ActClassTail>,
 }
 
@@ -17625,8 +17625,8 @@ impl TryFrom<ActEntitySerde> for ActEntity {
                 entity_id_offset: wire.channel_entity_id_offset,
                 class_tag,
                 channels: wire.channels.into_iter().zip(wire.channel_guid_offsets)
-                    .map(|((name, value), (_, offset))| (name, Located { value, offset }))
-                    .collect(),
+                    .map(|((name, value), (_, offset))| Ok((name, Located { value: value.try_into()?, offset })))
+                    .collect::<Result<_, String>>()?,
                 class_tail: match (wire.channel_class_tail, wire.channel_class_tail_offset) {
                     (bytes, None) if bytes.is_empty() => None,
                     (bytes, Some(offset)) => Some(ActClassTail::new(bytes, offset)?),
@@ -17669,7 +17669,7 @@ impl From<ActEntity> for ActEntitySerde {
             ActEntityMembership::TableOnly(_) => (BTreeMap::new(), BTreeMap::new(), Vec::new(), None),
             ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
                 let (channels, offsets) = group.channels.into_iter()
-                    .map(|(name, guid)| ((name.clone(), guid.value), (name, guid.offset)))
+                    .map(|(name, guid)| ((name.clone(), guid.value.as_str().to_owned()), (name, guid.offset)))
                     .unzip();
                 let (tail, tail_offset) = match group.class_tail {
                     Some(tail) => (tail.bytes, Some(tail.offset)),

@@ -55,7 +55,7 @@ fn generated_f3d_rejects_act_binding_divergence() {
             .channel_group_mut()
             .unwrap()
             .channels
-            .get_mut("Appearance").unwrap().value = "dddddddd-1111-2222-3333-eeeeeeeeeeee".into();
+            .get_mut("Appearance").unwrap().value = String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee").try_into().unwrap();
     });
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())

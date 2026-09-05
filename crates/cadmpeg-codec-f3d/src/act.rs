@@ -407,7 +407,7 @@ struct ChannelGroup {
     record_index_offset: usize,
     entity_id: Option<Located<String, usize>>,
     class_tag: String,
-    channels: BTreeMap<String, Located<String>>,
+    channels: BTreeMap<String, Located<crate::records::DesignGuidText>>,
     class_tail: Option<ActClassTail>,
 }
 
@@ -520,7 +520,7 @@ fn decode_channel_group(
         else {
             return Ok(None);
         };
-        if channels.insert(name.clone(), Located { value: guid, offset: (after_name + 4) as u64 }).is_some() {
+        if channels.insert(name.clone(), Located { value: guid.try_into().map_err(CodecError::malformed)?, offset: (after_name + 4) as u64 }).is_some() {
             return Err(CodecError::malformed(format_args!(
                 "duplicate F3D ACT channel {name:?}: {stream}@{}",
                 frame.start
@@ -684,7 +684,7 @@ mod tests {
             class_tag: "261".into(),
             channels: BTreeMap::from([(
                 "Appearance".into(),
-                Located { value: "11111111-2222-3333-4444-555555555555".into(), offset: 120 },
+                Located { value: String::from("11111111-2222-3333-4444-555555555555").try_into().unwrap(), offset: 120 },
             )]),
             class_tail: None,
         }

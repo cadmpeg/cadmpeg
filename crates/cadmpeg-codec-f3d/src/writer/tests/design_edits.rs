@@ -93,7 +93,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let act_entity = &mut native.act_entities[0];
     assert!(act_entity.table_entity_id_offset().is_some());
     assert!(act_entity.channel_entity_id_offset().is_some());
-    act_entity.channel_group_mut().unwrap().channels.get_mut("Appearance").unwrap().value = "dddddddd-1111-2222-3333-eeeeeeeeeeee".into();
+    act_entity.channel_group_mut().unwrap().channels.get_mut("Appearance").unwrap().value = String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee").try_into().unwrap();
     let binding = &mut edited.model.appearance_bindings[0];
     binding.channels.insert(
         "Appearance".into(),

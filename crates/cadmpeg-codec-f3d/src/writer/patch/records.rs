@@ -94,7 +94,7 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
             patch_bytes_at(bytes, offset, &encoded_id, "ACT entity id")?;
         }
         for guid in entity.channel_group().into_iter().flat_map(|group| group.channels.values()) {
-            let encoded = guid.value
+            let encoded = guid.value.as_str()
                 .encode_utf16()
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>();
@@ -167,17 +167,6 @@ fn patch_utf16_if_changed(
         .flat_map(u16::to_le_bytes)
         .collect::<Vec<_>>();
     patch_bytes_at(bytes, offset, &encoded, field)
-}
-
-pub(crate) fn canonical_guid(value: &str) -> bool {
-    value.len() == 36
-        && value.bytes().enumerate().all(|(index, byte)| {
-            if matches!(index, 8 | 13 | 18 | 23) {
-                byte == b'-'
-            } else {
-                byte.is_ascii_hexdigit()
-            }
-        })
 }
 
 pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecError> {

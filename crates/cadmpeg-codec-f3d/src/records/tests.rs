@@ -3451,6 +3451,12 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
         let error = serde_json::from_value::<super::ActEntity>(invalid).unwrap_err();
         assert!(error.to_string().contains("channels and channel_guid_offsets"));
     }
+    for guid in ["", "11111111-2222-3333-4444-55555555555z"] {
+        let mut invalid = wire.clone();
+        invalid["channels"]["Appearance"] = serde_json::json!(guid);
+        let error = serde_json::from_value::<super::ActEntity>(invalid).unwrap_err();
+        assert!(error.to_string().contains("GUID"));
+    }
     let mut invalid = wire;
     invalid["channels"] = serde_json::json!({});
     assert!(serde_json::from_value::<super::ActEntity>(invalid).is_err());

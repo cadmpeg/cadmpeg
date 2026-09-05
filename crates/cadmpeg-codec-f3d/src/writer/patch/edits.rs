@@ -21,7 +21,7 @@ use cadmpeg_ir::transform::Transform;
 use super::geometry::{
     orthonormal_pair, valid_edited_curve_structure, valid_edited_nurbs_direction,
 };
-use super::records::{canonical_guid, native_stream};
+use super::records::native_stream;
 use crate::native::F3dNative;
 use crate::writer::generate::native_geometry::{native_support_pcurve, pcurve_support_geometry};
 use crate::writer::primitives::{finite_point, finite_vector, normalized_face_sense_to_native};
@@ -1066,13 +1066,13 @@ pub(crate) fn validate_act_appearance_bindings(
                 entities
                     .iter()
                     .copied()
-                    .find(|entity| before.channels.iter().eq(act_channel_values(entity)))
+                    .find(|entity| before.channels.iter().map(|(name, guid)| (name, guid.as_str())).eq(act_channel_values(entity)))
             });
         let after_entity = before_entity.and_then(|before_entity| {
             target_entities_by_id
                 .get(before_entity.id.as_str())
                 .copied()
-                .filter(|entity| after.channels.iter().eq(act_channel_values(entity)))
+                .filter(|entity| after.channels.iter().map(|(name, guid)| (name, guid.as_str())).eq(act_channel_values(entity)))
         });
         if before_entity.is_none() || after_entity.is_none() {
             return Err(CodecError::NotImplemented(format!(
@@ -1118,7 +1118,7 @@ pub(crate) fn validate_act_appearance_bindings(
         let derived_binding = matching_bindings.is_some_and(|bindings| {
             bindings
                 .iter()
-                .any(|(channels, _)| channels.iter().eq(act_channel_values(before)))
+                .any(|(channels, _)| channels.iter().map(|(name, guid)| (name, guid.as_str())).eq(act_channel_values(before)))
         });
         let assignment_synchronized = assignment_entities.contains(after.entity_id.as_str());
         if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
@@ -1136,7 +1136,7 @@ pub(crate) fn validate_act_appearance_bindings(
                     ))
                     .is_some_and(|binding| {
                         binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
-                            && binding.channels.iter().eq(act_channel_values(after))
+                            && binding.channels.iter().map(|(name, guid)| (name, guid.as_str())).eq(act_channel_values(after))
                     })
             })
         });
@@ -1153,9 +1153,9 @@ pub(crate) fn validate_act_appearance_bindings(
     Ok(())
 }
 
-fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&String, &String)> {
+fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&String, &str)> {
     entity.channel_group().into_iter().flat_map(|group| &group.channels)
-        .map(|(name, guid)| (name, &guid.value))
+        .map(|(name, guid)| (name, guid.value.as_str()))
 }
 
 pub(crate) fn validate_act_entity_edits(
@@ -1210,17 +1210,6 @@ pub(crate) fn validate_act_entity_edits(
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT entity id {id} must retain its UTF-16 length"
             )));
-        }
-        if let (Some(before_group), Some(after_group)) = (before.channel_group(), after.channel_group()) {
-            for ((_, before_guid), (name, guid)) in before_group.channels.iter().zip(&after_group.channels) {
-                if guid.value.encode_utf16().count() != before_guid.value.encode_utf16().count()
-                    || !canonical_guid(&guid.value)
-                {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D ACT channel {name} on {id} must be a same-length canonical GUID"
-                    )));
-                }
-            }
         }
         edits
             .entry(native_stream(id, ":act-entity#")?)
