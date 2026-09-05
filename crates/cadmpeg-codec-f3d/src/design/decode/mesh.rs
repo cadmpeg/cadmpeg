@@ -32,7 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::{DesignMeshScope, DesignMeshCollectionOwner, DesignMeshSceneNode, DesignMeshSceneState, DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureTable, MeshAffineTransform};
+use crate::records::{DesignMeshCollection, DesignMeshScope, DesignMeshCollectionOwner, DesignMeshSceneNode, DesignMeshSceneState, DesignMeshFixedRecord, DesignMeshEntryName, DesignMeshPlacement, DesignMeshGuid, DesignGuidText, DesignMeshTextureTable, MeshAffineTransform};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -248,14 +248,11 @@ struct MeshBodyRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshCollectionRecord {
-    identity: DesignMeshRecordIdentity,
-    base_record: DesignMeshRecordIdentity,
+    collection: DesignMeshCollection,
     texture_table_record_index: u32,
     body_records: Vec<crate::records::Located<u32>>,
     count_offsets: [u64; 2],
-    texture_reference_offset: u64,
     owner_record_index: u32,
-    owner_reference_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -653,8 +650,7 @@ fn parse_mesh_collection_record(
         let owner_record_index = exact_local_record_index(record, owner_at)?;
         (owner_at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)? == record.len()).then_some(())?;
         Some(MeshCollectionRecord {
-            identity,
-            base_record,
+            collection: DesignMeshCollection::new(identity, base_record).ok()?,
             texture_table_record_index,
             body_records,
             count_offsets: [
@@ -664,12 +660,7 @@ fn parse_mesh_collection_record(
                     mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
                 )?,
             ],
-            texture_reference_offset: source_offset(
-                frame.start,
-                mesh_collection::TEXTURE_TABLE_REFERENCE,
-            )?,
             owner_record_index,
-            owner_reference_offset: source_offset(frame.start, owner_at)?,
         })
     })();
     parsed.ok_or_else(|| malformed_frame("mesh-collection", frame.entity_id))
@@ -1126,7 +1117,7 @@ where
     )?;
     let collection_record_indices = collections
         .iter()
-        .map(|collection| collection.identity.record_index())
+        .map(|collection| collection.collection.record().record_index())
         .collect::<HashSet<_>>();
     let mut texture_tables = unique_record_map(
         typed_primary_frames(
@@ -1230,7 +1221,7 @@ where
                 collection.body_records.iter().map(|row| &row.value).all(|body_index| {
                     bodies.get(body_index).is_some_and(|body| {
                         body.scope_record_index == **scope_index
-                            && body.collection_record_index == collection.identity.record_index()
+                            && body.collection_record_index == collection.collection.record().record_index()
                     })
                 })
             })
@@ -1256,7 +1247,7 @@ where
                 .collect::<Vec<_>>();
             return Err(CodecError::malformed(format_args!(
                 "F3D Design mesh feature graph violates `each mesh collection has exactly one scope with the same ordered body list` in {stream}: collection {} bodies {:?}, scope lists {:?}, body links {:?}",
-                collection.identity.record_index(),
+                collection.collection.record().record_index(),
                 collection.body_records.iter().map(|row| row.value).collect::<Vec<_>>(),
                 scope_lists,
                 body_links,
@@ -1273,7 +1264,7 @@ where
         let collection_owner = collection_owners
             .get(&collection.owner_record_index)
             .filter(|owner| {
-                owner.collection_record_index == collection.identity.record_index()
+                owner.collection_record_index == collection.collection.record().record_index()
                     && used_collection_owners.insert(owner.owner.record().record_index())
             })
             .ok_or_else(|| {
@@ -1390,8 +1381,7 @@ where
         features.push(DesignMeshFeature {
             id: ids::native_design_mesh_feature_id(source_entry_name, scope_offset),
             scope: scope.scope,
-            collection_record: collection.identity,
-            collection_base_record: collection.base_record,
+            collection: collection.collection,
             texture_table: DesignMeshTextureTable::new(texture_table.identity, textures)
                 .map_err(|message| malformed_mesh_graph(&stream, &message))?,
             body_count_offsets: [
@@ -1399,9 +1389,7 @@ where
                 collection.count_offsets[0],
                 collection.count_offsets[1],
             ],
-            texture_table_reference_offset: collection.texture_reference_offset,
             collection_owner: collection_owner.owner.clone(),
-            collection_owner_reference_offset: collection.owner_reference_offset,
             bodies: feature_bodies,
         });
     }
@@ -2283,7 +2271,7 @@ mod tests {
             panic!("one mesh feature");
         };
         assert_eq!(feature.scope.record().record_index(), 109);
-        assert_eq!(feature.collection_record.record_index(), 100);
+        assert_eq!(feature.collection.record().record_index(), 100);
         assert_eq!(feature.texture_table.record().record_index(), 101);
         assert_eq!(feature.bodies.iter().map(|body| body.placement.record().record_index()).collect::<Vec<_>>(), [104]);
         assert!(feature.texture_table.resources().is_empty());

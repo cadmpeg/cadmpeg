@@ -14545,6 +14545,47 @@ impl DesignMeshScope {
     }
 }
 
+/// Mesh collection with its same-index nested base and complete body-reference run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignMeshCollection {
+    record: DesignMeshRecordIdentity,
+    base_class_tag: DesignClassTag,
+}
+impl DesignMeshCollection {
+    pub fn new(record: DesignMeshRecordIdentity, base_record: DesignMeshRecordIdentity) -> Result<Self, String> {
+        let prefix = crate::layout::paramesh_mesh_collection_prefix::LEN as u64;
+        let fixed_length = prefix + crate::layout::paramesh_mesh_collection_base_prefix::LEN as u64 + 11;
+        let body_bytes = record.frame_length().checked_sub(fixed_length)
+            .ok_or("collection_record.frame_length must contain both prefixes and the owner reference")?;
+        if body_bytes % 11 != 0 || u32::try_from(body_bytes / 11).is_err() {
+            return Err("collection_record.frame_length must contain a u32-counted body-reference run".into());
+        }
+        if base_record.record_index() != record.record_index()
+            || base_record.byte_offset() != record.byte_offset() + prefix
+            || base_record.frame_length() != record.frame_length() - prefix {
+            return Err("collection_base_record must be the same-index nested base of collection_record".into());
+        }
+        Ok(Self { record, base_class_tag: base_record.class_tag })
+    }
+    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn base_record(&self) -> DesignMeshRecordIdentity {
+        let prefix = crate::layout::paramesh_mesh_collection_prefix::LEN as u64;
+        DesignMeshRecordIdentity {
+            class_tag: self.base_class_tag.clone(), record_index: self.record.record_index,
+            byte_offset: self.record.byte_offset() + prefix,
+            frame_length: self.record.frame_length() - prefix,
+        }
+    }
+    pub fn body_count(&self) -> u64 {
+        (self.record.frame_length() - crate::layout::paramesh_mesh_collection_prefix::LEN as u64
+            - crate::layout::paramesh_mesh_collection_base_prefix::LEN as u64 - 11) / 11
+    }
+    pub fn texture_table_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + crate::layout::paramesh_mesh_collection_prefix::TEXTURE_TABLE_REFERENCE as u64
+    }
+    pub fn owner_reference_offset(&self) -> u64 { self.record.byte_offset() + self.record.frame_length() - 11 }
+}
+
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -14555,20 +14596,14 @@ pub struct DesignMeshFeature {
     pub id: String,
     /// Feature scope and its closing owner reference.
     pub scope: DesignMeshScope,
-    /// Typed `ParaMesh` body-collection record.
-    pub collection_record: DesignMeshRecordIdentity,
-    /// Paired same-index base record inside the collection.
-    pub collection_base_record: DesignMeshRecordIdentity,
+    /// Mesh collection and its nested base.
+    pub collection: DesignMeshCollection,
     /// Typed `ParaMesh` texture-table record owned by the collection.
     pub texture_table: DesignMeshTextureTable,
     /// Three equal body counts: scope, collection prefix, collection base.
     pub body_count_offsets: [u64; 3],
-    /// Byte offset of the collection's texture-table reference.
-    pub texture_table_reference_offset: u64,
     /// Typed Design owner of the mesh-body collection.
     pub collection_owner: DesignMeshCollectionOwner,
-    /// Byte offset of the collection's owner reference.
-    pub collection_owner_reference_offset: u64,
     /// Mesh bodies in the source collection order.
     pub bodies: Vec<DesignMeshBody>,
 }
@@ -14638,17 +14673,21 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         if scope.owner_reference_offset() != wire.scope_owner_reference_offset {
             return Err("scope_owner_reference_offset must locate the closing base owner reference".into());
         }
+        let collection = DesignMeshCollection::new(wire.collection_record, wire.collection_base_record)?;
+        if collection.texture_table_reference_offset() != wire.texture_table_reference_offset {
+            return Err("texture_table_reference_offset must locate the collection texture-table reference".into());
+        }
+        if collection.owner_reference_offset() != wire.collection_owner_reference_offset {
+            return Err("collection_owner_reference_offset must locate the terminal collection owner reference".into());
+        }
         Ok(Self {
             bodies,
             id: wire.id,
             scope,
-            collection_record: wire.collection_record,
-            collection_base_record: wire.collection_base_record,
+            collection,
             texture_table: DesignMeshTextureTable::from_wire(wire.texture_table_record, wire.texture_flags_count_offset, wire.texture_filename_count_offset, wire.textures)?,
             body_count_offsets: wire.body_count_offsets,
-            texture_table_reference_offset: wire.texture_table_reference_offset,
             collection_owner: DesignMeshCollectionOwner::new(wire.collection_owner_record, wire.collection_owner_backlink_offset)?,
-            collection_owner_reference_offset: wire.collection_owner_reference_offset,
         })
     }
 }
@@ -14675,13 +14714,13 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             id: value.id,
             scope_record: value.scope.record().clone(),
             scope_base_record: value.scope.base_record(),
-            collection_record: value.collection_record,
-            collection_base_record: value.collection_base_record,
+            collection_record: value.collection.record().clone(),
+            collection_base_record: value.collection.base_record(),
             texture_table_record,
             body_count_offsets: value.body_count_offsets,
-            texture_table_reference_offset: value.texture_table_reference_offset,
+            texture_table_reference_offset: value.collection.texture_table_reference_offset(),
             collection_owner_record: value.collection_owner.record,
-            collection_owner_reference_offset: value.collection_owner_reference_offset,
+            collection_owner_reference_offset: value.collection.owner_reference_offset(),
             collection_owner_backlink_offset,
             scope_owner_record_index: value.scope.owner_record_index(),
             scope_owner_reference_offset: value.scope.owner_reference_offset(),

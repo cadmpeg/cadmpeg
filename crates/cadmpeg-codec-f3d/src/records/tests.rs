@@ -881,10 +881,10 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
     });
     let base = serde_json::json!({
         "id": "mesh-feature", "scope_record": identity, "scope_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 270, "frame_length": 30},
-        "collection_record": identity, "collection_base_record": identity,
+        "collection_record": {"class_tag": "256", "record_index": 104, "byte_offset": 0, "frame_length": 95}, "collection_base_record": {"class_tag": "256", "record_index": 104, "byte_offset": 38, "frame_length": 57},
         "texture_table_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 29}, "body_count_offsets": [21, 31, 41],
         "body_record_indices": [104, 104], "scope_body_reference_offsets": [25, 36],
-        "collection_body_reference_offsets": [62, 73], "texture_table_reference_offset": 52,
+        "collection_body_reference_offsets": [62, 73], "texture_table_reference_offset": 27,
         "collection_owner_record": {"class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 273}, "collection_owner_reference_offset": 84,
         "collection_owner_backlink_offset": 362, "scope_owner_record_index": 109,
         "scope_owner_reference_offset": 289, "texture_flags_count_offset": 121,
@@ -2830,4 +2830,25 @@ fn mesh_scope_constructs_only_same_index_closing_bases() {
     }
     assert!(super::DesignMeshScope::new(identity(104, 100, 200), identity(104, 270, 30), 0).is_err());
     assert!(super::DesignMeshScope::new(identity(104, 100, 54), identity(104, 124, 30), 109).is_err());
+}
+
+#[test]
+fn mesh_collection_constructs_only_complete_nested_body_runs() {
+    let identity = |index, offset, length| super::DesignMeshRecordIdentity::new(
+        super::DesignClassTag::try_from("256".to_owned()).expect("class tag"), index, offset, length,
+    ).expect("record identity");
+    for count in [0, 1, 2, u64::from(u32::MAX)] {
+        let length = 73 + 11 * count;
+        let collection = super::DesignMeshCollection::new(identity(104, 100, length), identity(104, 138, length - 38)).expect("collection");
+        assert_eq!(collection.base_record(), identity(104, 138, length - 38));
+        assert_eq!(collection.body_count(), count);
+        assert_eq!(collection.texture_table_reference_offset(), 127);
+        assert_eq!(collection.owner_reference_offset(), 100 + length - 11);
+    }
+    for base in [identity(105, 138, 57), identity(104, 137, 57), identity(104, 138, 58)] {
+        assert!(super::DesignMeshCollection::new(identity(104, 100, 95), base).is_err());
+    }
+    for length in [72, 74, 73 + 11 * (u64::from(u32::MAX) + 1)] {
+        assert!(super::DesignMeshCollection::new(identity(104, 100, length), identity(104, 138, length - 38)).is_err());
+    }
 }
