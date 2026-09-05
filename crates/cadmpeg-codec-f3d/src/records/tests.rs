@@ -1062,7 +1062,58 @@ fn edge_flange_rows_preserve_wire_and_reject_parallel_mismatch() {
         };
         let expected = serde_json::to_string(&wire).unwrap();
         let native: super::DesignEdgeFlangeOperation = serde_json::from_str(&expected).unwrap();
-        assert_eq!(native.edges.len(), count as usize);
+        assert_eq!(native.shape.edges().count(), count as usize);
+        assert_eq!(serde_json::to_string(&native).unwrap(), expected);
+        for mode in [super::DesignEdgeWidthMode::Symmetric, super::DesignEdgeWidthMode::TwoSides,
+            super::DesignEdgeWidthMode::SymmetricPerEdge, super::DesignEdgeWidthMode::TwoSidesPerEdge] {
+            if count == 0 && matches!(mode, super::DesignEdgeWidthMode::SymmetricPerEdge | super::DesignEdgeWidthMode::TwoSidesPerEdge) {
+                continue;
+            }
+            let mut width_wire = wire.clone();
+            width_wire.width_mode = Some(mode);
+            width_wire.width_distance_owner_record_indices = match mode {
+                super::DesignEdgeWidthMode::Symmetric => vec![600],
+                super::DesignEdgeWidthMode::TwoSides => vec![600, 601],
+                super::DesignEdgeWidthMode::SymmetricPerEdge => (0..count).map(|index| 600 + index).collect(),
+                super::DesignEdgeWidthMode::TwoSidesPerEdge => (0..2 * count).map(|index| 600 + index).collect(),
+                super::DesignEdgeWidthMode::FullEdge => Vec::new(),
+            };
+            if mode == super::DesignEdgeWidthMode::TwoSidesPerEdge {
+                width_wire.width_distance_owner_record_indices_by_edge = (0..count).map(|index| [600 + 2 * index, 601 + 2 * index]).collect();
+            }
+            for source in [super::DesignEdgeFlangeWidthParameterSource::EdgeWidth, super::DesignEdgeFlangeWidthParameterSource::EdgeOffset] {
+                width_wire.width_parameter_source = source;
+                let expected = serde_json::to_string(&width_wire).unwrap();
+                let decoded = serde_json::from_str::<super::DesignEdgeFlangeOperation>(&expected);
+                if source == super::DesignEdgeFlangeWidthParameterSource::EdgeOffset && mode != super::DesignEdgeWidthMode::TwoSidesPerEdge {
+                    assert!(decoded.unwrap_err().to_string().contains("width_parameter_source"));
+                } else {
+                    assert_eq!(serde_json::to_string(&decoded.unwrap()).unwrap(), expected);
+                }
+            }
+            width_wire.width_parameter_source = super::DesignEdgeFlangeWidthParameterSource::EdgeWidth;
+            if matches!(mode, super::DesignEdgeWidthMode::SymmetricPerEdge | super::DesignEdgeWidthMode::TwoSidesPerEdge) {
+                let mut invalid = width_wire.clone();
+                invalid.width_distance_owner_record_indices.push(999);
+                if mode == super::DesignEdgeWidthMode::TwoSidesPerEdge {
+                    invalid.width_distance_owner_record_indices.push(1000);
+                    invalid.width_distance_owner_record_indices_by_edge.push([999, 1000]);
+                }
+                assert!(super::DesignEdgeFlangeOperation::try_from(invalid).unwrap_err().contains("selected edges"));
+            }
+            width_wire.height_extent = super::DesignEdgeFlangeHeightExtent::ToObject {
+                target_group_record_index: 700, target_operand_record_index: 703,
+                offset_owner_record_index: 710, reference_record_indices: [720, 721],
+            };
+            assert!(super::DesignEdgeFlangeOperation::try_from(width_wire).unwrap_err().contains("height_extent"));
+        }
+        let mut to_object = wire.clone();
+        to_object.height_extent = super::DesignEdgeFlangeHeightExtent::ToObject {
+            target_group_record_index: 700, target_operand_record_index: 703,
+            offset_owner_record_index: 710, reference_record_indices: [720, 721],
+        };
+        let expected = serde_json::to_string(&to_object).unwrap();
+        let native: super::DesignEdgeFlangeOperation = serde_json::from_str(&expected).unwrap();
         assert_eq!(serde_json::to_string(&native).unwrap(), expected);
         for field in [
             "edge_wrapper_record_indices",

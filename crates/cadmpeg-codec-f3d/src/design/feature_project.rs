@@ -3450,7 +3450,7 @@ pub(crate) fn project_edge_flange(
         })
     };
 
-    let height = match &operation.height_extent {
+    let height = match &operation.shape.height() {
         DesignEdgeFlangeHeightExtent::Distance => SheetMetalFlangeHeight::Distance(design_length(
             parameter(operation.height_owner_record_index, "FlangeHeight")?,
         )?),
@@ -3517,40 +3517,14 @@ pub(crate) fn project_edge_flange(
         "FlangeAngle",
     )?)?;
 
-    let width_parameter = |owner_record_index, kind| match (operation.width_parameter_source, kind)
-    {
-        (DesignEdgeFlangeWidthParameterSource::EdgeOffset, "EdgeWidth_1") => {
-            parameter(owner_record_index, "EdgeOffset_1")
-        }
-        (DesignEdgeFlangeWidthParameterSource::EdgeOffset, "EdgeWidth_2") => {
-            parameter(owner_record_index, "EdgeOffset_2")
-        }
-        (DesignEdgeFlangeWidthParameterSource::EdgeWidth, kind) => {
-            parameter(owner_record_index, kind)
-        }
-        _ => None,
-    };
-    let width_length = |owner_record_index, kind| {
-        let length = design_length(width_parameter(owner_record_index, kind)?)?;
-        Some(match operation.width_parameter_source {
-            DesignEdgeFlangeWidthParameterSource::EdgeWidth => length,
-            DesignEdgeFlangeWidthParameterSource::EdgeOffset => Length(length.0.abs()),
-        })
-    };
-
-    // The width owners are ordered, and their parameter kinds name the mode
-    // independently of the owner count, so both must agree.
-    let width = match &operation.width {
-        crate::records::DesignEdgeWidth::FullEdge => SheetMetalFlangeWidth::FullEdge,
-        crate::records::DesignEdgeWidth::Symmetric(owner) => SheetMetalFlangeWidth::Symmetric {
+    let width = match &operation.shape {
+        crate::records::DesignEdgeFlangeShape::FullEdge { .. } => SheetMetalFlangeWidth::FullEdge,
+        crate::records::DesignEdgeFlangeShape::Symmetric { owner, .. } => SheetMetalFlangeWidth::Symmetric {
             width: design_length(parameter(*owner, "EdgeWidth")?)?,
         },
-        crate::records::DesignEdgeWidth::SymmetricPerEdge(owners)
-            if owners.len() == operation.edges.len() =>
-        {
-            let widths = owners
-                .iter()
-                .map(|owner| design_length(parameter(*owner, "EdgeWidth")?))
+        crate::records::DesignEdgeFlangeShape::SymmetricPerEdge(edges) => {
+            let widths = edges.iter()
+                .map(|row| design_length(parameter(row.owners, "EdgeWidth")?))
                 .collect::<Option<Vec<_>>>()?;
             let [first, rest @ ..] = widths.as_slice() else {
                 return None;
@@ -3560,27 +3534,32 @@ pub(crate) fn project_edge_flange(
             }
             SheetMetalFlangeWidth::Symmetric { width: *first }
         }
-        crate::records::DesignEdgeWidth::TwoSidesPerEdge(pairs)
-            if pairs.len() == operation.edges.len() =>
-        {
-            let widths = pairs
-                .iter()
-                .map(|[first_owner, second_owner]| {
-                    Some(SheetMetalFlangeTwoSidedWidth {
-                        first: width_length(*first_owner, "EdgeWidth_1")?,
-                        second: width_length(*second_owner, "EdgeWidth_2")?,
-                    })
+        crate::records::DesignEdgeFlangeShape::TwoSidesPerEdge { edges, source } => {
+            let (first_kind, second_kind) = match source {
+                DesignEdgeFlangeWidthParameterSource::EdgeWidth => ("EdgeWidth_1", "EdgeWidth_2"),
+                DesignEdgeFlangeWidthParameterSource::EdgeOffset => ("EdgeOffset_1", "EdgeOffset_2"),
+            };
+            let width_length = |owner, kind| {
+                let length = design_length(parameter(owner, kind)?)?;
+                Some(match source {
+                    DesignEdgeFlangeWidthParameterSource::EdgeWidth => length,
+                    DesignEdgeFlangeWidthParameterSource::EdgeOffset => Length(length.0.abs()),
                 })
-                .collect::<Option<Vec<_>>>()?;
+            };
+            let widths = edges.iter().map(|row| {
+                Some(SheetMetalFlangeTwoSidedWidth {
+                    first: width_length(row.owners[0], first_kind)?,
+                    second: width_length(row.owners[1], second_kind)?,
+                })
+            }).collect::<Option<Vec<_>>>()?;
             SheetMetalFlangeWidth::TwoSidesPerEdge { widths }
         }
-        crate::records::DesignEdgeWidth::TwoSides([first, second]) => {
+        crate::records::DesignEdgeFlangeShape::TwoSides { owners: [first, second], .. } => {
             SheetMetalFlangeWidth::TwoSides {
-                first: width_length(*first, "EdgeWidth_1")?,
-                second: width_length(*second, "EdgeWidth_2")?,
+                first: design_length(parameter(*first, "EdgeWidth_1")?)?,
+                second: design_length(parameter(*second, "EdgeWidth_2")?)?,
             }
         }
-        _ => return None,
     };
 
     let height_datum = match operation.height_datum {
@@ -3598,12 +3577,10 @@ pub(crate) fn project_edge_flange(
 
     // Each role-`0x08` group carries one selected edge. The aggregate role-`0x43`
     // group repeats them, so it contributes no separate selection.
-    if operation.edges.is_empty() {
+    if operation.shape.edges().next().is_none() {
         return None;
     }
-    let selections = operation
-        .edges
-        .iter()
+    let selections = operation.shape.edges()
         .map(|edge| {
             let mut matching = groups.iter().filter(|group| {
                 native_stream(&group.id) == Some(stream)

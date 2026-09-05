@@ -2288,31 +2288,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 // The ordered reference table is in record-index order, so the
                 // check is that every role names a distinct table entry and that
                 // the entries no role claims are exactly the width owners.
-                let edge_count = operation.edges.len();
-                let width_owner_count = operation.width_distance_owner_record_indices().len();
-                let width_source_valid = match operation.width_parameter_source {
-                    records::DesignEdgeFlangeWidthParameterSource::EdgeWidth => true,
-                    records::DesignEdgeFlangeWidthParameterSource::EdgeOffset => {
-                        operation.edge_width_mode() == records::DesignEdgeWidthMode::TwoSidesPerEdge
-                    }
-                };
-                let grouped_width_owners = operation
-                    .width_distance_owner_record_indices_by_edge()
-                    .iter()
-                    .flatten()
-                    .copied()
-                    .collect::<Vec<_>>();
-                let width_owners = operation.width_distance_owner_record_indices();
+                let edge_count = operation.shape.edges().count();
                 let claimed = operation
-                    .edges
-                    .iter()
+                    .shape.edges()
                     .flat_map(|edge| [
                         &edge.wrapper_record_index,
                         &edge.group_record_index,
                         &edge.operand_record_index,
                         &edge.aggregate_operand_record_index,
                     ])
-                    .chain(&width_owners)
+                    .chain(operation.shape.owner_indices())
                     .chain(&operation.auxiliary_reference_record_indices)
                     .chain([
                         &operation.aggregate_group_record_index,
@@ -2328,7 +2313,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     target_operand_record_index,
                     offset_owner_record_index,
                     ..
-                } = operation.height_extent
+                } = operation.shape.height()
                 {
                     claimed.extend([
                         target_group_record_index,
@@ -2337,43 +2322,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ]);
                 }
                 edge_count > 0
-                    && width_source_valid
-                    && match operation.edge_width_mode() {
-                        records::DesignEdgeWidthMode::FullEdge => width_owner_count == 0,
-                        records::DesignEdgeWidthMode::Symmetric => width_owner_count == 1,
-                        records::DesignEdgeWidthMode::TwoSides => width_owner_count == 2,
-                        records::DesignEdgeWidthMode::SymmetricPerEdge => {
-                            width_owner_count == edge_count
-                        }
-                        records::DesignEdgeWidthMode::TwoSidesPerEdge => {
-                            edge_count.checked_mul(2) == Some(width_owner_count)
-                                && operation
-                                    .width_distance_owner_record_indices_by_edge()
-                                    .len()
-                                    == edge_count
-                                && grouped_width_owners
-                                    == operation.width_distance_owner_record_indices()
-                        }
-                    }
-                    && (operation.edge_width_mode()
-                        == records::DesignEdgeWidthMode::TwoSidesPerEdge
-                        || operation
-                            .width_distance_owner_record_indices_by_edge()
-                            .is_empty())
-                    && (!matches!(
-                        operation.height_extent,
-                        records::DesignEdgeFlangeHeightExtent::ToObject { .. }
-                    ) || operation.width_distance_owner_record_indices().is_empty())
                     && claimed.len() == scope.reference_members.len()
                     && claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
                     && claimed
                         .iter()
                         .all(|index| scope.reference_members.contains(index))
-                    && operation.edges.iter().all(|edge| {
+                    && operation.shape.edges().all(|edge| {
                         edge.operand_record_index == edge.group_record_index.saturating_add(3)
                     })
-                    && (edge_count != 1 || operation.edges[0].aggregate_operand_record_index
-                        == operation.aggregate_group_record_index.saturating_add(3))
+                    && (edge_count != 1 || operation.shape.edges().all(|edge|
+                        edge.aggregate_operand_record_index == operation.aggregate_group_record_index.saturating_add(3)))
                     && operation.bend_radius.is_finite()
                     && operation.bend_radius > 0.0
                     && operation.bend_radius_offset > scope.byte_offset
