@@ -4799,7 +4799,7 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
     let kind_end = usize::try_from(scope.kind_offset)
         .ok()?
         .checked_add(kind_code_units.checked_mul(2)?)?;
-    let previous = usize::try_from(scope.previous_history_state_id_offset).ok()?;
+    let previous = usize::try_from(scope.previous_history_state_id_offset?).ok()?;
     if previous != kind_end.checked_add(previous_state)? {
         return None;
     }
@@ -5852,7 +5852,7 @@ fn exact_base_feature_body_snapshot(
         || View::u32_le_at(bytes, kind_end)? != scope.feature_ordinal
         || scope.feature_ordinal_offset != u64::try_from(kind_end).ok()?
         || scope.previous_history_state_id.is_some()
-        || scope.previous_history_state_id_offset != 0
+        || scope.previous_history_state_id_offset.is_some()
     {
         return None;
     }
@@ -6182,7 +6182,8 @@ fn exact_shifted_cylinder_primitive_prologue(
         || scope.history_state_id_offset != absolute(history_state_id_offset)?
         || scope.kind_offset != absolute(kind_offset)?
         || scope.feature_ordinal_offset != absolute(feature_ordinal_offset)?
-        || scope.previous_history_state_id_offset != absolute(previous_history_state_id_offset)?
+        || scope.previous_history_state_id_offset
+            != Some(absolute(previous_history_state_id_offset)?)
     {
         return None;
     }
@@ -9156,7 +9157,7 @@ pub(crate) fn parse_parameter_scope(
         previous_history_state_id,
         previous_history_state_id_offset: previous_history_state_id_offset
             .and_then(|offset| u64::try_from(offset).ok())
-            .unwrap_or_default(),
+            .filter(|&offset| offset != 0),
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
         reference_members: reference_members.clone(),
         reference_member_offsets: reference_member_offsets.clone(),

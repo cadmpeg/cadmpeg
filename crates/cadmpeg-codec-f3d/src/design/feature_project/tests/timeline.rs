@@ -721,7 +721,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         history_state_id: current,
         history_state_id_offset: byte_offset + 60,
         previous_history_state_id: previous,
-        previous_history_state_id_offset: byte_offset + 120,
+        previous_history_state_id_offset: Some(byte_offset + 120),
         reference_count_offset: byte_offset + 80,
         reference_members: Vec::new(),
         reference_member_offsets: Vec::new(),

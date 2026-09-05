@@ -82,7 +82,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     scope.feature_ordinal = 1;
     scope.feature_ordinal_offset = 284;
     scope.history_state_id_offset = 244;
-    scope.previous_history_state_id_offset = 315;
+    scope.previous_history_state_id_offset = Some(315);
     scope.set_component_insert_construction(Some(DesignComponentInsertConstruction {
         relation_record_index: 167,
         carrier_record_index: 166,
@@ -1050,7 +1050,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         history_state_id: None,
         history_state_id_offset: 224,
         previous_history_state_id: None,
-        previous_history_state_id_offset: 228,
+        previous_history_state_id_offset: Some(228),
         reference_count_offset: 180,
         reference_members: vec![20, 30],
         reference_member_offsets: vec![184, 195],

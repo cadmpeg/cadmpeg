@@ -61,7 +61,7 @@ fn parameter_scope_parses_named_variable_tail() {
     assert_eq!(scope.feature_ordinal, 1);
     assert_eq!(scope.history_state_id, Some(7));
     assert_eq!(scope.previous_history_state_id, None);
-    assert_eq!(scope.previous_history_state_id_offset, 0);
+    assert_eq!(scope.previous_history_state_id_offset, None);
     assert_eq!(scope.reference_members, [55]);
     assert_eq!(scope.frame_length, paired_at as u64);
 

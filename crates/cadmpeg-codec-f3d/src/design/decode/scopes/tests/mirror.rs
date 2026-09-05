@@ -77,7 +77,7 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
     scope.class_tag = "413".into();
     scope.paired_class_tag = "262".into();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 43;
+    scope.previous_history_state_id_offset = Some(43);
     scope.frame_length = 89;
     scope.paired_byte_offset = 89;
     bytes[47..51].copy_from_slice(&89_u32.to_le_bytes());
@@ -102,7 +102,7 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
     scope.class_tag = "369".into();
     scope.paired_class_tag = "261".into();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 43;
+    scope.previous_history_state_id_offset = Some(43);
     scope.frame_length = 89;
     scope.paired_byte_offset = 89;
     bytes[47..51].copy_from_slice(&89_u32.to_le_bytes());
@@ -132,7 +132,7 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
     scope.class_tag = "391".into();
     scope.paired_class_tag = "261".into();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 42;
+    scope.previous_history_state_id_offset = Some(42);
     scope.frame_length = 88;
     scope.paired_byte_offset = 88;
     bytes[46..50].copy_from_slice(&94_u32.to_le_bytes());
@@ -162,7 +162,7 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
     scope.class_tag = "440".into();
     scope.paired_class_tag = "258".into();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 43;
+    scope.previous_history_state_id_offset = Some(43);
     scope.frame_length = 89;
     scope.paired_byte_offset = 89;
     bytes[47..51].copy_from_slice(&100_u32.to_le_bytes());
@@ -188,7 +188,7 @@ fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
     scope.class_tag = "441".into();
     scope.paired_class_tag = "267".into();
     scope.kind_offset = 0;
-    scope.previous_history_state_id_offset = 42;
+    scope.previous_history_state_id_offset = Some(42);
     scope.frame_length = 84;
     scope.paired_byte_offset = 84;
     bytes[46..50].copy_from_slice(&61_u32.to_le_bytes());

@@ -149,7 +149,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         scope.history_state_id_offset = history_state;
         scope.kind_offset = kind;
         scope.feature_ordinal_offset = feature_ordinal;
-        scope.previous_history_state_id_offset = previous;
+        scope.previous_history_state_id_offset = Some(previous);
         scope
     }
 
