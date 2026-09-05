@@ -12681,15 +12681,57 @@ fn deserialize_face_recipe_postlude<'de, D: serde::Deserializer<'de>>(deserializ
 /// Typed sketch-container visibility bound to a Design sketch entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignSketchVisibilityWire", into = "DesignSketchVisibilityWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignSketchVisibilityWire"))]
 pub struct DesignSketchVisibility {
     /// One-based ordinal among sketch Geometry members in the Design stream.
-    pub stream_ordinal: u32,
-    /// Byte offset of `stream_ordinal`.
-    pub stream_ordinal_offset: u64,
-    /// Byte offset of the native visibility flag.
-    pub visible_offset: u64,
+    pub stream_ordinal: NonZeroU32,
+    stream_ordinal_offset: u64,
     /// Direct display visibility.
     pub visible: bool,
+}
+
+impl DesignSketchVisibility {
+    pub fn new(stream_ordinal: NonZeroU32, stream_ordinal_offset: u64, visible: bool) -> Result<Self, String> {
+        stream_ordinal_offset.checked_add(5).ok_or("stream_ordinal_offset overflows visible_offset")?;
+        Ok(Self { stream_ordinal, stream_ordinal_offset, visible })
+    }
+
+    pub fn stream_ordinal_offset(&self) -> u64 { self.stream_ordinal_offset }
+
+    pub fn visible_offset(&self) -> u64 { self.stream_ordinal_offset + 5 }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignSketchVisibilityWire {
+    stream_ordinal: u32,
+    stream_ordinal_offset: u64,
+    visible_offset: u64,
+    visible: bool,
+}
+
+impl TryFrom<DesignSketchVisibilityWire> for DesignSketchVisibility {
+    type Error = String;
+
+    fn try_from(wire: DesignSketchVisibilityWire) -> Result<Self, Self::Error> {
+        let value = Self::new(NonZeroU32::new(wire.stream_ordinal).ok_or("stream_ordinal must be nonzero")?, wire.stream_ordinal_offset, wire.visible)?;
+        if wire.visible_offset != value.visible_offset() {
+            return Err("visible_offset must equal stream_ordinal_offset + 5".into());
+        }
+        Ok(value)
+    }
+}
+
+impl From<DesignSketchVisibility> for DesignSketchVisibilityWire {
+    fn from(value: DesignSketchVisibility) -> Self {
+        Self {
+            stream_ordinal: value.stream_ordinal.get(),
+            stream_ordinal_offset: value.stream_ordinal_offset(),
+            visible_offset: value.visible_offset(),
+            visible: value.visible,
+        }
+    }
 }
 
 /// Local-to-model placement frame referenced by a Design sketch scope.

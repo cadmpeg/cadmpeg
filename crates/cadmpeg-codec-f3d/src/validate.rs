@@ -7625,11 +7625,9 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let visibility_valid = placement.visibility.as_ref().is_none_or(|visibility| {
             ctx.entities_by_suffix
                 .get(&(native_stream, placement.entity_id.suffix()))
-                .is_some_and(|entity| visibility.stream_ordinal_offset > entity.byte_offset)
-                && visibility.stream_ordinal != 0
-                && visibility.visible_offset == visibility.stream_ordinal_offset.saturating_add(5)
-                && visibility_ordinals.insert((native_stream, visibility.stream_ordinal))
-                && visibility_offsets.insert((native_stream, visibility.visible_offset))
+                .is_some_and(|entity| visibility.stream_ordinal_offset() > entity.byte_offset)
+                && visibility_ordinals.insert((native_stream, visibility.stream_ordinal.get()))
+                && visibility_offsets.insert((native_stream, visibility.visible_offset()))
         });
         let frame_valid = if placement.member_run_head {
             // The paired member-run record precedes the head record; the

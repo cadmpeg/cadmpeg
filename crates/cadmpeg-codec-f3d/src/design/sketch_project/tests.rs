@@ -63,12 +63,7 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
         scope_record_index: None,
         entity_id: crate::records::DesignEntityId::try_from("Sketch_201".to_owned()).expect("valid entity ID"),
 
-        visibility: Some(DesignSketchVisibility {
-            stream_ordinal: 1,
-            stream_ordinal_offset: 30,
-            visible_offset: 35,
-            visible: false,
-        }),
+        visibility: Some(DesignSketchVisibility::new(std::num::NonZeroU32::new(1).unwrap(), 30, false).unwrap()),
         byte_offset: 0,
         class_tag: "256".into(),
         record_index: 1,

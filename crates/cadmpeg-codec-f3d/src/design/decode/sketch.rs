@@ -365,8 +365,8 @@ fn decode_sketch_visibility_member(
     {
         return None;
     }
-    let stream_ordinal = View::u32_le_at(bytes, cursor)?;
-    if stream_ordinal == 0 || bytes.get(member_at + visibility_member::RESERVED_ZERO) != Some(&0) {
+    let stream_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, cursor)?)?;
+    if bytes.get(member_at + visibility_member::RESERVED_ZERO) != Some(&0) {
         return None;
     }
     let stream_ordinal_offset = cursor;
@@ -379,12 +379,7 @@ fn decode_sketch_visibility_member(
     if bytes.get(member_at + visibility_member::TAIL_MARKER) != Some(&1) {
         return None;
     }
-    Some(DesignSketchVisibility {
-        stream_ordinal,
-        stream_ordinal_offset: stream_ordinal_offset as u64,
-        visible_offset: visible_offset as u64,
-        visible,
-    })
+    DesignSketchVisibility::new(stream_ordinal, stream_ordinal_offset as u64, visible).ok()
 }
 
 /// Byte length of a member-run head carrying an explicit 4×4 transform.

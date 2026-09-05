@@ -2376,3 +2376,20 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
             .unwrap_err().to_string().contains("postlude"));
     }
 }
+
+#[test]
+fn sketch_visibility_derives_flag_offset_and_rejects_invalid_wire() {
+    let wire = r#"{"stream_ordinal":1,"stream_ordinal_offset":30,"visible_offset":35,"visible":false}"#;
+    let visibility: super::DesignSketchVisibility = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&visibility).unwrap(), wire);
+    for (invalid, field) in [
+        (wire.replace("\"stream_ordinal\":1", "\"stream_ordinal\":0"), "stream_ordinal"),
+        (wire.replace("\"visible_offset\":35", "\"visible_offset\":36"), "visible_offset"),
+        (wire.replace("\"stream_ordinal_offset\":30", &format!("\"stream_ordinal_offset\":{}", u64::MAX)), "stream_ordinal_offset"),
+    ] {
+        assert!(serde_json::from_str::<super::DesignSketchVisibility>(&invalid).unwrap_err().to_string().contains(field));
+    }
+    let last = super::DesignSketchVisibility::new(std::num::NonZeroU32::MIN, u64::MAX - 5, true).unwrap();
+    assert_eq!(last.visible_offset(), u64::MAX);
+    assert!(super::DesignSketchVisibility::new(std::num::NonZeroU32::MIN, u64::MAX - 4, true).is_err());
+}
