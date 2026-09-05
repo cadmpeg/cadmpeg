@@ -4726,7 +4726,7 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
         ),
         _ => return None,
     };
-    let kind_code_units = scope.kind.encode_utf16().count();
+    let kind_code_units = scope.kind.as_str().encode_utf16().count();
     let kind_end = usize::try_from(scope.kind_offset)
         .ok()?
         .checked_add(kind_code_units.checked_mul(2)?)?;
@@ -5651,7 +5651,7 @@ fn exact_base_feature_body_snapshot(
     }
     let start = usize::try_from(scope.byte_offset).ok()?;
     let body_count = usize::try_from(View::u32_le_at(bytes, start + snapshot::BODY_COUNT)?).ok()?;
-    let kind_width = scope.kind.encode_utf16().count().checked_mul(2)?;
+    let kind_width = scope.kind.as_str().encode_utf16().count().checked_mul(2)?;
     let expected_frame_length = FIXED_FRAME_LENGTH
         .checked_add(u64::try_from(body_count.checked_mul(snapshot_entry::LEN)?).ok()?)?
         .checked_add(u64::try_from(kind_width).ok()?)?;
@@ -8821,7 +8821,11 @@ pub(crate) fn parameter_scope_candidate_headers(
         .collect()
 }
 
-pub(crate) fn parameter_scope_tail_length_is_valid(kind: &str, tail_length: usize) -> bool {
+pub(crate) fn parameter_scope_tail_length_is_valid(
+    kind: impl AsRef<str>,
+    tail_length: usize,
+) -> bool {
+    let kind = kind.as_ref();
     if (80..=590).contains(&tail_length) && tail_length.is_multiple_of(2) {
         return true;
     }
@@ -8833,10 +8837,10 @@ pub(crate) fn parameter_scope_tail_length_is_valid(kind: &str, tail_length: usiz
 }
 
 pub(crate) fn parameter_scope_previous_history_offset(
-    kind: &str,
+    kind: impl AsRef<str>,
     tail_length: usize,
 ) -> Option<usize> {
-    parameter_scope_previous_history_offset_for_form(kind, tail_length, false)
+    parameter_scope_previous_history_offset_for_form(kind.as_ref(), tail_length, false)
 }
 
 fn parameter_scope_previous_history_offset_for_form(
@@ -9055,7 +9059,7 @@ pub(crate) fn parse_parameter_scope(
         class_tag: header.class_tag.clone(),
         record_index: header.record_index,
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
-        kind: kind.clone(),
+        kind: kind.clone().into(),
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
         extrude_prologue,
         coil_operation,
@@ -9859,7 +9863,7 @@ pub(crate) fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
 }
 
 pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
-    let kind_bytes = u64::try_from(scope.kind.encode_utf16().count())
+    let kind_bytes = u64::try_from(scope.kind.as_str().encode_utf16().count())
         .ok()?
         .checked_mul(2)?;
     scope.frame_length.checked_sub(kind_bytes)

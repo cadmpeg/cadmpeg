@@ -2743,6 +2743,165 @@ pub struct DesignHoleFaceSelection {
     pub next_byte_offset: u64,
 }
 
+macro_rules! design_feature_kinds {
+    ($($variant:ident => $lit:literal),+ $(,)?) => {
+        /// Source feature-family name stored on a parameter scope.
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(JsonSchema))]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
+        #[serde(from = "String", into = "String")]
+        pub enum DesignFeatureKind {
+            $($variant,)+
+            /// A spelling no producer in this crate names as a closed family.
+            Native(String),
+        }
+
+        impl DesignFeatureKind {
+            /// The source spelling written on the wire.
+            pub fn as_str(&self) -> &str {
+                match self {
+                    $(Self::$variant => $lit,)+
+                    Self::Native(name) => name,
+                }
+            }
+
+            /// Whether the source spelling is empty.
+            pub fn is_empty(&self) -> bool {
+                self.as_str().is_empty()
+            }
+        }
+
+        impl AsRef<str> for DesignFeatureKind {
+            fn as_ref(&self) -> &str {
+                self.as_str()
+            }
+        }
+
+        impl From<&str> for DesignFeatureKind {
+            fn from(name: &str) -> Self {
+                match name {
+                    $($lit => Self::$variant,)+
+                    other => Self::Native(other.to_owned()),
+                }
+            }
+        }
+
+        impl From<String> for DesignFeatureKind {
+            fn from(name: String) -> Self {
+                match name.as_str() {
+                    $($lit => Self::$variant,)+
+                    _ => Self::Native(name),
+                }
+            }
+        }
+
+        impl From<DesignFeatureKind> for String {
+            fn from(kind: DesignFeatureKind) -> Self {
+                kind.as_str().to_owned()
+            }
+        }
+
+        impl PartialEq<str> for DesignFeatureKind {
+            fn eq(&self, other: &str) -> bool {
+                self.as_str() == other
+            }
+        }
+
+        impl PartialEq<&str> for DesignFeatureKind {
+            fn eq(&self, other: &&str) -> bool {
+                self.as_str() == *other
+            }
+        }
+
+        impl PartialEq<DesignFeatureKind> for str {
+            fn eq(&self, other: &DesignFeatureKind) -> bool {
+                self == other.as_str()
+            }
+        }
+
+        impl PartialEq<DesignFeatureKind> for String {
+            fn eq(&self, other: &DesignFeatureKind) -> bool {
+                self.as_str() == other.as_str()
+            }
+        }
+
+        impl std::fmt::Display for DesignFeatureKind {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+    };
+}
+
+design_feature_kinds! {
+    Sketch => "Sketch",
+    Esquisse => "Esquisse",
+    Skizze => "Skizze",
+    Esboco => "Esboço",
+    Assemble => "Assemble",
+    AsBuilt => "As-built",
+    Extrude => "Extrude",
+    Extrusion => "Extrusion",
+    Extrusao => "Extrusão",
+    Fillet => "Fillet",
+    Conge => "Congé",
+    Abrundung => "Abrundung",
+    Arredondamento => "Arredondamento",
+    Chamfer => "Chamfer",
+    Chanfrein => "Chanfrein",
+    Combine => "Combine",
+    Draft => "Draft",
+    ReplaceFace => "ReplaceFace",
+    CPattern => "C-Pattern",
+    CircularPattern => "Circular Pattern",
+    ReseauC => "Réseau C",
+    RPattern => "R-Pattern",
+    RectangularPattern => "Rectangular Pattern",
+    Mirror => "Mirror",
+    SymetrieMiroir => "Symétrie miroir",
+    Move => "Move",
+    OffsetFaces => "OffsetFaces",
+    DecalerLesFaces => "DécalerLesFaces",
+    Revolve => "Revolve",
+    Shell => "Shell",
+    Schale => "Schale",
+    Thicken => "Thicken",
+    SpirePrimitive => "SpirePrimitive",
+    CoilPrimitive => "CoilPrimitive",
+    Loft => "Loft",
+    Sweep => "Sweep",
+    Pipe => "Pipe",
+    SurfacePatch => "SurfacePatch",
+    SurfaceExtend => "SurfaceExtend",
+    SurfaceOffset => "SurfaceOffset",
+    SurfaceRuled => "SurfaceRuled",
+    SurfaceTrim => "SurfaceTrim",
+    BoundaryFill => "BoundaryFill",
+    Hole => "Hole",
+    Split => "Split",
+    Scale => "Scale",
+    Massstab => "Maßstab",
+    Thread => "Thread",
+    EdgeFlange => "EdgeFlange",
+    Hem => "Hem",
+    BaseFlange => "BaseFlange",
+    ComponentInsert => "Component Insert",
+    CopyPaste => "CopyPaste",
+    JointOrigin => "JointOrigin",
+    Canvas => "Canvas",
+    Decal => "Decal",
+    BaseMeshFeature => "Base Mesh Feature",
+    WorkPlane => "WorkPlane",
+    WorkAxis => "WorkAxis",
+    WorkPoint => "WorkPoint",
+    DerivedInstance => "DerivedInstance",
+    CustomFeature => "CustomFeature",
+    Form => "Form",
+    SurfaceStitch => "SurfaceStitch",
+    BaseFeature => "Base Feature",
+    CopyPasteBodies => "CopyPasteBodies",
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2758,7 +2917,7 @@ pub struct DesignParameterScope {
     /// Byte length from the primary header to the paired header.
     pub frame_length: u64,
     /// Source feature-family name.
-    pub kind: String,
+    pub kind: DesignFeatureKind,
     /// Byte offset of the kind's UTF-16LE code units.
     pub kind_offset: u64,
     /// Extrude fixed prologue.
@@ -3405,7 +3564,7 @@ impl DesignParameterScope {
             class_tag: String::new(),
             record_index,
             frame_length: 0,
-            kind: kind.to_string(),
+            kind: kind.into(),
             kind_offset: 0,
             extrude_prologue: None,
             coil_operation: None,
