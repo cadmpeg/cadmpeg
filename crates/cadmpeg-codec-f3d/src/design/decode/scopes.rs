@@ -277,8 +277,10 @@ pub fn decode_parameter_scopes(
             }
             if scope.kind == "JointOrigin" {
                 if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
-                    scope.joint_origin_transform = Some(frame.transform);
-                    scope.joint_origin_transform_offset = Some(frame.transform_offset);
+                    scope.joint_origin_frame = Some(crate::records::DesignJointOriginTransform {
+                        joint_origin_transform: frame.transform,
+                        joint_origin_transform_offset: frame.transform_offset,
+                    });
                     if let Some((reference, reference_offset)) = frame.reference {
                         scope.joint_origin_reference = Some(reference);
                         scope.joint_origin_reference_offset = Some(reference_offset);
@@ -724,7 +726,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
     }
     for scope in scopes
         .iter_mut()
-        .filter(|scope| scope.kind == "JointOrigin" && scope.joint_origin_transform.is_none())
+        .filter(|scope| scope.kind == "JointOrigin" && scope.joint_origin_frame.is_none())
     {
         let mut matches = candidates
             .iter()
@@ -739,8 +741,10 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
         }) {
             continue;
         }
-        scope.joint_origin_transform = Some(*transform);
-        scope.joint_origin_transform_offset = Some(*transform_offset);
+        scope.joint_origin_frame = Some(crate::records::DesignJointOriginTransform {
+            joint_origin_transform: *transform,
+            joint_origin_transform_offset: *transform_offset,
+        });
         if let Some((record_index, offset)) = reference {
             scope.joint_origin_reference = Some(*record_index);
             scope.joint_origin_reference_offset = Some(*offset);
@@ -749,7 +753,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
     let resolved_origins = scopes
         .iter()
         .filter(|scope| scope.kind == "JointOrigin")
-        .filter_map(|scope| Some((scope.record_index, scope.joint_origin_transform?)))
+        .filter_map(|scope| Some((scope.record_index, scope.joint_origin_transform()?)))
         .collect::<HashMap<_, _>>();
     for (assembly_record_index, joint_origin_record_index, transform) in envelopes {
         if resolved_origins.get(&joint_origin_record_index) != Some(&transform) {
@@ -865,7 +869,7 @@ fn exact_assembly_axial_operand_target(
     let mut origins = scopes.iter().filter(|scope| {
         scope.kind == "JointOrigin"
             && scope.record_index == frame.reference_record_index
-            && scope.joint_origin_transform == Some(frame.transform)
+            && scope.joint_origin_transform() == Some(frame.transform)
     });
     let root = match (origins.next(), origins.next()) {
         (Some(origin), None) => Some(DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
@@ -9116,8 +9120,7 @@ pub(crate) fn parse_parameter_scope(
         work_plane_reference_offset: None,
         work_plane_construction: None,
         work_axis_construction: None,
-        joint_origin_transform: None,
-        joint_origin_transform_offset: None,
+        joint_origin_frame: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
         work_point_construction: None,

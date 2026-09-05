@@ -18,7 +18,7 @@ fn dispatcher_projects_datum_feature_scopes() {
 
     let mut joint_origin =
         DesignParameterScope::empty("f3d:native:parameter-scope#1", "JointOrigin", 1);
-    joint_origin.joint_origin_transform = Some(transform);
+    joint_origin.with_joint_origin_transform(transform);
 
     let mut work_plane =
         DesignParameterScope::empty("f3d:native:parameter-scope#2", "WorkPlane", 2);

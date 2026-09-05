@@ -451,7 +451,7 @@ fn project_joint_origin_operand(
         ) {
             return None;
         }
-    } else if target_scope.joint_origin_transform.is_none() {
+    } else if target_scope.joint_origin_transform().is_none() {
         return None;
     }
     Some(JointOperand::root(
@@ -868,7 +868,7 @@ mod tests {
             80,
         );
         let mut origin_scope = origin_scope;
-        origin_scope.joint_origin_transform = Some([
+        origin_scope.with_joint_origin_transform([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
