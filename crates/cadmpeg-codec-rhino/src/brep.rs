@@ -272,30 +272,14 @@ pub(crate) struct RawBrep {
     pub(crate) render_meshes: Vec<RawBrepMeshSlot>,
     /// Analysis mesh cache slots.
     pub(crate) analysis_meshes: Vec<RawBrepMeshSlot>,
-    /// Complete render-mesh side-wrapper range.
-    pub(crate) render_mesh_array_range: Range<usize>,
-    /// Complete analysis-mesh side-wrapper range.
-    pub(crate) analysis_mesh_array_range: Range<usize>,
     /// Raw solid state, normalized only by validation.
     pub(crate) is_solid: Option<i32>,
     /// Region face sides.
     pub(crate) face_sides: Vec<RawBrepFaceSide>,
     /// Regions.
     pub(crate) regions: Vec<RawBrepRegion>,
-    /// Complete region-topology wrapper range.
-    pub(crate) region_wrapper_range: Option<Range<usize>>,
     /// Complete payload range.
     pub(crate) source_range: Range<usize>,
-    /// Complete vertex-array wrapper range.
-    pub(crate) vertex_array_range: Range<usize>,
-    /// Complete edge-array wrapper range.
-    pub(crate) edge_array_range: Range<usize>,
-    /// Complete trim-array wrapper range.
-    pub(crate) trim_array_range: Range<usize>,
-    /// Complete loop-array wrapper range.
-    pub(crate) loop_array_range: Range<usize>,
-    /// Complete face-array wrapper range.
-    pub(crate) face_array_range: Range<usize>,
 }
 
 /// A semantically validated raw Brep.
@@ -716,8 +700,8 @@ pub(crate) fn parse(
         0,
         &mut warnings,
     )?;
-    let (vertices, vertex_array_range) = read_vertices(bytes, &mut reader, archive, &mut warnings)?;
-    let (edges, edge_array_range) = read_edges(
+    let (vertices, _) = read_vertices(bytes, &mut reader, archive, &mut warnings)?;
+    let (edges, _) = read_edges(
         bytes,
         &mut reader,
         archive,
@@ -725,7 +709,7 @@ pub(crate) fn parse(
         &mut warnings,
         &mut losses,
     )?;
-    let (trims, trim_array_range) = read_trims(
+    let (trims, _) = read_trims(
         bytes,
         &mut reader,
         archive,
@@ -733,19 +717,17 @@ pub(crate) fn parse(
         &mut warnings,
         &mut losses,
     )?;
-    let (loops, loop_array_range) = read_loops(bytes, &mut reader, archive, &mut warnings)?;
-    let (faces, face_array_range) = read_faces(bytes, &mut reader, archive, &mut warnings)?;
+    let (loops, _) = read_loops(bytes, &mut reader, archive, &mut warnings)?;
+    let (faces, _) = read_faces(bytes, &mut reader, archive, &mut warnings)?;
     let bounds = bbox(&mut reader)?;
-    let (render_meshes, render_mesh_array_range, analysis_meshes, analysis_mesh_array_range) =
-        if minor >= 1 {
-            let (render, render_range) =
-                read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
-            let (analysis, analysis_range) =
-                read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
-            (render, render_range, analysis, analysis_range)
-        } else {
-            (Vec::new(), 0..0, Vec::new(), 0..0)
-        };
+    let (render_meshes, analysis_meshes) = if minor >= 1 {
+        let (render, _) = read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+        let (analysis, _) =
+            read_mesh_sides(bytes, &mut reader, archive, faces.len(), &mut warnings)?;
+        (render, analysis)
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let is_solid = if minor >= 2 {
         let value = reader.i32()?;
         if (0..=2).contains(&value) {
@@ -759,12 +741,11 @@ pub(crate) fn parse(
     } else {
         None
     };
-    let (mut face_sides, mut regions, mut region_wrapper_range, inline_region_loaded) =
-        if minor >= 3 {
-            read_regions(bytes, &mut reader, archive, faces.len(), &mut warnings)?
-        } else {
-            (Vec::new(), Vec::new(), None, false)
-        };
+    let (mut face_sides, mut regions, _, inline_region_loaded) = if minor >= 3 {
+        read_regions(bytes, &mut reader, archive, faces.len(), &mut warnings)?
+    } else {
+        (Vec::new(), Vec::new(), None, false)
+    };
     if !inline_region_loaded {
         if let Some(extra) = userdata.iter().find(|value| {
             value.class_uuid() == V5_BREP_REGION_TOPOLOGY_USERDATA
@@ -773,10 +754,9 @@ pub(crate) fn parse(
                     || value.application_uuid() == Some(OPENNURBS4))
         }) {
             match read_region_topology_userdata(bytes, extra, archive, faces.len(), &mut warnings) {
-                Ok((sides, topology_regions, range, _)) => {
+                Ok((sides, topology_regions, _, _)) => {
                     face_sides = sides;
                     regions = topology_regions;
-                    region_wrapper_range = range;
                 }
                 Err(error) => warnings.push(format!(
                     "invalid optional Brep region topology discarded: {error}"
@@ -802,18 +782,10 @@ pub(crate) fn parse(
         bounds,
         render_meshes,
         analysis_meshes,
-        render_mesh_array_range,
-        analysis_mesh_array_range,
         is_solid,
         face_sides,
         regions,
-        region_wrapper_range,
         source_range: range,
-        vertex_array_range,
-        edge_array_range,
-        trim_array_range,
-        loop_array_range,
-        face_array_range,
     };
     match ValidatedRawBrep::try_new(raw.clone()) {
         Ok(mut validated) => {
@@ -1284,12 +1256,12 @@ fn parse_legacy_major2(
         vertex.tolerance = tolerance;
     }
 
-    let (render_meshes, render_mesh_array_range) =
+    let (render_meshes, _) =
         read_legacy_mesh_sides(bytes, &mut reader, archive, face_count, &mut warnings)?;
-    let (analysis_meshes, analysis_mesh_array_range) = if minor >= 1 {
-        read_legacy_mesh_sides(bytes, &mut reader, archive, face_count, &mut warnings)?
+    let analysis_meshes = if minor >= 1 {
+        read_legacy_mesh_sides(bytes, &mut reader, archive, face_count, &mut warnings)?.0
     } else {
-        (Vec::new(), 0..0)
+        Vec::new()
     };
     let skipped = reader.skip_remaining()?;
     if skipped != 0 {
@@ -1321,18 +1293,10 @@ fn parse_legacy_major2(
         bounds,
         render_meshes,
         analysis_meshes,
-        render_mesh_array_range,
-        analysis_mesh_array_range,
         is_solid: None,
         face_sides: Vec::new(),
         regions: Vec::new(),
-        region_wrapper_range: None,
         source_range: range,
-        vertex_array_range: 0..0,
-        edge_array_range: 0..0,
-        trim_array_range: 0..0,
-        loop_array_range: 0..0,
-        face_array_range: 0..0,
     };
     match ValidatedRawBrep::try_new(raw.clone()) {
         Ok(mut validated) => {
@@ -3011,18 +2975,10 @@ mod tests {
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
-            render_mesh_array_range: 0..0,
-            analysis_mesh_array_range: 0..0,
             is_solid: None,
             face_sides: Vec::new(),
             regions: Vec::new(),
-            region_wrapper_range: None,
             source_range: 0..0,
-            vertex_array_range: 0..0,
-            edge_array_range: 0..0,
-            trim_array_range: 0..0,
-            loop_array_range: 0..0,
-            face_array_range: 0..0,
         }
     }
 
@@ -3171,18 +3127,10 @@ mod tests {
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
-            render_mesh_array_range: 0..0,
-            analysis_mesh_array_range: 0..0,
             is_solid: None,
             face_sides: Vec::new(),
             regions: Vec::new(),
-            region_wrapper_range: None,
             source_range: 0..0,
-            vertex_array_range: 0..0,
-            edge_array_range: 0..0,
-            trim_array_range: 0..0,
-            loop_array_range: 0..0,
-            face_array_range: 0..0,
         }
     }
 

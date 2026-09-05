@@ -142,18 +142,10 @@ fn region_raw(
         },
         render_meshes: Vec::new(),
         analysis_meshes: Vec::new(),
-        render_mesh_array_range: 0..0,
-        analysis_mesh_array_range: 0..0,
         is_solid: None,
         face_sides,
         regions,
-        region_wrapper_range: Some(0..0),
         source_range: 0..0,
-        vertex_array_range: 0..0,
-        edge_array_range: 0..0,
-        trim_array_range: 0..0,
-        loop_array_range: 0..0,
-        face_array_range: 0..0,
     }
 }
 
@@ -355,18 +347,10 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
-            render_mesh_array_range: 0..0,
-            analysis_mesh_array_range: 0..0,
             is_solid: Some(3),
             face_sides: Vec::new(),
             regions: Vec::new(),
-            region_wrapper_range: None,
             source_range: 0..0,
-            vertex_array_range: 0..0,
-            edge_array_range: 0..0,
-            trim_array_range: 0..0,
-            loop_array_range: 0..0,
-            face_array_range: 0..0,
         },
     )
 }
