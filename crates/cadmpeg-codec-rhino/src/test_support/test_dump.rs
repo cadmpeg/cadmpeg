@@ -151,16 +151,11 @@ pub(crate) fn descriptor(
         object_type: 0,
         class_uuid: Uuid::nil(),
         class_data_range: offset..offset,
-        framing_degraded: false,
         attributes: Some(attributes),
         attributes_degraded: false,
         attributes_userdata: Vec::new(),
         identity: None,
         userdata: Vec::new(),
-        attributes_range: None,
-        attributes_body_range: None,
-        attributes_userdata_range: None,
-        attributes_userdata_body_range: None,
         history: None,
         unknown_trailer: Vec::new(),
         checksum_warnings: Vec::new(),
@@ -999,7 +994,9 @@ pub(crate) fn set_identity(
     color: Option<[u8; 4]>,
     visible: bool,
 ) {
-    let object = &mut scan.objects[source_order];
+    let object = scan.objects[source_order]
+        .framed_mut()
+        .expect("test object is framed");
     object.identity = Some(crate::objects::SourceIdentity {
         source_id: format!("rhino:object:record#{source_key}"),
         object_id: Uuid::from_wire(object_id),

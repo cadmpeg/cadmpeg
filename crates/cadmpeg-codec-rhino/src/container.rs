@@ -18,7 +18,7 @@ use crate::chunks::{
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
 use crate::objects::{
-    degraded_object_record, parse_object_record, resolve_identities, ObjectDescriptor,
+    degraded_object_record, parse_object_record, resolve_identities, ObjectRecord,
 };
 use crate::wire::Uuid;
 /// Maximum direct table records retained or described in one document.
@@ -144,7 +144,7 @@ pub(crate) struct Scan<'a> {
     /// Tables in source order.
     pub(crate) tables: Vec<Table>,
     /// All object records in source order.
-    pub(crate) objects: Vec<ObjectDescriptor>,
+    pub(crate) objects: Vec<ObjectRecord>,
     /// Direct table records retained as opaque source data.
     pub(crate) opaque_records: Vec<OpaqueRecord>,
     /// Parsed instance definitions and recoverable definition diagnostics.
@@ -994,7 +994,9 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                         degraded_object_record(&record, &error)
                     }
                 };
-                *object_typecodes.entry(descriptor.object_type).or_insert(0) += 1;
+                *object_typecodes
+                    .entry(descriptor.object_type())
+                    .or_insert(0) += 1;
                 all_objects.push(descriptor);
             }
             if opaque {
@@ -1087,9 +1089,9 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     }
     let mut classes = BTreeMap::<Uuid, (usize, usize)>::new();
     for object in &scan.objects {
-        let entry = classes.entry(object.class_uuid).or_insert((0, 0));
+        let entry = classes.entry(object.class_uuid()).or_insert((0, 0));
         entry.0 += 1;
-        entry.1 += object.range.len();
+        entry.1 += object.range().len();
     }
     for (class_uuid, (count, bytes)) in classes {
         let mut attributes = BTreeMap::new();

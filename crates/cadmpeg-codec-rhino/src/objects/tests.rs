@@ -4,6 +4,7 @@
 use cadmpeg_ir::report::Severity;
 
 use crate::chunks::{ArchiveVersion, BoundedReader};
+use crate::objects::ObjectRecord;
 use crate::settings;
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
@@ -528,21 +529,19 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     .expect("required invariant");
     attributes.layer_index = -1;
     attributes.color_source = 2;
-    let mut material = vec![descriptor(attributes.clone(), 10)];
+    let mut material = vec![ObjectRecord::Framed(descriptor(attributes.clone(), 10))];
     let mut warnings = Vec::new();
     crate::objects::resolve_identities(&mut material, &metadata, &mut warnings);
     assert_eq!(
         material[0]
-            .identity
-            .as_ref()
+            .identity()
             .expect("required invariant")
             .effective_color,
         None
     );
     assert_eq!(
         material[0]
-            .identity
-            .as_ref()
+            .identity()
             .expect("required invariant")
             .layer_name
             .as_deref(),
@@ -551,20 +550,18 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
 
     attributes.color_source = 3;
     attributes.object_mode = 0xf3;
-    let mut parent = vec![descriptor(attributes, 20)];
+    let mut parent = vec![ObjectRecord::Framed(descriptor(attributes, 20))];
     crate::objects::resolve_identities(&mut parent, &metadata, &mut warnings);
     assert_eq!(
         parent[0]
-            .identity
-            .as_ref()
+            .identity()
             .expect("required invariant")
             .effective_color,
         None
     );
     assert!(
         parent[0]
-            .identity
-            .as_ref()
+            .identity()
             .expect("required invariant")
             .definition_member
     );
@@ -587,11 +584,14 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
     let mut duplicate_again = duplicate.clone();
     duplicate_again.object_id = duplicate.object_id;
     let mut objects = vec![
-        descriptor(attributes, 10),
-        descriptor(duplicate, 20),
-        descriptor(duplicate_again, 30),
+        ObjectRecord::Framed(descriptor(attributes, 10)),
+        ObjectRecord::Framed(descriptor(duplicate, 20)),
+        ObjectRecord::Framed(descriptor(duplicate_again, 30)),
     ];
-    objects[0].class_uuid = Uuid::from_wire([9; 16]);
+    objects[0]
+        .framed_mut()
+        .expect("test object is framed")
+        .class_uuid = Uuid::from_wire([9; 16]);
     let mut warnings = Vec::new();
     crate::objects::resolve_identities(
         &mut objects,
@@ -599,16 +599,8 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         &mut warnings,
     );
     assert_ne!(
-        objects[0]
-            .identity
-            .as_ref()
-            .expect("required invariant")
-            .source_id,
-        objects[2]
-            .identity
-            .as_ref()
-            .expect("required invariant")
-            .source_id
+        objects[0].identity().expect("required invariant").source_id,
+        objects[2].identity().expect("required invariant").source_id
     );
     assert!(warnings
         .iter()
@@ -618,8 +610,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         .any(|warning| warning.contains("duplicate object UUID")));
     assert_eq!(
         objects[0]
-            .identity
-            .as_ref()
+            .identity()
             .expect("required invariant")
             .class_uuid,
         Uuid::from_wire([9; 16])
@@ -690,7 +681,7 @@ fn obsolete_custom_mesh_userdata_transfers_to_object_attributes() {
             ],
         );
         let scan = crate::container::scan_owned(bytes).expect("custom mesh object record");
-        let object = &scan.objects[0];
+        let object = scan.objects[0].framed().expect("test object is framed");
         assert_eq!(object.attributes_userdata.len(), 1);
         assert_eq!(
             object.attributes_userdata[0].class_uuid(),
@@ -743,7 +734,7 @@ fn malformed_obsolete_custom_mesh_userdata_keeps_object_attributes() {
         ],
     );
     let scan = crate::container::scan_owned(bytes).expect("malformed custom mesh record");
-    let object = &scan.objects[0];
+    let object = scan.objects[0].framed().expect("test object is framed");
     assert!(object.attributes.is_some());
     assert!(object
         .attributes
@@ -799,7 +790,7 @@ fn per_object_mesh_userdata_transfers_nested_parameters_to_object_attributes() {
             ],
         );
         let scan = crate::container::scan_owned(bytes).expect("per-object mesh record");
-        let object = &scan.objects[0];
+        let object = scan.objects[0].framed().expect("test object is framed");
         assert_eq!(object.attributes_userdata.len(), 1);
         assert_eq!(
             object.attributes_userdata[0].class_uuid(),
@@ -855,7 +846,7 @@ fn malformed_per_object_mesh_userdata_keeps_object_attributes() {
         ],
     );
     let scan = crate::container::scan_owned(bytes).expect("malformed per-object mesh record");
-    let object = &scan.objects[0];
+    let object = scan.objects[0].framed().expect("test object is framed");
     assert!(object.attributes.is_some());
     assert!(object
         .attributes
@@ -947,7 +938,14 @@ fn object_trailer_accepts_bounded_unknown_child_without_history() {
         ],
     );
     let scan = crate::container::scan_owned(bytes).expect("bounded unknown trailer");
-    assert_eq!(scan.objects[0].unknown_trailer.len(), 1);
+    assert_eq!(
+        scan.objects[0]
+            .framed()
+            .expect("test object is framed")
+            .unknown_trailer
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -969,7 +967,7 @@ pub(crate) fn malformed_bounded_object_is_retained_and_later_point_decodes() {
             ],
         );
         let mut scan = crate::container::scan_owned(bytes).expect("bounded object recovery");
-        assert!(scan.objects[0].framing_degraded);
+        assert!(scan.objects[0].is_degraded());
         set_test_units(&mut scan, 1.0);
         let result = crate::decode::decode_for_test(&scan);
         assert_eq!(
@@ -1005,8 +1003,16 @@ fn object_warning_lists_do_not_inherit_global_warnings() {
         ],
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
-    assert!(scan.objects[0].checksum_warnings.is_empty());
-    assert!(scan.objects[1].checksum_warnings.is_empty());
+    assert!(scan.objects[0]
+        .framed()
+        .expect("test object is framed")
+        .checksum_warnings
+        .is_empty());
+    assert!(scan.objects[1]
+        .framed()
+        .expect("test object is framed")
+        .checksum_warnings
+        .is_empty());
     assert_eq!(
         scan.warnings
             .iter()
@@ -1029,7 +1035,10 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
         ],
     );
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
-    scan.objects[0].attributes_degraded = true;
+    scan.objects[0]
+        .framed_mut()
+        .expect("test object is framed")
+        .attributes_degraded = true;
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         assert!(context.mark_decoded(0));
@@ -1054,8 +1063,8 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         ],
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
-    let offset = scan.objects[0].range.start as u64;
-    let class = scan.objects[0].class_uuid.to_string();
+    let offset = scan.objects[0].range().start as u64;
+    let class = scan.objects[0].class_uuid().to_string();
     let result = crate::decode::decode_for_test(&scan);
 
     let loss = result
