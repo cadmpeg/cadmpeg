@@ -4067,7 +4067,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         length,
                     )
                 })
-            && scope.history_state_id_offset == scope.kind_offset.saturating_sub(8)
             && if scope.previous_history_state_id_offset.is_none() {
                 scope.previous_history_state_id.is_none()
             } else {

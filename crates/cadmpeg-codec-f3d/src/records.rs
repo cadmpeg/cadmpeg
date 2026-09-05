@@ -6082,8 +6082,6 @@ pub struct DesignParameterScope {
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_state_id: Option<i64>,
-    /// Byte offset of the encoded history-state identity or null sentinel.
-    pub history_state_id_offset: u64,
     /// ASM delta-state identity immediately preceding this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_history_state_id: Option<i64>,
@@ -7671,6 +7669,11 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 wire.kind
             )));
         }
+        if wire.history_state_id_offset != wire.kind_offset.saturating_sub(8) {
+            return Err(DesignParameterScopePayloadError(
+                "history_state_id_offset disagrees with kind_offset".into(),
+            ));
+        }
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
@@ -7681,7 +7684,6 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             feature_ordinal: std::num::NonZeroU32::new(wire.feature_ordinal).ok_or_else(|| DesignParameterScopePayloadError("feature_ordinal must be nonzero".into()))?,
             feature_ordinal_offset: wire.feature_ordinal_offset,
             history_state_id: wire.history_state_id,
-            history_state_id_offset: wire.history_state_id_offset,
             previous_history_state_id: wire.previous_history_state_id,
             previous_history_state_id_offset: wire.previous_history_state_id_offset,
             reference_count_offset: wire.reference_count_offset,
@@ -7698,6 +7700,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
 impl From<DesignParameterScope> for DesignParameterScopeSerde {
     fn from(scope: DesignParameterScope) -> Self {
         let kind = scope.kind();
+        let history_state_id_offset = scope.history_state_id_offset();
         let (reference_members, reference_member_offsets) = scope.reference_members.into_wire();
         let mut wire = DesignParameterScopeSerde {
             id: scope.id,
@@ -7712,7 +7715,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             feature_ordinal: scope.feature_ordinal.get(),
             feature_ordinal_offset: scope.feature_ordinal_offset,
             history_state_id: scope.history_state_id,
-            history_state_id_offset: scope.history_state_id_offset,
+            history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
             previous_history_state_id_offset: scope.previous_history_state_id_offset,
             reference_count_offset: scope.reference_count_offset,
@@ -7845,6 +7848,11 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
 }
 
 impl DesignParameterScope {
+    /// Byte offset of the state word before the length-prefixed kind name.
+    pub fn history_state_id_offset(&self) -> u64 {
+        self.kind_offset.saturating_sub(8)
+    }
+
     /// Source feature-family name, derived from its construction variant.
     pub(crate) fn kind(&self) -> DesignFeatureKind {
         self.payload.kind()
@@ -8567,7 +8575,6 @@ impl DesignParameterScope {
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
             history_state_id: None,
-            history_state_id_offset: 0,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
             reference_count_offset: 0,

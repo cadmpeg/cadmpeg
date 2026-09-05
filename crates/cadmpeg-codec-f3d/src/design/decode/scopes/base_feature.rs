@@ -75,8 +75,6 @@ fn exact_base_feature_scope_tail(
         || scope.reference_count_offset
             != scope.byte_offset + u64::try_from(layout.reference_count).ok()?
         || !scope.reference_members.offsets().copied().eq([scope.byte_offset + u64::try_from(layout.generic_scope_reference_record).ok()?])
-        || scope.history_state_id_offset
-            != scope.byte_offset + u64::try_from(layout.history_state_id).ok()?
         || scope.kind_offset != scope.byte_offset + u64::try_from(layout.kind).ok()?
         || scope.feature_ordinal_offset
             != scope.byte_offset + u64::try_from(layout.feature_ordinal).ok()?
@@ -445,8 +443,6 @@ fn exact_base_feature_direct_body_based_on_faces(
             != scope.byte_offset + u64::try_from(class_377::REFERENCE_COUNT).ok()?
         || !scope.reference_members.offsets().copied().eq([scope.byte_offset
                 + u64::try_from(class_377::GENERIC_SCOPE_REFERENCE_RECORD).ok()?])
-        || scope.history_state_id_offset
-            != scope.byte_offset + u64::try_from(class_377::HISTORY_STATE_ID).ok()?
         || scope.kind_offset
             != scope.byte_offset + u64::try_from(class_377::KIND_LENGTH + 4).ok()?
         || scope.feature_ordinal_offset

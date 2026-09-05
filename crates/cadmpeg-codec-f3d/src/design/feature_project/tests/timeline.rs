@@ -716,7 +716,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: current,
-        history_state_id_offset: byte_offset + 60,
+
         previous_history_state_id: previous,
         previous_history_state_id_offset: Some(byte_offset + 120),
         reference_count_offset: byte_offset + 80,

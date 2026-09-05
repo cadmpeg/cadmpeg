@@ -146,14 +146,14 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         scope.paired_byte_offset = frame_length as u64;
         scope.frame_length = frame_length as u64;
         scope.reference_members = crate::records::ReferenceRun::Unlocated(reference_members);
-        let (reference_count, history_state, kind, feature_ordinal, previous) =
+        let (reference_count, _, kind, feature_ordinal, previous) =
             if frame_length == 352 {
                 (174, 233, 241, 275, 306)
             } else {
                 (302, 383, 391, 425, 456)
             };
         scope.reference_count_offset = reference_count;
-        scope.history_state_id_offset = history_state;
+
         scope.kind_offset = kind;
         scope.feature_ordinal_offset = feature_ordinal;
         scope.previous_history_state_id_offset = Some(previous);

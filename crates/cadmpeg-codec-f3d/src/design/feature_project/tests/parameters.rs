@@ -230,7 +230,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
-        history_state_id_offset: 0,
+
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 180,
@@ -358,7 +358,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         feature_ordinal: std::num::NonZeroU32::new(record_index).expect("nonzero ordinal"),
         feature_ordinal_offset: 0,
         history_state_id: None,
-        history_state_id_offset: 0,
+
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
@@ -494,7 +494,7 @@ fn parameter_expressions_project_feature_dependencies() {
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
-        history_state_id_offset: 0,
+
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: byte_offset + 80,

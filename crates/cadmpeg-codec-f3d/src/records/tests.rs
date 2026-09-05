@@ -2146,3 +2146,20 @@ fn scope_feature_ordinal_preserves_positive_wire_values_and_rejects_zero() {
     let error = serde_json::from_value::<DesignParameterScope>(wire).expect_err("zero ordinal rejected");
     assert!(error.to_string().contains("feature_ordinal"));
 }
+
+#[test]
+fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
+    for kind_offset in [0_u64, 8, 100, u64::MAX] {
+        let mut scope = DesignParameterScope::empty("scope", DesignFeatureKind::Sketch, 1);
+        scope.kind_offset = kind_offset;
+        let wire = serde_json::to_value(&scope).expect("serialize scope");
+        assert_eq!(wire["history_state_id_offset"], kind_offset.saturating_sub(8));
+        let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).expect("valid derived offset");
+        assert_eq!(decoded, scope);
+        assert_eq!(serde_json::to_value(decoded).expect("serialize scope"), wire);
+        let mut bad = wire;
+        bad["history_state_id_offset"] = (kind_offset.saturating_sub(8) + 1).into();
+        let error = serde_json::from_value::<DesignParameterScope>(bad).expect_err("mismatched offset rejected");
+        assert!(error.to_string().contains("history_state_id_offset"));
+    }
+}
