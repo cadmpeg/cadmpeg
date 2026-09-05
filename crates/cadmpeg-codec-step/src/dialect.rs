@@ -267,7 +267,10 @@ impl StepDialect {
     pub(crate) fn classify(exchange: &Exchange) -> DialectMatch {
         let identifiers = exchange.schema_identifiers();
         let dialect = identifiers.first().map_or(Self::Unknown, |identifier| {
-            Self::from_schema_identifier(identifier, exchange.primary_schema_object_identifier())
+            Self::from_schema_identifier(
+                identifier,
+                exchange.primary_schema_object_identifier().as_deref(),
+            )
         });
 
         let mut declared = BTreeMap::new();

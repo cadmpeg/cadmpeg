@@ -32,11 +32,7 @@ pub(super) fn decode(
             if !has_entity(record, "COORDINATES_LIST") {
                 return None;
             }
-            let scale = geometry
-                .length_scales
-                .get(&id)
-                .copied()
-                .unwrap_or(geometry.length_scale);
+            let scale = geometry.units.length([id]);
             super::geometry::coordinate_rows(record, scale).map(|vertices| (id, vertices))
         })
         .collect::<BTreeMap<_, _>>();
@@ -78,9 +74,7 @@ pub(super) fn decode(
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
-            detached_annotation: false,
-            declare_containers: true,
-            claim_containers: true,
+            mode: AssociationMode::BodyItems,
             active: BTreeSet::new(),
         };
         for item in item_ids {
@@ -130,9 +124,7 @@ pub(super) fn decode(
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
-            detached_annotation: false,
-            declare_containers: false,
-            claim_containers: true,
+            mode: AssociationMode::Placements,
             active: BTreeSet::new(),
         };
         for item in items {
@@ -160,9 +152,7 @@ pub(super) fn decode(
             placements: &mut item_placements,
             unresolved_placements: &mut unresolved_placements,
             body_context_items: &mut body_context_items,
-            detached_annotation: true,
-            declare_containers: false,
-            claim_containers: false,
+            mode: AssociationMode::DetachedAnnotation,
             active: BTreeSet::new(),
         };
         associator.visit(item, 0, None);
@@ -454,6 +444,13 @@ fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
         .and_then(ValueExt::reference)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AssociationMode {
+    BodyItems,
+    Placements,
+    DetachedAnnotation,
+}
+
 struct TessellationItemAssociator<'a> {
     bodies: &'a [BodyId],
     exchange: &'a Exchange,
@@ -465,9 +462,7 @@ struct TessellationItemAssociator<'a> {
     placements: &'a mut BTreeMap<u64, Vec<Transform>>,
     unresolved_placements: &'a mut BTreeSet<u64>,
     body_context_items: &'a mut BTreeSet<u64>,
-    detached_annotation: bool,
-    declare_containers: bool,
-    claim_containers: bool,
+    mode: AssociationMode,
     active: BTreeSet<u64>,
 }
 
@@ -503,7 +498,7 @@ impl TessellationItemAssociator<'_> {
         )
         .is_some()
         {
-            if !self.detached_annotation {
+            if self.mode != AssociationMode::DetachedAnnotation {
                 self.body_context_items.insert(id);
             }
             self.declared_items.insert(id);
@@ -522,14 +517,14 @@ impl TessellationItemAssociator<'_> {
                 "TESSELLATED_GEOMETRIC_SET",
             ],
         ) {
-            if self.declare_containers {
+            if self.mode == AssociationMode::BodyItems {
                 self.declared_items.insert(id);
                 self.item_bodies
                     .entry(id)
                     .or_default()
                     .extend(self.bodies.iter().cloned());
             }
-            if self.claim_containers {
+            if self.mode != AssociationMode::DetachedAnnotation {
                 self.typed.insert(id);
             }
             if !self.bodies.is_empty() && matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL")
@@ -548,7 +543,7 @@ impl TessellationItemAssociator<'_> {
             for item in item_ids {
                 self.visit(item, depth + 1, placement);
             }
-        } else if self.declare_containers {
+        } else if self.mode == AssociationMode::BodyItems {
             self.declared_items.insert(id);
             self.item_bodies
                 .entry(id)

@@ -1828,16 +1828,8 @@ fn measure_context<'a>(
     graph_limit: usize,
 ) -> MeasureContext<'a> {
     MeasureContext {
-        length_scale: geometry
-            .length_scales
-            .get(&id)
-            .copied()
-            .unwrap_or(geometry.length_scale),
-        angle_scale: geometry
-            .plane_angle_scales
-            .get(&id)
-            .copied()
-            .unwrap_or(geometry.plane_angle_scale),
+        length_scale: geometry.units.length([id]),
+        angle_scale: geometry.units.angle([id]),
         graph_limit,
         losses,
     }

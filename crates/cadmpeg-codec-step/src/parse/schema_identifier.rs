@@ -25,6 +25,7 @@
 /// The header classifies each identifier once and keeps the result. The
 /// decoded text is owned: it comes from a string decode that has no home in the
 /// header record, so a borrow would have nothing to point at.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum AdmittedSchemaIdentifier {
     /// The schema name and the optional object identifier are both valid.
     Valid {

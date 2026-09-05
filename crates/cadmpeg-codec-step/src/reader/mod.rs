@@ -206,7 +206,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
 }
 
 struct OpaqueSourceRecord {
-    unknown_id: String,
+    unknown_id: UnknownId,
     span: std::ops::Range<usize>,
     links: BTreeSet<u64>,
     reference_work: u64,
@@ -417,7 +417,7 @@ fn decode_exchange_mode(
             .records
             .values()
             .filter(|record| !session.typed_records.contains(&record.id))
-            .map(|record| (record.id, opaque_record_id(record).0))
+            .map(|record| (record.id, opaque_record_id(record)))
             .collect::<BTreeMap<_, _>>();
         opaque_sources.reserve(opaque_ids.len());
         for record in exchange.records.values() {
@@ -495,7 +495,7 @@ fn decode_exchange_mode(
                 None,
             )?;
             opaque.push(UnknownRecord::retained(
-                UnknownId::mint(source.unknown_id).expect("identity grammar"),
+                source.unknown_id,
                 source.span.start as u64,
                 bytes,
                 source
@@ -504,7 +504,7 @@ fn decode_exchange_mode(
                     .flat_map(|id| {
                         opaque_ids
                             .get(&id)
-                            .cloned()
+                            .map(|id| id.0.clone())
                             .into_iter()
                             .chain(source_targets.get(&id).into_iter().flatten().cloned())
                     })

@@ -21,7 +21,6 @@ impl std::fmt::Display for Ref {
 
 /// Accumulates DATA instances in allocation order and counts their entity types.
 pub struct Emitter {
-    next: u64,
     lines: Vec<String>,
     counts: BTreeMap<&'static str, usize>,
     /// Leaf instances keyed by encoded type and parameters.
@@ -31,7 +30,6 @@ pub struct Emitter {
 impl Emitter {
     pub fn new() -> Self {
         Emitter {
-            next: 1,
             lines: Vec::new(),
             counts: BTreeMap::new(),
             interned: HashMap::new(),
@@ -43,8 +41,7 @@ impl Emitter {
     /// `type_` is also the entity-count key. Complex instances use their leading
     /// keyword as the key.
     pub fn emit(&mut self, type_: &'static str, params: &str) -> Ref {
-        let id = self.next;
-        self.next += 1;
+        let id = self.lines.len() as u64 + 1;
         self.lines.push(format!("#{id} = {type_}({params});"));
         *self.counts.entry(type_).or_insert(0) += 1;
         Ref(id)
@@ -54,8 +51,7 @@ impl Emitter {
     ///
     /// `tally` supplies its entity-count key.
     pub fn emit_raw(&mut self, tally: &'static str, body: &str) -> Ref {
-        let id = self.next;
-        self.next += 1;
+        let id = self.lines.len() as u64 + 1;
         self.lines.push(format!("#{id} = {body};"));
         *self.counts.entry(tally).or_insert(0) += 1;
         Ref(id)

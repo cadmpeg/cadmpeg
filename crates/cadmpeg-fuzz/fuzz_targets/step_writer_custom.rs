@@ -32,11 +32,11 @@ fuzz_target!(|data: &[u8]| {
         product_name: format!("Product {}", data[0]),
         author: format!("Author {}", data[1]),
         organization: format!("Org {}", data[2]),
-        timestamp: format!(
+        timestamp: Some(format!(
             "2024-01-{:02}T{:02}:00:00",
             (data[3] % 28) + 1,
             data[4] % 24
-        ),
+        )),
         originating_system: format!("System {}", data[5]),
     };
 

@@ -99,11 +99,7 @@ fn write_header(
     schema: StepSchema,
     opts: &StepWriteOptions,
 ) -> std::io::Result<()> {
-    let ts = if opts.timestamp.is_empty() {
-        "1970-01-01T00:00:00"
-    } else {
-        &opts.timestamp
-    };
+    let ts = opts.timestamp.as_deref().unwrap_or("1970-01-01T00:00:00");
     writeln!(w, "ISO-10303-21;")?;
     writeln!(w, "HEADER;")?;
     writeln!(

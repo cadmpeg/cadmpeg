@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem::size_of;
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -185,8 +186,7 @@ pub struct Exchange {
     pub signature_sections: Vec<SignatureSection>,
     /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
-    schema_identifiers: Vec<String>,
-    schema_object_identifiers: Vec<Option<Vec<u64>>>,
+    schema_identifiers: Vec<AdmittedSchemaIdentifier>,
     implementation_level: String,
     implementation_grammar: ImplementationLevel,
     entity_ids: EntityIndex,
@@ -236,15 +236,18 @@ impl PartialEq for EntityIndex {
 
 impl Exchange {
     /// Header-admitted `FILE_SCHEMA` identifiers in source order.
-    pub(crate) fn schema_identifiers(&self) -> &[String] {
-        &self.schema_identifiers
+    pub(crate) fn schema_identifiers(&self) -> Vec<String> {
+        self.schema_identifiers
+            .iter()
+            .map(|identifier| identifier.text().to_owned())
+            .collect()
     }
 
     /// Numeric object-identifier components for the primary schema identifier.
-    pub(crate) fn primary_schema_object_identifier(&self) -> Option<&[u64]> {
-        self.schema_object_identifiers
+    pub(crate) fn primary_schema_object_identifier(&self) -> Option<Vec<u64>> {
+        self.schema_identifiers
             .first()
-            .and_then(Option::as_deref)
+            .and_then(AdmittedSchemaIdentifier::numeric_object_identifier)
     }
 
     /// Verbatim `FILE_DESCRIPTION` implementation-level declaration.
@@ -267,7 +270,6 @@ impl Exchange {
         self.signature_sections.clear();
         self.records.clear();
         self.schema_identifiers.clear();
-        self.schema_object_identifiers.clear();
         self.implementation_level.clear();
         self.entity_ids = EntityIndex::default();
     }
@@ -437,8 +439,7 @@ fn parse_inner(
         last_end: 0,
         depth: 0,
         diagnostics: Vec::new(),
-        omitted_entity_name_count: 0,
-        first_omitted_entity_name_offset: None,
+        omitted_entity_names: None,
         budget,
     };
     parser.current = parser.lex_next()?;
@@ -460,8 +461,7 @@ struct Parser<'input, 'ctx, 'arena> {
     last_end: usize,
     depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
-    omitted_entity_name_count: usize,
-    first_omitted_entity_name_offset: Option<usize>,
+    omitted_entity_names: Option<(usize, NonZeroUsize)>,
     budget: Option<&'ctx DecodeContext<'arena>>,
 }
 
@@ -661,16 +661,6 @@ impl Parser<'_, '_, '_> {
                 &header_admission.schema_identifiers,
                 header[2].offset,
             ));
-        let schema_object_identifiers = header_admission
-            .schema_identifiers
-            .iter()
-            .map(AdmittedSchemaIdentifier::numeric_object_identifier)
-            .collect();
-        let declared_schema_identifiers = header_admission
-            .schema_identifiers
-            .iter()
-            .map(|identifier| identifier.text().to_owned())
-            .collect();
         let schema_names_for_matching =
             schema_names_for_matching(&header_admission.schema_identifiers);
         if let Err(message) =
@@ -975,9 +965,12 @@ impl Parser<'_, '_, '_> {
                     allocation_bytes(added_capacity, size_of::<Value>()),
                     "step_omitted_name_recovery_storage",
                 )?;
-                self.omitted_entity_name_count += 1;
-                self.first_omitted_entity_name_offset
-                    .get_or_insert(record.span.start);
+                match &mut self.omitted_entity_names {
+                    Some((_, count)) => *count = count.saturating_add(1),
+                    None => {
+                        self.omitted_entity_names = Some((record.span.start, NonZeroUsize::MIN))
+                    }
+                }
             }
         }
         let mut refs = Vec::new();
@@ -1060,13 +1053,13 @@ impl Parser<'_, '_, '_> {
         if has_resource_value {
             return self.err("resource values are only valid in edition-3 anchor items");
         }
-        if let Some(offset) = self.first_omitted_entity_name_offset {
+        if let Some((offset, count)) = self.omitted_entity_names {
             self.diagnostics.push(ParseDiagnostic {
                 offset,
                 kind: ParseDiagnosticKind::OmittedEntityName,
                 message: format!(
                     "recovered {} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name",
-                    self.omitted_entity_name_count
+                    count
                 ),
             });
         }
@@ -1089,8 +1082,7 @@ impl Parser<'_, '_, '_> {
                 signatures,
                 signature_sections,
                 records,
-                schema_identifiers: declared_schema_identifiers,
-                schema_object_identifiers,
+                schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
                 implementation_grammar: implementation_level,
                 entity_ids: EntityIndex::default(),
