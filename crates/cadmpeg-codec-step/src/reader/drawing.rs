@@ -74,8 +74,8 @@ pub(super) fn decode(
     let mut losses = Vec::new();
     let mut candidates = exchange
         .records
-        .values()
-        .filter_map(|record| drawing_type(record).map(|name| (record.id, name)))
+        .iter()
+        .filter_map(|(&id, record)| drawing_type(record).map(|name| (id, name)))
         .filter(|(id, name)| {
             let valid = required_parameter_count(name)
                 .is_none_or(|count| source_parameters(&exchange.records[id], name).len() >= count);
@@ -323,7 +323,7 @@ fn add_source_typed_targets(
         {
             continue;
         }
-        let identity = opaque_record_id(record).0;
+        let identity = opaque_record_id(id, record).0;
         let source_type = record
             .partials
             .iter()
@@ -828,7 +828,7 @@ fn target_for(
     }
     exchange.records.get(&id).map(|record| {
         ReferenceSelection::new(
-            ReferenceTarget::Local(opaque_record_id(record).0),
+            ReferenceTarget::Local(opaque_record_id(id, record).0),
             Vec::new(),
         )
     })

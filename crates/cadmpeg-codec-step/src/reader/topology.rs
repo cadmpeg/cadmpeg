@@ -219,7 +219,7 @@ pub(super) fn decode(
         losses: Vec::new(),
         notes: Vec::new(),
     };
-    for record in exchange.records.values() {
+    for (&id, record) in &exchange.records {
         let Some(name) = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])
         else {
             continue;
@@ -232,7 +232,7 @@ pub(super) fn decode(
                 .note(format!(
                     "{name} #{} omits the derived `cfs_faces` slot required by ISO 10303-21; \
                  read the shell element from positional slot 1",
-                    record.id
+                    id
                 ))
                 .with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
@@ -902,7 +902,7 @@ fn build_wire_set(
     };
     let mut typed = HashSet::from([id, set_id]);
     if set_type == "CONNECTED_EDGE_SUB_SET"
-        && !validate_subset_parent(set, set_type, exchange, warnings)
+        && !validate_subset_parent(set_id, set, set_type, exchange, warnings)
     {
         typed.remove(&set_id);
     }
@@ -2109,7 +2109,7 @@ fn build_one(
                 CarrierKind::ConnectedFaceSet,
             )?;
             if set_type == "CONNECTED_FACE_SUB_SET"
-                && !validate_subset_parent(sr, set_type, exchange, warnings)
+                && !validate_subset_parent(shell_step, sr, set_type, exchange, warnings)
             {
                 typed.remove(&shell_step);
             }
@@ -2156,7 +2156,7 @@ fn build_one(
                 return None;
             }
             let face_info = require_carrier(
-                face_attributes(fr, exchange, &mut BTreeSet::new()),
+                face_attributes(face_step, fr, exchange, &mut BTreeSet::new()),
                 failure,
                 face_step,
                 CarrierKind::FaceAttributes,
@@ -4183,11 +4183,12 @@ fn is_face_record(record: &RawRecord) -> bool {
 }
 
 fn face_attributes(
+    id: u64,
     record: &RawRecord,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
 ) -> Option<FaceInfo> {
-    if !active.insert(record.id) {
+    if !active.insert(id) {
         return None;
     }
     let result = (|| match most_specific(
@@ -4202,7 +4203,12 @@ fn face_attributes(
     )? {
         "ORIENTED_FACE" => {
             let face_element = oriented_face_element(record)?;
-            let mut base = face_attributes(exchange.records.get(&face_element)?, exchange, active)?;
+            let mut base = face_attributes(
+                face_element,
+                exchange.records.get(&face_element)?,
+                exchange,
+                active,
+            )?;
             let orientation = oriented_face_orientation(record)?;
             if !orientation {
                 base.reverse_bound_orientation = !base.reverse_bound_orientation;
@@ -4217,7 +4223,7 @@ fn face_attributes(
         "SUBFACE" => {
             let parent = subface_parent(record)?;
             let mut parent_info =
-                face_attributes(exchange.records.get(&parent)?, exchange, active)?;
+                face_attributes(parent, exchange.records.get(&parent)?, exchange, active)?;
             let bounds = direct_face_bounds(record, exchange)?;
             parent_info.typed.insert(parent);
             if let Some(name) = face_name_value(record) {
@@ -4259,7 +4265,7 @@ fn face_attributes(
         }
         _ => None,
     })();
-    active.remove(&record.id);
+    active.remove(&id);
     result
 }
 
@@ -4443,6 +4449,7 @@ fn connected_set_members(record: &RawRecord, set_type: &str) -> Option<Vec<u64>>
 }
 
 fn validate_subset_parent(
+    id: u64,
     record: &RawRecord,
     subset_type: &str,
     exchange: &Exchange,
@@ -4463,7 +4470,7 @@ fn validate_subset_parent(
     let Some(parent) = parent else {
         warnings.push(format!(
             "{subset_type} #{} has no resolvable parent {base_type}",
-            record.id
+            id
         ));
         return false;
     };
@@ -4476,7 +4483,7 @@ fn validate_subset_parent(
     } else {
         warnings.push(format!(
             "{subset_type} #{} parent #{parent} does not resolve to {base_type}",
-            record.id
+            id
         ));
         false
     }

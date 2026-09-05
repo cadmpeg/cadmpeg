@@ -119,8 +119,6 @@ impl<'a> IntoIterator for &'a mut RecordPartials {
 /// One DATA entity instance with its exact source extent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawRecord {
-    /// Numeric entity-instance name without `#`.
-    pub id: u64,
     /// One leaf for a simple instance or all leaves for a complex instance.
     pub partials: RecordPartials,
     /// Half-open byte range from instance name through semicolon.
@@ -781,8 +779,7 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let mut ids = Vec::new();
             while !self.peek_name("ENDSEC") {
-                let record = self.record()?;
-                let id = record.id;
+                let (id, record) = self.record()?;
                 self.charge_retained(
                     btree_node_storage::<u64, RawRecord>(),
                     "step_parse_record_table_storage",
@@ -1044,7 +1041,7 @@ impl Parser<'_, '_, '_> {
         ))
     }
 
-    fn record(&mut self) -> Result<RawRecord, ParseError> {
+    fn record(&mut self) -> Result<(u64, RawRecord), ParseError> {
         let start = self.current_offset();
         let TokenKind::Instance(id) = self.next_kind()? else {
             return self.err("expected instance name");
@@ -1094,11 +1091,13 @@ impl Parser<'_, '_, '_> {
         };
         self.charge_vec_storage(&partials.0, "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
-        Ok(RawRecord {
+        Ok((
             id,
-            partials,
-            span: start..self.previous_end(),
-        })
+            RawRecord {
+                partials,
+                span: start..self.previous_end(),
+            },
+        ))
     }
 
     fn partial(&mut self) -> Result<PartialRecord, ParseError> {

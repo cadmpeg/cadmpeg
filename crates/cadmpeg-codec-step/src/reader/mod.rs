@@ -419,9 +419,9 @@ fn decode_exchange_mode(
     } else {
         exchange
             .records
-            .values()
-            .filter(|record| !session.typed_records.contains(&record.id))
-            .map(|record| record.span.start)
+            .iter()
+            .filter(|(id, _)| !session.typed_records.contains(id))
+            .map(|(_, record)| record.span.start)
             .collect()
     };
     let mut counts = BTreeMap::<String, usize>::new();
@@ -432,13 +432,13 @@ fn decode_exchange_mode(
     if retain_opaque {
         opaque_ids = exchange
             .records
-            .values()
-            .filter(|record| !session.typed_records.contains(&record.id))
-            .map(|record| (record.id, opaque_record_id(record)))
+            .iter()
+            .filter(|(id, _)| !session.typed_records.contains(id))
+            .map(|(&id, record)| (id, opaque_record_id(id, record)))
             .collect::<BTreeMap<_, _>>();
         opaque_sources.reserve(opaque_ids.len());
-        for record in exchange.records.values() {
-            if session.typed_records.contains(&record.id) {
+        for (&id, record) in &exchange.records {
+            if session.typed_records.contains(&id) {
                 continue;
             }
             let kind = record
@@ -462,7 +462,7 @@ fn decode_exchange_mode(
                     .for_each(|value| collect_references(value, &mut links));
             }
             opaque_sources.push(OpaqueSourceRecord {
-                unknown_id: opaque_ids[&record.id].clone(),
+                unknown_id: opaque_ids[&id].clone(),
                 span: record.span.clone(),
                 links,
                 reference_work,
@@ -474,8 +474,8 @@ fn decode_exchange_mode(
             .collect::<BTreeSet<_>>();
         source_targets = record_targets(&session.ir, |record_id| target_ids.contains(&record_id));
     } else {
-        for record in exchange.records.values() {
-            if session.typed_records.contains(&record.id) {
+        for (&id, record) in &exchange.records {
+            if session.typed_records.contains(&id) {
                 continue;
             }
             let kind = record
@@ -981,14 +981,14 @@ fn referenced_record_ids(exchange: &Exchange) -> BTreeSet<u64> {
     references
 }
 
-fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
+fn opaque_record_id(id: u64, record: &parse::RawRecord) -> UnknownId {
     let kind = record
         .partials
         .iter()
         .map(|partial| partial.name.to_ascii_lowercase())
         .collect::<Vec<_>>()
         .join("_");
-    UnknownId::mint(crate::ids::StepIdentity::data(&kind, record.id)).expect("identity grammar")
+    UnknownId::mint(crate::ids::StepIdentity::data(&kind, id)).expect("identity grammar")
 }
 
 fn record_targets(
@@ -1035,8 +1035,8 @@ fn byte_accounting(
 ) -> Result<ByteAccounting, CodecError> {
     let mut classes =
         ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?;
-    for record in exchange.records.values() {
-        let class = if typed_records.contains(&record.id) {
+    for (&id, record) in &exchange.records {
+        let class = if typed_records.contains(&id) {
             ByteClass::Typed
         } else {
             ByteClass::Opaque
