@@ -314,19 +314,145 @@ pub struct TextShapeUse {
 
 /// One vertex point representation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextPointRepresentation {
-    /// First curve/surface parameter.
-    pub parameter: f64,
-    /// Optional second surface parameter.
-    pub second_parameter: Option<f64>,
-    /// Representation family code 1 through 3.
-    pub kind: u8,
-    /// Referenced 3D or 2D curve index.
-    pub curve: Option<usize>,
-    /// Referenced surface index.
-    pub surface: Option<usize>,
-    /// Location index, or zero for identity.
-    pub location: usize,
+#[serde(
+    try_from = "TextPointRepresentationWire",
+    into = "TextPointRepresentationWire"
+)]
+pub enum TextPointRepresentation {
+    /// Kind 1: point on a 3D curve.
+    Curve3d {
+        /// Curve parameter.
+        parameter: f64,
+        /// One-based 3D curve index.
+        curve: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+    /// Kind 2: point on a parameter-space curve of a surface.
+    Pcurve {
+        /// Parameter-curve parameter.
+        parameter: f64,
+        /// One-based 2D curve index.
+        curve: usize,
+        /// One-based surface index.
+        surface: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+    /// Kind 3: point on a surface.
+    Surface {
+        /// First surface parameter.
+        parameter: f64,
+        /// Second surface parameter.
+        second_parameter: f64,
+        /// One-based surface index.
+        surface: usize,
+        /// Location index, or zero for identity.
+        location: usize,
+    },
+}
+
+impl TextPointRepresentation {
+    /// Representation family code 1 through 3 retained on the CADIR wire.
+    pub const fn kind(&self) -> u8 {
+        match self {
+            Self::Curve3d { .. } => 1,
+            Self::Pcurve { .. } => 2,
+            Self::Surface { .. } => 3,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TextPointRepresentationWire {
+    parameter: f64,
+    second_parameter: Option<f64>,
+    kind: u8,
+    curve: Option<usize>,
+    surface: Option<usize>,
+    location: usize,
+}
+
+impl From<TextPointRepresentation> for TextPointRepresentationWire {
+    fn from(value: TextPointRepresentation) -> Self {
+        let kind = value.kind();
+        match value {
+            TextPointRepresentation::Curve3d {
+                parameter,
+                curve,
+                location,
+            } => Self {
+                parameter,
+                second_parameter: None,
+                kind,
+                curve: Some(curve),
+                surface: None,
+                location,
+            },
+            TextPointRepresentation::Pcurve {
+                parameter,
+                curve,
+                surface,
+                location,
+            } => Self {
+                parameter,
+                second_parameter: None,
+                kind,
+                curve: Some(curve),
+                surface: Some(surface),
+                location,
+            },
+            TextPointRepresentation::Surface {
+                parameter,
+                second_parameter,
+                surface,
+                location,
+            } => Self {
+                parameter,
+                second_parameter: Some(second_parameter),
+                kind,
+                curve: None,
+                surface: Some(surface),
+                location,
+            },
+        }
+    }
+}
+
+impl TryFrom<TextPointRepresentationWire> for TextPointRepresentation {
+    type Error = String;
+
+    fn try_from(wire: TextPointRepresentationWire) -> Result<Self, Self::Error> {
+        match (
+            wire.kind,
+            wire.parameter,
+            wire.second_parameter,
+            wire.curve,
+            wire.surface,
+            wire.location,
+        ) {
+            (1, parameter, None, Some(curve), None, location) => Ok(Self::Curve3d {
+                parameter,
+                curve,
+                location,
+            }),
+            (2, parameter, None, Some(curve), Some(surface), location) => Ok(Self::Pcurve {
+                parameter,
+                curve,
+                surface,
+                location,
+            }),
+            (3, parameter, Some(second_parameter), None, Some(surface), location) => {
+                Ok(Self::Surface {
+                    parameter,
+                    second_parameter,
+                    surface,
+                    location,
+                })
+            }
+            _ => Err("vertex representation kind disagrees with payload fields".to_owned()),
+        }
+    }
 }
 
 /// One edge representation record.
@@ -1692,61 +1818,66 @@ fn parse_binary_tshape(
                     ));
                 }
                 let parameter = cursor.f64("binary vertex parameter")?;
-                let (second_parameter, curve, surface) = match representation_kind {
-                    1 => (
-                        None,
-                        Some(checked_binary_reference(
+                let representation = match representation_kind {
+                    1 => TextPointRepresentation::Curve3d {
+                        parameter,
+                        curve: checked_binary_reference(
                             cursor.i32("binary vertex curve")?,
                             curve_count,
                             false,
                             "vertex curve",
-                        )?),
-                        None,
-                    ),
-                    2 => (
-                        None,
-                        Some(checked_binary_reference(
+                        )?,
+                        location: checked_binary_reference(
+                            cursor.i32("binary vertex location")?,
+                            location_count,
+                            true,
+                            "vertex location",
+                        )?,
+                    },
+                    2 => TextPointRepresentation::Pcurve {
+                        parameter,
+                        curve: checked_binary_reference(
                             cursor.i32("binary vertex pcurve")?,
                             curve2d_count,
                             false,
                             "vertex pcurve",
-                        )?),
-                        Some(checked_binary_reference(
+                        )?,
+                        surface: checked_binary_reference(
                             cursor.i32("binary vertex surface")?,
                             surface_count,
                             false,
                             "vertex surface",
-                        )?),
-                    ),
-                    3 => (
-                        Some(cursor.f64("binary vertex second surface parameter")?),
-                        None,
-                        Some(checked_binary_reference(
+                        )?,
+                        location: checked_binary_reference(
+                            cursor.i32("binary vertex location")?,
+                            location_count,
+                            true,
+                            "vertex location",
+                        )?,
+                    },
+                    3 => TextPointRepresentation::Surface {
+                        parameter,
+                        second_parameter: cursor.f64("binary vertex second surface parameter")?,
+                        surface: checked_binary_reference(
                             cursor.i32("binary vertex surface")?,
                             surface_count,
                             false,
                             "vertex surface",
-                        )?),
-                    ),
+                        )?,
+                        location: checked_binary_reference(
+                            cursor.i32("binary vertex location")?,
+                            location_count,
+                            true,
+                            "vertex location",
+                        )?,
+                    },
                     other => {
                         return Err(CodecError::malformed(format_args!(
                             "invalid binary vertex representation kind {other}"
                         )))
                     }
                 };
-                representations.push(TextPointRepresentation {
-                    parameter,
-                    second_parameter,
-                    kind: representation_kind,
-                    curve,
-                    surface,
-                    location: checked_binary_reference(
-                        cursor.i32("binary vertex location")?,
-                        location_count,
-                        true,
-                        "vertex location",
-                    )?,
-                });
+                representations.push(representation);
             }
             TextTShapeGeometry::Vertex {
                 tolerance,
@@ -3284,57 +3415,39 @@ fn parse_vertex_geometry(
                 "vertex representation-count limit exceeded".into(),
             ));
         }
-        let (second_parameter, curve, surface) = match kind {
-            1 => (
-                None,
-                Some(parse_reference(
-                    cursor,
-                    "vertex curve",
-                    counts["Curves"],
-                    false,
-                )?),
-                None,
-            ),
-            2 => (
-                None,
-                Some(parse_reference(
+        let location_of = |cursor: &mut TokenCursor<'_>| {
+            parse_reference(cursor, "vertex location", counts["Locations"], true)
+        };
+        let representation = match kind {
+            1 => TextPointRepresentation::Curve3d {
+                parameter,
+                curve: parse_reference(cursor, "vertex curve", counts["Curves"], false)?,
+                location: location_of(cursor)?,
+            },
+            2 => TextPointRepresentation::Pcurve {
+                parameter,
+                curve: parse_reference(
                     cursor,
                     "vertex parameter curve",
                     counts["Curve2ds"],
                     false,
-                )?),
-                Some(parse_reference(
-                    cursor,
-                    "vertex surface",
-                    counts["Surfaces"],
-                    false,
-                )?),
-            ),
-            3 => (
-                Some(cursor.real("vertex second surface parameter")?),
-                None,
-                Some(parse_reference(
-                    cursor,
-                    "vertex surface",
-                    counts["Surfaces"],
-                    false,
-                )?),
-            ),
+                )?,
+                surface: parse_reference(cursor, "vertex surface", counts["Surfaces"], false)?,
+                location: location_of(cursor)?,
+            },
+            3 => TextPointRepresentation::Surface {
+                parameter,
+                second_parameter: cursor.real("vertex second surface parameter")?,
+                surface: parse_reference(cursor, "vertex surface", counts["Surfaces"], false)?,
+                location: location_of(cursor)?,
+            },
             other => {
                 return Err(CodecError::malformed(format_args!(
                     "invalid vertex representation kind {other}"
                 )))
             }
         };
-        let location = parse_reference(cursor, "vertex location", counts["Locations"], true)?;
-        representations.push(TextPointRepresentation {
-            parameter,
-            second_parameter,
-            kind: kind as u8,
-            curve,
-            surface,
-            location,
-        });
+        representations.push(representation);
     }
     Ok(TextTShapeGeometry::Vertex {
         tolerance,
