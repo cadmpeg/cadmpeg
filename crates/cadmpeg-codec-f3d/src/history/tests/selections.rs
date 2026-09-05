@@ -452,8 +452,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         byte_offset: 0,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: Some(design_id.into()),
-        design_id_offset: None,
+        design_id: Some(crate::records::RecordedValue { value: design_id.into(), offset: None }),
         design_selector: Some(ConstructionRecipeSelector {
             value: selector,
             byte_offset: 0,
@@ -485,7 +484,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                 selector_tail: None,
 
                 references: vec![DesignBodyRecipeReference {
-                    design_reference: if recipe.design_id.as_deref() == Some("family") {
+                    design_reference: if recipe.design_id.as_ref().map(|field| field.value.as_str()) == Some("family") {
                         413
                     } else {
                         409

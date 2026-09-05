@@ -423,3 +423,26 @@ fn material_assignment_preserves_located_and_authored_token_wire() {
     let parsed: super::DesignMaterialAssignment = serde_json::from_str(&wire).expect("absent tokens");
     assert_eq!(serde_json::to_string(&parsed).expect("material wire"), wire);
 }
+
+#[test]
+fn recipe_design_id_preserves_source_and_authored_wire() {
+    let prefix = r#"{"id":"recipe#0","byte_offset":27,"kind":"body""#;
+    let suffix = r#","recipe_index":0,"record_index":12}"#;
+    for value in ["\"\"", "\"301\""] {
+        for offset in [None, Some(0), Some(4)] {
+            let mut wire = format!("{prefix},\"design_id\":{value}");
+            if let Some(offset) = offset {
+                wire.push_str(&format!(",\"design_id_offset\":{offset}"));
+            }
+            wire.push_str(suffix);
+            let parsed: super::ConstructionRecipe = serde_json::from_str(&wire).expect("recipe id");
+            assert_eq!(serde_json::to_string(&parsed).expect("recipe wire"), wire);
+        }
+    }
+    let wire = format!("{prefix}{suffix}");
+    let parsed: super::ConstructionRecipe = serde_json::from_str(&wire).expect("body-less recipe");
+    assert_eq!(serde_json::to_string(&parsed).expect("recipe wire"), wire);
+    let wire = format!("{prefix},\"design_id_offset\":4{suffix}");
+    let error = serde_json::from_str::<super::ConstructionRecipe>(&wire).expect_err("orphan design id offset").to_string();
+    assert!(error.contains("design_id_offset"));
+}

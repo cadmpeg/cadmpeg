@@ -85,8 +85,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         byte_offset: recipe_at as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: Some("2265".into()),
-        design_id_offset: None,
+        design_id: Some(crate::records::RecordedValue { value: "2265".into(), offset: None }),
         design_selector: Some(crate::records::ConstructionRecipeSelector {
             value: 9,
             byte_offset: 0,
@@ -326,8 +325,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         byte_offset: recipe_at as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design_id: Some("301".into()),
-        design_id_offset: None,
+        design_id: Some(crate::records::RecordedValue { value: "301".into(), offset: None }),
         design_selector: Some(crate::records::ConstructionRecipeSelector {
             value: 6,
             byte_offset: 0,
@@ -406,7 +404,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index_offset: Some(recipe_record_at + 8),
         kind: ConstructionRecipeKind::Edge,
         design_id: None,
-        design_id_offset: None,
         design_selector: None,
         recipe_index: 7,
         record_index: 303,
@@ -519,7 +516,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index_offset: Some(vertex_recipe_record_at + 8),
         kind: ConstructionRecipeKind::Vertex,
         design_id: None,
-        design_id_offset: None,
         design_selector: None,
         recipe_index: 9,
         record_index: 303,
@@ -1302,7 +1298,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_scope.payload = crate::records::DesignFeatureKind::Extrude.into();
     let mut face_recipe = recipe;
     face_recipe.kind = ConstructionRecipeKind::BoundedFace;
-    face_recipe.design_id = Some("303".into());
+    face_recipe.design_id.as_mut().expect("recipe id").value = "303".into();
     face_recipe.byte_offset = face_recipe_name_at as u64;
     face_recipe.record_index_offset = Some(face_recipe_record_at + 8);
     let mut operand = parse_face_operand(

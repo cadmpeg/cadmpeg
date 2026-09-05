@@ -273,7 +273,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                         byte_offset: u64::try_from(selector_at).ok()?,
                     })
                 });
-            let key = (kind, design_id.clone());
+            let key = (kind, design_id);
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
             *counter += 1;
@@ -286,8 +286,7 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 byte_offset: offset as u64,
                 record_index_offset: record_index_offset.map(|offset| offset as u64),
                 kind,
-                design_id,
-                design_id_offset: design_id_field.as_ref().map(|field| field.1 as u64),
+                design_id: design_id_field.map(|(value, offset)| crate::records::RecordedValue { value, offset: Some(offset as u64) }),
                 design_selector,
                 recipe_index,
                 record_index,
@@ -1777,8 +1776,8 @@ mod tests {
         let mut recipes = Vec::new();
         crate::design::decode::body::decode_stream(&body, "Design/BulkStream.dat", &mut recipes);
         assert_eq!(recipes.len(), 1);
-        assert_eq!(recipes[0].design_id.as_deref(), Some("2265"));
-        assert_eq!(recipes[0].design_id_offset, Some(4));
+        assert_eq!(recipes[0].design_id.as_ref().map(|field| field.value.as_str()), Some("2265"));
+        assert_eq!(recipes[0].design_id.as_ref().and_then(|field| field.offset), Some(4));
         assert_eq!(
             recipes[0].design_selector,
             Some(crate::records::ConstructionRecipeSelector {
