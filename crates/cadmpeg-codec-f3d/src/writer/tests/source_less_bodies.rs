@@ -525,8 +525,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     let mut preambleless = source_less.clone();
     {
         let mut native = f3d_native_mut(&mut preambleless);
-        native.asm_histories[0].stream_size = None;
-        native.asm_histories[0].history_entry_count = None;
+        native.asm_histories[0].preamble = None;
     }
     let mut preambleless_bytes = Vec::new();
     F3dCodec
@@ -543,16 +542,18 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         )
         .expect("source-less preambleless history round trip");
     assert_eq!(
-        f3d_native(preambleless_round_trip.ir()).asm_histories[0].stream_size,
+        f3d_native(preambleless_round_trip.ir()).asm_histories[0].stream_size(),
         None
     );
     assert_eq!(
-        f3d_native(preambleless_round_trip.ir()).asm_histories[0].history_entry_count,
+        f3d_native(preambleless_round_trip.ir()).asm_histories[0].history_entry_count(),
         None
     );
     {
         let mut native = f3d_native_mut(&mut source_less);
-        native.asm_histories[0].stream_size = Some(3);
+        if let Some(preamble) = &mut native.asm_histories[0].preamble {
+            preamble.stream_size = 3;
+        }
     }
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -565,8 +566,8 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less history round trip");
     let actual = &f3d_native(round_trip.ir()).asm_histories[0];
-    assert_eq!(actual.stream_size, expected.stream_size);
-    assert_eq!(actual.history_entry_count, expected.history_entry_count);
+    assert_eq!(actual.stream_size(), expected.stream_size());
+    assert_eq!(actual.history_entry_count(), expected.history_entry_count());
     assert_eq!(actual.states.len(), expected.states.len());
     assert_eq!(actual.states[0].state_id, expected.states[0].state_id);
     assert_eq!(actual.states[0].bulletin_boards.len(), 1);

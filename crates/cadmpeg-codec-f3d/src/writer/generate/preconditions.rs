@@ -810,26 +810,20 @@ pub(crate) fn validate_source_less_history_graph(
         }
     }
     for history in &native.asm_histories {
-        match (history.stream_size, history.history_entry_count) {
-            (Some(size), Some(entry_count))
+        match history.preamble {
+            Some(preamble)
                 if history
                     .states
                     .first()
-                    .is_some_and(|state| state.state_id == size)
-                    && entry_count >= 0 => {}
-            (Some(_), Some(_)) => {
+                    .is_some_and(|state| state.state_id == preamble.stream_size)
+                    && preamble.history_entry_count >= 0 => {}
+            Some(_) => {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
             }
-            (None, None) => {}
-            _ => {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D history {} has an incomplete history-stream preamble",
-                    history.id
-                )));
-            }
+            None => {}
         }
     }
     if native

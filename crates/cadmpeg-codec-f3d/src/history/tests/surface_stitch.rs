@@ -122,8 +122,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let history = AsmHistory {
         id: history_id.clone(),
         byte_offset: 0,
-        stream_size: None,
-        history_entry_count: None,
+        preamble: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
         states: vec![

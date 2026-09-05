@@ -224,13 +224,13 @@ pub(crate) fn native_history_tail(
         ));
     }
     let history = &histories[0];
-    match (history.stream_size, history.history_entry_count) {
-        (Some(stream_size), Some(history_entry_count)) => {
+    match history.preamble {
+        Some(preamble) => {
             if history
                 .states
                 .first()
-                .is_none_or(|state| state.state_id != stream_size)
-                || history_entry_count < 0
+                .is_none_or(|state| state.state_id != preamble.stream_size)
+                || preamble.history_entry_count < 0
             {
                 return Err(CodecError::malformed(format_args!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
@@ -242,22 +242,16 @@ pub(crate) fn native_history_tail(
             }
             native_ident(bytes, "Data")?;
             native_ident(bytes, "history_stream")?;
-            native_i64(bytes, stream_size);
-            native_i64(bytes, stream_size);
+            native_i64(bytes, preamble.stream_size);
+            native_i64(bytes, preamble.stream_size);
             native_i64(bytes, 0);
-            native_i64(bytes, history_entry_count);
+            native_i64(bytes, preamble.history_entry_count);
             for reference in [-1, 0, 1, -1] {
                 native_ref(bytes, reference);
             }
             bytes.push(0x11);
         }
-        (None, None) => {}
-        _ => {
-            return Err(CodecError::malformed(format_args!(
-                "F3D history {} has an incomplete history-stream preamble",
-                history.id
-            )));
-        }
+        None => {}
     }
     for state in &history.states {
         native_ident(bytes, "delta_state")?;

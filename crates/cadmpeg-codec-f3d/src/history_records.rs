@@ -8,26 +8,99 @@ use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
+/// Stream-size and history-entry-count pair from an ASM history preamble.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AsmPreamble {
+    pub stream_size: i64,
+    pub history_entry_count: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "AsmHistorySerde"))]
+#[serde(try_from = "AsmHistorySerde", into = "AsmHistorySerde")]
 pub(crate) struct AsmHistory {
     pub id: String,
     pub byte_offset: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stream_size: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "high_water_mark")]
-    pub history_entry_count: Option<i64>,
+    pub preamble: Option<AsmPreamble>,
     /// True when historical topology binding was not attempted because its
     /// state-by-record work estimate exceeded the decoder safety budget.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub record_table_binding_budget_exceeded: bool,
     /// Historical projection consumers finished and any temporary complete
     /// topology snapshots were released. A compact plane-selection topology can
     /// remain for late feature projection.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub projection_finalized: bool,
     pub states: Vec<AsmDeltaState>,
+}
+
+impl AsmHistory {
+    pub(crate) fn stream_size(&self) -> Option<i64> {
+        self.preamble.map(|preamble| preamble.stream_size)
+    }
+
+    pub(crate) fn history_entry_count(&self) -> Option<i64> {
+        self.preamble.map(|preamble| preamble.history_entry_count)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct AsmHistorySerde {
+    id: String,
+    byte_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stream_size: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "high_water_mark")]
+    history_entry_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    record_table_binding_budget_exceeded: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    projection_finalized: bool,
+    states: Vec<AsmDeltaState>,
+}
+
+impl TryFrom<AsmHistorySerde> for AsmHistory {
+    type Error = String;
+
+    fn try_from(wire: AsmHistorySerde) -> Result<Self, Self::Error> {
+        let preamble = match (wire.stream_size, wire.history_entry_count) {
+            (Some(stream_size), Some(history_entry_count)) => Some(AsmPreamble {
+                stream_size,
+                history_entry_count,
+            }),
+            (None, None) => None,
+            _ => {
+                return Err(
+                    "asm history stream_size and history_entry_count must be paired".into(),
+                );
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            preamble,
+            record_table_binding_budget_exceeded: wire.record_table_binding_budget_exceeded,
+            projection_finalized: wire.projection_finalized,
+            states: wire.states,
+        })
+    }
+}
+
+impl From<AsmHistory> for AsmHistorySerde {
+    fn from(history: AsmHistory) -> Self {
+        let stream_size = history.stream_size();
+        let history_entry_count = history.history_entry_count();
+        Self {
+            id: history.id,
+            byte_offset: history.byte_offset,
+            stream_size,
+            history_entry_count,
+            record_table_binding_budget_exceeded: history.record_table_binding_budget_exceeded,
+            projection_finalized: history.projection_finalized,
+            states: history.states,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -2092,8 +2092,7 @@ pub(crate) fn validate_history_state_edits(
             )));
         }
         let mut normalized = history.clone();
-        normalized.stream_size = before.stream_size;
-        normalized.history_entry_count = before.history_entry_count;
+        normalized.preamble = before.preamble;
         for (state, before_state) in normalized.states.iter_mut().zip(&before.states) {
             state.state_id = before_state.state_id;
             state.version_flag = before_state.version_flag;
@@ -2141,14 +2140,12 @@ pub(crate) fn validate_history_state_edits(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("invalid ASM history id {}", history.id))
             })?;
-        if let Some(size) = history.stream_size {
+        if let Some(preamble) = history.preamble {
             if history
                 .states
                 .first()
-                .is_none_or(|state| state.state_id != size)
-                || history
-                    .history_entry_count
-                    .is_none_or(|entry_count| entry_count < 0)
+                .is_none_or(|state| state.state_id != preamble.stream_size)
+                || preamble.history_entry_count < 0
             {
                 return Err(CodecError::malformed(format_args!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
@@ -2156,18 +2153,14 @@ pub(crate) fn validate_history_state_edits(
                 )));
             }
         }
-        if history.stream_size != before.stream_size
-            || history.history_entry_count != before.history_entry_count
-        {
-            let (Some(stream_size), Some(history_entry_count)) =
-                (history.stream_size, history.history_entry_count)
-            else {
+        if history.preamble != before.preamble {
+            let (Some(preamble), Some(_)) = (history.preamble, before.preamble) else {
                 return Err(CodecError::NotImplemented(format!(
                     "cannot add or remove the F3D history preamble: {}",
                     history.id
                 )));
             };
-            if history.byte_offset == 0 || history_entry_count < 0 {
+            if history.byte_offset == 0 || preamble.history_entry_count < 0 {
                 return Err(CodecError::malformed(format_args!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
@@ -2175,8 +2168,8 @@ pub(crate) fn validate_history_state_edits(
             }
             edits.entry(stream.clone()).or_default().preamble = Some(PreambleEdit {
                 byte_offset: history.byte_offset,
-                stream_size,
-                history_entry_count,
+                stream_size: preamble.stream_size,
+                history_entry_count: preamble.history_entry_count,
             });
         }
         for (state, before_state) in history.states.iter().zip(&before.states) {
