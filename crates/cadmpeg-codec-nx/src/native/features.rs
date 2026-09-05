@@ -1262,8 +1262,29 @@ pub struct FeatureDatumPlaneHeader {
     pub source_offset: u64,
 }
 
+/// One compact index in a datum-plane terminal index lane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureDatumPlaneIndexLaneEntry {
+    pub value: u32,
+    pub raw: Vec<u8>,
+    pub offset: u64,
+}
+
+/// Unique terminal compact-index lane of a reconstructed datum-plane payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureDatumPlaneIndexLane {
+    pub offset: u64,
+    pub declared_count: u8,
+    pub trailer: u32,
+    pub entries: Vec<FeatureDatumPlaneIndexLaneEntry>,
+}
+
 /// Exact logical datum-plane object payload reconstructed in lane order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureDatumPlanePayloadWire",
+    into = "FeatureDatumPlanePayloadWire"
+)]
 pub struct FeatureDatumPlanePayload {
     /// Globally unique reconstructed-payload identity.
     pub id: String,
@@ -1283,24 +1304,130 @@ pub struct FeatureDatumPlanePayload {
     pub block_byte_lengths: Vec<u64>,
     /// Absolute file offset of each source block.
     pub block_source_offsets: Vec<u64>,
-    /// Payload-relative opening offset of a unique terminal index lane.
+    /// Unique terminal index lane, when the payload has exactly one.
+    pub index_lane: Option<FeatureDatumPlaneIndexLane>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDatumPlanePayloadWire {
+    id: String,
+    operation_label: String,
+    datum_plane_header: String,
+    data_blocks: Vec<String>,
+    byte_len: u64,
+    sha256: String,
+    block_payload_offsets: Vec<u64>,
+    block_byte_lengths: Vec<u64>,
+    block_source_offsets: Vec<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub index_lane_offset: Option<u64>,
-    /// Declared count of the terminal index lane.
+    index_lane_offset: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub index_lane_declared_count: Option<u8>,
-    /// Ordered decoded compact indices.
+    index_lane_declared_count: Option<u8>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub index_lane_values: Vec<u32>,
-    /// Exact compact-index tokens in serialized order.
+    index_lane_values: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub index_lane_raw_indices: Vec<Vec<u8>>,
-    /// Payload-relative offsets of decoded compact indices.
+    index_lane_raw_indices: Vec<Vec<u8>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub index_lane_value_offsets: Vec<u64>,
-    /// Big-endian trailer word of the terminal lane.
+    index_lane_value_offsets: Vec<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub index_lane_trailer: Option<u32>,
+    index_lane_trailer: Option<u32>,
+}
+
+impl From<FeatureDatumPlanePayload> for FeatureDatumPlanePayloadWire {
+    fn from(value: FeatureDatumPlanePayload) -> Self {
+        let (
+            index_lane_offset,
+            index_lane_declared_count,
+            index_lane_values,
+            index_lane_raw_indices,
+            index_lane_value_offsets,
+            index_lane_trailer,
+        ) = match value.index_lane {
+            None => (None, None, Vec::new(), Vec::new(), Vec::new(), None),
+            Some(lane) => (
+                Some(lane.offset),
+                Some(lane.declared_count),
+                lane.entries.iter().map(|entry| entry.value).collect(),
+                lane.entries.iter().map(|entry| entry.raw.clone()).collect(),
+                lane.entries.iter().map(|entry| entry.offset).collect(),
+                Some(lane.trailer),
+            ),
+        };
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            datum_plane_header: value.datum_plane_header,
+            data_blocks: value.data_blocks,
+            byte_len: value.byte_len,
+            sha256: value.sha256,
+            block_payload_offsets: value.block_payload_offsets,
+            block_byte_lengths: value.block_byte_lengths,
+            block_source_offsets: value.block_source_offsets,
+            index_lane_offset,
+            index_lane_declared_count,
+            index_lane_values,
+            index_lane_raw_indices,
+            index_lane_value_offsets,
+            index_lane_trailer,
+        }
+    }
+}
+
+impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
+    type Error = String;
+
+    fn try_from(wire: FeatureDatumPlanePayloadWire) -> Result<Self, Self::Error> {
+        let index_lane =
+            match (
+                wire.index_lane_offset,
+                wire.index_lane_declared_count,
+                wire.index_lane_trailer,
+                wire.index_lane_values.is_empty()
+                    && wire.index_lane_raw_indices.is_empty()
+                    && wire.index_lane_value_offsets.is_empty(),
+            ) {
+                (None, None, None, true) => None,
+                (Some(offset), Some(declared_count), Some(trailer), _) => {
+                    if wire.index_lane_values.len() != wire.index_lane_raw_indices.len()
+                        || wire.index_lane_values.len() != wire.index_lane_value_offsets.len()
+                    {
+                        return Err("datum-plane index lane entry vectors disagree".to_owned());
+                    }
+                    Some(FeatureDatumPlaneIndexLane {
+                        offset,
+                        declared_count,
+                        trailer,
+                        entries: wire
+                            .index_lane_values
+                            .into_iter()
+                            .zip(wire.index_lane_raw_indices)
+                            .zip(wire.index_lane_value_offsets)
+                            .map(|((value, raw), offset)| FeatureDatumPlaneIndexLaneEntry {
+                                value,
+                                raw,
+                                offset,
+                            })
+                            .collect(),
+                    })
+                }
+                _ => return Err(
+                    "datum-plane index lane offset count trailer and entries are present together"
+                        .to_owned(),
+                ),
+            };
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            datum_plane_header: wire.datum_plane_header,
+            data_blocks: wire.data_blocks,
+            byte_len: wire.byte_len,
+            sha256: wire.sha256,
+            block_payload_offsets: wire.block_payload_offsets,
+            block_byte_lengths: wire.block_byte_lengths,
+            block_source_offsets: wire.block_source_offsets,
+            index_lane,
+        })
+    }
 }
 
 /// One exactly framed scalar pair in a reconstructed datum-plane payload.
@@ -5794,19 +5921,25 @@ pub fn feature_datum_plane_payloads(
                 block_payload_offsets,
                 block_byte_lengths,
                 block_source_offsets,
-                index_lane_offset: lane.map(|lane| lane.offset as u64),
-                index_lane_declared_count: lane.map(|lane| lane.declared_count),
-                index_lane_values: lane.map_or_else(Vec::new, |lane| {
-                    lane.indices.iter().map(|(value, _)| *value).collect()
+                index_lane: lane.and_then(|lane| {
+                    (lane.indices.len() == lane.raw_indices.len()).then(|| {
+                        FeatureDatumPlaneIndexLane {
+                            offset: lane.offset as u64,
+                            declared_count: lane.declared_count,
+                            trailer: lane.trailer,
+                            entries: lane
+                                .indices
+                                .iter()
+                                .zip(lane.raw_indices.iter())
+                                .map(|((value, offset), raw)| FeatureDatumPlaneIndexLaneEntry {
+                                    value: *value,
+                                    raw: raw.clone(),
+                                    offset: *offset as u64,
+                                })
+                                .collect(),
+                        }
+                    })
                 }),
-                index_lane_raw_indices: lane.map_or_else(Vec::new, |lane| lane.raw_indices.clone()),
-                index_lane_value_offsets: lane.map_or_else(Vec::new, |lane| {
-                    lane.indices
-                        .iter()
-                        .map(|(_, offset)| *offset as u64)
-                        .collect()
-                }),
-                index_lane_trailer: lane.map(|lane| lane.trailer),
             })
         })
         .collect()
