@@ -2949,8 +2949,7 @@ pub(crate) fn parse_entity_selection_operand(
         identity_record_offset: frame.identity_record_offset,
         primary_identity: frame.primary_identity,
         primary_identity_offset: frame.primary_identity_offset,
-        secondary_identity: frame.secondary.map(|identity| identity.value),
-        curve_secondary_identity: frame.secondary.and_then(|identity| identity.curve_identity),
+        secondary: frame.secondary,
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -3049,10 +3048,10 @@ pub(crate) fn entity_selection_matches_curve(
     operand: &DesignEntitySelectionOperand,
     curve: &SketchCurveIdentity,
 ) -> bool {
-    Some(curve.primary_id) == operand.secondary_identity.map(|identity| identity.value)
-        && operand
-            .curve_secondary_identity
-            .is_none_or(|secondary| curve.secondary_id == secondary.value)
+    operand.secondary.is_some_and(|secondary| {
+        curve.primary_id == secondary.identity.value
+            && secondary.curve_identity.is_none_or(|identity| curve.secondary_id == identity.value)
+    })
 }
 
 /// Direct sketch-point identity carried by a `WorkPoint` input.
@@ -3218,7 +3217,7 @@ pub(crate) fn parse_entity_selection_frame(
             identity_at.checked_add(class_338_curve::OWNER_RECORD_INDEX)?,
             primary_identity,
             Some(crate::records::DesignSecondaryIdentity {
-                value: crate::records::Located {
+                identity: crate::records::Located {
                     value: secondary_identity,
                     offset: u64::try_from(identity_at.checked_add(class_338_curve::CURVE_PERSISTENT_ID)?).ok()?,
                 },
@@ -3236,7 +3235,7 @@ pub(crate) fn parse_entity_selection_frame(
             primary_identity_offset,
             View::u64_le_at(bytes, primary_identity_offset)?,
             Some(crate::records::DesignSecondaryIdentity {
-                value: crate::records::Located {
+                identity: crate::records::Located {
                     value: View::u64_le_at(bytes, secondary_identity_offset)?,
                     offset: u64::try_from(secondary_identity_offset).ok()?,
                 },

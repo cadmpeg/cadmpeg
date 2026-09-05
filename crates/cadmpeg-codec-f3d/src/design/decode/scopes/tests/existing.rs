@@ -504,7 +504,7 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
                 context_id: "22222222-2222-4222-8222-222222222222".into(),
                 identity_record_index: 103,
                 primary_identity: 1331,
-                secondary: Some(crate::records::DesignSecondaryIdentity { value: 183, curve_identity: None }),
+                secondary: Some(crate::records::DesignSecondaryIdentity { identity: 183, curve_identity: None }),
             }
         );
         assert_eq!(

@@ -6738,13 +6738,13 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == operand
                     .identity_record_offset
                     .saturating_add(class_338_curve::OWNER_RECORD_INDEX as u64)
-            && operand.secondary_identity.map(|identity| identity.offset)
+            && operand.secondary.map(|secondary| secondary.identity.offset)
                 == Some(
                     operand
                         .identity_record_offset
                         .saturating_add(class_338_curve::CURVE_PERSISTENT_ID as u64),
                 )
-            && operand.curve_secondary_identity.is_none()
+            && operand.secondary.and_then(|secondary| secondary.curve_identity).is_none()
             && operand.next_record_index == operand.record_index.saturating_add(4)
             && operand.next_byte_offset
                 == operand
@@ -6767,28 +6767,27 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && operand.identity_record_index == operand.record_index.saturating_add(3)
             && (class_338_curve_identity
                 || matches!(
-                (operand.primary_identity_offset, operand.secondary_identity),
+                (operand.primary_identity_offset, operand.secondary),
                 (primary, Some(secondary))
                     if primary == operand.identity_record_offset.saturating_add(29)
-                        && secondary.offset == operand.identity_record_offset.saturating_add(37)
+                        && secondary.identity.offset == operand.identity_record_offset.saturating_add(37)
                 )
                 || matches!(
-                    (operand.primary_identity_offset, operand.secondary_identity),
+                    (operand.primary_identity_offset, operand.secondary),
                     (primary, None)
                         if primary == operand.identity_record_offset.saturating_add(21)
                 ))
-            && operand.curve_secondary_identity.is_none_or(|identity| {
-                operand.secondary_identity.is_some()
-                    && identity.offset == operand.identity_record_offset.saturating_add(21)
+            && operand.secondary.and_then(|secondary| secondary.curve_identity).is_none_or(|identity| {
+                identity.offset == operand.identity_record_offset.saturating_add(21)
             })
-            && (operand.secondary_identity.is_none()
+            && (operand.secondary.is_none()
                 || operand.next_record_index == operand.record_index.saturating_add(4))
             && operand.next_byte_offset
                 == operand
                     .identity_record_offset
                     .saturating_add(if class_338_curve_identity {
                         class_338_curve::LEN as u64
-                    } else if operand.secondary_identity.is_some() {
+                    } else if operand.secondary.is_some() {
                         45
                     } else {
                         29

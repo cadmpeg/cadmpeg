@@ -1897,9 +1897,19 @@ pub enum DesignCoilSectionPlacement {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSecondaryIdentity<Id> {
     #[serde(rename = "secondary_identity")]
-    pub value: Id,
+    pub identity: Id,
     #[serde(rename = "curve_secondary_identity", skip_serializing_if = "Option::is_none")]
     pub curve_identity: Option<Id>,
+}
+
+impl<Id> DesignSecondaryIdentity<Id> {
+    fn from_wire(identity: Option<Id>, curve_identity: Option<Id>) -> Result<Option<Self>, String> {
+        match (identity, curve_identity) {
+            (Some(identity), curve_identity) => Ok(Some(Self { identity, curve_identity })),
+            (None, None) => Ok(None),
+            (None, Some(_)) => Err("curve_secondary_identity requires secondary_identity".into()),
+        }
+    }
 }
 
 /// Construction-recipe families admitted by a face selection.
@@ -1942,11 +1952,8 @@ fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(deserializer: 
         curve_secondary_identity: Option<u64>,
     }
     let wire = Wire::deserialize(deserializer)?;
-    match (wire.secondary_identity, wire.curve_secondary_identity) {
-        (Some(value), curve_identity) => Ok(Some(DesignSecondaryIdentity { value, curve_identity })),
-        (None, None) => Ok(None),
-        (None, Some(_)) => Err(serde::de::Error::custom("curve_secondary_identity requires secondary_identity")),
-    }
+    DesignSecondaryIdentity::from_wire(wire.secondary_identity, wire.curve_secondary_identity)
+        .map_err(serde::de::Error::custom)
 }
 
 fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<ConstructionRecipeDesign<String>>, D::Error> {
@@ -10030,6 +10037,7 @@ pub struct DesignExtrudeSelectionMember {
 /// Persistent Design entity selected through a nested indexed-record frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignEntitySelectionOperandWire"))]
 #[serde(try_from = "DesignEntitySelectionOperandWire", into = "DesignEntitySelectionOperandWire")]
 pub struct DesignEntitySelectionOperand {
     /// Globally unique deterministic identifier for this native operand.
@@ -10063,13 +10071,8 @@ pub struct DesignEntitySelectionOperand {
     pub primary_identity: u64,
     /// Byte offset of `primary_identity`.
     pub primary_identity_offset: u64,
-    /// Secondary identity in the nested pair; for a Sketch curve selection,
-    /// this is the curve's primary persistent identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_identity: Option<Located<u64>>,
-    /// Optional secondary identity of the selected Sketch curve.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curve_secondary_identity: Option<Located<u64>>,
+    /// Secondary identity and any dependent curve identity, with their source locations.
+    pub secondary: Option<DesignSecondaryIdentity<Located<u64>>>,
     /// Input-state edge proofs derived from the two serialized identities.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,
@@ -10166,8 +10169,10 @@ impl TryFrom<DesignEntitySelectionOperandWire> for DesignEntitySelectionOperand 
             identity_record_offset: wire.identity_record_offset,
             primary_identity: wire.primary_identity,
             primary_identity_offset: wire.primary_identity_offset,
-            secondary_identity: Located::from_wire(wire.secondary_identity, wire.secondary_identity_offset, "secondary_identity")?,
-            curve_secondary_identity: Located::from_wire(wire.curve_secondary_identity, wire.curve_secondary_identity_offset, "curve_secondary_identity")?,
+            secondary: DesignSecondaryIdentity::from_wire(
+                Located::from_wire(wire.secondary_identity, wire.secondary_identity_offset, "secondary_identity")?,
+                Located::from_wire(wire.curve_secondary_identity, wire.curve_secondary_identity_offset, "curve_secondary_identity")?,
+            )?,
             historical_edge_candidates: wire.historical_edge_candidates,
             historical_face_candidates: wire.historical_face_candidates,
             resolved_edge_slot: wire.resolved_edge_slot,
@@ -10195,10 +10200,10 @@ impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
             identity_record_offset: record.identity_record_offset,
             primary_identity: record.primary_identity,
             primary_identity_offset: record.primary_identity_offset,
-            secondary_identity: record.secondary_identity.map(|identity| identity.value),
-            secondary_identity_offset: record.secondary_identity.map(|identity| identity.offset),
-            curve_secondary_identity: record.curve_secondary_identity.map(|identity| identity.value),
-            curve_secondary_identity_offset: record.curve_secondary_identity.map(|identity| identity.offset),
+            secondary_identity: record.secondary.map(|secondary| secondary.identity.value),
+            secondary_identity_offset: record.secondary.map(|secondary| secondary.identity.offset),
+            curve_secondary_identity: record.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.value),
+            curve_secondary_identity_offset: record.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.offset),
             historical_edge_candidates: record.historical_edge_candidates,
             historical_face_candidates: record.historical_face_candidates,
             resolved_edge_slot: record.resolved_edge_slot,

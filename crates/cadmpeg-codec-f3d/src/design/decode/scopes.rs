@@ -8189,7 +8189,7 @@ fn exact_hole_face_selection(
                 identity_record_offset: frame.identity_record_offset,
                 primary_identity: frame.primary_identity,
                 primary_identity_offset: frame.primary_identity_offset,
-                secondary_identity: frame.secondary.map(|identity| identity.value),
+                secondary_identity: frame.secondary.map(|secondary| secondary.identity),
                 curve_secondary_identity: frame.secondary.and_then(|identity| identity.curve_identity),
                 historical_face_candidates: Vec::new(),
                 next_record_index: frame.next_record_index,
@@ -9317,7 +9317,7 @@ fn exact_coil_placement(
         identity_record_index: selection.identity_record_index,
         primary_identity: selection.primary_identity,
         secondary: selection.secondary.map(|identity| crate::records::DesignSecondaryIdentity {
-            value: identity.value.value,
+            identity: identity.identity.value,
             curve_identity: identity.curve_identity.map(|identity| identity.value),
         }),
     })

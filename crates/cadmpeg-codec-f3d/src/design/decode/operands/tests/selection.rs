@@ -354,7 +354,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
         .expect("nested entity-selection frame");
     assert_eq!(operand.primary_identity, 1331);
-    assert_eq!(operand.secondary_identity.map(|identity| identity.value), Some(183));
+    assert_eq!(operand.secondary.map(|secondary| secondary.identity.value), Some(183));
     assert_eq!(operand.identity_record_offset, identity_at as u64);
     assert_eq!(operand.next_byte_offset, next_at as u64);
 
@@ -367,7 +367,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let compact_operand = parse_entity_selection_operand(&compact, &group, 0, &record)
         .expect("compact nested entity-selection frame");
     assert_eq!(compact_operand.primary_identity, 1331);
-    assert_eq!(compact_operand.secondary_identity.map(|identity| identity.value), None);
+    assert_eq!(compact_operand.secondary.map(|secondary| secondary.identity.value), None);
     assert_eq!(compact_operand.identity_record_offset, identity_at as u64);
     assert_eq!(compact_operand.next_record_index, 109);
     assert_eq!(compact_operand.next_byte_offset, compact_next_at as u64);
@@ -383,10 +383,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let curve_operand = parse_entity_selection_operand(&curve_identity, &group, 0, &record)
         .expect("expanded Sketch-curve entity-selection frame");
     assert_eq!(curve_operand.primary_identity, 1331);
-    assert_eq!(curve_operand.secondary_identity.map(|identity| identity.value), Some(183));
-    assert_eq!(curve_operand.curve_secondary_identity.map(|identity| identity.value), Some(77));
+    assert_eq!(curve_operand.secondary.map(|secondary| secondary.identity.value), Some(183));
+    assert_eq!(curve_operand.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.value), Some(77));
     assert_eq!(
-        curve_operand.curve_secondary_identity.map(|identity| identity.offset),
+        curve_operand.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.offset),
         Some(identity_at as u64 + 21)
     );
     assert_eq!(curve_operand.next_byte_offset, curve_next_at as u64);
@@ -411,14 +411,14 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         parse_entity_selection_operand(&class_338_curve_identity, &group, 0, &class_338_record)
             .expect("class-338 Sketch-curve entity-selection frame");
     assert_eq!(class_338_operand.primary_identity, 949);
-    assert_eq!(class_338_operand.secondary_identity.map(|identity| identity.value), Some(249));
-    assert_eq!(class_338_operand.curve_secondary_identity.map(|identity| identity.value), None);
+    assert_eq!(class_338_operand.secondary.map(|secondary| secondary.identity.value), Some(249));
+    assert_eq!(class_338_operand.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.value), None);
     assert_eq!(
         class_338_operand.primary_identity_offset,
         identity_at as u64 + 33
     );
     assert_eq!(
-        class_338_operand.secondary_identity.map(|identity| identity.offset),
+        class_338_operand.secondary.map(|secondary| secondary.identity.offset),
         Some(identity_at as u64 + 41)
     );
     assert_eq!(class_338_operand.next_byte_offset, class_338_next_at as u64);
