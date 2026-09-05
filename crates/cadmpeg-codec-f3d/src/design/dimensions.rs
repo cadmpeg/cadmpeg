@@ -542,11 +542,6 @@ fn project_all_dimension_constraints(
         }
         if parameter.source_kind.starts_with("Linear Dimension") {
             if group.state == 0x20 {
-                let loci = group
-                    .loci
-                    .iter()
-                    .map(|locus| (locus.geometry_record_index, locus.role))
-                    .collect::<Vec<_>>();
                 let entities_by_record = group
                     .loci
                     .iter()
@@ -563,30 +558,18 @@ fn project_all_dimension_constraints(
                             .map(|secondary_id| (locus.geometry_record_index, secondary_id))
                     })
                     .collect::<HashMap<_, _>>();
-                let mut definition = exact_counted_offset(
-                    &loci,
-                    &group.loci.iter().map(|locus| locus.returned.value).collect::<Vec<_>>(),
+                let CountedOffset { pairs, distance } = exact_counted_offset(
+                    &group.loci,
                     &entities_by_record,
                     &secondary_ids,
                     linear_tolerance,
                 )?;
-                let Definition::Offset {
-                    distance,
-                    parameter: driving_parameter,
-                    ..
-                } = &mut definition
-                else {
-                    unreachable!("exact_counted_offset always returns an offset")
-                };
-                if let Some(factor) =
-                    offset_parameter_factor(distance.0, parameter.evaluated_value * 10.0)
-                {
-                    *driving_parameter = Some(cadmpeg_ir::sketches::OffsetParameter {
+                let parameter = offset_parameter_factor(distance.0, parameter.evaluated_value * 10.0)
+                    .map(|factor| cadmpeg_ir::sketches::OffsetParameter {
                         id: parameter_id,
                         negated: factor.is_sign_negative(),
                     });
-                }
-                return Some(definition);
+                return Some(Definition::Offset { pairs, distance, parameter });
             }
             if let Some(definition) = directional_point_dimension(
                 &locus_entities,
@@ -5387,34 +5370,36 @@ pub(crate) fn point_lies_on_sketch_geometry(
     }
 }
 
+pub(crate) struct CountedOffset {
+    pub pairs: Vec<cadmpeg_ir::sketches::SketchOffsetPair>,
+    pub distance: cadmpeg_ir::features::Length,
+}
+
 pub(crate) fn exact_counted_offset(
-    loci: &[(u32, u32)],
-    return_members: &[u32],
+    loci: &[crate::records::DesignDimensionLocus],
     entities: &HashMap<u32, &cadmpeg_ir::sketches::SketchEntity>,
     secondary_ids: &HashMap<u32, u64>,
     linear_tolerance: f64,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+) -> Option<CountedOffset> {
     use cadmpeg_ir::features::Length;
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
+    use cadmpeg_ir::sketches::SketchOffsetPair;
 
     if loci.len() != entities.len()
-        || loci.len() != return_members.len()
         || loci.len() < 2
         || !loci.len().is_multiple_of(2)
-        || !return_members.len().is_multiple_of(2)
     {
         return None;
     }
     let source_count = loci.len() / 2;
-    let role_partition = loci[..source_count].iter().all(|(_, role)| *role != 0)
-        && loci[source_count..].iter().all(|(_, role)| *role == 0);
-    let identity_partition = loci.iter().all(|(_, role)| *role != 0)
+    let role_partition = loci[..source_count].iter().all(|locus| locus.role != 0)
+        && loci[source_count..].iter().all(|locus| locus.role == 0);
+    let identity_partition = loci.iter().all(|locus| locus.role != 0)
         && loci[..source_count]
             .iter()
-            .all(|(record_index, _)| secondary_ids.get(record_index).copied() == Some(0))
-        && loci[source_count..].iter().all(|(record_index, _)| {
+            .all(|locus| secondary_ids.get(&locus.geometry_record_index).copied() == Some(0))
+        && loci[source_count..].iter().all(|locus| {
             secondary_ids
-                .get(record_index)
+                .get(&locus.geometry_record_index)
                 .is_some_and(|secondary_id| *secondary_id != 0)
         });
     if !role_partition && !identity_partition {
@@ -5422,11 +5407,11 @@ pub(crate) fn exact_counted_offset(
     }
     let source_records = loci[..source_count]
         .iter()
-        .map(|(record_index, _)| *record_index)
+        .map(|locus| locus.geometry_record_index)
         .collect::<HashSet<_>>();
     let result_records = loci[source_count..]
         .iter()
-        .map(|(record_index, _)| *record_index)
+        .map(|locus| locus.geometry_record_index)
         .collect::<HashSet<_>>();
     if source_records.len() != source_count || result_records.len() != source_count {
         return None;
@@ -5434,19 +5419,18 @@ pub(crate) fn exact_counted_offset(
     let mut used_members = HashSet::new();
     let mut pairs = Vec::with_capacity(source_count);
     let mut canonical_distance: Option<f64> = None;
-    for members in return_members.chunks_exact(2) {
-        let [source_record_index, result_record_index] = members else {
-            unreachable!("chunks_exact(2) always yields pairs")
-        };
-        if !source_records.contains(source_record_index)
-            || !result_records.contains(result_record_index)
-            || !used_members.insert(*source_record_index)
-            || !used_members.insert(*result_record_index)
+    for [source_locus, result_locus] in loci.as_chunks::<2>().0 {
+        let source_record_index = source_locus.returned.value;
+        let result_record_index = result_locus.returned.value;
+        if !source_records.contains(&source_record_index)
+            || !result_records.contains(&result_record_index)
+            || !used_members.insert(source_record_index)
+            || !used_members.insert(result_record_index)
         {
             return None;
         }
-        let source = entities.get(source_record_index)?;
-        let result = entities.get(result_record_index)?;
+        let source = entities.get(&source_record_index)?;
+        let result = entities.get(&result_record_index)?;
         let distance = sketch_curve_offset(&source.geometry, &result.geometry).or_else(|| {
             cadmpeg_ir::eval::fitted_nurbs_offset_frame_distance(
                 &source.geometry,
@@ -5464,13 +5448,9 @@ pub(crate) fn exact_counted_offset(
             source_reversed,
         });
     }
-    if used_members.len() != loci.len() {
-        return None;
-    }
-    Some(Definition::Offset {
+    Some(CountedOffset {
         pairs,
         distance: Length(canonical_distance?),
-        parameter: None,
     })
 }
 
