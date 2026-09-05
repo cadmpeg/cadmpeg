@@ -55,7 +55,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     let records = IndexedRecordOffsets::build(&bytes);
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
-        Some(DesignSolidPrimitive::Box {
+        Some(DesignSolidPrimitive::Box(crate::records::DesignBoxPrimitive {
             length: 3.0,
             width: 4.0,
             height: 2.0,
@@ -64,7 +64,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
             operation: DesignExtrudeOperation::Join,
             operation_offset: 20,
             ..
-        })
+        }))
     ));
 
     bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
@@ -75,13 +75,13 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &cylinder_scope, &cylinder_owners,),
-        Some(DesignSolidPrimitive::Cylinder {
+        Some(DesignSolidPrimitive::Cylinder(crate::records::DesignCylinderPrimitive {
             height: 0.7,
             diameter: 3.0,
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 20,
             ..
-        })
+        }))
     ));
 }
 
@@ -195,7 +195,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             &compact_scope,
             &compact_owners,
         ),
-        Some(DesignSolidPrimitive::Cylinder {
+        Some(DesignSolidPrimitive::Cylinder(crate::records::DesignCylinderPrimitive {
             height: 0.7,
             diameter: 3.0,
             operation: DesignExtrudeOperation::NewBody,
@@ -203,7 +203,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             transform: None,
             transform_offset: None,
             ..
-        })
+        }))
     ));
 
     for (class_tag, paired_class_tag) in [("297", "258"), ("375", "258"), ("414", "272")] {
@@ -243,7 +243,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                 &expanded_scope,
                 &expanded_owners,
             ),
-            Some(DesignSolidPrimitive::Cylinder {
+            Some(DesignSolidPrimitive::Cylinder(crate::records::DesignCylinderPrimitive {
                 height: 0.7,
                 diameter: 3.0,
                 operation: DesignExtrudeOperation::Join,
@@ -251,7 +251,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                 transform: Some(_),
                 transform_offset: Some(72),
                 ..
-            })
+            }))
         ));
 
         let mut translated = expanded;

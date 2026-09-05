@@ -1277,107 +1277,139 @@ pub struct DesignCoilTransform {
 #[serde(rename_all = "snake_case", tag = "primitive")]
 pub enum DesignSolidPrimitive {
     /// Axis-aligned box defined by five owned dimensions and offsets.
-    Box {
-        /// Length along the source x-axis in source centimetres.
-        length: f64,
-        /// Referenced length owner.
-        length_record_index: u32,
-        /// Byte offset of the evaluated length.
-        length_offset: u64,
-        /// Width along the source y-axis in source centimetres.
-        width: f64,
-        /// Referenced width owner.
-        width_record_index: u32,
-        /// Byte offset of the evaluated width.
-        width_offset: u64,
-        /// Height along the source z-axis in source centimetres.
-        height: f64,
-        /// Referenced height owner.
-        height_record_index: u32,
-        /// Byte offset of the evaluated height.
-        height_offset: u64,
-        /// Translation along the source x-axis in source centimetres.
-        offset_x: f64,
-        /// Referenced x-offset owner.
-        offset_x_record_index: u32,
-        /// Byte offset of the evaluated x offset.
-        offset_x_offset: u64,
-        /// Translation along the source y-axis in source centimetres.
-        offset_y: f64,
-        /// Referenced y-offset owner.
-        offset_y_record_index: u32,
-        /// Byte offset of the evaluated y offset.
-        offset_y_offset: u64,
-        /// Result Boolean operation.
-        operation: DesignExtrudeOperation,
-        /// Byte offset of the operation enum.
-        operation_offset: u64,
-    },
+    Box(DesignBoxPrimitive),
     /// Circular cylinder defined by height and diameter owners.
-    Cylinder {
-        /// Axial height in source centimetres.
-        height: f64,
-        /// Referenced height owner.
-        height_record_index: u32,
-        /// Byte offset of the evaluated height.
-        height_offset: u64,
-        /// Circular diameter in source centimetres.
-        diameter: f64,
-        /// Referenced diameter owner.
-        diameter_record_index: u32,
-        /// Byte offset of the evaluated diameter.
-        diameter_offset: u64,
-        /// Source frame carried by the shifted cylinder form.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        transform: Option<[[f64; 4]; 4]>,
-        /// Byte offset of the shifted-form source frame.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        transform_offset: Option<u64>,
-        /// Result Boolean operation.
-        operation: DesignExtrudeOperation,
-        /// Byte offset of the operation enum.
-        operation_offset: u64,
-    },
+    Cylinder(DesignCylinderPrimitive),
     /// Sphere defined by a placement frame and diameter.
-    Sphere {
-        /// Row-major local-to-model placement frame.
-        transform: [[f64; 4]; 4],
-        /// Byte offset of the placement matrix.
-        transform_offset: u64,
-        /// Sphere diameter in source centimetres.
-        diameter: f64,
-        /// Referenced diameter record.
-        diameter_record_index: u32,
-        /// Byte offset of the diameter scalar.
-        diameter_offset: u64,
-        /// Result Boolean operation.
-        operation: DesignExtrudeOperation,
-        /// Byte offset of the operation enum.
-        operation_offset: u64,
-    },
+    Sphere(DesignSpherePrimitive),
     /// Torus defined by a placement frame and two diameters.
-    Torus {
-        /// Row-major local-to-model placement frame.
-        transform: [[f64; 4]; 4],
-        /// Byte offset of the placement matrix.
-        transform_offset: u64,
-        /// Major diameter in source centimetres.
-        major_diameter: f64,
-        /// Referenced major-diameter record.
-        major_diameter_record_index: u32,
-        /// Byte offset of the major-diameter scalar.
-        major_diameter_offset: u64,
-        /// Tube diameter in source centimetres.
-        minor_diameter: f64,
-        /// Referenced minor-diameter record.
-        minor_diameter_record_index: u32,
-        /// Byte offset of the minor-diameter scalar.
-        minor_diameter_offset: u64,
-        /// Result Boolean operation.
-        operation: DesignExtrudeOperation,
-        /// Byte offset of the operation enum.
-        operation_offset: u64,
-    },
+    Torus(DesignTorusPrimitive),
+}
+
+/// Exact `Box` primitive construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignBoxPrimitive {
+    /// Length along the source x-axis in source centimetres.
+    pub length: f64,
+    /// Referenced length owner.
+    pub length_record_index: u32,
+    /// Byte offset of the evaluated length.
+    pub length_offset: u64,
+    /// Width along the source y-axis in source centimetres.
+    pub width: f64,
+    /// Referenced width owner.
+    pub width_record_index: u32,
+    /// Byte offset of the evaluated width.
+    pub width_offset: u64,
+    /// Height along the source z-axis in source centimetres.
+    pub height: f64,
+    /// Referenced height owner.
+    pub height_record_index: u32,
+    /// Byte offset of the evaluated height.
+    pub height_offset: u64,
+    /// Translation along the source x-axis in source centimetres.
+    pub offset_x: f64,
+    /// Referenced x-offset owner.
+    pub offset_x_record_index: u32,
+    /// Byte offset of the evaluated x offset.
+    pub offset_x_offset: u64,
+    /// Translation along the source y-axis in source centimetres.
+    pub offset_y: f64,
+    /// Referenced y-offset owner.
+    pub offset_y_record_index: u32,
+    /// Byte offset of the evaluated y offset.
+    pub offset_y_offset: u64,
+    /// Result Boolean operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation enum.
+    pub operation_offset: u64,
+}
+
+/// Exact `Cylinder` primitive construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignCylinderPrimitive {
+    /// Axial height in source centimetres.
+    pub height: f64,
+    /// Referenced height owner.
+    pub height_record_index: u32,
+    /// Byte offset of the evaluated height.
+    pub height_offset: u64,
+    /// Circular diameter in source centimetres.
+    pub diameter: f64,
+    /// Referenced diameter owner.
+    pub diameter_record_index: u32,
+    /// Byte offset of the evaluated diameter.
+    pub diameter_offset: u64,
+    /// Source frame carried by the shifted cylinder form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the shifted-form source frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform_offset: Option<u64>,
+    /// Result Boolean operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation enum.
+    pub operation_offset: u64,
+}
+
+/// Exact `Sphere` primitive construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSpherePrimitive {
+    /// Row-major local-to-model placement frame.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the placement matrix.
+    pub transform_offset: u64,
+    /// Sphere diameter in source centimetres.
+    pub diameter: f64,
+    /// Referenced diameter record.
+    pub diameter_record_index: u32,
+    /// Byte offset of the diameter scalar.
+    pub diameter_offset: u64,
+    /// Result Boolean operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation enum.
+    pub operation_offset: u64,
+}
+
+/// Exact `Torus` primitive construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignTorusPrimitive {
+    /// Row-major local-to-model placement frame.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the placement matrix.
+    pub transform_offset: u64,
+    /// Major diameter in source centimetres.
+    pub major_diameter: f64,
+    /// Referenced major-diameter record.
+    pub major_diameter_record_index: u32,
+    /// Byte offset of the major-diameter scalar.
+    pub major_diameter_offset: u64,
+    /// Tube diameter in source centimetres.
+    pub minor_diameter: f64,
+    /// Referenced minor-diameter record.
+    pub minor_diameter_record_index: u32,
+    /// Byte offset of the minor-diameter scalar.
+    pub minor_diameter_offset: u64,
+    /// Result Boolean operation.
+    pub operation: DesignExtrudeOperation,
+    /// Byte offset of the operation enum.
+    pub operation_offset: u64,
+}
+
+
+impl From<DesignSolidPrimitive> for DesignScopePayload {
+    fn from(value: DesignSolidPrimitive) -> Self {
+        match value {
+            DesignSolidPrimitive::Box(value) => Self::BoxPrimitive(Some(value)),
+            DesignSolidPrimitive::Cylinder(value) => Self::CylinderPrimitive(Some(value)),
+            DesignSolidPrimitive::Sphere(value) => Self::SpherePrimitive(Some(value)),
+            DesignSolidPrimitive::Torus(value) => Self::TorusPrimitive(Some(value)),
+        }
+    }
 }
 
 /// Exact fixed-form construction data of a direct-face feature scope.
@@ -3401,10 +3433,10 @@ design_feature_kinds! {
         SurfaceStitch => "SurfaceStitch": Option<DesignSurfaceStitchOperation>,
         BaseFeature => "Base Feature": Option<DesignBaseFeatureConstruction>,
         CopyPasteBodies => "CopyPasteBodies": Option<DesignCopyPasteBodiesOperation>,
-        SpherePrimitive => "SpherePrimitive": Option<DesignSolidPrimitive>,
-        TorusPrimitive => "TorusPrimitive": Option<DesignSolidPrimitive>,
-        BoxPrimitive => "BoxPrimitive": Option<DesignSolidPrimitive>,
-        CylinderPrimitive => "CylinderPrimitive": Option<DesignSolidPrimitive>,
+        SpherePrimitive => "SpherePrimitive": Option<DesignSpherePrimitive>,
+        TorusPrimitive => "TorusPrimitive": Option<DesignTorusPrimitive>,
+        BoxPrimitive => "BoxPrimitive": Option<DesignBoxPrimitive>,
+        CylinderPrimitive => "CylinderPrimitive": Option<DesignCylinderPrimitive>,
     }
     names {
         SurfaceTrim => "SurfaceTrim",
@@ -4831,16 +4863,32 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
             DesignFeatureKind::Face => DesignScopePayload::Face,
             DesignFeatureKind::SpherePrimitive => {
-                DesignScopePayload::SpherePrimitive(wire.solid_primitive.take())
+                DesignScopePayload::SpherePrimitive(match wire.solid_primitive.take() {
+                    None => None,
+                    Some(DesignSolidPrimitive::Sphere(value)) => Some(value),
+                    Some(_) => return Err(DesignParameterScopePayloadError("solid_primitive.primitive does not match SpherePrimitive".into())),
+                })
             }
             DesignFeatureKind::TorusPrimitive => {
-                DesignScopePayload::TorusPrimitive(wire.solid_primitive.take())
+                DesignScopePayload::TorusPrimitive(match wire.solid_primitive.take() {
+                    None => None,
+                    Some(DesignSolidPrimitive::Torus(value)) => Some(value),
+                    Some(_) => return Err(DesignParameterScopePayloadError("solid_primitive.primitive does not match TorusPrimitive".into())),
+                })
             }
             DesignFeatureKind::BoxPrimitive => {
-                DesignScopePayload::BoxPrimitive(wire.solid_primitive.take())
+                DesignScopePayload::BoxPrimitive(match wire.solid_primitive.take() {
+                    None => None,
+                    Some(DesignSolidPrimitive::Box(value)) => Some(value),
+                    Some(_) => return Err(DesignParameterScopePayloadError("solid_primitive.primitive does not match BoxPrimitive".into())),
+                })
             }
             DesignFeatureKind::CylinderPrimitive => {
-                DesignScopePayload::CylinderPrimitive(wire.solid_primitive.take())
+                DesignScopePayload::CylinderPrimitive(match wire.solid_primitive.take() {
+                    None => None,
+                    Some(DesignSolidPrimitive::Cylinder(value)) => Some(value),
+                    Some(_) => return Err(DesignParameterScopePayloadError("solid_primitive.primitive does not match CylinderPrimitive".into())),
+                })
             }
             DesignFeatureKind::Native(name) => DesignScopePayload::Native(name.clone()),
         };
@@ -4985,10 +5033,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::Esquisse(value)
             | DesignScopePayload::Skizze(value)
             | DesignScopePayload::Esboco(value) => wire.sketch_entity = value,
-            DesignScopePayload::SpherePrimitive(value)
-            | DesignScopePayload::TorusPrimitive(value)
-            | DesignScopePayload::BoxPrimitive(value)
-            | DesignScopePayload::CylinderPrimitive(value) => wire.solid_primitive = value,
+            DesignScopePayload::SpherePrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Sphere),
+            DesignScopePayload::TorusPrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Torus),
+            DesignScopePayload::BoxPrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Box),
+            DesignScopePayload::CylinderPrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Cylinder),
             DesignScopePayload::ReplaceFace(value)
             | DesignScopePayload::OffsetFaces(value)
             | DesignScopePayload::DecalerLesFaces(value)
@@ -5162,26 +5210,6 @@ impl DesignParameterScope {
             | DesignScopePayload::Esquisse(value)
             | DesignScopePayload::Skizze(value)
             | DesignScopePayload::Esboco(value) => value.as_mut(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn solid_primitive(&self) -> Option<&DesignSolidPrimitive> {
-        match &self.payload {
-            DesignScopePayload::SpherePrimitive(value)
-            | DesignScopePayload::TorusPrimitive(value)
-            | DesignScopePayload::BoxPrimitive(value)
-            | DesignScopePayload::CylinderPrimitive(value) => value.as_ref(),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn solid_primitive_mut(&mut self) -> Option<&mut DesignSolidPrimitive> {
-        match &mut self.payload {
-            DesignScopePayload::SpherePrimitive(value)
-            | DesignScopePayload::TorusPrimitive(value)
-            | DesignScopePayload::BoxPrimitive(value)
-            | DesignScopePayload::CylinderPrimitive(value) => value.as_mut(),
             _ => None,
         }
     }

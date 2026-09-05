@@ -43,7 +43,7 @@ use crate::records::{
     DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
     DesignFixedExtrudeDistance, DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope,
-    DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
+    DesignSketchPlacement, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, DesignSurfaceTrimOperation, SketchCurveGeometry,
     SketchCurveIdentity,
 };
@@ -584,7 +584,7 @@ pub fn project_parameter_design_with_edge_identities(
 > {
     use cadmpeg_ir::features::{
         Angle, DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
-        Length, ParameterId, ParameterValue, PatternKind, PrimitiveSolid,
+        Length, ParameterId, ParameterValue, PatternKind,
     };
     use std::collections::BTreeMap;
 
@@ -1126,92 +1126,8 @@ pub fn project_parameter_design_with_edge_identities(
                             .collect(),
                     }),
                 None => {
-                    if let Some(primitive) = scope.solid_primitive() {
-                        let operation = |operation| match operation {
-                            DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
-                            DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
-                            DesignExtrudeOperation::Intersect => {
-                                cadmpeg_ir::features::BooleanOp::Intersect
-                            }
-                            DesignExtrudeOperation::NewBody => {
-                                cadmpeg_ir::features::BooleanOp::NewBody
-                            }
-                        };
-                        match primitive {
-                            DesignSolidPrimitive::Box {
-                                length,
-                                width,
-                                height,
-                                offset_x,
-                                offset_y,
-                                operation: result,
-                                ..
-                            } => {
-                                let placement = cadmpeg_ir::transform::Transform::affine([
-                                    [1.0, 0.0, 0.0, *offset_x * 10.0],
-                                    [0.0, 1.0, 0.0, *offset_y * 10.0],
-                                    [0.0, 0.0, 1.0, 0.0],
-                                ])
-                                .expect("block placement is affine");
-                                FeatureDefinition::Block {
-                                    dimensions: Some([
-                                        Length(*length * 10.0),
-                                        Length(*width * 10.0),
-                                        Length(*height * 10.0),
-                                    ]),
-                                    placement: Some(placement),
-                                    op: operation(*result),
-                                }
-                            }
-                            DesignSolidPrimitive::Cylinder {
-                                height,
-                                diameter,
-                                operation: result,
-                                ..
-                            } => FeatureDefinition::Primitive {
-                                solid: PrimitiveSolid::Cylinder {
-                                    radius: Length(*diameter * 5.0),
-                                    height: Length(*height * 10.0),
-                                    angle: Angle(std::f64::consts::TAU),
-                                },
-                                op: operation(*result),
-                            },
-                            DesignSolidPrimitive::Sphere {
-                                transform,
-                                diameter,
-                                operation: result,
-                                ..
-                            } => FeatureDefinition::Sphere {
-                                center: Point3::new(
-                                    transform[0][3] * 10.0,
-                                    transform[1][3] * 10.0,
-                                    transform[2][3] * 10.0,
-                                ),
-                                radius: Length(*diameter * 5.0),
-                                op: operation(*result),
-                            },
-                            DesignSolidPrimitive::Torus {
-                                transform,
-                                major_diameter,
-                                minor_diameter,
-                                operation: result,
-                                ..
-                            } => FeatureDefinition::Torus {
-                                center: Point3::new(
-                                    transform[0][3] * 10.0,
-                                    transform[1][3] * 10.0,
-                                    transform[2][3] * 10.0,
-                                ),
-                                axis: Vector3::new(
-                                    transform[0][2],
-                                    transform[1][2],
-                                    transform[2][2],
-                                ),
-                                major_radius: Length(*major_diameter * 5.0),
-                                minor_radius: Length(*minor_diameter * 5.0),
-                                op: operation(*result),
-                            },
-                        }
+                    if let Some(primitive) = project_solid_primitive(scope) {
+                        primitive
                     } else if scope.kind() == crate::records::DesignFeatureKind::JointOrigin {
                         scope.joint_origin_transform().map_or_else(
                             || FeatureDefinition::Native {
@@ -1754,6 +1670,97 @@ pub fn project_parameter_design_with_edge_identities(
     ensure_feature_dependencies_precede(&features)?;
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok((features, parameters))
+}
+
+fn project_solid_primitive(scope: &DesignParameterScope) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, Length, PrimitiveSolid};
+    use cadmpeg_ir::math::{Point3, Vector3};
+                        let operation = |operation| match operation {
+                            DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
+                            DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
+                            DesignExtrudeOperation::Intersect => {
+                                cadmpeg_ir::features::BooleanOp::Intersect
+                            }
+                            DesignExtrudeOperation::NewBody => {
+                                cadmpeg_ir::features::BooleanOp::NewBody
+                            }
+                        };
+                        Some(match &scope.payload {
+                            crate::records::DesignScopePayload::BoxPrimitive(Some(crate::records::DesignBoxPrimitive {
+                                length,
+                                width,
+                                height,
+                                offset_x,
+                                offset_y,
+                                operation: result,
+                                ..
+                            })) => {
+                                let placement = cadmpeg_ir::transform::Transform::affine([
+                                    [1.0, 0.0, 0.0, *offset_x * 10.0],
+                                    [0.0, 1.0, 0.0, *offset_y * 10.0],
+                                    [0.0, 0.0, 1.0, 0.0],
+                                ])
+                                ?;
+                                FeatureDefinition::Block {
+                                    dimensions: Some([
+                                        Length(*length * 10.0),
+                                        Length(*width * 10.0),
+                                        Length(*height * 10.0),
+                                    ]),
+                                    placement: Some(placement),
+                                    op: operation(*result),
+                                }
+                            }
+                            crate::records::DesignScopePayload::CylinderPrimitive(Some(crate::records::DesignCylinderPrimitive {
+                                height,
+                                diameter,
+                                operation: result,
+                                ..
+                            })) => FeatureDefinition::Primitive {
+                                solid: PrimitiveSolid::Cylinder {
+                                    radius: Length(*diameter * 5.0),
+                                    height: Length(*height * 10.0),
+                                    angle: Angle(std::f64::consts::TAU),
+                                },
+                                op: operation(*result),
+                            },
+                            crate::records::DesignScopePayload::SpherePrimitive(Some(crate::records::DesignSpherePrimitive {
+                                transform,
+                                diameter,
+                                operation: result,
+                                ..
+                            })) => FeatureDefinition::Sphere {
+                                center: Point3::new(
+                                    transform[0][3] * 10.0,
+                                    transform[1][3] * 10.0,
+                                    transform[2][3] * 10.0,
+                                ),
+                                radius: Length(*diameter * 5.0),
+                                op: operation(*result),
+                            },
+                            crate::records::DesignScopePayload::TorusPrimitive(Some(crate::records::DesignTorusPrimitive {
+                                transform,
+                                major_diameter,
+                                minor_diameter,
+                                operation: result,
+                                ..
+                            })) => FeatureDefinition::Torus {
+                                center: Point3::new(
+                                    transform[0][3] * 10.0,
+                                    transform[1][3] * 10.0,
+                                    transform[2][3] * 10.0,
+                                ),
+                                axis: Vector3::new(
+                                    transform[0][2],
+                                    transform[1][2],
+                                    transform[2][2],
+                                ),
+                                major_radius: Length(*major_diameter * 5.0),
+                                minor_radius: Length(*minor_diameter * 5.0),
+                                op: operation(*result),
+                            },
+                        _ => return None,
+})
 }
 
 fn work_point_edge_operand<'a>(
