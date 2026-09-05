@@ -88,8 +88,22 @@ impl<'de> Deserialize<'de> for ExportReport {
                 )))
             }
         };
-        let (write_path, fidelity) =
-            admit_export_path(wire.write_path, wire.fidelity).map_err(serde::de::Error::custom)?;
+        let (write_path, fidelity) = match (wire.write_path, wire.fidelity) {
+            (
+                WritePath::VerbatimReplay,
+                FidelityResolution::NotConsumed | FidelityResolution::Degraded { .. },
+            ) => {
+                return Err(serde::de::Error::custom(
+                    "verbatim_replay cannot pair with not_consumed or degraded fidelity",
+                ))
+            }
+            (WritePath::Synthesized, FidelityResolution::Replayed) => {
+                return Err(serde::de::Error::custom(
+                    "synthesized cannot pair with replayed fidelity",
+                ))
+            }
+            (write_path, fidelity) => (write_path, fidelity),
+        };
         Ok(Self {
             identity,
             census: wire.census,
@@ -213,22 +227,6 @@ impl EntityCensus {
     }
 }
 
-fn admit_export_path(
-    write_path: WritePath,
-    fidelity: FidelityResolution,
-) -> Result<(WritePath, FidelityResolution), String> {
-    match (write_path, &fidelity) {
-        (
-            WritePath::VerbatimReplay,
-            FidelityResolution::NotConsumed | FidelityResolution::Degraded { .. },
-        ) => Err("verbatim_replay cannot pair with not_consumed or degraded fidelity".into()),
-        (WritePath::Synthesized, FidelityResolution::Replayed) => {
-            Err("synthesized cannot pair with replayed fidelity".into())
-        }
-        _ => Ok((write_path, fidelity)),
-    }
-}
-
 impl ExportReport {
     /// How decode-time source fidelity was handled.
     #[must_use]
@@ -272,8 +270,6 @@ impl ExportReport {
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
-        let (write_path, fidelity) = admit_export_path(write_path, fidelity)
-            .expect("export constructors admit only consistent write-path/fidelity pairs");
         Self {
             identity: ExportIdentity::Cadir,
             census,
@@ -295,8 +291,6 @@ impl ExportReport {
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
-        let (write_path, fidelity) = admit_export_path(write_path, fidelity)
-            .expect("export constructors admit only consistent write-path/fidelity pairs");
         Self {
             identity: ExportIdentity::Native(target),
             census,
