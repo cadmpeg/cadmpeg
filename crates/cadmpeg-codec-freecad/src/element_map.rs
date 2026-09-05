@@ -1328,8 +1328,6 @@ mod tests {
             id: name.into(),
             name: name.into(),
             role: "element-map".into(),
-            byte_len: data.len() as u64,
-            sha256: String::new(),
             referenced_by: Vec::new(),
             data: data.to_vec(),
         }

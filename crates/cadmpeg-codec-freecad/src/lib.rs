@@ -45,7 +45,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -865,14 +864,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for entry in &entries {
-        entry_lengths.insert(entry.name.as_str(), entry.byte_len);
-        if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
-            findings.push(finding(
-                Check::PayloadIntegrity,
-                format!("{} failed length or digest validation", entry.id),
-                Some(entry.id.clone()),
-            ));
-        }
+        entry_lengths.insert(entry.name.as_str(), entry.byte_len());
         for owner in &entry.referenced_by {
             if !asset_owner_ids.contains(owner.as_str()) {
                 findings.push(finding(
@@ -938,7 +930,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     let covered_entries = logical_by_entry.keys().copied().collect::<HashSet<_>>();
     for entry in &entries {
-        if entry.byte_len > 0 && !covered_entries.contains(entry.name.as_str()) {
+        if entry.byte_len() > 0 && !covered_entries.contains(entry.name.as_str()) {
             findings.push(finding(
                 Check::PayloadIntegrity,
                 format!("logical ledger omits nonempty entry {}", entry.name),
@@ -1156,8 +1148,6 @@ impl CodecBackend for FcstdCodec {
                         id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),
                         role: entry.role.clone(),
-                        byte_len: bytes.len() as u64,
-                        sha256: sha256_hex(bytes),
                         referenced_by,
                         data: bytes.to_vec(),
                     })

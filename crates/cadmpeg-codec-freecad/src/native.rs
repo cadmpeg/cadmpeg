@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned FCStd-native records.
 
+use cadmpeg_ir::hash::sha256_hex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -237,6 +238,7 @@ pub struct SemanticAnnotationRecord {
 
 /// One application-domain object projected into the L8 census.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "ApplicationRecordWire", into = "ApplicationRecordWire")]
 pub struct ApplicationRecord {
     /// Stable census identity.
     pub id: String,
@@ -260,18 +262,99 @@ pub struct ApplicationRecord {
     pub byte_start: u64,
     /// Exclusive `Document.xml` byte offset of the object-data record.
     pub byte_end: u64,
-    /// Exact object-data byte length.
-    pub byte_len: u64,
-    /// Lowercase SHA-256 of exact object-data bytes.
-    pub sha256: String,
     /// Exact retained object-data bytes.
     pub data: Vec<u8>,
     /// Auditable preservation records for every owned property.
     pub property_records: Vec<ApplicationPropertyRecord>,
 }
 
+impl ApplicationRecord {
+    /// Exact object-data byte length.
+    pub fn byte_len(&self) -> u64 {
+        self.data.len() as u64
+    }
+
+    /// Lowercase SHA-256 of exact object-data bytes.
+    pub fn sha256(&self) -> String {
+        sha256_hex(&self.data)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ApplicationRecordWire {
+    id: String,
+    object: String,
+    type_name: String,
+    domain: String,
+    properties: Vec<String>,
+    dependencies: Vec<String>,
+    side_entries: Vec<String>,
+    inert_payload: bool,
+    order: usize,
+    byte_start: u64,
+    byte_end: u64,
+    byte_len: u64,
+    sha256: String,
+    data: Vec<u8>,
+    property_records: Vec<ApplicationPropertyRecord>,
+}
+
+impl From<ApplicationRecord> for ApplicationRecordWire {
+    fn from(value: ApplicationRecord) -> Self {
+        let byte_len = value.byte_len();
+        let sha256 = value.sha256();
+        Self {
+            id: value.id,
+            object: value.object,
+            type_name: value.type_name,
+            domain: value.domain,
+            properties: value.properties,
+            dependencies: value.dependencies,
+            side_entries: value.side_entries,
+            inert_payload: value.inert_payload,
+            order: value.order,
+            byte_start: value.byte_start,
+            byte_end: value.byte_end,
+            byte_len,
+            sha256,
+            data: value.data,
+            property_records: value.property_records,
+        }
+    }
+}
+
+impl TryFrom<ApplicationRecordWire> for ApplicationRecord {
+    type Error = String;
+
+    fn try_from(wire: ApplicationRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            id: wire.id,
+            object: wire.object,
+            type_name: wire.type_name,
+            domain: wire.domain,
+            properties: wire.properties,
+            dependencies: wire.dependencies,
+            side_entries: wire.side_entries,
+            inert_payload: wire.inert_payload,
+            order: wire.order,
+            byte_start: wire.byte_start,
+            byte_end: wire.byte_end,
+            data: wire.data,
+            property_records: wire.property_records,
+        };
+        if wire.byte_len != record.byte_len() || wire.sha256 != record.sha256() {
+            return Err("application record byte_len/sha256 disagrees with data".to_owned());
+        }
+        Ok(record)
+    }
+}
+
 /// Exact application-property preservation record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ApplicationPropertyRecordWire",
+    into = "ApplicationPropertyRecordWire"
+)]
 pub struct ApplicationPropertyRecord {
     /// Stable preservation identity.
     pub id: String,
@@ -291,10 +374,6 @@ pub struct ApplicationPropertyRecord {
     pub byte_start: u64,
     /// Exclusive `Document.xml` byte offset.
     pub byte_end: u64,
-    /// Exact property byte length.
-    pub byte_len: u64,
-    /// Lowercase SHA-256 of exact property bytes.
-    pub sha256: String,
     /// Exact retained property bytes.
     pub data: Vec<u8>,
     /// Complete retained referenced payloads.
@@ -303,19 +382,148 @@ pub struct ApplicationPropertyRecord {
     pub inert: bool,
 }
 
+impl ApplicationPropertyRecord {
+    /// Exact property byte length.
+    pub fn byte_len(&self) -> u64 {
+        self.data.len() as u64
+    }
+
+    /// Lowercase SHA-256 of exact property bytes.
+    pub fn sha256(&self) -> String {
+        sha256_hex(&self.data)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ApplicationPropertyRecordWire {
+    id: String,
+    object: String,
+    property: String,
+    type_name: String,
+    family: PropertyFamily,
+    order: usize,
+    links: Vec<LinkTarget>,
+    byte_start: u64,
+    byte_end: u64,
+    byte_len: u64,
+    sha256: String,
+    data: Vec<u8>,
+    payloads: Vec<ApplicationPayloadRecord>,
+    inert: bool,
+}
+
+impl From<ApplicationPropertyRecord> for ApplicationPropertyRecordWire {
+    fn from(value: ApplicationPropertyRecord) -> Self {
+        let byte_len = value.byte_len();
+        let sha256 = value.sha256();
+        Self {
+            id: value.id,
+            object: value.object,
+            property: value.property,
+            type_name: value.type_name,
+            family: value.family,
+            order: value.order,
+            links: value.links,
+            byte_start: value.byte_start,
+            byte_end: value.byte_end,
+            byte_len,
+            sha256,
+            data: value.data,
+            payloads: value.payloads,
+            inert: value.inert,
+        }
+    }
+}
+
+impl TryFrom<ApplicationPropertyRecordWire> for ApplicationPropertyRecord {
+    type Error = String;
+
+    fn try_from(wire: ApplicationPropertyRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            id: wire.id,
+            object: wire.object,
+            property: wire.property,
+            type_name: wire.type_name,
+            family: wire.family,
+            order: wire.order,
+            links: wire.links,
+            byte_start: wire.byte_start,
+            byte_end: wire.byte_end,
+            data: wire.data,
+            payloads: wire.payloads,
+            inert: wire.inert,
+        };
+        if wire.byte_len != record.byte_len() || wire.sha256 != record.sha256() {
+            return Err("application property byte_len/sha256 disagrees with data".to_owned());
+        }
+        Ok(record)
+    }
+}
+
 /// Complete named payload retained for an application property.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ApplicationPayloadRecordWire",
+    into = "ApplicationPayloadRecordWire"
+)]
 pub struct ApplicationPayloadRecord {
     /// Global native entry identity.
     pub entry: String,
     /// Exact archive entry name.
     pub name: String,
-    /// Logical byte length.
-    pub byte_len: u64,
-    /// Lowercase SHA-256 of complete logical bytes.
-    pub sha256: String,
     /// Complete retained logical bytes.
     pub data: Vec<u8>,
+}
+
+impl ApplicationPayloadRecord {
+    /// Logical byte length.
+    pub fn byte_len(&self) -> u64 {
+        self.data.len() as u64
+    }
+
+    /// Lowercase SHA-256 of complete logical bytes.
+    pub fn sha256(&self) -> String {
+        sha256_hex(&self.data)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ApplicationPayloadRecordWire {
+    entry: String,
+    name: String,
+    byte_len: u64,
+    sha256: String,
+    data: Vec<u8>,
+}
+
+impl From<ApplicationPayloadRecord> for ApplicationPayloadRecordWire {
+    fn from(value: ApplicationPayloadRecord) -> Self {
+        let byte_len = value.byte_len();
+        let sha256 = value.sha256();
+        Self {
+            entry: value.entry,
+            name: value.name,
+            byte_len,
+            sha256,
+            data: value.data,
+        }
+    }
+}
+
+impl TryFrom<ApplicationPayloadRecordWire> for ApplicationPayloadRecord {
+    type Error = String;
+
+    fn try_from(wire: ApplicationPayloadRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            entry: wire.entry,
+            name: wire.name,
+            data: wire.data,
+        };
+        if wire.byte_len != record.byte_len() || wire.sha256 != record.sha256() {
+            return Err("application payload byte_len/sha256 disagrees with data".to_owned());
+        }
+        Ok(record)
+    }
 }
 
 /// One `TechDraw` page, template, view, dimension, or annotation record.
@@ -1215,6 +1423,7 @@ pub enum PropertyFamily {
 
 /// One logical archive entry and its graph ownership.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "EntryRecordWire", into = "EntryRecordWire")]
 pub struct EntryRecord {
     /// Stable entry identity.
     pub id: String,
@@ -1222,14 +1431,67 @@ pub struct EntryRecord {
     pub name: String,
     /// Classified entry role.
     pub role: String,
-    /// Logical byte length.
-    pub byte_len: u64,
-    /// Lowercase SHA-256 of logical bytes.
-    pub sha256: String,
     /// Application property, GUI property, and GUI state identities that reference this entry.
     pub referenced_by: Vec<String>,
     /// Complete logical bytes.
     pub data: Vec<u8>,
+}
+
+impl EntryRecord {
+    /// Logical byte length.
+    pub fn byte_len(&self) -> u64 {
+        self.data.len() as u64
+    }
+
+    /// Lowercase SHA-256 of logical bytes.
+    pub fn sha256(&self) -> String {
+        sha256_hex(&self.data)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct EntryRecordWire {
+    id: String,
+    name: String,
+    role: String,
+    byte_len: u64,
+    sha256: String,
+    referenced_by: Vec<String>,
+    data: Vec<u8>,
+}
+
+impl From<EntryRecord> for EntryRecordWire {
+    fn from(value: EntryRecord) -> Self {
+        let byte_len = value.byte_len();
+        let sha256 = value.sha256();
+        Self {
+            id: value.id,
+            name: value.name,
+            role: value.role,
+            byte_len,
+            sha256,
+            referenced_by: value.referenced_by,
+            data: value.data,
+        }
+    }
+}
+
+impl TryFrom<EntryRecordWire> for EntryRecord {
+    type Error = String;
+
+    fn try_from(wire: EntryRecordWire) -> Result<Self, Self::Error> {
+        let record = Self {
+            id: wire.id,
+            name: wire.name,
+            role: wire.role,
+            referenced_by: wire.referenced_by,
+            data: wire.data,
+        };
+        if wire.byte_len != record.byte_len() || wire.sha256 != record.sha256() {
+            return Err("entry byte_len/sha256 disagrees with data".to_owned());
+        }
+        Ok(record)
+    }
 }
 
 /// One non-overlapping logical-entry byte span.
