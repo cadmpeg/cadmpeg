@@ -480,7 +480,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     };
     let (ufrx, ufrx_model_states, embedded_references, external_references, ufrx_occurrences) =
         ufrx_projection;
-    if let DocumentKind::Unknown(_) = document_kind {
+    if matches!(document_kind, DocumentKind::Unknown | DocumentKind::Mixed) {
         if let Some(property_kind) = metadata.document_kind.take() {
             document_kind = property_kind;
         }

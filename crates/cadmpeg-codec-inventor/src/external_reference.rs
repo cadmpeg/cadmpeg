@@ -219,7 +219,10 @@ fn parse_stream_grammar<'a>(
         match document_kind {
             DocumentKind::Assembly => true,
             DocumentKind::Part => false,
-            DocumentKind::Drawing | DocumentKind::Presentation | DocumentKind::Unknown(_) => {
+            DocumentKind::Drawing
+            | DocumentKind::Presentation
+            | DocumentKind::Mixed
+            | DocumentKind::Unknown => {
                 return Err(CodecError::NotImplemented(format!(
                     "UFRxDoc schema 15 {} header is not implemented",
                     document_kind.label()

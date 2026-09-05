@@ -119,7 +119,8 @@ pub(crate) enum DocumentKind {
     Assembly,
     Drawing,
     Presentation,
-    Unknown(String),
+    Mixed,
+    Unknown,
 }
 
 impl DocumentKind {
@@ -143,7 +144,8 @@ impl DocumentKind {
             Self::Assembly => "assembly",
             Self::Drawing => "drawing",
             Self::Presentation => "presentation",
-            Self::Unknown(detail) => detail,
+            Self::Mixed => "mixed_part_assembly",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -530,8 +532,8 @@ fn document_kind_for_segments(segments: &[SegmentDescriptor<'_>]) -> DocumentKin
     match (has_part, has_assembly) {
         (true, false) => DocumentKind::Part,
         (false, true) => DocumentKind::Assembly,
-        (true, true) => DocumentKind::Unknown("mixed_part_assembly".into()),
-        (false, false) => DocumentKind::Unknown("unknown".into()),
+        (true, true) => DocumentKind::Mixed,
+        (false, false) => DocumentKind::Unknown,
     }
 }
 
