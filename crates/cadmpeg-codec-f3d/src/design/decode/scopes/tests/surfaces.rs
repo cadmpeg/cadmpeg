@@ -888,28 +888,21 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-377/class-259 Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::BodyBasedOnFaces {
-        body_entity_suffixes,
-        body_entity_suffix_offsets,
-        body_reference_records,
+        body,
         parameter_body_record,
         parameter_body_record_offset,
         auxiliary_record,
         auxiliary_record_offset,
         envelope_guid,
         envelope_guid_offset,
-        tag_body_based_on_faces,
         tag_body_based_on_faces_offset,
         ..
     } = &construction
     else {
         panic!("class-377/class-259 frame selected the wrong form");
     };
-    assert_eq!(body_entity_suffixes, &[201]);
-    assert_eq!(
-        body_entity_suffix_offsets,
-        &[class_377::BODY_ENTITY_SUFFIX as u64]
-    );
-    assert_eq!(body_reference_records, &[201]);
+    assert_eq!(*body, crate::records::Located { value: 201, offset: class_377::BODY_ENTITY_SUFFIX as u64 });
+    assert_eq!(construction.body_reference_records().collect::<Vec<_>>(), [201]);
     assert_eq!(*parameter_body_record, 198);
     assert_eq!(
         *parameter_body_record_offset,
@@ -919,7 +912,6 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     assert_eq!(*auxiliary_record_offset, class_377::AUXILIARY_RECORD as u64);
     assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
     assert_eq!(*envelope_guid_offset, class_377::ENVELOPE_GUID as u64);
-    assert!(*tag_body_based_on_faces);
     assert_eq!(
         *tag_body_based_on_faces_offset,
         class_377::TAG_BODY_BASED_ON_FACES_VALUE as u64
