@@ -1619,11 +1619,13 @@ pub struct DataBlockTargetIndexRow {
 
 /// Exact row encoding that selects `UGS::RM_creation_display_data` in an
 /// `RMFastLoad` record area.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RmCreationDisplayDataEncoding {
     /// Self-framed index row whose fourth post-flag index selects the class.
     Index {
+        first_index: u32,
+        raw_first_index: Vec<u8>,
+        first_index_source_offset: u64,
         flag: u8,
         indices: [u32; 4],
         raw_indices: [Vec<u8>; 4],
@@ -1631,6 +1633,9 @@ pub enum RmCreationDisplayDataEncoding {
     },
     /// Self-framed linked row whose third post-marker index selects the class.
     Linked {
+        first_index: u32,
+        raw_first_index: Vec<u8>,
+        first_index_source_offset: u64,
         discriminator: u8,
         target_index: u32,
         raw_target_index: Vec<u8>,
@@ -1655,20 +1660,15 @@ pub enum RmCreationDisplayDataEncoding {
 
 /// Lossless class-selected creation-display relation in `RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "RmCreationDisplayDataRelationWire",
+    into = "RmCreationDisplayDataRelationWire"
+)]
 pub struct RmCreationDisplayDataRelation {
     /// Globally unique relation identity.
     pub id: String,
     /// Zero-based relation order in ascending source order.
     pub ordinal: u32,
-    /// Leading compact index when the row encoding carries one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_index: Option<u32>,
-    /// Exact serialized leading-index token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub raw_first_index: Option<Vec<u8>>,
-    /// Absolute file offset of the leading compact index.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_index_source_offset: Option<u64>,
     /// Exact registered class name.
     pub class_name: String,
     /// Target in the native `class_definitions` arena.
@@ -1677,12 +1677,250 @@ pub struct RmCreationDisplayDataRelation {
     pub encoding: RmCreationDisplayDataEncoding,
     /// Member addressed by the target index when the row carries one and the
     /// index resolves in the `RMFastLoad` object-ID table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_object_id: Option<String>,
     /// Directory entry containing the relation.
     pub source_entry: String,
     /// Absolute file offset of the opening row discriminator.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RmCreationDisplayDataEncodingWire {
+    Index {
+        flag: u8,
+        indices: [u32; 4],
+        raw_indices: [Vec<u8>; 4],
+        index_source_offsets: [u64; 4],
+    },
+    Linked {
+        discriminator: u8,
+        target_index: u32,
+        raw_target_index: Vec<u8>,
+        target_index_source_offset: u64,
+        indices: [u32; 3],
+        raw_indices: [Vec<u8>; 3],
+        index_source_offsets: [u64; 3],
+        flag: u8,
+        mode: u8,
+    },
+    Target {
+        target_index: u32,
+        raw_target_index: Vec<u8>,
+        target_index_source_offset: u64,
+        indices: [u32; 3],
+        raw_indices: [Vec<u8>; 3],
+        index_source_offsets: [u64; 3],
+        mode: u8,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+struct RmCreationDisplayDataRelationWire {
+    id: String,
+    ordinal: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    raw_first_index: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_index_source_offset: Option<u64>,
+    class_name: String,
+    class_definition: String,
+    encoding: RmCreationDisplayDataEncodingWire,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_object_id: Option<String>,
+    source_entry: String,
+    source_offset: u64,
+}
+
+impl From<RmCreationDisplayDataRelation> for RmCreationDisplayDataRelationWire {
+    fn from(value: RmCreationDisplayDataRelation) -> Self {
+        let (first_index, raw_first_index, first_index_source_offset, encoding) =
+            match value.encoding {
+                RmCreationDisplayDataEncoding::Index {
+                    first_index,
+                    raw_first_index,
+                    first_index_source_offset,
+                    flag,
+                    indices,
+                    raw_indices,
+                    index_source_offsets,
+                } => (
+                    Some(first_index),
+                    Some(raw_first_index),
+                    Some(first_index_source_offset),
+                    RmCreationDisplayDataEncodingWire::Index {
+                        flag,
+                        indices,
+                        raw_indices,
+                        index_source_offsets,
+                    },
+                ),
+                RmCreationDisplayDataEncoding::Linked {
+                    first_index,
+                    raw_first_index,
+                    first_index_source_offset,
+                    discriminator,
+                    target_index,
+                    raw_target_index,
+                    target_index_source_offset,
+                    indices,
+                    raw_indices,
+                    index_source_offsets,
+                    flag,
+                    mode,
+                } => (
+                    Some(first_index),
+                    Some(raw_first_index),
+                    Some(first_index_source_offset),
+                    RmCreationDisplayDataEncodingWire::Linked {
+                        discriminator,
+                        target_index,
+                        raw_target_index,
+                        target_index_source_offset,
+                        indices,
+                        raw_indices,
+                        index_source_offsets,
+                        flag,
+                        mode,
+                    },
+                ),
+                RmCreationDisplayDataEncoding::Target {
+                    target_index,
+                    raw_target_index,
+                    target_index_source_offset,
+                    indices,
+                    raw_indices,
+                    index_source_offsets,
+                    mode,
+                } => (
+                    None,
+                    None,
+                    None,
+                    RmCreationDisplayDataEncodingWire::Target {
+                        target_index,
+                        raw_target_index,
+                        target_index_source_offset,
+                        indices,
+                        raw_indices,
+                        index_source_offsets,
+                        mode,
+                    },
+                ),
+            };
+        Self {
+            id: value.id,
+            ordinal: value.ordinal,
+            first_index,
+            raw_first_index,
+            first_index_source_offset,
+            class_name: value.class_name,
+            class_definition: value.class_definition,
+            encoding,
+            target_object_id: value.target_object_id,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelation {
+    type Error = String;
+
+    fn try_from(wire: RmCreationDisplayDataRelationWire) -> Result<Self, Self::Error> {
+        let encoding = match (
+            wire.encoding,
+            wire.first_index,
+            wire.raw_first_index,
+            wire.first_index_source_offset,
+        ) {
+            (
+                RmCreationDisplayDataEncodingWire::Index {
+                    flag,
+                    indices,
+                    raw_indices,
+                    index_source_offsets,
+                },
+                Some(first_index),
+                Some(raw_first_index),
+                Some(first_index_source_offset),
+            ) => RmCreationDisplayDataEncoding::Index {
+                first_index,
+                raw_first_index,
+                first_index_source_offset,
+                flag,
+                indices,
+                raw_indices,
+                index_source_offsets,
+            },
+            (
+                RmCreationDisplayDataEncodingWire::Linked {
+                    discriminator,
+                    target_index,
+                    raw_target_index,
+                    target_index_source_offset,
+                    indices,
+                    raw_indices,
+                    index_source_offsets,
+                    flag,
+                    mode,
+                },
+                Some(first_index),
+                Some(raw_first_index),
+                Some(first_index_source_offset),
+            ) => RmCreationDisplayDataEncoding::Linked {
+                first_index,
+                raw_first_index,
+                first_index_source_offset,
+                discriminator,
+                target_index,
+                raw_target_index,
+                target_index_source_offset,
+                indices,
+                raw_indices,
+                index_source_offsets,
+                flag,
+                mode,
+            },
+            (
+                RmCreationDisplayDataEncodingWire::Target {
+                    target_index,
+                    raw_target_index,
+                    target_index_source_offset,
+                    indices,
+                    raw_indices,
+                    index_source_offsets,
+                    mode,
+                },
+                None,
+                None,
+                None,
+            ) => RmCreationDisplayDataEncoding::Target {
+                target_index,
+                raw_target_index,
+                target_index_source_offset,
+                indices,
+                raw_indices,
+                index_source_offsets,
+                mode,
+            },
+            _ => return Err(
+                "RM creation-display first index is present exactly for Index and Linked encodings"
+                    .to_owned(),
+            ),
+        };
+        Ok(Self {
+            id: wire.id,
+            ordinal: wire.ordinal,
+            class_name: wire.class_name,
+            class_definition: wire.class_definition,
+            encoding,
+            target_object_id: wire.target_object_id,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Complete named NX part palette for color indices 1 through 216.
@@ -3986,12 +4224,12 @@ pub fn rm_creation_display_data_relations(
             relations.push(RmCreationDisplayDataRelation {
                 id: String::new(),
                 ordinal: 0,
-                first_index: Some(row.first_index),
-                raw_first_index: Some(row.raw_first_index),
-                first_index_source_offset: Some(source_base + row.first_index_offset as u64),
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Index {
+                    first_index: row.first_index,
+                    raw_first_index: row.raw_first_index,
+                    first_index_source_offset: source_base + row.first_index_offset as u64,
                     flag: row.flag,
                     indices: row.indices.map(|(index, _)| index),
                     raw_indices: row.raw_indices,
@@ -4011,12 +4249,12 @@ pub fn rm_creation_display_data_relations(
             relations.push(RmCreationDisplayDataRelation {
                 id: String::new(),
                 ordinal: 0,
-                first_index: Some(row.first_index.0),
-                raw_first_index: Some(row.raw_first_index),
-                first_index_source_offset: Some(source_base + row.first_index.1 as u64),
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Linked {
+                    first_index: row.first_index.0,
+                    raw_first_index: row.raw_first_index,
+                    first_index_source_offset: source_base + row.first_index.1 as u64,
                     discriminator: row.discriminator,
                     target_index: row.target_index.0,
                     raw_target_index: row.raw_target_index,
@@ -4041,9 +4279,6 @@ pub fn rm_creation_display_data_relations(
             relations.push(RmCreationDisplayDataRelation {
                 id: String::new(),
                 ordinal: 0,
-                first_index: None,
-                raw_first_index: None,
-                first_index_source_offset: None,
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Target {
