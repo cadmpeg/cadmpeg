@@ -351,18 +351,14 @@ fn decode_table(
     let mut table_references = Vec::with_capacity(reference_count);
     for ordinal in 0..reference_count {
         let byte_offset = cursor;
-        let target_record_offset = cursor
-            .checked_add(1)
-            .ok_or_else(|| malformed("table reference"))?;
         let (target_record, end) =
             marker_ref(bytes, cursor, 6, frame.end).ok_or_else(|| malformed("table reference"))?;
-        table_references.push(ActTableReference {
-            id: crate::ids::native_scoped_id(stream, "act-table-reference", byte_offset),
-            ordinal: u32::try_from(ordinal).map_err(|_| malformed("table-reference ordinal"))?,
-            byte_offset: byte_offset as u64,
+        table_references.push(ActTableReference::new(
+            crate::ids::native_scoped_id(stream, "act-table-reference", byte_offset),
+            u32::try_from(ordinal).map_err(|_| malformed("table-reference ordinal"))?,
+            byte_offset as u64,
             target_record,
-            target_record_offset: target_record_offset as u64,
-        });
+        ).map_err(CodecError::malformed)?);
         cursor = end;
     }
 

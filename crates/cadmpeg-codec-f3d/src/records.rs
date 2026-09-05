@@ -17716,17 +17716,57 @@ pub struct ActGuid {
 /// One reference in the ACT table run between the GUID pool and channel registry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ActTableReferenceWire", into = "ActTableReferenceWire")]
 pub struct ActTableReference {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
     /// Position in the counted reference run, in source order.
     pub ordinal: u32,
     /// Byte offset of the reference-presence marker in the ACT `BulkStream`.
-    pub byte_offset: u64,
+    byte_offset: u64,
     /// Target ACT record index.
     pub target_record: u32,
-    /// Byte offset of `target_record`.
-    pub target_record_offset: u64,
+}
+
+impl ActTableReference {
+    pub fn new(id: String, ordinal: u32, byte_offset: u64, target_record: u32) -> Result<Self, String> {
+        byte_offset.checked_add(1).ok_or("ACT table reference byte_offset overflows target_record_offset")?;
+        Ok(Self { id, ordinal, byte_offset, target_record })
+    }
+
+    pub fn byte_offset(&self) -> u64 { self.byte_offset }
+
+    fn target_record_offset(&self) -> u64 { self.byte_offset + 1 }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ActTableReferenceWire {
+    id: String,
+    ordinal: u32,
+    byte_offset: u64,
+    target_record: u32,
+    target_record_offset: u64,
+}
+
+impl TryFrom<ActTableReferenceWire> for ActTableReference {
+    type Error = String;
+
+    fn try_from(wire: ActTableReferenceWire) -> Result<Self, Self::Error> {
+        let reference = Self::new(wire.id, wire.ordinal, wire.byte_offset, wire.target_record)?;
+        if wire.target_record_offset != reference.target_record_offset() {
+            return Err("ACT table reference target_record_offset must follow byte_offset".into());
+        }
+        Ok(reference)
+    }
+}
+
+impl From<ActTableReference> for ActTableReferenceWire {
+    fn from(reference: ActTableReference) -> Self {
+        let target_record_offset = reference.target_record_offset();
+        Self { id: reference.id, ordinal: reference.ordinal, byte_offset: reference.byte_offset,
+            target_record: reference.target_record, target_record_offset }
+    }
 }
 
 /// One named entry in the ACT table's stream-wide channel registry.

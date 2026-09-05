@@ -3550,3 +3550,22 @@ fn act_root_layout_derives_utf16_offsets_and_bounds_padding() {
     assert!(ActRootLayout::new(u64::MAX - 62, "0_3".into(), "".into(), 1).is_err());
     assert!(ActRootLayout::new(0, "".into(), "".into(), 1).is_err());
 }
+
+#[test]
+fn act_table_reference_derives_target_offset_and_rejects_wire_drift() {
+    let wire = serde_json::json!({
+        "id": "stream:act-table-reference#20", "ordinal": 0,
+        "byte_offset": 20, "target_record": 3, "target_record_offset": 21
+    });
+    let reference: super::ActTableReference = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(reference.byte_offset(), 20);
+    assert_eq!(serde_json::to_value(reference).unwrap(), wire);
+    for offset in [0, 20, 22, u64::MAX] {
+        let mut invalid = wire.clone();
+        invalid["target_record_offset"] = serde_json::json!(offset);
+        let error = serde_json::from_value::<super::ActTableReference>(invalid).unwrap_err();
+        assert!(error.to_string().contains("target_record_offset"));
+    }
+    assert!(super::ActTableReference::new("id".into(), 0, u64::MAX, 3).is_err());
+    assert!(super::ActTableReference::new("id".into(), 0, u64::MAX - 1, 3).is_ok());
+}

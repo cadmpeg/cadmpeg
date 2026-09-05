@@ -1001,7 +1001,7 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         std::collections::BTreeMap::<&str, (HashSet<u32>, &str)>::new();
     let mut table_reference_offsets = HashSet::new();
     for reference in &native.act_table_references {
-        let stream = act_stream_for_id(&reference.id, "act-table-reference", reference.byte_offset);
+        let stream = act_stream_for_id(&reference.id, "act-table-reference", reference.byte_offset());
         if let Some(stream) = stream {
             streams.entry(stream).or_insert(&reference.id);
         }
@@ -1013,11 +1013,10 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .insert(reference.ordinal)
         });
         let unique_offset = stream
-            .is_some_and(|stream| table_reference_offsets.insert((stream, reference.byte_offset)));
+            .is_some_and(|stream| table_reference_offsets.insert((stream, reference.byte_offset())));
         let valid = stream.is_some()
             && unique_ordinal
-            && unique_offset
-            && reference.byte_offset.checked_add(1) == Some(reference.target_record_offset);
+            && unique_offset;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,

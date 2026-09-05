@@ -1207,14 +1207,6 @@ fn generated_act_native_validation_rejects_structural_drift() {
     assert!(crate::validate::validate_native(&wrong_registry)
         .iter()
         .any(|finding| finding.message.contains("ACT channel-registry entry")));
-
-    let mut wrong_table_reference = wrong_registry;
-    update_f3d_native(&mut wrong_table_reference, |native| {
-        native.act_table_references[0].target_record_offset += 1;
-    });
-    assert!(crate::validate::validate_native(&wrong_table_reference)
-        .iter()
-        .any(|finding| finding.message.contains("ACT table reference")));
 }
 
 #[test]
