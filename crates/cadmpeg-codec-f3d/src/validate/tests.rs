@@ -348,8 +348,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             byte_offset: byte_offset + 220,
             record_index_offset: None,
             kind: ConstructionRecipeKind::Body,
-            design_id: Some("301".into()),
-            design_id_offset: Some(byte_offset + 197),
+            design_id: Some(crate::records::RecordedValue { value: "301".into(), offset: Some(byte_offset + 197) }),
             design_selector: Some(ConstructionRecipeSelector {
                 value: operand_record_index + 4,
                 byte_offset: byte_offset + 200,

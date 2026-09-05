@@ -148,8 +148,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         byte_offset: 0,
         record_index_offset: None,
         kind,
-        design_id: Some(format!("{}", 320 + ordinal)),
-        design_id_offset: None,
+        design_id: Some(crate::records::RecordedValue { value: format!("{}", 320 + ordinal), offset: None }),
         design_selector: None,
         recipe_index: 0,
         record_index: 100 + i32::try_from(ordinal).unwrap(),
@@ -277,7 +276,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .find(|recipe| recipe.kind == ConstructionRecipeKind::Body)
         .expect("body recipe");
     assert_eq!(body_recipe.record_index, 100);
-    assert_eq!(body_recipe.design_id.as_deref(), Some("320"));
+    assert_eq!(body_recipe.design_id.as_ref().map(|field| field.value.as_str()), Some("320"));
     assert!(native
         .construction_recipes
         .iter()
@@ -287,7 +286,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .iter()
         .find(|recipe| recipe.kind == ConstructionRecipeKind::BoundedFace)
         .expect("bounded-face recipe");
-    assert_eq!(bounded.design_id.as_deref(), Some("322"));
+    assert_eq!(bounded.design_id.as_ref().map(|field| field.value.as_str()), Some("322"));
     assert_eq!(bounded.record_index, 102);
     assert_eq!(native.persistent_references.len(), 3);
     assert_eq!(

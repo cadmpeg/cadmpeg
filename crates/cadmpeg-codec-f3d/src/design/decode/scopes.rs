@@ -9776,7 +9776,7 @@ fn exact_coil_face_selection(
         recipe_record_byte_offset: face.recipe_record_byte_offset,
         recipe_id: recipe.id.clone(),
         recipe_kind: recipe.kind,
-        design_id: recipe.design_id.clone(),
+        design_id: recipe.design_id.as_ref().map(|field| field.value.clone()),
         design_selector: recipe.design_selector,
     })
 }

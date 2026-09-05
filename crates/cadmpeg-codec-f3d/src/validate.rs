@@ -6685,13 +6685,13 @@ fn validate_body_recipe_operands<'a>(
             && valid_design_guid(&operand.context_id)
             && recipe.is_some_and(|recipe| {
                 let selector_is_valid = recipe.design_id.as_ref().is_some_and(|design_id| {
-                    let Some(design_id_offset) = recipe.design_id_offset else {
+                    let Some(design_id_offset) = design_id.offset else {
                         return false;
                     };
                     let Some(selector) = recipe.design_selector else {
                         return false;
                     };
-                    u64::try_from(design_id.len()).ok().is_some_and(|length| {
+                    u64::try_from(design_id.value.len()).ok().is_some_and(|length| {
                         let selector_follows_id =
                             design_id_offset.checked_add(length) == Some(selector.byte_offset);
                         let prefix_frame =

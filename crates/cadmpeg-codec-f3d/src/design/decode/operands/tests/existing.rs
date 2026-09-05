@@ -95,7 +95,6 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
         design_id: None,
-        design_id_offset: None,
         design_selector: None,
         recipe_index: 0,
         record_index: 0,

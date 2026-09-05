@@ -1697,7 +1697,6 @@ pub(super) fn continue_fixed_kind_operations(
         record_index_offset: None,
         kind: ConstructionRecipeKind::Edge,
         design_id: None,
-        design_id_offset: None,
         design_selector: None,
         recipe_index: 0,
         record_index: 303,
