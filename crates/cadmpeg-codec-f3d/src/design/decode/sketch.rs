@@ -131,7 +131,7 @@ pub fn decode_sketch_placements(
             continue;
         };
         let entity_id = binding.entity_id.as_str();
-        let entity_suffix = binding.entity_suffix;
+        let entity_suffix = binding.entity_id.suffix();
         let entry = scan.entries.iter().find(|entry| {
             scan.is_design_stream(entry, ContainerRole::Bulkstream)
                 && scope.id.starts_with(&ids::native_scope_prefix(&entry.name))

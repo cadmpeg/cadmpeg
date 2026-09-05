@@ -259,8 +259,7 @@ pub fn decode_parameter_scopes(
                     | crate::records::DesignScopePayload::Esboco(slot) = &mut scope.payload
                     {
                         *slot = Some(crate::records::DesignSketchEntityBinding {
-                            entity_id: entity.entity_id.clone(),
-                            entity_suffix: entity.entity_suffix,
+                            entity_id: crate::records::DesignEntityId::try_from(entity.entity_id.clone()).map_err(crate::error::malformed)?,
                             entity_reference_offset: scope
                                 .byte_offset
                                 .saturating_add(*relative_offset as u64),

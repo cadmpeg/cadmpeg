@@ -2210,3 +2210,36 @@ fn bend_radius_requires_a_positive_finite_value() {
         }
     }
 }
+
+#[test]
+fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
+    for (name, suffix) in [
+        ("Sketch_0", 0), ("Sketch_00017", 17), ("Sketch_+0017", 17),
+        ("module_Sketch_42", 42), ("_18446744073709551615", u64::MAX),
+    ] {
+        let id = super::DesignEntityId::try_from(name.to_owned()).expect("valid entity ID");
+        assert_eq!(id.as_str(), name);
+        assert_eq!(id.suffix(), suffix);
+        let wire = serde_json::json!({"entity_id": name, "entity_suffix": suffix, "entity_reference_offset": 20});
+        let binding: super::DesignSketchEntityBinding = serde_json::from_value(wire.clone()).expect("matching suffix");
+        assert_eq!(serde_json::to_value(binding).unwrap(), wire);
+        let mut mismatch = wire;
+        mismatch["entity_suffix"] = (suffix ^ 1).into();
+        let error = serde_json::from_value::<super::DesignSketchEntityBinding>(mismatch).expect_err("contradictory suffix");
+        assert!(error.to_string().contains("entity_suffix"));
+    }
+    for name in ["", "Sketch", "Sketch_", "Sketch_-1", "Sketch_++1", "Sketch_18446744073709551616"] {
+        assert!(super::DesignEntityId::try_from(name.to_owned()).expect_err("invalid entity ID").contains("entity_id"));
+    }
+    let wire = serde_json::json!({
+        "scope_reference_ordinal": 0, "record_index": 1, "byte_offset": 10,
+        "class_tag": "300", "asset_id": "asset", "asset_id_offset": 20,
+        "entity_id": "Sketch_00017", "entity_suffix": 17, "entity_reference_offset": 30,
+        "paired_class_tag": "301", "paired_byte_offset": 40
+    });
+    let profile: super::DesignSketchProfileOperand = serde_json::from_value(wire.clone()).expect("valid profile ID");
+    assert_eq!(serde_json::to_value(profile).unwrap(), wire);
+    let mut mismatch = wire;
+    mismatch["entity_suffix"] = 18.into();
+    assert!(serde_json::from_value::<super::DesignSketchProfileOperand>(mismatch).expect_err("mismatched profile suffix").to_string().contains("entity_suffix"));
+}

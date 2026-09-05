@@ -483,8 +483,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             class_tag: "377".into(),
             asset_id: "asset".into(),
             asset_id_offset: 0,
-            entity_id: format!("{stream}:sketch#7"),
-            entity_suffix: 7,
+            entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned()).expect("valid entity identity"),
             entity_reference_offset: 0,
             region_selection: None,
             paired_class_tag: "264".into(),
@@ -614,7 +613,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     let placement = DesignSketchPlacement {
         id: format!("{stream}:placement#7"),
         scope_record_index: None,
-        entity_id: format!("{stream}:sketch#7"),
+        entity_id: "Sketch_7".into(),
         entity_suffix: 7,
         visibility: None,
         byte_offset: 0,

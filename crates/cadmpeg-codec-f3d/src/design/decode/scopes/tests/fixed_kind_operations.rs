@@ -1319,8 +1319,7 @@ pub(super) fn continue_fixed_kind_operations(
             class_tag: "312".into(),
             asset_id: "asset".into(),
             asset_id_offset: 32_040,
-            entity_id: "0_2718".into(),
-            entity_suffix: 2718,
+            entity_id: crate::records::DesignEntityId::try_from("0_2718".to_owned()).expect("valid entity identity"),
             entity_reference_offset: 32_080,
             region_selection: None,
             paired_class_tag: "258".into(),
@@ -1708,8 +1707,7 @@ pub(super) fn continue_fixed_kind_operations(
     | crate::records::DesignScopePayload::Esboco(slot) = &mut scope.payload
     {
         *slot = Some(crate::records::DesignSketchEntityBinding {
-            entity_id: "Sketch_99".into(),
-            entity_suffix: 99,
+            entity_id: crate::records::DesignEntityId::try_from("Sketch_99".to_owned()).expect("valid entity identity"),
             entity_reference_offset: 0,
         });
     }

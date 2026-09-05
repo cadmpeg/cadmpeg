@@ -6374,7 +6374,7 @@ where
     let wire = SketchEntityWire::deserialize(deserializer)?;
     match (wire.entity_id, wire.entity_suffix, wire.entity_reference_offset) {
         (None, None, None) => Ok(None),
-        (Some(entity_id), Some(entity_suffix), Some(entity_reference_offset)) => Ok(Some(DesignSketchEntityBinding { entity_id, entity_suffix, entity_reference_offset })),
+        (Some(entity_id), Some(entity_suffix), Some(entity_reference_offset)) => DesignSketchEntityBinding::try_from(DesignSketchEntityBindingWire { entity_id, entity_suffix, entity_reference_offset }).map(Some).map_err(serde::de::Error::custom),
         _ => Err(serde::de::Error::custom("entity_id, entity_suffix, and entity_reference_offset must occur together")),
     }
 }
@@ -6571,17 +6571,81 @@ impl From<DesignCoilScope> for DesignCoilScopeWire {
     }
 }
 
+/// Design entity identity with a decimal u64 suffix after its final underscore.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DesignEntityId(String);
+
+impl TryFrom<String> for DesignEntityId {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let (_, suffix) = value.rsplit_once('_').ok_or("entity_id requires a decimal suffix")?;
+        suffix.parse::<u64>().map_err(|_| "entity_id requires a decimal u64 suffix")?;
+        Ok(Self(value))
+    }
+}
+
+impl DesignEntityId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn suffix(&self) -> u64 {
+        self.0.rsplit('_').take(1).flat_map(str::bytes)
+            .filter(|byte| *byte != b'+')
+            .fold(0, |value, digit| value * 10 + u64::from(digit - b'0'))
+    }
+}
+
 /// Sketch-module entity named by a sketch parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignSketchEntityBindingWire", into = "DesignSketchEntityBindingWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignSketchEntityBindingWire"))]
 pub struct DesignSketchEntityBinding {
     /// Full Design entity id of a sketch scope.
-    pub entity_id: String,
-    /// Numeric suffix of `entity_id`.
-    pub entity_suffix: u64,
+    pub entity_id: DesignEntityId,
     /// Byte offset of the sketch entity suffix.
     pub entity_reference_offset: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignSketchEntityBindingWire {
+    /// Full Design entity id of a sketch scope.
+    entity_id: String,
+    /// Numeric suffix of `entity_id`.
+    entity_suffix: u64,
+    /// Byte offset of the sketch entity suffix.
+    entity_reference_offset: u64,
+}
+
+impl TryFrom<DesignSketchEntityBindingWire> for DesignSketchEntityBinding {
+    type Error = String;
+
+    fn try_from(wire: DesignSketchEntityBindingWire) -> Result<Self, Self::Error> {
+        let entity_id = DesignEntityId::try_from(wire.entity_id)?;
+        if entity_id.suffix() != wire.entity_suffix {
+            return Err("entity_suffix disagrees with entity_id".into());
+        }
+        Ok(Self {
+            entity_id,
+            entity_reference_offset: wire.entity_reference_offset,
+        })
+    }
+}
+
+impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
+    fn from(value: DesignSketchEntityBinding) -> Self {
+        let entity_suffix = value.entity_id.suffix();
+        Self {
+            entity_id: value.entity_id.0,
+            entity_suffix,
+            entity_reference_offset: value.entity_reference_offset,
+        }
+    }
+}
+
 
 /// Explicit 16-f64 frame carried by a `WorkPlane` scope.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -9395,6 +9459,8 @@ impl DesignBaseFeatureConstruction {
 /// Sketch-profile selection frame named by a profile-based feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignSketchProfileOperandWire", into = "DesignSketchProfileOperandWire")]
+#[cfg_attr(feature = "schema", schemars(with = "DesignSketchProfileOperandWire"))]
 pub struct DesignSketchProfileOperand {
     /// Zero-based position in the scope's ordered reference table.
     pub scope_reference_ordinal: u32,
@@ -9409,9 +9475,7 @@ pub struct DesignSketchProfileOperand {
     /// Byte offset of the asset UUID's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// Full Design entity id of the selected Sketch.
-    pub entity_id: String,
-    /// Numeric suffix stored by the profile frame.
-    pub entity_suffix: u64,
+    pub entity_id: DesignEntityId,
     /// Byte offset of the suffix's UTF-16LE code units.
     pub entity_reference_offset: u64,
     /// Exact nested profile-region selection, when its complete frame closes.
@@ -9422,6 +9486,81 @@ pub struct DesignSketchProfileOperand {
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignSketchProfileOperandWire {
+    /// Zero-based position in the scope's ordered reference table.
+    scope_reference_ordinal: u32,
+    /// Primary indexed-record identity named by the scope table.
+    record_index: u32,
+    /// Byte offset of the primary indexed-record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    class_tag: String,
+    /// Asset UUID qualifying the selected Sketch reference.
+    asset_id: String,
+    /// Byte offset of the asset UUID's UTF-16LE code units.
+    asset_id_offset: u64,
+    /// Full Design entity id of the selected Sketch.
+    entity_id: String,
+    /// Numeric suffix stored by the profile frame.
+    entity_suffix: u64,
+    /// Byte offset of the suffix's UTF-16LE code units.
+    entity_reference_offset: u64,
+    /// Exact nested profile-region selection, when its complete frame closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    region_selection: Option<DesignSketchProfileRegionSelection>,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    paired_class_tag: String,
+    /// Byte offset of the same-index paired header.
+    paired_byte_offset: u64,
+}
+
+impl TryFrom<DesignSketchProfileOperandWire> for DesignSketchProfileOperand {
+    type Error = String;
+
+    fn try_from(wire: DesignSketchProfileOperandWire) -> Result<Self, Self::Error> {
+        let entity_id = DesignEntityId::try_from(wire.entity_id)?;
+        if entity_id.suffix() != wire.entity_suffix {
+            return Err("entity_suffix disagrees with entity_id".into());
+        }
+        Ok(Self {
+            scope_reference_ordinal: wire.scope_reference_ordinal,
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            asset_id: wire.asset_id,
+            asset_id_offset: wire.asset_id_offset,
+            entity_id,
+            entity_reference_offset: wire.entity_reference_offset,
+            region_selection: wire.region_selection,
+            paired_class_tag: wire.paired_class_tag,
+            paired_byte_offset: wire.paired_byte_offset,
+        })
+    }
+}
+
+impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
+    fn from(value: DesignSketchProfileOperand) -> Self {
+        let entity_suffix = value.entity_id.suffix();
+        Self {
+            scope_reference_ordinal: value.scope_reference_ordinal,
+            record_index: value.record_index,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            asset_id: value.asset_id,
+            asset_id_offset: value.asset_id_offset,
+            entity_id: value.entity_id.0,
+            entity_suffix,
+            entity_reference_offset: value.entity_reference_offset,
+            region_selection: value.region_selection,
+            paired_class_tag: value.paired_class_tag,
+            paired_byte_offset: value.paired_byte_offset,
+        }
+    }
+}
+
 
 /// Nested ordered region selection carried by a sketch-profile operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -3730,7 +3730,7 @@ pub fn bind_extrude_selection_geometry(
             })?;
             Some((
                 (stream, group.record_index),
-                scope.extrude_profile()?.entity_suffix,
+                scope.extrude_profile()?.entity_id.suffix(),
             ))
         })
         .collect::<HashMap<_, _>>();
@@ -4040,8 +4040,7 @@ pub(crate) fn parse_sketch_profile(
         class_tag: header.class_tag.clone(),
         asset_id,
         asset_id_offset: u64::try_from(start + 40).ok()?,
-        entity_id: entity.entity_id.clone(),
-        entity_suffix,
+        entity_id: crate::records::DesignEntityId::try_from(entity.entity_id.clone()).ok()?,
         entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
         region_selection,
         paired_class_tag,
