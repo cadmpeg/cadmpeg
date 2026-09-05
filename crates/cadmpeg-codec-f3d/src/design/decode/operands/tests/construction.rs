@@ -423,17 +423,13 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ];
     let plane_scopes = vec![first_plane, second_plane, compact_split_scope.clone()];
     let plane_timeline = DesignFeatureTimeline {
-        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
-        byte_offset: 0,
-        class_tag: "256".into(),
-        record_index: 1,
-        source_ordinal: 0,
-        frame_length: 0,
-        context_record_index: 1,
-        context_record_index_offset: 0,
-        item_count_offset: 0,
-        items: plane_scopes.iter().map(|scope| crate::records::Located { value: u64::from(scope.record_index), offset: 0 }).collect(),
-    };
+frame: crate::records::DesignTimelineFrame::test_items(0, plane_scopes.iter().map(|scope| crate::records::Located { value: u64::from(scope.record_index), offset: 0 }).collect()),
+id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
+class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+record_index: std::num::NonZeroU64::new(1).unwrap(),
+source_ordinal: 0,
+context_record_index: std::num::NonZeroU64::new(1).unwrap(),
+};
     let (plane_features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],

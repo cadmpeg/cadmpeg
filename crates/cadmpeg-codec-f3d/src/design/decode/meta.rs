@@ -466,11 +466,9 @@ fn parse_feature_timeline_record(
 
     let mut at = payload.checked_add(2)?;
     let context_reference_offset = at.checked_add(1)?;
-    let context_record_index =
-        local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?;
-    if context_record_index == 0 {
-        return None;
-    }
+    let context_record_index = std::num::NonZeroU64::new(
+        local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?,
+    )?;
     let item_count_offset = at;
     let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
     at = at.checked_add(4)?;
@@ -478,13 +476,9 @@ fn parse_feature_timeline_record(
         return None;
     }
     let mut items = Vec::with_capacity(count);
-    let mut unique = HashSet::with_capacity(count);
     for _ in 0..count {
         let target_offset = at.checked_add(1)?;
         let target = local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?;
-        if target == 0 || !unique.insert(target) {
-            return None;
-        }
         items.push(crate::records::Located { value: target, offset: target_offset as u64 });
     }
     if at != end {
@@ -493,15 +487,11 @@ fn parse_feature_timeline_record(
 
     Some(DesignFeatureTimeline {
         id: ids::native_design_feature_timeline_id(stream, start),
-        byte_offset: start as u64,
-        class_tag,
-        record_index: expected_entity_id,
+        frame: crate::records::DesignTimelineFrame::new(start as u64, end.checked_sub(start)? as u64, context_reference_offset as u64, item_count_offset as u64, items).ok()?,
+        class_tag: crate::records::DesignClassTag::try_from(class_tag).ok()?,
+        record_index: std::num::NonZeroU64::new(expected_entity_id)?,
         source_ordinal,
-        frame_length: end.checked_sub(start)? as u64,
         context_record_index,
-        context_record_index_offset: context_reference_offset as u64,
-        item_count_offset: item_count_offset as u64,
-        items,
     })
 }
 

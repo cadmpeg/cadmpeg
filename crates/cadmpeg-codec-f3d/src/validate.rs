@@ -1320,56 +1320,24 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
             });
             continue;
         };
-        let expected_type = expected.get(&(segment, timeline.record_index));
-        let frame_end = timeline.byte_offset.checked_add(timeline.frame_length);
-        let offsets_valid = timeline.items.windows(2).all(|pair| {
-                pair[0].offset
-                    .checked_add(11)
-                    .is_some_and(|minimum| pair[1].offset >= minimum)
-            })
-            && frame_end.is_some_and(|end| {
-                timeline.context_record_index_offset > timeline.byte_offset
-                    && timeline
-                        .context_record_index_offset
-                        .checked_add(10)
-                        .is_some_and(|after_context| after_context <= timeline.item_count_offset)
-                    && timeline
-                        .item_count_offset
-                        .checked_add(4)
-                        .is_some_and(|after_count| after_count <= end)
-                    && timeline
-                        .items
-                        .first()
-                        .is_none_or(|offset| {
-                            timeline.item_count_offset.checked_add(5) == Some(offset.offset)
-                        })
-                    && timeline.items.iter().all(|offset| {
-                        offset.offset
-                            .checked_add(10)
-                            .is_some_and(|after_reference| after_reference <= end)
-                    })
-            });
+        let expected_type = expected.get(&(segment, timeline.record_index.get()));
         let expected_id = ids::native_design_feature_timeline_id_in_stream(
             design_stream(&timeline.id),
-            timeline.byte_offset,
+            timeline.frame.byte_offset(),
         );
-        let unique_record = actual_records.insert((segment, timeline.record_index));
+        let unique_record = actual_records.insert((segment, timeline.record_index.get()));
         let record_valid =
             expected_type.is_some_and(|(class_tag, source_ordinal, valid_type, _)| {
                 *valid_type
-                    && timeline.class_tag == *class_tag
+                    && timeline.class_tag.as_str() == class_tag
                     && timeline.source_ordinal == *source_ordinal
             }) && timeline.id == expected_id
-                && timeline.record_index != 0
-                && entity_type_counts.get(&(segment, timeline.record_index)) == Some(&1)
-                && timeline.context_record_index != 0
-                && entity_type_counts.get(&(segment, timeline.context_record_index)) == Some(&1)
-                && unique_record
-                && offsets_valid;
+                && entity_type_counts.get(&(segment, timeline.record_index.get())) == Some(&1)
+                && entity_type_counts.get(&(segment, timeline.context_record_index.get())) == Some(&1)
+                && unique_record;
         let mut items_valid = true;
-        for item in timeline.items.iter().map(|item| item.value) {
-            items_valid &= item != 0
-                && entity_type_counts.get(&(segment, item)) == Some(&1)
+        for item in timeline.frame.items().iter().map(|item| item.value) {
+            items_valid &= entity_type_counts.get(&(segment, item)) == Some(&1)
                 && item_records.insert((segment, item));
         }
         if !record_valid || !items_valid {

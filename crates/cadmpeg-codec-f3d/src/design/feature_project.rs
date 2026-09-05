@@ -230,7 +230,7 @@ fn authored_scope_ordinals_for_stream<'a>(
     }
     if stream_timelines
         .iter()
-        .filter(|timeline| !timeline.items.is_empty())
+        .filter(|timeline| !timeline.frame.items().is_empty())
         .count()
         > 1
     {
@@ -241,8 +241,8 @@ fn authored_scope_ordinals_for_stream<'a>(
     let mut item_ordinals = HashMap::<u64, u64>::new();
     let mut next_ordinal = 0_u64;
     for timeline in stream_timelines {
-        for item in timeline.items.iter().map(|item| item.value) {
-            if item == 0 || item_ordinals.insert(item, next_ordinal).is_some() {
+        for item in timeline.frame.items().iter().map(|item| item.value) {
+            if item_ordinals.insert(item, next_ordinal).is_some() {
                 return Err(CodecError::Malformed(
                     "Design timeline item identity is not unique".into(),
                 ));
@@ -522,29 +522,24 @@ pub fn project_parameter_design(
     Vec<cadmpeg_ir::features::Feature>,
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
-    let mut timelines = Vec::<DesignFeatureTimeline>::new();
+    let mut streams = Vec::<(&str, Vec<crate::records::Located<u64>>)>::new();
     for scope in scopes {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
-        let timeline = timelines
-            .iter_mut()
-            .find(|timeline| native_stream(&timeline.id) == Some(stream));
-        if let Some(timeline) = timeline {
-            timeline.items.push(crate::records::Located { value: u64::from(scope.record_index), offset: 0 });
+        let item = crate::records::Located { value: u64::from(scope.record_index), offset: 0 };
+        if let Some((_, items)) = streams.iter_mut().find(|(candidate, _)| *candidate == stream) {
+            items.push(item);
         } else {
-            timelines.push(DesignFeatureTimeline {
-                id: ids::native_design_feature_timeline_id_in_stream(stream, 0),
-                byte_offset: 0,
-                class_tag: "256".into(),
-                record_index: 1,
-                source_ordinal: 0,
-                frame_length: 0,
-                context_record_index: 1,
-                context_record_index_offset: 0,
-                item_count_offset: 0,
-                items: vec![crate::records::Located { value: u64::from(scope.record_index), offset: 0 }],
-            });
+            streams.push((stream, vec![item]));
         }
     }
+    let timelines = streams.into_iter().map(|(stream, items)| DesignFeatureTimeline {
+        frame: crate::records::DesignTimelineFrame::test_items(0, items),
+        id: ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
+    }).collect::<Vec<_>>();
     project_parameter_design_with_edge_identities(&ProjectInputs {
         native,
         owners,
