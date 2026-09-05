@@ -8196,7 +8196,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
         let returns_start = frame.governing_owner_reference_offset.saturating_add(15);
         let returns_valid = frame.return_members.iter().enumerate().all(|(ordinal, member)| {
             member.offset == returns_start.saturating_add((ordinal as u64).saturating_mul(11))
-                && sketch_geometry_indices.contains(&(native_stream, member.value))
+                && sketch_geometry_indices.contains(&(native_stream, member.value.get()))
         });
         let mut operand_members = frame
             .operands
@@ -8205,7 +8205,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 operand.geometry_record_index.map(std::num::NonZeroU32::get)
             })
             .collect::<Vec<_>>();
-        let mut return_members = frame.return_members.iter().map(|member| member.value).collect::<Vec<_>>();
+        let mut return_members = frame.return_members.iter().map(|member| member.value.get()).collect::<Vec<_>>();
         operand_members.sort_unstable();
         return_members.sort_unstable();
         let owner_is_sketch = entities_by_suffix

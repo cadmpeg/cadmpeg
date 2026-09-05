@@ -708,6 +708,9 @@ fn annotation_return_members_preserve_wire_and_reject_unequal_offsets() {
         assert!(error.contains("return_members"));
         assert!(error.contains("return_member_offsets"));
     }
+    let invalid = wire.replace("\"return_members\":[10,11]", "\"return_members\":[10,0]");
+    let error = serde_json::from_str::<super::DesignDimensionAnnotationFrame>(&invalid).unwrap_err().to_string();
+    assert!(error.contains("return_members"));
 }
 
 #[test]

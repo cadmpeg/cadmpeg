@@ -1050,7 +1050,7 @@ pub struct DesignDimensionAnnotationFrame {
     /// Byte offset of `governing_owner_record_index`.
     pub governing_owner_reference_offset: u64,
     /// Ordered non-null return geometry records.
-    pub return_members: Vec<Located<u32>>,
+    pub return_members: Vec<Located<NonZeroU32>>,
     /// Dynamic class tag of the paired indexed record.
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
@@ -1113,7 +1113,10 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
             return Err("return_members and return_member_offsets must have equal lengths".into());
         }
         Ok(Self {
-            return_members: wire.return_members.into_iter().zip(wire.return_member_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            return_members: wire.return_members.into_iter().zip(wire.return_member_offsets).map(|(value, offset)| {
+                let value = NonZeroU32::new(value).ok_or("return_members must contain nonzero geometry indices")?;
+                Ok(Located { value, offset })
+            }).collect::<Result<_, Self::Error>>()?,
             id: wire.id,
             companion_record_index: wire.companion_record_index,
             governing_companion_record_index: wire.governing_companion_record_index,
@@ -1136,7 +1139,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
 }
 impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire {
     fn from(value: DesignDimensionAnnotationFrame) -> Self {
-        let (return_members, return_member_offsets) = value.return_members.into_iter().map(|member| (member.value, member.offset)).unzip();
+        let (return_members, return_member_offsets) = value.return_members.into_iter().map(|member| (member.value.get(), member.offset)).unzip();
         Self { return_members, return_member_offsets,
             id: value.id,
             companion_record_index: value.companion_record_index,
