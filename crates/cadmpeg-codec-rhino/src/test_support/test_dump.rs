@@ -974,15 +974,9 @@ pub(crate) fn static_definition(
             meters_per_unit: 0.001,
             custom_name: String::new(),
         },
-        legacy_linked_path: String::new(),
-        legacy_relative_linked_path: String::new(),
-        legacy_checksum_range: None,
-        legacy_relative_path: false,
         linked_depth: 0,
         linked_appearance: 0,
-        file_reference_range: None,
-        file_reference: None,
-        reference_settings_range: None,
+        link: crate::instances::LinkSource::None,
     }
 }
 
