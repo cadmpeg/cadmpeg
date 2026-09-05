@@ -1592,3 +1592,52 @@ fn edge_operand_wire_rejects_partial_resolved_axis() {
         assert!(error.contains("resolved_axis_direction"));
     }
 }
+
+#[test]
+fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
+    fn check<T>(base: &serde_json::Value)
+    where
+        T: serde::de::DeserializeOwned + serde::Serialize + std::fmt::Debug,
+    {
+        for binding in [
+            serde_json::json!({}),
+            serde_json::json!({"historical_entity_kind": "loop", "historical_entity_ref": 42}),
+            serde_json::json!({"historical_entity_kind": "loop", "historical_entity_ref": 42, "historical_state_ids": [2, 3]}),
+        ] {
+            let mut wire = base.clone();
+            wire.as_object_mut().unwrap().extend(binding.as_object().unwrap().clone());
+            let value: T = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(value).unwrap(), wire);
+        }
+        for binding in [
+            serde_json::json!({"historical_entity_kind": "loop"}),
+            serde_json::json!({"historical_entity_ref": 42}),
+            serde_json::json!({"historical_state_ids": [2]}),
+            serde_json::json!({"historical_entity_kind": "loop", "historical_state_ids": [2]}),
+            serde_json::json!({"historical_entity_ref": 42, "historical_state_ids": [2]}),
+        ] {
+            let mut invalid = base.clone();
+            invalid.as_object_mut().unwrap().extend(binding.as_object().unwrap().clone());
+            let error = serde_json::from_value::<T>(invalid).unwrap_err().to_string();
+            assert!(error.contains("historical_entity_kind"));
+            assert!(error.contains("historical_entity_ref"));
+            assert!(error.contains("historical_state_ids"));
+        }
+    }
+    let mut member = serde_json::json!({
+        "id": "member", "group_record_index": 1, "group_member_ordinal": 0,
+        "record_index": 2, "byte_offset": 10, "class_tag": "346",
+        "local_id": 17, "local_id_offset": 20,
+        "asset_id": "asset", "asset_id_offset": 30,
+        "context_id": "context", "context_id_offset": 40,
+        "tail_slot_present": false, "tail_slot_offset": 0,
+        "next_record_index": 3, "next_byte_offset": 50
+    });
+    check::<super::DesignExtrudeSelectionMember>(&member);
+    for field in ["tail_slot_present", "tail_slot_offset", "next_record_index", "next_byte_offset"] {
+        member.as_object_mut().unwrap().remove(field);
+    }
+    member["scope_record_index"] = serde_json::json!(4);
+    member["compact_layout"] = serde_json::json!(false);
+    check::<super::DesignEdgeIdentityOperand>(&member);
+}
