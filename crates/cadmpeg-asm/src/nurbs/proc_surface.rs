@@ -7,12 +7,12 @@ use crate::nurbs::blend::{
     var_blend_spl_sur, vertex_blend_spl_sur,
 };
 use crate::nurbs::core::{curve_block, surface_block};
-use crate::nurbs::pcurve::{NurbsPcurve, decode_pcurve_block_with_end, pcurve_block_with_end};
+use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end, NurbsPcurve};
 use crate::nurbs::proc_curve::{
     embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
     optional_embedded_surface_with_bounds, optional_helix_revision,
 };
-use crate::nurbs::reader::{LEN_TO_MM, Nullable, normalized, take_native_ident};
+use crate::nurbs::reader::{normalized, take_native_ident, Nullable, LEN_TO_MM};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
@@ -1152,6 +1152,28 @@ pub struct EmbeddedNetSurface {
     pub discontinuity_flag: bool,
 }
 
+/// Shared profile, frame, and path of an explicit or law-driven sweep.
+pub struct SweepProfile {
+    /// The embedded profile curve.
+    pub profile: NurbsCurve,
+    /// The mode integer of the sweep.
+    pub mode: i64,
+    /// Two parameter bounds of the profile curve.
+    pub profile_range: [f64; 2],
+    /// The profile frame point and vector, when serialized.
+    pub profile_frame: Option<(Point3, Vector3)>,
+    /// The sweep origin point.
+    pub origin: Point3,
+    /// Three direction vectors.
+    pub directions: [Vector3; 3],
+    /// The embedded path curve.
+    pub path: NurbsCurve,
+    /// Two parameter bounds of the path curve.
+    pub path_range: [f64; 2],
+    /// The parameter serialized after the path range.
+    pub path_parameter: f64,
+}
+
 /// The layout-discriminated body of an embedded sweep surface.
 pub enum EmbeddedSweepSurfaceLayout {
     /// The profile-first form: profile, spine, and a formula triple.
@@ -1171,28 +1193,21 @@ pub enum EmbeddedSweepSurfaceLayout {
         /// Three law formulas, in stream order.
         formulas: Box<[EmbeddedLawFormula; 3]>,
     },
+    /// An explicit or law-driven sweep with a shared profile and path.
+    Sweep {
+        /// Shared profile and path fields.
+        profile: SweepProfile,
+        /// The fields selected by the sweep form.
+        tail: SweepTail,
+    },
+}
+
+/// Form-specific fields following the shared sweep profile.
+pub enum SweepTail {
     /// The explicit form closed by one law formula.
-    ExplicitFormula {
-        /// The embedded profile curve.
-        profile: NurbsCurve,
-        /// The mode integer of the sweep.
-        mode: i64,
-        /// Two parameter bounds of the profile curve.
-        profile_range: [f64; 2],
-        /// The profile frame point and vector, when serialized.
-        profile_frame: Option<(Point3, Vector3)>,
-        /// The sweep origin point.
-        origin: Point3,
-        /// Three direction vectors.
-        directions: [Vector3; 3],
+    Formula {
         /// The boolean serialized before the path.
         trajectory_flag: bool,
-        /// The embedded path curve.
-        path: NurbsCurve,
-        /// Two parameter bounds of the path curve.
-        path_range: [f64; 2],
-        /// The parameter serialized after the path range.
-        path_parameter: f64,
         /// The boolean serialized before the formula.
         formula_flag: bool,
         /// The law formula closing the form.
@@ -1201,27 +1216,9 @@ pub enum EmbeddedSweepSurfaceLayout {
         trailing_flag: bool,
     },
     /// The explicit form closed by a guide curve.
-    ExplicitGuide {
-        /// The embedded profile curve.
-        profile: NurbsCurve,
-        /// The mode integer of the sweep.
-        mode: i64,
-        /// Two parameter bounds of the profile curve.
-        profile_range: [f64; 2],
-        /// The profile frame point and vector, when serialized.
-        profile_frame: Option<(Point3, Vector3)>,
-        /// The sweep origin point.
-        origin: Point3,
-        /// Three direction vectors.
-        directions: [Vector3; 3],
+    Guide {
         /// The boolean serialized before the path.
         trajectory_flag: bool,
-        /// The embedded path curve.
-        path: NurbsCurve,
-        /// Two parameter bounds of the path curve.
-        path_range: [f64; 2],
-        /// The parameter serialized after the path range.
-        path_parameter: f64,
         /// Two booleans serialized before the guide curve.
         guide_flags: [bool; 2],
         /// The embedded guide curve.
@@ -1236,27 +1233,9 @@ pub enum EmbeddedSweepSurfaceLayout {
         trailing_flags: [bool; 3],
     },
     /// The explicit form closed by a support surface.
-    ExplicitSurface {
-        /// The embedded profile curve.
-        profile: NurbsCurve,
-        /// The mode integer of the sweep.
-        mode: i64,
-        /// Two parameter bounds of the profile curve.
-        profile_range: [f64; 2],
-        /// The profile frame point and vector, when serialized.
-        profile_frame: Option<(Point3, Vector3)>,
-        /// The sweep origin point.
-        origin: Point3,
-        /// Three direction vectors.
-        directions: [Vector3; 3],
+    Surface {
         /// The boolean serialized before the path.
         trajectory_flag: bool,
-        /// The embedded path curve.
-        path: NurbsCurve,
-        /// Two parameter bounds of the path curve.
-        path_range: [f64; 2],
-        /// The parameter serialized after the path range.
-        path_parameter: f64,
         /// The singularity integer of the form.
         singularity: i64,
         /// The embedded support surface.
@@ -1268,20 +1247,8 @@ pub enum EmbeddedSweepSurfaceLayout {
         /// The legacy boolean closing the form, when serialized.
         legacy_flag: Option<bool>,
     },
-    /// The law-driven form: two law expressions and one formula.
-    LawDriven {
-        /// The embedded profile curve.
-        profile: NurbsCurve,
-        /// The mode integer of the sweep.
-        mode: i64,
-        /// Two parameter bounds of the profile curve.
-        profile_range: [f64; 2],
-        /// The profile frame point and vector, when serialized.
-        profile_frame: Option<(Point3, Vector3)>,
-        /// The sweep origin point.
-        origin: Point3,
-        /// Three direction vectors.
-        directions: [Vector3; 3],
+    /// The law-driven form with two law expressions and one formula.
+    Law {
         /// The first law expression.
         first_law: EmbeddedLawExpression,
         /// The mode integer of the first law.
@@ -1294,12 +1261,6 @@ pub enum EmbeddedSweepSurfaceLayout {
         path_mode: i64,
         /// The boolean serialized before the path.
         path_flag: bool,
-        /// The embedded path curve.
-        path: NurbsCurve,
-        /// Two parameter bounds of the path curve.
-        path_range: [f64; 2],
-        /// The parameter serialized after the path range.
-        path_parameter: f64,
         /// The boolean serialized before the second law.
         second_law_flag: bool,
         /// The second law expression.
@@ -2760,22 +2721,24 @@ fn sweep_spl_sur(
             cur.set_pos(path_end);
             let path_range = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
             let path_parameter = cur.take_f64()?;
-            match branch {
+            let profile = SweepProfile {
+                profile,
+                mode,
+                profile_range,
+                profile_frame,
+                origin,
+                directions,
+                path,
+                path_range,
+                path_parameter,
+            };
+            let tail = match branch {
                 1 => {
                     let formula_flag = cur.take_bool()?;
                     let formula = law_formula(&mut cur)?;
                     let trailing_flag = cur.take_bool()?;
-                    EmbeddedSweepSurfaceLayout::ExplicitFormula {
-                        profile,
-                        mode,
-                        profile_range,
-                        profile_frame,
-                        origin,
-                        directions,
+                    SweepTail::Formula {
                         trajectory_flag,
-                        path,
-                        path_range,
-                        path_parameter,
                         formula_flag,
                         formula,
                         trailing_flag,
@@ -2792,17 +2755,8 @@ fn sweep_spl_sur(
                         *parameter = cur.take_f64()?;
                     }
                     let trailing_flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
-                    EmbeddedSweepSurfaceLayout::ExplicitGuide {
-                        profile,
-                        mode,
-                        profile_range,
-                        profile_frame,
-                        origin,
-                        directions,
+                    SweepTail::Guide {
                         trajectory_flag,
-                        path,
-                        path_range,
-                        path_parameter,
                         guide_flags,
                         guide_curve,
                         guide_range,
@@ -2825,17 +2779,8 @@ fn sweep_spl_sur(
                     let legacy_flag = matches!(cur.peek(), Some(Token::True | Token::False))
                         .then(|| cur.take_bool())
                         .flatten();
-                    EmbeddedSweepSurfaceLayout::ExplicitSurface {
-                        profile,
-                        mode,
-                        profile_range,
-                        profile_frame,
-                        origin,
-                        directions,
+                    SweepTail::Surface {
                         trajectory_flag,
-                        path,
-                        path_range,
-                        path_parameter,
                         singularity,
                         support_surface,
                         auxiliary_curve,
@@ -2844,7 +2789,8 @@ fn sweep_spl_sur(
                     }
                 }
                 _ => return None,
-            }
+            };
+            EmbeddedSweepSurfaceLayout::Sweep { profile, tail }
         } else {
             let first_law = sweep_law_expression(&mut cur)?;
             let first_mode = cur.take_long()?;
@@ -2862,27 +2808,31 @@ fn sweep_spl_sur(
             let formula_mode = cur.take_long()?;
             let formula = law_formula(&mut cur)?;
             let trailing_flag = cur.take_bool()?;
-            EmbeddedSweepSurfaceLayout::LawDriven {
-                profile,
-                mode,
-                profile_range,
-                profile_frame,
-                origin,
-                directions,
-                first_law,
-                first_mode,
-                first_range,
-                law_direction,
-                path_mode,
-                path_flag,
-                path,
-                path_range,
-                path_parameter,
-                second_law_flag,
-                second_law,
-                formula_mode,
-                formula,
-                trailing_flag,
+            EmbeddedSweepSurfaceLayout::Sweep {
+                profile: SweepProfile {
+                    profile,
+                    mode,
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    path,
+                    path_range,
+                    path_parameter,
+                },
+                tail: SweepTail::Law {
+                    first_law,
+                    first_mode,
+                    first_range,
+                    law_direction,
+                    path_mode,
+                    path_flag,
+                    second_law_flag,
+                    second_law,
+                    formula_mode,
+                    formula,
+                    trailing_flag,
+                },
             }
         }
     };
@@ -2982,27 +2932,31 @@ fn revision_sweep_sur(
         let trailing_flag = cur.take_bool()?;
         let law_direction = Vector3::new(law_direction[0], law_direction[1], law_direction[2]);
         (
-            EmbeddedSweepSurfaceLayout::LawDriven {
-                profile,
-                mode,
-                profile_range,
-                profile_frame,
-                origin,
-                directions,
-                first_law,
-                first_mode,
-                first_range,
-                law_direction,
-                path_mode,
-                path_flag,
-                path,
-                path_range,
-                path_parameter,
-                second_law_flag,
-                second_law,
-                formula_mode,
-                formula,
-                trailing_flag,
+            EmbeddedSweepSurfaceLayout::Sweep {
+                profile: SweepProfile {
+                    profile,
+                    mode,
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    path,
+                    path_range,
+                    path_parameter,
+                },
+                tail: SweepTail::Law {
+                    first_law,
+                    first_mode,
+                    first_range,
+                    law_direction,
+                    path_mode,
+                    path_flag,
+                    second_law_flag,
+                    second_law,
+                    formula_mode,
+                    formula,
+                    trailing_flag,
+                },
             },
             path_endpoints,
         )
@@ -3023,20 +2977,24 @@ fn revision_sweep_sur(
         let formula = law_formula_resolving(&mut cur, Some(table))?;
         let trailing_flag = cur.take_bool()?;
         (
-            EmbeddedSweepSurfaceLayout::ExplicitFormula {
-                profile,
-                mode,
-                profile_range,
-                profile_frame,
-                origin,
-                directions,
-                trajectory_flag,
-                path,
-                path_range,
-                path_parameter,
-                formula_flag,
-                formula,
-                trailing_flag,
+            EmbeddedSweepSurfaceLayout::Sweep {
+                profile: SweepProfile {
+                    profile,
+                    mode,
+                    profile_range,
+                    profile_frame,
+                    origin,
+                    directions,
+                    path,
+                    path_range,
+                    path_parameter,
+                },
+                tail: SweepTail::Formula {
+                    trajectory_flag,
+                    formula_flag,
+                    formula,
+                    trailing_flag,
+                },
             },
             path_endpoints,
         )
@@ -4381,13 +4339,11 @@ mod sweep_law_tests {
         let formula = law_formula_resolving(&mut cur, None).expect("rail formula");
 
         assert_eq!(formula.name(), "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
-        let [
-            EmbeddedLawExpression::TransformVec {
-                vectors: actual_vectors,
-                scale,
-                flags,
-            },
-        ] = formula.variables()
+        let [EmbeddedLawExpression::TransformVec {
+            vectors: actual_vectors,
+            scale,
+            flags,
+        }] = formula.variables()
         else {
             panic!("expected one vector transform binding");
         };

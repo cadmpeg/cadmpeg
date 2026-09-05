@@ -1725,204 +1725,171 @@ fn emit_sweep_surface(
                 },
             )
         }
-        EmbeddedSweepSurfaceLayout::ExplicitFormula {
-            profile,
-            mode,
-            profile_range,
-            profile_frame,
-            origin,
-            directions,
-            trajectory_flag,
-            path,
-            path_range,
-            path_parameter,
-            formula_flag,
-            formula,
-            trailing_flag,
-        } => {
-            let formula = map_law_formula(formula, |index, variable| {
-                map_sweep_law(&mut *out, i, &format!("explicit:{index}"), variable, format)
-            });
-            (
-                profile,
-                path,
-                cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitFormula {
+        EmbeddedSweepSurfaceLayout::Sweep {
+            profile:
+                crate::nurbs::proc_surface::SweepProfile {
+                    profile,
                     mode,
                     profile_range,
                     profile_frame,
                     origin,
                     directions,
-                    trajectory_flag,
+                    path,
                     path_range,
                     path_parameter,
+                },
+            tail,
+        } => {
+            let layout = match tail {
+                crate::nurbs::proc_surface::SweepTail::Formula {
+                    trajectory_flag,
                     formula_flag,
                     formula,
                     trailing_flag,
-                },
-            )
-        }
-        EmbeddedSweepSurfaceLayout::ExplicitGuide {
-            profile,
-            mode,
-            profile_range,
-            profile_frame,
-            origin,
-            directions,
-            trajectory_flag,
-            path,
-            path_range,
-            path_parameter,
-            guide_flags,
-            guide_curve,
-            guide_range,
-            guide_modes,
-            guide_parameters,
-            trailing_flags,
-        } => {
-            let guide_curve_id =
-                CurveId::mint(format!("{format}:brep:procedural_surface#{i}:sweep:guide"))
-                    .expect("identity grammar");
-            out.curves.push(Curve {
-                id: guide_curve_id.clone(),
-                geometry: CurveGeometry::Nurbs(guide_curve),
-                source_object: None,
-            });
-            (
-                profile,
-                path,
-                cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitGuide {
-                    mode,
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
+                } => {
+                    let formula = map_law_formula(formula, |index, variable| {
+                        map_sweep_law(&mut *out, i, &format!("explicit:{index}"), variable, format)
+                    });
+                    cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitFormula {
+                        mode,
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        trajectory_flag,
+                        path_range,
+                        path_parameter,
+                        formula_flag,
+                        formula,
+                        trailing_flag,
+                    }
+                }
+                crate::nurbs::proc_surface::SweepTail::Guide {
                     trajectory_flag,
-                    path_range,
-                    path_parameter,
                     guide_flags,
-                    guide_curve: guide_curve_id,
+                    guide_curve,
                     guide_range,
                     guide_modes,
                     guide_parameters,
                     trailing_flags,
-                },
-            )
-        }
-        EmbeddedSweepSurfaceLayout::ExplicitSurface {
-            profile,
-            mode,
-            profile_range,
-            profile_frame,
-            origin,
-            directions,
-            trajectory_flag,
-            path,
-            path_range,
-            path_parameter,
-            singularity,
-            support_surface,
-            auxiliary_curve,
-            support_flag,
-            legacy_flag,
-        } => {
-            let support_surface_id = SurfaceId::mint(format!(
-                "{format}:brep:procedural_surface#{i}:sweep:support"
-            ))
-            .expect("identity grammar");
-            out.surfaces.push(Surface {
-                id: support_surface_id.clone(),
-                geometry: support_surface,
-                source_object: None,
-            });
-            let auxiliary_curve = auxiliary_curve.map(|geometry| {
-                let id = CurveId::mint(format!(
-                    "{format}:brep:procedural_surface#{i}:sweep:auxiliary"
-                ))
-                .expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry: CurveGeometry::Nurbs(geometry),
-                    source_object: None,
-                });
-                id
-            });
-            (
-                profile,
-                path,
-                cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitSurface {
-                    mode,
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
+                } => {
+                    let guide_curve_id =
+                        CurveId::mint(format!("{format}:brep:procedural_surface#{i}:sweep:guide"))
+                            .expect("identity grammar");
+                    out.curves.push(Curve {
+                        id: guide_curve_id.clone(),
+                        geometry: CurveGeometry::Nurbs(guide_curve),
+                        source_object: None,
+                    });
+                    cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitGuide {
+                        mode,
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        trajectory_flag,
+                        path_range,
+                        path_parameter,
+                        guide_flags,
+                        guide_curve: guide_curve_id,
+                        guide_range,
+                        guide_modes,
+                        guide_parameters,
+                        trailing_flags,
+                    }
+                }
+                crate::nurbs::proc_surface::SweepTail::Surface {
                     trajectory_flag,
-                    path_range,
-                    path_parameter,
                     singularity,
-                    support_surface: support_surface_id,
+                    support_surface,
                     auxiliary_curve,
                     support_flag,
                     legacy_flag,
-                },
-            )
-        }
-        EmbeddedSweepSurfaceLayout::LawDriven {
-            profile,
-            mode,
-            profile_range,
-            profile_frame,
-            origin,
-            directions,
-            first_law,
-            first_mode,
-            first_range,
-            law_direction,
-            path_mode,
-            path_flag,
-            path,
-            path_range,
-            path_parameter,
-            second_law_flag,
-            second_law,
-            formula_mode,
-            formula,
-            trailing_flag,
-        } => {
-            let first_law = map_sweep_law(&mut *out, i, "law:first", first_law, format);
-            let second_law = map_sweep_law(&mut *out, i, "law:second", second_law, format);
-            let formula = map_law_formula(formula, |index, variable| {
-                map_sweep_law(
-                    &mut *out,
-                    i,
-                    &format!("law:formula:{index}"),
-                    variable,
-                    format,
-                )
-            });
-            (
-                profile,
-                path,
-                cadmpeg_ir::geometry::SweepSurfaceLayout::LawDriven {
-                    mode,
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    first_law: Box::new(first_law),
+                } => {
+                    let support_surface_id = SurfaceId::mint(format!(
+                        "{format}:brep:procedural_surface#{i}:sweep:support"
+                    ))
+                    .expect("identity grammar");
+                    out.surfaces.push(Surface {
+                        id: support_surface_id.clone(),
+                        geometry: support_surface,
+                        source_object: None,
+                    });
+                    let auxiliary_curve = auxiliary_curve.map(|geometry| {
+                        let id = CurveId::mint(format!(
+                            "{format}:brep:procedural_surface#{i}:sweep:auxiliary"
+                        ))
+                        .expect("identity grammar");
+                        out.curves.push(Curve {
+                            id: id.clone(),
+                            geometry: CurveGeometry::Nurbs(geometry),
+                            source_object: None,
+                        });
+                        id
+                    });
+                    cadmpeg_ir::geometry::SweepSurfaceLayout::ExplicitSurface {
+                        mode,
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        trajectory_flag,
+                        path_range,
+                        path_parameter,
+                        singularity,
+                        support_surface: support_surface_id,
+                        auxiliary_curve,
+                        support_flag,
+                        legacy_flag,
+                    }
+                }
+                crate::nurbs::proc_surface::SweepTail::Law {
+                    first_law,
                     first_mode,
                     first_range,
                     law_direction,
                     path_mode,
                     path_flag,
-                    path_range,
-                    path_parameter,
                     second_law_flag,
-                    second_law: Box::new(second_law),
+                    second_law,
                     formula_mode,
                     formula,
                     trailing_flag,
-                },
-            )
+                } => {
+                    let first_law = map_sweep_law(&mut *out, i, "law:first", first_law, format);
+                    let second_law = map_sweep_law(&mut *out, i, "law:second", second_law, format);
+                    let formula = map_law_formula(formula, |index, variable| {
+                        map_sweep_law(
+                            &mut *out,
+                            i,
+                            &format!("law:formula:{index}"),
+                            variable,
+                            format,
+                        )
+                    });
+                    cadmpeg_ir::geometry::SweepSurfaceLayout::LawDriven {
+                        mode,
+                        profile_range,
+                        profile_frame,
+                        origin,
+                        directions,
+                        first_law: Box::new(first_law),
+                        first_mode,
+                        first_range,
+                        law_direction,
+                        path_mode,
+                        path_flag,
+                        path_range,
+                        path_parameter,
+                        second_law_flag,
+                        second_law: Box::new(second_law),
+                        formula_mode,
+                        formula,
+                        trailing_flag,
+                    }
+                }
+            };
+            (profile, path, layout)
         }
     };
     let profile = CurveId::mint(format!(
