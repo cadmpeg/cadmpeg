@@ -4612,28 +4612,19 @@ fn exact_legacy_circular_pattern_axis(
     {
         return None;
     }
-    let wrapper_record_indices = identity_offsets
-        .iter()
-        .map(|offset| View::u32_le_at(bytes, *offset))
-        .collect::<Option<Vec<_>>>()?;
-    let wrappers = wrapper_record_indices
-        .iter()
-        .map(|record_index| exact_pattern_identity_wrapper(bytes, records, *record_index))
-        .collect::<Option<Vec<_>>>()?;
-    let mut persistent_identities = wrappers
-        .iter()
-        .map(|(identity, _)| *identity)
-        .collect::<Vec<_>>();
-    persistent_identities.sort_unstable();
-    persistent_identities.dedup();
-    let [persistent_identity] = persistent_identities.as_slice() else {
+    let wrappers = identity_offsets.iter().map(|offset| {
+        let record_index = View::u32_le_at(bytes, *offset)?;
+        let (identity, identity_offset) = exact_pattern_identity_wrapper(bytes, records, record_index)?;
+        Some((identity, crate::records::DesignPatternAxisWrapper { record_index, identity_offset }))
+    }).collect::<Option<Vec<_>>>()?;
+    let persistent_identity = wrappers.first()?.0;
+    if wrappers.iter().any(|(identity, _)| *identity != persistent_identity) {
         return None;
-    };
+    }
     Some((
         DesignCircularPatternAxis::HistoricalEdge {
-            wrapper_record_indices,
-            persistent_identities: vec![*persistent_identity],
-            identity_offsets: wrappers.into_iter().map(|(_, offset)| offset).collect(),
+            wrappers: wrappers.into_iter().map(|(_, wrapper)| wrapper).collect(),
+            persistent_identity,
             resolved: None,
         },
         selection_record_index,
