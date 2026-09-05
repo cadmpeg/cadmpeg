@@ -43,6 +43,8 @@ pub(crate) struct ExtrusionBoundary {
     pub(crate) start_pcurve: CapPcurve,
     /// Exact cap pcurve at the end.
     pub(crate) end_pcurve: CapPcurve,
+    /// Solved lateral tensor surface for this boundary.
+    pub(crate) lateral: NurbsSurface,
 }
 
 /// Exact parameter-space curve for one planar cap.
@@ -65,8 +67,6 @@ pub(crate) struct CapPcurve {
 pub(crate) struct DecodedExtrusion {
     /// Ordered outer then inner profile boundaries.
     pub(crate) boundaries: Vec<ExtrusionBoundary>,
-    /// One solved lateral tensor surface per boundary.
-    pub(crate) laterals: Vec<NurbsSurface>,
     /// Effective model-space path direction from trimmed start to end.
     pub(crate) direction: Vector3,
     /// Effective cap origins.
@@ -243,7 +243,6 @@ pub(crate) fn decode(
     ];
     let direction = cap_origins[1].vector_from(cap_origins[0]);
     let mut boundaries = Vec::with_capacity(source_boundaries.len());
-    let mut laterals = Vec::with_capacity(source_boundaries.len());
     let mut orientations = Vec::with_capacity(source_boundaries.len());
     for source in source_boundaries {
         orientations.push(exact_orientation(&source, version_offset)?);
@@ -275,19 +274,20 @@ pub(crate) fn decode(
         let end_frame = cap_frame(xaxis, up, tangent, active_miters[1], version_offset)?;
         let start_pcurve = cap_pcurve(&start_nurbs, cap_origins[0], start_frame, version_offset)?;
         let end_pcurve = cap_pcurve(&end_nurbs, cap_origins[1], end_frame, version_offset)?;
-        laterals.push(crate::surfaces::extrusion_nurbs(
+        let lateral = crate::surfaces::extrusion_nurbs(
             &start_nurbs,
             &end_nurbs,
             path_domain,
             transposed,
             version_offset,
-        )?);
+        )?;
         boundaries.push(ExtrusionBoundary {
             start_curve,
             start_nurbs,
             end_nurbs,
             start_pcurve,
             end_pcurve,
+            lateral,
         });
     }
     if (orientations.len() > 1
@@ -320,7 +320,6 @@ pub(crate) fn decode(
     ];
     Ok(DecodedExtrusion {
         boundaries,
-        laterals,
         direction,
         cap_origins,
         cap_normals: [cap_frames[0].2, cap_frames[1].2],
@@ -1280,7 +1279,10 @@ pub(crate) mod tests {
             )
             .expect("required invariant");
             assert_eq!(decoded.boundaries.len(), 1);
-            assert_eq!(decoded.laterals[0].v_knots(), vec![4.0, 4.0, 9.0, 9.0]);
+            assert_eq!(
+                decoded.boundaries[0].lateral.v_knots(),
+                vec![4.0, 4.0, 9.0, 9.0]
+            );
             assert_eq!(
                 decoded.caps,
                 if minor < 2 {
@@ -1341,7 +1343,7 @@ pub(crate) mod tests {
         )
         .expect("required invariant");
         assert_eq!(decoded.caps, [false, false]);
-        assert_eq!(decoded.laterals.len(), 1);
+        assert_eq!(decoded.boundaries.len(), 1);
         let capped = payload_with_profile(2, [true, false], None, open);
         assert!(decode(
             &capped,
@@ -1521,7 +1523,7 @@ pub(crate) mod tests {
             &mut crate::mesh::MeshBudget::new(),
         )
         .expect("required invariant");
-        assert_eq!(decoded.laterals.len(), 1);
+        assert_eq!(decoded.boundaries.len(), 1);
         assert!(decoded.meshes.is_empty());
         assert_eq!(decoded.warnings.len(), 1);
     }
@@ -1538,7 +1540,7 @@ pub(crate) mod tests {
             &mut crate::mesh::MeshBudget::new(),
         )
         .expect("required invariant");
-        assert_eq!(decoded.laterals.len(), 1);
+        assert_eq!(decoded.boundaries.len(), 1);
         assert_eq!(decoded.meshes.len(), 1);
         assert!(decoded.warnings.is_empty());
     }

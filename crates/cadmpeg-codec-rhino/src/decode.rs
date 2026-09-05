@@ -3054,8 +3054,7 @@ impl<'a> DecodeContext<'a> {
             return false;
         };
         let key = self.object_key(identity, source_order);
-        if extrusion.boundaries.len() != extrusion.laterals.len() || extrusion.boundaries.is_empty()
-        {
+        if extrusion.boundaries.is_empty() {
             return false;
         }
         let association = self.source_association(identity);
@@ -3074,7 +3073,12 @@ impl<'a> DecodeContext<'a> {
                 );
                 directrices.push(id);
             }
-            for (index, geometry) in extrusion.laterals.iter().cloned().enumerate() {
+            for (index, geometry) in extrusion
+                .boundaries
+                .iter()
+                .map(|boundary| boundary.lateral.clone())
+                .enumerate()
+            {
                 let surface_id: cadmpeg_ir::ids::SurfaceId =
                     format!("rhino:object:surface#{key}.lateral-{index}").into();
                 let procedure_id: cadmpeg_ir::ids::ProceduralSurfaceId =
