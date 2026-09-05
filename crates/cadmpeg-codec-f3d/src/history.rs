@@ -5485,8 +5485,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.recipe_selectors.clear();
         operand.recipe_state_id = None;
         operand.resolved_edge_slot = None;
-        operand.resolved_axis_origin = None;
-        operand.resolved_axis_direction = None;
+        operand.resolved_axis = None;
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -5691,8 +5690,8 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 .resolved_edge_slot
                 .and_then(|edge| historical_edge_axis(edge, topology))
             {
-                operand.resolved_axis_origin = Some(origin);
-                operand.resolved_axis_direction = Some(direction);
+                operand.resolved_axis =
+                    Some(crate::records::DesignAxis { origin, direction }.into());
             }
             continue;
         }
@@ -5789,8 +5788,7 @@ fn bind_active_edge_operand_for_scope(
             .zip(topology)
             .and_then(|(edge, topology)| historical_edge_axis(edge, topology))
         {
-            operand.resolved_axis_origin = Some(origin);
-            operand.resolved_axis_direction = Some(direction);
+            operand.resolved_axis = Some(crate::records::DesignAxis { origin, direction }.into());
         }
     }
 }
@@ -7098,15 +7096,13 @@ pub(crate) fn bind_circular_pattern_axes(
         };
         let DesignCircularPatternAxis::HistoricalEdge {
             persistent_identities,
-            resolved_origin,
-            resolved_direction,
+            resolved,
             ..
         } = &mut construction.axis
         else {
             continue;
         };
-        *resolved_origin = None;
-        *resolved_direction = None;
+        *resolved = None;
         let identities = HistoricalIdentityIndex::build(
             std::slice::from_ref(*history),
             persistent_identities.iter().copied(),
@@ -7127,8 +7123,7 @@ pub(crate) fn bind_circular_pattern_axes(
         if axes.any(|candidate| !same_axis_line((origin, direction), candidate)) {
             continue;
         }
-        *resolved_origin = Some(origin);
-        *resolved_direction = Some(direction);
+        *resolved = Some(crate::records::DesignAxis { origin, direction }.into());
     }
 }
 
@@ -7321,8 +7316,7 @@ pub(crate) fn bind_mirror_selection_planes(
         let Some(construction) = scope.mirror_construction_mut() else {
             continue;
         };
-        construction.plane_origin = None;
-        construction.plane_normal = None;
+        construction.plane = None;
         let (Some(selection_record_index), Some(state_id), Some(previous_state_id)) = (
             construction.plane_selection_record_index,
             history_state_id,
@@ -7413,8 +7407,13 @@ pub(crate) fn bind_mirror_selection_planes(
         if !norm.is_finite() || (norm - 1.0).abs() > EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9 {
             continue;
         }
-        construction.plane_origin = Some(plane.origin);
-        construction.plane_normal = Some(plane.normal);
+        construction.plane = Some(
+            crate::records::DesignPlane {
+                origin: plane.origin,
+                normal: plane.normal,
+            }
+            .into(),
+        );
     }
 }
 

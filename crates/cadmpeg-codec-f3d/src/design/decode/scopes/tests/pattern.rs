@@ -18,8 +18,7 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
         wrapper_record_indices: vec![11],
         persistent_identities: vec![17],
         identity_offsets: vec![23],
-        resolved_origin: None,
-        resolved_direction: None,
+        resolved: None,
     };
     let inline = DesignCircularPatternAxis::Inline {
         origin: [1.0, 2.0, 3.0],

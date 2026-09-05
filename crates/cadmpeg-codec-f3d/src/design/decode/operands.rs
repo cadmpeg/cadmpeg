@@ -4483,8 +4483,7 @@ pub(crate) fn parse_edge_operand(
         recipe_selectors: Vec::new(),
         recipe_state_id: None,
         resolved_edge_slot: None,
-        resolved_axis_origin: None,
-        resolved_axis_direction: None,
+        resolved_axis: None,
         next_record_index: parsed.next_record_index,
         next_byte_offset: parsed.next_byte_offset,
     })

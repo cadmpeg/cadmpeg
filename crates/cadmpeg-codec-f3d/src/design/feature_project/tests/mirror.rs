@@ -71,8 +71,13 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
         plane_scope_record_index: None,
         plane_reference_offset: None,
         plane_selection_record_index: None,
-        plane_origin: Some(Point3::new(0.0, 0.0, 0.0)),
-        plane_normal: Some(Vector3::new(0.0, 0.0, 1.0)),
+        plane: Some(
+            crate::records::DesignPlane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            }
+            .into(),
+        ),
     }));
     scope
 }
