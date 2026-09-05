@@ -1215,9 +1215,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         },
         _ => None,
     };
+    let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
+    let face_keys = kernel_brep
+        .face_native_keys
+        .iter()
+        .filter_map(|record| record.asm_face_key.map(|key| (record.face.clone(), key)))
+        .collect();
     let AsmTransferRemainder {
-        body_keys: _,
-        face_keys,
         unknowns: kernel_unknowns,
         stats: kernel_stats,
         annotation_records: kernel_annotations,
@@ -1227,7 +1231,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         "inventor",
         std::num::NonZeroU32::new(INVENTOR_NATIVE_VERSION)
             .expect("Inventor native version is nonzero"),
-        kernel_brep.unwrap_or_else(AsmBrep::default),
+        kernel_brep,
     )?;
     ir.set_native_unknowns("inventor", &[] as &[NativeUnknownRecord])?;
     let geometry_transferred =
