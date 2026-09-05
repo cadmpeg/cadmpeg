@@ -1,6 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural validation for detached CMS signatures in Part 21.
 
+use std::ops::Range;
+
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+
+use crate::parse::ParseError;
+
+pub(crate) fn decode_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<u8>, ParseError> {
+    let mut compact = Vec::with_capacity(payload.len());
+    let mut at = payload.start;
+    while at < payload.end {
+        if input[at].is_ascii_control() || input[at] == b' ' {
+            at += 1;
+            continue;
+        }
+        if let Some(end) = crate::lex::print_control_end(input, at) {
+            if end <= payload.end {
+                at = end;
+                continue;
+            }
+        }
+        if input.get(at..at + 2) == Some(b"/*") {
+            let body = at + 2;
+            if let Some(end) = input[body..payload.end]
+                .windows(2)
+                .position(|window| window == b"*/")
+            {
+                at = body + end + 2;
+                continue;
+            }
+        }
+        compact.push(input[at]);
+        at += 1;
+    }
+    let cms = STANDARD
+        .decode(compact)
+        .map_err(|error| ParseError::Syntax {
+            offset: payload.start,
+            message: format!("invalid SIGNATURE Base64 payload: {error}"),
+        })?;
+    // SG-04: this is a structural detached-CMS gate. It does not compute the
+    // Part 21 alphabet digest, verify a signer key, or apply caller policy;
+    // the codec retains an admitted signature as opaque source data.
+    validate_detached_cms(&cms).map_err(|message| ParseError::Syntax {
+        offset: payload.start,
+        message: format!("invalid detached CMS SIGNATURE payload: {message}"),
+    })?;
+    Ok(cms)
+}
+
 const CMS_SIGNED_DATA_OID: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x02];
 
 #[derive(Debug)]
