@@ -286,8 +286,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(shape_payloads.len(), 1);
     assert_eq!(
         shape_payloads[0]
-            .text
-            .as_ref()
+            .payload
+            .shape_set()
             .map(|facts| facts.topology_version),
         Some(1)
     );

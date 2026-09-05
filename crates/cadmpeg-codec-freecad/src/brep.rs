@@ -31,6 +31,7 @@ pub enum ShapePayloadForm {
 
 /// One exact-shape property bound to its side entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ShapePayloadRecordWire", into = "ShapePayloadRecordWire")]
 pub struct ShapePayloadRecord {
     /// Stable payload identity.
     pub id: String,
@@ -38,18 +39,49 @@ pub struct ShapePayloadRecord {
     pub property: String,
     /// Side-entry identity.
     pub entry: String,
-    /// Carrier form.
-    pub form: ShapePayloadForm,
-    /// Text shape-set facts, when applicable.
-    pub text: Option<TextFacts>,
-    /// Decoded binary shape-set prefix, when applicable.
-    pub binary: Option<BinaryFacts>,
+    /// Carrier payload.
+    pub payload: ShapePayload,
 }
 
-/// Versioned prefix tables decoded from a binary shape set.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BinaryFacts {
-    /// Binary topology grammar version.
+/// Parsed exact-shape carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ShapePayload {
+    /// Explicit zero-byte null shape.
+    Empty,
+    /// Compact text shape-set grammar.
+    Text {
+        /// Shared table contents.
+        facts: ShapeSet,
+        /// Shape-type token census.
+        shape_types: BTreeMap<String, usize>,
+    },
+    /// Binary shape-set grammar.
+    Binary(ShapeSet),
+}
+
+impl ShapePayload {
+    /// Carrier form retained on the CADIR wire.
+    pub const fn form(&self) -> ShapePayloadForm {
+        match self {
+            Self::Empty => ShapePayloadForm::Empty,
+            Self::Text { .. } => ShapePayloadForm::Text,
+            Self::Binary(_) => ShapePayloadForm::Binary,
+        }
+    }
+
+    /// Shared table contents when the carrier is text or binary.
+    pub const fn shape_set(&self) -> Option<&ShapeSet> {
+        match self {
+            Self::Empty => None,
+            Self::Text { facts, .. } | Self::Binary(facts) => Some(facts),
+        }
+    }
+}
+
+/// Versioned prefix tables shared by text and binary shape sets.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapeSet {
+    /// Topology grammar version.
     pub topology_version: u8,
     /// Ordered location table with resolved transforms.
     pub locations: Vec<TextLocation>,
@@ -67,37 +99,182 @@ pub struct BinaryFacts {
     pub triangulations: Vec<TextTriangulation>,
     /// Ordered subshape-first topology records.
     pub tshapes: Vec<TextTShape>,
-    /// Root shape use stored after the shape set.
+    /// Root shape uses stored after the shape set.
     pub roots: Vec<TextShapeUse>,
 }
 
-/// Framing facts from a text shape set.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TextFacts {
-    /// Topology grammar version.
-    pub topology_version: u8,
-    /// Declared table counts by section name.
-    pub section_counts: BTreeMap<String, usize>,
-    /// Shape-type token census.
-    pub shape_types: BTreeMap<String, usize>,
-    /// Ordered location table with resolved transforms.
-    pub locations: Vec<TextLocation>,
-    /// Ordered parameter-space curve table.
-    pub curve2ds: Vec<TextCurve2d>,
-    /// Ordered 3D curve table.
-    pub curves: Vec<TextCurve>,
-    /// Ordered surface table.
-    pub surfaces: Vec<TextSurface>,
-    /// Ordered standalone 3D polygons.
-    pub polygons3d: Vec<TextPolygon3d>,
-    /// Ordered polygons indexing triangulation nodes.
-    pub polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
-    /// Ordered display triangulations.
-    pub triangulations: Vec<TextTriangulation>,
-    /// Ordered subshape-first topology records.
-    pub tshapes: Vec<TextTShape>,
-    /// Oriented root shape uses following the topology table.
-    pub roots: Vec<TextShapeUse>,
+impl ShapeSet {
+    fn section_counts(&self) -> BTreeMap<String, usize> {
+        [
+            ("Locations", self.locations.len()),
+            ("Curve2ds", self.curve2ds.len()),
+            ("Curves", self.curves.len()),
+            ("Polygon3D", self.polygons3d.len()),
+            (
+                "PolygonOnTriangulations",
+                self.polygons_on_triangulations.len(),
+            ),
+            ("Surfaces", self.surfaces.len()),
+            ("Triangulations", self.triangulations.len()),
+            ("TShapes", self.tshapes.len()),
+        ]
+        .into_iter()
+        .map(|(name, count)| (name.to_owned(), count))
+        .collect()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct ShapePayloadRecordWire {
+    id: String,
+    property: String,
+    entry: String,
+    form: ShapePayloadForm,
+    text: Option<TextFactsWire>,
+    binary: Option<BinaryFactsWire>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TextFactsWire {
+    topology_version: u8,
+    section_counts: BTreeMap<String, usize>,
+    shape_types: BTreeMap<String, usize>,
+    locations: Vec<TextLocation>,
+    curve2ds: Vec<TextCurve2d>,
+    curves: Vec<TextCurve>,
+    surfaces: Vec<TextSurface>,
+    polygons3d: Vec<TextPolygon3d>,
+    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    triangulations: Vec<TextTriangulation>,
+    tshapes: Vec<TextTShape>,
+    roots: Vec<TextShapeUse>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct BinaryFactsWire {
+    topology_version: u8,
+    locations: Vec<TextLocation>,
+    curve2ds: Vec<TextCurve2d>,
+    curves: Vec<TextCurve>,
+    polygons3d: Vec<TextPolygon3d>,
+    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    surfaces: Vec<TextSurface>,
+    triangulations: Vec<TextTriangulation>,
+    tshapes: Vec<TextTShape>,
+    roots: Vec<TextShapeUse>,
+}
+
+impl From<ShapeSet> for BinaryFactsWire {
+    fn from(value: ShapeSet) -> Self {
+        Self {
+            topology_version: value.topology_version,
+            locations: value.locations,
+            curve2ds: value.curve2ds,
+            curves: value.curves,
+            polygons3d: value.polygons3d,
+            polygons_on_triangulations: value.polygons_on_triangulations,
+            surfaces: value.surfaces,
+            triangulations: value.triangulations,
+            tshapes: value.tshapes,
+            roots: value.roots,
+        }
+    }
+}
+
+impl From<BinaryFactsWire> for ShapeSet {
+    fn from(value: BinaryFactsWire) -> Self {
+        Self {
+            topology_version: value.topology_version,
+            locations: value.locations,
+            curve2ds: value.curve2ds,
+            curves: value.curves,
+            polygons3d: value.polygons3d,
+            polygons_on_triangulations: value.polygons_on_triangulations,
+            surfaces: value.surfaces,
+            triangulations: value.triangulations,
+            tshapes: value.tshapes,
+            roots: value.roots,
+        }
+    }
+}
+
+impl From<ShapePayloadRecord> for ShapePayloadRecordWire {
+    fn from(value: ShapePayloadRecord) -> Self {
+        let form = value.payload.form();
+        let (text, binary) = match value.payload {
+            ShapePayload::Empty => (None, None),
+            ShapePayload::Text { facts, shape_types } => {
+                let section_counts = facts.section_counts();
+                (
+                    Some(TextFactsWire {
+                        topology_version: facts.topology_version,
+                        section_counts,
+                        shape_types,
+                        locations: facts.locations,
+                        curve2ds: facts.curve2ds,
+                        curves: facts.curves,
+                        surfaces: facts.surfaces,
+                        polygons3d: facts.polygons3d,
+                        polygons_on_triangulations: facts.polygons_on_triangulations,
+                        triangulations: facts.triangulations,
+                        tshapes: facts.tshapes,
+                        roots: facts.roots,
+                    }),
+                    None,
+                )
+            }
+            ShapePayload::Binary(facts) => (None, Some(facts.into())),
+        };
+        Self {
+            id: value.id,
+            property: value.property,
+            entry: value.entry,
+            form,
+            text,
+            binary,
+        }
+    }
+}
+
+impl TryFrom<ShapePayloadRecordWire> for ShapePayloadRecord {
+    type Error = String;
+
+    fn try_from(wire: ShapePayloadRecordWire) -> Result<Self, Self::Error> {
+        let payload = match (wire.form, wire.text, wire.binary) {
+            (ShapePayloadForm::Empty, None, None) => ShapePayload::Empty,
+            (ShapePayloadForm::Text, Some(text), None) => {
+                let facts = ShapeSet {
+                    topology_version: text.topology_version,
+                    locations: text.locations,
+                    curve2ds: text.curve2ds,
+                    curves: text.curves,
+                    polygons3d: text.polygons3d,
+                    polygons_on_triangulations: text.polygons_on_triangulations,
+                    surfaces: text.surfaces,
+                    triangulations: text.triangulations,
+                    tshapes: text.tshapes,
+                    roots: text.roots,
+                };
+                if text.section_counts != facts.section_counts() {
+                    return Err(
+                        "text shape-set section_counts disagrees with table lengths".to_owned()
+                    );
+                }
+                ShapePayload::Text {
+                    facts,
+                    shape_types: text.shape_types,
+                }
+            }
+            (ShapePayloadForm::Binary, None, Some(binary)) => ShapePayload::Binary(binary.into()),
+            _ => return Err("shape payload form disagrees with text and binary facts".to_owned()),
+        };
+        Ok(Self {
+            id: wire.id,
+            property: wire.property,
+            entry: wire.entry,
+            payload,
+        })
+    }
 }
 
 /// Topological shape family.
@@ -541,25 +718,19 @@ pub fn parse_payloads(
         let entry = entries.get(name.as_str()).ok_or_else(|| {
             CodecError::malformed(format_args!("missing exact-shape entry {name}"))
         })?;
-        let form = if entry.data.is_empty() {
-            ShapePayloadForm::Empty
+        let payload = if entry.data.is_empty() {
+            ShapePayload::Empty
         } else if name.to_ascii_lowercase().ends_with(".bin") {
-            ShapePayloadForm::Binary
+            ShapePayload::Binary(parse_binary_prefix(&entry.data)?)
         } else {
-            ShapePayloadForm::Text
-        };
-        let (text, binary) = match form {
-            ShapePayloadForm::Empty => (None, None),
-            ShapePayloadForm::Text => (Some(parse_text(&entry.data)?), None),
-            ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
+            let (facts, shape_types) = parse_text(&entry.data)?;
+            ShapePayload::Text { facts, shape_types }
         };
         payloads.push(ShapePayloadRecord {
             id: crate::native::native_child_id("shape-payload", &property.id, &name),
             property: property.id.clone(),
             entry: entry.id.clone(),
-            form,
-            text,
-            binary,
+            payload,
         });
     }
     Ok(payloads)
@@ -604,36 +775,19 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
     payloads
         .iter()
         .filter_map(|payload| {
-            let (version, curve2ds, curves, surfaces, polygons3d, indexed, triangulations, tshapes) =
-                if let Some(facts) = &payload.text {
-                    (
-                        facts.topology_version,
-                        &facts.curve2ds,
-                        &facts.curves,
-                        &facts.surfaces,
-                        facts.polygons3d.len(),
-                        facts.polygons_on_triangulations.len(),
-                        facts.triangulations.len(),
-                        &facts.tshapes,
-                    )
-                } else if let Some(facts) = &payload.binary {
-                    (
-                        facts.topology_version,
-                        &facts.curve2ds,
-                        &facts.curves,
-                        &facts.surfaces,
-                        facts.polygons3d.len(),
-                        facts.polygons_on_triangulations.len(),
-                        facts.triangulations.len(),
-                        &facts.tshapes,
-                    )
-                } else {
-                    return None;
-                };
+            let facts = payload.payload.shape_set()?;
+            let version = facts.topology_version;
+            let curve2ds = &facts.curve2ds;
+            let curves = &facts.curves;
+            let surfaces = &facts.surfaces;
+            let polygons3d = facts.polygons3d.len();
+            let indexed = facts.polygons_on_triangulations.len();
+            let triangulations = facts.triangulations.len();
+            let tshapes = &facts.tshapes;
             let mut record = crate::native::CarrierCensusRecord {
                 id: crate::native::native_child_id("carrier-census", &payload.id, "families"),
                 payload: payload.id.clone(),
-                form: match payload.form {
+                form: match payload.payload.form() {
                     ShapePayloadForm::Empty => "empty".into(),
                     ShapePayloadForm::Text => "text".into(),
                     ShapePayloadForm::Binary => "binary".into(),
@@ -760,7 +914,7 @@ fn census_surface(
     increment(counts, family);
 }
 
-pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
+pub(crate) fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, BTreeMap<String, usize>), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let headers = [
@@ -863,23 +1017,24 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
     let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
     let (tshapes, roots) = parse_tshapes(&tokens, &section_counts, topology_version)?;
-    Ok(TextFacts {
-        topology_version,
-        section_counts,
+    Ok((
+        ShapeSet {
+            topology_version,
+            locations,
+            curve2ds,
+            curves,
+            surfaces,
+            polygons3d,
+            polygons_on_triangulations,
+            triangulations,
+            tshapes,
+            roots,
+        },
         shape_types,
-        locations,
-        curve2ds,
-        curves,
-        surfaces,
-        polygons3d,
-        polygons_on_triangulations,
-        triangulations,
-        tshapes,
-        roots,
-    })
+    ))
 }
 
-pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
+pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<ShapeSet, CodecError> {
     let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
@@ -1134,7 +1289,7 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecErro
             }]
         }
     };
-    Ok(BinaryFacts {
+    Ok(ShapeSet {
         topology_version: version,
         locations,
         curve2ds,
@@ -3804,11 +3959,7 @@ pub(crate) fn transfer_text_curves(
 ) -> CurveTransfer {
     let mut transfer = CurveTransfer::default();
     for payload in payloads {
-        let curves = if let Some(text) = &payload.text {
-            &text.curves
-        } else if let Some(binary) = &payload.binary {
-            &binary.curves
-        } else {
+        let Some(curves) = payload.payload.shape_set().map(|set| &set.curves) else {
             continue;
         };
         let object_id = properties
@@ -3978,11 +4129,7 @@ pub(crate) fn transfer_text_surfaces(
 ) -> SurfaceTransfer {
     let mut transfer = SurfaceTransfer::default();
     for payload in payloads {
-        let surfaces = if let Some(text) = &payload.text {
-            &text.surfaces
-        } else if let Some(binary) = &payload.binary {
-            &binary.surfaces
-        } else {
+        let Some(surfaces) = payload.payload.shape_set().map(|set| &set.surfaces) else {
             continue;
         };
         let object_id = properties
@@ -4386,9 +4533,7 @@ pub(crate) mod tests {
             parse_payloads(&[property], &[entry, second_entry]).expect("empty shape payload");
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].entry, "fcstd:native:entry#empty.brp");
-        assert_eq!(payloads[0].form, ShapePayloadForm::Empty);
-        assert!(payloads[0].text.is_none());
-        assert!(payloads[0].binary.is_none());
+        assert!(matches!(payloads[0].payload, ShapePayload::Empty));
     }
 
     #[test]
@@ -4489,7 +4634,7 @@ pub(crate) mod tests {
     #[test]
     fn normalizes_rational_bezier_curve_to_nurbs() {
         let input = text_brep("6 1 2 0 0 0 1 5 0 0 2 10 0 0 1", 1, "", 0);
-        let facts = parse_text(input.as_bytes()).expect("valid Bezier curve");
+        let facts = parse_text(input.as_bytes()).expect("valid Bezier curve").0;
         let TextCurve::Nurbs(curve) = &facts.curves[0] else {
             panic!("Bezier curve was not normalized to NURBS")
         };
@@ -4501,7 +4646,9 @@ pub(crate) mod tests {
     #[test]
     fn normalizes_bezier_surface_to_nurbs() {
         let input = text_brep("", 0, "8 0 0 1 1 0 0 0 0 1 0 1 0 0 1 1 0", 1);
-        let facts = parse_text(input.as_bytes()).expect("valid Bezier surface");
+        let facts = parse_text(input.as_bytes())
+            .expect("valid Bezier surface")
+            .0;
         let TextSurface::Nurbs(surface) = &facts.surfaces[0] else {
             panic!("Bezier surface was not normalized to NURBS")
         };
@@ -4531,7 +4678,7 @@ pub(crate) mod tests {
             "6 0 0 2 1 0 0 0 1 0 0\n7 0 0 0 0 0 1 1 0 0 0 1 0 0\n10 0 1 2 3 11 4 1 0 0 0 0 0 1 1 0 0 0 1 0",
             3,
         );
-        let facts = parse_text(input.as_bytes()).expect("recursive surfaces");
+        let facts = parse_text(input.as_bytes()).expect("recursive surfaces").0;
         let TextSurface::Extrusion {
             direction,
             directrix,
@@ -4561,7 +4708,7 @@ pub(crate) mod tests {
     #[test]
     fn resolves_elementary_and_compound_locations_in_source_order() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 3\n1 1 0 0 5 0 1 0 0 0 0 1 0\n2 1 2 0\n2 1 -1 2 1 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("location table");
+        let facts = parse_text(input.as_bytes()).expect("location table").0;
         assert_eq!(facts.locations.len(), 3);
         assert_eq!(facts.locations[0].transform.rows()[0][3], 5.0);
         assert_eq!(facts.locations[1].transform.rows()[0][3], 10.0);
@@ -4669,7 +4816,7 @@ pub(crate) mod tests {
     #[test]
     fn parses_analytic_spline_and_recursive_parameter_curves() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 3\n1 0 0 1 0\n6 1 2 0 0 1 5 0 2 10 0 1\n8 0 6.28 9 2 2 0 0 1 0 0 1 3\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("2D curve table");
+        let facts = parse_text(input.as_bytes()).expect("2D curve table").0;
         assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
         let TextCurve2d::Nurbs(nurbs) = &facts.curve2ds[1] else {
             panic!("expected normalized 2D Bezier")
@@ -4691,7 +4838,9 @@ pub(crate) mod tests {
     #[test]
     fn expands_periodic_parameter_curve_knots_and_poles() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 1\n7 1 1 6 6 2 0 0 1 1 0 1 1 1 1 0 1 1 -1 0 1 -1 -1 1 0 6 6.283185307179586 6\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("periodic parameter curve");
+        let facts = parse_text(input.as_bytes())
+            .expect("periodic parameter curve")
+            .0;
         let TextCurve2d::Nurbs(nurbs) = &facts.curve2ds[0] else {
             panic!("expected periodic NURBS")
         };
@@ -4707,7 +4856,7 @@ pub(crate) mod tests {
     #[test]
     fn parses_polygonal_carriers_and_version_three_normals() {
         let input = "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 1\n2 1 0.1 0 0 0 1 0 0 0 1\nPolygonOnTriangulations 1\n2 1 2 p 0.2 1 0 1\nSurfaces 0\nTriangulations 1\n3 1 1 1 0.01 0 0 0 1 0 0 0 1 0 0 0 1 0 0 1 1 2 3 0 0 1 0 0 1 0 0 1\nTShapes 0\n*";
-        let facts = parse_text(input.as_bytes()).expect("polygonal carriers");
+        let facts = parse_text(input.as_bytes()).expect("polygonal carriers").0;
         assert_eq!(facts.polygons3d[0].nodes.len(), 2);
         assert_eq!(
             facts.polygons3d[0].parameters.as_deref(),
@@ -4724,7 +4873,7 @@ pub(crate) mod tests {
     #[test]
     fn parses_subshape_first_topology_and_reverse_references() {
         let input = "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 8\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 0 1001000 +8 0 +7 0 *\nWi 1001000 +6 0 *\nFa 0 0.001 1 0 1001000 +5 0 *\nSh 1001000 +4 0 *\nSo 1001000 +3 0 *\nCo 1001000 +2 0 *\n+1 0 *";
-        let facts = parse_text(input.as_bytes()).expect("topology table");
+        let facts = parse_text(input.as_bytes()).expect("topology table").0;
         assert_eq!(facts.tshapes.len(), 8);
         assert_eq!(facts.tshapes[2].kind, TextShapeKind::Edge);
         assert_eq!(facts.tshapes[2].children[0].shape, 1);
