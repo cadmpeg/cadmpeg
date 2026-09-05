@@ -75,19 +75,19 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         .expect("assembly part");
     let occurrence = nodes
         .iter()
-        .find(|node| node.kind == "occurrence")
+        .find(|node| node.kind() == "occurrence")
         .expect("occurrence");
-    assert_eq!(assembly.members, vec![occurrence.object.clone()]);
+    assert_eq!(assembly.members(), vec![occurrence.object.clone()]);
     assert_eq!(
-        occurrence.prototype.as_deref(),
+        occurrence.prototype(),
         Some("fcstd:native:object#Prototype")
     );
-    assert_eq!(occurrence.local_transform.expect("placement")[0][3], 4.0);
-    assert_eq!(occurrence.element_count, Some(2));
-    assert_eq!(occurrence.link_transform, Some(true));
-    assert_eq!(occurrence.element_transforms.len(), 2);
-    assert_eq!(occurrence.element_transforms[1][0][3], 4.0);
-    assert_eq!(occurrence.element_scales, vec![[1.0; 3], [2.0; 3]]);
+    assert_eq!(occurrence.local_transform().expect("placement")[0][3], 4.0);
+    assert_eq!(occurrence.element_count(), Some(2));
+    assert_eq!(occurrence.link_transform(), Some(true));
+    assert_eq!(occurrence.element_transforms().len(), 2);
+    assert_eq!(occurrence.element_transforms()[1][0][3], 4.0);
+    assert_eq!(occurrence.element_scales(), &[[1.0; 3], [2.0; 3]]);
     assert_eq!(result.ir().model.product_definitions.len(), 5);
     let component = result
         .ir()
@@ -351,7 +351,7 @@ fn selects_the_active_link_placement_carrier() {
         nodes
             .iter()
             .find(|node| node.object.ends_with(name))
-            .and_then(|node| node.local_transform)
+            .and_then(native::ProductNodeRecord::local_transform)
             .map(|matrix| matrix[0][3])
             .expect("link placement")
     };
@@ -392,7 +392,7 @@ fn accepts_axis_angle_placement_values() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform.expect("placement");
+    let matrix = occurrence.local_transform().expect("placement");
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -435,7 +435,7 @@ fn follows_freecad_axis_angle_precedence_and_zero_axis_fallback() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform.expect("placement");
+    let matrix = occurrence.local_transform().expect("placement");
     assert_eq!(matrix[0][3], 2.0);
     assert_eq!(matrix[1][3], 3.0);
     assert_eq!(matrix[2][3], 4.0);
@@ -478,7 +478,7 @@ fn accepts_nonzero_axis_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform.expect("placement");
+    let matrix = occurrence.local_transform().expect("placement");
     assert!((matrix[1][1]).abs() < f64::EPSILON * 16.0);
     assert!((matrix[1][2] + 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][1] - 1.0).abs() < f64::EPSILON * 16.0);
@@ -518,7 +518,7 @@ fn accepts_nonzero_quaternion_below_machine_epsilon() {
         .iter()
         .find(|node| node.object.ends_with("Occurrence"))
         .expect("occurrence");
-    let matrix = occurrence.local_transform.expect("placement");
+    let matrix = occurrence.local_transform().expect("placement");
     assert!(matrix[0][0].abs() < f64::EPSILON * 16.0);
     assert!((matrix[0][2] - 1.0).abs() < f64::EPSILON * 16.0);
     assert!((matrix[2][0] + 1.0).abs() < f64::EPSILON * 16.0);
@@ -1054,26 +1054,11 @@ fn node(object: &str, members: &[&str]) -> native::ProductNodeRecord {
     native::ProductNodeRecord {
         id: format!("product:{object}"),
         object: object.into(),
-        kind: "group".into(),
-        members: members.iter().map(|member| (*member).into()).collect(),
-        prototype: None,
-        external_document: None,
-        external_document_attribute: None,
-        local_transform: None,
-        placement_property: None,
-        element_count: None,
-        link_transform: None,
-        element_transforms: Vec::new(),
-        element_scales: Vec::new(),
-        linked_subelements: Vec::new(),
-        claim_child: None,
-        copy_on_change: None,
-        copy_on_change_source: None,
-        copy_on_change_group: None,
-        copy_on_change_touched: None,
-        scale: None,
-        element_visibility: Vec::new(),
-        element_objects: Vec::new(),
+        node: native::ProductNode::Group(native::ContainerNode {
+            members: members.iter().map(|member| (*member).into()).collect(),
+            local_transform: None,
+            placement_property: None,
+        }),
     }
 }
 
