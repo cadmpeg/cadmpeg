@@ -438,10 +438,12 @@ fn distance_record(unit: u32, value: f64) -> cadmpeg_protein::DecodedRecord {
         asset_lib_id: String::new(),
         properties: std::collections::BTreeMap::from([(
             "test_Depth".to_owned(),
-            cadmpeg_protein::DecodedProperty {
+            cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::Distance { unit, value },
-                connections: Vec::new(),
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::Distance { unit, value },
+                    connections: None,
+                },
             },
         )]),
     }
@@ -486,19 +488,25 @@ fn schema_primary_colour_wins_over_rival_colour_members() {
             color_property("surface_albedo", [0.5, 0.5, 0.5, 1.0]),
             (
                 "common_Tint_toggle".to_owned(),
-                cadmpeg_protein::DecodedProperty {
+                cadmpeg_protein::property::DecodedProperty {
                     value_offset: 0,
-                    value: cadmpeg_protein::PropertyValue::Boolean(false),
-                    connections: Vec::new(),
+                    content: cadmpeg_protein::property::PropertyContent::Value {
+                        value: cadmpeg_protein::property::PropertyValue::Boolean(false),
+                        connections: None,
+                    },
                 },
             ),
         ]);
         properties.insert(
             primary_id.to_owned(),
-            cadmpeg_protein::DecodedProperty {
+            cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::Color([0.125, 0.25, 0.375, 1.0]),
-                connections: Vec::new(),
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::Color([
+                        0.125, 0.25, 0.375, 1.0,
+                    ]),
+                    connections: None,
+                },
             },
         );
         let record = appearance_record(schema, properties);
@@ -519,10 +527,12 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
     ]);
     properties.insert(
         "common_Tint_toggle".to_owned(),
-        cadmpeg_protein::DecodedProperty {
+        cadmpeg_protein::property::DecodedProperty {
             value_offset: 0,
-            value: cadmpeg_protein::PropertyValue::Boolean(true),
-            connections: Vec::new(),
+            content: cadmpeg_protein::property::PropertyContent::Value {
+                value: cadmpeg_protein::property::PropertyValue::Boolean(true),
+                connections: None,
+            },
         },
     );
     let record = appearance_record("PrismOpaqueSchema", properties);
@@ -532,20 +542,25 @@ fn enabled_common_tint_replaces_the_schema_primary_colour() {
     );
 }
 
-fn color_property(id: &str, color: [f64; 4]) -> (String, cadmpeg_protein::DecodedProperty) {
+fn color_property(
+    id: &str,
+    color: [f64; 4],
+) -> (String, cadmpeg_protein::property::DecodedProperty) {
     (
         id.to_owned(),
-        cadmpeg_protein::DecodedProperty {
+        cadmpeg_protein::property::DecodedProperty {
             value_offset: 0,
-            value: cadmpeg_protein::PropertyValue::Color(color),
-            connections: Vec::new(),
+            content: cadmpeg_protein::property::PropertyContent::Value {
+                value: cadmpeg_protein::property::PropertyValue::Color(color),
+                connections: None,
+            },
         },
     )
 }
 
 fn appearance_record(
     schema: &str,
-    properties: std::collections::BTreeMap<String, cadmpeg_protein::DecodedProperty>,
+    properties: std::collections::BTreeMap<String, cadmpeg_protein::property::DecodedProperty>,
 ) -> cadmpeg_protein::DecodedRecord {
     cadmpeg_protein::DecodedRecord {
         ordinal: 0,
@@ -568,10 +583,14 @@ fn texture_record(guid: &str, path: &str) -> cadmpeg_protein::DecodedRecord {
         asset_lib_id: String::new(),
         properties: std::collections::BTreeMap::from([(
             "unifiedbitmap_Bitmap".to_owned(),
-            cadmpeg_protein::DecodedProperty {
+            cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::TextureUri(vec![path.to_owned()]),
-                connections: Vec::new(),
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::TextureUri(vec![
+                        path.to_owned()
+                    ]),
+                    connections: None,
+                },
             },
         )]),
     }
@@ -582,10 +601,12 @@ fn appearance_connected_to(texture_guid: &str) -> cadmpeg_protein::DecodedRecord
         "GenericSchema",
         std::collections::BTreeMap::from([(
             "generic_diffuse".to_owned(),
-            cadmpeg_protein::DecodedProperty {
+            cadmpeg_protein::property::DecodedProperty {
                 value_offset: 0,
-                value: cadmpeg_protein::PropertyValue::Color([0.25, 0.5, 0.75, 1.0]),
-                connections: vec![texture_guid.to_owned()],
+                content: cadmpeg_protein::property::PropertyContent::Value {
+                    value: cadmpeg_protein::property::PropertyValue::Color([0.25, 0.5, 0.75, 1.0]),
+                    connections: Some(vec![texture_guid.to_owned()]),
+                },
             },
         )]),
     )
@@ -639,13 +660,15 @@ fn unknown_texture_distance_unit_omits_typed_texture_and_counts_loss() {
     let mut texture = texture_record(guid, "textures/albedo.png");
     texture.properties.insert(
         "unifiedbitmap_RealWorldScaleX".into(),
-        cadmpeg_protein::DecodedProperty {
+        cadmpeg_protein::property::DecodedProperty {
             value_offset: 0,
-            value: cadmpeg_protein::PropertyValue::Distance {
-                unit: 0x0002_1008,
-                value: 3.0,
+            content: cadmpeg_protein::property::PropertyContent::Value {
+                value: cadmpeg_protein::property::PropertyValue::Distance {
+                    unit: 0x0002_1008,
+                    value: 3.0,
+                },
+                connections: None,
             },
-            connections: Vec::new(),
         },
     );
 
