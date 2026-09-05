@@ -65,7 +65,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
         assert_eq!(operation.aggregate_operand_record_index, 243);
         assert_eq!(operation.edge_group_record_index, 251);
         assert_eq!(operation.edge_operand_record_index, 254);
-        assert_eq!(operation.bend_radius, 0.25);
+        assert_eq!(operation.bend_radius.get(), 0.25);
         assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
     }
 }
@@ -129,7 +129,7 @@ fn hem_scope_reads_the_rolled_owner_layout() {
             angle_owner_record_index: 788,
         }
     );
-    assert_eq!(operation.bend_radius, 0.25);
+    assert_eq!(operation.bend_radius.get(), 0.25);
     assert_eq!(operation.bend_radius_offset, 160);
 }
 
@@ -153,7 +153,7 @@ fn hem_scope_reads_the_teardrop_owner_layout() {
             radius_owner_record_index: 775,
         }
     );
-    assert_eq!(operation.bend_radius, 0.25);
+    assert_eq!(operation.bend_radius.get(), 0.25);
     assert_eq!(operation.bend_radius_offset, 170);
 }
 

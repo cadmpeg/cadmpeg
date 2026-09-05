@@ -3600,7 +3600,7 @@ pub(crate) fn project_edge_flange(
         height_datum,
         bend_position,
         width,
-        bend_radius: Length(operation.bend_radius * 10.0),
+        bend_radius: Length(operation.bend_radius.get() * 10.0),
     })
 }
 
@@ -3750,7 +3750,7 @@ pub(crate) fn project_hem(
         edges,
         form,
         direction,
-        bend_radius: Length(operation.bend_radius * 10.0),
+        bend_radius: Length(operation.bend_radius.get() * 10.0),
     })
 }
 

@@ -1085,6 +1085,12 @@ fn edge_flange_rows_preserve_wire_and_reject_parallel_mismatch() {
         let native: super::DesignEdgeFlangeOperation = serde_json::from_str(&expected).unwrap();
         assert_eq!(native.shape.edges().count(), count as usize);
         assert_eq!(serde_json::to_string(&native).unwrap(), expected);
+        for radius in [0.0, -1.0, f64::INFINITY, f64::NAN] {
+            let mut invalid = wire.clone();
+            invalid.bend_radius = radius;
+            let error = super::DesignEdgeFlangeOperation::try_from(invalid).expect_err("invalid bend radius");
+            assert!(error.contains("bend_radius"));
+        }
         for mode in [super::DesignEdgeWidthMode::Symmetric, super::DesignEdgeWidthMode::TwoSides,
             super::DesignEdgeWidthMode::SymmetricPerEdge, super::DesignEdgeWidthMode::TwoSidesPerEdge] {
             if count == 0 && matches!(mode, super::DesignEdgeWidthMode::SymmetricPerEdge | super::DesignEdgeWidthMode::TwoSidesPerEdge) {
@@ -2161,5 +2167,34 @@ fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
         bad["history_state_id_offset"] = (kind_offset.saturating_sub(8) + 1).into();
         let error = serde_json::from_value::<DesignParameterScope>(bad).expect_err("mismatched offset rejected");
         assert!(error.to_string().contains("history_state_id_offset"));
+    }
+}
+
+#[test]
+fn bend_radius_requires_a_positive_finite_value() {
+    for value in [0.0, -0.0, -1.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+        assert!(super::DesignBendRadius::new(value).is_none());
+    }
+    for radius in [f64::MIN_POSITIVE, 0.25, f64::MAX] {
+        let value = super::DesignBendRadius::new(radius).expect("positive finite radius");
+        assert_eq!(value.get(), radius);
+        let wire = serde_json::json!({
+            "edge_wrapper_record_index": 1, "edge_group_record_index": 2,
+            "edge_operand_record_index": 5, "aggregate_group_record_index": 6,
+            "aggregate_operand_record_index": 9,
+            "parameter_owners": {"kind": "gap_length", "gap_owner_record_index": 10, "length_owner_record_index": 11},
+            "settings_record_index": 12, "bend_radius": radius, "bend_radius_offset": 100,
+            "form_code": 3, "direction_code": 1, "direction_reversal_byte": 0,
+            "reference_side_code": 4
+        });
+        let operation: super::DesignHemOperation = serde_json::from_value(wire.clone()).expect("valid radius");
+        assert_eq!(operation.bend_radius.get(), radius);
+        assert_eq!(serde_json::to_value(operation).expect("serialize hem"), wire);
+        for invalid in [0.0, -1.0] {
+            let mut bad = wire.clone();
+            bad["bend_radius"] = invalid.into();
+            let error = serde_json::from_value::<super::DesignHemOperation>(bad).expect_err("invalid bend radius");
+            assert!(error.to_string().contains("bend_radius"));
+        }
     }
 }

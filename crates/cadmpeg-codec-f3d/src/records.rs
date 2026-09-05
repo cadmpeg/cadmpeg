@@ -8637,6 +8637,20 @@ impl DesignEdgeFlangeEdge {
     }
 }
 
+/// Positive finite inside bend radius in source centimetres.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DesignBendRadius(f64);
+
+impl DesignBendRadius {
+    pub fn new(value: f64) -> Option<Self> {
+        (value.is_finite() && value > 0.0).then_some(Self(value))
+    }
+
+    pub fn get(self) -> f64 {
+        self.0
+    }
+}
+
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -8661,7 +8675,7 @@ pub struct DesignEdgeFlangeOperation {
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub bend_radius: f64,
+    pub bend_radius: DesignBendRadius,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
     /// Face pair the flange height is measured from.
@@ -8724,7 +8738,7 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
             angle_owner_record_index: wire.angle_owner_record_index,
             auxiliary_reference_record_indices: wire.auxiliary_reference_record_indices,
             settings_record_index: wire.settings_record_index,
-            bend_radius: wire.bend_radius,
+            bend_radius: DesignBendRadius::new(wire.bend_radius).ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
             height_datum: wire.height_datum,
             bend_position: wire.bend_position,
@@ -8755,7 +8769,7 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
             auxiliary_reference_record_indices: operation.auxiliary_reference_record_indices,
             width_parameter_source: operation.shape.source(),
             settings_record_index: operation.settings_record_index,
-            bend_radius: operation.bend_radius,
+            bend_radius: operation.bend_radius.get(),
             bend_radius_offset: operation.bend_radius_offset,
             reference_side_code: 4,
             height_datum: operation.height_datum,
@@ -8816,7 +8830,7 @@ pub struct DesignHemOperation {
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub bend_radius: f64,
+    pub bend_radius: DesignBendRadius,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
 }
@@ -8872,7 +8886,7 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
             aggregate_operand_record_index: wire.aggregate_operand_record_index,
             parameter_owners: wire.parameter_owners,
             settings_record_index: wire.settings_record_index,
-            bend_radius: wire.bend_radius,
+            bend_radius: DesignBendRadius::new(wire.bend_radius).ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
         })
     }
@@ -8888,7 +8902,7 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
             aggregate_operand_record_index: record.aggregate_operand_record_index,
             parameter_owners: record.parameter_owners,
             settings_record_index: record.settings_record_index,
-            bend_radius: record.bend_radius,
+            bend_radius: record.bend_radius.get(),
             bend_radius_offset: record.bend_radius_offset,
             form_code: 3,
             direction_code: 1,

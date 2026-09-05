@@ -115,7 +115,7 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
     assert_eq!(operation.height_owner_record_index, 204);
     assert_eq!(operation.angle_owner_record_index, 218);
     assert_eq!(operation.settings_record_index, 207);
-    assert!((operation.bend_radius - 0.25).abs() < EPS_BEND_RADIUS);
+    assert!((operation.bend_radius.get() - 0.25).abs() < EPS_BEND_RADIUS);
     assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
     assert_eq!(
         operation.bend_position,
@@ -203,7 +203,7 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
         assert_eq!(operation.height_owner_record_index, 204);
         assert_eq!(operation.angle_owner_record_index, 218);
         assert_eq!(operation.settings_record_index, 207);
-        assert!((operation.bend_radius - 0.254).abs() < EPS_BEND_RADIUS);
+        assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
         assert_eq!(operation.bend_radius_offset, 138);
         assert_eq!(
             operation.bend_position,
@@ -243,7 +243,7 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
         assert_eq!(operation.height_owner_record_index, 219);
         assert_eq!(operation.angle_owner_record_index, 222);
         assert_eq!(operation.settings_record_index, 234);
-        assert!((operation.bend_radius - 0.254).abs() < EPS_BEND_RADIUS);
+        assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
         assert_eq!(operation.bend_radius_offset, 165);
         assert_eq!(
             operation.bend_position,
@@ -294,7 +294,7 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
         operation.shape.mode(),
         crate::records::DesignEdgeWidthMode::SymmetricPerEdge
     );
-    assert!((operation.bend_radius - 0.254).abs() < EPS_BEND_RADIUS);
+    assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
     assert_eq!(operation.bend_radius_offset, 165);
 }
 
@@ -340,7 +340,7 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
             operation.shape.mode(),
             crate::records::DesignEdgeWidthMode::TwoSidesPerEdge
         );
-        assert!((operation.bend_radius - 0.254).abs() < EPS_BEND_RADIUS);
+        assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
         assert_eq!(operation.bend_radius_offset, 169);
     }
 }
@@ -367,7 +367,7 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
     assert_eq!(operation.height_owner_record_index, 204);
     assert_eq!(operation.angle_owner_record_index, 218);
     assert_eq!(operation.settings_record_index, 207);
-    assert!((operation.bend_radius - 0.25).abs() < EPS_BEND_RADIUS);
+    assert!((operation.bend_radius.get() - 0.25).abs() < EPS_BEND_RADIUS);
     assert_eq!(operation.bend_radius_offset, 142);
     assert_eq!(
         operation.bend_position,
@@ -434,7 +434,7 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
     assert_eq!(operation.settings_record_index, 240);
     assert_eq!(operation.height_owner_record_index, 225);
     assert_eq!(operation.angle_owner_record_index, 228);
-    assert!((operation.bend_radius - 0.254).abs() < EPS_BEND_RADIUS);
+    assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
     assert_eq!(operation.bend_radius_offset, 169);
 }
 
