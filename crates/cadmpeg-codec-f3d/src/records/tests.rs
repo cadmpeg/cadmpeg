@@ -369,3 +369,30 @@ fn construction_path_preserves_layout_wire_and_rejects_mixed_forms() {
         }
     }
 }
+
+#[test]
+fn coil_values_preserve_optional_locations_and_reject_orphan_offsets() {
+    for (field, value) in [
+        ("coil_operation", "\"cut\""),
+        ("coil_extent", "\"spiral\""),
+        ("coil_section", "\"circular\""),
+        ("coil_section_placement", "\"inside\""),
+        ("coil_clockwise", "false"),
+    ] {
+        for wire in [
+            "{}".to_owned(),
+            format!("{{\"{field}\":{value}}}"),
+            format!("{{\"{field}\":{value},\"{field}_offset\":0}}"),
+            format!("{{\"{field}\":{value},\"{field}_offset\":30}}"),
+        ] {
+            let parsed: super::DesignCoilScope = serde_json::from_str(&wire).expect("valid Coil field");
+            assert_eq!(serde_json::to_string(&parsed).expect("Coil wire"), wire);
+        }
+        let wire = format!("{{\"{field}_offset\":30}}");
+        let error = serde_json::from_str::<super::DesignCoilScope>(&wire)
+            .expect_err("offset without value")
+            .to_string();
+        assert!(error.contains(field));
+        assert!(error.contains(&format!("{field}_offset")));
+    }
+}

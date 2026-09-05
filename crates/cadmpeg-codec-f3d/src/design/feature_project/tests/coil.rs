@@ -58,18 +58,18 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).coil_operation =
-            Some(DesignExtrudeOperation::NewBody);
+            Some(crate::records::RecordedValue { value: DesignExtrudeOperation::NewBody, offset: None });
     }
     if let crate::records::DesignScopePayload::SpirePrimitive(slot)
     | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).coil_extent =
-            Some(DesignCoilExtent::RevolutionsHeight);
+            Some(crate::records::RecordedValue { value: DesignCoilExtent::RevolutionsHeight, offset: None });
     }
     if let crate::records::DesignScopePayload::SpirePrimitive(slot)
     | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
-        slot.get_or_insert_with(Default::default).coil_section = Some(DesignCoilSection::Circular);
+        slot.get_or_insert_with(Default::default).coil_section = Some(crate::records::RecordedValue { value: DesignCoilSection::Circular, offset: None });
     }
     {
         let value = Some(DesignCoilSectionPlacement::Inside);
@@ -77,7 +77,7 @@ fn long_coil_matrix_projects_as_explicit_placement() {
         | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
         {
             slot.get_or_insert_with(Default::default)
-                .coil_section_placement = value;
+                .coil_section_placement = value.map(|value| crate::records::RecordedValue { value, offset: None });
         }
     }
     {
@@ -85,7 +85,7 @@ fn long_coil_matrix_projects_as_explicit_placement() {
         if let crate::records::DesignScopePayload::SpirePrimitive(slot)
         | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
         {
-            slot.get_or_insert_with(Default::default).coil_clockwise = value;
+            slot.get_or_insert_with(Default::default).coil_clockwise = value.map(|value| crate::records::RecordedValue { value, offset: None });
         }
     }
     if let crate::records::DesignScopePayload::SpirePrimitive(slot)

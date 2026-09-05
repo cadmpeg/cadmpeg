@@ -9207,58 +9207,23 @@ pub(crate) fn parse_parameter_scope(
     } else {
         None
     };
-    let (
-        coil_operation,
-        coil_operation_offset,
-        coil_extent,
-        coil_extent_offset,
-        coil_section,
-        coil_section_offset,
-        coil_section_placement,
-        coil_section_placement_offset,
-        coil_clockwise,
-        coil_clockwise_offset,
-    ) = if family == Some(DesignFeatureFamily::Coil) {
-        exact_coil_discriminators(bytes, start, paired_at, &kind, reference_members).map_or(
-            (None, None, None, None, None, None, None, None, None, None),
-            |fields| {
-                (
-                    Some(fields.operation),
-                    Some(fields.operation_offset),
-                    fields.extent,
-                    fields.extent_offset,
-                    Some(fields.section),
-                    fields.section_offset,
-                    Some(fields.section_placement),
-                    fields.section_placement_offset,
-                    Some(fields.clockwise),
-                    fields.clockwise_offset,
-                )
-            },
-        )
+    let coil_discriminators = if family == Some(DesignFeatureFamily::Coil) {
+        exact_coil_discriminators(bytes, start, paired_at, &kind, reference_members)
     } else {
-        (None, None, None, None, None, None, None, None, None, None)
+        None
     };
     let coil_transform = if family == Some(DesignFeatureFamily::Coil) {
         exact_long_coil_transform(bytes, start, paired_at, &kind, reference_members)
     } else {
         None
     };
-    let coil = if family == Some(DesignFeatureFamily::Coil)
-        || coil_operation.is_some()
-        || coil_transform.is_some()
-    {
+    let coil = if family == Some(DesignFeatureFamily::Coil) {
         Some(crate::records::DesignCoilScope {
-            coil_operation,
-            coil_operation_offset,
-            coil_extent,
-            coil_extent_offset,
-            coil_section,
-            coil_section_offset,
-            coil_section_placement,
-            coil_section_placement_offset,
-            coil_clockwise,
-            coil_clockwise_offset,
+            coil_operation: coil_discriminators.as_ref().map(|fields| crate::records::RecordedValue { value: fields.operation, offset: Some(fields.operation_offset) }),
+            coil_extent: coil_discriminators.as_ref().and_then(|fields| fields.extent),
+            coil_section: coil_discriminators.as_ref().map(|fields| crate::records::RecordedValue { value: fields.section, offset: fields.section_offset }),
+            coil_section_placement: coil_discriminators.as_ref().map(|fields| crate::records::RecordedValue { value: fields.section_placement, offset: fields.section_placement_offset }),
+            coil_clockwise: coil_discriminators.as_ref().map(|fields| crate::records::RecordedValue { value: fields.clockwise, offset: fields.clockwise_offset }),
             coil_placement: None,
             coil_transform,
         })
@@ -9414,8 +9379,7 @@ fn named_parameter_scope_tail_is_valid(
 struct CoilDiscriminators {
     operation: DesignExtrudeOperation,
     operation_offset: u64,
-    extent: Option<DesignCoilExtent>,
-    extent_offset: Option<u64>,
+    extent: Option<crate::records::RecordedValue<DesignCoilExtent>>,
     section: DesignCoilSection,
     section_offset: Option<u64>,
     section_placement: DesignCoilSectionPlacement,
@@ -9923,8 +9887,7 @@ fn exact_coil_discriminators(
     Some(CoilDiscriminators {
         operation,
         operation_offset: operation_offset as u64,
-        extent: Some(extent),
-        extent_offset: Some(extent_offset as u64),
+        extent: Some(crate::records::RecordedValue { value: extent, offset: Some(extent_offset as u64) }),
         section,
         section_offset: Some(section_offset as u64),
         section_placement,
@@ -9975,7 +9938,6 @@ fn exact_long_coil_discriminators(
         // The long form has no extent selector. Its exact owned parameter set
         // supplies the mode after the scope is parsed.
         extent: None,
-        extent_offset: None,
         // The long form fixes these settings in its dialect envelope.
         section: DesignCoilSection::Circular,
         section_offset: None,
@@ -10079,13 +10041,13 @@ fn bind_coil_extent_from_parameters(
         _ => None,
     };
     if let Some(extent) = extent {
+        if let crate::records::DesignScopePayload::SpirePrimitive(slot)
+        | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
         {
-            let value = Some(extent);
-            if let crate::records::DesignScopePayload::SpirePrimitive(slot)
-            | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
-            {
-                slot.get_or_insert_with(Default::default).coil_extent = value;
-            }
+            slot.get_or_insert_with(Default::default).coil_extent = Some(crate::records::RecordedValue {
+                value: extent,
+                offset: None,
+            });
         }
     }
 }
