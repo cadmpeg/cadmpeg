@@ -13,6 +13,7 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
 use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
+use cadmpeg_registry::Format;
 use serde::Serialize;
 
 /// A conversion workflow either refuses a modeled request or fails
@@ -220,6 +221,15 @@ impl Serialize for RefusalStage {
     }
 }
 
+/// The operation whose validation failed.
+#[derive(Debug, Clone, Copy)]
+pub enum CheckOperation {
+    /// Report validation findings without an export.
+    Check,
+    /// Refuse an export after validation.
+    Export,
+}
+
 /// Typed refusal from the conversion workflow.
 ///
 /// Presentation messages, codes, typed detail, and retained reports are all
@@ -245,8 +255,8 @@ pub enum ConversionRefusal {
     },
     /// The check found errors and `--allow-errors` was not set.
     CheckFailed {
-        /// Human-readable message.
-        message: String,
+        /// Operation rejected by validation.
+        operation: CheckOperation,
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
@@ -254,15 +264,13 @@ pub enum ConversionRefusal {
     },
     /// Decode reported losses under `--reject-lossy`.
     DecodeLossRejected {
-        /// Human-readable message.
-        message: String,
+        /// Requested output format.
+        format: Format,
         /// Decode report available for an optional `--report`.
         decode_report: DecodeReport,
     },
     /// Export planning reported losses under `--reject-lossy`.
     ExportLossRejected {
-        /// Human-readable message.
-        message: String,
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
@@ -272,8 +280,8 @@ pub enum ConversionRefusal {
     },
     /// Geometry export refused because decode transferred no geometry.
     EmptyGeometry {
-        /// Human-readable message.
-        message: String,
+        /// Requested output format.
+        format: Format,
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
@@ -397,12 +405,12 @@ impl ConversionRefusal {
                 }
             }
             Self::CheckFailed {
-                message,
+                operation,
                 decode_report,
                 validation,
             } => RefusalEvidence {
                 code: RefusalCode::CheckFailed,
-                message: Cow::Borrowed(message),
+                message: Cow::Owned(match operation { CheckOperation::Check => format!("check found {} error(s)", validation.error_count()), CheckOperation::Export => format!("check found {} error(s); refusing to export (use --allow-errors to override)", validation.error_count()) }),
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
@@ -411,11 +419,11 @@ impl ConversionRefusal {
                 },
             },
             Self::DecodeLossRejected {
-                message,
+                format,
                 decode_report,
             } => RefusalEvidence {
                 code: RefusalCode::DecodeLossRejected,
-                message: Cow::Borrowed(message),
+                message: Cow::Owned(format!("decode reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)", decode_report.losses.len(), format.name())),
                 detail: None,
                 reports: RefusalReports {
                     decode: Some(decode_report),
@@ -424,13 +432,12 @@ impl ConversionRefusal {
                 },
             },
             Self::ExportLossRejected {
-                message,
                 decode_report,
                 validation,
                 export_report,
             } => RefusalEvidence {
                 code: RefusalCode::ExportLossRejected,
-                message: Cow::Borrowed(message),
+                message: Cow::Owned(format!("export planning reported {} loss(es): {}; refusing to write a lossy {} (omit --reject-lossy to allow)", export_report.losses.len(), export_report.losses.iter().map(|loss| loss.message.as_str()).collect::<Vec<_>>().join("; "), export_report.format())),
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
@@ -439,12 +446,12 @@ impl ConversionRefusal {
                 },
             },
             Self::EmptyGeometry {
-                message,
+                format,
                 decode_report,
                 validation,
             } => RefusalEvidence {
                 code: RefusalCode::EmptyGeometry,
-                message: Cow::Borrowed(message),
+                message: Cow::Owned(format!("decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)", format.name())),
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
@@ -717,7 +724,7 @@ mod tests {
     #[test]
     fn check_refusal_maps_to_check_stage() {
         let refusal = ConversionRefusal::CheckFailed {
-            message: "check found 1 error(s)".into(),
+            operation: CheckOperation::Check,
             decode_report: None,
             validation: ValidationReport {
                 entity_counts: BTreeMap::new(),

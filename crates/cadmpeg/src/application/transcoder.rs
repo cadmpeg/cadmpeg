@@ -336,10 +336,7 @@ impl<'a> Transcoder<'a> {
         );
         if !validation.is_ok() && !policy.allow_errors {
             return Err(ConversionRefusal::CheckFailed {
-                message: format!(
-                    "check found {} error(s); refusing to export (use --allow-errors to override)",
-                    validation.error_count()
-                ),
+                operation: super::refusal::CheckOperation::Export,
                 decode_report,
                 validation,
             }
@@ -353,10 +350,7 @@ impl<'a> Transcoder<'a> {
             && !policy.allow_empty
         {
             return Err(ConversionRefusal::EmptyGeometry {
-                message: format!(
-                    "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
-                    format.name()
-                ),
+                format,
                 decode_report,
                 validation,
             }
@@ -396,17 +390,6 @@ impl PreparedConversion {
         };
         if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {
             return Err(ConversionRefusal::ExportLossRejected {
-                message: format!(
-                    "export planning reported {} loss(es): {}; refusing to write a lossy {} (omit --reject-lossy to allow)",
-                    plan.report().losses.len(),
-                    plan.report()
-                        .losses
-                        .iter()
-                        .map(|loss| loss.message.as_str())
-                        .collect::<Vec<_>>()
-                        .join("; "),
-                    self.selection.format.name()
-                ),
                 decode_report: self.document.decode_report().cloned(),
                 validation: self.validation.clone(),
                 export_report: plan.report().clone(),
@@ -502,10 +485,7 @@ fn decode_lossy_refusal(
     let report = report?;
     let count = report.losses.len();
     (count > 0).then(|| ConversionRefusal::DecodeLossRejected {
-        message: format!(
-            "decode reported {count} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
-            format.name()
-        ),
+        format,
         decode_report: report.clone(),
     })
 }

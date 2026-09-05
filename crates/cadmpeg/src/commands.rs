@@ -380,7 +380,7 @@ pub fn check_cmd(
         losses(loaded.decode_report()),
     );
     let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
-        message: format!("check found {} error(s)", report.error_count()),
+        operation: crate::application::refusal::CheckOperation::Check,
         decode_report: loaded.decode_report().cloned(),
         validation: report.clone(),
     });

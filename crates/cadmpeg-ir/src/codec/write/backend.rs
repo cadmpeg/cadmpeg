@@ -211,12 +211,18 @@ impl<E: EncoderBackend> Encoder for E {
             losses,
             notes,
         } = body;
-        let (write_path, fidelity) = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
-            None => ExportReport::cadir(census, fidelity, write_path, losses, notes),
-            Some(target) => {
-                ExportReport::native(target, census, fidelity, write_path, losses, notes)
+            None => {
+                ExportReport::cadir(census, write_path, input.fidelity.is_some(), losses, notes)
             }
+            Some(target) => ExportReport::native(
+                target,
+                census,
+                write_path,
+                input.fidelity.is_some(),
+                losses,
+                notes,
+            ),
         };
         Ok(ExportPlan { report, bytes })
     }
@@ -295,7 +301,7 @@ pub enum WritePath {
 }
 
 impl WritePath {
-    pub(super) fn into_report(
+    pub(crate) fn into_report(
         self,
         fidelity_provided: bool,
     ) -> (ReportWritePath, FidelityResolution) {

@@ -11,6 +11,7 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{LossNote, Severity};
+use crate::codec::write::WritePath as BackendWritePath;
 use crate::document::CensusKey;
 
 /// Entity census and fidelity details from a successful export.
@@ -265,11 +266,12 @@ impl ExportReport {
     #[must_use]
     pub(crate) fn cadir(
         census: EntityCensus,
-        fidelity: FidelityResolution,
-        write_path: WritePath,
+        write_path: BackendWritePath,
+        fidelity_provided: bool,
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
+        let (write_path, fidelity) = write_path.into_report(fidelity_provided);
         Self {
             identity: ExportIdentity::Cadir,
             census,
@@ -286,11 +288,12 @@ impl ExportReport {
     pub(crate) fn native(
         target: DialectId,
         census: EntityCensus,
-        fidelity: FidelityResolution,
-        write_path: WritePath,
+        write_path: BackendWritePath,
+        fidelity_provided: bool,
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
+        let (write_path, fidelity) = write_path.into_report(fidelity_provided);
         Self {
             identity: ExportIdentity::Native(target),
             census,
