@@ -8128,7 +8128,40 @@ pub enum DesignConstructionPathPlacement {
 /// Nested identity chain named by a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignConstructionOperandIdentityWire", into = "DesignConstructionOperandIdentityWire")]
 pub struct DesignConstructionOperandIdentity {
+    /// Globally unique deterministic identifier.
+    pub id: String,
+    /// Owning operand-group record.
+    pub group_record_index: u32,
+    /// Ordered identity-wrapper indexed records.
+    pub wrappers: Vec<DesignIdentityWrapper>,
+    /// Indexed identity of the record physically following the wrappers.
+    pub following_record_index: u32,
+    /// Indexed-header byte offset of the record following the wrappers.
+    pub following_byte_offset: u64,
+    /// Per-file dynamic class tag of the record following the wrappers.
+    pub following_class_tag: String,
+    /// Entity-tracking path between the outer wrappers and persistent identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tracking_path: Option<DesignConstructionTrackingPath>,
+    /// Fixed-width persistent identity, when the following record has that grammar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persistent_identity: Option<DesignConstructionPersistentIdentity>,
+}
+
+/// Identity and location of one indexed construction wrapper.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignIdentityWrapper {
+    pub record_index: u32,
+    pub byte_offset: u64,
+    pub class_tag: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignConstructionOperandIdentityWire {
     /// Globally unique deterministic identifier.
     pub id: String,
     /// Owning operand-group record.
@@ -8151,6 +8184,53 @@ pub struct DesignConstructionOperandIdentity {
     /// Fixed-width persistent identity, when the following record has that grammar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub persistent_identity: Option<DesignConstructionPersistentIdentity>,
+}
+
+impl TryFrom<DesignConstructionOperandIdentityWire> for DesignConstructionOperandIdentity {
+    type Error = String;
+    fn try_from(wire: DesignConstructionOperandIdentityWire) -> Result<Self, Self::Error> {
+        if wire.wrapper_record_indices.len() != wire.wrapper_byte_offsets.len()
+            || wire.wrapper_record_indices.len() != wire.wrapper_class_tags.len()
+        {
+            return Err("wrapper_record_indices, wrapper_byte_offsets, and wrapper_class_tags must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            group_record_index: wire.group_record_index,
+            following_record_index: wire.following_record_index,
+            following_byte_offset: wire.following_byte_offset,
+            following_class_tag: wire.following_class_tag,
+            tracking_path: wire.tracking_path,
+            persistent_identity: wire.persistent_identity,
+            wrappers: wire.wrapper_record_indices.into_iter().zip(wire.wrapper_byte_offsets).zip(wire.wrapper_class_tags)
+                .map(|((record_index, byte_offset), class_tag)| DesignIdentityWrapper { record_index, byte_offset, class_tag }).collect(),
+        })
+    }
+}
+
+impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdentityWire {
+    fn from(identity: DesignConstructionOperandIdentity) -> Self {
+        let mut wrapper_record_indices = Vec::with_capacity(identity.wrappers.len());
+        let mut wrapper_byte_offsets = Vec::with_capacity(identity.wrappers.len());
+        let mut wrapper_class_tags = Vec::with_capacity(identity.wrappers.len());
+        for wrapper in identity.wrappers {
+            wrapper_record_indices.push(wrapper.record_index);
+            wrapper_byte_offsets.push(wrapper.byte_offset);
+            wrapper_class_tags.push(wrapper.class_tag);
+        }
+        Self {
+            id: identity.id,
+            group_record_index: identity.group_record_index,
+            following_record_index: identity.following_record_index,
+            following_byte_offset: identity.following_byte_offset,
+            following_class_tag: identity.following_class_tag,
+            tracking_path: identity.tracking_path,
+            persistent_identity: identity.persistent_identity,
+            wrapper_record_indices,
+            wrapper_byte_offsets,
+            wrapper_class_tags,
+        }
+    }
 }
 
 /// Entity-tracking path embedded in a construction-operand identity chain.

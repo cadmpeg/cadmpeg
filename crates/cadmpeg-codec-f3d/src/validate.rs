@@ -6292,34 +6292,15 @@ fn validate_construction_operand_identities<'a>(
         let selected_profile = group
             .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
             .and_then(|scope| scope.extrude_profile());
-        let wrapper_shape = identity.wrapper_record_indices.len()
-            == identity.wrapper_byte_offsets.len()
-            && identity.wrapper_record_indices.len() == identity.wrapper_class_tags.len()
-            && identity
-                .wrapper_record_indices
-                .iter()
-                .copied()
-                .collect::<HashSet<_>>()
-                .len()
-                == identity.wrapper_record_indices.len()
-            && identity
-                .wrapper_byte_offsets
-                .windows(2)
-                .all(|offsets| offsets[1] == offsets[0].saturating_add(24))
-            && identity
-                .wrapper_record_indices
-                .iter()
-                .zip(&identity.wrapper_byte_offsets)
-                .zip(&identity.wrapper_class_tags)
-                .all(|((&record_index, &byte_offset), class_tag)| {
-                    class_tag.len() == 3
-                        && class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                        && records_by_index
-                            .get(&(native_stream, record_index))
-                            .is_some_and(|header| {
-                                header.byte_offset == byte_offset && header.class_tag == *class_tag
-                            })
-                });
+        let wrapper_shape = identity.wrappers.iter().map(|wrapper| wrapper.record_index).collect::<HashSet<_>>().len() == identity.wrappers.len()
+            && identity.wrappers.windows(2).all(|wrappers| wrappers[1].byte_offset == wrappers[0].byte_offset.saturating_add(24))
+            && identity.wrappers.iter().all(|wrapper| {
+                wrapper.class_tag.len() == 3
+                    && wrapper.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                    && records_by_index.get(&(native_stream, wrapper.record_index)).is_some_and(|header| {
+                        header.byte_offset == wrapper.byte_offset && header.class_tag == wrapper.class_tag
+                    })
+            });
         let transform = group.and_then(|group| group.frame.trailing_transforms.first());
         let tracking_shape = identity.tracking_path.as_ref().is_none_or(|path| {
             let mut cursor = path.carrier_byte_offset.saturating_add(73);
@@ -6368,17 +6349,15 @@ fn validate_construction_operand_identities<'a>(
                     })
         });
         let chain_entry_shape = if let Some(path) = &identity.tracking_path {
-            identity
-                .wrapper_byte_offsets
-                .last()
+            identity.wrappers.last().map(|wrapper| wrapper.byte_offset)
                 .is_some_and(|offset| path.wrapper_byte_offset == offset.saturating_add(24))
-                || (identity.wrapper_byte_offsets.is_empty()
+                || (identity.wrappers.is_empty()
                     && transform.is_some_and(|transform| {
                         path.wrapper_record_index == transform.following_record_index
                             && path.wrapper_byte_offset == transform.following_byte_offset
                             && path.wrapper_class_tag == transform.following_class_tag
                     }))
-                || (identity.wrapper_byte_offsets.is_empty()
+                || (identity.wrappers.is_empty()
                     && transform.is_none()
                     && group.is_some_and(|group| {
                         group.frame.trailing_record_indices.first()
@@ -6396,7 +6375,7 @@ fn validate_construction_operand_identities<'a>(
                 identity.following_record_index == path.following_record_index
                     && identity.following_byte_offset == path.following_byte_offset
                     && identity.following_class_tag == path.following_class_tag
-            } else if let Some(offset) = identity.wrapper_byte_offsets.last() {
+            } else if let Some(offset) = identity.wrappers.last().map(|wrapper| wrapper.byte_offset) {
                 identity.following_byte_offset == offset.saturating_add(24)
             } else {
                 transform.is_some_and(|transform| {
@@ -6446,9 +6425,7 @@ fn validate_construction_operand_identities<'a>(
             });
         let valid = group.is_some_and(|group| {
             let trailing = group.frame.trailing_record_indices.first();
-            identity
-                .wrapper_record_indices
-                .first()
+            identity.wrappers.first().map(|wrapper| &wrapper.record_index)
                 .or_else(|| {
                     group
                         .frame
@@ -6957,7 +6934,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
             })
             .collect::<Vec<_>>();
-        expected_identities.sort_by_key(|identity| identity.wrapper_byte_offsets.first().copied());
+        expected_identities.sort_by_key(|identity| identity.wrappers.first().map(|wrapper| wrapper.byte_offset));
         let expected_identity_ids = expected_identities
             .into_iter()
             .map(|identity| identity.id.as_str())

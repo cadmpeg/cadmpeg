@@ -1184,9 +1184,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     let identity = DesignConstructionOperandIdentity {
         id: format!("{stream}:operand-identity#1100"),
         group_record_index: 100,
-        wrapper_record_indices: vec![101],
-        wrapper_byte_offsets: vec![1_100],
-        wrapper_class_tags: vec!["384".into()],
+        wrappers: vec![crate::records::DesignIdentityWrapper { record_index: 101, byte_offset: 1_100, class_tag: "384".into() }],
         following_record_index: 102,
         following_byte_offset: 1_124,
         following_class_tag: "395".into(),

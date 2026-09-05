@@ -2576,17 +2576,12 @@ pub fn bind_lost_edge_groups(
                 group.record_index
             )));
         }
-        let Some((wrapper_record_index, wrapper_byte_offset, wrapper_class_tag)) = identity
-            .wrapper_record_indices
-            .first()
-            .zip(identity.wrapper_byte_offsets.first())
-            .zip(identity.wrapper_class_tags.first())
-            .map(|((record_index, byte_offset), class_tag)| {
-                (*record_index, *byte_offset, class_tag.as_str())
-            })
-        else {
+        let Some(wrapper) = identity.wrappers.first() else {
             continue;
         };
+        let wrapper_record_index = wrapper.record_index;
+        let wrapper_byte_offset = wrapper.byte_offset;
+        let wrapper_class_tag = wrapper.class_tag.as_str();
         let mut stream_edges = lost_edges
             .iter()
             .filter(|edge| native_stream(&edge.id) == Some(stream))
@@ -2652,9 +2647,7 @@ pub(crate) fn parse_construction_operand_identity(
         current_class_tag = transform.following_class_tag;
         chain_started = true;
     }
-    let mut wrapper_record_indices = Vec::new();
-    let mut wrapper_byte_offsets = Vec::new();
-    let mut wrapper_class_tags = Vec::new();
+    let mut wrappers = Vec::new();
     let mut seen = HashSet::new();
     loop {
         if parse_construction_tracking_path(
@@ -2672,9 +2665,11 @@ pub(crate) fn parse_construction_operand_identity(
         if !seen.insert((current_record_index, current_at)) {
             return None;
         }
-        wrapper_record_indices.push(current_record_index);
-        wrapper_byte_offsets.push(u64::try_from(current_at).ok()?);
-        wrapper_class_tags.push(current_class_tag);
+        wrappers.push(crate::records::DesignIdentityWrapper {
+            record_index: current_record_index,
+            byte_offset: u64::try_from(current_at).ok()?,
+            class_tag: current_class_tag,
+        });
         current_at = current_at.checked_add(24)?;
         let (next_class_tag, after_next_tag) =
             lp_ascii_filtered(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
@@ -2714,9 +2709,7 @@ pub(crate) fn parse_construction_operand_identity(
     Some(DesignConstructionOperandIdentity {
         id: String::new(),
         group_record_index: group.record_index,
-        wrapper_record_indices,
-        wrapper_byte_offsets,
-        wrapper_class_tags,
+        wrappers,
         following_record_index: current_record_index,
         following_byte_offset: u64::try_from(current_at).ok()?,
         following_class_tag: current_class_tag,
@@ -3853,7 +3846,7 @@ pub fn bind_extrude_selection_identities(
                         })
             })
             .collect::<Vec<_>>();
-        matches.sort_by_key(|identity| identity.wrapper_byte_offsets.first().copied());
+        matches.sort_by_key(|identity| identity.wrappers.first().map(|wrapper| wrapper.byte_offset));
         member.operand_identity_ids = matches
             .into_iter()
             .map(|identity| identity.id.clone())
