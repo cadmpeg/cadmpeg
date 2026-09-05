@@ -48,7 +48,12 @@ fuzz = "required"
 [[crate]]
 id = "nx"
 names = ["NxCodec"]
-hidden = ["saved_body_census_evidence", "BodyCensusEvidence"]
+hidden = [
+    "saved_body_census_evidence",
+    "BodyCensusEvaluation",
+    "FeatureBoundary",
+    "UnsupportedBodyCensusReason",
+]
 fuzz = "required"
 
 [[crate]]

@@ -4187,3 +4187,24 @@ crate = "cadmpeg-ir"
 kind = "visibility"
 item = "cadmpeg_ir::report::ExportReport::{write_path,fidelity}"
 reason = "write path and fidelity resolution are admitted together so a verbatim replay cannot report unused fidelity"
+
+[[change]]
+commit = "40df8ca4e10bb4be74b926d399c0860576372500"
+crate = "cadmpeg-codec-nx"
+kind = "deletion"
+item = "cadmpeg_codec_nx::BodyCensusEvidence"
+reason = "saved-body census evidence is BodyCensusEvaluation so a flattened verified flag cannot disagree with the evaluation"
+
+[[change]]
+commit = "40df8ca4e10bb4be74b926d399c0860576372500"
+crate = "cadmpeg-codec-nx"
+kind = "signature"
+item = "cadmpeg_codec_nx::saved_body_census_evidence"
+reason = "the profile harness returns BodyCensusEvaluation so a parallel evidence struct cannot flatten it"
+
+[[change]]
+commit = "40df8ca4e10bb4be74b926d399c0860576372500"
+crate = "cadmpeg-codec-nx"
+kind = "variant"
+item = "cadmpeg_codec_nx::BodyCensusEvaluation::Unsupported"
+reason = "an unsupported census boundary carries FeatureBoundary so feature identity cannot exist without name family and ordinal"
