@@ -504,8 +504,7 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
                 context_id: "22222222-2222-4222-8222-222222222222".into(),
                 identity_record_index: 103,
                 primary_identity: 1331,
-                secondary_identity: Some(183),
-                curve_secondary_identity: None,
+                secondary: Some(crate::records::DesignSecondaryIdentity { value: 183, curve_identity: None }),
             }
         );
         assert_eq!(
@@ -716,9 +715,8 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
             recipe_record_index: 103,
             recipe_record_byte_offset: recipes[0].byte_offset - 15,
             recipe_id: recipes[0].id.clone(),
-            recipe_kind: ConstructionRecipeKind::Face,
-            design_id: Some("body".into()),
-            design_selector: None,
+            recipe_kind: crate::records::DesignFaceRecipeKind::Face,
+            design: Some(crate::records::ConstructionRecipeDesign { id: "body".into(), selector: None }),
         }
     );
 }

@@ -1719,3 +1719,44 @@ fn construction_recipe_design_preserves_wire_and_rejects_orphan_selector() {
     assert!(error.contains("design_id"));
     assert!(error.contains("design_selector"));
 }
+
+#[test]
+fn coil_selection_preserves_wire_and_rejects_dependent_fields_without_identity() {
+    let persistent = r#"{"kind":"persistent","asset_id":"asset","context_id":"context","identity_record_index":3,"primary_identity":7"#;
+    for fields in [
+        "",
+        ",\"secondary_identity\":11",
+        ",\"secondary_identity\":11,\"curve_secondary_identity\":0",
+        ",\"secondary_identity\":11,\"curve_secondary_identity\":13",
+    ] {
+        let wire = format!("{persistent}{fields}}}");
+        let selection: super::DesignCoilSelection = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&selection).unwrap(), wire);
+    }
+    let wire = format!("{persistent},\"curve_secondary_identity\":13}}");
+    let error = serde_json::from_str::<super::DesignCoilSelection>(&wire).unwrap_err().to_string();
+    assert!(error.contains("secondary_identity"));
+    assert!(error.contains("curve_secondary_identity"));
+
+    let face = r#"{"kind":"face_recipe","asset_id":"asset","context_id":"context","recipe_record_index":3,"recipe_record_byte_offset":40,"recipe_id":"recipe","recipe_kind":"#;
+    for kind in ["face", "bounded_face"] {
+        for fields in [
+            "",
+            ",\"design_id\":\"body\"",
+            ",\"design_id\":\"body\",\"design_selector\":{\"value\":2,\"byte_offset\":60}",
+        ] {
+            let wire = format!("{face}\"{kind}\"{fields}}}");
+            let selection: super::DesignCoilSelection = serde_json::from_str(&wire).unwrap();
+            assert_eq!(serde_json::to_string(&selection).unwrap(), wire);
+        }
+    }
+    let wire = format!("{face}\"face\",\"design_selector\":{{\"value\":2,\"byte_offset\":60}}}}");
+    let error = serde_json::from_str::<super::DesignCoilSelection>(&wire).unwrap_err().to_string();
+    assert!(error.contains("design_id"));
+    assert!(error.contains("design_selector"));
+    for kind in ["body", "edge", "vertex"] {
+        let wire = format!("{face}\"{kind}\"}}");
+        let error = serde_json::from_str::<super::DesignCoilSelection>(&wire).unwrap_err().to_string();
+        assert!(error.contains("recipe_kind"));
+    }
+}
