@@ -17699,18 +17699,57 @@ impl From<ActEntity> for ActEntitySerde {
 /// One GUID in the ordered ACT stream-wide asset/change-version pool.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ActGuidWire", into = "ActGuidWire")]
 pub struct ActGuid {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Byte offset of this GUID's UTF-16 length prefix in the ACT `BulkStream`.
-    pub byte_offset: u64,
-    /// Byte offset of the UTF-16 GUID code units in the ACT `BulkStream`.
-    pub guid_offset: u64,
-    /// Position of this GUID in the pool, in source stream order; pool position does
-    /// not assign one GUID to a single `ACTTable` entry.
+    /// Byte offset of the UTF-16 length prefix in the ACT BulkStream.
+    byte_offset: u64,
+    /// Position in the pool in source order; does not assign a GUID to one table entry.
     pub ordinal: u32,
     /// The pooled GUID string.
-    pub guid: String,
+    pub guid: DesignGuidText,
+}
+
+impl ActGuid {
+    pub fn new(id: String, byte_offset: u64, ordinal: u32, guid: String) -> Result<Self, String> {
+        byte_offset.checked_add(4).ok_or("ACT GUID byte_offset overflows guid_offset")?;
+        Ok(Self { id, byte_offset, ordinal, guid: guid.try_into()? })
+    }
+
+    pub fn byte_offset(&self) -> u64 { self.byte_offset }
+
+    pub fn guid_offset(&self) -> u64 { self.byte_offset + 4 }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ActGuidWire {
+    id: String,
+    byte_offset: u64,
+    guid_offset: u64,
+    ordinal: u32,
+    guid: String,
+}
+
+impl TryFrom<ActGuidWire> for ActGuid {
+    type Error = String;
+
+    fn try_from(wire: ActGuidWire) -> Result<Self, Self::Error> {
+        let guid = Self::new(wire.id, wire.byte_offset, wire.ordinal, wire.guid)?;
+        if wire.guid_offset != guid.guid_offset() {
+            return Err("ACT GUID guid_offset must follow byte_offset by four bytes".into());
+        }
+        Ok(guid)
+    }
+}
+
+impl From<ActGuid> for ActGuidWire {
+    fn from(guid: ActGuid) -> Self {
+        let guid_offset = guid.guid_offset();
+        Self { id: guid.id, byte_offset: guid.byte_offset, guid_offset,
+            ordinal: guid.ordinal, guid: guid.guid.into() }
+    }
 }
 
 /// One reference in the ACT table run between the GUID pool and channel registry.

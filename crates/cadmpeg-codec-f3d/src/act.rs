@@ -326,15 +326,12 @@ fn decode_table(
     {
         let byte_offset = cursor;
         let ordinal = u32::try_from(guids.len()).map_err(|_| malformed("GUID ordinal"))?;
-        guids.push(ActGuid {
-            id: crate::ids::native_scoped_id(stream, "act-guid", byte_offset),
-            byte_offset: byte_offset as u64,
-            guid_offset: byte_offset
-                .checked_add(4)
-                .ok_or_else(|| malformed("GUID offset"))? as u64,
+        guids.push(ActGuid::new(
+            crate::ids::native_scoped_id(stream, "act-guid", byte_offset),
+            byte_offset as u64,
             ordinal,
             guid,
-        });
+        ).map_err(|_| malformed("GUID offset"))?);
         cursor = end;
     }
 

@@ -80,10 +80,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let act_guid = native
         .act_guids
         .iter_mut()
-        .find(|guid| guid.guid == "eeeeeeee-1111-2222-3333-ffffffffffff")
+        .find(|guid| guid.guid.as_str() == "eeeeeeee-1111-2222-3333-ffffffffffff")
         .expect("generated standalone ACT GUID");
-    assert!(act_guid.guid_offset > act_guid.byte_offset);
-    act_guid.guid = "ffffffff-1111-2222-3333-444444444444".into();
+    assert!(act_guid.guid_offset() > act_guid.byte_offset());
+    act_guid.guid = String::from("ffffffff-1111-2222-3333-444444444444").try_into().unwrap();
     native.act_registry_channels[0].guid = "dddddddd-1111-2222-3333-eeeeeeeeeeee".into();
     let act_root = &mut native.act_root_components[0];
     act_root.instance_root_record = 71;
@@ -188,7 +188,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert!(f3d_native(round_trip.ir())
         .act_guids
         .iter()
-        .any(|guid| guid.guid == "ffffffff-1111-2222-3333-444444444444"));
+        .any(|guid| guid.guid.as_str() == "ffffffff-1111-2222-3333-444444444444"));
     let act_root = &f3d_native(round_trip.ir()).act_root_components[0];
     assert_eq!(act_root.record_index, 9);
     assert_eq!(act_root.instance_root_record, 71);

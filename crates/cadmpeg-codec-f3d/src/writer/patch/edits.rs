@@ -1269,24 +1269,15 @@ pub(crate) fn validate_act_guid_edits(
         if after.guid == before.guid {
             continue;
         }
-        if after.guid.encode_utf16().count() != before.guid.encode_utf16().count() {
-            return Err(CodecError::NotImplemented(format!(
-                "F3D ACT GUID {id} must retain its UTF-16 length"
-            )));
-        }
-        if !canonical_guid(&after.guid) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT GUID {id} is not canonical"
-            )));
-        }
         let encoded = after
             .guid
+            .as_str()
             .encode_utf16()
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
         let stream = native_stream(id, ":act-guid#")?;
         edits.entry(stream).or_default().push(Edit {
-            offset: after.guid_offset,
+            offset: after.guid_offset(),
             value: encoded,
         });
     }

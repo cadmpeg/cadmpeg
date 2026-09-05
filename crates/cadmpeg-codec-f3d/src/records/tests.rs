@@ -3569,3 +3569,30 @@ fn act_table_reference_derives_target_offset_and_rejects_wire_drift() {
     assert!(super::ActTableReference::new("id".into(), 0, u64::MAX, 3).is_err());
     assert!(super::ActTableReference::new("id".into(), 0, u64::MAX - 1, 3).is_ok());
 }
+
+#[test]
+fn act_guid_derives_payload_offset_and_rejects_wire_drift() {
+    let wire = serde_json::json!({
+        "id": "stream:act-guid#20", "byte_offset": 20, "guid_offset": 24,
+        "ordinal": 0, "guid": "01234567-89ab-cdef-0123-456789abcdef"
+    });
+    let guid: super::ActGuid = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(guid.byte_offset(), 20);
+    assert_eq!(guid.guid_offset(), 24);
+    assert_eq!(serde_json::to_value(guid).unwrap(), wire);
+    for offset in [0, 20, 23, 25, u64::MAX] {
+        let mut invalid = wire.clone();
+        invalid["guid_offset"] = serde_json::json!(offset);
+        let error = serde_json::from_value::<super::ActGuid>(invalid).unwrap_err();
+        assert!(error.to_string().contains("guid_offset"));
+    }
+    for text in ["", "01234567-89ab-cdef-0123-456789abcdeg"] {
+        let mut invalid = wire.clone();
+        invalid["guid"] = serde_json::json!(text);
+        let error = serde_json::from_value::<super::ActGuid>(invalid).unwrap_err();
+        assert!(error.to_string().contains("GUID"));
+    }
+    let text = "01234567-89ab-cdef-0123-456789abcdef";
+    assert!(super::ActGuid::new("id".into(), u64::MAX - 3, 0, text.into()).is_err());
+    assert!(super::ActGuid::new("id".into(), u64::MAX - 4, 0, text.into()).is_ok());
+}

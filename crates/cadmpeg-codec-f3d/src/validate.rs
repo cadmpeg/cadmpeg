@@ -967,7 +967,7 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut guid_ordinals = std::collections::BTreeMap::<&str, (HashSet<u32>, &str)>::new();
     let mut guid_offsets = HashSet::new();
     for guid in &native.act_guids {
-        let stream = act_stream_for_id(&guid.id, "act-guid", guid.byte_offset);
+        let stream = act_stream_for_id(&guid.id, "act-guid", guid.byte_offset());
         if let Some(stream) = stream {
             streams.entry(stream).or_insert(&guid.id);
         }
@@ -979,12 +979,10 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .insert(guid.ordinal)
         });
         let unique_offset =
-            stream.is_some_and(|stream| guid_offsets.insert((stream, guid.byte_offset)));
+            stream.is_some_and(|stream| guid_offsets.insert((stream, guid.byte_offset())));
         let valid = stream.is_some()
             && unique_offset
-            && unique_ordinal
-            && guid.byte_offset.checked_add(4) == Some(guid.guid_offset)
-            && valid_design_guid(&guid.guid);
+            && unique_ordinal;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,

@@ -924,7 +924,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(f3d_native(result.ir()).act_entities[0].entity_id, "0_985");
     assert_eq!(f3d_native(result.ir()).act_guids.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).act_guids[0].guid,
+        f3d_native(result.ir()).act_guids[0].guid.as_str(),
         "eeeeeeee-1111-2222-3333-ffffffffffff"
     );
     assert_eq!(f3d_native(result.ir()).act_registry_channels.len(), 2);
