@@ -23,8 +23,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     scope.class_tag = "405".into();
     scope.paired_class_tag = "259".into();
     scope.reference_members = vec![10, 11, 12, 13, 20, 21, 22];
-    scope.ensure_path_feature().path_feature_construction =
-        Some(DesignPathFeatureConstruction::Pipe {
+    {
+        let value = Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 26,
             section_shape: crate::records::DesignPipeSectionShape::Circular,
@@ -35,6 +35,15 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             record_indexes: [10, 11, 12, 13],
             value_offsets: [40, 151, 262, 373],
         });
+        if let crate::records::DesignScopePayload::Loft(slot)
+        | crate::records::DesignScopePayload::Sweep(slot)
+        | crate::records::DesignScopePayload::Revolve(slot)
+        | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
+        {
+            slot.get_or_insert_with(Default::default)
+                .path_feature_construction = value;
+        }
+    }
 
     let parameter = |record_index: u32,
                      source_kind: &str,
@@ -126,8 +135,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         } if path == path_group.id
     ));
 
-    scope.ensure_path_feature().path_feature_construction =
-        Some(DesignPathFeatureConstruction::Pipe {
+    {
+        let value = Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 26,
             section_shape: crate::records::DesignPipeSectionShape::Circular,
@@ -138,6 +147,15 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             record_indexes: [10, 11, 12, 13],
             value_offsets: [40, 151, 262, 373],
         });
+        if let crate::records::DesignScopePayload::Loft(slot)
+        | crate::records::DesignScopePayload::Sweep(slot)
+        | crate::records::DesignScopePayload::Revolve(slot)
+        | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
+        {
+            slot.get_or_insert_with(Default::default)
+                .path_feature_construction = value;
+        }
+    }
     let hollow_definition = crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,
@@ -164,8 +182,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         .iter()
         .map(|parameter| (parameter.record_index, parameter))
         .collect::<Vec<_>>();
-    scope.ensure_path_feature().path_feature_construction =
-        Some(DesignPathFeatureConstruction::Pipe {
+    {
+        let value = Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 26,
             section_shape: crate::records::DesignPipeSectionShape::Circular,
@@ -176,6 +194,15 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             record_indexes: [10, 11, 12, 13],
             value_offsets: [40, 151, 262, 373],
         });
+        if let crate::records::DesignScopePayload::Loft(slot)
+        | crate::records::DesignScopePayload::Sweep(slot)
+        | crate::records::DesignScopePayload::Revolve(slot)
+        | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
+        {
+            slot.get_or_insert_with(Default::default)
+                .path_feature_construction = value;
+        }
+    }
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &too_thick_parameter_refs,
@@ -185,8 +212,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .is_none());
 
-    scope.ensure_path_feature().path_feature_construction =
-        Some(DesignPathFeatureConstruction::Pipe {
+    {
+        let value = Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 26,
             section_shape: crate::records::DesignPipeSectionShape::Circular,
@@ -197,6 +224,15 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             record_indexes: [10, 11, 12, 13],
             value_offsets: [40, 151, 262, 373],
         });
+        if let crate::records::DesignScopePayload::Loft(slot)
+        | crate::records::DesignScopePayload::Sweep(slot)
+        | crate::records::DesignScopePayload::Revolve(slot)
+        | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
+        {
+            slot.get_or_insert_with(Default::default)
+                .path_feature_construction = value;
+        }
+    }
 
     scope.reference_members.push(23);
     assert!(crate::design::feature_project::project_fixed_pipe(
@@ -222,8 +258,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
 
     scope.class_tag = "421".into();
     scope.paired_class_tag = "257".into();
-    scope.ensure_path_feature().path_feature_construction =
-        Some(DesignPathFeatureConstruction::Pipe {
+    {
+        let value = Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 25,
             section_shape: crate::records::DesignPipeSectionShape::Circular,
@@ -234,6 +270,15 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             record_indexes: [10, 11, 12, 13],
             value_offsets: [40, 151, 262, 373],
         });
+        if let crate::records::DesignScopePayload::Loft(slot)
+        | crate::records::DesignScopePayload::Sweep(slot)
+        | crate::records::DesignScopePayload::Revolve(slot)
+        | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
+        {
+            slot.get_or_insert_with(Default::default)
+                .path_feature_construction = value;
+        }
+    }
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,

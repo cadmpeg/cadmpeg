@@ -50,7 +50,6 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         class_tag: "301".into(),
         record_index,
         frame_length: 200,
-        kind: kind.to_owned().into(),
         kind_offset: byte_offset + 100,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -61,7 +60,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         reference_count_offset: byte_offset + 80,
         reference_members: vec![record_index + 1],
         reference_member_offsets: vec![byte_offset + 85],
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::from(kind.to_owned()).into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
@@ -71,24 +70,26 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         scope(22, 400, "Chamfer"),
         scope(32, 700, "Hole"),
     ];
-    scopes[2].set_hole_construction(Some(DesignHoleConstruction {
-        point_record_index: 378,
-        point_record_byte_offset: 10,
-        position: [1.25, -2.5, 3.75],
-        position_offset: 35,
-        direction: [0.0, 0.0, 1.0],
-        direction_offset: 59,
-        point_parameters: [0.125, -0.25],
-        point_parameter_offsets: [83, 91],
-        reference_type: 19,
-        reference_type_offset: 99,
-        tangent_point_data: Some([-1.0, -1.0, -1.0]),
-        tangent_point_data_prefix: Some(0),
-        tangent_point_data_offset: Some(104),
-        input_record_indices: vec![378],
-        input_record_offsets: vec![129],
-        face_selection: None,
-    }));
+    if let crate::records::DesignScopePayload::Hole(slot) = &mut scopes[2].payload {
+        *slot = Some(DesignHoleConstruction {
+            point_record_index: 378,
+            point_record_byte_offset: 10,
+            position: [1.25, -2.5, 3.75],
+            position_offset: 35,
+            direction: [0.0, 0.0, 1.0],
+            direction_offset: 59,
+            point_parameters: [0.125, -0.25],
+            point_parameter_offsets: [83, 91],
+            reference_type: 19,
+            reference_type_offset: 99,
+            tangent_point_data: Some([-1.0, -1.0, -1.0]),
+            tangent_point_data_prefix: Some(0),
+            tangent_point_data_offset: Some(104),
+            input_record_indices: vec![378],
+            input_record_offsets: vec![129],
+            face_selection: None,
+        });
+    }
     scopes[2].reference_members = vec![0, 363, 0, 370, 0, 378];
     let hole_face_operand = |record_index, scope_reference_ordinal| DesignFaceOperand {
         id: format!("f3d:native:face-operand#{record_index}"),
@@ -573,13 +574,15 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     scope.feature_ordinal = 1;
     scope.previous_history_state_id = Some(7);
     scope.reference_members = vec![101, 111, 102, 112];
-    scope.set_draft_operation(Some(DesignDraftOperation {
-        angle: -0.25,
-        angle_record_index: 90,
-        angle_offset: 0,
-        opposite_angle_record_index: 91,
-        opposite_angle_offset: 0,
-    }));
+    if let crate::records::DesignScopePayload::Draft(slot) = &mut scope.payload {
+        *slot = Some(DesignDraftOperation {
+            angle: -0.25,
+            angle_record_index: 90,
+            angle_offset: 0,
+            opposite_angle_record_index: 91,
+            opposite_angle_offset: 0,
+        });
+    }
     let group = |record_index, member, role| DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#{record_index}"),
         scope_record_index: 100,
@@ -882,7 +885,6 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         class_tag: "301".into(),
         record_index: 12,
         frame_length: 200,
-        kind: crate::records::DesignFeatureKind::Conge,
         kind_offset: 210,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -893,7 +895,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         reference_count_offset: 180,
         reference_members: vec![100, 101],
         reference_member_offsets: vec![185, 196],
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::Conge.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: 300,
@@ -970,21 +972,27 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         owner(40, 41, 3),
     ];
     let mut indexed_scope = scope.clone();
-    indexed_scope.set_fixed_fillet_parameters(Some(crate::records::DesignFixedFilletParameters {
-        groups: vec![crate::records::DesignFixedFilletGroup {
-            tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
-                value: 1.0,
-                record_index: 10,
-                value_offset: 100,
-            }),
-            radii: vec![0.5],
-            radius_record_indexes: vec![20],
-            radius_offsets: vec![200],
-            intermediate_parameters: Vec::new(),
-            intermediate_parameter_record_indexes: Vec::new(),
-            intermediate_parameter_offsets: Vec::new(),
-        }],
-    }));
+    if let crate::records::DesignScopePayload::Fillet(slot)
+    | crate::records::DesignScopePayload::Conge(slot)
+    | crate::records::DesignScopePayload::Abrundung(slot)
+    | crate::records::DesignScopePayload::Arredondamento(slot) = &mut indexed_scope.payload
+    {
+        *slot = Some(crate::records::DesignFixedFilletParameters {
+            groups: vec![crate::records::DesignFixedFilletGroup {
+                tangency_weight: Some(crate::records::DesignFixedFilletTangencyWeight {
+                    value: 1.0,
+                    record_index: 10,
+                    value_offset: 100,
+                }),
+                radii: vec![0.5],
+                radius_record_indexes: vec![20],
+                radius_offsets: vec![200],
+                intermediate_parameters: Vec::new(),
+                intermediate_parameter_record_indexes: Vec::new(),
+                intermediate_parameter_offsets: Vec::new(),
+            }],
+        });
+    }
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         std::slice::from_mut(&mut indexed_scope),
         &owners,
@@ -1258,7 +1266,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 
     let mut patch_scope = scope.clone();
-    patch_scope.kind = crate::records::DesignFeatureKind::SurfacePatch;
+    patch_scope.payload = crate::records::DesignFeatureKind::SurfacePatch.into();
     patch_scope.frame_length = 354;
     patch_scope.reference_members = vec![100, 200, 300, 301];
     let patch_boundary = |scope_reference_ordinal, record_index, model_reference| {
@@ -1272,7 +1280,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             model_reference,
         }
     };
-    patch_scope.set_surface_patch_boundaries(vec![patch_boundary(2, 300, 100)]);
+    if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut patch_scope.payload {
+        *slot = vec![patch_boundary(2, 300, 100)];
+    }
     let mut patch_group = group(100, 0, vec![200]);
     patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
@@ -1299,10 +1309,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
     patch_scope.frame_length = 398;
     patch_scope.reference_members = vec![100, 200, 300, 101, 201, 301, 102];
-    patch_scope.set_surface_patch_boundaries(vec![
-        patch_boundary(2, 300, 100),
-        patch_boundary(5, 301, 101),
-    ]);
+    if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut patch_scope.payload {
+        *slot = vec![patch_boundary(2, 300, 100), patch_boundary(5, 301, 101)];
+    }
     let mut second_patch_group = group(101, 3, vec![201]);
     second_patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
@@ -1368,7 +1377,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
     patch_scope.frame_length = 339;
     patch_scope.reference_members = vec![100, 200, 300];
-    patch_scope.set_surface_patch_boundaries(vec![patch_boundary(2, 300, 100)]);
+    if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut patch_scope.payload {
+        *slot = vec![patch_boundary(2, 300, 100)];
+    }
     patch_group.role = 0x0000_0041_0000_0000;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
@@ -1399,7 +1410,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
     patch_scope.frame_length = 340;
     patch_scope.reference_members = vec![100, 200, 300, 301];
-    patch_scope.set_surface_patch_boundaries(vec![patch_boundary(2, 300, 100)]);
+    if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut patch_scope.payload {
+        *slot = vec![patch_boundary(2, 300, 100)];
+    }
     patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
@@ -1421,7 +1434,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
     patch_scope.frame_length = 343;
     patch_scope.reference_members = vec![100, 200, 201, 202, 203, 300];
-    patch_scope.surface_patch_boundaries_mut().clear();
+    patch_scope.payload = crate::records::DesignScopePayload::SurfacePatch(Vec::new());
     patch_group.members = vec![200, 201, 202, 203];
     let grouped_projection = crate::design::feature_project::project_surface_patch(
         &patch_scope,
@@ -1443,7 +1456,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 
     let mut fill_scope = scope.clone();
-    fill_scope.kind = crate::records::DesignFeatureKind::BoundaryFill;
+    fill_scope.payload = crate::records::DesignFeatureKind::BoundaryFill.into();
     fill_scope.reference_members = vec![100, 200, 201, 300, 301, 400];
     let mut tools = group(100, 0, vec![200, 201]);
     tools.role = 0x0000_0004_0000_0000;

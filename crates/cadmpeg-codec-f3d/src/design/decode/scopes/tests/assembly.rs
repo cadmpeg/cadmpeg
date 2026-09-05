@@ -1163,10 +1163,11 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         .chain(second_members)
         .chain([90, 91])
         .collect();
-    assembly.set_assembly_alignment(Some(axial_test_alignment([
-        first_transform,
-        second_transform,
-    ])));
+    if let crate::records::DesignScopePayload::Assemble(slot)
+    | crate::records::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
+    {
+        *slot = Some(axial_test_alignment([first_transform, second_transform]));
+    }
     let mut scopes = vec![
         assembly,
         axial_test_component_scope(200, first_role),
@@ -1258,10 +1259,11 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     );
     assembly.frame_length = 705;
     assembly.reference_members = members.into_iter().chain([90, 91]).collect();
-    assembly.set_assembly_alignment(Some(axial_test_alignment([
-        first_transform,
-        second_transform,
-    ])));
+    if let crate::records::DesignScopePayload::Assemble(slot)
+    | crate::records::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
+    {
+        *slot = Some(axial_test_alignment([first_transform, second_transform]));
+    }
     let mut origin = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:joint-origin#80",
         crate::records::DesignFeatureKind::JointOrigin,
@@ -1939,15 +1941,17 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
         crate::records::DesignFeatureKind::ComponentInsert,
         record_index,
     );
-    scope.set_component_insert_construction(Some(DesignComponentInsertConstruction {
-        relation_record_index: record_index + 1,
-        carrier_record_index: record_index + 2,
-        occurrence_identity: None,
-        neutron_role: role.into(),
-        neutron_role_offset: 0,
-        transform: identity_matrix(),
-        transform_offset: Some(0),
-        carrier_transform_offset: Some(0),
-    }));
+    if let crate::records::DesignScopePayload::ComponentInsert(slot) = &mut scope.payload {
+        *slot = Some(DesignComponentInsertConstruction {
+            relation_record_index: record_index + 1,
+            carrier_record_index: record_index + 2,
+            occurrence_identity: None,
+            neutron_role: role.into(),
+            neutron_role_offset: 0,
+            transform: identity_matrix(),
+            transform_offset: Some(0),
+            carrier_transform_offset: Some(0),
+        });
+    }
     scope
 }

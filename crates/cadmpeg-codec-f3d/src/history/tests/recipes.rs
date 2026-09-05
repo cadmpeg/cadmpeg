@@ -108,22 +108,24 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         crate::records::DesignFeatureKind::WorkPoint,
         200,
     );
-    work_point.set_work_point_construction(Some(DesignWorkPointConstruction {
-        point_record_index: 201,
-        point_record_byte_offset: 0,
-        position: [4.0, 3.0, 0.0],
-        position_offset: 0,
-        rule: DesignWorkPointRule::Vertex {
-            input: DesignWorkPointInput {
-                record_index: 202,
-                reference_offset: 0,
-                carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                    recipe,
-                })),
+    if let crate::records::DesignScopePayload::WorkPoint(slot) = &mut work_point.payload {
+        *slot = Some(DesignWorkPointConstruction {
+            point_record_index: 201,
+            point_record_byte_offset: 0,
+            position: [4.0, 3.0, 0.0],
+            position_offset: 0,
+            rule: DesignWorkPointRule::Vertex {
+                input: DesignWorkPointInput {
+                    record_index: 202,
+                    reference_offset: 0,
+                    carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                        recipe,
+                    })),
+                },
             },
-        },
-        reference_type_offset: 0,
-    }));
+            reference_type_offset: 0,
+        });
+    }
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,
         member_refs,
@@ -1046,7 +1048,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
 
     let mut scale_scope = scope.clone();
-    scale_scope.kind = crate::records::DesignFeatureKind::Scale;
+    scale_scope.payload = crate::records::DesignFeatureKind::Scale.into();
     scale_scope.previous_history_state_id = Some(7);
     let mut scale_group = group.clone();
     scale_group.role = 0x0000_0004_0000_0000;
@@ -1081,7 +1083,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     ));
 
     let mut move_scope = scope;
-    move_scope.kind = crate::records::DesignFeatureKind::Move;
+    move_scope.payload = crate::records::DesignFeatureKind::Move.into();
     move_scope.history_state_id = Some(42);
     move_scope.previous_history_state_id = Some(41);
     let move_history = crate::history_records::AsmHistory {
@@ -1521,21 +1523,23 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     assert_eq!(operands[0].resolved_face_slots, [7]);
 
     let mut cylinder_scope = scope.clone();
-    cylinder_scope.set_thread_construction(Some(DesignThreadConstruction {
-        form: DesignThreadForm::Standard,
-        designation_offset: 0,
-        designation: "M4x0.7".into(),
-        nominal_size_text: "4.0".into(),
-        nominal_size: 4.0,
-        profile: "ISO Metric profile".into(),
-        major_diameter: 0.4,
-        minor_diameter: 0.2,
-        pitch: 0.07,
-        pitch_diameter: 0.3,
-        trailing_reference_record_index: None,
-        trailing_reference_offset: None,
-        face_group_record_indices: vec![100],
-    }));
+    if let crate::records::DesignScopePayload::Thread(slot) = &mut cylinder_scope.payload {
+        *slot = Some(DesignThreadConstruction {
+            form: DesignThreadForm::Standard,
+            designation_offset: 0,
+            designation: "M4x0.7".into(),
+            nominal_size_text: "4.0".into(),
+            nominal_size: 4.0,
+            profile: "ISO Metric profile".into(),
+            major_diameter: 0.4,
+            minor_diameter: 0.2,
+            pitch: 0.07,
+            pitch_diameter: 0.3,
+            trailing_reference_record_index: None,
+            trailing_reference_offset: None,
+            face_group_record_indices: vec![100],
+        });
+    }
     let mut cylinder_operand = operand.clone();
     cylinder_operand.recipe_references[0].candidate_faces =
         vec![FaceId::mint("f3d:brep/input/brep:entity#999").expect("identity grammar")];
@@ -1837,51 +1841,54 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         DesignParameterScope::empty(scope_id, crate::records::DesignFeatureKind::Hole, 42);
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.set_hole_construction(Some(DesignHoleConstruction {
-        point_record_index: 55,
-        point_record_byte_offset: 0,
-        position: [0.0; 3],
-        position_offset: 0,
-        direction: [0.0, 0.0, 1.0],
-        direction_offset: 0,
-        point_parameters: [0.0; 2],
-        point_parameter_offsets: [0, 0],
-        reference_type: 0,
-        reference_type_offset: 0,
-        tangent_point_data: None,
-        tangent_point_data_prefix: None,
-        tangent_point_data_offset: None,
-        input_record_indices: vec![55],
-        input_record_offsets: vec![0],
-        face_selection: Some(DesignHoleFaceSelection {
-            record_index: 100,
-            byte_offset: 0,
-            class_tag: "333".into(),
-            asset_id: "asset".into(),
-            asset_id_offset: 0,
-            context_id: "context".into(),
-            context_id_offset: 0,
-            identity_record_index: 103,
-            identity_record_offset: 0,
-            primary_identity: 18044,
-            primary_identity_offset: 0,
-            secondary_identity: None,
-            secondary_identity_offset: None,
-            curve_secondary_identity: None,
-            curve_secondary_identity_offset: None,
-            historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
-                history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2".into(),
-                historical: crate::records::HistoricalBinding {
-                    kind: AsmHistoricalEntityKind::Pcurve,
-                    entity_ref: 18044,
-                    state_ids: vec![1],
-                },
-                face_slot: 30,
-            }],
-            next_record_index: 104,
-            next_byte_offset: 0,
-        }),
-    }));
+    if let crate::records::DesignScopePayload::Hole(slot) = &mut scope.payload {
+        *slot = Some(DesignHoleConstruction {
+            point_record_index: 55,
+            point_record_byte_offset: 0,
+            position: [0.0; 3],
+            position_offset: 0,
+            direction: [0.0, 0.0, 1.0],
+            direction_offset: 0,
+            point_parameters: [0.0; 2],
+            point_parameter_offsets: [0, 0],
+            reference_type: 0,
+            reference_type_offset: 0,
+            tangent_point_data: None,
+            tangent_point_data_prefix: None,
+            tangent_point_data_offset: None,
+            input_record_indices: vec![55],
+            input_record_offsets: vec![0],
+            face_selection: Some(DesignHoleFaceSelection {
+                record_index: 100,
+                byte_offset: 0,
+                class_tag: "333".into(),
+                asset_id: "asset".into(),
+                asset_id_offset: 0,
+                context_id: "context".into(),
+                context_id_offset: 0,
+                identity_record_index: 103,
+                identity_record_offset: 0,
+                primary_identity: 18044,
+                primary_identity_offset: 0,
+                secondary_identity: None,
+                secondary_identity_offset: None,
+                curve_secondary_identity: None,
+                curve_secondary_identity_offset: None,
+                historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
+                    history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2"
+                        .into(),
+                    historical: crate::records::HistoricalBinding {
+                        kind: AsmHistoricalEntityKind::Pcurve,
+                        entity_ref: 18044,
+                        state_ids: vec![1],
+                    },
+                    face_slot: 30,
+                }],
+                next_record_index: 104,
+                next_byte_offset: 0,
+            }),
+        });
+    }
     let mut feature = Feature::new(
         feature_id.clone(),
         0,

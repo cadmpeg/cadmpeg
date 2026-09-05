@@ -3008,7 +3008,7 @@ pub(super) fn bind_hem_operation_from_parameters(
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
 ) {
-    if scope.kind != crate::records::DesignFeatureKind::Hem {
+    if scope.kind() != crate::records::DesignFeatureKind::Hem {
         return;
     }
     let Some(stream) = native_stream(&scope.id) else {
@@ -3037,13 +3037,18 @@ pub(super) fn bind_hem_operation_from_parameters(
     let Some(paired_at) = usize::try_from(scope.paired_byte_offset).ok() else {
         return;
     };
-    scope.set_hem_operation(exact_hem_operation(
-        bytes,
-        start,
-        paired_at,
-        &scope.reference_members,
-        &parameter_source_kinds,
-    ));
+    {
+        let construction = exact_hem_operation(
+            bytes,
+            start,
+            paired_at,
+            &scope.reference_members,
+            &parameter_source_kinds,
+        );
+        if let crate::records::DesignScopePayload::Hem(slot) = &mut scope.payload {
+            *slot = construction;
+        }
+    }
 }
 
 /// Read the gap-and-length `Hem` fixed operation section for one candidate header

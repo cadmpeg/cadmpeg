@@ -60,29 +60,33 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
         crate::records::DesignFeatureKind::Mirror,
         10,
     );
-    scope.set_mirror_construction(Some(DesignMirrorConstruction {
-        count: 2,
-        count_record_index: 11,
-        count_offset: 0,
-        stitch_tolerance: 0.001,
-        stitch_tolerance_record_index: Some(12),
-        stitch_tolerance_offset: 0,
-        stitch_tolerance_scope: None,
-        seed_group_record_index,
-        plane_group_record_index: 30,
-        seed_feature_scope_record_index: None,
-        seed_feature_reference_offset: None,
-        plane_scope_record_index: None,
-        plane_reference_offset: None,
-        plane_selection_record_index: None,
-        plane: Some(
-            crate::records::DesignPlane {
-                origin: Point3::new(0.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-            }
-            .into(),
-        ),
-    }));
+    if let crate::records::DesignScopePayload::Mirror(slot)
+    | crate::records::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
+    {
+        *slot = Some(DesignMirrorConstruction {
+            count: 2,
+            count_record_index: 11,
+            count_offset: 0,
+            stitch_tolerance: 0.001,
+            stitch_tolerance_record_index: Some(12),
+            stitch_tolerance_offset: 0,
+            stitch_tolerance_scope: None,
+            seed_group_record_index,
+            plane_group_record_index: 30,
+            seed_feature_scope_record_index: None,
+            seed_feature_reference_offset: None,
+            plane_scope_record_index: None,
+            plane_reference_offset: None,
+            plane_selection_record_index: None,
+            plane: Some(
+                crate::records::DesignPlane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                }
+                .into(),
+            ),
+        });
+    }
     scope
 }
 

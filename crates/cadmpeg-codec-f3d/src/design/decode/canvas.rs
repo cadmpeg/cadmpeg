@@ -9,8 +9,8 @@ use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
 use crate::records::{DesignCanvasImage, DesignParameterScope};
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -36,7 +36,7 @@ pub fn decode_canvas_images(
             scopes
                 .iter()
                 .filter(|scope| {
-                    scope.kind == crate::records::DesignFeatureKind::Canvas
+                    scope.kind() == crate::records::DesignFeatureKind::Canvas
                         && ids::native_stream(&scope.id) == Some(stream.as_str())
                 })
                 .filter_map(|scope| parse_canvas_image(bytes, &entry.name, scope)),

@@ -162,8 +162,8 @@ fn authored_scope_ordinals_for_stream<'a>(
                 "Design assembly datum envelope has no JointOrigin target".into(),
             ));
         };
-        if scope.kind != crate::records::DesignFeatureKind::Assemble
-            || target.kind != crate::records::DesignFeatureKind::JointOrigin
+        if scope.kind() != crate::records::DesignFeatureKind::Assemble
+            || target.kind() != crate::records::DesignFeatureKind::JointOrigin
             || target.joint_origin_transform().is_none()
         {
             return Err(CodecError::Malformed(
@@ -178,11 +178,11 @@ fn authored_scope_ordinals_for_stream<'a>(
         .collect::<Vec<_>>();
     stream_timelines.sort_by_key(|timeline| timeline.source_ordinal);
     if stream_timelines.is_empty() {
-        let first_family = design_feature_family(&first_scope.kind);
+        let first_family = design_feature_family(&first_scope.kind());
         let homogeneous = scopes.iter().all(|scope| {
             first_family.map_or_else(
-                || scope.kind == first_scope.kind,
-                |family| design_feature_family(&scope.kind) == Some(family),
+                || scope.kind() == first_scope.kind(),
+                |family| design_feature_family(&scope.kind()) == Some(family),
             )
         });
         let mut ordered = scopes.to_vec();
@@ -651,7 +651,7 @@ pub fn project_parameter_design_with_edge_identities(
                         .map(|parameter| (owner.local_ordinal, parameter))
                 })
                 .collect::<Vec<_>>();
-            let family = design_feature_family(&scope.kind);
+            let family = design_feature_family(&scope.kind());
             let definition = match family {
                 Some(DesignFeatureFamily::Sketch) => FeatureDefinition::Sketch { sketch: None },
                 Some(DesignFeatureFamily::Assemble) => scope
@@ -665,7 +665,7 @@ pub fn project_parameter_design_with_edge_identities(
                     })
                     .map_or_else(
                         || FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
@@ -686,7 +686,7 @@ pub fn project_parameter_design_with_edge_identities(
                     body_recipe_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.as_str().into(),
+                    kind: scope.kind_name().into(),
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
@@ -722,7 +722,7 @@ pub fn project_parameter_design_with_edge_identities(
                         )
                     })
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.as_str().into(),
+                        kind: scope.kind_name().into(),
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
@@ -732,7 +732,7 @@ pub fn project_parameter_design_with_edge_identities(
                     }),
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.as_str().into(),
+                        kind: scope.kind_name().into(),
                         parameters: BTreeMap::new(),
                     }),
                 Some(DesignFeatureFamily::Draft) => project_draft(
@@ -744,7 +744,7 @@ pub fn project_parameter_design_with_edge_identities(
                     histories,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.as_str().into(),
+                    kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
                 }),
                 Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
@@ -754,7 +754,7 @@ pub fn project_parameter_design_with_edge_identities(
                     body_recipe_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.as_str().into(),
+                    kind: scope.kind_name().into(),
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
@@ -772,7 +772,7 @@ pub fn project_parameter_design_with_edge_identities(
                     curve_identities,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.as_str().into(),
+                    kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
                 }),
                 Some(DesignFeatureFamily::Loft) => project_fixed_loft(
@@ -784,7 +784,7 @@ pub fn project_parameter_design_with_edge_identities(
                     face_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.as_str().into(),
+                    kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
                 }),
                 Some(DesignFeatureFamily::Sweep) => project_fixed_sweep(
@@ -796,7 +796,7 @@ pub fn project_parameter_design_with_edge_identities(
                     face_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.as_str().into(),
+                    kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
                 }),
                 Some(DesignFeatureFamily::Pipe) => project_fixed_pipe(
@@ -807,7 +807,7 @@ pub fn project_parameter_design_with_edge_identities(
                     edge_identity_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.as_str().into(),
+                    kind: scope.kind_name().into(),
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
@@ -822,13 +822,13 @@ pub fn project_parameter_design_with_edge_identities(
                     edge_identity_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.as_str().into(),
+                    kind: scope.kind_name().into(),
                     parameters: BTreeMap::new(),
                 }),
                 Some(DesignFeatureFamily::SurfaceExtend) => {
                     scope.surface_extend_operation().map_or_else(
                         || FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
                         },
                         |operation| {
@@ -859,7 +859,7 @@ pub fn project_parameter_design_with_edge_identities(
                         project_surface_offset(scope, operation, construction_groups, face_operands)
                     })
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.as_str().into(),
+                        kind: scope.kind_name().into(),
                         parameters: BTreeMap::new(),
                     }),
                 Some(DesignFeatureFamily::SurfaceRuled) => project_ruled_surface(
@@ -871,7 +871,7 @@ pub fn project_parameter_design_with_edge_identities(
                     edge_identity_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.as_str().into(),
+                    kind: scope.kind_name().into(),
                     parameters: parameters
                         .iter()
                         .map(|(_, parameter)| {
@@ -882,21 +882,21 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SurfaceTrim) => {
                     project_surface_trim(scope, construction_groups, body_recipe_operands)
                         .unwrap_or_else(|| FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
                         })
                 }
                 Some(DesignFeatureFamily::BoundaryFill) => {
                     project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
                         }
                     })
                 }
                 Some(DesignFeatureFamily::Hole) => project_hole(scope, &parameters, face_operands)
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.as_str().into(),
+                        kind: scope.kind_name().into(),
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
@@ -907,7 +907,7 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Split) => {
                     project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
                         }
                     })
@@ -936,7 +936,7 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::OffsetFaces) => {
                     project_offset_faces(scope, &parameters, face_operands, construction_groups)
                         .unwrap_or_else(|| FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
@@ -947,7 +947,7 @@ pub fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::Move) => project_move(scope, construction_groups)
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.as_str().into(),
+                        kind: scope.kind_name().into(),
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
@@ -958,7 +958,7 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Shell) => {
                     project_shell(scope, face_operands, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
@@ -971,7 +971,7 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Thicken) => {
                     project_thicken(scope, face_operands, construction_groups).unwrap_or_else(
                         || FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
@@ -984,7 +984,7 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::Coil) => {
                     project_coil(scope, &parameters, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
@@ -996,7 +996,7 @@ pub fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::Scale) => scope.scale_operation().map_or_else(
                     || FeatureDefinition::Native {
-                        kind: scope.kind.as_str().into(),
+                        kind: scope.kind_name().into(),
                         parameters: BTreeMap::new(),
                     },
                     |operation| {
@@ -1035,7 +1035,7 @@ pub fn project_parameter_design_with_edge_identities(
                 ),
                 Some(DesignFeatureFamily::Thread) => scope.thread_construction().map_or_else(
                     || FeatureDefinition::Native {
-                        kind: scope.kind.as_str().into(),
+                        kind: scope.kind_name().into(),
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
@@ -1105,7 +1105,7 @@ pub fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
                     project_edge_flange(scope, inputs).unwrap_or_else(|| {
                         FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
@@ -1117,7 +1117,7 @@ pub fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs)
                     .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.as_str().into(),
+                        kind: scope.kind_name().into(),
                         parameters: parameters
                             .iter()
                             .map(|(_, parameter)| {
@@ -1212,10 +1212,10 @@ pub fn project_parameter_design_with_edge_identities(
                                 op: operation(*result),
                             },
                         }
-                    } else if scope.kind == crate::records::DesignFeatureKind::JointOrigin {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::JointOrigin {
                         scope.joint_origin_transform().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: parameters
                                     .iter()
                                     .map(|(_, parameter)| {
@@ -1246,10 +1246,10 @@ pub fn project_parameter_design_with_edge_identities(
                                 ),
                             },
                         )
-                    } else if scope.kind == crate::records::DesignFeatureKind::WorkPlane {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::WorkPlane {
                         scope.work_plane_transform().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: parameters
                                     .iter()
                                     .map(|(_, parameter)| {
@@ -1259,7 +1259,7 @@ pub fn project_parameter_design_with_edge_identities(
                             },
                             |transform| project_work_plane(scope, transform),
                         )
-                    } else if scope.kind == crate::records::DesignFeatureKind::WorkAxis {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::WorkAxis {
                         scope
                             .work_axis_construction()
                             .and_then(|construction| {
@@ -1272,7 +1272,7 @@ pub fn project_parameter_design_with_edge_identities(
                             })
                             .map_or_else(
                                 || FeatureDefinition::Native {
-                                    kind: scope.kind.as_str().into(),
+                                    kind: scope.kind_name().into(),
                                     parameters: parameters
                                         .iter()
                                         .map(|(_, parameter)| {
@@ -1289,10 +1289,10 @@ pub fn project_parameter_design_with_edge_identities(
                                     direction,
                                 },
                             )
-                    } else if scope.kind == crate::records::DesignFeatureKind::WorkPoint {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::WorkPoint {
                         scope.work_point_construction().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: parameters
                                     .iter()
                                     .map(|(_, parameter)| {
@@ -1316,28 +1316,28 @@ pub fn project_parameter_design_with_edge_identities(
                                 .map(Box::new),
                             },
                         )
-                    } else if scope.kind == crate::records::DesignFeatureKind::BaseFlange {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::BaseFlange {
                         project_base_flange(scope, construction_groups, placements).unwrap_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             },
                         )
-                    } else if scope.kind == crate::records::DesignFeatureKind::RemoveBody {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::RemoveBody {
                         project_remove_body(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             }
                         })
-                    } else if scope.kind == crate::records::DesignFeatureKind::SurfaceStitch {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::SurfaceStitch {
                         project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             }
                         })
-                    } else if scope.kind == crate::records::DesignFeatureKind::SplitFace {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::SplitFace {
                         project_split_face(
                             scope,
                             scopes,
@@ -1347,23 +1347,23 @@ pub fn project_parameter_design_with_edge_identities(
                             histories,
                         )
                         .unwrap_or_else(|| FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
                         })
                     } else if matches!(
-                        scope.kind,
+                        scope.kind(),
                         crate::records::DesignFeatureKind::DeleteFace
                             | crate::records::DesignFeatureKind::SurfaceDeleteFace
                     ) {
                         project_delete_face(scope, construction_groups, face_operands)
                             .unwrap_or_else(|| FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             })
-                    } else if scope.kind == crate::records::DesignFeatureKind::CopyPasteBodies {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::CopyPasteBodies {
                         scope.copy_paste_bodies_operation().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             },
                             |operation| FeatureDefinition::InsertBodies {
@@ -1374,10 +1374,10 @@ pub fn project_parameter_design_with_edge_identities(
                                 ),
                             },
                         )
-                    } else if scope.kind == crate::records::DesignFeatureKind::CopyPaste {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::CopyPaste {
                         scope.copy_paste_component_operation().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             },
                             |operation| FeatureDefinition::InsertComponent {
@@ -1386,10 +1386,10 @@ pub fn project_parameter_design_with_edge_identities(
                                 ),
                             },
                         )
-                    } else if scope.kind == crate::records::DesignFeatureKind::BaseFeature {
+                    } else if scope.kind() == crate::records::DesignFeatureKind::BaseFeature {
                         scope.base_feature_construction().map_or_else(
                             || FeatureDefinition::Native {
-                                kind: scope.kind.as_str().into(),
+                                kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             },
                             |construction| FeatureDefinition::BaseFeature {
@@ -1402,7 +1402,7 @@ pub fn project_parameter_design_with_edge_identities(
                         )
                     } else {
                         FeatureDefinition::Native {
-                            kind: scope.kind.as_str().into(),
+                            kind: scope.kind_name().into(),
                             parameters: parameters
                                 .iter()
                                 .map(|(_, parameter)| {
@@ -1422,7 +1422,7 @@ pub fn project_parameter_design_with_edge_identities(
             Feature {
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
-                name: Some(format!("{} {}", scope.kind, scope.feature_ordinal)),
+                name: Some(format!("{} {}", scope.kind(), scope.feature_ordinal)),
                 suppressed: Some(
                     matches!(
                         family,
@@ -1440,7 +1440,7 @@ pub fn project_parameter_design_with_edge_identities(
                 } else {
                     BTreeMap::new()
                 },
-                source_tag: Some(scope.kind.as_str().to_owned()),
+                source_tag: Some(scope.kind_name().to_owned()),
                 source_text: None,
                 source_content: Vec::new(),
                 outputs,
@@ -2147,7 +2147,7 @@ fn project_fillet_arm(
         };
         if incomplete_assignment {
             FeatureDefinition::Native {
-                kind: scope.kind.as_str().into(),
+                kind: scope.kind_name().into(),
                 parameters: parameters
                     .iter()
                     .map(|(_, parameter)| (parameter.name.clone(), parameter.expression.clone()))
@@ -3132,7 +3132,7 @@ fn selected_work_planes<'a>(
         let mut target_scopes = scopes.iter().filter(|candidate| {
             native_stream(&candidate.id) == Some(stream)
                 && candidate.record_index == target_record_index
-                && candidate.kind == crate::records::DesignFeatureKind::WorkPlane
+                && candidate.kind() == crate::records::DesignFeatureKind::WorkPlane
                 && candidate.work_plane_transform().is_some()
         });
         let target = target_scopes.next()?;
@@ -3496,7 +3496,7 @@ pub(crate) fn project_edge_flange(
                     native_stream(&candidate.id) == Some(stream)
                         && candidate.record_index == target_record_index
                         && matches!(
-                            candidate.kind,
+                            candidate.kind(),
                             crate::records::DesignFeatureKind::WorkPlane
                                 | crate::records::DesignFeatureKind::WorkPoint
                         )
@@ -4105,7 +4105,7 @@ pub(crate) fn bind_form_cages(
 ) -> Result<(), CodecError> {
     for scope in scopes
         .iter()
-        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::Form)
+        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::Form)
     {
         let Some(stream) =
             native_stream(&scope.id).and_then(|stream| stream.strip_prefix(ids::SCHEME_PREFIX))
@@ -4189,7 +4189,7 @@ pub(crate) fn bind_form_cages(
         if scope.class_tag == "328"
             && scopes
                 .iter()
-                .filter(|candidate| candidate.kind == crate::records::DesignFeatureKind::Form)
+                .filter(|candidate| candidate.kind() == crate::records::DesignFeatureKind::Form)
                 .count()
                 == 1
             && form_class_328_envelope(bytes, &records, scope)
@@ -4238,7 +4238,7 @@ pub(crate) fn bind_form_cages(
         }
         if scopes
             .iter()
-            .filter(|candidate| candidate.kind == crate::records::DesignFeatureKind::Form)
+            .filter(|candidate| candidate.kind() == crate::records::DesignFeatureKind::Form)
             .count()
             == 1
             && cages.len() == 1
@@ -6483,7 +6483,7 @@ pub(crate) fn project_mirror(
                 .filter(|candidate| {
                     native_stream(&candidate.id) == Some(stream)
                         && candidate.record_index == plane_scope_record_index
-                        && candidate.kind == crate::records::DesignFeatureKind::WorkPlane
+                        && candidate.kind() == crate::records::DesignFeatureKind::WorkPlane
                         && candidate.work_plane_transform().is_some()
                 })
                 .collect::<Vec<_>>();
@@ -6684,7 +6684,7 @@ fn project_fixed_pipe(
     else {
         return None;
     };
-    if scope.kind != crate::records::DesignFeatureKind::Pipe
+    if scope.kind() != crate::records::DesignFeatureKind::Pipe
         || *operation != DesignExtrudeOperation::NewBody
         || *section_shape != crate::records::DesignPipeSectionShape::Circular
         || values[0..2] != [1.0, 1.0]
@@ -6849,7 +6849,7 @@ pub(crate) fn project_surface_patch(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, SurfaceBoundary};
 
-    if scope.kind != crate::records::DesignFeatureKind::SurfacePatch {
+    if scope.kind() != crate::records::DesignFeatureKind::SurfacePatch {
         return None;
     }
     let stream = native_stream(&scope.id)?;
@@ -6994,7 +6994,7 @@ pub(crate) fn project_boundary_fill(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
 
-    if scope.kind != crate::records::DesignFeatureKind::BoundaryFill
+    if scope.kind() != crate::records::DesignFeatureKind::BoundaryFill
         || scope.reference_members.len() < 5
     {
         return None;
@@ -7048,7 +7048,8 @@ fn project_hole(
         FaceSelection, FeatureDefinition, HoleBottom, HoleKind, LinearTermination,
     };
 
-    if scope.kind != crate::records::DesignFeatureKind::Hole || !matches!(parameters.len(), 3 | 5) {
+    if scope.kind() != crate::records::DesignFeatureKind::Hole || !matches!(parameters.len(), 3 | 5)
+    {
         return None;
     }
     let parameter = |source_kind: &str| {
@@ -7150,7 +7151,7 @@ fn project_replace_face(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::FeatureDefinition;
 
-    if scope.kind != crate::records::DesignFeatureKind::ReplaceFace
+    if scope.kind() != crate::records::DesignFeatureKind::ReplaceFace
         || scope.class_tag != "301"
         || scope.paired_class_tag != "258"
         || scope.frame_length != 290
@@ -7204,7 +7205,7 @@ pub(crate) fn project_surface_trim(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, PathRef, TrimRegion};
 
-    if scope.kind != crate::records::DesignFeatureKind::SurfaceTrim
+    if scope.kind() != crate::records::DesignFeatureKind::SurfaceTrim
         || scope.reference_members.len() != 4
     {
         return None;
@@ -7290,7 +7291,8 @@ pub(crate) fn project_split(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
 
-    if scope.kind != crate::records::DesignFeatureKind::Split || scope.reference_members.len() < 4 {
+    if scope.kind() != crate::records::DesignFeatureKind::Split || scope.reference_members.len() < 4
+    {
         return None;
     }
     let stream = native_stream(&scope.id)?;
@@ -7375,7 +7377,7 @@ fn project_split_face(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, SplitFaceTool};
 
     let reference_count = scope.reference_members.len();
-    if scope.kind != crate::records::DesignFeatureKind::SplitFace || reference_count < 4 {
+    if scope.kind() != crate::records::DesignFeatureKind::SplitFace || reference_count < 4 {
         return None;
     }
     let reference_tail_length =
@@ -7460,7 +7462,7 @@ fn project_delete_face(
         .kind_offset
         .checked_sub(scope.byte_offset)?
         .checked_sub(reference_bytes)?;
-    let heal = match scope.kind.as_str() {
+    let heal = match scope.kind_name() {
         "DeleteFace" => match (base_frame_length, base_kind_offset) {
             (236, 139) | (241, 143) => true,
             (232, 135)

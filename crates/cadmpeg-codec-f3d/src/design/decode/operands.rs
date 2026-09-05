@@ -12,10 +12,10 @@ use crate::design::decode::dimension_frames::{
 use crate::design::decode::scopes::extrude_sheet_metal::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::payload_prologue;
 use crate::design::decode::sketch::{
-    IndexedRecordOffsets, indexed_record_index, next_indexed_record_offset,
-    next_indexed_record_offset_with_index,
+    indexed_record_index, next_indexed_record_offset, next_indexed_record_offset_with_index,
+    IndexedRecordOffsets,
 };
-use crate::design::{DesignFeatureFamily, design_feature_family};
+use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
@@ -47,8 +47,8 @@ use crate::records::{
     DesignWorkPointSketchPointSelection, LostEdgeReference, PersistentSubentityTag,
     SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Decode edge-recipe operand frames named by edge-selecting feature scopes.
@@ -90,7 +90,7 @@ pub fn decode_edge_operands(
     let mut out = Vec::new();
     for scope in scopes
         .iter()
-        .filter(|scope| has_edge_recipe_operands(&scope.kind))
+        .filter(|scope| has_edge_recipe_operands(&scope.kind()))
     {
         let mut member_indices = groups
             .iter()
@@ -190,7 +190,7 @@ pub fn decode_edge_treatment_vertex_operands(
     let mut out = Vec::new();
     for scope in scopes
         .iter()
-        .filter(|scope| has_edge_recipe_operands(&scope.kind))
+        .filter(|scope| has_edge_recipe_operands(&scope.kind()))
     {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -275,7 +275,7 @@ pub fn bind_work_point_input_carriers(
         .collect::<HashMap<_, _>>();
     let work_planes = scopes
         .iter()
-        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::WorkPlane)
+        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::WorkPlane)
         .filter_map(|scope| {
             Some((
                 (
@@ -290,7 +290,7 @@ pub fn bind_work_point_input_carriers(
 
     for scope in scopes
         .iter_mut()
-        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::WorkPoint)
+        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::WorkPoint)
     {
         let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
             continue;
@@ -432,7 +432,7 @@ pub fn bind_work_plane_constructions(
 
     for scope in scopes
         .iter_mut()
-        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::WorkPlane)
+        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::WorkPlane)
     {
         if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = None;
@@ -608,7 +608,7 @@ pub fn decode_edge_identity_operands(
             native_stream(&scope.id) == Some(stream)
                 && scope.record_index == group.scope_record_index
                 && matches!(
-                    design_feature_family(&scope.kind),
+                    design_feature_family(&scope.kind()),
                     Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
                 )
         }) else {
@@ -690,49 +690,50 @@ pub fn decode_face_operands(
             group.extrude_role,
             Some(DesignExtrudeOperandRole::Profile | DesignExtrudeOperandRole::Faces(_))
         );
-        let is_offset_faces_operand = design_feature_family(&scope.kind)
+        let is_offset_faces_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::OffsetFaces)
             && group.role == 0x0000_0010_0000_0000;
-        let is_shell_operand = design_feature_family(&scope.kind)
+        let is_shell_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Shell)
             && group.role == 0x0000_0010_0000_0000;
-        let is_loft_profile = design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
+        let is_loft_profile = design_feature_family(&scope.kind())
+            == Some(DesignFeatureFamily::Loft)
             && matches!(group.role, 0x0000_0041_0000_0000 | 0x0000_0043_0000_0000);
-        let is_sweep_guide_surface = design_feature_family(&scope.kind)
+        let is_sweep_guide_surface = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Sweep)
             && group.role == 0x0000_0011_0000_0000;
-        let is_revolve_axis = design_feature_family(&scope.kind)
+        let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
             && group.role == 0x0000_0021_0000_0000;
         let is_edge_treatment_support = matches!(
-            design_feature_family(&scope.kind),
+            design_feature_family(&scope.kind()),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
         );
-        let is_circular_pattern_seed = design_feature_family(&scope.kind)
+        let is_circular_pattern_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::CircularPattern)
             && group.role == 0x0000_0008_0000_0000;
-        let is_mirror_seed = design_feature_family(&scope.kind)
+        let is_mirror_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
             && group.role == 0x0000_0008_0000_0000;
-        let is_mirror_plane = design_feature_family(&scope.kind)
+        let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
             && group.role == 0x0000_0005_0000_0000;
-        let is_split_face_operand = scope.kind == crate::records::DesignFeatureKind::SplitFace;
+        let is_split_face_operand = scope.kind() == crate::records::DesignFeatureKind::SplitFace;
         let is_delete_face_operand = matches!(
-            scope.kind,
+            scope.kind(),
             crate::records::DesignFeatureKind::DeleteFace
                 | crate::records::DesignFeatureKind::SurfaceDeleteFace
         );
-        let is_thread_face = scope.kind == crate::records::DesignFeatureKind::Thread
+        let is_thread_face = scope.kind() == crate::records::DesignFeatureKind::Thread
             && group.role == 0x0000_0010_0000_0000;
-        let is_hole_face = scope.kind == crate::records::DesignFeatureKind::Hole
+        let is_hole_face = scope.kind() == crate::records::DesignFeatureKind::Hole
             && group.role == 0x0000_0004_0000_0000;
         let is_draft_operand =
-            design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft);
-        let is_replace_face_operand = design_feature_family(&scope.kind)
+            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft);
+        let is_replace_face_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::ReplaceFace)
             && group.role == 0x0000_0010_0000_0000;
-        let is_surface_offset_operand = design_feature_family(&scope.kind)
+        let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
             && group.role == 0x0000_0041_0000_0000;
         if !is_extrude_operand
@@ -811,7 +812,7 @@ pub fn decode_face_operands(
         }
     }
     for scope in scopes.values().filter(|scope| {
-        let is_legacy_as_built_421 = scope.kind == crate::records::DesignFeatureKind::AsBuilt
+        let is_legacy_as_built_421 = scope.kind() == crate::records::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
                 scope.frame_length,
                 &scope.class_tag,
@@ -819,7 +820,7 @@ pub fn decode_face_operands(
             )
             .is_some();
         matches!(
-            design_feature_family(&scope.kind),
+            design_feature_family(&scope.kind()),
             Some(
                 DesignFeatureFamily::OffsetFaces
                     | DesignFeatureFamily::Shell
@@ -828,7 +829,7 @@ pub fn decode_face_operands(
                     | DesignFeatureFamily::ReplaceFace
             )
         ) || matches!(
-            scope.kind,
+            scope.kind(),
             crate::records::DesignFeatureKind::SplitFace | crate::records::DesignFeatureKind::Hole
         ) || is_legacy_as_built_421
     }) {
@@ -843,7 +844,7 @@ pub fn decode_face_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        let ordinals = if scope.kind == crate::records::DesignFeatureKind::AsBuilt
+        let ordinals = if scope.kind() == crate::records::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
                 scope.frame_length,
                 &scope.class_tag,
@@ -867,7 +868,7 @@ pub fn decode_face_operands(
             else {
                 continue;
             };
-            let next_byte_offset = if scope.kind == crate::records::DesignFeatureKind::AsBuilt
+            let next_byte_offset = if scope.kind() == crate::records::DesignFeatureKind::AsBuilt
                 && crate::design::assembly::legacy_as_built_421_generation(
                     scope.frame_length,
                     &scope.class_tag,
@@ -912,7 +913,7 @@ pub fn decode_face_source_groups(
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     for scope in scopes
         .iter()
-        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::Face)
+        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::Face)
     {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -1267,9 +1268,9 @@ pub fn bind_sketch_profiles(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     for scope in scopes.iter_mut().filter(|scope| {
-        design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
-            || scope.kind == crate::records::DesignFeatureKind::BaseFlange
+        design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
+            || scope.kind() == crate::records::DesignFeatureKind::BaseFlange
     }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -1291,12 +1292,34 @@ pub fn bind_sketch_profiles(
             })
             .collect::<Vec<_>>();
         if let [profile] = candidates.as_slice() {
-            if scope.kind == crate::records::DesignFeatureKind::BaseFlange {
-                scope.ensure_base_flange().base_flange_profile = Some(profile.clone());
-            } else if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep) {
-                scope.ensure_path_feature().sweep_profile = Some(profile.clone());
+            if scope.kind() == crate::records::DesignFeatureKind::BaseFlange {
+                {
+                    let value = Some(profile.clone());
+                    if let crate::records::DesignScopePayload::BaseFlange(slot) = &mut scope.payload
+                    {
+                        slot.get_or_insert_with(Default::default)
+                            .base_flange_profile = value;
+                    }
+                }
+            } else if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep) {
+                {
+                    let value = Some(profile.clone());
+                    if let crate::records::DesignScopePayload::Loft(slot)
+                    | crate::records::DesignScopePayload::Sweep(slot)
+                    | crate::records::DesignScopePayload::Revolve(slot)
+                    | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
+                    {
+                        slot.get_or_insert_with(Default::default).sweep_profile = value;
+                    }
+                }
             } else {
-                scope.ensure_extrude().extrude_profile = Some(profile.clone());
+                if let crate::records::DesignScopePayload::Extrude(slot)
+                | crate::records::DesignScopePayload::Extrusion(slot)
+                | crate::records::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+                {
+                    slot.get_or_insert_with(Default::default).extrude_profile =
+                        Some(profile.clone());
+                }
             }
         }
     }
@@ -1316,7 +1339,7 @@ pub fn decode_extrude_selection_groups(
     let mut out = Vec::new();
     for scope in scopes
         .iter()
-        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude))
+        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude))
     {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -1360,43 +1383,43 @@ pub fn decode_construction_operand_groups(
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
     for scope in scopes.iter_mut().filter(|scope| {
-        design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Coil)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Pipe)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::OffsetFaces)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Revolve)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Shell)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Thicken)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceRuled)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::ReplaceFace)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceOffset)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceTrim)
-            || scope.kind == crate::records::DesignFeatureKind::SplitFace
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::RectangularPattern)
-            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Mirror)
-            || scope.kind == crate::records::DesignFeatureKind::RemoveBody
-            || scope.kind == crate::records::DesignFeatureKind::SurfaceStitch
-            || scope.kind == crate::records::DesignFeatureKind::DeleteFace
-            || scope.kind == crate::records::DesignFeatureKind::SurfaceDeleteFace
-            || scope.kind == crate::records::DesignFeatureKind::Decal
-            || scope.kind == crate::records::DesignFeatureKind::Thread
-            || scope.kind == crate::records::DesignFeatureKind::Hole
+        design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Coil)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Loft)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Pipe)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::OffsetFaces)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Revolve)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Thicken)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfacePatch)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceRuled)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::BoundaryFill)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Split)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::ReplaceFace)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceOffset)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceTrim)
+            || scope.kind() == crate::records::DesignFeatureKind::SplitFace
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Scale)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::CircularPattern)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::RectangularPattern)
+            || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Mirror)
+            || scope.kind() == crate::records::DesignFeatureKind::RemoveBody
+            || scope.kind() == crate::records::DesignFeatureKind::SurfaceStitch
+            || scope.kind() == crate::records::DesignFeatureKind::DeleteFace
+            || scope.kind() == crate::records::DesignFeatureKind::SurfaceDeleteFace
+            || scope.kind() == crate::records::DesignFeatureKind::Decal
+            || scope.kind() == crate::records::DesignFeatureKind::Thread
+            || scope.kind() == crate::records::DesignFeatureKind::Hole
             || matches!(
-                scope.kind,
+                scope.kind(),
                 crate::records::DesignFeatureKind::BaseFlange
                     | crate::records::DesignFeatureKind::EdgeFlange
                     | crate::records::DesignFeatureKind::Hem
             )
-            || has_typed_edge_treatment_group(&scope.kind)
+            || has_typed_edge_treatment_group(&scope.kind())
     }) {
         let scope_group_start = out.len();
         let Some(stream) = native_stream(&scope.id) else {
@@ -1427,7 +1450,7 @@ pub fn decode_construction_operand_groups(
             }
         }
         scope.unclosed_construction_operand_groups = unclosed;
-        if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
+        if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude) {
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
     }
@@ -1449,7 +1472,7 @@ pub fn decode_loft_legacy_body_carriers(
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| {
-        design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
+        design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Loft)
             && matches!(
                 scope.path_feature_construction(),
                 Some(DesignPathFeatureConstruction::Loft { operation, .. })
@@ -1685,7 +1708,7 @@ pub fn decode_fillet_radius_groups(
     let mut out = Vec::new();
     for scope in scopes
         .iter()
-        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Fillet))
+        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Fillet))
     {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -1878,7 +1901,13 @@ pub fn disambiguate_fixed_fillet_parameters(
             continue;
         };
         if indexed_scopes.contains(&(stream.to_owned(), scope.record_index)) {
-            scope.set_fixed_fillet_parameters(None);
+            if let crate::records::DesignScopePayload::Fillet(slot)
+            | crate::records::DesignScopePayload::Conge(slot)
+            | crate::records::DesignScopePayload::Abrundung(slot)
+            | crate::records::DesignScopePayload::Arredondamento(slot) = &mut scope.payload
+            {
+                *slot = None;
+            }
         }
     }
 }
@@ -1915,7 +1944,7 @@ fn extrude_operand_role(
     scope: &DesignParameterScope,
     role: u64,
 ) -> Option<DesignExtrudeOperandRole> {
-    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Extrude) {
+    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Extrude) {
         return None;
     }
     match role {
@@ -2029,7 +2058,7 @@ pub(crate) fn parse_construction_operand_group(
         trailing_record_indices.push(record_index);
         trailing_record_offsets.push(offset);
     }
-    let legacy_move_class_328 = scope.kind == crate::records::DesignFeatureKind::Move
+    let legacy_move_class_328 = scope.kind() == crate::records::DesignFeatureKind::Move
         && header.class_tag == "328"
         && auxiliary_reference_slots == [false, true]
         && header
@@ -2184,11 +2213,11 @@ fn legacy_body_group_tail(
     cursor: usize,
     opaque_index: u32,
 ) -> Option<(bool, usize, String)> {
-    let body_scope = design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
-        || scope.kind == crate::records::DesignFeatureKind::RemoveBody;
+    let body_scope = design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
+        || scope.kind() == crate::records::DesignFeatureKind::RemoveBody;
     let (flag_pair, variant) = match header.class_tag.as_str() {
         "257" | "323" | "338" if body_scope => ([1, 1], true),
-        "328" if scope.kind == crate::records::DesignFeatureKind::Move => ([1, 1], true),
+        "328" if scope.kind() == crate::records::DesignFeatureKind::Move => ([1, 1], true),
         "282" | "302" if body_scope => ([0, 1], false),
         _ => return None,
     };
@@ -2202,7 +2231,7 @@ fn legacy_body_group_tail(
     {
         return None;
     }
-    if scope.kind == crate::records::DesignFeatureKind::Move && header.class_tag == "328" {
+    if scope.kind() == crate::records::DesignFeatureKind::Move && header.class_tag == "328" {
         if bytes.get(tail) != Some(&0) {
             return None;
         }
@@ -2236,7 +2265,7 @@ fn legacy_body_group_tail(
         return None;
     }
     let (paired_class_tag, after_tag) = lp_ascii_filtered(bytes, tail, 3..=3, u8::is_ascii_digit)?;
-    if scope.kind == crate::records::DesignFeatureKind::Move
+    if scope.kind() == crate::records::DesignFeatureKind::Move
         && header.class_tag == "328"
         && paired_class_tag != "263"
     {
@@ -3356,7 +3385,7 @@ pub fn decode_body_recipe_operands(
         if scopes.iter().any(|scope| {
             scope.record_index == group.scope_record_index
                 && native_stream(&scope.id) == Some(stream)
-                && scope.kind == crate::records::DesignFeatureKind::Hole
+                && scope.kind() == crate::records::DesignFeatureKind::Hole
         }) {
             continue;
         }
@@ -3394,7 +3423,8 @@ pub fn decode_body_recipe_operands(
         }
     }
     for scope in scopes.iter().filter(|scope| {
-        scope.combine_operation().is_some() || scope.kind == crate::records::DesignFeatureKind::Hole
+        scope.combine_operation().is_some()
+            || scope.kind() == crate::records::DesignFeatureKind::Hole
     }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -4453,7 +4483,7 @@ pub(crate) fn parse_edge_operand(
     recipes: &[ConstructionRecipe],
     terminal_group_limit: Option<u64>,
 ) -> Option<DesignEdgeOperand> {
-    let next_record_delta = edge_recipe_terminal_delta(&scope.kind);
+    let next_record_delta = edge_recipe_terminal_delta(&scope.kind());
     let stream = native_stream(&scope.id)?;
     let parsed = parse_recipe_operand(
         bytes,
@@ -4477,7 +4507,7 @@ pub(crate) fn parse_edge_operand(
         )
     })?;
     let recipe_structure = edge_recipe_structure(&parsed.recipe_program);
-    let surface_patch_recipe_structure = (scope.kind
+    let surface_patch_recipe_structure = (scope.kind()
         == crate::records::DesignFeatureKind::SurfacePatch)
         .then(|| {
             surface_patch_recipe_structure(&parsed.recipe_program, parsed.recipe_references.len())

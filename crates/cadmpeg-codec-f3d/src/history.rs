@@ -2620,7 +2620,7 @@ pub(crate) fn bind_vertex_recipe_history(
         .iter()
         .filter(|scope| {
             matches!(
-                scope.kind,
+                scope.kind(),
                 crate::records::DesignFeatureKind::WorkPlane
                     | crate::records::DesignFeatureKind::WorkPoint
             )
@@ -2650,7 +2650,7 @@ pub(crate) fn bind_vertex_recipe_history(
 
     for scope in scopes
         .iter_mut()
-        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::WorkPoint)
+        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::WorkPoint)
     {
         let scope_id = scope.id.clone();
         let Some(construction) = scope.work_point_construction_mut() else {
@@ -2691,7 +2691,7 @@ pub(crate) fn bind_vertex_recipe_history(
 
     for scope in scopes
         .iter_mut()
-        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::WorkPlane)
+        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::WorkPlane)
     {
         let transform = scope.work_plane_transform();
         let scope_id = scope.id.clone();
@@ -3753,7 +3753,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     *record_index,
                 )
             });
-        let feature_family = crate::design::design_feature_family(&scope.kind);
+        let feature_family = crate::design::design_feature_family(&scope.kind());
         let thread_face_candidates = (feature_family
             == Some(crate::design::DesignFeatureFamily::Thread))
         .then(|| {
@@ -3762,7 +3762,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             (!candidates.is_empty()).then(|| candidates.to_vec())
         })
         .flatten();
-        let nested_split_face_candidates = (scope.kind
+        let nested_split_face_candidates = (scope.kind()
             == crate::records::DesignFeatureKind::SplitFace)
             .then(|| {
                 exact_face_selection_group(operand, scope, operand_groups)?;
@@ -3870,7 +3870,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     crate::design::face_resolve::resolve_face_operand_history_candidates(operand);
                 if let Some(direct) = direct {
                     vec![direct]
-                } else if scope.kind == crate::records::DesignFeatureKind::SurfaceDeleteFace {
+                } else if scope.kind() == crate::records::DesignFeatureKind::SurfaceDeleteFace {
                     crate::design::face_resolve::resolve_surface_delete_face_history_set(operand)
                         .unwrap_or_default()
                 } else if preserves_stable_face_set {
@@ -3961,7 +3961,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             }
         }
         if operand.resolved_face_slots.is_empty()
-            && scope.kind == crate::records::DesignFeatureKind::Draft
+            && scope.kind() == crate::records::DesignFeatureKind::Draft
         {
             if let Some(result) = state.topology.as_ref() {
                 if let Some(face) =
@@ -5638,7 +5638,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 ))
             })
             .collect();
-        if scope.kind == crate::records::DesignFeatureKind::SurfacePatch
+        if scope.kind() == crate::records::DesignFeatureKind::SurfacePatch
             && operand.surface_patch_recipe_structure.is_some()
         {
             operand.resolved_edge_slot = surface_patch_edge_operand_slot(
@@ -5648,7 +5648,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
             );
             continue;
         }
-        if crate::design::design_feature_family(&scope.kind)
+        if crate::design::design_feature_family(&scope.kind())
             == Some(crate::design::DesignFeatureFamily::Sweep)
         {
             let reference_faces = terminal_edge_recipe_reference_faces(
@@ -5677,7 +5677,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 );
             continue;
         }
-        if crate::design::design_feature_family(&scope.kind)
+        if crate::design::design_feature_family(&scope.kind())
             == Some(crate::design::DesignFeatureFamily::Revolve)
         {
             let reference_faces = terminal_edge_recipe_reference_faces(
@@ -5772,7 +5772,7 @@ fn bind_active_edge_operand_for_scope(
     terminal_topologies: &[(i64, &AsmHistoricalTopology)],
 ) {
     bind_active_edge_operand_candidates(operand, terminal_topologies);
-    if scope.kind == crate::records::DesignFeatureKind::SurfacePatch
+    if scope.kind() == crate::records::DesignFeatureKind::SurfacePatch
         && operand.surface_patch_recipe_structure.is_some()
     {
         operand.recipe_state_id = None;
@@ -5794,7 +5794,7 @@ fn bind_active_edge_operand_for_scope(
             }
         }
     }
-    if crate::design::design_feature_family(&scope.kind)
+    if crate::design::design_feature_family(&scope.kind())
         == Some(crate::design::DesignFeatureFamily::Revolve)
     {
         let topology = operand.recipe_state_id.and_then(|state_id| {
@@ -8050,7 +8050,7 @@ pub(crate) fn bind_edge_identity_history(
                     // on this operand group's compact member count.
                     if treatment_edges.is_empty() {
                         let is_edge_treatment = matches!(
-                            crate::design::design_feature_family(&scope.kind),
+                            crate::design::design_feature_family(&scope.kind()),
                             Some(
                                 crate::design::DesignFeatureFamily::Fillet
                                     | crate::design::DesignFeatureFamily::Chamfer

@@ -87,21 +87,23 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     scope.feature_ordinal_offset = 284;
     scope.history_state_id_offset = 244;
     scope.previous_history_state_id_offset = Some(315);
-    scope.set_component_insert_construction(Some(DesignComponentInsertConstruction {
-        relation_record_index: 167,
-        carrier_record_index: 166,
-        occurrence_identity: Some(17),
-        neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
-        neutron_role_offset: 259,
-        transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        transform_offset: None,
-        carrier_transform_offset: None,
-    }));
+    if let crate::records::DesignScopePayload::ComponentInsert(slot) = &mut scope.payload {
+        *slot = Some(DesignComponentInsertConstruction {
+            relation_record_index: 167,
+            carrier_record_index: 166,
+            occurrence_identity: Some(17),
+            neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
+            neutron_role_offset: 259,
+            transform: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: None,
+            carrier_transform_offset: None,
+        });
+    }
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     {
@@ -309,29 +311,31 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         } else {
             vec![1, 2, 3, 4, 5, operand_record_index]
         };
-        scope.set_combine_operation((!hole_scope).then_some(DesignCombineOperation {
-            form: DesignCombineForm::Standard,
-            operation: DesignExtrudeOperation::Join,
-            operation_offset: 0,
-            keep_tools: false,
-            keep_tools_offset: 0,
-            target: DesignCombineBodySelection {
-                record_index: if empty_legacy_tool {
-                    operand_record_index + 1
-                } else {
-                    operand_record_index
+        if let crate::records::DesignScopePayload::Combine(slot) = &mut scope.payload {
+            *slot = (!hole_scope).then_some(DesignCombineOperation {
+                form: DesignCombineForm::Standard,
+                operation: DesignExtrudeOperation::Join,
+                operation_offset: 0,
+                keep_tools: false,
+                keep_tools_offset: 0,
+                target: DesignCombineBodySelection {
+                    record_index: if empty_legacy_tool {
+                        operand_record_index + 1
+                    } else {
+                        operand_record_index
+                    },
+                    external_identity: None,
                 },
-                external_identity: None,
-            },
-            tools: vec![DesignCombineBodySelection {
-                record_index: if empty_legacy_tool {
-                    operand_record_index
-                } else {
-                    operand_record_index + 1
-                },
-                external_identity: None,
-            }],
-        }));
+                tools: vec![DesignCombineBodySelection {
+                    record_index: if empty_legacy_tool {
+                        operand_record_index
+                    } else {
+                        operand_record_index + 1
+                    },
+                    external_identity: None,
+                }],
+            });
+        }
         scopes.push(scope);
         headers.push(DesignRecordHeader {
             id: format!("{stream}:design-record-header#{operand_record_index}"),
@@ -513,7 +517,8 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 
     {
         let mut native = f3d_native_mut(&mut ir);
-        native.design_parameter_scopes[0].kind = crate::records::DesignFeatureKind::SurfaceTrim;
+        native.design_parameter_scopes[0].payload =
+            crate::records::DesignFeatureKind::SurfaceTrim.into();
         native.design_construction_operand_groups[1].role = 0x0000_0021_0000_0000;
     }
     assert!(!crate::validate::validate_native(&ir)
@@ -539,8 +544,8 @@ fn validation_checks_pipe_path_group_roles() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let mut scope =
         DesignParameterScope::empty(&scope_id, crate::records::DesignFeatureKind::Pipe, 10);
-    scope.ensure_path_feature().path_feature_construction =
-        Some(DesignPathFeatureConstruction::Pipe {
+    {
+        let value = Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 0,
             section_shape: crate::records::DesignPipeSectionShape::Circular,
@@ -551,6 +556,15 @@ fn validation_checks_pipe_path_group_roles() {
             record_indexes: [11, 12, 13, 14],
             value_offsets: [0; 4],
         });
+        if let crate::records::DesignScopePayload::Loft(slot)
+        | crate::records::DesignScopePayload::Sweep(slot)
+        | crate::records::DesignScopePayload::Revolve(slot)
+        | crate::records::DesignScopePayload::Pipe(slot) = &mut scope.payload
+        {
+            slot.get_or_insert_with(Default::default)
+                .path_feature_construction = value;
+        }
+    }
     scope.reference_members = vec![1, 2, 3, 4, 20, 21];
     let path_group = DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#20"),
@@ -1024,9 +1038,8 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         class_tag: "301".into(),
         record_index: 10,
         frame_length: 200,
-        kind: crate::records::DesignFeatureKind::Extrude,
         kind_offset: 210,
-        payload: DesignScopePayload::Extrude(crate::records::DesignExtrudeScope {
+        payload: DesignScopePayload::Extrude(Some(crate::records::DesignExtrudeScope {
             extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::NewBody,
@@ -1046,7 +1059,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             }),
             extrude_profile: Some(profile),
             ..crate::records::DesignExtrudeScope::default()
-        }),
+        })),
         feature_ordinal: 1,
         feature_ordinal_offset: 220,
         history_state_id: None,
@@ -1117,14 +1130,16 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         .any(profile_message));
 
     let profile = f3d_native_mut(&mut ir).design_parameter_scopes[0]
-        .ensure_extrude()
+        .extrude_mut()
+        .unwrap()
         .extrude_profile
         .take();
     assert!(!crate::validate::validate_native(&ir)
         .iter()
         .any(profile_message));
     f3d_native_mut(&mut ir).design_parameter_scopes[0]
-        .ensure_extrude()
+        .extrude_mut()
+        .unwrap()
         .extrude_profile = profile;
 
     f3d_native_mut(&mut ir)

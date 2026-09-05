@@ -57,7 +57,7 @@ fn parameter_scope_parses_named_variable_tail() {
     };
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("named variable-tail scope");
-    assert_eq!(scope.kind, crate::records::DesignFeatureKind::Draft);
+    assert_eq!(scope.kind(), crate::records::DesignFeatureKind::Draft);
     assert_eq!(scope.feature_ordinal, 1);
     assert_eq!(scope.history_state_id, Some(7));
     assert_eq!(scope.previous_history_state_id, None);

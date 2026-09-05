@@ -40,7 +40,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     bytes[25] = 1;
     let mut box_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#12",
-        crate::records::DesignFeatureKind::Native("BoxPrimitive".into()),
+        crate::records::DesignFeatureKind::BoxPrimitive,
         12,
     );
     box_scope.frame_length = bytes.len() as u64;
@@ -69,7 +69,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
 
     bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
     let mut cylinder_scope = box_scope;
-    cylinder_scope.kind = crate::records::DesignFeatureKind::Native("CylinderPrimitive".into());
+    cylinder_scope.payload = crate::records::DesignFeatureKind::CylinderPrimitive.into();
     cylinder_scope.record_index = 13;
     cylinder_scope.reference_members = vec![30, 31];
     let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
@@ -137,7 +137,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         let id = format!("f3d:{stream}:scope#{record_index}");
         let mut scope = DesignParameterScope::empty(
             &id,
-            crate::records::DesignFeatureKind::Native("CylinderPrimitive".into()),
+            crate::records::DesignFeatureKind::CylinderPrimitive,
             record_index,
         );
         scope.byte_offset = 0;
@@ -377,7 +377,9 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             ],
         }
     );
-    scope.set_combine_operation(Some(operation));
+    if let crate::records::DesignScopePayload::Combine(slot) = &mut scope.payload {
+        *slot = Some(operation);
+    }
     assert_eq!(
         project_combine(&scope, "Design1/BulkStream.dat"),
         Some(cadmpeg_ir::features::FeatureDefinition::Combine {

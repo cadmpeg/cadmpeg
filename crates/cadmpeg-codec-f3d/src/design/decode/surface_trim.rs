@@ -7,15 +7,15 @@ use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::scopes::{exact_indexed_header_at, marked_record_reference};
 use crate::design::decode::sketch::{
-    IndexedRecordOffsets, indexed_record_index, next_indexed_record_offset,
+    indexed_record_index, next_indexed_record_offset, IndexedRecordOffsets,
 };
 use crate::ids::{native_design_surface_trim_operation_id, native_stream};
 use crate::records::{
     DesignParameterScope, DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord,
     DesignSurfaceTrimOperation,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Decode the exact auxiliary BRep-cell carrier of a `SurfaceTrim` scope.
@@ -30,7 +30,7 @@ pub(crate) fn exact_surface_trim_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceTrimOperation> {
-    if scope.kind != crate::records::DesignFeatureKind::SurfaceTrim
+    if scope.kind() != crate::records::DesignFeatureKind::SurfaceTrim
         || scope.reference_members.len() != 4
     {
         return None;
@@ -154,7 +154,7 @@ pub(crate) fn decode_surface_trim_operations(
     let mut out = Vec::new();
     for scope in scopes
         .iter()
-        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::SurfaceTrim)
+        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::SurfaceTrim)
     {
         let Some(stream) = native_stream(&scope.id) else {
             continue;

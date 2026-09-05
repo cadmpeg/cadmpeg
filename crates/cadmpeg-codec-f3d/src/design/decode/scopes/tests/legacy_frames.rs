@@ -366,7 +366,9 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
                 support_record_index: 200,
             })
         ));
-        scope.set_work_axis_construction(Some(construction));
+        if let crate::records::DesignScopePayload::WorkAxis(slot) = &mut scope.payload {
+            *slot = Some(construction);
+        }
         let (features, _) = project_parameter_design(
             &[],
             &[],
@@ -451,23 +453,29 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
         12,
     );
     scope.reference_members = vec![80, 82];
-    scope.ensure_extrude().extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
-        reference: None,
-        operation: DesignExtrudeOperation::NewBody,
-        operation_offset: 28,
-        direction_face_extend_values: [1, 2],
-        side_extent_discriminators: [1, 0],
-        side_extent_discriminator_offsets: [77, 90],
-        first_side_target_ordinal: None,
-        extent: DesignExtrudeExtent::OneSidedDistance,
-        direction_face_extend_offsets: [32, 36],
-        direction_reversed: false,
-        direction_reversed_offset: 40,
-        solid_operation: true,
-        solid_operation_offset: 41,
-        start: DesignExtrudeStart::ProfilePlane,
-        start_offset: 42,
-    });
+    if let crate::records::DesignScopePayload::Extrude(slot)
+    | crate::records::DesignScopePayload::Extrusion(slot)
+    | crate::records::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    {
+        slot.get_or_insert_with(Default::default).extrude_prologue =
+            Some(DesignExtrudePrologue::ReferenceAware {
+                reference: None,
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 28,
+                direction_face_extend_values: [1, 2],
+                side_extent_discriminators: [1, 0],
+                side_extent_discriminator_offsets: [77, 90],
+                first_side_target_ordinal: None,
+                extent: DesignExtrudeExtent::OneSidedDistance,
+                direction_face_extend_offsets: [32, 36],
+                direction_reversed: false,
+                direction_reversed_offset: 40,
+                solid_operation: true,
+                solid_operation_offset: 41,
+                start: DesignExtrudeStart::ProfilePlane,
+                start_offset: 42,
+            });
+    }
 
     let fixed = exact_fixed_extrude_parameters(
         &bytes,

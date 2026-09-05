@@ -342,15 +342,19 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         crate::records::DesignFeatureKind::Assemble,
         10,
     );
-    assembly.set_assembly_alignment(Some(DesignAssemblyAlignment {
-        angle: 0.0,
-        offset: [0.0; 3],
-        owner_record_indices: Vec::new(),
-        value_offsets: Vec::new(),
-        operands: None,
-        limits: None,
-        joint_origin_scope_record_index: Some(20),
-    }));
+    if let crate::records::DesignScopePayload::Assemble(slot)
+    | crate::records::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
+    {
+        *slot = Some(DesignAssemblyAlignment {
+            angle: 0.0,
+            offset: [0.0; 3],
+            owner_record_indices: Vec::new(),
+            value_offsets: Vec::new(),
+            operands: None,
+            limits: None,
+            joint_origin_scope_record_index: Some(20),
+        });
+    }
     let mut origin = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#20"),
         crate::records::DesignFeatureKind::JointOrigin,
@@ -458,15 +462,19 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
             crate::records::DesignFeatureKind::Assemble,
             record_index,
         );
-        scope.set_assembly_alignment(Some(DesignAssemblyAlignment {
-            angle: 0.0,
-            offset: [0.0; 3],
-            owner_record_indices: Vec::new(),
-            value_offsets: Vec::new(),
-            operands: None,
-            limits: None,
-            joint_origin_scope_record_index: Some(20),
-        }));
+        if let crate::records::DesignScopePayload::Assemble(slot)
+        | crate::records::DesignScopePayload::AsBuilt(slot) = &mut scope.payload
+        {
+            *slot = Some(DesignAssemblyAlignment {
+                angle: 0.0,
+                offset: [0.0; 3],
+                owner_record_indices: Vec::new(),
+                value_offsets: Vec::new(),
+                operands: None,
+                limits: None,
+                joint_origin_scope_record_index: Some(20),
+            });
+        }
         scope
     };
     let mut origin = DesignParameterScope::empty(
@@ -658,7 +666,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     assert_eq!(ordinals[&(stream, second.record_index)], 1);
 
     let mut mixed = second;
-    mixed.kind = crate::records::DesignFeatureKind::Fillet;
+    mixed.payload = crate::records::DesignFeatureKind::Fillet.into();
     let mixed_scopes = vec![first, mixed];
     let error = crate::design::feature_project::authored_scope_ordinals(&mixed_scopes, &[])
         .expect_err("mixed families have no timeline-independent total order");
@@ -724,7 +732,6 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         class_tag: "301".into(),
         record_index,
         frame_length: 200,
-        kind: kind.to_owned().into(),
         kind_offset: byte_offset + 100,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -735,7 +742,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         reference_count_offset: byte_offset + 80,
         reference_members: Vec::new(),
         reference_member_offsets: Vec::new(),
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::from(kind.to_owned()).into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,

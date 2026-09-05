@@ -35,17 +35,19 @@ fn dispatcher_projects_datum_feature_scopes() {
         crate::records::DesignFeatureKind::WorkPoint,
         3,
     );
-    work_point.set_work_point_construction(Some(crate::records::DesignWorkPointConstruction {
-        point_record_index: 4,
-        point_record_byte_offset: 0,
-        position: [4.0, 5.0, 6.0],
-        position_offset: 0,
-        rule: crate::records::DesignWorkPointRule::Native {
-            reference_type: 1,
-            inputs: Vec::new(),
-        },
-        reference_type_offset: 0,
-    }));
+    if let crate::records::DesignScopePayload::WorkPoint(slot) = &mut work_point.payload {
+        *slot = Some(crate::records::DesignWorkPointConstruction {
+            point_record_index: 4,
+            point_record_byte_offset: 0,
+            position: [4.0, 5.0, 6.0],
+            position_offset: 0,
+            rule: crate::records::DesignWorkPointRule::Native {
+                reference_type: 1,
+                inputs: Vec::new(),
+            },
+            reference_type_offset: 0,
+        });
+    }
 
     let scopes = vec![joint_origin, work_plane, work_point];
     let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
@@ -79,14 +81,18 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         crate::records::DesignFeatureKind::Scale,
         4,
     );
-    scale.set_scale_operation(Some(DesignScaleOperation {
-        body_group_record_index: 5,
-        center_record_index: 6,
-        center_position: Some([1.25, -2.5, 3.75]),
-        center_position_offset: Some(40),
-        uniform_factor: 2.5,
-        uniform_factor_offset: 20,
-    }));
+    if let crate::records::DesignScopePayload::Scale(slot)
+    | crate::records::DesignScopePayload::Massstab(slot) = &mut scale.payload
+    {
+        *slot = Some(DesignScaleOperation {
+            body_group_record_index: 5,
+            center_record_index: 6,
+            center_position: Some([1.25, -2.5, 3.75]),
+            center_position_offset: Some(40),
+            uniform_factor: 2.5,
+            uniform_factor_offset: 20,
+        });
+    }
 
     let (features, _) = project_parameter_design(&[], &[], &[scale], &[], &[], &[], &[], &[]);
     let FeatureDefinition::Scale {
@@ -231,16 +237,18 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         crate::records::DesignFeatureKind::WorkPoint,
         40,
     );
-    point.set_work_point_construction(Some(DesignWorkPointConstruction {
-        point_record_index: 41,
-        point_record_byte_offset: 0,
-        position: [1.0, 2.0, 3.0],
-        position_offset: 0,
-        rule: DesignWorkPointRule::ThreePlaneIntersection {
-            inputs: [input(42, 10), input(46, 20), input(50, 30)],
-        },
-        reference_type_offset: 0,
-    }));
+    if let crate::records::DesignScopePayload::WorkPoint(slot) = &mut point.payload {
+        *slot = Some(DesignWorkPointConstruction {
+            point_record_index: 41,
+            point_record_byte_offset: 0,
+            position: [1.0, 2.0, 3.0],
+            position_offset: 0,
+            rule: DesignWorkPointRule::ThreePlaneIntersection {
+                inputs: [input(42, 10), input(46, 20), input(50, 30)],
+            },
+            reference_type_offset: 0,
+        });
+    }
     let mut scopes = planes.to_vec();
     scopes.push(point);
 
@@ -310,22 +318,24 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         crate::records::DesignFeatureKind::WorkPoint,
         20,
     );
-    point.set_work_point_construction(Some(DesignWorkPointConstruction {
-        point_record_index: 21,
-        point_record_byte_offset: 0,
-        position: [4.0, 3.0, 0.0],
-        position_offset: 0,
-        rule: DesignWorkPointRule::Vertex {
-            input: DesignWorkPointInput {
-                record_index: 22,
-                reference_offset: 0,
-                carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                    recipe,
-                })),
+    if let crate::records::DesignScopePayload::WorkPoint(slot) = &mut point.payload {
+        *slot = Some(DesignWorkPointConstruction {
+            point_record_index: 21,
+            point_record_byte_offset: 0,
+            position: [4.0, 3.0, 0.0],
+            position_offset: 0,
+            rule: DesignWorkPointRule::Vertex {
+                input: DesignWorkPointInput {
+                    record_index: 22,
+                    reference_offset: 0,
+                    carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                        recipe,
+                    })),
+                },
             },
-        },
-        reference_type_offset: 0,
-    }));
+            reference_type_offset: 0,
+        });
+    }
     let timeline = DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
         byte_offset: 0,
@@ -458,28 +468,40 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::DesignFeatureKind::BaseFlange,
         10,
     );
-    base_flange.ensure_base_flange().base_flange_operation = Some(DesignBaseFlangeOperation {
-        thickness: 0.2,
-        thickness_offset: 0,
-        profile_group_record_index: 100,
-        profile_record_index: 101,
-        thickness_record_index: 102,
-        settings_record_index: 103,
-    });
-    base_flange.ensure_base_flange().base_flange_profile = Some(DesignSketchProfileOperand {
-        scope_reference_ordinal: 1,
-        record_index: 101,
-        byte_offset: 0,
-        class_tag: "377".into(),
-        asset_id: "asset".into(),
-        asset_id_offset: 0,
-        entity_id: format!("{stream}:sketch#7"),
-        entity_suffix: 7,
-        entity_reference_offset: 0,
-        region_selection: None,
-        paired_class_tag: "264".into(),
-        paired_byte_offset: 0,
-    });
+    {
+        let value = Some(DesignBaseFlangeOperation {
+            thickness: 0.2,
+            thickness_offset: 0,
+            profile_group_record_index: 100,
+            profile_record_index: 101,
+            thickness_record_index: 102,
+            settings_record_index: 103,
+        });
+        if let crate::records::DesignScopePayload::BaseFlange(slot) = &mut base_flange.payload {
+            slot.get_or_insert_with(Default::default)
+                .base_flange_operation = value;
+        }
+    }
+    {
+        let value = Some(DesignSketchProfileOperand {
+            scope_reference_ordinal: 1,
+            record_index: 101,
+            byte_offset: 0,
+            class_tag: "377".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            entity_id: format!("{stream}:sketch#7"),
+            entity_suffix: 7,
+            entity_reference_offset: 0,
+            region_selection: None,
+            paired_class_tag: "264".into(),
+            paired_byte_offset: 0,
+        });
+        if let crate::records::DesignScopePayload::BaseFlange(slot) = &mut base_flange.payload {
+            slot.get_or_insert_with(Default::default)
+                .base_flange_profile = value;
+        }
+    }
 
     let mut remove_body = DesignParameterScope::empty(
         &format!("{stream}:scope#remove-body"),
@@ -494,92 +516,104 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         30,
     );
     surface_stitch.reference_members = vec![300, 301, 302, 303];
-    surface_stitch.set_surface_stitch_operation(Some(DesignSurfaceStitchOperation {
-        gap_tolerance: 0.01,
-        gap_tolerance_offset: 0,
-        tolerance_record_index: 302,
-        settings_record_index: 303,
-    }));
+    if let crate::records::DesignScopePayload::SurfaceStitch(slot) = &mut surface_stitch.payload {
+        *slot = Some(DesignSurfaceStitchOperation {
+            gap_tolerance: 0.01,
+            gap_tolerance_offset: 0,
+            tolerance_record_index: 302,
+            settings_record_index: 303,
+        });
+    }
 
     let mut copy_paste = DesignParameterScope::empty(
         &format!("{stream}:scope#copy-paste"),
         crate::records::DesignFeatureKind::CopyPaste,
         40,
     );
-    copy_paste.set_copy_paste_component_operation(Some(DesignCopyPasteComponentOperation {
-        relation_record_index: 401,
-        source_occurrence_record_index: 402,
-        copied_occurrence_record_index: 403,
-        component_guid: "component".into(),
-        source_occurrence_guid: "source-occurrence".into(),
-        copied_occurrence_guid: "copied-occurrence".into(),
-        source_transform: identity_matrix(),
-        source_transform_offset: 0,
-        copied_transform: identity_matrix(),
-        copied_transform_offset: 0,
-    }));
+    if let crate::records::DesignScopePayload::CopyPaste(slot) = &mut copy_paste.payload {
+        *slot = Some(DesignCopyPasteComponentOperation {
+            relation_record_index: 401,
+            source_occurrence_record_index: 402,
+            copied_occurrence_record_index: 403,
+            component_guid: "component".into(),
+            source_occurrence_guid: "source-occurrence".into(),
+            copied_occurrence_guid: "copied-occurrence".into(),
+            source_transform: identity_matrix(),
+            source_transform_offset: 0,
+            copied_transform: identity_matrix(),
+            copied_transform_offset: 0,
+        });
+    }
 
     let mut copy_paste_bodies = DesignParameterScope::empty(
         &format!("{stream}:scope#copy-paste-bodies"),
         crate::records::DesignFeatureKind::CopyPasteBodies,
         50,
     );
-    copy_paste_bodies.set_copy_paste_bodies_operation(Some(DesignCopyPasteBodiesOperation {
-        body_group_record_index: 501,
-        body_group_class_tag: "264".into(),
-        body_group_byte_offset: 0,
-        body_operand_record_indices: vec![502],
-        body_operand_record_offsets: vec![0],
-        relation_record_index: 503,
-        relation_class_tag: "264".into(),
-        relation_byte_offset: 0,
-        source_body_entity_suffixes: vec![11],
-        source_body_entity_suffix_offsets: vec![0],
-        copied_body_entity_suffixes: vec![12],
-        copied_body_entity_suffix_offsets: vec![0],
-    }));
+    if let crate::records::DesignScopePayload::CopyPasteBodies(slot) =
+        &mut copy_paste_bodies.payload
+    {
+        *slot = Some(DesignCopyPasteBodiesOperation {
+            body_group_record_index: 501,
+            body_group_class_tag: "264".into(),
+            body_group_byte_offset: 0,
+            body_operand_record_indices: vec![502],
+            body_operand_record_offsets: vec![0],
+            relation_record_index: 503,
+            relation_class_tag: "264".into(),
+            relation_byte_offset: 0,
+            source_body_entity_suffixes: vec![11],
+            source_body_entity_suffix_offsets: vec![0],
+            copied_body_entity_suffixes: vec![12],
+            copied_body_entity_suffix_offsets: vec![0],
+        });
+    }
 
     let mut base_feature = DesignParameterScope::empty(
         &format!("{stream}:scope#base-feature"),
         crate::records::DesignFeatureKind::BaseFeature,
         60,
     );
-    base_feature.set_base_feature_construction(Some(DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes: vec![21],
-        body_entity_suffix_offsets: vec![0],
-        body_entity_fields: vec![[0; 6]],
-        body_reference_records: vec![601],
-        body_reference_record_offsets: vec![0],
-        body_reference_fields: vec![[0; 6]],
-        repeated_reference_fields: Vec::new(),
-        metadata_record: 602,
-        metadata_record_offset: 0,
-        metadata_field: vec![0, 0],
-        result_records: vec![603],
-        result_record_offsets: vec![0],
-        result_fields: vec![[0; 6]],
-    }));
+    if let crate::records::DesignScopePayload::BaseFeature(slot) = &mut base_feature.payload {
+        *slot = Some(DesignBaseFeatureConstruction::ResultBodies {
+            body_entity_suffixes: vec![21],
+            body_entity_suffix_offsets: vec![0],
+            body_entity_fields: vec![[0; 6]],
+            body_reference_records: vec![601],
+            body_reference_record_offsets: vec![0],
+            body_reference_fields: vec![[0; 6]],
+            repeated_reference_fields: Vec::new(),
+            metadata_record: 602,
+            metadata_record_offset: 0,
+            metadata_field: vec![0, 0],
+            result_records: vec![603],
+            result_record_offsets: vec![0],
+            result_fields: vec![[0; 6]],
+        });
+    }
 
     let mut thread = DesignParameterScope::empty(
         &format!("{stream}:scope#thread"),
         crate::records::DesignFeatureKind::Thread,
         70,
     );
-    thread.set_thread_construction(Some(DesignThreadConstruction {
-        form: DesignThreadForm::Compact,
-        designation_offset: 0,
-        designation: "M3.5x0.6".into(),
-        nominal_size_text: "3.5".into(),
-        nominal_size: 3.5,
-        profile: "GB Metric profile".into(),
-        major_diameter: 0.35995,
-        minor_diameter: 0.293,
-        pitch: 0.06,
-        pitch_diameter: 0.3166,
-        trailing_reference_record_index: None,
-        trailing_reference_offset: None,
-        face_group_record_indices: vec![701],
-    }));
+    if let crate::records::DesignScopePayload::Thread(slot) = &mut thread.payload {
+        *slot = Some(DesignThreadConstruction {
+            form: DesignThreadForm::Compact,
+            designation_offset: 0,
+            designation: "M3.5x0.6".into(),
+            nominal_size_text: "3.5".into(),
+            nominal_size: 3.5,
+            profile: "GB Metric profile".into(),
+            major_diameter: 0.35995,
+            minor_diameter: 0.293,
+            pitch: 0.06,
+            pitch_diameter: 0.3166,
+            trailing_reference_record_index: None,
+            trailing_reference_offset: None,
+            face_group_record_indices: vec![701],
+        });
+    }
     thread.reference_members = vec![701, 702];
 
     let scopes = vec![

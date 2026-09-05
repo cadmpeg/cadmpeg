@@ -189,18 +189,20 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         crate::records::DesignFeatureKind::Combine,
         80,
     );
-    combine_scope.set_combine_operation(Some(crate::records::DesignCombineOperation {
-        form: crate::records::DesignCombineForm::Standard,
-        operation: crate::records::DesignExtrudeOperation::Join,
-        operation_offset: 0,
-        keep_tools: false,
-        keep_tools_offset: 0,
-        target: crate::records::DesignCombineBodySelection {
-            record_index: 0,
-            external_identity: None,
-        },
-        tools: Vec::new(),
-    }));
+    if let crate::records::DesignScopePayload::Combine(slot) = &mut combine_scope.payload {
+        *slot = Some(crate::records::DesignCombineOperation {
+            form: crate::records::DesignCombineForm::Standard,
+            operation: crate::records::DesignExtrudeOperation::Join,
+            operation_offset: 0,
+            keep_tools: false,
+            keep_tools_offset: 0,
+            target: crate::records::DesignCombineBodySelection {
+                record_index: 0,
+                external_identity: None,
+            },
+            tools: Vec::new(),
+        });
+    }
     let combine_recipe = ConstructionRecipe {
         design_selector: Some(crate::records::ConstructionRecipeSelector {
             value: 1,
@@ -377,7 +379,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         class_tag: "301".into(),
         record_index: 1,
         frame_length: 200,
-        kind: crate::records::DesignFeatureKind::Fillet,
         kind_offset: 1100,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -388,7 +389,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         reference_count_offset: 1080,
         reference_members: vec![100],
         reference_member_offsets: vec![1085],
-        payload: DesignScopePayload::Empty,
+        payload: crate::records::DesignFeatureKind::Fillet.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: 1200,
@@ -429,7 +430,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.resolved_edge_slot, None);
     bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&105u32.to_le_bytes());
     let mut work_point_scope = scope.clone();
-    work_point_scope.kind = crate::records::DesignFeatureKind::WorkPoint;
+    work_point_scope.payload = crate::records::DesignFeatureKind::WorkPoint.into();
     let work_point_operand = parse_edge_operand(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -443,7 +444,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(work_point_operand.next_record_index, 105);
     bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&107u32.to_le_bytes());
     let mut sweep_scope = scope.clone();
-    sweep_scope.kind = crate::records::DesignFeatureKind::Sweep;
+    sweep_scope.payload = crate::records::DesignFeatureKind::Sweep.into();
     let sweep_operand = parse_edge_operand(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -1298,7 +1299,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     let face_next_at = header(&mut face_bytes, *b"306", 104);
     let mut face_scope = scope;
-    face_scope.kind = crate::records::DesignFeatureKind::Extrude;
+    face_scope.payload = crate::records::DesignFeatureKind::Extrude.into();
     let mut face_recipe = recipe;
     face_recipe.kind = ConstructionRecipeKind::BoundedFace;
     face_recipe.design_id = Some("303".into());
@@ -1699,7 +1700,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ])
     .expect("split-face context recipe structure");
     let mut split_scope = face_scope.clone();
-    split_scope.kind = crate::records::DesignFeatureKind::SplitFace;
+    split_scope.payload = crate::records::DesignFeatureKind::SplitFace.into();
     split_scope.previous_history_state_id = Some(49);
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;
