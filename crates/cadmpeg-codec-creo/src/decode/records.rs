@@ -1675,63 +1675,55 @@ pub(super) fn curve_parameter_records(
             });
     records
         .iter()
-        .map(|record| {
-            let (suffix, suffix_candidate_count) = match record.suffix {
-                crate::curve::CurveSuffixStatus::Unique => ("unique", None),
-                crate::curve::CurveSuffixStatus::Ambiguous { candidate_count } => {
-                    ("ambiguous", Some(candidate_count))
-                }
-            };
-            CreoCurveParameterRecord {
-                id: format!(
-                    "creo:{id_namespace}:curve_parameter#{}",
-                    curve_occurrence_identity(
-                        record.curve_id,
-                        record.offset,
-                        curve_id_counts[&record.curve_id],
-                    )
-                ),
-                curve_id: record.curve_id,
-                type_byte: record.type_byte,
-                body: record.body.clone(),
-                scalar_values: record.scalar_values.clone(),
-                scalar_tokens: record
-                    .scalar_tokens
-                    .iter()
-                    .map(|token| CreoCurveParameterScalar {
-                        value: token.value,
-                        raw: token.raw.clone(),
-                        offset: token.offset,
-                        length: token.length,
-                    })
-                    .collect(),
-                skipped_references: record.skipped_references.clone(),
-                references: record
-                    .references
-                    .iter()
-                    .map(|reference| CreoCurveParameterReference {
-                        entity_id: reference.entity_id,
-                        offset: reference.offset,
-                        length: reference.length,
-                    })
-                    .collect(),
-                opaque_spans: record
-                    .opaque_spans
-                    .iter()
-                    .map(|span| CreoCurveParameterOpaqueSpan {
-                        raw: span.raw.clone(),
-                        offset: span.offset,
-                        length: span.length,
-                    })
-                    .collect(),
-                reference_geometry: record.reference_geometry,
-                suffix,
-                suffix_candidate_count,
-                offset: record.offset,
-                body_offset: record.body_offset,
-                suffix_offset: record.suffix_offset,
-                source_section: source_section(scan, record.offset),
-            }
+        .map(|record| CreoCurveParameterRecord {
+            id: format!(
+                "creo:{id_namespace}:curve_parameter#{}",
+                curve_occurrence_identity(
+                    record.curve_id,
+                    record.offset,
+                    curve_id_counts[&record.curve_id],
+                )
+            ),
+            curve_id: record.curve_id,
+            type_byte: record.type_byte,
+            body: record.body.clone(),
+            scalar_values: record.scalar_values.clone(),
+            scalar_tokens: record
+                .scalar_tokens
+                .iter()
+                .map(|token| CreoCurveParameterScalar {
+                    value: token.value,
+                    raw: token.raw.clone(),
+                    offset: token.offset,
+                    length: token.length,
+                })
+                .collect(),
+            skipped_references: record.skipped_references.clone(),
+            references: record
+                .references
+                .iter()
+                .map(|reference| CreoCurveParameterReference {
+                    entity_id: reference.entity_id,
+                    offset: reference.offset,
+                    length: reference.length,
+                })
+                .collect(),
+            opaque_spans: record
+                .opaque_spans
+                .iter()
+                .map(|span| CreoCurveParameterOpaqueSpan {
+                    raw: span.raw.clone(),
+                    offset: span.offset,
+                    length: span.length,
+                })
+                .collect(),
+            reference_geometry: record.reference_geometry,
+            suffix: "unique",
+            suffix_candidate_count: None,
+            offset: record.offset,
+            body_offset: record.body_offset,
+            suffix_offset: record.suffix_offset,
+            source_section: source_section(scan, record.offset),
         })
         .collect()
 }

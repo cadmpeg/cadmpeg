@@ -4,7 +4,7 @@
 use super::*;
 use std::collections::BTreeSet;
 
-fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterRecord {
+fn parameter_record(curve_id: u32) -> CurveParameterRecord {
     CurveParameterRecord {
         curve_id,
         type_byte: 0,
@@ -15,7 +15,6 @@ fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterR
         references: Vec::new(),
         opaque_spans: Vec::new(),
         reference_geometry: [0, 0],
-        suffix,
         offset: curve_id as usize,
         body_offset: curve_id as usize,
         suffix_offset: curve_id as usize,
@@ -23,22 +22,19 @@ fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterR
 }
 
 #[test]
-fn typed_parameter_rows_require_unique_identity_and_suffix_boundary() {
-    let unique = parameter_record(7, CurveSuffixStatus::Unique);
+fn typed_parameter_rows_require_unique_identity() {
+    let unique = parameter_record(7);
     assert_eq!(
         uniquely_bounded_parameter_records(std::slice::from_ref(&unique)).len(),
         1
     );
-
-    let ambiguous = parameter_record(8, CurveSuffixStatus::Ambiguous { candidate_count: 2 });
-    assert!(uniquely_bounded_parameter_records(&[ambiguous]).is_empty());
     assert!(uniquely_bounded_parameter_records(&[unique.clone(), unique]).is_empty());
 }
 
 #[test]
 fn pcurve_endpoint_slots_must_be_finite() {
     let nan = [0xed, 0x7f, 0xf8, 0, 0, 0, 0, 0, 0];
-    let mut record = parameter_record(7, CurveSuffixStatus::Unique);
+    let mut record = parameter_record(7);
     record.body.extend_from_slice(&nan);
     record.body.extend([0x0f; 7]);
     record.scalar_values.push(f64::NAN);
@@ -192,7 +188,7 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
         ],
         body,
         scalar_tokens,
-        ..parameter_record(846, CurveSuffixStatus::Unique)
+        ..parameter_record(846)
     };
     let topology = CurveTopologyRow {
         id: 846,
