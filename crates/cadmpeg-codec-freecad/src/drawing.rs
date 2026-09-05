@@ -33,10 +33,10 @@ pub(crate) fn transfer(
             let (views, template) = if is_page_type(&object.type_name) {
                 let views = typed_links(&owned, "Views", "App::PropertyLinkList")?
                     .into_iter()
-                    .filter_map(|link| link.object)
+                    .filter_map(|link| link.object().map(str::to_owned))
                     .collect();
                 let template = typed_single_link(&owned, "Template", "App::PropertyLink")?
-                    .and_then(|link| link.object);
+                    .and_then(|link| link.object().map(str::to_owned));
                 (views, template)
             } else {
                 (Vec::new(), None)
@@ -97,17 +97,17 @@ pub(crate) fn transfer_neutral(
             .filter(|property| property.owner == record.object)
             .collect::<Vec<_>>();
         let relationship = |link: &crate::native::LinkTarget| {
-            let target = match (&link.document, &link.object) {
+            let target = match (link.document_name(), link.object()) {
                 (Some(document), Some(object)) => ReferenceTarget::External {
-                    document: document.clone(),
-                    object: object.clone(),
+                    document: document.to_owned(),
+                    object: object.to_owned(),
                 },
-                (None, Some(object)) if object.is_empty() => ReferenceTarget::Null,
+                (None, None) => ReferenceTarget::Null,
                 (None, Some(object)) => ReferenceTarget::Local(
                     neutral_ids
-                        .get(object.as_str())
+                        .get(object)
                         .cloned()
-                        .unwrap_or_else(|| object.clone()),
+                        .unwrap_or_else(|| object.to_owned()),
                 ),
                 _ => {
                     return Err(CodecError::malformed(
@@ -193,7 +193,7 @@ pub(crate) fn transfer_neutral(
                     if link.document.is_some() {
                         return None;
                     }
-                    let object = link.object.as_deref().filter(|object| !object.is_empty())?;
+                    let object = link.object()?;
                     neutral_ids.get(object).cloned()
                 })
         } else {

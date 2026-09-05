@@ -69,7 +69,7 @@ pub(crate) fn transfer(
                 .and_then(|properties| body_membership_property(properties))
                 .into_iter()
                 .flat_map(|property| &property.links)
-                .filter_map(|link| link.object.as_deref())
+                .filter_map(|link| link.object())
                 .map(move |member| (member, feature_id(body)))
         })
         .collect::<HashMap<_, _>>();
@@ -415,7 +415,7 @@ pub(crate) fn transfer(
                     owned
                         .iter()
                         .flat_map(|property| &property.links)
-                        .filter_map(|link| link.object.as_deref())
+                        .filter_map(|link| link.object())
                         .map(|dependency| (dependency, false)),
                 )
                 .collect::<Vec<_>>();
@@ -527,7 +527,7 @@ fn body_definition(
         property
             .links
             .iter()
-            .filter_map(|link| link.object.as_deref())
+            .filter_map(|link| link.object())
             .filter_map(|target| feature_ids.get(target).cloned())
             .collect()
     });
@@ -562,9 +562,9 @@ fn body_tip(
         [link]
             if link.subelements.is_empty()
                 && link.document.is_none()
-                && link.document_attribute.is_none() =>
+                && link.document_attribute().is_none() =>
         {
-            let Some(target) = link.object.as_deref().filter(|target| !target.is_empty()) else {
+            let Some(target) = link.object() else {
                 return BodyTipResolution::Valid(None);
             };
             feature_ids
@@ -659,9 +659,7 @@ fn feature_ordinals<'a>(
                             .iter()
                             .map(move |link| (property.name.as_str(), link))
                     })
-                    .filter_map(|(property_name, link)| {
-                        Some((property_name, link.object.as_deref()?))
-                    })
+                    .filter_map(|(property_name, link)| Some((property_name, link.object()?)))
                     .filter(|(property_name, dependency)| {
                         object_by_id.get(dependency).is_some_and(|dependency| {
                             matches!(
@@ -1320,7 +1318,7 @@ fn validate_external_geo_prefix(
 }
 
 fn external_link_key(reference: &crate::native::LinkTarget) -> Option<String> {
-    let object = crate::native::id_key(reference.object.as_deref()?);
+    let object = crate::native::id_key(reference.object()?);
     let subelement = reference.subelements.first()?;
     Some(format!("{object}.{subelement}"))
 }
@@ -1492,7 +1490,7 @@ fn parse_sketch(
             if matched_references.contains(&external_index) {
                 continue;
             }
-            let Some(target_object) = reference.object.clone() else {
+            let Some(target_object) = reference.object().map(str::to_owned) else {
                 continue;
             };
             let numeric_suffix = format!(":external:{external_index}");
@@ -1512,7 +1510,7 @@ fn parse_sketch(
                     )),
                     id.clone(),
                     SketchGeometry::ExternalReference {
-                        document: reference.document.clone(),
+                        document: reference.document_name().map(str::to_owned),
                         object: target_object,
                         subelements: reference.subelements.clone(),
                     },
@@ -1881,7 +1879,7 @@ fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
             let value = property
                 .links
                 .first()
-                .and_then(|link| link.object.clone())
+                .and_then(|link| link.object().map(str::to_owned))
                 .or_else(|| scalar_text(property))
                 .unwrap_or_else(|| property.raw_xml.clone());
             (property.name.clone(), value)
@@ -3203,7 +3201,7 @@ fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a Property
             }
             return None;
         };
-        let target = link.object.as_deref()?;
+        let target = link.object()?;
         if target.is_empty() || selected.is_some() {
             return None;
         }
@@ -3840,13 +3838,8 @@ fn extrusion_definition(
         _ => return None,
     };
     let use_custom = bool_selector(properties, "UseCustomVector", false)?;
-    let is_nonempty_link = |link: &crate::native::LinkTarget| {
-        link.document.is_some()
-            || link
-                .object
-                .as_deref()
-                .is_some_and(|object| !object.is_empty())
-    };
+    let is_nonempty_link =
+        |link: &crate::native::LinkTarget| link.document.is_some() || link.object().is_some();
     let reference_axis = property(properties, "ReferenceAxis")
         .filter(|property| property.links.iter().any(is_nonempty_link));
     if reference_axis.is_some_and(|property| {
@@ -4337,11 +4330,7 @@ fn malformed(message: impl Into<String>) -> CodecError {
 }
 
 fn nonempty_link(link: &crate::native::LinkTarget) -> bool {
-    link.document.is_some()
-        || link
-            .object
-            .as_deref()
-            .is_some_and(|object| !object.is_empty())
+    link.document.is_some() || link.object().is_some_and(|object| !object.is_empty())
 }
 
 fn singular_operand<'a>(
@@ -4352,10 +4341,7 @@ fn singular_operand<'a>(
     let [link] = property.links.as_slice() else {
         return None;
     };
-    link.object
-        .as_deref()
-        .filter(|object| !object.is_empty())
-        .map(|_| property)
+    link.object().map(|_| property)
 }
 
 fn direct_root_attributes(
@@ -4708,7 +4694,7 @@ fn loft_definition(
         .into_iter()
         .chain(property(properties, "Sections"))
         .flat_map(|property| &property.links)
-        .filter_map(|link| link.object.as_deref())
+        .filter_map(|link| link.object())
         .map(|object| {
             sketches
                 .get(object)
@@ -4770,7 +4756,7 @@ fn sweep_definition(
         .into_iter()
         .chain(property(properties, "Sections"))
         .flat_map(|property| &property.links)
-        .filter_map(|link| link.object.as_deref())
+        .filter_map(|link| link.object())
         .map(profile_ref)
         .collect::<Vec<_>>();
     profiles.dedup();
@@ -5135,11 +5121,7 @@ fn binder_definition(
     let sources = property(properties, "Support")?
         .links
         .iter()
-        .filter(|link| {
-            link.object
-                .as_deref()
-                .is_some_and(|object| !object.is_empty())
-        })
+        .filter(|link| link.object().is_some())
         .map(|link| {
             Some(BinderSource {
                 target: binder_target(link, features)?,
@@ -5188,11 +5170,7 @@ fn binder_definition(
                 property
                     .links
                     .first()
-                    .filter(|link| {
-                        link.object
-                            .as_deref()
-                            .is_some_and(|object| !object.is_empty())
-                    })
+                    .filter(|link| link.object().is_some_and(|object| !object.is_empty()))
                     .and_then(|link| binder_target(link, features))
             }
             _ => return None,
@@ -5234,10 +5212,10 @@ fn binder_target(
     link: &crate::native::LinkTarget,
     features: &HashMap<&str, FeatureId>,
 ) -> Option<BinderTarget> {
-    let object = link.object.as_deref()?;
+    let object = link.object()?;
     if let Some(document) = link.document.as_ref() {
         return Some(BinderTarget::External {
-            document: document.clone(),
+            document: document.as_str().to_owned(),
             object: object.to_owned(),
         });
     }
@@ -5319,18 +5297,17 @@ fn pattern_definition(
         .filter(|property| !property.links.is_empty())
         .or_else(|| {
             property(properties, "BaseFeature").filter(|property| {
-                property.links.iter().any(|link| {
-                    link.object
-                        .as_deref()
-                        .is_some_and(|object| !object.is_empty())
-                })
+                property
+                    .links
+                    .iter()
+                    .any(|link| link.object().is_some_and(|object| !object.is_empty()))
             })
         });
     let seeds = if let Some(originals) = originals {
         let seeds = originals
             .links
             .iter()
-            .filter_map(|link| link.object.as_deref())
+            .filter_map(|link| link.object())
             .map(|target| {
                 features.get(target).cloned().map(Some).or_else(|| {
                     objects
@@ -5376,7 +5353,7 @@ fn pattern_definition(
             .iter()
             .enumerate()
             .map(|(index, link)| {
-                let target = link.object.as_deref()?;
+                let target = link.object()?;
                 let object = objects.iter().find(|object| object.id == target)?;
                 let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
                 let pattern = pattern_kind(
@@ -5421,7 +5398,7 @@ fn multi_transform_stage_seeds(
         transformations
             .links
             .iter()
-            .any(|link| link.object.as_deref() == Some(stage))
+            .any(|link| link.object() == Some(stage))
             .then_some(())?;
         let originals = property(owned, "Originals")
             .filter(|property| !property.links.is_empty())
@@ -5429,7 +5406,7 @@ fn multi_transform_stage_seeds(
         let seeds = originals
             .links
             .iter()
-            .filter_map(|link| link.object.as_deref())
+            .filter_map(|link| link.object())
             .map(|object| features.get(object).cloned())
             .collect::<Option<Vec<_>>>()?;
         (!seeds.is_empty()).then_some(seeds)
@@ -5448,11 +5425,11 @@ fn implicit_body_predecessor(
         let position = members
             .links
             .iter()
-            .position(|link| link.object.as_deref() == Some(owner))?;
+            .position(|link| link.object() == Some(owner))?;
         members.links[..position]
             .iter()
             .rev()
-            .filter_map(|link| link.object.as_deref())
+            .filter_map(|link| link.object())
             .find_map(|member| features.get(member).cloned())
     })
 }
@@ -5692,7 +5669,7 @@ fn axis_reference(
         return Some((Point3::new(0.0, 0.0, 0.0), direction.unit()?));
     }
     let (link, selector) = singular_reference_link(property(properties, name)?)?;
-    let target = link.object.as_deref()?;
+    let target = link.object()?;
     let object = objects.iter().find(|object| object.id == target)?;
     let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
     let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
@@ -5723,7 +5700,7 @@ fn plane_reference(
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<(Point3, Vector3)> {
     let (link, selector) = singular_reference_link(property(properties, name)?)?;
-    let target = link.object.as_deref()?;
+    let target = link.object()?;
     let object = objects.iter().find(|object| object.id == target)?;
     let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
     let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
@@ -5757,7 +5734,7 @@ fn singular_reference_link(
     property: &PropertyRecord,
 ) -> Option<(&crate::native::LinkTarget, Option<&str>)> {
     let link = scalar_link(property)?;
-    let object = link.object.as_deref()?;
+    let object = link.object()?;
     if object.is_empty() {
         return None;
     }
@@ -5929,7 +5906,7 @@ fn feature_base_definition(
     if property.type_name != "App::PropertyLink" || property.links.len() != 1 {
         return None;
     }
-    let source = property.links[0].object.as_deref()?;
+    let source = property.links[0].object()?;
     Some(FeatureDefinition::DerivedGeometry {
         source: feature_ids.get(source)?.clone(),
     })

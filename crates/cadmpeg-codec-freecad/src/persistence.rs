@@ -403,9 +403,9 @@ fn parse_document(
     }
     for property in &mut properties {
         for link in &mut property.links {
-            if let Some(target) = &mut link.object {
+            if let Some(target) = link.object() {
                 if declared_names.contains(target) {
-                    *target = object_id(target);
+                    link.object = cadmpeg_ir::products::NonEmptyString::new(object_id(target));
                 }
             }
         }
@@ -741,8 +741,7 @@ fn local_link(
     }
     Ok(LinkTarget {
         document: None,
-        document_attribute: None,
-        object: Some(required_attr(node, object_attribute)?),
+        object: cadmpeg_ir::products::NonEmptyString::new(required_attr(node, object_attribute)?),
         subelements: subelements.to_vec(),
     })
 }
@@ -795,9 +794,8 @@ fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
         }
     };
     Ok(LinkTarget {
-        document: file.as_ref().filter(|value| !value.is_empty()).cloned(),
-        document_attribute: file.map(|_| "file".into()),
-        object: Some(required_attr(node, "name")?),
+        document: crate::native::ExternalDocument::from_file_attr(file),
+        object: cadmpeg_ir::products::NonEmptyString::new(required_attr(node, "name")?),
         subelements,
     })
 }
