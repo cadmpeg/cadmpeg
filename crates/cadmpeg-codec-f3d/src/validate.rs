@@ -231,7 +231,7 @@ fn valid_class_307_joint_origin_qualifier(
                     && target_scope.paired_class_tag == *paired_class_tag
                     && target_scope.paired_byte_offset == *paired_byte_offset
                     && target_scope.frame_length == class_307_joint_origin::LEN as u64
-                    && target_scope.joint_origin_transform == Some(frame.transform)
+                    && target_scope.joint_origin_transform() == Some(frame.transform)
             })
             .count()
             == 1
@@ -577,7 +577,7 @@ fn valid_axial_assembly_targets(
                             design_stream(&target_scope.id) == stream
                                 && target_scope.kind == "JointOrigin"
                                 && target_scope.record_index == *scope_record_index
-                                && target_scope.joint_origin_transform == Some(frame.transform)
+                                && target_scope.joint_origin_transform() == Some(frame.transform)
                         })
                         .count()
                         == 1
@@ -3054,7 +3054,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 design_stream(&target.id) == native_stream
                                     && target.kind == "JointOrigin"
                                     && target.record_index == record_index
-                                    && target.joint_origin_transform_offset
+                                    && target.joint_origin_transform_offset()
                                         == Some(scope.byte_offset + 36)
                             })
                     });
@@ -3684,8 +3684,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
         };
         let joint_origin_link = match (
-            scope.joint_origin_transform,
-            scope.joint_origin_transform_offset,
+            scope.joint_origin_transform(),
+            scope.joint_origin_transform_offset(),
             scope.joint_origin_reference,
             scope.joint_origin_reference_offset,
         ) {

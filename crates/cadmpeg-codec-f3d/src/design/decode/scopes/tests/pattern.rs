@@ -230,8 +230,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         work_plane_reference_offset: None,
         work_plane_construction: None,
         work_axis_construction: None,
-        joint_origin_transform: None,
-        joint_origin_transform_offset: None,
+        joint_origin_frame: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
         work_point_construction: None,
@@ -733,14 +732,14 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     linked_assembly.assembly_alignment = Some(axial_alignment.clone());
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
     bind_joint_origin_frames_from_assemblies(&axial_assembly_bytes, &mut linked_scopes);
-    assert_eq!(linked_scopes[1].joint_origin_transform_offset, Some(39));
+    assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
     assert_eq!(
-        linked_scopes[1].joint_origin_transform,
+        linked_scopes[1].joint_origin_transform(),
         Some(axial_frames[0].transform)
     );
-    assert_eq!(linked_scopes[2].joint_origin_transform_offset, Some(178));
+    assert_eq!(linked_scopes[2].joint_origin_transform_offset(), Some(178));
     assert_eq!(
-        linked_scopes[2].joint_origin_transform,
+        linked_scopes[2].joint_origin_transform(),
         Some(axial_frames[1].transform)
     );
     assert_eq!(
@@ -776,11 +775,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut single_frame_scopes);
     assert_eq!(
-        single_frame_scopes[1].joint_origin_transform_offset,
+        single_frame_scopes[1].joint_origin_transform_offset(),
         Some(36)
     );
     assert_eq!(
-        single_frame_scopes[1].joint_origin_transform,
+        single_frame_scopes[1].joint_origin_transform(),
         Some(axial_frames[0].transform)
     );
     assert_eq!(single_frame_scopes[1].joint_origin_reference, Some(90));
@@ -804,9 +803,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .joint_origin_scope_record_index = None;
     let mut conflicting_joint_origin = single_frame_scopes[1].clone();
     conflicting_joint_origin
-        .joint_origin_transform
+        .joint_origin_frame
         .as_mut()
-        .unwrap()[2][3] += 1.0;
+        .unwrap()
+        .joint_origin_transform[2][3] += 1.0;
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(
@@ -819,13 +819,15 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
     let mut invalid_joint_origin = single_frame_scopes[1].clone();
-    invalid_joint_origin.joint_origin_transform = None;
-    invalid_joint_origin.joint_origin_transform_offset = None;
+    invalid_joint_origin.joint_origin_frame = None;
     invalid_joint_origin.joint_origin_reference = None;
     invalid_joint_origin.joint_origin_reference_offset = None;
     let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
     bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut invalid_single_frame_scopes);
-    assert_eq!(invalid_single_frame_scopes[1].joint_origin_transform, None);
+    assert_eq!(
+        invalid_single_frame_scopes[1].joint_origin_transform(),
+        None
+    );
 
     let mut compact_bytes = assembly_bytes[..627].to_vec();
     compact_bytes.extend_from_slice(&3_u32.to_le_bytes());

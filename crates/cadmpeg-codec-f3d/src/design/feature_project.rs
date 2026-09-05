@@ -165,7 +165,7 @@ fn authored_scope_ordinals_for_stream<'a>(
         };
         if scope.kind != "Assemble"
             || target.kind != "JointOrigin"
-            || target.joint_origin_transform.is_none()
+            || target.joint_origin_transform().is_none()
         {
             return Err(CodecError::Malformed(
                 "Design assembly datum envelope has an invalid JointOrigin target".into(),
@@ -1224,7 +1224,7 @@ pub fn project_parameter_design_with_edge_identities(
                             },
                         }
                     } else if scope.kind == "JointOrigin" {
-                        scope.joint_origin_transform.map_or_else(
+                        scope.joint_origin_transform().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind.as_str().into(),
                                 parameters: parameters

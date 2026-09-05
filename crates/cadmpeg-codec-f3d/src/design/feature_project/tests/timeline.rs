@@ -346,13 +346,13 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         "JointOrigin",
         20,
     );
-    origin.joint_origin_transform = Some(identity_matrix());
+    origin.with_joint_origin_transform(identity_matrix());
     let mut internal_origin = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#30"),
         "JointOrigin",
         30,
     );
-    internal_origin.joint_origin_transform = Some(identity_matrix());
+    internal_origin.with_joint_origin_transform(identity_matrix());
     let scopes = vec![assembly, origin.clone(), internal_origin.clone()];
     let timeline = DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
@@ -467,7 +467,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
         "JointOrigin",
         20,
     );
-    origin.joint_origin_transform = Some(identity_matrix());
+    origin.with_joint_origin_transform(identity_matrix());
     let scopes = vec![envelope(10), envelope(11), origin];
     let timeline = DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
@@ -764,8 +764,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         work_plane_reference_offset: None,
         work_plane_construction: None,
         work_axis_construction: None,
-        joint_origin_transform: None,
-        joint_origin_transform_offset: None,
+        joint_origin_frame: None,
         joint_origin_reference: None,
         joint_origin_reference_offset: None,
         work_point_construction: None,
