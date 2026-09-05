@@ -4698,7 +4698,7 @@ pub(super) fn exact_legacy_mirror_scope_count(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<(u32, u32, u64)> {
+) -> Option<(u32, u64)> {
     if (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) != ("441", "267") {
         return None;
     }
@@ -4733,7 +4733,6 @@ pub(super) fn exact_legacy_mirror_scope_count(
         return None;
     }
     Some((
-        mirror_441_count::COUNT_VALUE,
         count_record_index,
         u64::try_from(*start)
             .ok()?
@@ -4865,9 +4864,8 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
         value,
         u64::try_from(value_offset).ok()?,
         DesignMirrorScopeTolerance {
-            marker,
+            marker: crate::records::DesignMirrorToleranceMarker::try_from((marker, repeated_marker_offset.map(u64::try_from).transpose().ok()?)).ok()?,
             marker_offset: u64::try_from(marker_offset).ok()?,
-            repeated_marker_offset: repeated_marker_offset.map(u64::try_from).transpose().ok()?,
             first_reference,
             first_reference_offset: u64::try_from(first_reference_offset).ok()?,
             second_reference,
@@ -5027,7 +5025,6 @@ pub fn bind_mirror_constructions(
         let (count, tolerance_source) = (
             match (count.as_slice(), inline_count) {
                 ([count], None) => Some((
-                    count.evaluated_value as u32,
                     count.record_index,
                     count.evaluated_value_offset,
                 )),
@@ -5038,36 +5035,32 @@ pub fn bind_mirror_constructions(
                 ([tolerance], None) => Some((
                     tolerance.evaluated_value,
                     tolerance.evaluated_value_offset,
-                    Some(tolerance.record_index),
-                    None,
+                    crate::records::DesignMirrorToleranceSource::Owner { record_index: tolerance.record_index },
                 )),
                 ([], Some((value, value_offset, scope_tail))) => {
-                    Some((value, value_offset, None, Some(scope_tail)))
+                    Some((value, value_offset, crate::records::DesignMirrorToleranceSource::Scope(scope_tail)))
                 }
                 _ => None,
             },
         );
-        let Some((count, count_record_index, count_offset)) = count else {
+        let Some((count_record_index, count_offset)) = count else {
             continue;
         };
         let Some((
             stitch_tolerance,
             stitch_tolerance_offset,
-            stitch_tolerance_record_index,
-            stitch_tolerance_scope,
+            tolerance_source,
         )) = tolerance_source
         else {
             continue;
         };
         {
             let construction = Some(DesignMirrorConstruction {
-                count,
                 count_record_index,
                 count_offset,
                 stitch_tolerance,
-                stitch_tolerance_record_index,
                 stitch_tolerance_offset,
-                stitch_tolerance_scope,
+                tolerance_source,
                 seed_group_record_index: seed_group.record_index,
                 plane_group_record_index: plane_group.record_index,
                 seed_feature_scope_record_index: seed_feature.map(|(value, offset)| crate::records::Located { value, offset }),
