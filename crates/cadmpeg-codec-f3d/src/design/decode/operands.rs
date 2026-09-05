@@ -4025,7 +4025,7 @@ pub(crate) fn parse_sketch_profile(
         .filter(|entity| {
             native_stream(&entity.id) == Some(stream)
                 && entity.in_sketch_module()
-                && entity.entity_suffix == entity_suffix
+                && entity.entity_id.suffix() == entity_suffix
         })
         .collect::<Vec<_>>();
     let [entity] = matches.as_slice() else {
@@ -4040,7 +4040,7 @@ pub(crate) fn parse_sketch_profile(
         class_tag: header.class_tag.clone(),
         asset_id,
         asset_id_offset: u64::try_from(start + 40).ok()?,
-        entity_id: crate::records::DesignEntityId::try_from(entity.entity_id.clone()).ok()?,
+        entity_id: entity.entity_id.clone(),
         entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
         region_selection,
         paired_class_tag,

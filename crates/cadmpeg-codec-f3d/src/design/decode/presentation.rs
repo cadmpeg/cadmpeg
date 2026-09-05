@@ -58,7 +58,7 @@ pub(crate) enum BodyPresentationOwner {
     /// The owner stores a component-qualified entity ID after its entity
     /// suffix.
     Named {
-        entity_id: String,
+        entity_id: crate::records::DesignEntityId,
         entity_id_offset: u64,
     },
     /// The owner stores only its u64 entity suffix in the indexed head.
@@ -167,13 +167,8 @@ pub(crate) fn body_presentations(
         let framed_bytes = &bytes[..frame.end];
         let named_header = parse_settled_entity_header(framed_bytes, frame.start)
             .or_else(|| parse_genesis_entity_header(framed_bytes, frame.start));
-        let (entity_suffix, owner, material) = if let Some((
-            entity_suffix,
-            entity_id,
-            _,
-            header_end,
-        )) = named_header
-        {
+        let (entity_suffix, owner, material) = if let Some((entity_id, _, header_end)) = named_header {
+            let entity_suffix = entity_id.suffix();
             if entity_suffix != frame.entity_id {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design body-presentation entity {} disagrees with its named header entity {entity_suffix}",
@@ -181,7 +176,7 @@ pub(crate) fn body_presentations(
                 )));
             }
             let entity_id_offset = header_end
-                .checked_sub(entity_id.encode_utf16().count() * 2)
+                .checked_sub(entity_id.as_str().encode_utf16().count() * 2)
                 .expect("entity header end follows its UTF-16 payload");
             (
                 entity_suffix,
@@ -716,7 +711,7 @@ mod tests {
         assert_eq!(
             presentation.owner,
             BodyPresentationOwner::Named {
-                entity_id: format!("0_{entity}"),
+                entity_id: crate::records::DesignEntityId::from_parts("0", entity),
                 entity_id_offset: 25,
             }
         );

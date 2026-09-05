@@ -1095,7 +1095,7 @@ pub fn decode_dimension_annotation_frames(
         let sketch_entities = entities
             .iter()
             .filter(|entity| native_stream(&entity.id) == Some(stream) && entity.in_sketch_module())
-            .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
+            .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
             .collect::<HashSet<_>>();
         let governed_owners = owners
             .iter()
@@ -1458,7 +1458,7 @@ pub fn decode_dimension_presentation_frames(
             .filter(|entity| {
                 native_stream(&entity.id) == Some(stream.as_str()) && entity.in_sketch_module()
             })
-            .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
+            .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
         for start in indexed_record_offsets(bytes) {
@@ -1668,7 +1668,7 @@ pub fn decode_dimension_locus_groups(
         let sketch_entities = entities
             .iter()
             .filter(|entity| native_stream(&entity.id) == Some(scope) && entity.in_sketch_module())
-            .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
+            .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some((start, end)) = companion_owned_interval(

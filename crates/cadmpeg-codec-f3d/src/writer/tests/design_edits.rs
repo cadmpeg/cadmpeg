@@ -172,8 +172,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .find(|header| header.in_sketch_module())
         .cloned()
         .expect("round-trip sketch entity header");
-    assert_eq!(header.entity_suffix, 277);
-    assert_eq!(header.entity_id, "0_277");
+    assert_eq!(header.entity_id.suffix(), 277);
+    assert_eq!(header.entity_id.as_str(), "0_277");
     assert_eq!(header.record_reference, Some(585));
     assert_eq!(header.references.values().copied().collect::<Vec<_>>(), [44, 33]);
     let object = f3d_native(round_trip.ir())

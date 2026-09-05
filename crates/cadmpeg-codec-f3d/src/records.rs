@@ -6586,6 +6586,11 @@ impl TryFrom<String> for DesignEntityId {
 }
 
 impl DesignEntityId {
+    pub fn from_parts(prefix: &str, suffix: u64) -> Self {
+        Self(format!("{prefix}_{suffix}"))
+    }
+
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -13065,10 +13070,8 @@ pub struct DesignEntityHeader {
     pub id: String,
     /// Byte offset of this entity header in its Design `BulkStream`.
     pub byte_offset: u64,
-    /// Numeric suffix of the owning design-entity id (e.g. the `N` in `Body:N`).
-    pub entity_suffix: u64,
     /// Full UTF-16LE-decoded design-entity id string for this header.
-    pub entity_id: String,
+    pub entity_id: DesignEntityId,
     /// Source per-file dynamic three-digit ASCII class tag naming this header's record type.
     pub class_tag: String,
     /// Whether the flag-selected four-byte optional slot is present.
@@ -13149,14 +13152,17 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
         if wire.declared_reference_count.is_some_and(|count| count != wire.reference_indices.len()) {
             return Err("declared_reference_count must match reference_indices".into());
         }
+        let entity_id = DesignEntityId::try_from(wire.entity_id)?;
+        if entity_id.suffix() != wire.entity_suffix {
+            return Err("entity_suffix disagrees with entity_id".into());
+        }
         Ok(Self {
             reference_count_present: wire.declared_reference_count.is_some(),
             references: ReferenceRun::from_columns(wire.reference_indices, wire.reference_offsets, "reference_indices/reference_offsets")?,
             members: ReferenceRun::from_columns(wire.member_indices, wire.member_offsets, "member_indices/member_offsets")?,
             id: wire.id,
             byte_offset: wire.byte_offset,
-            entity_suffix: wire.entity_suffix,
-            entity_id: wire.entity_id,
+            entity_id,
             class_tag: wire.class_tag,
             optional_slot_present: wire.optional_slot_present,
             module: wire.module,
@@ -13179,8 +13185,8 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             member_offsets,
             id: header.id,
             byte_offset: header.byte_offset,
-            entity_suffix: header.entity_suffix,
-            entity_id: header.entity_id,
+            entity_suffix: header.entity_id.suffix(),
+            entity_id: header.entity_id.0,
             class_tag: header.class_tag,
             optional_slot_present: header.optional_slot_present,
             module: header.module,

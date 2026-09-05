@@ -1714,8 +1714,8 @@ pub(super) fn continue_fixed_kind_operations(
     let entity = crate::records::DesignEntityHeader {
         id: "f3d:native:design-entity-header#70".into(),
         byte_offset: 70,
-        entity_suffix: 99,
-        entity_id: "Sketch_99".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_99".to_owned()).expect("valid entity ID"),
         class_tag: "366".into(),
         optional_slot_present: false,
         module: Some("MSketch".into()),

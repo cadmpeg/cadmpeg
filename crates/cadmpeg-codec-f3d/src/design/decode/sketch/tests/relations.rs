@@ -266,10 +266,10 @@ fn genesis_entity_header_variant_resolves_suffix_and_id() {
     for unit in "0_201".encode_utf16() {
         bytes.extend_from_slice(&unit.to_le_bytes());
     }
-    let (entity_suffix, entity_id, optional_slot_present, end) =
+    let (entity_id, optional_slot_present, end) =
         parse_genesis_entity_header(&bytes, 0).unwrap();
-    assert_eq!(entity_suffix, 201);
-    assert_eq!(entity_id, "0_201");
+    assert_eq!(entity_id.suffix(), 201);
+    assert_eq!(entity_id.as_str(), "0_201");
     assert!(!optional_slot_present);
     assert_eq!(end, bytes.len());
     assert!(parse_settled_entity_header(&bytes, 0).is_none());

@@ -275,7 +275,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         .design_entity_headers
         .iter()
         .filter(|header| header.in_sketch_module())
-        .map(|header| header.entity_suffix)
+        .map(|header| header.entity_id.suffix())
         .collect::<BTreeSet<_>>();
     let root_indices = native
         .design_entity_headers
@@ -616,18 +616,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         }
     }
     for header in &native.design_entity_headers {
-        let suffix = header
-            .entity_id
-            .rsplit('_')
-            .next()
-            .and_then(|suffix| suffix.parse::<u64>().ok());
-        if suffix != Some(header.entity_suffix) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design header {} entity id conflicts with suffix {}",
-                header.id, header.entity_suffix
-            )));
-        }
-        let owned_module = entity_modules.get(&header.entity_suffix).cloned();
+        let owned_module = entity_modules.get(&header.entity_id.suffix()).cloned();
         if header.module != owned_module {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design header {} module conflicts with MetaStream ownership",

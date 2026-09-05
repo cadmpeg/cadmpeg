@@ -765,7 +765,7 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
             .expect("generated Design entity header")
             .clone();
         duplicate.id.push_str("-duplicate");
-        duplicate.entity_id.push_str(":duplicate");
+        duplicate.entity_id = crate::records::DesignEntityId::from_parts("duplicate", duplicate.entity_id.suffix());
         let id = duplicate.entity_id.clone();
         native.design_entity_headers.push(duplicate);
         id
