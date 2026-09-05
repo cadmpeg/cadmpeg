@@ -358,18 +358,20 @@ pub(crate) fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64
     Some(value)
 }
 
-#[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent bound.
-pub(crate) fn take_optional_range_value(bytes: &[u8], position: &mut usize) -> Option<Option<f64>> {
+pub(crate) fn take_optional_range_value(
+    bytes: &[u8],
+    position: &mut usize,
+) -> Option<Nullable<f64>> {
     match bytes.get(*position)? {
         0x0a => {
             *position += 1;
-            take_f64(bytes, position).map(Some)
+            take_f64(bytes, position).map(Nullable::Value)
         }
         0x0b => {
             *position += 1;
-            Some(None)
+            Some(Nullable::Null)
         }
-        0x06 => take_f64(bytes, position).map(Some),
+        0x06 => take_f64(bytes, position).map(Nullable::Value),
         _ => None,
     }
 }
