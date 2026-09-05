@@ -11004,8 +11004,6 @@ pub struct DesignLoftLegacyBodyCarrier {
     pub byte_offset: u64,
     /// Per-file dynamic primary class tag (`322` or `411`).
     pub class_tag: String,
-    /// Raw scope reference stored at the fixed owner lane.
-    pub owner_scope_record_index: u32,
     /// Byte offset of `owner_scope_record_index`.
     pub owner_scope_record_index_offset: u64,
     /// The one member reference carried by this fixed legacy frame.
@@ -11015,23 +11013,19 @@ pub struct DesignLoftLegacyBodyCarrier {
     /// Byte offset of the on-wire member count (always 1).
     pub member_count_offset: u64,
     /// Opaque nonzero ordinal in the legacy scalar lane.
-    pub opaque_index: u32,
+    pub opaque_index: std::num::NonZeroU8,
     /// Byte offset of the first `opaque_index` copy.
     pub opaque_index_offset: u64,
     /// Opaque finite scalar in the legacy scalar lane.
     pub opaque_scalar: f64,
     /// Byte offset of `opaque_scalar`.
     pub opaque_scalar_offset: u64,
-    /// Repeated scalar-lane ordinal.
-    pub repeated_opaque_index: u32,
     /// Byte offset of the repeated `opaque_index` copy.
     pub repeated_opaque_index_offset: u64,
     /// Record named by the marked `N+2` reference.
     pub next_next_record_index: u32,
     /// Byte offset of the marked `N+2` reference.
     pub next_next_reference_offset: u64,
-    /// Two bytes between the `N+2` and `N+1` references.
-    pub flags: [u8; 2],
     /// Byte offset of `flags`.
     pub flags_offset: u64,
     /// Record named by the marked `N+1` reference.
@@ -11095,26 +11089,34 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
                     .into(),
             );
         }
+        if wire.owner_scope_record_index != wire.scope_record_index {
+            return Err("owner_scope_record_index disagrees with scope_record_index".into());
+        }
+        if wire.repeated_opaque_index != wire.opaque_index {
+            return Err("repeated_opaque_index disagrees with opaque_index".into());
+        }
+        if wire.flags != [0, 0] {
+            return Err("flags must be zero".into());
+        }
+        let opaque_index = u8::try_from(wire.opaque_index).ok()
+            .and_then(std::num::NonZeroU8::new).ok_or("opaque_index must be in 1..=255")?;
         Ok(Self {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag,
-            owner_scope_record_index: wire.owner_scope_record_index,
             owner_scope_record_index_offset: wire.owner_scope_record_index_offset,
             member: wire.members[0],
             member_offset: wire.member_offsets[0],
             member_count_offset: wire.member_count_offset,
-            opaque_index: wire.opaque_index,
+            opaque_index,
             opaque_index_offset: wire.opaque_index_offset,
             opaque_scalar: wire.opaque_scalar,
             opaque_scalar_offset: wire.opaque_scalar_offset,
-            repeated_opaque_index: wire.repeated_opaque_index,
             repeated_opaque_index_offset: wire.repeated_opaque_index_offset,
             next_next_record_index: wire.next_next_record_index,
             next_next_reference_offset: wire.next_next_reference_offset,
-            flags: wire.flags,
             flags_offset: wire.flags_offset,
             next_record_index: wire.next_record_index,
             next_reference_offset: wire.next_reference_offset,
@@ -11135,21 +11137,21 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
             record_index: carrier.record_index,
             byte_offset: carrier.byte_offset,
             class_tag: carrier.class_tag,
-            owner_scope_record_index: carrier.owner_scope_record_index,
+            owner_scope_record_index: carrier.scope_record_index,
             owner_scope_record_index_offset: carrier.owner_scope_record_index_offset,
             members: vec![carrier.member],
             member_offsets: vec![carrier.member_offset],
             member_count: 1,
             member_count_offset: carrier.member_count_offset,
-            opaque_index: carrier.opaque_index,
+            opaque_index: u32::from(carrier.opaque_index.get()),
             opaque_index_offset: carrier.opaque_index_offset,
             opaque_scalar: carrier.opaque_scalar,
             opaque_scalar_offset: carrier.opaque_scalar_offset,
-            repeated_opaque_index: carrier.repeated_opaque_index,
+            repeated_opaque_index: u32::from(carrier.opaque_index.get()),
             repeated_opaque_index_offset: carrier.repeated_opaque_index_offset,
             next_next_record_index: carrier.next_next_record_index,
             next_next_reference_offset: carrier.next_next_reference_offset,
-            flags: carrier.flags,
+            flags: [0, 0],
             flags_offset: carrier.flags_offset,
             next_record_index: carrier.next_record_index,
             next_reference_offset: carrier.next_reference_offset,

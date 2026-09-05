@@ -263,6 +263,38 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
             .expect_err("partial loft scope reference");
         assert!(error.to_string().contains(field));
     }
+    let base: serde_json::Value = serde_json::from_str(&format!("{prefix}{suffix}")).unwrap();
+    for (field, value) in [
+        ("owner_scope_record_index", serde_json::json!(13)),
+        ("repeated_opaque_index", serde_json::json!(2)),
+        ("flags", serde_json::json!([0, 1])),
+    ] {
+        let mut invalid = base.clone();
+        invalid[field] = value;
+        assert!(
+            serde_json::from_value::<super::DesignLoftLegacyBodyCarrier>(invalid)
+                .expect_err("invalid derived field")
+                .to_string()
+                .contains(field)
+        );
+    }
+    for ordinal in [0, 255, 256, u32::MAX] {
+        let mut wire = base.clone();
+        wire["opaque_index"] = ordinal.into();
+        wire["repeated_opaque_index"] = ordinal.into();
+        let parsed = serde_json::from_value::<super::DesignLoftLegacyBodyCarrier>(wire.clone());
+        if ordinal == 255 {
+            assert_eq!(
+                serde_json::to_value(parsed.expect("maximum ordinal")).unwrap(),
+                wire
+            );
+        } else {
+            assert!(parsed
+                .expect_err("invalid ordinal")
+                .to_string()
+                .contains("opaque_index"));
+        }
+    }
 }
 
 #[test]

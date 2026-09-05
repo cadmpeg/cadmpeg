@@ -1457,7 +1457,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     assert_eq!(parsed_322.paired_byte_offset, 87);
     assert_eq!(parsed_322.member, 900);
     assert_eq!(parsed_322.member_offset, 36);
-    assert_eq!(parsed_322.opaque_index, 89);
+    assert_eq!(parsed_322.opaque_index.get(), 89);
     assert_eq!(parsed_322.opaque_scalar, 1.25);
     assert_eq!(parsed_322.next_next_record_index, 102);
     assert_eq!(parsed_322.next_record_index, 101);
