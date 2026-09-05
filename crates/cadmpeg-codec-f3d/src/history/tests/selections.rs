@@ -170,10 +170,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         reference_type: 0,
         reference_type_offset: 0,
         tangent_point_data: None,
-        tangent_point_data_prefix: None,
-        tangent_point_data_offset: None,
-        input_record_indices: vec![55],
-        input_record_offsets: vec![0],
+        input_records: vec![crate::records::Located { value: 55, offset: 0 }],
         face_selection: Some(face_selection),
     };
     let mut scope = crate::records::DesignParameterScope::empty(

@@ -272,7 +272,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     hole_scope.payload = crate::records::DesignFeatureKind::Hole.into();
     let hole = exact_hole_construction(bytes, records, &hole_scope, stream_types)?;
     if hole.point_record_index != hole_record_index
-        || hole.input_record_indices.as_slice() != [second_selection_record_index]
+        || !hole.input_records.iter().map(|reference| reference.value).eq([second_selection_record_index])
         || point_rule_input_indices(&point.rule).as_slice() != [first_selection_record_index]
     {
         return None;

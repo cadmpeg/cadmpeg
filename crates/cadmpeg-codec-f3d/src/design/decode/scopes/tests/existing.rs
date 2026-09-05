@@ -935,18 +935,18 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
     assert_eq!(construction.direction_offset, (position_at + 24) as u64);
     assert_f64_array(construction.point_parameters, [0.125, -0.25]);
     assert_eq!(construction.reference_type, 19);
-    assert_eq!(construction.tangent_point_data_prefix, Some(0x7f));
+    assert_eq!(construction.tangent_point_data.as_ref().map(|tangent| tangent.prefix), Some(0x7f));
     assert_f64_array(
         construction
             .tangent_point_data
             .as_ref()
-            .copied()
+            .map(|tangent| tangent.data.value)
             .expect("version-four tangent point data"),
         [-1.0, -1.0, -1.0],
     );
-    assert_eq!(construction.input_record_indices, [378]);
+    assert_eq!(construction.input_records.iter().map(|reference| reference.value).collect::<Vec<_>>(), [378]);
     assert_eq!(
-        construction.input_record_offsets,
+        construction.input_records.iter().map(|reference| reference.offset).collect::<Vec<_>>(),
         [(input_reference_at + 1) as u64]
     );
 }
@@ -969,12 +969,12 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
     assert_f64_array(construction.direction, [0.0, 0.0, 1.0]);
     assert_f64_array(construction.point_parameters, [0.125, -0.25]);
     assert_eq!(construction.reference_type, 19);
-    assert_eq!(construction.tangent_point_data_prefix, None);
+    assert_eq!(construction.tangent_point_data.as_ref().map(|tangent| tangent.prefix), None);
     assert_eq!(construction.tangent_point_data, None);
-    assert_eq!(construction.tangent_point_data_offset, None);
-    assert_eq!(construction.input_record_indices, [378]);
+    assert_eq!(construction.tangent_point_data.as_ref().map(|tangent| tangent.data.offset), None);
+    assert_eq!(construction.input_records.iter().map(|reference| reference.value).collect::<Vec<_>>(), [378]);
     assert_eq!(
-        construction.input_record_offsets,
+        construction.input_records.iter().map(|reference| reference.offset).collect::<Vec<_>>(),
         [(input_reference_at + 1) as u64]
     );
 }

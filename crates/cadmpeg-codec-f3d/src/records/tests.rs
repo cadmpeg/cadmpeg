@@ -306,3 +306,37 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
         }
     }
 }
+
+#[test]
+fn hole_construction_preserves_tangent_and_input_reference_wire() {
+    let prefix = r#"{"point_record_index":55,"point_record_byte_offset":10,"position":[1.25,-2.5,3.75],"position_offset":35,"direction":[0.0,0.0,1.0],"direction_offset":59,"point_parameters":[0.125,-0.25],"point_parameter_offsets":[83,91],"reference_type":19,"reference_type_offset":99"#;
+    let fields = [
+        ("tangent_point_data", "[-1.0,-1.0,-1.0]"),
+        ("tangent_point_data_prefix", "127"),
+        ("tangent_point_data_offset", "104"),
+    ];
+    for mask in 0..8 {
+        let mut wire = prefix.to_owned();
+        for (index, (field, value)) in fields.iter().enumerate() {
+            if mask & (1 << index) != 0 {
+                wire.push_str(&format!(",\"{field}\":{value}"));
+            }
+        }
+        wire.push_str(r#","input_record_indices":[378,379],"input_record_offsets":[129,134]}"#);
+        let result = serde_json::from_str::<super::DesignHoleConstruction>(&wire);
+        if mask == 0 || mask == 7 {
+            assert_eq!(serde_json::to_string(&result.expect("complete tangent form")).expect("hole wire"), wire);
+        } else {
+            let error = result.expect_err("partial tangent form").to_string();
+            for (field, _) in fields {
+                assert!(error.contains(field));
+            }
+        }
+    }
+    for (indices, offsets) in [("[]", "[129]"), ("[378]", "[]"), ("[378,379]", "[129]")] {
+        let wire = format!("{prefix},\"input_record_indices\":{indices},\"input_record_offsets\":{offsets}}}");
+        let error = serde_json::from_str::<super::DesignHoleConstruction>(&wire).expect_err("unequal input arrays").to_string();
+        assert!(error.contains("input_record_indices"));
+        assert!(error.contains("input_record_offsets"));
+    }
+}

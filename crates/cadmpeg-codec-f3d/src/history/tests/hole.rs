@@ -134,10 +134,7 @@ fn hole_scope() -> crate::records::DesignParameterScope {
         reference_type: 13,
         reference_type_offset: 0,
         tangent_point_data: None,
-        tangent_point_data_prefix: None,
-        tangent_point_data_offset: None,
-        input_record_indices: vec![1],
-        input_record_offsets: vec![0],
+        input_records: vec![crate::records::Located { value: 1, offset: 0 }],
         face_selection: Some(face_selection),
     };
     let mut scope = crate::records::DesignParameterScope::empty(

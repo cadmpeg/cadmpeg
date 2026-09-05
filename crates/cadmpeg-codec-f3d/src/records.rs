@@ -3965,6 +3965,14 @@ pub struct DesignWorkPointConstruction {
     pub reference_type_offset: u64,
 }
 
+/// Tangent-point payload of a version-four Hole point carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignHoleTangentPoint {
+    pub prefix: u8,
+    pub data: Located<[f64; 3]>,
+}
+
 /// Exact point-and-direction construction carried by a `Hole` scope.
 ///
 /// The native point carrier stores the coordinates in source centimetres and
@@ -3973,6 +3981,7 @@ pub struct DesignWorkPointConstruction {
 /// records without reparsing the byte stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignHoleConstructionWire", into = "DesignHoleConstructionWire")]
 pub struct DesignHoleConstruction {
     /// Point-data record selected by the Hole scope.
     pub point_record_index: u32,
@@ -3994,22 +4003,105 @@ pub struct DesignHoleConstruction {
     pub reference_type: u32,
     /// Byte offset of `reference_type`.
     pub reference_type_offset: u64,
-    /// Tangent-point data carried by the version-four point-data base level.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tangent_point_data: Option<[f64; 3]>,
-    /// Serialized byte immediately before the version-four tangent-point data.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tangent_point_data_prefix: Option<u8>,
-    /// Byte offset of the first version-four tangent-point component.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tangent_point_data_offset: Option<u64>,
-    /// Record indices of the counted input-reference run.
-    pub input_record_indices: Vec<u32>,
-    /// Byte offsets of the input-reference targets.
-    pub input_record_offsets: Vec<u64>,
+    /// Version-four tangent-point data with its prefix and source location.
+    pub tangent_point_data: Option<DesignHoleTangentPoint>,
+    /// Located targets of the counted input-reference run.
+    pub input_records: Vec<Located<u32>>,
     /// Direct persistent face selection carried by the Hole scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face_selection: Option<DesignHoleFaceSelection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignHoleConstructionWire {
+    /// Point-data record selected by the Hole scope.
+    point_record_index: u32,
+    /// Byte offset of the point-data record header.
+    point_record_byte_offset: u64,
+    /// Hole entry position in source model centimetres.
+    position: [f64; 3],
+    /// Byte offset of the first position coordinate.
+    position_offset: u64,
+    /// Directed drilling vector in model space.
+    direction: [f64; 3],
+    /// Byte offset of the first direction component.
+    direction_offset: u64,
+    /// Two point-construction parameters carried by the point-data base level.
+    point_parameters: [f64; 2],
+    /// Byte offsets of the two point-construction parameters.
+    point_parameter_offsets: [u64; 2],
+    /// `refType` construction rule carried by the point-data record.
+    reference_type: u32,
+    /// Byte offset of `reference_type`.
+    reference_type_offset: u64,
+    /// Tangent-point data carried by the version-four point-data base level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tangent_point_data: Option<[f64; 3]>,
+    /// Serialized byte immediately before the version-four tangent-point data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tangent_point_data_prefix: Option<u8>,
+    /// Byte offset of the first version-four tangent-point component.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tangent_point_data_offset: Option<u64>,
+    /// Record indices of the counted input-reference run.
+    input_record_indices: Vec<u32>,
+    /// Byte offsets of the input-reference targets.
+    input_record_offsets: Vec<u64>,
+    /// Direct persistent face selection carried by the Hole scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    face_selection: Option<DesignHoleFaceSelection>,
+}
+
+impl TryFrom<DesignHoleConstructionWire> for DesignHoleConstruction {
+    type Error = String;
+    fn try_from(wire: DesignHoleConstructionWire) -> Result<Self, Self::Error> {
+        if wire.input_record_indices.len() != wire.input_record_offsets.len() {
+            return Err("input_record_indices and input_record_offsets must have equal lengths".into());
+        }
+        Ok(Self {
+            point_record_index: wire.point_record_index,
+            point_record_byte_offset: wire.point_record_byte_offset,
+            position: wire.position,
+            position_offset: wire.position_offset,
+            direction: wire.direction,
+            direction_offset: wire.direction_offset,
+            point_parameters: wire.point_parameters,
+            point_parameter_offsets: wire.point_parameter_offsets,
+            reference_type: wire.reference_type,
+            reference_type_offset: wire.reference_type_offset,
+            tangent_point_data: match (wire.tangent_point_data, wire.tangent_point_data_prefix, wire.tangent_point_data_offset) {
+                (None, None, None) => None,
+                (Some(value), Some(prefix), Some(offset)) => Some(DesignHoleTangentPoint { prefix, data: Located { value, offset } }),
+                _ => return Err("tangent_point_data, tangent_point_data_prefix and tangent_point_data_offset must occur together".into()),
+            },
+            input_records: wire.input_record_indices.into_iter().zip(wire.input_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            face_selection: wire.face_selection,
+        })
+    }
+}
+
+impl From<DesignHoleConstruction> for DesignHoleConstructionWire {
+    fn from(record: DesignHoleConstruction) -> Self {
+        Self {
+            point_record_index: record.point_record_index,
+            point_record_byte_offset: record.point_record_byte_offset,
+            position: record.position,
+            position_offset: record.position_offset,
+            direction: record.direction,
+            direction_offset: record.direction_offset,
+            point_parameters: record.point_parameters,
+            point_parameter_offsets: record.point_parameter_offsets,
+            reference_type: record.reference_type,
+            reference_type_offset: record.reference_type_offset,
+            tangent_point_data: record.tangent_point_data.as_ref().map(|tangent| tangent.data.value),
+            tangent_point_data_prefix: record.tangent_point_data.as_ref().map(|tangent| tangent.prefix),
+            tangent_point_data_offset: record.tangent_point_data.as_ref().map(|tangent| tangent.data.offset),
+            input_record_indices: record.input_records.iter().map(|reference| reference.value).collect(),
+            input_record_offsets: record.input_records.iter().map(|reference| reference.offset).collect(),
+            face_selection: record.face_selection,
+        }
+    }
 }
 
 /// Direct persistent face selection carried by a `Hole` scope.
