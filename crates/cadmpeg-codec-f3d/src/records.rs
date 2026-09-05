@@ -12656,9 +12656,26 @@ pub struct DesignFaceRecipeStructure {
     pub prelude: [i32; 2],
     /// Two ordered topology side clauses.
     pub sides: [DesignTopologyRecipeSide; 2],
-    /// Optional six-word postlude following the two side clauses.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub postlude: Vec<i32>,
+    /// Scalar carried by the optional `[-1, value, -1, 0, 0, -1]` postlude.
+    #[serde(default, rename = "postlude", skip_serializing_if = "Option::is_none", serialize_with = "serialize_face_recipe_postlude", deserialize_with = "deserialize_face_recipe_postlude")]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<i32>"))]
+    pub postlude_value: Option<i32>,
+}
+
+fn serialize_face_recipe_postlude<S: serde::Serializer>(value: &Option<i32>, serializer: S) -> Result<S::Ok, S::Error> {
+    match value {
+        Some(value) => [-1, *value, -1, 0, 0, -1].as_slice().serialize(serializer),
+        None => <[i32]>::serialize(&[], serializer),
+    }
+}
+
+fn deserialize_face_recipe_postlude<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<i32>, D::Error> {
+    let words = Vec::<i32>::deserialize(deserializer)?;
+    match words.as_slice() {
+        [] => Ok(None),
+        [-1, value, -1, 0, 0, -1] => Ok(Some(*value)),
+        _ => Err(serde::de::Error::custom("postlude must be empty or [-1, value, -1, 0, 0, -1]")),
+    }
 }
 
 /// Typed sketch-container visibility bound to a Design sketch entity.

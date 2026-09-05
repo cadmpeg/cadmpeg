@@ -2353,3 +2353,26 @@ fn surface_patch_recipe_requires_two_clauses_and_preserves_root_wire() {
             .unwrap_err().to_string().contains("clauses"));
     }
 }
+
+#[test]
+fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
+    let side = r#"{"field_count":2,"header_value":0,"scalars":[0],"payload_prefix":[0],"payload_entry_count":0,"entries":[]}"#;
+    let prefix = format!(r#"{{"root":0,"prelude":[1,2],"sides":[{side},{side}]"#);
+    for value in [i32::MIN, -1, 0, 4, i32::MAX] {
+        let wire = format!(r#"{prefix},"postlude":[-1,{value},-1,0,0,-1]}}"#);
+        let structure: super::DesignFaceRecipeStructure = serde_json::from_str(&wire).unwrap();
+        assert_eq!(structure.postlude_value, Some(value));
+        assert_eq!(serde_json::to_string(&structure).unwrap(), wire);
+    }
+    let omitted = format!("{prefix}}}");
+    for wire in [omitted.clone(), format!(r#"{prefix},"postlude":[]}}"#)] {
+        let structure: super::DesignFaceRecipeStructure = serde_json::from_str(&wire).unwrap();
+        assert_eq!(structure.postlude_value, None);
+        assert_eq!(serde_json::to_string(&structure).unwrap(), omitted);
+    }
+    for postlude in ["[-1]", "[-1,4,-1,0,0]", "[0,4,-1,0,0,-1]", "[-1,4,-1,0,1,-1]"] {
+        let wire = format!(r#"{prefix},"postlude":{postlude}}}"#);
+        assert!(serde_json::from_str::<super::DesignFaceRecipeStructure>(&wire)
+            .unwrap_err().to_string().contains("postlude"));
+    }
+}

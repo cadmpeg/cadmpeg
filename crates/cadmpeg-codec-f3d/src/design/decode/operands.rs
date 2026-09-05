@@ -4729,13 +4729,13 @@ pub(crate) fn face_recipe_structure(
         .into_iter()
         .filter_map(|(sides, tail)| {
             let postlude = match tail {
-                [] | [-1 | 0] => Vec::new(),
-                [-1, _, -1, 0, 0, -1] => tail.to_vec(),
+                [] | [-1 | 0] => None,
+                [-1, value, -1, 0, 0, -1] => Some(*value),
                 _ => return None,
             };
             Some((sides.try_into().ok()?, postlude))
         })
-        .collect::<Vec<([DesignTopologyRecipeSide; 2], Vec<i32>)>>();
+        .collect::<Vec<([DesignTopologyRecipeSide; 2], Option<i32>)>>();
     let [(sides, postlude)] = structures.as_slice() else {
         return None;
     };
@@ -4743,7 +4743,7 @@ pub(crate) fn face_recipe_structure(
         root,
         prelude: [first_prelude, second_prelude],
         sides: sides.clone(),
-        postlude: postlude.clone(),
+        postlude_value: *postlude,
     })
 }
 

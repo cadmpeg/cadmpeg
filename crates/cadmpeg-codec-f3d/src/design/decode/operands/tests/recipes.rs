@@ -958,7 +958,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         0, -1, 0, -1, 0, 1, 1, 4, 1, 1, 1, 4, 4, 4, -1, 4, -1, 0, 0, -1,
     ])
     .expect("face-node topology postlude");
-    assert_eq!(postlude_face.postlude, [-1, 4, -1, 0, 0, -1]);
+    assert_eq!(postlude_face.postlude_value, Some(4));
     let unambiguous_payload_face = crate::design::decode::operands::face_recipe_structure(&[
         0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 0, -1, 0, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, -1, 3, 0, -1, 0, -1, 1, -1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, -1,
@@ -1593,7 +1593,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                     entries: Vec::new(),
                 },
             ],
-            postlude: Vec::new(),
+            postlude_value: None,
         }),
     });
     assert!(matches!(
