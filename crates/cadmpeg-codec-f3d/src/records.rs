@@ -13697,6 +13697,29 @@ impl From<DesignMeshRecordIdentity> for DesignMeshRecordIdentityWire {
     }
 }
 
+/// A hyphenated hexadecimal GUID with its original letter case.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "String"))]
+#[serde(try_from = "String", into = "String")]
+pub struct DesignGuidText(String);
+
+impl DesignGuidText {
+    pub fn as_str(&self) -> &str { &self.0 }
+}
+impl TryFrom<String> for DesignGuidText {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if !crate::bytes::is_guid_hyphenated(&value) {
+            return Err("GUID must be 36 hyphenated hexadecimal characters".into());
+        }
+        Ok(Self(value))
+    }
+}
+impl From<DesignGuidText> for String {
+    fn from(value: DesignGuidText) -> Self { value.0 }
+}
+
 /// One texture resource owned by a Design mesh feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -13706,23 +13729,39 @@ pub struct DesignMeshTextureResource {
     /// Zero-based position in the serialized flags map.
     pub ordinal: u32,
     /// Stable resource GUID used as the key in both texture maps.
-    pub resource_guid: String,
+    pub resource_guid: DesignGuidText,
     /// Byte offset of the flags-map GUID payload.
-    pub flags_guid_offset: u64,
+    pub flags_location: DesignMeshTextureMapLocation,
     /// Opaque resource flags retained without reinterpretation.
     pub flags: u32,
-    /// Byte offset of `flags`.
-    pub flags_offset: u64,
     /// Zero-based position of the same GUID in the serialized filename map.
     pub filename_ordinal: u32,
     /// Byte offset of the filename-map GUID payload.
-    pub filename_guid_offset: u64,
-    /// Byte offset of the filename-record reference.
-    pub filename_record_reference_offset: u64,
+    pub filename_location: DesignMeshTextureMapLocation,
     /// Filename record joined to its archive entry.
     pub file: DesignMeshTextureFile,
     /// Neutral embedded asset projected from the matching archive entry.
     pub asset: AssetId,
+}
+
+/// Location of a 36-byte resource GUID immediately followed by its map payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DesignMeshTextureMapLocation(u64);
+
+impl DesignMeshTextureMapLocation {
+    pub fn new(guid_offset: u64) -> Result<Self, String> {
+        guid_offset.checked_add(36).ok_or("texture map GUID offset overflows")?;
+        Ok(Self(guid_offset))
+    }
+    pub fn guid_offset(self) -> u64 { self.0 }
+    pub fn payload_offset(self) -> u64 { self.0 + 36 }
+    fn from_wire(guid_offset: u64, payload_offset: u64, field: &str) -> Result<Self, String> {
+        let location = Self::new(guid_offset)?;
+        if location.payload_offset() != payload_offset {
+            return Err(format!("{field} must immediately follow its 36-byte GUID"));
+        }
+        Ok(location)
+    }
 }
 
 /// A filename record and the archive entry with its exact basename.
@@ -13763,7 +13802,7 @@ struct DesignMeshTextureResourceWire {
     /// Zero-based position in the serialized flags map.
     ordinal: u32,
     /// Stable resource GUID used as the key in both texture maps.
-    resource_guid: String,
+    resource_guid: DesignGuidText,
     /// Byte offset of the flags-map GUID payload.
     flags_guid_offset: u64,
     /// Opaque resource flags retained without reinterpretation.
@@ -13798,10 +13837,9 @@ impl TryFrom<DesignMeshTextureResourceWire> for DesignMeshTextureResource {
         }
         Ok(Self {
             ordinal: wire.ordinal, resource_guid: wire.resource_guid,
-            flags_guid_offset: wire.flags_guid_offset, flags: wire.flags,
-            flags_offset: wire.flags_offset, filename_ordinal: wire.filename_ordinal,
-            filename_guid_offset: wire.filename_guid_offset,
-            filename_record_reference_offset: wire.filename_record_reference_offset,
+            flags_location: DesignMeshTextureMapLocation::from_wire(wire.flags_guid_offset, wire.flags_offset, "flags_offset")?, flags: wire.flags,
+            filename_ordinal: wire.filename_ordinal,
+            filename_location: DesignMeshTextureMapLocation::from_wire(wire.filename_guid_offset, wire.filename_record_reference_offset, "filename_record_reference_offset")?,
             file, asset: wire.asset,
         })
     }
@@ -13810,10 +13848,10 @@ impl From<DesignMeshTextureResource> for DesignMeshTextureResourceWire {
     fn from(value: DesignMeshTextureResource) -> Self {
         Self {
             ordinal: value.ordinal, resource_guid: value.resource_guid,
-            flags_guid_offset: value.flags_guid_offset, flags: value.flags,
-            flags_offset: value.flags_offset, filename_ordinal: value.filename_ordinal,
-            filename_guid_offset: value.filename_guid_offset,
-            filename_record_reference_offset: value.filename_record_reference_offset,
+            flags_guid_offset: value.flags_location.guid_offset(), flags: value.flags,
+            flags_offset: value.flags_location.payload_offset(), filename_ordinal: value.filename_ordinal,
+            filename_guid_offset: value.filename_location.guid_offset(),
+            filename_record_reference_offset: value.filename_location.payload_offset(),
             filename: value.file.filename().to_owned(),
             filename_offset: value.file.filename_offset(),
             filename_record: value.file.record,

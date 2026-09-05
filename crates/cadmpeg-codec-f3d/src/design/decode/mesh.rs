@@ -32,7 +32,7 @@ use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
 use crate::paramesh::{decode_mesh_container, MeshContainer};
-use crate::records::MeshAffineTransform;
+use crate::records::{DesignGuidText, DesignMeshTextureMapLocation, MeshAffineTransform};
 use crate::records::{
     DesignMeshBody, DesignMeshFeature, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshTextureResource, DesignRecordHeader,
@@ -274,19 +274,17 @@ struct MeshCollectionRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshTextureMapEntry {
     ordinal: u32,
-    resource_guid: String,
-    guid_offset: u64,
+    resource_guid: DesignGuidText,
+    location: DesignMeshTextureMapLocation,
     value: u32,
-    value_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshTextureFilenameEntry {
     ordinal: u32,
-    resource_guid: String,
-    guid_offset: u64,
+    resource_guid: DesignGuidText,
+    location: DesignMeshTextureMapLocation,
     filename_record_index: u32,
-    reference_offset: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -747,19 +745,16 @@ fn parse_mesh_texture_table_record(
         for ordinal in 0..flags_count {
             let guid_at = at;
             let (resource_guid, end) = lp_ascii_strict(record, at, 36..=36)?;
-            (is_guid_hyphenated(&resource_guid)
-                && flag_keys.insert(resource_guid.to_ascii_uppercase()))
-            .then_some(())?;
+            let resource_guid = DesignGuidText::try_from(resource_guid).ok()?;
+            flag_keys.insert(resource_guid.as_str().to_ascii_uppercase()).then_some(())?;
             at = end;
-            let value_offset = at;
             let value = View::u32_le_at(record, at)?;
             at = at.checked_add(4)?;
             flags.push(MeshTextureMapEntry {
                 ordinal: u32::try_from(ordinal).ok()?,
                 resource_guid,
-                guid_offset: source_offset(frame.start, guid_at.checked_add(4)?)?,
+                location: DesignMeshTextureMapLocation::new(source_offset(frame.start, guid_at.checked_add(4)?)?).ok()?,
                 value,
-                value_offset: source_offset(frame.start, value_offset)?,
             });
         }
         let filename_count_at = at;
@@ -770,19 +765,16 @@ fn parse_mesh_texture_table_record(
         for ordinal in 0..filename_count {
             let guid_at = at;
             let (resource_guid, end) = lp_ascii_strict(record, at, 36..=36)?;
-            (is_guid_hyphenated(&resource_guid)
-                && filename_keys.insert(resource_guid.to_ascii_uppercase()))
-            .then_some(())?;
+            let resource_guid = DesignGuidText::try_from(resource_guid).ok()?;
+            filename_keys.insert(resource_guid.as_str().to_ascii_uppercase()).then_some(())?;
             at = end;
-            let reference_at = at;
             let filename_record_index = exact_local_record_index(record, at)?;
             at = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
             filenames.push(MeshTextureFilenameEntry {
                 ordinal: u32::try_from(ordinal).ok()?,
                 resource_guid,
-                guid_offset: source_offset(frame.start, guid_at.checked_add(4)?)?,
+                location: DesignMeshTextureMapLocation::new(source_offset(frame.start, guid_at.checked_add(4)?)?).ok()?,
                 filename_record_index,
-                reference_offset: source_offset(frame.start, reference_at)?,
             });
         }
         (at == record.len() && flag_keys == filename_keys).then_some(())?;
@@ -1360,12 +1352,12 @@ where
         let mut filename_entries = texture_table
             .filenames
             .iter()
-            .map(|entry| (entry.resource_guid.to_ascii_uppercase(), entry))
+            .map(|entry| (entry.resource_guid.as_str().to_ascii_uppercase(), entry))
             .collect::<HashMap<_, _>>();
         let mut textures = Vec::with_capacity(texture_table.flags.len());
         for flag in &texture_table.flags {
             let filename_entry = filename_entries
-                .remove(&flag.resource_guid.to_ascii_uppercase())
+                .remove(&flag.resource_guid.as_str().to_ascii_uppercase())
                 .ok_or_else(|| {
                     stream_error("texture flag and filename maps have identical GUID keys")
                 })?;
@@ -1381,12 +1373,10 @@ where
             textures.push(DesignMeshTextureResource {
                 ordinal: flag.ordinal,
                 resource_guid: flag.resource_guid.clone(),
-                flags_guid_offset: flag.guid_offset,
+                flags_location: flag.location,
                 flags: flag.value,
-                flags_offset: flag.value_offset,
                 filename_ordinal: filename_entry.ordinal,
-                filename_guid_offset: filename_entry.guid_offset,
-                filename_record_reference_offset: filename_entry.reference_offset,
+                filename_location: filename_entry.location,
                 file: crate::records::DesignMeshTextureFile::new(filename_record, &filename, archive_entry_name)
                     .map_err(|message| malformed_mesh_graph(&stream, &message))?,
                 asset,
@@ -2536,7 +2526,7 @@ mod tests {
             panic!("two texture resources");
         };
         let second_reference =
-            usize::try_from(second.reference_offset).expect("test reference offset");
+            usize::try_from(second.location.payload_offset()).expect("test reference offset");
         put_reference(
             &mut graph.bytes,
             second_reference,

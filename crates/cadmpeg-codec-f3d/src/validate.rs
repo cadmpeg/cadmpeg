@@ -1574,12 +1574,10 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
         resources.sort_by_key(|resource| resource.ordinal);
         let flag_order_valid = resources.iter().enumerate().all(|(ordinal, resource)| {
             let offsets_valid = texture_cursor.is_some_and(|cursor| {
-                cursor.checked_add(4) == Some(resource.flags_guid_offset)
-                    && cursor.checked_add(40) == Some(resource.flags_offset)
+                cursor.checked_add(4) == Some(resource.flags_location.guid_offset())
             });
             let valid = resource.ordinal == u32::try_from(ordinal).unwrap_or(u32::MAX)
-                && valid_design_guid(&resource.resource_guid)
-                && resource_guids.insert(resource.resource_guid.to_ascii_uppercase())
+                && resource_guids.insert(resource.resource_guid.as_str().to_ascii_uppercase())
                 && offsets_valid;
             texture_cursor = texture_cursor.and_then(|cursor| cursor.checked_add(44));
             valid
@@ -1598,8 +1596,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .entry(filename_key)
                 .or_insert(resource.file.record());
             let offsets_valid = texture_cursor.is_some_and(|cursor| {
-                cursor.checked_add(4) == Some(resource.filename_guid_offset)
-                    && cursor.checked_add(40) == Some(resource.filename_record_reference_offset)
+                cursor.checked_add(4) == Some(resource.filename_location.guid_offset())
             });
             let valid = resource.filename_ordinal == u32::try_from(ordinal).unwrap_or(u32::MAX)
                 && offsets_valid
