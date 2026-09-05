@@ -7378,31 +7378,107 @@ pub struct DesignScaleOperation {
 /// Source and copied Design body identities carried by `CopyPasteBodies`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignCopyPasteBodiesOperationWire"))]
+#[serde(try_from = "DesignCopyPasteBodiesOperationWire", into = "DesignCopyPasteBodiesOperationWire")]
 pub struct DesignCopyPasteBodiesOperation {
+    pub bodies: Vec<DesignCopiedBody>,
     /// Counted body-selection group named by the scope prefix and reference table.
     pub body_group_record_index: u32,
     /// Dynamic class tag of the body group's primary header.
     pub body_group_class_tag: String,
     /// Byte offset of the body group's primary header.
     pub body_group_byte_offset: u64,
-    /// Ordered body-operand records carried by the counted group.
-    pub body_operand_record_indices: Vec<u32>,
-    /// Byte offsets parallel to `body_operand_record_indices`.
-    pub body_operand_record_offsets: Vec<u64>,
     /// Indexed source-to-copy relation record named by the scope prefix.
     pub relation_record_index: u32,
     /// Dynamic class tag of the relation record's primary header.
     pub relation_class_tag: String,
     /// Byte offset of the relation record's primary header.
     pub relation_byte_offset: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignCopiedBody {
+    pub operand: Located<u32>,
+    pub source: Located<u32>,
+    pub copied: Located<u32>,
+}
+
+/// Source and copied Design body identities carried by `CopyPasteBodies`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignCopyPasteBodiesOperationWire {
+    /// Counted body-selection group named by the scope prefix and reference table.
+    body_group_record_index: u32,
+    /// Dynamic class tag of the body group's primary header.
+    body_group_class_tag: String,
+    /// Byte offset of the body group's primary header.
+    body_group_byte_offset: u64,
+    /// Ordered body-operand records carried by the counted group.
+    body_operand_record_indices: Vec<u32>,
+    /// Byte offsets parallel to `body_operand_record_indices`.
+    body_operand_record_offsets: Vec<u64>,
+    /// Indexed source-to-copy relation record named by the scope prefix.
+    relation_record_index: u32,
+    /// Dynamic class tag of the relation record's primary header.
+    relation_class_tag: String,
+    /// Byte offset of the relation record's primary header.
+    relation_byte_offset: u64,
     /// Source Design body entity suffixes in copy order.
-    pub source_body_entity_suffixes: Vec<u32>,
+    source_body_entity_suffixes: Vec<u32>,
     /// Byte offsets parallel to `source_body_entity_suffixes`.
-    pub source_body_entity_suffix_offsets: Vec<u64>,
+    source_body_entity_suffix_offsets: Vec<u64>,
     /// Newly copied Design body entity suffixes parallel to the sources.
-    pub copied_body_entity_suffixes: Vec<u32>,
+    copied_body_entity_suffixes: Vec<u32>,
     /// Byte offsets parallel to `copied_body_entity_suffixes`.
-    pub copied_body_entity_suffix_offsets: Vec<u64>,
+    copied_body_entity_suffix_offsets: Vec<u64>,
+}
+
+impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperation {
+    type Error = String;
+    fn try_from(wire: DesignCopyPasteBodiesOperationWire) -> Result<Self, Self::Error> {
+        let count = wire.body_operand_record_indices.len();
+        if wire.body_operand_record_offsets.len() != count { return Err("body_operand_record_offsets must match body_operand_record_indices".into()); }
+        if wire.source_body_entity_suffixes.len() != count { return Err("source_body_entity_suffixes must match body_operand_record_indices".into()); }
+        if wire.source_body_entity_suffix_offsets.len() != count { return Err("source_body_entity_suffix_offsets must match body_operand_record_indices".into()); }
+        if wire.copied_body_entity_suffixes.len() != count { return Err("copied_body_entity_suffixes must match body_operand_record_indices".into()); }
+        if wire.copied_body_entity_suffix_offsets.len() != count { return Err("copied_body_entity_suffix_offsets must match body_operand_record_indices".into()); }
+        let bodies = wire.body_operand_record_indices.into_iter()
+            .zip(wire.body_operand_record_offsets)
+            .zip(wire.source_body_entity_suffixes.into_iter().zip(wire.source_body_entity_suffix_offsets))
+            .zip(wire.copied_body_entity_suffixes.into_iter().zip(wire.copied_body_entity_suffix_offsets))
+            .map(|(((value, offset), (source, source_offset)), (copied, copied_offset))| DesignCopiedBody {
+                operand: Located { value, offset },
+                source: Located { value: source, offset: source_offset },
+                copied: Located { value: copied, offset: copied_offset },
+            }).collect();
+        Ok(Self { bodies,
+            body_group_record_index: wire.body_group_record_index,
+            body_group_class_tag: wire.body_group_class_tag,
+            body_group_byte_offset: wire.body_group_byte_offset,
+            relation_record_index: wire.relation_record_index,
+            relation_class_tag: wire.relation_class_tag,
+            relation_byte_offset: wire.relation_byte_offset,
+        })
+    }
+}
+impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire {
+    fn from(value: DesignCopyPasteBodiesOperation) -> Self {
+        Self {
+            body_group_record_index: value.body_group_record_index,
+            body_group_class_tag: value.body_group_class_tag,
+            body_group_byte_offset: value.body_group_byte_offset,
+            relation_record_index: value.relation_record_index,
+            relation_class_tag: value.relation_class_tag,
+            relation_byte_offset: value.relation_byte_offset,
+            body_operand_record_indices: value.bodies.iter().map(|body| body.operand.value).collect(),
+            body_operand_record_offsets: value.bodies.iter().map(|body| body.operand.offset).collect(),
+            source_body_entity_suffixes: value.bodies.iter().map(|body| body.source.value).collect(),
+            source_body_entity_suffix_offsets: value.bodies.iter().map(|body| body.source.offset).collect(),
+            copied_body_entity_suffixes: value.bodies.iter().map(|body| body.copied.value).collect(),
+            copied_body_entity_suffix_offsets: value.bodies.iter().map(|body| body.copied.offset).collect(),
+        }
+    }
 }
 
 /// Layout of the legacy class-452/class-262 Base Feature envelope.

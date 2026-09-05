@@ -1285,7 +1285,7 @@ pub fn project_parameter_design_with_edge_identities(
                             |operation| FeatureDefinition::InsertBodies {
                                 bodies: design_body_selection(
                                     scope,
-                                    operation.copied_body_entity_suffixes.iter().copied().map(u64::from),
+                                    operation.bodies.iter().map(|body| u64::from(body.copied.value)),
                                     body_bindings,
                                 ),
                             },

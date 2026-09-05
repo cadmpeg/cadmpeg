@@ -225,11 +225,11 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     .expect("single-body CopyPasteBodies relation");
     assert_eq!(operation.body_group_record_index, 55);
     assert_eq!(operation.body_group_byte_offset, body_group_at as u64);
-    assert_eq!(operation.body_operand_record_indices, [66]);
+    assert_eq!(operation.bodies.iter().map(|body| body.operand.value).collect::<Vec<_>>(), [66]);
     assert_eq!(operation.relation_record_index, 44);
     assert_eq!(operation.relation_byte_offset, relation_at as u64);
-    assert_eq!(operation.source_body_entity_suffixes, [1206]);
-    assert_eq!(operation.copied_body_entity_suffixes, [1215]);
+    assert_eq!(operation.bodies.iter().map(|body| body.source.value).collect::<Vec<_>>(), [1206]);
+    assert_eq!(operation.bodies.iter().map(|body| body.copied.value).collect::<Vec<_>>(), [1215]);
 
     // A Sketch scope may also carry the generic ordered reference table
     // used by `EntityGenesis`-form streams; the table then has more than
@@ -1823,8 +1823,8 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
             .expect("CopyPasteBodies operation");
     assert_eq!(operation.body_group_record_index, 1_500);
     assert_eq!(operation.relation_record_index, 1_700);
-    assert_eq!(operation.source_body_entity_suffixes, [985]);
-    assert_eq!(operation.copied_body_entity_suffixes, [8_422]);
+    assert_eq!(operation.bodies.iter().map(|body| body.source.value).collect::<Vec<_>>(), [985]);
+    assert_eq!(operation.bodies.iter().map(|body| body.copied.value).collect::<Vec<_>>(), [8_422]);
 }
 
 #[test]

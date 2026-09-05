@@ -5403,16 +5403,14 @@ pub(crate) fn exact_copy_paste_bodies_operation(
     if body_group_count != scope.reference_members.len().checked_sub(1)? {
         return None;
     }
-    let mut body_operand_record_indices = Vec::with_capacity(body_group_count);
-    let mut body_operand_record_offsets = Vec::with_capacity(body_group_count);
+    let mut operands = Vec::with_capacity(body_group_count);
     let mut body_group_cursor = body_group_count_at.checked_add(4)?;
     for expected in &scope.reference_members[1..] {
         let actual = marked_record_reference(bytes, body_group_cursor)?;
         if actual != *expected {
             return None;
         }
-        body_operand_record_indices.push(actual);
-        body_operand_record_offsets.push(u64::try_from(body_group_cursor + 1).ok()?);
+        operands.push(crate::records::Located { value: actual, offset: u64::try_from(body_group_cursor + 1).ok()? });
         body_group_cursor = body_group_cursor.checked_add(11)?;
     }
     let relation_at = records.first_at_or_after(search_at, relation_record_index)?;
@@ -5431,10 +5429,7 @@ pub(crate) fn exact_copy_paste_bodies_operation(
     if reference_count != body_count.checked_mul(2)? {
         return None;
     }
-    let mut source_body_entity_suffixes = Vec::with_capacity(body_count);
-    let mut source_body_entity_suffix_offsets = Vec::with_capacity(body_count);
-    let mut copied_body_entity_suffixes = Vec::with_capacity(body_count);
-    let mut copied_body_entity_suffix_offsets = Vec::with_capacity(body_count);
+    let mut bodies = Vec::with_capacity(body_count);
     let references_at = count_at.checked_add(5)?;
     let body_reference = |at: usize, trailing_zeros: usize| {
         if bytes.get(at) != Some(&1)
@@ -5447,21 +5442,16 @@ pub(crate) fn exact_copy_paste_bodies_operation(
         }
         View::u32_le_at(bytes, at + 1)
     };
-    for ordinal in 0..body_count {
+    for (ordinal, operand) in operands.into_iter().enumerate() {
         let source_at = references_at.checked_add(ordinal.checked_mul(30)?)?;
         let copied_at = source_at.checked_add(15)?;
-        source_body_entity_suffixes.push(body_reference(source_at, 10)?);
-        source_body_entity_suffix_offsets.push(u64::try_from(source_at + 1).ok()?);
-        copied_body_entity_suffixes.push(body_reference(
-            copied_at,
-            if ordinal + 1 == body_count { 6 } else { 10 },
-        )?);
-        copied_body_entity_suffix_offsets.push(u64::try_from(copied_at + 1).ok()?);
+        bodies.push(crate::records::DesignCopiedBody {
+            operand,
+            source: crate::records::Located { value: body_reference(source_at, 10)?, offset: u64::try_from(source_at + 1).ok()? },
+            copied: crate::records::Located { value: body_reference(copied_at, if ordinal + 1 == body_count { 6 } else { 10 })?, offset: u64::try_from(copied_at + 1).ok()? },
+        });
     }
-    if source_body_entity_suffixes
-        .iter()
-        .chain(&copied_body_entity_suffixes)
-        .copied()
+    if bodies.iter().flat_map(|body| [body.source.value, body.copied.value])
         .collect::<HashSet<_>>()
         .len()
         != reference_count
@@ -5469,18 +5459,13 @@ pub(crate) fn exact_copy_paste_bodies_operation(
         return None;
     }
     Some(DesignCopyPasteBodiesOperation {
+        bodies,
         body_group_record_index,
         body_group_class_tag,
         body_group_byte_offset: u64::try_from(body_group_at).ok()?,
-        body_operand_record_indices,
-        body_operand_record_offsets,
         relation_record_index,
         relation_class_tag,
         relation_byte_offset: u64::try_from(relation_at).ok()?,
-        source_body_entity_suffixes,
-        source_body_entity_suffix_offsets,
-        copied_body_entity_suffixes,
-        copied_body_entity_suffix_offsets,
     })
 }
 

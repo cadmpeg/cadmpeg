@@ -655,3 +655,21 @@ fn base_feature_result_rows_preserve_complete_and_unrepeated_runs() {
         }
     }
 }
+
+#[test]
+fn copied_body_rows_preserve_wire_and_reject_unequal_runs() {
+    let wire = r#"{"body_group_record_index":501,"body_group_class_tag":"264","body_group_byte_offset":100,"body_operand_record_indices":[502,504],"body_operand_record_offsets":[126,137],"relation_record_index":503,"relation_class_tag":"264","relation_byte_offset":200,"source_body_entity_suffixes":[11,13],"source_body_entity_suffix_offsets":[225,255],"copied_body_entity_suffixes":[12,14],"copied_body_entity_suffix_offsets":[240,270]}"#;
+    let operation: super::DesignCopyPasteBodiesOperation = serde_json::from_str(wire).expect("copy body rows");
+    assert_eq!(serde_json::to_string(&operation).expect("copy body wire"), wire);
+    assert_eq!(operation.bodies[1].source.value, 13);
+    assert_eq!(operation.bodies[1].copied.value, 14);
+    let value: serde_json::Value = serde_json::from_str(wire).expect("copy JSON");
+    for field in ["body_operand_record_indices", "body_operand_record_offsets", "source_body_entity_suffixes", "source_body_entity_suffix_offsets", "copied_body_entity_suffixes", "copied_body_entity_suffix_offsets"] {
+        for length in [0, 1, 3] {
+            let mut invalid = value.clone();
+            invalid[field].as_array_mut().expect("copy array").resize(length, serde_json::json!(1));
+            let error = serde_json::from_value::<super::DesignCopyPasteBodiesOperation>(invalid).expect_err("unequal body runs").to_string();
+            assert!(error.contains(field), "{field}: {error}");
+        }
+    }
+}

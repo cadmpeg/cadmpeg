@@ -554,18 +554,13 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         &mut copy_paste_bodies.payload
     {
         *slot = Some(DesignCopyPasteBodiesOperation {
+            bodies: vec![crate::records::DesignCopiedBody { operand: crate::records::Located { value: 502, offset: 0 }, source: crate::records::Located { value: 11, offset: 0 }, copied: crate::records::Located { value: 12, offset: 0 } }],
             body_group_record_index: 501,
             body_group_class_tag: "264".into(),
             body_group_byte_offset: 0,
-            body_operand_record_indices: vec![502],
-            body_operand_record_offsets: vec![0],
             relation_record_index: 503,
             relation_class_tag: "264".into(),
             relation_byte_offset: 0,
-            source_body_entity_suffixes: vec![11],
-            source_body_entity_suffix_offsets: vec![0],
-            copied_body_entity_suffixes: vec![12],
-            copied_body_entity_suffix_offsets: vec![0],
         });
     }
 
