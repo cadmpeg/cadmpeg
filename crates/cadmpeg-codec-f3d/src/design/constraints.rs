@@ -142,7 +142,7 @@ pub fn project_sketch_constraints(
         let input_entities = relation
             .members
             .iter()
-            .filter_map(|member| projected.get(&(scope, member.record_index)).copied())
+            .filter_map(|member| projected.get(&(scope, member.reference.record_index())).copied())
             .collect::<Vec<_>>();
         // The second reference run is the relation's semantic member order.
         // The interleaved first run is retained separately because
@@ -151,7 +151,7 @@ pub fn project_sketch_constraints(
         let semantic_entities = relation
             .return_members
             .iter()
-            .filter_map(|member| projected.get(&(scope, member.record_index)).copied())
+            .filter_map(|member| projected.get(&(scope, member.reference.record_index())).copied())
             .collect::<Vec<_>>();
         let exact = relation.unknown_constraint_bits() == 0
             && relation.constraint_kinds().len() == 1
@@ -458,7 +458,7 @@ pub(crate) fn exact_text_relation(
     let pattern = relation.definition.kind();
     match pattern {
         SketchRelationKind::TextFrame { text_reference }
-            if relation.members.first().map(|member| member.record_index)
+            if relation.members.first().map(|member| member.reference.record_index())
                     == Some(*text_reference)
                 && relation.auxiliary_references.values().copied().eq([*text_reference])
                 && relation.return_member_indices() == relation.member_indices()[1..] =>
@@ -470,7 +470,7 @@ pub(crate) fn exact_text_relation(
             let frame = relation
                 .return_members
                 .iter()
-                .map(|member| projected.get(&(scope, member.record_index)).copied())
+                .map(|member| projected.get(&(scope, member.reference.record_index())).copied())
                 .collect::<Option<Vec<_>>>()?;
             (!frame.is_empty()
                 && frame.iter().all(|entity| {
@@ -490,11 +490,11 @@ pub(crate) fn exact_text_relation(
             glyph_transforms,
         } if relation.members.len() == 2
             && relation.member_relation_ordinals().len() == 2
-            && relation.members[1].record_index == *text_reference
+            && relation.members[1].reference.record_index() == *text_reference
             && relation.auxiliary_references.values().copied().eq([*text_reference])
-            && relation.return_member_indices() == [relation.members[0].record_index] =>
+            && relation.return_member_indices() == [relation.members[0].reference.record_index()] =>
         {
-            let path = projected.get(&(scope, relation.members[0].record_index))?;
+            let path = projected.get(&(scope, relation.members[0].reference.record_index()))?;
             let text = projected.get(&(scope, *text_reference))?;
             if path.id() == text.id()
                 || matches!(
@@ -1000,11 +1000,11 @@ mod tests {
             owner_entity_id: "0_1".into(),
             auxiliary_references: crate::records::ReferenceRun::Unlocated(auxiliary_references),
             rectangular_counted_reference_count: Some(rectangular_counted_reference_count),
-            members: members
+            members: (members
                 .clone()
                 .into_iter()
                 .map(SketchRelationMember::from_index)
-                .collect(),
+                .collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
             owner_reference_offset: 0,
             definition: crate::records::SketchRelationDefinition::new(0x2000_0000, SketchRelationKind::from_pattern(Some(
                 crate::records::SketchPatternDefinition::Rectangular {
@@ -1027,11 +1027,11 @@ mod tests {
                 },
             ))).expect("valid relation definition"),
             entity_genesis: None,
-            return_members: members
+            return_members: (members
                 .iter()
                 .copied()
                 .map(SketchRelationReturnMember::from_index)
-                .collect(),
+                .collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
             raw_bytes: Vec::new(),
         }
     }
@@ -1220,12 +1220,12 @@ mod tests {
             owner_entity_id: "0_1".into(),
             auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![20, 21]),
             rectangular_counted_reference_count: None,
-            members: vec![
+            members: (vec![
                 SketchRelationMember::from_index(1),
                 SketchRelationMember::from_index(2),
                 SketchRelationMember::from_index(3),
                 SketchRelationMember::from_index(4),
-            ],
+            ]).try_into().expect("uniform member resolution"),
             owner_reference_offset: 0,
             definition: crate::records::SketchRelationDefinition::new(0x1000_0000, SketchRelationKind::from_pattern(Some(
                 crate::records::SketchPatternDefinition::Circular {
@@ -1236,12 +1236,12 @@ mod tests {
                 },
             ))).expect("valid relation definition"),
             entity_genesis: None,
-            return_members: vec![
+            return_members: (vec![
                 SketchRelationReturnMember::from_index(2),
                 SketchRelationReturnMember::from_index(3),
                 SketchRelationReturnMember::from_index(4),
                 SketchRelationReturnMember::from_index(1),
-            ],
+            ]).try_into().expect("uniform member resolution"),
             raw_bytes: Vec::new(),
         };
         let members = [&center, &seed, &middle, &last];
@@ -1325,12 +1325,12 @@ mod tests {
             owner_entity_id: "0_1".into(),
             auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![20, 21]),
             rectangular_counted_reference_count: None,
-            members: vec![
+            members: (vec![
                 SketchRelationMember::from_index(1),
                 SketchRelationMember::from_index(2),
                 SketchRelationMember::from_index(3),
                 SketchRelationMember::from_index(4),
-            ],
+            ]).try_into().expect("uniform member resolution"),
             owner_reference_offset: 0,
             definition: crate::records::SketchRelationDefinition::new(0x1000_0000, SketchRelationKind::from_pattern(Some(
                 crate::records::SketchPatternDefinition::Circular {
@@ -1341,12 +1341,12 @@ mod tests {
                 },
             ))).expect("valid relation definition"),
             entity_genesis: None,
-            return_members: vec![
+            return_members: (vec![
                 SketchRelationReturnMember::from_index(2),
                 SketchRelationReturnMember::from_index(3),
                 SketchRelationReturnMember::from_index(4),
                 SketchRelationReturnMember::from_index(1),
-            ],
+            ]).try_into().expect("uniform member resolution"),
             raw_bytes: Vec::new(),
         };
         let members = [&center, &seed, &middle, &last];
@@ -1406,10 +1406,10 @@ mod tests {
             owner_entity_id: String::new(),
             auxiliary_references: crate::records::ReferenceRun::Unlocated(vec![2]),
             rectangular_counted_reference_count: None,
-            members: vec![
+            members: (vec![
                 SketchRelationMember::from_index(1),
                 SketchRelationMember::from_index(2),
-            ],
+            ]).try_into().expect("uniform member resolution"),
             owner_reference_offset: 0,
             definition: crate::records::SketchRelationDefinition::new(0x200_0000_0000, SketchRelationKind::from_pattern(Some(
                 crate::records::SketchPatternDefinition::TextPath {
@@ -1418,7 +1418,7 @@ mod tests {
                 },
             ))).expect("valid relation definition"),
             entity_genesis: Some(2),
-            return_members: vec![SketchRelationReturnMember::from_index(1)],
+            return_members: (vec![SketchRelationReturnMember::from_index(1)]).try_into().expect("uniform member resolution"),
             raw_bytes: Vec::new(),
         };
         let projected =

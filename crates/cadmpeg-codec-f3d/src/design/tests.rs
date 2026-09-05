@@ -267,11 +267,11 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         owner_entity_id: String::new(),
         auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: vec![SketchRelationMember::from_index(20)],
+        members: (vec![SketchRelationMember::from_index(20)]).try_into().expect("uniform member resolution"),
         owner_reference_offset: 0,
         definition: crate::records::SketchRelationDefinition::new(0, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        return_members: vec![SketchRelationReturnMember::from_index(20)],
+        return_members: (vec![SketchRelationReturnMember::from_index(20)]).try_into().expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
 

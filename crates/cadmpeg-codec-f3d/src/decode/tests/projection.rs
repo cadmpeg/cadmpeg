@@ -1301,11 +1301,11 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         owner_entity_id: "0_1".into(),
         auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: Vec::new(),
+        members: (Vec::new()).try_into().expect("uniform member resolution"),
         owner_reference_offset: 0,
         definition: crate::records::SketchRelationDefinition::new(0, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        return_members: Vec::new(),
+        return_members: (Vec::new()).try_into().expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     });
     native.design_parameters.push(DesignParameter {

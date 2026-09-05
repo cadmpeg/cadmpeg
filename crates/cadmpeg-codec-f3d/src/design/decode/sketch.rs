@@ -1169,17 +1169,12 @@ pub fn decode_sketch_relations(
             let Ok(definition) = crate::records::SketchRelationDefinition::new(parsed.state, kind) else {
                 continue;
             };
-            let members = parsed.members.into_iter().map(|member| crate::records::SketchRelationMember {
-                record_index: member.reference.value,
-                offset: member.reference.offset as u32,
-                relation_ordinal: member.relation_ordinal,
-                resolved: None,
-            }).collect();
-            let return_members = parsed.return_members.into_iter().map(|member| crate::records::SketchRelationReturnMember {
-                record_index: member.value,
-                offset: member.offset as u32,
-                resolved: None,
-            }).collect();
+            let members = crate::records::SketchRelationMembers::from_indices(parsed.members.into_iter().map(|member| (
+                member.reference.value, member.reference.offset as u32, member.relation_ordinal,
+            )));
+            let return_members = crate::records::SketchRelationReturnMembers::from_indices(parsed.return_members.into_iter().map(|member| (
+                member.value, member.offset as u32,
+            )));
             out.push(SketchRelation {
                 id: ids::native_sketch_relation_id(&entry.name, record.record_index),
                 record_index: record.record_index,
@@ -2799,6 +2794,7 @@ pub(crate) fn bind_sketch_graph(
             ))
         })
         .collect::<std::collections::HashMap<_, _>>();
+    let mut scoped_relations = Vec::with_capacity(relations.len());
     for relation in relations.iter_mut() {
         let scope = native_stream(&relation.id).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -2815,6 +2811,7 @@ pub(crate) fn bind_sketch_graph(
                 ))
             })?
             .to_string();
+        scoped_relations.push((scope, relation.owner_reference, &mut relation.members, &mut relation.return_members));
     }
     let typed_records = points
         .iter()
@@ -2860,15 +2857,15 @@ pub(crate) fn bind_sketch_graph(
             owners.insert((*owner_scope, record_index), owner_reference);
         }
     }
-    for relation in relations.iter() {
-        let scope = native_stream(&relation.id).expect("relation stream checked above");
-        for record_index in relation.all_member_indices() {
+    for &(scope, owner_reference, ref members, ref returned) in &scoped_relations {
+        for record_index in members.iter().map(|member| member.reference.record_index())
+            .chain(returned.iter().map(|member| member.reference.record_index())) {
             if !typed_records.contains(&(scope, record_index)) {
                 continue;
             }
             if owners
-                .insert((scope, record_index), relation.owner_reference)
-                .is_some_and(|owner| owner != relation.owner_reference)
+                .insert((scope, record_index), owner_reference)
+                .is_some_and(|owner| owner != owner_reference)
             {
                 return Err(CodecError::malformed(format_args!(
                     "Fusion sketch record {record_index} in {scope} belongs to multiple sketches"
@@ -2947,42 +2944,11 @@ pub(crate) fn bind_sketch_graph(
             ))
         }))
         .collect::<std::collections::HashMap<_, _>>();
-    let resolve = |scope: &str, indices: &[u32]| {
-        indices
-            .iter()
-            .map(|record_index| {
-                operands.get(&(scope, *record_index)).cloned().unwrap_or(
-                    SketchRelationOperand::Record {
-                        record_index: *record_index,
-                    },
-                )
-            })
-            .collect()
-    };
-    for relation in relations {
-        let scope = native_stream(&relation.id).expect("relation stream checked above");
-        let member_indices = relation
-            .members
-            .iter()
-            .map(|member| member.record_index)
-            .collect::<Vec<_>>();
-        let return_indices = relation
-            .return_members
-            .iter()
-            .map(|member| member.record_index)
-            .collect::<Vec<_>>();
-        let resolved_members: Vec<SketchRelationOperand> = resolve(scope, &member_indices);
-        let resolved_return_members: Vec<SketchRelationOperand> = resolve(scope, &return_indices);
-        for (member, resolved) in relation.members.iter_mut().zip(resolved_members) {
-            member.resolved = Some(resolved);
-        }
-        for (member, resolved) in relation
-            .return_members
-            .iter_mut()
-            .zip(resolved_return_members)
-        {
-            member.resolved = Some(resolved);
-        }
+    for (scope, _, members, returned) in scoped_relations {
+        let resolve = |record_index| operands.get(&(scope, record_index)).cloned()
+            .unwrap_or(SketchRelationOperand::Record { record_index });
+        members.resolve(resolve);
+        returned.resolve(resolve);
     }
     Ok(())
 }

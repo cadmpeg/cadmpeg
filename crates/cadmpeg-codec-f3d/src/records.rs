@@ -15477,69 +15477,155 @@ pub(crate) fn constraint_kinds_from_state(state: u64) -> (Vec<SketchConstraintKi
     (kinds, state & !SKETCH_CONSTRAINT_MASK)
 }
 
-/// One first-run sketch-relation member with its offset, ordinal, and resolution.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+/// An indexed relation reference before or after sketch identity resolution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SketchRelationReference {
+    /// Indexed Design record whose identity has not been resolved.
+    Index(u32),
+    /// Resolved identity, which contains its indexed Design record reference.
+    Resolved(SketchRelationOperand),
+}
+
+impl SketchRelationReference {
+    /// Indexed Design record referenced by this member.
+    #[must_use]
+    pub fn record_index(&self) -> u32 {
+        match self {
+            Self::Index(index) => *index,
+            Self::Resolved(operand) => operand.record_index(),
+        }
+    }
+
+    /// Identity after resolution, including a record with no sketch identity.
+    #[must_use]
+    pub fn resolved(&self) -> Option<&SketchRelationOperand> {
+        match self {
+            Self::Index(_) => None,
+            Self::Resolved(operand) => Some(operand),
+        }
+    }
+
+    fn from_wire(record_index: u32, resolved: Option<SketchRelationOperand>, field: &str) -> Result<Self, SketchRelationPayloadError> {
+        match resolved {
+            None => Ok(Self::Index(record_index)),
+            Some(operand) if operand.record_index() == record_index => Ok(Self::Resolved(operand)),
+            Some(_) => Err(SketchRelationPayloadError(format!("sketch relation {field} record_index disagrees with its reference"))),
+        }
+    }
+}
+
+/// One first-run sketch-relation member with its offset and ordinal.
+#[derive(Debug, Clone, PartialEq)]
 pub struct SketchRelationMember {
-    /// Indexed Design record referenced by the relation.
-    pub record_index: u32,
+    /// Indexed record or its resolved sketch identity.
+    pub reference: SketchRelationReference,
     /// Payload offset of the member, relative to the record.
     pub offset: u32,
     /// Count of relations already recorded on this member.
     pub relation_ordinal: u32,
-    /// Typed sketch identity, when the member has been resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved: Option<SketchRelationOperand>,
 }
 
 impl SketchRelationMember {
-    /// A member named only by record index, with zero offset and ordinal.
+    /// An unresolved member with zero offset and ordinal.
     #[must_use]
     pub fn from_index(record_index: u32) -> Self {
-        Self {
-            record_index,
-            offset: 0,
-            relation_ordinal: 0,
-            resolved: None,
-        }
+        Self { reference: SketchRelationReference::Index(record_index), offset: 0, relation_ordinal: 0 }
     }
 }
 
-impl From<u32> for SketchRelationMember {
-    fn from(record_index: u32) -> Self {
-        Self::from_index(record_index)
-    }
-}
-
-/// One return-run sketch-relation member with its offset and resolution.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+/// One return-run sketch-relation member with its offset.
+#[derive(Debug, Clone, PartialEq)]
 pub struct SketchRelationReturnMember {
-    /// Indexed Design record referenced by the relation.
-    pub record_index: u32,
+    /// Indexed record or its resolved sketch identity.
+    pub reference: SketchRelationReference,
     /// Payload offset of the return member, relative to the record.
     pub offset: u32,
-    /// Typed sketch identity, when the member has been resolved.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved: Option<SketchRelationOperand>,
 }
 
 impl SketchRelationReturnMember {
-    /// A return member named only by record index, with zero offset.
+    /// An unresolved return member with zero offset.
     #[must_use]
     pub fn from_index(record_index: u32) -> Self {
-        Self {
-            record_index,
-            offset: 0,
-            resolved: None,
-        }
+        Self { reference: SketchRelationReference::Index(record_index), offset: 0 }
     }
 }
 
-impl From<u32> for SketchRelationReturnMember {
-    fn from(record_index: u32) -> Self {
-        Self::from_index(record_index)
+/// A complete first member run, either unresolved or resolved throughout.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SketchRelationMembers(Vec<SketchRelationMember>);
+
+impl SketchRelationMembers {
+    /// Construct the unresolved source run with its member locations.
+    pub(crate) fn from_indices(rows: impl IntoIterator<Item = (u32, u32, u32)>) -> Self {
+        Self(rows.into_iter().map(|(record_index, offset, relation_ordinal)| SketchRelationMember { reference: SketchRelationReference::Index(record_index), offset, relation_ordinal }).collect())
     }
+
+    /// Resolve every member while retaining its position metadata.
+    pub(crate) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
+        self.0 = self.0.iter().map(|row| SketchRelationMember {
+            reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
+            offset: row.offset, relation_ordinal: row.relation_ordinal,
+        }).collect();
+    }
+
+    /// Reverse source order without changing the run's resolution state.
+    pub(crate) fn reverse(&mut self) { self.0.reverse(); }
+}
+
+impl TryFrom<Vec<SketchRelationMember>> for SketchRelationMembers {
+    type Error = SketchRelationPayloadError;
+
+    fn try_from(rows: Vec<SketchRelationMember>) -> Result<Self, Self::Error> {
+        if rows.windows(2).any(|pair| pair[0].reference.resolved().is_some() != pair[1].reference.resolved().is_some()) {
+            return Err(SketchRelationPayloadError("sketch relation members run mixes resolved and unresolved references".into()));
+        }
+        Ok(Self(rows))
+    }
+}
+
+impl std::ops::Deref for SketchRelationMembers {
+    type Target = [SketchRelationMember];
+
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+/// A complete return member run, either unresolved or resolved throughout.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SketchRelationReturnMembers(Vec<SketchRelationReturnMember>);
+
+impl SketchRelationReturnMembers {
+    /// Construct the unresolved source run with its member locations.
+    pub(crate) fn from_indices(rows: impl IntoIterator<Item = (u32, u32)>) -> Self {
+        Self(rows.into_iter().map(|(record_index, offset)| SketchRelationReturnMember { reference: SketchRelationReference::Index(record_index), offset }).collect())
+    }
+
+    /// Resolve every member while retaining its position metadata.
+    pub(crate) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
+        self.0 = self.0.iter().map(|row| SketchRelationReturnMember {
+            reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
+            offset: row.offset,
+        }).collect();
+    }
+
+    /// Reverse source order without changing the run's resolution state.
+    pub(crate) fn reverse(&mut self) { self.0.reverse(); }
+}
+
+impl TryFrom<Vec<SketchRelationReturnMember>> for SketchRelationReturnMembers {
+    type Error = SketchRelationPayloadError;
+
+    fn try_from(rows: Vec<SketchRelationReturnMember>) -> Result<Self, Self::Error> {
+        if rows.windows(2).any(|pair| pair[0].reference.resolved().is_some() != pair[1].reference.resolved().is_some()) {
+            return Err(SketchRelationPayloadError("sketch relation return_members run mixes resolved and unresolved references".into()));
+        }
+        Ok(Self(rows))
+    }
+}
+
+impl std::ops::Deref for SketchRelationReturnMembers {
+    type Target = [SketchRelationReturnMember];
+
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 /// Pattern or text payload a sketch relation carries, when the mask names one.
@@ -15682,7 +15768,7 @@ impl SketchRelationDefinition {
 
 /// Rejected CADIR sketch relation whose derived fields disagree with `state`.
 #[derive(Debug)]
-pub(crate) struct SketchRelationPayloadError(String);
+pub struct SketchRelationPayloadError(String);
 
 impl std::fmt::Display for SketchRelationPayloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -15721,7 +15807,7 @@ pub struct SketchRelation {
     pub rectangular_counted_reference_count: Option<u32>,
     /// First reference run, interleaved with per-member relation ordinals.
     /// Its order does not define relation operand order.
-    pub members: Vec<SketchRelationMember>,
+    pub members: SketchRelationMembers,
     /// Payload offset of `owner_reference`, relative to the record.
     pub owner_reference_offset: u32,
     /// Constraint mask and the payload it selects.
@@ -15729,7 +15815,7 @@ pub struct SketchRelation {
     /// `EntityGenesis` origin bitfield stored by the relation record, when present.
     pub entity_genesis: Option<u64>,
     /// Second reference run in semantic member order.
-    pub return_members: Vec<SketchRelationReturnMember>,
+    pub return_members: SketchRelationReturnMembers,
     /// Complete variable-width source record for native replay/write.
     pub raw_bytes: Vec<u8>,
 }
@@ -15752,7 +15838,7 @@ impl SketchRelation {
     pub fn member_indices(&self) -> Vec<u32> {
         self.members
             .iter()
-            .map(|member| member.record_index)
+            .map(|member| member.reference.record_index())
             .collect()
     }
 
@@ -15761,7 +15847,7 @@ impl SketchRelation {
     pub fn return_member_indices(&self) -> Vec<u32> {
         self.return_members
             .iter()
-            .map(|member| member.record_index)
+            .map(|member| member.reference.record_index())
             .collect()
     }
 
@@ -15769,8 +15855,8 @@ impl SketchRelation {
     pub fn all_member_indices(&self) -> impl Iterator<Item = u32> + '_ {
         self.members
             .iter()
-            .map(|member| member.record_index)
-            .chain(self.return_members.iter().map(|member| member.record_index))
+            .map(|member| member.reference.record_index())
+            .chain(self.return_members.iter().map(|member| member.reference.record_index()))
     }
 
     /// Payload offsets parallel to the first reference run.
@@ -15797,83 +15883,44 @@ impl SketchRelation {
             .collect()
     }
 
-    /// Resolved first-run members, empty when none have been bound.
+    /// Resolved first-run members, empty for an unresolved run.
     #[must_use]
     pub fn resolved_members(&self) -> Vec<SketchRelationOperand> {
-        if self.members.iter().any(|member| member.resolved.is_none()) {
-            Vec::new()
-        } else {
-            self.members
-                .iter()
-                .filter_map(|member| member.resolved.clone())
-                .collect()
-        }
+        self.members.iter().filter_map(|member| member.reference.resolved().cloned()).collect()
     }
 
-    /// Resolved return-run members, empty when none have been bound.
+    /// Resolved return-run members, empty for an unresolved run.
     #[must_use]
     pub fn resolved_return_members(&self) -> Vec<SketchRelationOperand> {
-        if self
-            .return_members
-            .iter()
-            .any(|member| member.resolved.is_none())
-        {
-            Vec::new()
-        } else {
-            self.return_members
-                .iter()
-                .filter_map(|member| member.resolved.clone())
-                .collect()
-        }
+        self.return_members.iter().filter_map(|member| member.reference.resolved().cloned()).collect()
     }
 }
 
 fn zip_relation_members(
-    members: Vec<u32>,
-    offsets: Vec<u32>,
-    ordinals: Vec<u32>,
-    resolved: Vec<SketchRelationOperand>,
-) -> Result<Vec<SketchRelationMember>, SketchRelationPayloadError> {
+    members: Vec<u32>, offsets: Vec<u32>, ordinals: Vec<u32>, resolved: Vec<SketchRelationOperand>,
+) -> Result<SketchRelationMembers, SketchRelationPayloadError> {
     let len = members.len();
     let offsets = pad_or_check("member_offsets", offsets, len)?;
     let ordinals = pad_or_check("member_relation_ordinals", ordinals, len)?;
     let resolved = pad_resolved("resolved_members", resolved, len)?;
-    Ok(members
-        .into_iter()
-        .zip(offsets)
-        .zip(ordinals)
-        .zip(resolved)
-        .map(
-            |(((record_index, offset), relation_ordinal), resolved)| SketchRelationMember {
-                record_index,
-                offset,
-                relation_ordinal,
-                resolved,
-            },
-        )
-        .collect())
+    members.into_iter().zip(offsets).zip(ordinals).zip(resolved)
+        .map(|(((record_index, offset), relation_ordinal), resolved)| Ok(SketchRelationMember {
+            reference: SketchRelationReference::from_wire(record_index, resolved, "resolved_members")?, offset, relation_ordinal,
+        }))
+        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?.try_into()
 }
 
 fn zip_return_members(
-    members: Vec<u32>,
-    offsets: Vec<u32>,
-    resolved: Vec<SketchRelationOperand>,
-) -> Result<Vec<SketchRelationReturnMember>, SketchRelationPayloadError> {
+    members: Vec<u32>, offsets: Vec<u32>, resolved: Vec<SketchRelationOperand>,
+) -> Result<SketchRelationReturnMembers, SketchRelationPayloadError> {
     let len = members.len();
     let offsets = pad_or_check("return_member_offsets", offsets, len)?;
     let resolved = pad_resolved("resolved_return_members", resolved, len)?;
-    Ok(members
-        .into_iter()
-        .zip(offsets)
-        .zip(resolved)
-        .map(
-            |((record_index, offset), resolved)| SketchRelationReturnMember {
-                record_index,
-                offset,
-                resolved,
-            },
-        )
-        .collect())
+    members.into_iter().zip(offsets).zip(resolved)
+        .map(|((record_index, offset), resolved)| Ok(SketchRelationReturnMember {
+            reference: SketchRelationReference::from_wire(record_index, resolved, "resolved_return_members")?, offset,
+        }))
+        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?.try_into()
 }
 
 fn pad_or_check(
@@ -16005,14 +16052,6 @@ impl From<SketchRelation> for SketchRelationSerde {
     fn from(relation: SketchRelation) -> Self {
         let (constraint_kinds, unknown_constraint_bits) =
             constraint_kinds_from_state(relation.definition.state());
-        let emit_resolved = relation
-            .members
-            .iter()
-            .all(|member| member.resolved.is_some());
-        let emit_return_resolved = relation
-            .return_members
-            .iter()
-            .all(|member| member.resolved.is_some());
         let emit_ordinals = relation
             .members
             .iter()
@@ -16032,17 +16071,9 @@ impl From<SketchRelation> for SketchRelationSerde {
             members: relation
                 .members
                 .iter()
-                .map(|member| member.record_index)
+                .map(|member| member.reference.record_index())
                 .collect(),
-            resolved_members: if emit_resolved {
-                relation
-                    .members
-                    .iter()
-                    .filter_map(|member| member.resolved.clone())
-                    .collect()
-            } else {
-                Vec::new()
-            },
+            resolved_members: relation.members.iter().filter_map(|member| member.reference.resolved().cloned()).collect(),
             member_offsets: relation
                 .members
                 .iter()
@@ -16066,17 +16097,9 @@ impl From<SketchRelation> for SketchRelationSerde {
             return_members: relation
                 .return_members
                 .iter()
-                .map(|member| member.record_index)
+                .map(|member| member.reference.record_index())
                 .collect(),
-            resolved_return_members: if emit_return_resolved {
-                relation
-                    .return_members
-                    .iter()
-                    .filter_map(|member| member.resolved.clone())
-                    .collect()
-            } else {
-                Vec::new()
-            },
+            resolved_return_members: relation.return_members.iter().filter_map(|member| member.reference.resolved().cloned()).collect(),
             return_member_offsets: relation
                 .return_members
                 .iter()
@@ -16121,6 +16144,17 @@ pub enum SketchRelationOperand {
         /// Indexed Design record referenced by the relation.
         record_index: u32,
     },
+}
+
+impl SketchRelationOperand {
+    /// Indexed Design record that owns this identity.
+    #[must_use]
+    pub fn record_index(&self) -> u32 {
+        match self {
+            Self::Point { record_index, .. } | Self::Curve { record_index, .. }
+            | Self::Surface { record_index, .. } | Self::Record { record_index } => *record_index,
+        }
+    }
 }
 
 /// One bit in a Fusion sketch-constraint state mask.

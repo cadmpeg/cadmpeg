@@ -385,11 +385,11 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         owner_entity_id: "0_1".into(),
         auxiliary_references: crate::records::ReferenceRun::Located(vec![crate::records::Located { value: 0, offset: 80 }]),
         rectangular_counted_reference_count: None,
-        members: [(1, 25, 3), (2, 40, 5), (3, 55, 1), (4, 70, 1)].into_iter().map(|(record_index, offset, relation_ordinal)| crate::records::SketchRelationMember { record_index, offset, relation_ordinal, resolved: None }).collect(),
+        members: ([(1, 25, 3), (2, 40, 5), (3, 55, 1), (4, 70, 1)].into_iter().map(|(record_index, offset, relation_ordinal)| crate::records::SketchRelationMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, relation_ordinal, }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
         owner_reference_offset: 90,
         definition: crate::records::SketchRelationDefinition::new(0x20_0000_0000, crate::records::SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        return_members: [(1, 120, curve(1, 10)), (3, 131, curve(3, 30)), (2, 142, curve(2, 20)), (4, 153, curve(4, 40))].into_iter().map(|(record_index, offset, resolved)| crate::records::SketchRelationReturnMember { record_index, offset, resolved: Some(resolved) }).collect(),
+        return_members: ([(1, 120, curve(1, 10)), (3, 131, curve(3, 30)), (2, 142, curve(2, 20)), (4, 153, curve(4, 40))].into_iter().map(|(_record_index, offset, resolved)| crate::records::SketchRelationReturnMember { reference: crate::records::SketchRelationReference::Resolved(resolved), offset, }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
     let projected = HashMap::from([
@@ -419,18 +419,18 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     assert_eq!(parameter, None);
 
     let mut repeated_pair = relation;
-    repeated_pair.return_members.extend([
+    let mut returned = repeated_pair.return_members.to_vec();
+    returned.extend([
         crate::records::SketchRelationReturnMember {
-            record_index: 1,
+            reference: crate::records::SketchRelationReference::Resolved(curve(1, 10)),
             offset: 0,
-            resolved: Some(curve(1, 10)),
         },
         crate::records::SketchRelationReturnMember {
-            record_index: 3,
+            reference: crate::records::SketchRelationReference::Resolved(curve(3, 30)),
             offset: 0,
-            resolved: Some(curve(3, 30)),
         },
     ]);
+    repeated_pair.return_members = returned.try_into().expect("uniform member resolution");
     assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
 }
 

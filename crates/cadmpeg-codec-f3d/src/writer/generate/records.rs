@@ -832,8 +832,8 @@ fn encode_sketch_relation(
     let member_count = u32::try_from(relation.members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
     record.extend_from_slice(&member_count.to_le_bytes());
-    for member in &relation.members {
-        write_reference(&mut record, member.record_index);
+    for member in relation.members.iter() {
+        write_reference(&mut record, member.reference.record_index());
         record.extend_from_slice(&member.relation_ordinal.to_le_bytes());
     }
     // The base level's property-block presence byte, then the block when the
@@ -859,8 +859,8 @@ fn encode_sketch_relation(
     let return_count = u32::try_from(relation.return_members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many return members".into()))?;
     record.extend_from_slice(&return_count.to_le_bytes());
-    for member in &relation.return_members {
-        write_reference(&mut record, member.record_index);
+    for member in relation.return_members.iter() {
+        write_reference(&mut record, member.reference.record_index());
     }
     record.push(0);
     record.resize(record.len().max(101), 0);

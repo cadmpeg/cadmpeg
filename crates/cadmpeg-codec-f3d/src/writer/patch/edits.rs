@@ -2559,8 +2559,8 @@ pub(crate) fn validate_sketch_relation_edits(
         let mut values = Vec::new();
         collect_sketch_reference_edits(
             relation,
-            before.members.iter().map(|row| row.record_index),
-            relation.members.iter().map(|row| (row.record_index, row.offset)),
+            before.members.iter().map(|row| row.reference.record_index()),
+            relation.members.iter().map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
         )?;
         match &relation.auxiliary_references {
@@ -2586,8 +2586,8 @@ pub(crate) fn validate_sketch_relation_edits(
         }
         collect_sketch_reference_edits(
             relation,
-            before.return_members.iter().map(|row| row.record_index),
-            relation.return_members.iter().map(|row| (row.record_index, row.offset)),
+            before.return_members.iter().map(|row| row.reference.record_index()),
+            relation.return_members.iter().map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
         )?;
         if relation.definition.state() != before.definition.state() {

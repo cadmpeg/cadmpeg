@@ -584,16 +584,16 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         owner_reference_offset: 0,
         auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: vec![
+        members: (vec![
             SketchRelationMember::from_index(100),
             SketchRelationMember::from_index(600),
-        ],
+        ]).try_into().expect("uniform member resolution"),
         definition: crate::records::SketchRelationDefinition::new(0x11, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        return_members: vec![
+        return_members: (vec![
             SketchRelationReturnMember::from_index(600),
             SketchRelationReturnMember::from_index(100),
-        ],
+        ]).try_into().expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     }];
 
@@ -653,16 +653,16 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).design_types[2].version = 11;
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
-        relation.members = [100, 600, 100, 600, 100, 600, 100, 600]
+        relation.members = ([100, 600, 100, 600, 100, 600, 100, 600]
             .into_iter()
             .map(SketchRelationMember::from_index)
-            .collect();
-        relation.return_members = relation
+            .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+        relation.return_members = (relation
             .members
             .iter()
             .rev()
-            .map(|member| SketchRelationReturnMember::from_index(member.record_index))
-            .collect();
+            .map(|member| SketchRelationReturnMember::from_index(member.reference.record_index()))
+            .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
     }
     let mut variable_relation = Vec::new();
     F3dCodec
@@ -687,14 +687,14 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     );
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
-        relation.members = vec![
+        relation.members = (vec![
             SketchRelationMember::from_index(100),
             SketchRelationMember::from_index(600),
-        ];
-        relation.return_members = vec![
+        ]).try_into().expect("uniform member resolution");
+        relation.return_members = (vec![
             SketchRelationReturnMember::from_index(600),
             SketchRelationReturnMember::from_index(100),
-        ];
+        ]).try_into().expect("uniform member resolution");
     }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
     let error = F3dCodec

@@ -81,7 +81,7 @@ fn text_frame_curve_records(
             let scope = native_stream(&relation.id)?.to_owned();
             if relation.unknown_constraint_bits() != 0
                 || relation.constraint_kinds().len() != 1
-                || relation.members.first().map(|member| member.record_index)
+                || relation.members.first().map(|member| member.reference.record_index())
                     != Some(*text_reference)
                 || !relation.auxiliary_references.values().copied().eq([*text_reference])
                 || relation.members.len() < 2
@@ -92,7 +92,7 @@ fn text_frame_curve_records(
                 return None;
             }
             if !relation.return_members.iter().all(|member| {
-                curve_owners.get(&(scope.clone(), member.record_index))
+                curve_owners.get(&(scope.clone(), member.reference.record_index()))
                     == Some(&relation.owner_reference)
             }) {
                 return None;
@@ -713,7 +713,7 @@ pub fn project_spatial_sketch_constraints(
             let semantic_entities = relation
                 .return_members
                 .iter()
-                .map(|member| projected.get(&(scope, member.record_index)).copied())
+                .map(|member| projected.get(&(scope, member.reference.record_index())).copied())
                 .collect::<Option<Vec<_>>>()?;
             let members = semantic_entities
                 .iter()
