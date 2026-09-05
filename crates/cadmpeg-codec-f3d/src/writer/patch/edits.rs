@@ -24,9 +24,7 @@ use super::geometry::{
 use super::records::{canonical_guid, native_stream};
 use crate::native::F3dNative;
 use crate::writer::generate::native_geometry::{native_support_pcurve, pcurve_support_geometry};
-use crate::writer::primitives::{
-    finite_point, finite_vector, history_change_kind, normalized_face_sense_to_native,
-};
+use crate::writer::primitives::{finite_point, finite_vector, normalized_face_sense_to_native};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 const EPS_EDITED_DIRECTION_UNIT: f64 = 1.0e-9;
@@ -2119,8 +2117,6 @@ pub(crate) fn validate_history_state_edits(
                 }
                 for (change, before_change) in board.changes.iter_mut().zip(&before_board.changes) {
                     change.kind = before_change.kind;
-                    change.old_ref = before_change.old_ref;
-                    change.new_ref = before_change.new_ref;
                 }
             }
         }
@@ -2199,12 +2195,6 @@ pub(crate) fn validate_history_state_edits(
                 }
                 for (change, before_change) in board.changes.iter().zip(&before_board.changes) {
                     if change != before_change {
-                        if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
-                            return Err(CodecError::malformed(format_args!(
-                                "F3D entity change {} has a kind inconsistent with its references",
-                                change.id
-                            )));
-                        }
                         edits
                             .entry(stream.clone())
                             .or_default()

@@ -329,10 +329,10 @@ fn decode_retains_generated_asm_history_graph() {
     assert_eq!(history.states[0].records[0].revision_id, Some(1830));
     assert_eq!(history.states[0].records[0].entity_references, [1830, -1]);
     assert!(!history.states[0].records[0].raw_bytes.is_empty());
-    assert_eq!(
+    assert!(matches!(
         history.states[0].bulletin_boards[0].changes[1].kind,
-        crate::history_records::AsmEntityChangeKind::Insert
-    );
+        crate::history_records::AsmEntityChangeKind::Insert { .. }
+    ));
     assert_eq!(history.states[1].previous_ref, Some(0));
     assert_eq!(history.states[1].next_ref, None);
     assert!(result.report().geometry_transferred());
@@ -364,10 +364,8 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         board.owner_ref = 22;
         board.number = 24;
         assert!(board.changes[0].byte_offset > 0);
-        board.changes[0].kind = crate::history_records::AsmEntityChangeKind::Delete;
-        board.changes[0].old_ref = Some(26);
-        board.changes[0].new_ref = None;
-        board.changes[1].new_ref = Some(28);
+        board.changes[0].kind = crate::history_records::AsmEntityChangeKind::Delete { old: 26 };
+        board.changes[1].kind = crate::history_records::AsmEntityChangeKind::Insert { new: 28 };
     });
 
     let mut regenerated = Vec::new();
@@ -398,11 +396,11 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
     assert_eq!(board.number, 24);
     assert_eq!(
         board.changes[0].kind,
-        crate::history_records::AsmEntityChangeKind::Delete
+        crate::history_records::AsmEntityChangeKind::Delete { old: 26 }
     );
-    assert_eq!(board.changes[0].old_ref, Some(26));
-    assert_eq!(board.changes[0].new_ref, None);
-    assert_eq!(board.changes[1].new_ref, Some(28));
+    assert_eq!(board.changes[0].old_ref(), Some(26));
+    assert_eq!(board.changes[0].new_ref(), None);
+    assert_eq!(board.changes[1].new_ref(), Some(28));
 }
 
 #[test]

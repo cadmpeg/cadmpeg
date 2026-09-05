@@ -1591,9 +1591,10 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         id: format!("revision-700-to-{new_ref}"),
         parent: "board".into(),
         byte_offset: 0,
-        kind: AsmEntityChangeKind::Update,
-        old_ref: Some(700),
-        new_ref: Some(new_ref),
+        kind: AsmEntityChangeKind::Update {
+            old: 700,
+            new: new_ref,
+        },
     };
     let mut reconstructed_revision_history = history.clone();
     reconstructed_revision_history.states[0].bulletin_boards = vec![AsmBulletinBoard {

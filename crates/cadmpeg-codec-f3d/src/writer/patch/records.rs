@@ -543,14 +543,14 @@ pub(crate) fn patch_history_states(
             change.byte_offset,
             1,
             0x0c,
-            change.old_ref.unwrap_or(-1),
+            change.old_ref().unwrap_or(-1),
         )?;
         AsmEditSet::patch_tagged_i64(
             bytes,
             change.byte_offset,
             2,
             0x0c,
-            change.new_ref.unwrap_or(-1),
+            change.new_ref().unwrap_or(-1),
         )?;
     }
     Ok(())

@@ -15,8 +15,6 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
 use super::attributes::source_less_body_key;
 use super::records::validate_dynamic_class_tag;
-use crate::writer::primitives::history_change_kind;
-
 pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.model.procedural_surfaces {
@@ -808,16 +806,6 @@ pub(crate) fn validate_source_less_history_graph(
         ));
     }
     for state in states {
-        for board in &state.bulletin_boards {
-            for change in &board.changes {
-                if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
-                    return Err(CodecError::InvalidInput(format!(
-                        "F3D entity change {} has a kind inconsistent with its references",
-                        change.id
-                    )));
-                }
-            }
-        }
         for record in &state.records {
             if record.raw_bytes.is_empty() {
                 return Err(CodecError::InvalidInput(format!(

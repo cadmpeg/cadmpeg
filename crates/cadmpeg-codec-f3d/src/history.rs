@@ -96,15 +96,7 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
         }
         for board in &state.bulletin_boards {
             if board.parent != state.id
-                || board.changes.iter().any(|change| {
-                    let expected = match (change.old_ref.is_some(), change.new_ref.is_some()) {
-                        (false, true) => Some(AsmEntityChangeKind::Insert),
-                        (true, false) => Some(AsmEntityChangeKind::Delete),
-                        (true, true) => Some(AsmEntityChangeKind::Update),
-                        (false, false) => None,
-                    };
-                    change.parent != board.id || expected != Some(change.kind)
-                })
+                || board.changes.iter().any(|change| change.parent != board.id)
             {
                 return false;
             }
@@ -226,7 +218,7 @@ fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
         .iter()
         .flat_map(|state| &state.bulletin_boards)
         .flat_map(|board| &board.changes)
-        .filter_map(|change| change.old_ref)
+        .filter_map(|change| change.old_ref())
         .collect::<Vec<_>>();
     old_references.sort_unstable();
     if old_references.first().is_none_or(|first| {
@@ -297,7 +289,7 @@ fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
         .flat_map(|state| &state.bulletin_boards)
         .flat_map(|board| &board.changes)
     {
-        let (None, Some(new_ref)) = (change.old_ref, change.new_ref) else {
+        let Some(new_ref) = change.new_ref().filter(|_| change.old_ref().is_none()) else {
             return None;
         };
         if new_ref <= 0 || !inserted.insert(new_ref) {
@@ -366,25 +358,24 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
             .iter()
             .flat_map(|board| &board.changes)
         {
-            match (change.old_ref, change.new_ref) {
-                (Some(old), Some(new)) => {
+            match change.kind {
+                AsmEntityChangeKind::Update { old, new } => {
                     if !versions.contains_key(&new) || archived_ids.binary_search(&old).is_err() {
                         return;
                     }
                     versions.insert(new, old);
                 }
-                (None, Some(new)) => {
+                AsmEntityChangeKind::Insert { new } => {
                     if versions.remove(&new).is_none() {
                         return;
                     }
                 }
-                (Some(old), None) => {
+                AsmEntityChangeKind::Delete { old } => {
                     if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
                         return;
                     }
                     versions.insert(old, old);
                 }
-                (None, None) => return,
             }
         }
         let Some(next) = state.next_ref else {
@@ -569,10 +560,10 @@ fn historical_record_archive(
         .flat_map(|state| &state.bulletin_boards)
         .flat_map(|board| &board.changes)
     {
-        let Some(old_ref) = change.old_ref else {
+        let Some(old_ref) = change.old_ref() else {
             continue;
         };
-        let entity_ref = change.new_ref.unwrap_or(old_ref);
+        let entity_ref = change.new_ref().unwrap_or(old_ref);
         if revision_entities.insert(old_ref, entity_ref).is_some() {
             return None;
         }
@@ -6587,11 +6578,11 @@ impl HistoricalIdentityIndex {
                 .flat_map(|state| &state.bulletin_boards)
                 .flat_map(|board| &board.changes)
             {
-                let Some(record_ref) = change.old_ref.filter(|old| record_refs.contains(old))
+                let Some(record_ref) = change.old_ref().filter(|old| record_refs.contains(old))
                 else {
                     continue;
                 };
-                let entity_ref = change.new_ref.unwrap_or(record_ref);
+                let entity_ref = change.new_ref().unwrap_or(record_ref);
                 revisions
                     .entry(record_ref)
                     .or_default()
@@ -8877,9 +8868,9 @@ fn decode_bulletin_boards(
             let old = take_int(bytes, &mut position, 0x0c, width)?;
             let new = take_int(bytes, &mut position, 0x0c, width)?;
             let kind = match (old >= 0, new >= 0) {
-                (false, true) => AsmEntityChangeKind::Insert,
-                (true, false) => AsmEntityChangeKind::Delete,
-                (true, true) => AsmEntityChangeKind::Update,
+                (false, true) => AsmEntityChangeKind::Insert { new },
+                (true, false) => AsmEntityChangeKind::Delete { old },
+                (true, true) => AsmEntityChangeKind::Update { old, new },
                 (false, false) => return None,
             };
             changes.push(AsmEntityChange {
@@ -8895,8 +8886,6 @@ fn decode_bulletin_boards(
                 parent: board_id.clone(),
                 byte_offset: change_offset as u64,
                 kind,
-                old_ref: (old >= 0).then_some(old),
-                new_ref: (new >= 0).then_some(new),
             });
         }
         boards.push(AsmBulletinBoard {
