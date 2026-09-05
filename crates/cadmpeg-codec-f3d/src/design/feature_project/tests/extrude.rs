@@ -656,7 +656,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         },
         role: 0x0000_0008_0000_0000,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
-        extrude_face_role: None,
         role_offset: 1054,
 
         paired_class_tag: "259".into(),
@@ -1008,13 +1007,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
     let mut face_group = body_group.clone();
     face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
-    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces);
+    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(None));
     face_group.role = 0x0000_0011_0000_0000;
     let mut ordered_faces = [face_group.clone(), face_group.clone()];
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     assign_extrude_face_roles(&scope, &mut ordered_faces);
     assert_eq!(
-        ordered_faces.map(|group| group.extrude_face_role),
+        ordered_faces.map(|group| group.extrude_face_role()),
         [
             Some(DesignExtrudeFaceRole::Start),
             Some(DesignExtrudeFaceRole::Termination)
@@ -1146,7 +1145,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
     set_extrude_direction_reversed(&mut scope, true);
-    face_group.extrude_face_role = Some(DesignExtrudeFaceRole::Termination);
+    face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
+        DesignExtrudeFaceRole::Termination,
+    )));
     let side_offset = parameter("Side1Offset", "mm", 0.025);
     let to_face = project_extrude(
         &scope,
@@ -1330,7 +1331,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     let mut start_group = face_group.clone();
     start_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();
-    start_group.extrude_face_role = Some(DesignExtrudeFaceRole::Start);
+    start_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
+        DesignExtrudeFaceRole::Start,
+    )));
     let from_face = project_extrude(
         &scope,
         &[

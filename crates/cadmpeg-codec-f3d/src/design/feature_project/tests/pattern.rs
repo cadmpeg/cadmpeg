@@ -49,7 +49,6 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
         },
         role,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 0,
         paired_class_tag: "263".into(),
         paired_byte_offset: 0,

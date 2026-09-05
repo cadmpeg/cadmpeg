@@ -822,7 +822,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .design_construction_operand_groups
         .iter()
         .filter(|group| {
-            group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces)
+            group
+                .extrude_role
+                .is_some_and(|role| matches!(role, records::DesignExtrudeOperandRole::Faces(_)))
                 || (group.extrude_role == Some(records::DesignExtrudeOperandRole::Profile)
                     && decoded_profile_face_groups
                         .contains(&(design_stream(&group.id), group.record_index)))
@@ -3899,7 +3901,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                                 == target.scope_reference_ordinal
                                             && group.role == 0x0000_0005_0000_0000
                                             && group.extrude_role.is_none()
-                                            && group.extrude_face_role.is_none()
+                                            && group.extrude_face_role().is_none()
                                     });
                                 target.scope_reference_ordinal_offset.checked_add(5)
                                     == Some(side_extent_discriminator_offsets[0])
@@ -5150,17 +5152,15 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     Some(design::DesignFeatureFamily::Extrude) => match group.extrude_role {
                         Some(records::DesignExtrudeOperandRole::Bodies) => {
                             matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
-                                && group.extrude_face_role.is_none()
                         }
                         Some(records::DesignExtrudeOperandRole::Profile) => {
                             group.role == 0x0000_0041_0000_0000
-                                && group.extrude_face_role.is_none()
                                 && scope.extrude_profile().is_none_or(|profile| {
                                     group.members.first() == Some(&profile.record_index)
                                 })
                         }
-                        Some(records::DesignExtrudeOperandRole::Faces) => {
-                            (group.role == 0x0000_0011_0000_0000
+                        Some(records::DesignExtrudeOperandRole::Faces(Some(_))) => {
+                            group.role == 0x0000_0011_0000_0000
                                 || group.role == 0x0000_0012_0000_0000
                                     && scope
                                         .extrude_prologue()
@@ -5172,16 +5172,14 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     && scope
                                         .extrude_prologue()
                                         .map(records::DesignExtrudePrologue::start)
-                                        == Some(records::DesignExtrudeStart::FromFace))
-                                && group.extrude_face_role.is_some()
+                                        == Some(records::DesignExtrudeStart::FromFace)
                         }
-                        None => {
-                            group.role == 0x0000_0005_0000_0000 && group.extrude_face_role.is_none()
-                        }
+                        Some(records::DesignExtrudeOperandRole::Faces(None)) => false,
+                        None => group.role == 0x0000_0005_0000_0000,
                     },
                     Some(
                         design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
-                    ) => group.extrude_role.is_none() && group.extrude_face_role.is_none(),
+                    ) => group.extrude_role.is_none() && group.extrude_face_role().is_none(),
                     Some(design::DesignFeatureFamily::Coil) => {
                         group.role
                             == if scope.kind == "CoilPrimitive"
@@ -5194,27 +5192,27 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 0x0000_0008_0000_0000
                             }
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Move) => {
                         group.role == 0x0000_0004_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::OffsetFaces) => {
                         group.role == 0x0000_0010_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Draft) => {
                         matches!(group.role, 0x0000_0010_0000_0000 | 0x0000_0021_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::ReplaceFace) => {
                         matches!(group.role, 0x0000_0009_0000_0000 | 0x0000_0010_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Revolve) => {
                         matches!(
@@ -5224,17 +5222,17 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 | 0x0000_0021_0000_0000
                                 | 0x0000_0041_0000_0000
                         ) && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Shell) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0010_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Thicken) => {
                         matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0012_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Loft) => {
                         (scope.path_feature_construction().is_none()
@@ -5247,7 +5245,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     | 0x0000_0007_0000_0000
                             ))
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Sweep) => {
                         (scope.path_feature_construction().is_none()
@@ -5259,44 +5257,44 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     | 0x0000_0041_0000_0000
                             ))
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Pipe) => {
                         group.role == 0x0000_0005_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::CircularPattern) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::RectangularPattern) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Mirror) => {
                         matches!(
                             group.role,
                             0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
                         ) && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::SurfacePatch) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0041_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::SurfaceOffset) => {
                         group.role == 0x0000_0041_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::SurfaceRuled) => {
                         group.role == 0x0000_0008_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                             && scope.ruled_surface_operation().is_some_and(|operation| {
                                 operation
                                     .edge_group_record_indices
@@ -5306,34 +5304,34 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     Some(design::DesignFeatureFamily::BoundaryFill) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Hole) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::SurfaceTrim) => {
                         matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0021_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Split) => {
                         matches!(
                             group.role,
                             0x0000_0004_0000_0000 | 0x0000_0009_0000_0000 | 0x0000_0021_0000_0000
                         ) && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Scale) => {
                         group.role == 0x0000_0004_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::Thread) => {
                         group.role == 0x0000_0010_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                             && scope.thread_construction().is_some_and(|construction| {
                                 construction
                                     .face_group_record_indices
@@ -5345,43 +5343,43 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             group.role,
                             0x0000_0008_0000_0000 | 0x0000_0021_0000_0000 | 0x0000_0043_0000_0000
                         ) && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(design::DesignFeatureFamily::SheetMetalHem) => {
                         matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     Some(_) => false,
                     None if scope.kind == "RemoveBody" => {
                         group.role == 0x0000_0004_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     None if scope.kind == "SurfaceStitch" => {
                         group.role == 0x0000_0005_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     None if scope.kind == "SplitFace" => {
                         matches!(group.role, 0x0000_0010_0000_0000 | 0x0000_0021_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     None if matches!(scope.kind.as_str(), "DeleteFace" | "SurfaceDeleteFace") => {
                         group.role == 0x0000_0010_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     None if scope.kind == "Decal" => {
                         group.role == 0x0000_0004_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     None if scope.kind == "BaseFlange" => {
                         group.role == 0x0000_0041_0000_0000
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                             && scope
                                 .base_flange_profile()
                                 .as_ref()
@@ -5390,7 +5388,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     None if scope.kind == "Hem" => {
                         matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
                             && group.extrude_role.is_none()
-                            && group.extrude_face_role.is_none()
+                            && group.extrude_face_role().is_none()
                     }
                     None => false,
                 };
@@ -5719,7 +5717,9 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .filter(|group| {
                     design_stream(&group.id) == native_stream
                         && group.scope_record_index == scope.record_index
-                        && group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces)
+                        && group.extrude_role.is_some_and(|role| {
+                            matches!(role, records::DesignExtrudeOperandRole::Faces(_))
+                        })
                 })
                 .count();
             let target_shape_group_count = native
@@ -5730,7 +5730,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && group.scope_record_index == scope.record_index
                         && group.role == 0x0000_0005_0000_0000
                         && group.extrude_role.is_none()
-                        && group.extrude_face_role.is_none()
+                        && group.extrude_face_role().is_none()
                         && !group.members.is_empty()
                         && group
                             .members
@@ -5930,7 +5930,9 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .filter(|group| {
                     design_stream(&group.id) == native_stream
                         && group.scope_record_index == scope.record_index
-                        && group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces)
+                        && group.extrude_role.is_some_and(|role| {
+                            matches!(role, records::DesignExtrudeOperandRole::Faces(_))
+                        })
                 })
                 .collect::<Vec<_>>();
             face_groups.sort_by_key(|group| group.scope_reference_ordinal);
@@ -5967,7 +5969,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     || face_operand_group_count != expected_face_group_count
                     || face_groups
                         .iter()
-                        .map(|group| group.extrude_face_role)
+                        .map(|group| group.extrude_face_role())
                         .ne(expected_face_roles.iter().copied().map(Some)))
             {
                 findings.push(Finding {

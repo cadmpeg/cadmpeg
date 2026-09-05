@@ -194,7 +194,7 @@ pub(crate) fn resolved_body_recipe_selection(
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     if group.scope_record_index != scope.record_index
         || group.extrude_role.is_some()
-        || group.extrude_face_role.is_some()
+        || group.extrude_face_role().is_some()
         || group.members.is_empty()
     {
         return None;
@@ -1750,7 +1750,7 @@ pub(crate) fn bind_extrude_start_planes(
             continue;
         };
         if matching_groups.next().is_some()
-            || group.extrude_face_role != Some(DesignExtrudeFaceRole::Start)
+            || group.extrude_face_role() != Some(DesignExtrudeFaceRole::Start)
         {
             continue;
         }
@@ -1901,7 +1901,7 @@ fn bind_extrude_target_face(
     };
     let native = native.clone();
     let mut matching_groups = resolution.groups.iter().filter(|group| {
-        group.id == native && group.extrude_face_role == Some(DesignExtrudeFaceRole::Termination)
+        group.id == native && group.extrude_face_role() == Some(DesignExtrudeFaceRole::Termination)
     });
     let Some(group) = matching_groups.next() else {
         return;

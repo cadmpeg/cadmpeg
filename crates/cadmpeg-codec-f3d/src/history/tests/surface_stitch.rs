@@ -59,7 +59,6 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 0,
         paired_class_tag: "261".into(),
         paired_byte_offset: 0,

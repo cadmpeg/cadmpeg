@@ -6421,15 +6421,22 @@ pub struct DesignExtrudeSelectionGroup {
 }
 
 /// Semantic role of a counted Extrude operand group.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DesignExtrudeOperandRole {
     /// Existing bodies consumed by the Boolean operation.
     Bodies,
     /// Sketch profile swept by the Extrude.
     Profile,
     /// Faces used by profile-start or termination construction.
+    Faces(Option<DesignExtrudeFaceRole>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum DesignExtrudeOperandRoleTag {
+    Bodies,
+    Profile,
     Faces,
 }
 
@@ -6447,6 +6454,14 @@ pub enum DesignExtrudeFaceRole {
 /// Construction-operand group owned by a feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "DesignConstructionOperandGroupSerde")
+)]
+#[serde(
+    try_from = "DesignConstructionOperandGroupSerde",
+    into = "DesignConstructionOperandGroupSerde"
+)]
 pub struct DesignConstructionOperandGroup {
     /// Globally unique deterministic identifier.
     pub id: String,
@@ -6463,7 +6478,6 @@ pub struct DesignConstructionOperandGroup {
     /// Ordered operand-record references.
     pub members: Vec<u32>,
     /// Ordered unresolved-edge records whose run terminates at this group's identity.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lost_edge_references: Vec<String>,
     /// Byte offsets parallel to `members`.
     pub member_offsets: Vec<u64>,
@@ -6471,18 +6485,122 @@ pub struct DesignConstructionOperandGroup {
     pub frame: DesignConstructionOperandGroupFrame,
     /// Source u64 role code.
     pub role: u64,
-    /// Extrude-specific semantic role of `role`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Extrude-specific semantic role of `role`. Face start/termination lives
+    /// on `Faces`.
     pub extrude_role: Option<DesignExtrudeOperandRole>,
-    /// Start or termination role when `extrude_role` is `faces`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_face_role: Option<DesignExtrudeFaceRole>,
     /// Byte offset of `role`.
     pub role_offset: u64,
     /// Per-file dynamic paired class tag.
     pub paired_class_tag: String,
     /// Same-index paired-header byte offset.
     pub paired_byte_offset: u64,
+}
+
+impl DesignConstructionOperandGroup {
+    pub(crate) fn extrude_face_role(&self) -> Option<DesignExtrudeFaceRole> {
+        match self.extrude_role {
+            Some(DesignExtrudeOperandRole::Faces(role)) => role,
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignConstructionOperandGroupSerde {
+    id: String,
+    scope_record_index: u32,
+    scope_reference_ordinal: u32,
+    record_index: u32,
+    byte_offset: u64,
+    class_tag: String,
+    members: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    lost_edge_references: Vec<String>,
+    member_offsets: Vec<u64>,
+    frame: DesignConstructionOperandGroupFrame,
+    role: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extrude_role: Option<DesignExtrudeOperandRoleTag>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extrude_face_role: Option<DesignExtrudeFaceRole>,
+    role_offset: u64,
+    paired_class_tag: String,
+    paired_byte_offset: u64,
+}
+
+impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandGroup {
+    type Error = String;
+
+    fn try_from(wire: DesignConstructionOperandGroupSerde) -> Result<Self, Self::Error> {
+        let extrude_role = match (wire.extrude_role, wire.extrude_face_role) {
+            (Some(DesignExtrudeOperandRoleTag::Bodies), None) => {
+                Some(DesignExtrudeOperandRole::Bodies)
+            }
+            (Some(DesignExtrudeOperandRoleTag::Profile), None) => {
+                Some(DesignExtrudeOperandRole::Profile)
+            }
+            (Some(DesignExtrudeOperandRoleTag::Faces), face_role) => {
+                Some(DesignExtrudeOperandRole::Faces(face_role))
+            }
+            (None, None) => None,
+            _ => {
+                return Err("extrude_face_role is only valid when extrude_role is faces".into());
+            }
+        };
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            scope_reference_ordinal: wire.scope_reference_ordinal,
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            members: wire.members,
+            lost_edge_references: wire.lost_edge_references,
+            member_offsets: wire.member_offsets,
+            frame: wire.frame,
+            role: wire.role,
+            extrude_role,
+            role_offset: wire.role_offset,
+            paired_class_tag: wire.paired_class_tag,
+            paired_byte_offset: wire.paired_byte_offset,
+        })
+    }
+}
+
+impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerde {
+    fn from(group: DesignConstructionOperandGroup) -> Self {
+        let (extrude_role, extrude_face_role) = match group.extrude_role {
+            Some(DesignExtrudeOperandRole::Bodies) => {
+                (Some(DesignExtrudeOperandRoleTag::Bodies), None)
+            }
+            Some(DesignExtrudeOperandRole::Profile) => {
+                (Some(DesignExtrudeOperandRoleTag::Profile), None)
+            }
+            Some(DesignExtrudeOperandRole::Faces(face_role)) => {
+                (Some(DesignExtrudeOperandRoleTag::Faces), face_role)
+            }
+            None => (None, None),
+        };
+        Self {
+            id: group.id,
+            scope_record_index: group.scope_record_index,
+            scope_reference_ordinal: group.scope_reference_ordinal,
+            record_index: group.record_index,
+            byte_offset: group.byte_offset,
+            class_tag: group.class_tag,
+            members: group.members,
+            lost_edge_references: group.lost_edge_references,
+            member_offsets: group.member_offsets,
+            frame: group.frame,
+            role: group.role,
+            extrude_role,
+            extrude_face_role,
+            role_offset: group.role_offset,
+            paired_class_tag: group.paired_class_tag,
+            paired_byte_offset: group.paired_byte_offset,
+        }
+    }
 }
 
 /// Serialized framing of a construction-operand group.

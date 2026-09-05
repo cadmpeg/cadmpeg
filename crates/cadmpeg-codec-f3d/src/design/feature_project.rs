@@ -7675,7 +7675,11 @@ pub(crate) fn project_extrude(
     };
     let face_groups = scope_groups
         .iter()
-        .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces))
+        .filter(|group| {
+            group
+                .extrude_role
+                .is_some_and(|role| matches!(role, DesignExtrudeOperandRole::Faces(_)))
+        })
         .copied()
         .collect::<Vec<_>>();
     let unique = |source_kind: &str| {
@@ -7758,12 +7762,12 @@ pub(crate) fn project_extrude(
     };
     let start_groups = face_groups
         .iter()
-        .filter(|group| group.extrude_face_role == Some(DesignExtrudeFaceRole::Start))
+        .filter(|group| group.extrude_face_role() == Some(DesignExtrudeFaceRole::Start))
         .copied()
         .collect::<Vec<_>>();
     let termination_groups = face_groups
         .iter()
-        .filter(|group| group.extrude_face_role == Some(DesignExtrudeFaceRole::Termination))
+        .filter(|group| group.extrude_face_role() == Some(DesignExtrudeFaceRole::Termination))
         .copied()
         .collect::<Vec<_>>();
     let first_side_target_ordinal = match prologue {
@@ -7780,7 +7784,7 @@ pub(crate) fn project_extrude(
         .filter(|group| {
             group.role == 0x0000_0005_0000_0000
                 && group.extrude_role.is_none()
-                && group.extrude_face_role.is_none()
+                && group.extrude_face_role().is_none()
                 && first_side_target_ordinal
                     .is_none_or(|ordinal| group.scope_reference_ordinal == ordinal)
         })

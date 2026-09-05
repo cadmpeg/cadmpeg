@@ -2230,7 +2230,7 @@ fn bind_surface_stitch_face_selection(
                 && group.scope_record_index == scope.record_index
                 && group.role == 0x0000_0005_0000_0000
                 && group.extrude_role.is_none()
-                && group.extrude_face_role.is_none()
+                && group.extrude_face_role().is_none()
         })
         .collect::<Vec<_>>();
     matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
@@ -3773,8 +3773,10 @@ pub(crate) fn bind_face_operand_history_candidates(
                 crate::ids::native_stream(&group.id) == stream
                     && group.scope_record_index == scope.record_index
                     && group.record_index == group_record_index
-                    && group.extrude_role == Some(crate::records::DesignExtrudeOperandRole::Faces)
-                    && group.extrude_face_role.is_some()
+                    && group.extrude_role.is_some_and(|role| {
+                        matches!(role, crate::records::DesignExtrudeOperandRole::Faces(_))
+                    })
+                    && group.extrude_face_role().is_some()
             });
             groups.next()?;
             if groups.next().is_some() {
@@ -3831,7 +3833,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                         return false;
                     };
                     groups.next().is_none()
-                        && group.extrude_face_role
+                        && group.extrude_face_role()
                             == Some(crate::records::DesignExtrudeFaceRole::Termination)
                 });
         operand.resolved_face_slots = match scope.direct_face_operation() {

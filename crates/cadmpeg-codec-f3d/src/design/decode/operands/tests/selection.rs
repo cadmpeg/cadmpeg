@@ -207,7 +207,6 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         },
         role: 0x0000_0008_0000_0000,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
-        extrude_face_role: None,
         role_offset: 1053,
 
         paired_class_tag: "259".into(),
@@ -328,7 +327,6 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         },
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 953,
 
         paired_class_tag: "265".into(),

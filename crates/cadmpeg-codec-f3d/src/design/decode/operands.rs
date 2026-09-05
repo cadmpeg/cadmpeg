@@ -675,7 +675,7 @@ pub fn decode_face_operands(
         };
         let is_extrude_operand = matches!(
             group.extrude_role,
-            Some(DesignExtrudeOperandRole::Profile | DesignExtrudeOperandRole::Faces)
+            Some(DesignExtrudeOperandRole::Profile | DesignExtrudeOperandRole::Faces(_))
         );
         let is_offset_faces_operand = design_feature_family(&scope.kind)
             == Some(DesignFeatureFamily::OffsetFaces)
@@ -1614,18 +1614,24 @@ pub(crate) fn assign_extrude_face_roles(
     scope: &DesignParameterScope,
     groups: &mut [DesignConstructionOperandGroup],
 ) {
-    let mut face_groups = groups
-        .iter_mut()
-        .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces));
+    let mut face_groups = groups.iter_mut().filter(|group| {
+        group
+            .extrude_role
+            .is_some_and(|role| matches!(role, DesignExtrudeOperandRole::Faces(_)))
+    });
     if scope.extrude_prologue().map(DesignExtrudePrologue::start)
         == Some(DesignExtrudeStart::FromFace)
     {
         if let Some(group) = face_groups.next() {
-            group.extrude_face_role = Some(DesignExtrudeFaceRole::Start);
+            group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
+                DesignExtrudeFaceRole::Start,
+            )));
         }
     }
     for group in face_groups {
-        group.extrude_face_role = Some(DesignExtrudeFaceRole::Termination);
+        group.extrude_role = Some(DesignExtrudeOperandRole::Faces(Some(
+            DesignExtrudeFaceRole::Termination,
+        )));
     }
 }
 
@@ -1884,12 +1890,12 @@ fn extrude_operand_role(
     match role {
         0x0000_0004_0000_0000 | 0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
         0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
-        0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces),
+        0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces(None)),
         0x0000_0005_0000_0000
             if scope.extrude_prologue().map(DesignExtrudePrologue::start)
                 == Some(DesignExtrudeStart::FromFace) =>
         {
-            Some(DesignExtrudeOperandRole::Faces)
+            Some(DesignExtrudeOperandRole::Faces(None))
         }
         0x0000_0012_0000_0000
             if scope
@@ -1897,10 +1903,10 @@ fn extrude_operand_role(
                 .and_then(DesignExtrudePrologue::extent)
                 == Some(DesignExtrudeExtent::OneSidedToFace) =>
         {
-            Some(DesignExtrudeOperandRole::Faces)
+            Some(DesignExtrudeOperandRole::Faces(None))
         }
         0x0000_0012_0000_0000 if is_class_296_two_sided_to_faces_scope(scope) => {
-            Some(DesignExtrudeOperandRole::Faces)
+            Some(DesignExtrudeOperandRole::Faces(None))
         }
         _ => None,
     }
@@ -2131,7 +2137,6 @@ pub(crate) fn parse_construction_operand_group(
         },
         role,
         extrude_role,
-        extrude_face_role: None,
         role_offset,
         paired_class_tag,
         paired_byte_offset,

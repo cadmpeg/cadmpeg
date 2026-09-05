@@ -412,7 +412,6 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             },
             role,
             extrude_role: None,
-            extrude_face_role: None,
             role_offset: 0,
             paired_class_tag: "264".into(),
             paired_byte_offset: 0,

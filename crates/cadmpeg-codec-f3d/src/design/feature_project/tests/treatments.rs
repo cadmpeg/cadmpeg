@@ -515,7 +515,6 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             },
             role: 0x0000_0008_0000_0000,
             extrude_role: None,
-            extrude_face_role: None,
             role_offset: 1_060 + u64::from(scope_reference_ordinal),
             paired_class_tag: "259".into(),
             paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
@@ -609,7 +608,6 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         },
         role,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 0,
         paired_class_tag: "000".into(),
         paired_byte_offset: 0,
@@ -930,7 +928,6 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         },
         role: 0x0000_0008_0000_0000,
         extrude_role: None,
-        extrude_face_role: None,
         role_offset: 1110 + u64::from(ordinal) * 200,
 
         paired_class_tag: "259".into(),
