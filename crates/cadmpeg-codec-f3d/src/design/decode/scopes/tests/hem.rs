@@ -67,12 +67,6 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
         assert_eq!(operation.edge_operand_record_index, 254);
         assert_eq!(operation.bend_radius, 0.25);
         assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
-        // These four values are retained, not interpreted: each holds one value
-        // across every readable hem form and direction state (DR-09A).
-        assert_eq!(operation.form_code, 3);
-        assert_eq!(operation.direction_code, 1);
-        assert_eq!(operation.direction_reversal_byte, 0);
-        assert_eq!(operation.reference_side_code, 4);
     }
 }
 

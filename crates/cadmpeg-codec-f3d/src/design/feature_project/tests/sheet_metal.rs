@@ -44,7 +44,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         settings_record_index: 411,
         bend_radius: 0.25,
         bend_radius_offset: 156,
-        reference_side_code: 4,
+        reference_side_code: (),
         height_datum: DesignSheetMetalHeightDatum::InnerFaces,
         bend_position: DesignBendPosition::Adjacent,
     });
@@ -445,7 +445,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         settings_record_index: 411,
         bend_radius: 0.25,
         bend_radius_offset: 156,
-        reference_side_code: 4,
+        reference_side_code: (),
         height_datum: DesignSheetMetalHeightDatum::OuterFaces,
         bend_position: DesignBendPosition::Inside,
     });
@@ -644,7 +644,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         settings_record_index: 343,
         bend_radius: 0.25,
         bend_radius_offset: 156,
-        reference_side_code: 4,
+        reference_side_code: (),
         height_datum: DesignSheetMetalHeightDatum::OuterFaces,
         bend_position: DesignBendPosition::Inside,
     });
@@ -949,10 +949,10 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         settings_record_index: 724,
         bend_radius: 0.25,
         bend_radius_offset: 100,
-        form_code: 3,
-        direction_code: 1,
-        direction_reversal_byte: 0,
-        reference_side_code: 4,
+        form_code: (),
+        direction_code: (),
+        direction_reversal_byte: (),
+        reference_side_code: (),
     };
     let project = |record_index: u32,
                    operation: DesignHemOperation,
