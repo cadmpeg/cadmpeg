@@ -3837,7 +3837,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
     for object in &scan.objects {
-        if let Some(identity) = &object.identity {
+        if let Some(identity) = object.identity() {
             *object_id_counts.entry(identity.object_id).or_default() += 1;
         }
     }
@@ -4130,6 +4130,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> PresentationInstall {
     }
     let mut group_members = BTreeMap::<i32, Vec<String>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
+        let Some(object) = object.framed() else {
+            continue;
+        };
         if let Some(attributes) = &object.attributes {
             for group in &attributes.groups {
                 group_members

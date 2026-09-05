@@ -492,7 +492,7 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn new(scan: &'a Scan<'a>, expand: crate::mesh::MeshExpand<'a>) -> Self {
         let mut object_candidates = BTreeMap::new();
         for (source_order, object) in scan.objects.iter().enumerate() {
-            if let Some(identity) = &object.identity {
+            if let Some(identity) = object.identity() {
                 object_candidates
                     .entry(identity.object_id)
                     .or_insert_with(Vec::new)
@@ -574,7 +574,10 @@ impl<'a> DecodeContext<'a> {
     /// Looks up a scanned object by deterministic source order.
     #[cfg(test)]
     pub(crate) fn object(&self, source_order: usize) -> Option<&ObjectDescriptor> {
-        self.scan.objects.get(source_order)
+        self.scan
+            .objects
+            .get(source_order)
+            .and_then(|object| object.framed())
     }
 
     /// Looks up the retained unknown record for a source-order object.
@@ -733,7 +736,7 @@ impl<'a> DecodeContext<'a> {
         if !self.transition(source_order, GeometryStatus::NativeRetained) {
             return false;
         }
-        let class = self.scan.objects[source_order].class_uuid.to_string();
+        let class = self.scan.objects[source_order].class_uuid().to_string();
         let outcome = self.outcomes.get_mut(&class).expect("status class exists");
         outcome.native_code = Some(code);
         true
@@ -805,7 +808,9 @@ impl<'a> DecodeContext<'a> {
             {
                 continue;
             }
-            let object = &self.scan.objects[source_order];
+            let Some(object) = self.scan.objects[source_order].framed() else {
+                continue;
+            };
             if self.selected_object.is_none() && self.is_definition_member(object) {
                 continue;
             }
@@ -1023,7 +1028,9 @@ impl<'a> DecodeContext<'a> {
             return;
         }
         for source_order in 0..self.scan.objects.len() {
-            let object = &self.scan.objects[source_order];
+            let Some(object) = self.scan.objects[source_order].framed() else {
+                continue;
+            };
             if !crate::dimensions::supported_class(object.class_uuid) {
                 continue;
             }
@@ -1858,7 +1865,7 @@ impl<'a> DecodeContext<'a> {
         } else {
             format!(
                 "record-{source_order:06}-offset-{}",
-                self.scan.objects[source_order].range.start
+                self.scan.objects[source_order].range().start
             )
         }
     }
@@ -1984,6 +1991,9 @@ impl<'a> DecodeContext<'a> {
             .objects
             .get(source_order)
             .ok_or_else(|| "reference object is missing".to_string())?;
+        let object = object
+            .framed()
+            .ok_or_else(|| "reference identity is unavailable".to_string())?;
         let identity = object
             .identity
             .as_ref()
@@ -2057,7 +2067,7 @@ impl<'a> DecodeContext<'a> {
                 }
             };
             let member = &self.scan.objects[member_order];
-            if crate::instances::is_reference_class(member.class_uuid) {
+            if crate::instances::is_reference_class(member.class_uuid()) {
                 let nested = self.expand_reference_inner(member_order, transform, path, stack)?;
                 self.append_links(member_order, &nested);
                 self.mark_decoded(member_order);
@@ -2291,7 +2301,7 @@ impl<'a> DecodeContext<'a> {
         let Some(object) = self.scan.objects.get(source_order) else {
             return false;
         };
-        let Some(identity) = object.identity.as_ref() else {
+        let Some(identity) = object.identity() else {
             return false;
         };
         surface.source_object = Some(self.source_association(identity));
@@ -2579,15 +2589,17 @@ impl<'a> DecodeContext<'a> {
         for source_order in 0..self.scan.objects.len() {
             let object = &self.scan.objects[source_order];
             let id = Self::mint_unknown_id(source_order);
-            let class = object.class_uuid.to_string();
-            let object_type = object.object_type;
-            let framing_degraded = object.framing_degraded;
-            let attributes_degraded = object.attributes_degraded;
-            let record = self.source_record(id, object.range.clone());
+            let class = object.class_uuid().to_string();
+            let object_type = object.object_type();
+            let framing_degraded = object.is_degraded();
+            let attributes_degraded = object
+                .framed()
+                .is_some_and(|object| object.attributes_degraded);
+            let record = self.source_record(id, object.range());
             let outcome = self.outcomes.entry(class.clone()).or_default();
             if outcome.retained == 0 {
                 outcome.first_offset =
-                    u64::try_from(object.range.start).expect("Rhino record offset fits u64");
+                    u64::try_from(object.range().start).expect("Rhino record offset fits u64");
                 outcome.first_object_type = object_type;
             }
             outcome.retained += 1;
@@ -2647,7 +2659,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn scan_warning(&mut self, source_order: usize, message: &str) {
-        let class = self.scan.objects[source_order].class_uuid.to_string();
+        let class = self.scan.objects[source_order].class_uuid().to_string();
         self.scan_warnings_for_class(&class, message);
     }
 
@@ -2658,8 +2670,8 @@ impl<'a> DecodeContext<'a> {
                 .scan
                 .objects
                 .iter()
-                .find(|object| object.class_uuid.to_string() == class)
-                .map_or(0, |object| object.range.start as u64);
+                .find(|object| object.class_uuid().to_string() == class)
+                .map_or(0, |object| object.range().start as u64);
         }
         self.report
             .phase_warnings
@@ -2707,7 +2719,7 @@ impl<'a> DecodeContext<'a> {
         let Some(object) = self.scan.objects.get(source_order) else {
             return false;
         };
-        let Some(identity) = object.identity.as_ref() else {
+        let Some(identity) = object.identity() else {
             return false;
         };
         let key = self.object_key(identity, source_order);
@@ -3026,7 +3038,7 @@ impl<'a> DecodeContext<'a> {
         let Some(object) = self.scan.objects.get(source_order) else {
             return false;
         };
-        let Some(identity) = object.identity.as_ref() else {
+        let Some(identity) = object.identity() else {
             return false;
         };
         let Some(unknown) = self
@@ -3126,7 +3138,7 @@ impl<'a> DecodeContext<'a> {
         let Some(object) = self.scan.objects.get(source_order) else {
             return;
         };
-        let Some(identity) = object.identity.as_ref() else {
+        let Some(identity) = object.identity() else {
             return;
         };
         let Some(unknown) = self
@@ -3190,7 +3202,7 @@ impl<'a> DecodeContext<'a> {
         let Some(object) = self.scan.objects.get(source_order) else {
             return false;
         };
-        let Some(identity) = object.identity.as_ref() else {
+        let Some(identity) = object.identity() else {
             return false;
         };
         if !self.charge_entities(source_order, 1) {
@@ -3421,7 +3433,7 @@ impl<'a> DecodeContext<'a> {
             return false;
         }
         let object = &self.scan.objects[source_order];
-        let class = object.class_uuid.to_string();
+        let class = object.class_uuid().to_string();
         let outcome = self.outcomes.get_mut(&class).expect("status class exists");
         match current {
             GeometryStatus::Retained => outcome.retained -= 1,

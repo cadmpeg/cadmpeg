@@ -146,7 +146,7 @@ fn external_record(
 pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let mut object_records = BTreeMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
-        if let Some(identity) = &object.identity {
+        if let Some(identity) = object.identity() {
             object_records.entry(identity.object_id).or_default().push((
                 source_order,
                 format!("rhino:object:record#{source_order:06}"),
@@ -222,7 +222,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     }
     let mut occurrences = Vec::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
-        if !crate::instances::is_reference_class(object.class_uuid) || object.framing_degraded {
+        let Some(object) = object.framed() else {
+            continue;
+        };
+        if !crate::instances::is_reference_class(object.class_uuid) {
             continue;
         }
         let Ok(reference) =

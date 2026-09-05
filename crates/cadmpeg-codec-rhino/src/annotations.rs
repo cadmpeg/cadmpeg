@@ -455,6 +455,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
     let mut dots = Vec::new();
     let mut arrows = Vec::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
+        let Some(object) = object.framed() else {
+            continue;
+        };
         let identity = object.identity.as_ref();
         let link = format!("rhino:object:record#{source_order:06}");
         let key = identity.map_or_else(
