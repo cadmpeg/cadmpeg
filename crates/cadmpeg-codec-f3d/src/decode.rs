@@ -4425,7 +4425,7 @@ fn extend_related_design_records(
                     crate::ids::native_stream(&scope.id)?.to_owned(),
                     scope.record_index,
                 ),
-                scope.kind.as_str(),
+                &scope.kind,
             ))
         })
         .collect::<std::collections::HashMap<_, _>>();

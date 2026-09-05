@@ -413,7 +413,7 @@ fn project_qualified_operands(
                         scopes,
                         stream,
                         *component_insert_scope_record_index,
-                        "Component Insert",
+                        &crate::records::DesignFeatureKind::ComponentInsert,
                     )?;
                     let feature = unique_feature(features, &target_scope.id)?;
                     let FeatureDefinition::InsertComponent { occurrence } = &feature.definition
@@ -443,7 +443,12 @@ fn project_joint_origin_operand(
     scopes: &[DesignParameterScope],
     features: &[Feature],
 ) -> Option<JointOperand> {
-    let target_scope = unique_scope(scopes, stream, scope_record_index, "JointOrigin")?;
+    let target_scope = unique_scope(
+        scopes,
+        stream,
+        scope_record_index,
+        &crate::records::DesignFeatureKind::JointOrigin,
+    )?;
     if let Some(feature) = unique_feature(features, &target_scope.id) {
         if !matches!(
             feature.definition,
@@ -464,12 +469,12 @@ fn unique_scope<'a>(
     scopes: &'a [DesignParameterScope],
     stream: &str,
     record_index: u32,
-    kind: &str,
+    kind: &crate::records::DesignFeatureKind,
 ) -> Option<&'a DesignParameterScope> {
     let mut matches = scopes.iter().filter(|scope| {
         native_stream(&scope.id) == Some(stream)
             && scope.record_index == record_index
-            && scope.kind == kind
+            && scope.kind == *kind
     });
     let scope = matches.next()?;
     matches.next().is_none().then_some(scope)
@@ -859,12 +864,12 @@ mod tests {
     fn axial_operands_project_component_and_document_root_qualifiers() {
         let component_scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:component-insert#200",
-            "Component Insert",
+            crate::records::DesignFeatureKind::ComponentInsert,
             200,
         );
         let origin_scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:joint-origin#80",
-            "JointOrigin",
+            crate::records::DesignFeatureKind::JointOrigin,
             80,
         );
         let mut origin_scope = origin_scope;

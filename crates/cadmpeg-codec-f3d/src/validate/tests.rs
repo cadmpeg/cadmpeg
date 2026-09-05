@@ -69,7 +69,11 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
 
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#100");
-    let mut scope = DesignParameterScope::empty(&scope_id, "Component Insert", 169);
+    let mut scope = DesignParameterScope::empty(
+        &scope_id,
+        crate::records::DesignFeatureKind::ComponentInsert,
+        169,
+    );
     scope.byte_offset = 100;
     scope.class_tag = "410".into();
     scope.frame_length = 261;
@@ -293,7 +297,11 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         let hole_scope = ordinal == 2;
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#{scope_record_index}"),
-            if hole_scope { "Hole" } else { "Combine" },
+            if hole_scope {
+                crate::records::DesignFeatureKind::Hole
+            } else {
+                crate::records::DesignFeatureKind::Combine
+            },
             scope_record_index,
         );
         scope.reference_members = if hole_scope {
@@ -411,8 +419,11 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 
     let stream = "f3d:Design/BulkStream.dat";
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    let mut scope =
-        DesignParameterScope::empty(&format!("{stream}:design-parameter-scope#10"), "Hole", 10);
+    let mut scope = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#10"),
+        crate::records::DesignFeatureKind::Hole,
+        10,
+    );
     scope.reference_members = vec![100, 101, 200, 201];
     let group = |record_index: u32,
                  scope_reference_ordinal: u32,
@@ -502,7 +513,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 
     {
         let mut native = f3d_native_mut(&mut ir);
-        native.design_parameter_scopes[0].kind = "SurfaceTrim".into();
+        native.design_parameter_scopes[0].kind = crate::records::DesignFeatureKind::SurfaceTrim;
         native.design_construction_operand_groups[1].role = 0x0000_0021_0000_0000;
     }
     assert!(!crate::validate::validate_native(&ir)
@@ -526,7 +537,8 @@ fn validation_checks_pipe_path_group_roles() {
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#10");
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    let mut scope = DesignParameterScope::empty(&scope_id, "Pipe", 10);
+    let mut scope =
+        DesignParameterScope::empty(&scope_id, crate::records::DesignFeatureKind::Pipe, 10);
     scope.ensure_path_feature().path_feature_construction =
         Some(DesignPathFeatureConstruction::Pipe {
             operation: DesignExtrudeOperation::NewBody,
@@ -1012,7 +1024,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         class_tag: "301".into(),
         record_index: 10,
         frame_length: 200,
-        kind: "Extrude".into(),
+        kind: crate::records::DesignFeatureKind::Extrude,
         kind_offset: 210,
         payload: DesignScopePayload::Extrude(crate::records::DesignExtrudeScope {
             extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {

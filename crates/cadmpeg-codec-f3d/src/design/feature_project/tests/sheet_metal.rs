@@ -23,7 +23,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#900"),
-        "EdgeFlange",
+        crate::records::DesignFeatureKind::EdgeFlange,
         382,
     );
     scope.reference_members = vec![383, 385, 388, 393, 396, 399, 402, 404, 407, 411];
@@ -417,7 +417,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#910"),
-        "EdgeFlange",
+        crate::records::DesignFeatureKind::EdgeFlange,
         382,
     );
     scope.set_edge_flange_operation(Some(DesignEdgeFlangeOperation {
@@ -563,7 +563,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     };
     let mut target_scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#920"),
-        "WorkPlane",
+        crate::records::DesignFeatureKind::WorkPlane,
         320,
     );
     target_scope.with_work_plane_transform([
@@ -621,7 +621,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#901"),
-        "EdgeFlange",
+        crate::records::DesignFeatureKind::EdgeFlange,
         317,
     );
     scope.reference_members = vec![318, 320, 323, 328, 331, 334, 336, 339, 343];
@@ -684,7 +684,11 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         model_reference: 0,
     };
     let scope_with = |boundaries: Vec<DesignSurfacePatchBoundary>| {
-        let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "SurfacePatch", 1);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test:scope#1",
+            crate::records::DesignFeatureKind::SurfacePatch,
+            1,
+        );
         scope.set_surface_patch_boundaries(boundaries);
         scope
     };
@@ -741,7 +745,11 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
     };
     use cadmpeg_ir::features::{FeatureDefinition, SurfaceContinuity};
 
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "SurfacePatch", 1);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#1",
+        crate::records::DesignFeatureKind::SurfacePatch,
+        1,
+    );
     scope.frame_length = 442;
     scope.reference_members = vec![900, 100, 101, 102, 110, 111, 112, 120, 121, 122];
     scope.set_surface_patch_boundaries(vec![
@@ -963,7 +971,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                    parameters: Vec<DesignParameter>| {
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#{record_index}"),
-            "Hem",
+            crate::records::DesignFeatureKind::Hem,
             record_index,
         );
         scope.set_hem_operation(Some(operation));

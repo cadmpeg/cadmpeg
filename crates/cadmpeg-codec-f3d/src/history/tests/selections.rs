@@ -178,7 +178,11 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         input_record_offsets: vec![0],
         face_selection: Some(face_selection),
     };
-    let mut scope = crate::records::DesignParameterScope::empty("f3d:scope#42", "Hole", 42);
+    let mut scope = crate::records::DesignParameterScope::empty(
+        "f3d:scope#42",
+        crate::records::DesignFeatureKind::Hole,
+        42,
+    );
     scope.set_hole_construction(Some(construction));
 
     bind_hole_selection_history(std::slice::from_mut(&mut scope), &[history]);
@@ -579,7 +583,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     };
     let mut scope = crate::records::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        "Combine",
+        crate::records::DesignFeatureKind::Combine,
         10,
     );
     scope.set_combine_operation(Some(crate::records::DesignCombineOperation {
@@ -1388,7 +1392,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        "Extrude",
+        crate::records::DesignFeatureKind::Extrude,
         42,
     );
     scope.history_state_id = Some(2);
@@ -1580,7 +1584,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     use cadmpeg_ir::math::{Point3, Vector3};
     let mut scope = crate::records::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#42",
-        "Mirror",
+        crate::records::DesignFeatureKind::Mirror,
         42,
     );
     scope.history_state_id = Some(2);

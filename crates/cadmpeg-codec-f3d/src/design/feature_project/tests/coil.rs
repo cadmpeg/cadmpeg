@@ -52,7 +52,7 @@ fn parameter(
 fn long_coil_matrix_projects_as_explicit_placement() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#40",
-        "CoilPrimitive",
+        crate::records::DesignFeatureKind::CoilPrimitive,
         40,
     );
     scope.ensure_coil().coil_operation = Some(DesignExtrudeOperation::NewBody);

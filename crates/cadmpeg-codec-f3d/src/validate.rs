@@ -72,7 +72,7 @@ fn body_recipe_reference_table_is_admitted(
             operand.owner,
             records::DesignOperandOwner::ScopeReference { .. }
         ) && scope.is_some_and(|scope| {
-            scope.kind == "Combine"
+            scope.kind == crate::records::DesignFeatureKind::Combine
                 && scope.combine_operation().is_some_and(|operation| {
                     operation
                         .tools
@@ -224,7 +224,7 @@ fn valid_class_307_joint_origin_qualifier(
             .iter()
             .filter(|target_scope| {
                 design_stream(&target_scope.id) == stream
-                    && target_scope.kind == "JointOrigin"
+                    && target_scope.kind == crate::records::DesignFeatureKind::JointOrigin
                     && target_scope.record_index == *scope_record_index
                     && target_scope.class_tag == *class_tag
                     && target_scope.byte_offset == *byte_offset
@@ -507,7 +507,8 @@ fn valid_axial_assembly_targets(
                     .iter()
                     .filter(|target_scope| {
                         design_stream(&target_scope.id) == stream
-                            && target_scope.kind == "Component Insert"
+                            && target_scope.kind
+                                == crate::records::DesignFeatureKind::ComponentInsert
                             && target_scope.record_index == *component_insert_scope_record_index
                             && target_scope.component_insert_construction().is_some_and(
                                 |construction| {
@@ -573,7 +574,8 @@ fn valid_axial_assembly_targets(
                         .iter()
                         .filter(|target_scope| {
                             design_stream(&target_scope.id) == stream
-                                && target_scope.kind == "JointOrigin"
+                                && target_scope.kind
+                                    == crate::records::DesignFeatureKind::JointOrigin
                                 && target_scope.record_index == *scope_record_index
                                 && target_scope.joint_origin_transform() == Some(frame.transform)
                         })
@@ -1638,7 +1640,7 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             )
             && feature.bodies.len() == body_count
             && scope.is_some_and(|scope| {
-                scope.kind == "Base Mesh Feature"
+                scope.kind == crate::records::DesignFeatureKind::BaseMeshFeature
                     && scope.byte_offset == feature.scope_record.byte_offset
                     && scope.paired_byte_offset == feature.scope_base_record.byte_offset
             });
@@ -1870,7 +1872,8 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
             image.geometry_byte_offset.saturating_add(197),
             image.geometry_byte_offset.saturating_add(205),
         ];
-        let valid = scope.is_some_and(|scope| scope.kind == "Canvas")
+        let valid = scope
+            .is_some_and(|scope| scope.kind == crate::records::DesignFeatureKind::Canvas)
             && scope_bindings.insert((native_stream, image.scope_record_index))
             && geometry_records.insert((native_stream, image.geometry_record_index))
             && image.geometry_record_index != image.asset_record_index
@@ -2016,7 +2019,8 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 })
             })
         });
-        let valid = scope.is_some_and(|scope| scope.kind == "Decal")
+        let valid = scope
+            .is_some_and(|scope| scope.kind == crate::records::DesignFeatureKind::Decal)
             && scope_bindings.insert((native_stream, image.scope_record_index))
             && asset_records.insert((native_stream, image.asset_record_index))
             && image.asset_reference_offset
@@ -2278,15 +2282,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let sweep_profile_link = scope
             .sweep_profile()
             .is_none_or(|profile| is_sweep && valid_sketch_profile(profile));
-        let is_base_flange = scope.kind == "BaseFlange";
+        let is_base_flange = scope.kind == crate::records::DesignFeatureKind::BaseFlange;
         let base_flange_profile_link = scope
             .base_flange_profile()
             .map_or(!is_base_flange, |profile| {
                 is_base_flange && valid_sketch_profile(profile)
             });
-        let base_flange_link = match (scope.base_flange_operation(), scope.kind.as_str()) {
-            (None, kind) => kind != "BaseFlange",
-            (Some(_), kind) if kind != "BaseFlange" => false,
+        let base_flange_link = match (scope.base_flange_operation(), &scope.kind) {
+            (None, kind) => *kind != crate::records::DesignFeatureKind::BaseFlange,
+            (Some(_), kind) if *kind != crate::records::DesignFeatureKind::BaseFlange => false,
             (Some(operation), _) => {
                 scope.reference_members
                     == [
@@ -2305,9 +2309,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && operation.thickness_offset < scope.paired_byte_offset
             }
         };
-        let edge_flange_link = match (scope.edge_flange_operation(), scope.kind.as_str()) {
+        let edge_flange_link = match (scope.edge_flange_operation(), &scope.kind) {
             (None, _) => true,
-            (Some(_), kind) if kind != "EdgeFlange" => false,
+            (Some(_), kind) if *kind != crate::records::DesignFeatureKind::EdgeFlange => false,
             (Some(operation), _) => {
                 // The ordered reference table is in record-index order, so the
                 // check is that every role names a distinct table entry and that
@@ -2413,9 +2417,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
         };
-        let hem_link = match (scope.hem_operation(), scope.kind.as_str()) {
+        let hem_link = match (scope.hem_operation(), &scope.kind) {
             (None, _) => true,
-            (Some(_), kind) if kind != "Hem" => false,
+            (Some(_), kind) if *kind != crate::records::DesignFeatureKind::Hem => false,
             (Some(operation), _) => {
                 // The ordered reference table is in record-index order, so the
                 // check is that every role names a distinct table entry and that
@@ -2462,9 +2466,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
         };
-        let copy_paste_link = match (scope.copy_paste_bodies_operation(), scope.kind.as_str()) {
-            (None, kind) => kind != "CopyPasteBodies",
-            (Some(_), kind) if kind != "CopyPasteBodies" => false,
+        let copy_paste_link = match (scope.copy_paste_bodies_operation(), &scope.kind) {
+            (None, kind) => *kind != crate::records::DesignFeatureKind::CopyPasteBodies,
+            (Some(_), kind) if *kind != crate::records::DesignFeatureKind::CopyPasteBodies => false,
             (Some(operation), _) => {
                 let body_count = operation.body_operand_record_indices.len();
                 let group_header =
@@ -2698,7 +2702,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::Axial)
                 );
-                let as_built_frames = scope.kind == "As-built" && scope.frame_length == 399;
+                let as_built_frames = scope.kind == crate::records::DesignFeatureKind::AsBuilt
+                    && scope.frame_length == 399;
                 let as_built_421_generation = design::assembly::legacy_as_built_421_generation(
                     scope.frame_length,
                     &scope.class_tag,
@@ -3015,7 +3020,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && scope.frame_length == 604
                             && native.design_parameter_scopes.iter().any(|target| {
                                 design_stream(&target.id) == native_stream
-                                    && target.kind == "JointOrigin"
+                                    && target.kind == crate::records::DesignFeatureKind::JointOrigin
                                     && target.record_index == record_index
                                     && target.joint_origin_transform_offset()
                                         == Some(scope.byte_offset + 36)
@@ -3181,7 +3186,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
         };
         let component_insert_link = match scope.component_insert_construction() {
-            None => scope.kind != "Component Insert",
+            None => scope.kind != crate::records::DesignFeatureKind::ComponentInsert,
             Some(construction) => {
                 let relation =
                     records_by_index.get(&(native_stream, construction.relation_record_index));
@@ -3280,7 +3285,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .neutron_role
                             .get(37..)
                             .is_some_and(|suffix| suffix.starts_with("urn:")));
-                scope.kind == "Component Insert"
+                scope.kind == crate::records::DesignFeatureKind::ComponentInsert
                     && scope.reference_members == [construction.relation_record_index]
                     && construction.carrier_record_index != construction.relation_record_index
                     && role_valid
@@ -3300,7 +3305,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
         };
         let copy_paste_component_link = match scope.copy_paste_component_operation() {
-            None => scope.kind != "CopyPaste",
+            None => scope.kind != crate::records::DesignFeatureKind::CopyPaste,
             Some(operation) => {
                 let source = native
                     .design_component_occurrences
@@ -3321,7 +3326,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     525 => 34,
                     _ => 0,
                 };
-                scope.kind == "CopyPaste"
+                scope.kind == crate::records::DesignFeatureKind::CopyPaste
                     && source_at != 0
                     && scope.reference_members == [operation.relation_record_index]
                     && operation.source_occurrence_record_index
@@ -3665,7 +3670,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 };
                 let assembly_operand = native.design_parameter_scopes.iter().any(|assembly| {
                     design_stream(&assembly.id) == native_stream
-                        && assembly.kind == "Assemble"
+                        && assembly.kind == crate::records::DesignFeatureKind::Assemble
                         && assembly.assembly_alignment().is_some_and(|alignment| {
                             alignment.operand_frames().is_some_and(|frames| {
                                 frames.iter().any(|frame| {
@@ -3681,7 +3686,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let single_operand_assembly =
                     native.design_parameter_scopes.iter().any(|assembly| {
                         design_stream(&assembly.id) == native_stream
-                            && assembly.kind == "Assemble"
+                            && assembly.kind == crate::records::DesignFeatureKind::Assemble
                             && assembly.class_tag == "276"
                             && assembly.paired_class_tag == "258"
                             && assembly.frame_length == 604
@@ -3691,7 +3696,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             })
                             && reference_offset == Some(assembly.byte_offset + 25)
                     });
-                scope.kind == "JointOrigin"
+                scope.kind == crate::records::DesignFeatureKind::JointOrigin
                     && design::decode::sketch::valid_sketch_transform(&transform)
                     && (inline || assembly_operand || single_operand_assembly)
             }
@@ -4381,8 +4386,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (true | false, None) => true,
                 _ => false,
             }
-            && match (scope.kind.as_str(), scope.surface_stitch_operation()) {
-                ("SurfaceStitch", Some(operation)) => {
+            && match (&scope.kind, scope.surface_stitch_operation()) {
+                (crate::records::DesignFeatureKind::SurfaceStitch, Some(operation)) => {
                     operation.gap_tolerance.is_finite()
                         && operation.gap_tolerance > 0.0
                         && operation.gap_tolerance_offset > scope.paired_byte_offset
@@ -4392,12 +4397,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             == operation.tolerance_record_index
                         && scope.reference_members.last() == Some(&operation.settings_record_index)
                 }
-                ("SurfaceStitch", None) => false,
+                (crate::records::DesignFeatureKind::SurfaceStitch, None) => false,
                 (_, None) => true,
                 (_, Some(_)) => false,
             }
-            && match (scope.kind.as_str(), scope.ruled_surface_operation()) {
-                ("SurfaceRuled", Some(operation)) => {
+            && match (&scope.kind, scope.ruled_surface_operation()) {
+                (crate::records::DesignFeatureKind::SurfaceRuled, Some(operation)) => {
                     operation.method_offset == scope.byte_offset.saturating_add(20)
                         && operation.alternate_face_offset == scope.byte_offset.saturating_add(27)
                         && operation.corner_offset == scope.byte_offset.saturating_add(50)
@@ -4422,7 +4427,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             }
                         }
                 }
-                ("SurfaceRuled", None) => false,
+                (crate::records::DesignFeatureKind::SurfaceRuled, None) => false,
                 (_, None) => true,
                 (_, Some(_)) => false,
             }
@@ -4437,7 +4442,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .and_then(|length| usize::try_from(length).ok())
                 .is_some_and(|length| {
                     design::decode::scopes::parameter_scope_tail_length_is_valid(
-                        &scope.kind,
+                        scope.kind.as_str(),
                         length,
                     )
                 })
@@ -4451,7 +4456,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .and_then(|tail_length| usize::try_from(tail_length).ok())
                     .and_then(|tail_length| {
                         design::decode::scopes::parameter_scope_previous_history_offset(
-                            &scope.kind,
+                            scope.kind.as_str(),
                             tail_length,
                         )
                     }) {
@@ -4486,7 +4491,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .iter()
                 .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
             && record_indices.contains(&(native_stream, scope.record_index))
-            && entity_link.unwrap_or(scope.kind != "Sketch")
+            && entity_link.unwrap_or(scope.kind != crate::records::DesignFeatureKind::Sketch)
             && extrude_profile_link
             && sweep_profile_link
             && base_flange_profile_link
@@ -4504,7 +4509,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && joint_origin_link
             && work_point_link
             && work_plane_link
-            && (scope.kind != "Sketch"
+            && (scope.kind != crate::records::DesignFeatureKind::Sketch
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
         if !valid {
@@ -4527,7 +4532,7 @@ fn valid_work_point_construction(
         return true;
     };
     let native = ctx.native;
-    if scope.kind != "WorkPoint"
+    if scope.kind != crate::records::DesignFeatureKind::WorkPoint
         || !construction.rule.carriers_are_compatible()
         || construction.point_record_byte_offset >= construction.position_offset
         || construction.position_offset >= construction.reference_type_offset
@@ -4587,7 +4592,7 @@ fn valid_work_point_construction(
                             == Some(selection.work_plane_scope_record_index)
                         && native.design_parameter_scopes.iter().any(|plane| {
                             design_stream(&plane.id) == native_stream
-                                && plane.kind == "WorkPlane"
+                                && plane.kind == crate::records::DesignFeatureKind::WorkPlane
                                 && plane.record_index == selection.work_plane_scope_record_index
                         })
                 }
@@ -4668,7 +4673,7 @@ fn valid_work_plane_construction(
         return false;
     };
 
-    scope.kind == "WorkPlane"
+    scope.kind == crate::records::DesignFeatureKind::WorkPlane
         && placement == placement_record_index
         && [
             inputs[0].record_index,
@@ -4986,9 +4991,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
         let frame_valid = frame.member_count_offset
             == group.byte_offset.saturating_add(
                 if scope.is_some_and(|scope| {
-                    scope.kind == "SurfaceStitch"
-                        || (scope.kind == "SplitFace" && group.role == 0x0000_0021_0000_0000)
-                        || (scope.kind == "Split"
+                    scope.kind == crate::records::DesignFeatureKind::SurfaceStitch
+                        || (scope.kind == crate::records::DesignFeatureKind::SplitFace
+                            && group.role == 0x0000_0021_0000_0000)
+                        || (scope.kind == crate::records::DesignFeatureKind::Split
                             && matches!(group.role, 0x0000_0009_0000_0000 | 0x0000_0021_0000_0000))
                 }) {
                     88
@@ -5184,7 +5190,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     ) => group.extrude_role.is_none() && group.extrude_face_role().is_none(),
                     Some(design::DesignFeatureFamily::Coil) => {
                         group.role
-                            == if scope.kind == "CoilPrimitive"
+                            == if scope.kind == crate::records::DesignFeatureKind::CoilPrimitive
                                 && scope.reference_members.len() == 10
                                 && scope.coil_operation_offset()
                                     == scope.byte_offset.checked_add(22)
@@ -5353,32 +5359,37 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             && group.extrude_face_role().is_none()
                     }
                     Some(_) => false,
-                    None if scope.kind == "RemoveBody" => {
+                    None if scope.kind == crate::records::DesignFeatureKind::RemoveBody => {
                         group.role == 0x0000_0004_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role().is_none()
                     }
-                    None if scope.kind == "SurfaceStitch" => {
+                    None if scope.kind == crate::records::DesignFeatureKind::SurfaceStitch => {
                         group.role == 0x0000_0005_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role().is_none()
                     }
-                    None if scope.kind == "SplitFace" => {
+                    None if scope.kind == crate::records::DesignFeatureKind::SplitFace => {
                         matches!(group.role, 0x0000_0010_0000_0000 | 0x0000_0021_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role().is_none()
                     }
-                    None if matches!(scope.kind.as_str(), "DeleteFace" | "SurfaceDeleteFace") => {
+                    None if matches!(
+                        scope.kind,
+                        crate::records::DesignFeatureKind::DeleteFace
+                            | crate::records::DesignFeatureKind::SurfaceDeleteFace
+                    ) =>
+                    {
                         group.role == 0x0000_0010_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role().is_none()
                     }
-                    None if scope.kind == "Decal" => {
+                    None if scope.kind == crate::records::DesignFeatureKind::Decal => {
                         group.role == 0x0000_0004_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role().is_none()
                     }
-                    None if scope.kind == "BaseFlange" => {
+                    None if scope.kind == crate::records::DesignFeatureKind::BaseFlange => {
                         group.role == 0x0000_0041_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role().is_none()
@@ -5387,7 +5398,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 .as_ref()
                                 .is_some_and(|profile| group.members == [profile.record_index])
                     }
-                    None if scope.kind == "Hem" => {
+                    None if scope.kind == crate::records::DesignFeatureKind::Hem => {
                         matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
                             && group.extrude_role.is_none()
                             && group.extrude_face_role().is_none()
@@ -5396,16 +5407,16 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 };
                 (design::design_feature_family(&scope.kind).is_some()
                     || matches!(
-                        scope.kind.as_str(),
-                        "RemoveBody"
-                            | "SurfaceStitch"
-                            | "SplitFace"
-                            | "DeleteFace"
-                            | "SurfaceDeleteFace"
-                            | "Decal"
-                            | "BaseFlange"
-                            | "EdgeFlange"
-                            | "Hem"
+                        scope.kind,
+                        crate::records::DesignFeatureKind::RemoveBody
+                            | crate::records::DesignFeatureKind::SurfaceStitch
+                            | crate::records::DesignFeatureKind::SplitFace
+                            | crate::records::DesignFeatureKind::DeleteFace
+                            | crate::records::DesignFeatureKind::SurfaceDeleteFace
+                            | crate::records::DesignFeatureKind::Decal
+                            | crate::records::DesignFeatureKind::BaseFlange
+                            | crate::records::DesignFeatureKind::EdgeFlange
+                            | crate::records::DesignFeatureKind::Hem
                     ))
                     && role_is_valid
                     && usize::try_from(group.scope_reference_ordinal)
@@ -6713,7 +6724,7 @@ fn validate_body_recipe_operands<'a>(
             records::DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal,
             } => {
-                (scope.kind == "Hole"
+                (scope.kind == crate::records::DesignFeatureKind::Hole
                     || (!scope_reference_ordinal.is_multiple_of(2)
                         && scope.combine_operation().is_some_and(|operation| {
                             operation.target.record_index == operand.record_index
@@ -7359,7 +7370,7 @@ fn validate_edge_operands<'a>(
             }
         }
         let expected_surface_patch_recipe_structure = scope
-            .filter(|scope| scope.kind == "SurfacePatch")
+            .filter(|scope| scope.kind == crate::records::DesignFeatureKind::SurfacePatch)
             .and_then(|_| {
                 design::decode::operands::surface_patch_recipe_structure(
                     &operand.recipe_program,
@@ -7538,11 +7549,12 @@ fn validate_edge_treatment_groups<'a>(
     edge_treatment_vertex_records: &HashSet<(&'a str, u32)>,
 ) {
     let native = ctx.native;
-    for scope in native
-        .design_parameter_scopes
-        .iter()
-        .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Chamfer"))
-    {
+    for scope in native.design_parameter_scopes.iter().filter(|scope| {
+        matches!(
+            scope.kind,
+            crate::records::DesignFeatureKind::Fillet | crate::records::DesignFeatureKind::Chamfer
+        )
+    }) {
         let native_stream = design_stream(&scope.id);
         let groups = native
             .design_construction_operand_groups
@@ -7845,14 +7857,17 @@ fn validate_face_operands<'a>(
                                             },
                                         )
                                 }
-                                None if scope.kind == "SplitFace" => {
+                                None if scope.kind
+                                    == crate::records::DesignFeatureKind::SplitFace =>
+                                {
                                     group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
                                         && operand.recipe_kind
                                             == records::ConstructionRecipeKind::BoundedFace
                                 }
                                 None if matches!(
-                                    scope.kind.as_str(),
-                                    "DeleteFace" | "SurfaceDeleteFace"
+                                    scope.kind,
+                                    crate::records::DesignFeatureKind::DeleteFace
+                                        | crate::records::DesignFeatureKind::SurfaceDeleteFace
                                 ) =>
                                 {
                                     group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
@@ -7882,7 +7897,7 @@ fn validate_face_operands<'a>(
                                         == records::ConstructionRecipeKind::BoundedFace
                                 }
                                 Some(design::DesignFeatureFamily::Assemble)
-                                    if scope.kind == "As-built"
+                                    if scope.kind == crate::records::DesignFeatureKind::AsBuilt
                                         && design::assembly::legacy_as_built_421_generation(
                                             scope.frame_length,
                                             &scope.class_tag,
@@ -8027,7 +8042,7 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             &group.paired_class_tag,
         );
         let scope_links_valid = scope.is_some_and(|scope| {
-            scope.kind == "Face"
+            scope.kind == crate::records::DesignFeatureKind::Face
                 && carrier_ordinal.and_then(|ordinal| scope.reference_members.get(ordinal))
                     == Some(&group.carrier_record_index)
                 && carrier_ordinal

@@ -595,7 +595,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignEdgeOperand],
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
-    if scope.kind != "Loft"
+    if scope.kind != crate::records::DesignFeatureKind::Loft
         || !matches!(group.role, 0x41_0000_0000 | 0x43_0000_0000)
         || group.members.is_empty()
         || !group.lost_edge_references.is_empty()
@@ -871,7 +871,9 @@ pub(crate) fn resolved_historical_split_face_target_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if scope.kind != "SplitFace" || group.role != 0x0000_0010_0000_0000 {
+    if scope.kind != crate::records::DesignFeatureKind::SplitFace
+        || group.role != 0x0000_0010_0000_0000
+    {
         return None;
     }
     let faces = historical_face_group_slots(group, operands, true)?;
@@ -893,7 +895,9 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if scope.kind != "SplitFace" || group.role != 0x0000_0010_0000_0000 {
+    if scope.kind != crate::records::DesignFeatureKind::SplitFace
+        || group.role != 0x0000_0010_0000_0000
+    {
         return None;
     }
     resolved_historical_split_face_target_group(scope, group, operands).or_else(|| {
@@ -908,7 +912,7 @@ fn split_face_updated_target_slots(
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
 ) -> Option<Vec<i64>> {
-    if scope.kind != "SplitFace"
+    if scope.kind != crate::records::DesignFeatureKind::SplitFace
         || group.role != 0x0000_0010_0000_0000
         || updated_face_slots.is_empty()
         || updated_face_slots.len() != group.members.len()

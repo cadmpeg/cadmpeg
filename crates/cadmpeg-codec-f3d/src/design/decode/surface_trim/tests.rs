@@ -65,7 +65,7 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#800",
-        "SurfaceTrim",
+        crate::records::DesignFeatureKind::SurfaceTrim,
         800,
     );
     scope.reference_members = vec![801, 804, 808, 811];

@@ -51,7 +51,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
 
     let scope =
         parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap();
-    assert_eq!(scope.kind, "Sketch");
+    assert_eq!(scope.kind, crate::records::DesignFeatureKind::Sketch);
     assert_eq!(scope.feature_ordinal, 1);
     assert_eq!(scope.feature_ordinal_offset, feature_ordinal_at as u64);
     assert_eq!(scope.history_state_id, Some(7));
@@ -82,7 +82,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &header,
     )
     .expect("scope with compact fixed tail");
-    assert_eq!(compact.kind, "Sketch");
+    assert_eq!(compact.kind, crate::records::DesignFeatureKind::Sketch);
     assert_eq!(compact.frame_length, paired_at as u64 - 1);
     assert_eq!(compact.previous_history_state_id, Some(2));
     assert!(
@@ -101,7 +101,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         let decoded =
             parse_parameter_scope(&legacy, &IndexedRecordOffsets::build(&legacy), &header)
                 .expect("scope with legacy fixed tail");
-        assert_eq!(decoded.kind, "Sketch");
+        assert_eq!(decoded.kind, crate::records::DesignFeatureKind::Sketch);
         assert_eq!(decoded.previous_history_state_id, Some(2));
         assert_eq!(
             decoded.previous_history_state_id_offset,
@@ -140,7 +140,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         let decoded =
             parse_parameter_scope(&variant, &IndexedRecordOffsets::build(&variant), &header)
                 .expect("scope with extended no-history fixed tail");
-        assert_eq!(decoded.kind, "Sketch");
+        assert_eq!(decoded.kind, crate::records::DesignFeatureKind::Sketch);
         assert_eq!(decoded.previous_history_state_id, None);
         assert_eq!(decoded.previous_history_state_id_offset, None);
     }
@@ -171,7 +171,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &header,
     )
     .expect("CopyPasteBodies scope with extended tail");
-    assert_eq!(copy.kind, "CopyPasteBodies");
+    assert_eq!(
+        copy.kind,
+        crate::records::DesignFeatureKind::CopyPasteBodies
+    );
     assert_eq!(copy.feature_ordinal, 2);
     assert_eq!(copy.feature_ordinal_offset, copy_feature_ordinal_at as u64);
     assert_eq!(copy.history_state_id, None);
@@ -244,7 +247,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         &header,
     )
     .expect("generic-table Sketch scope");
-    assert_eq!(generic_scope.kind, "Sketch");
+    assert_eq!(
+        generic_scope.kind,
+        crate::records::DesignFeatureKind::Sketch
+    );
     assert_eq!(generic_scope.reference_members, [55, 56]);
 
     let work_plane_at = bytes.len();
@@ -412,7 +418,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     }
     let mut axis_scope = scope.clone();
     axis_scope.id = "f3d:native:parameter-scope#55".into();
-    axis_scope.kind = "WorkAxis".into();
+    axis_scope.kind = crate::records::DesignFeatureKind::WorkAxis;
     axis_scope.reference_members = vec![100, 101, 102, 103, 104];
     let construction = exact_work_axis_construction(
         &axis_bytes,
@@ -663,7 +669,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     joint_origin.extend_from_slice(&60u32.to_le_bytes());
     bytes.extend_from_slice(&joint_origin);
     let mut joint_origin_scope = scope.clone();
-    joint_origin_scope.kind = "JointOrigin".into();
+    joint_origin_scope.kind = crate::records::DesignFeatureKind::JointOrigin;
     joint_origin_scope.reference_members = vec![60];
     let decoded = exact_joint_origin_frame(
         &bytes,
@@ -704,7 +710,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_joint_origin.extend_from_slice(&67u32.to_le_bytes());
     bytes.extend_from_slice(&compact_joint_origin);
     let mut compact_joint_origin_scope = scope.clone();
-    compact_joint_origin_scope.kind = "JointOrigin".into();
+    compact_joint_origin_scope.kind = crate::records::DesignFeatureKind::JointOrigin;
     compact_joint_origin_scope.reference_members = vec![67];
     let decoded = exact_joint_origin_frame(
         &bytes,
@@ -736,7 +742,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     legacy_joint_origin.extend_from_slice(&72u32.to_le_bytes());
     bytes.extend_from_slice(&legacy_joint_origin);
     let mut legacy_joint_origin_scope = scope.clone();
-    legacy_joint_origin_scope.kind = "JointOrigin".into();
+    legacy_joint_origin_scope.kind = crate::records::DesignFeatureKind::JointOrigin;
     legacy_joint_origin_scope.reference_members = vec![72];
     let decoded = exact_joint_origin_frame(
         &bytes,
@@ -781,7 +787,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     move_frame.extend_from_slice(&90u32.to_le_bytes());
     bytes.extend_from_slice(&move_frame);
     let mut move_scope = scope.clone();
-    move_scope.kind = "Move".into();
+    move_scope.kind = crate::records::DesignFeatureKind::Move;
     move_scope.reference_members = vec![90];
     let decoded = crate::design::decode::scopes::exact_move_operation(
         &bytes,
@@ -808,7 +814,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     compact_move.extend_from_slice(&91u32.to_le_bytes());
     bytes.extend_from_slice(&compact_move);
     let mut compact_move_scope = scope.clone();
-    compact_move_scope.kind = "Move".into();
+    compact_move_scope.kind = crate::records::DesignFeatureKind::Move;
     compact_move_scope.reference_members = vec![91];
     let decoded = crate::design::decode::scopes::exact_move_operation(
         &bytes,
@@ -847,7 +853,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     class_433_move.extend_from_slice(&92u32.to_le_bytes());
     bytes.extend_from_slice(&class_433_move);
     let mut class_433_move_scope = scope.clone();
-    class_433_move_scope.kind = "Move".into();
+    class_433_move_scope.kind = crate::records::DesignFeatureKind::Move;
     class_433_move_scope.reference_members = vec![92];
     let decoded = crate::design::decode::scopes::exact_move_operation(
         &bytes,
@@ -874,7 +880,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&scale);
     let mut scale_scope = scope.clone();
     scale_scope.byte_offset = scale_at as u64;
-    scale_scope.kind = "Maßstab".into();
+    scale_scope.kind = crate::records::DesignFeatureKind::Massstab;
     scale_scope.frame_length = 317;
     scale_scope.reference_members = vec![101, 102, 103, 104, 105];
     let scale_records = IndexedRecordOffsets::build(&bytes);
@@ -917,7 +923,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&diameter);
     let mut sphere_scope = scope.clone();
     sphere_scope.byte_offset = sphere_at as u64;
-    sphere_scope.kind = "SpherePrimitive".into();
+    sphere_scope.kind = crate::records::DesignFeatureKind::Native("SpherePrimitive".into());
     sphere_scope.frame_length = 462;
     assert!(matches!(
         exact_solid_primitive(
@@ -965,7 +971,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     }
     let mut torus_scope = scope.clone();
     torus_scope.byte_offset = torus_at as u64;
-    torus_scope.kind = "TorusPrimitive".into();
+    torus_scope.kind = crate::records::DesignFeatureKind::Native("TorusPrimitive".into());
     torus_scope.frame_length = 486;
     assert!(matches!(
         exact_solid_primitive(
@@ -998,7 +1004,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&distance);
     let mut offset_scope = scope.clone();
     offset_scope.byte_offset = offset_at as u64;
-    offset_scope.kind = "OffsetFaces".into();
+    offset_scope.kind = crate::records::DesignFeatureKind::OffsetFaces;
     offset_scope.frame_length = 286;
     offset_scope.reference_members = vec![1, 2, 3, 73];
     assert!(matches!(
@@ -1054,7 +1060,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&thickness);
     let mut thicken_scope = scope.clone();
     thicken_scope.byte_offset = thicken_at as u64;
-    thicken_scope.kind = "Thicken".into();
+    thicken_scope.kind = crate::records::DesignFeatureKind::Thicken;
     thicken_scope.frame_length = 301;
     thicken_scope.reference_members = vec![1, 2, 74];
     assert!(matches!(
@@ -1191,7 +1197,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes.extend_from_slice(&shell_thickness);
     let mut shell_scope = scope.clone();
     shell_scope.byte_offset = shell_at as u64;
-    shell_scope.kind = "Shell".into();
+    shell_scope.kind = crate::records::DesignFeatureKind::Shell;
     shell_scope.frame_length = 278;
     shell_scope.reference_members = vec![200, 201, 1_778];
     shell_scope.set_direct_face_operation(exact_direct_face_operation(
@@ -1361,7 +1367,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         bytes.extend_from_slice(&scalar);
     }
     let mut extrude_scope = scope.clone();
-    extrude_scope.kind = "Extrude".into();
+    extrude_scope.kind = crate::records::DesignFeatureKind::Extrude;
     extrude_scope.ensure_extrude().extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
         reference: None,
         operation: DesignExtrudeOperation::NewBody,
@@ -1508,7 +1514,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
 
     let mut extend_scope = scope.clone();
     extend_scope.id = "f3d:native:parameter-scope#12".into();
-    extend_scope.kind = "SurfaceExtend".into();
+    extend_scope.kind = crate::records::DesignFeatureKind::SurfaceExtend;
     extend_scope.reference_members = vec![
         extend_distance_record_index,
         extend_boundary_record_index,
@@ -1562,7 +1568,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     bytes[extend_boundary_at + extend_boundary_tail + 21
         ..extend_boundary_at + extend_boundary_tail + 25]
         .copy_from_slice(&65u32.to_le_bytes());
-    extend_scope.kind = "SurfaceOffset".into();
+    extend_scope.kind = crate::records::DesignFeatureKind::SurfaceOffset;
     extend_scope.set_surface_extend_operation(None);
     let operation =
         exact_surface_offset_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope)
@@ -1763,7 +1769,10 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     assert_eq!(headers.len(), 1);
     let scope = crate::design::decode::scopes::parse_parameter_scope(&bytes, &records, &headers[0])
         .expect("scope");
-    assert_eq!(scope.kind, "CopyPasteBodies");
+    assert_eq!(
+        scope.kind,
+        crate::records::DesignFeatureKind::CopyPasteBodies
+    );
     assert_eq!(scope.reference_members, [1_500, 1_600]);
     assert_eq!(scope.frame_length, 225);
     let operation =
@@ -1790,7 +1799,11 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
     bytes.extend_from_slice(b"262");
     bytes.extend_from_slice(&71u32.to_le_bytes());
 
-    let scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#1",
+        crate::records::DesignFeatureKind::WorkPlane,
+        1,
+    );
     let mut scope = scope;
     scope.reference_members = vec![71];
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
@@ -1824,7 +1837,11 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
         bytes.extend_from_slice(b"262");
         bytes.extend_from_slice(&71u32.to_le_bytes());
 
-        let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test:scope#1",
+            crate::records::DesignFeatureKind::WorkPlane,
+            1,
+        );
         scope.reference_members = vec![71];
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("class-256 WorkPlane frame");
@@ -1844,7 +1861,11 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
     invalid.extend_from_slice(&3u32.to_le_bytes());
     invalid.extend_from_slice(b"262");
     invalid.extend_from_slice(&71u32.to_le_bytes());
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#2", "WorkPlane", 2);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#2",
+        crate::records::DesignFeatureKind::WorkPlane,
+        2,
+    );
     scope.reference_members = vec![71];
     assert_eq!(
         exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
@@ -1904,7 +1925,11 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
         bytes.extend_from_slice(paired_class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
 
-        let mut scope = DesignParameterScope::empty("f3d:test:scope#opaque", "WorkPlane", 1);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test:scope#opaque",
+            crate::records::DesignFeatureKind::WorkPlane,
+            1,
+        );
         scope.reference_members = vec![record_index];
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("opaque-prefix WorkPlane frame");
@@ -1923,7 +1948,11 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
     invalid.extend_from_slice(&3u32.to_le_bytes());
     invalid.extend_from_slice(b"262");
     invalid.extend_from_slice(&84u32.to_le_bytes());
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#invalid", "WorkPlane", 2);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#invalid",
+        crate::records::DesignFeatureKind::WorkPlane,
+        2,
+    );
     scope.reference_members = vec![84];
     assert_eq!(
         exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),

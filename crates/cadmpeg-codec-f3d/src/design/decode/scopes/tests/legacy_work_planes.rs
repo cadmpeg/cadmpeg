@@ -84,7 +84,11 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
         bytes.extend_from_slice(paired_class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
 
-        let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test:scope#1",
+            crate::records::DesignFeatureKind::WorkPlane,
+            1,
+        );
         scope.reference_members = vec![record_index];
         let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
             .expect("325-byte WorkPlane frame");

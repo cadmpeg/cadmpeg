@@ -16,16 +16,25 @@ fn dispatcher_projects_datum_feature_scopes() {
     transform[1][3] = 2.0;
     transform[2][3] = 3.0;
 
-    let mut joint_origin =
-        DesignParameterScope::empty("f3d:native:parameter-scope#1", "JointOrigin", 1);
+    let mut joint_origin = DesignParameterScope::empty(
+        "f3d:native:parameter-scope#1",
+        crate::records::DesignFeatureKind::JointOrigin,
+        1,
+    );
     joint_origin.with_joint_origin_transform(transform);
 
-    let mut work_plane =
-        DesignParameterScope::empty("f3d:native:parameter-scope#2", "WorkPlane", 2);
+    let mut work_plane = DesignParameterScope::empty(
+        "f3d:native:parameter-scope#2",
+        crate::records::DesignFeatureKind::WorkPlane,
+        2,
+    );
     work_plane.with_work_plane_transform(transform);
 
-    let mut work_point =
-        DesignParameterScope::empty("f3d:native:parameter-scope#3", "WorkPoint", 3);
+    let mut work_point = DesignParameterScope::empty(
+        "f3d:native:parameter-scope#3",
+        crate::records::DesignFeatureKind::WorkPoint,
+        3,
+    );
     work_point.set_work_point_construction(Some(crate::records::DesignWorkPointConstruction {
         point_record_index: 4,
         point_record_byte_offset: 0,
@@ -65,7 +74,11 @@ fn dispatcher_projects_datum_feature_scopes() {
 
 #[test]
 fn dispatcher_projects_scale_point_center_in_neutral_units() {
-    let mut scale = DesignParameterScope::empty("f3d:native:parameter-scope#4", "Scale", 4);
+    let mut scale = DesignParameterScope::empty(
+        "f3d:native:parameter-scope#4",
+        crate::records::DesignFeatureKind::Scale,
+        4,
+    );
     scale.set_scale_operation(Some(DesignScaleOperation {
         body_group_record_index: 5,
         center_record_index: 6,
@@ -103,8 +116,11 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
 
 #[test]
 fn dispatcher_projects_referenced_work_plane_frame() {
-    let mut referenced =
-        DesignParameterScope::empty("f3d:native:parameter-scope#10", "WorkPlane", 10);
+    let mut referenced = DesignParameterScope::empty(
+        "f3d:native:parameter-scope#10",
+        crate::records::DesignFeatureKind::WorkPlane,
+        10,
+    );
     referenced.with_work_plane_transform(identity_matrix());
     referenced.with_work_plane_reference(11);
 
@@ -145,7 +161,11 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         next_record_index: record_index + 5,
         next_byte_offset: 5,
     };
-    let mut plane = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPlane", 20);
+    let mut plane = DesignParameterScope::empty(
+        "f3d:native:parameter-scope#20",
+        crate::records::DesignFeatureKind::WorkPlane,
+        20,
+    );
     plane.with_work_plane_transform(identity_matrix());
     if let Some(frame) = plane.work_plane_frame_mut() {
         frame.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
@@ -178,7 +198,11 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
 
     let planes = [10, 20, 30].map(|record_index| {
         let id = format!("f3d:native:parameter-scope#{record_index}");
-        let mut scope = DesignParameterScope::empty(&id, "WorkPlane", record_index);
+        let mut scope = DesignParameterScope::empty(
+            &id,
+            crate::records::DesignFeatureKind::WorkPlane,
+            record_index,
+        );
         scope.with_work_plane_transform(identity_matrix());
         scope
     });
@@ -202,7 +226,11 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             },
         })),
     };
-    let mut point = DesignParameterScope::empty("f3d:native:parameter-scope#40", "WorkPoint", 40);
+    let mut point = DesignParameterScope::empty(
+        "f3d:native:parameter-scope#40",
+        crate::records::DesignFeatureKind::WorkPoint,
+        40,
+    );
     point.set_work_point_construction(Some(DesignWorkPointConstruction {
         point_record_index: 41,
         point_record_byte_offset: 0,
@@ -251,8 +279,11 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     };
     use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
 
-    let mut predecessor =
-        DesignParameterScope::empty("f3d:native:parameter-scope#10", "Extrude", 10);
+    let mut predecessor = DesignParameterScope::empty(
+        "f3d:native:parameter-scope#10",
+        crate::records::DesignFeatureKind::Extrude,
+        10,
+    );
     predecessor.history_state_id = Some(4);
     let recipe_id = "f3d:native:construction-recipe#vertex".to_string();
     let recipe = DesignVertexRecipe {
@@ -274,7 +305,11 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         next_record_index: 25,
         next_byte_offset: 5,
     };
-    let mut point = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPoint", 20);
+    let mut point = DesignParameterScope::empty(
+        "f3d:native:parameter-scope#20",
+        crate::records::DesignFeatureKind::WorkPoint,
+        20,
+    );
     point.set_work_point_construction(Some(DesignWorkPointConstruction {
         point_record_index: 21,
         point_record_byte_offset: 0,
@@ -418,8 +453,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         }
     };
 
-    let mut base_flange =
-        DesignParameterScope::empty(&format!("{stream}:scope#base-flange"), "BaseFlange", 10);
+    let mut base_flange = DesignParameterScope::empty(
+        &format!("{stream}:scope#base-flange"),
+        crate::records::DesignFeatureKind::BaseFlange,
+        10,
+    );
     base_flange.ensure_base_flange().base_flange_operation = Some(DesignBaseFlangeOperation {
         thickness: 0.2,
         thickness_offset: 0,
@@ -443,13 +481,16 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         paired_byte_offset: 0,
     });
 
-    let mut remove_body =
-        DesignParameterScope::empty(&format!("{stream}:scope#remove-body"), "RemoveBody", 20);
+    let mut remove_body = DesignParameterScope::empty(
+        &format!("{stream}:scope#remove-body"),
+        crate::records::DesignFeatureKind::RemoveBody,
+        20,
+    );
     remove_body.reference_members = vec![200];
 
     let mut surface_stitch = DesignParameterScope::empty(
         &format!("{stream}:scope#surface-stitch"),
-        "SurfaceStitch",
+        crate::records::DesignFeatureKind::SurfaceStitch,
         30,
     );
     surface_stitch.reference_members = vec![300, 301, 302, 303];
@@ -460,8 +501,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         settings_record_index: 303,
     }));
 
-    let mut copy_paste =
-        DesignParameterScope::empty(&format!("{stream}:scope#copy-paste"), "CopyPaste", 40);
+    let mut copy_paste = DesignParameterScope::empty(
+        &format!("{stream}:scope#copy-paste"),
+        crate::records::DesignFeatureKind::CopyPaste,
+        40,
+    );
     copy_paste.set_copy_paste_component_operation(Some(DesignCopyPasteComponentOperation {
         relation_record_index: 401,
         source_occurrence_record_index: 402,
@@ -477,7 +521,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut copy_paste_bodies = DesignParameterScope::empty(
         &format!("{stream}:scope#copy-paste-bodies"),
-        "CopyPasteBodies",
+        crate::records::DesignFeatureKind::CopyPasteBodies,
         50,
     );
     copy_paste_bodies.set_copy_paste_bodies_operation(Some(DesignCopyPasteBodiesOperation {
@@ -495,8 +539,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         copied_body_entity_suffix_offsets: vec![0],
     }));
 
-    let mut base_feature =
-        DesignParameterScope::empty(&format!("{stream}:scope#base-feature"), "Base Feature", 60);
+    let mut base_feature = DesignParameterScope::empty(
+        &format!("{stream}:scope#base-feature"),
+        crate::records::DesignFeatureKind::BaseFeature,
+        60,
+    );
     base_feature.set_base_feature_construction(Some(DesignBaseFeatureConstruction::ResultBodies {
         body_entity_suffixes: vec![21],
         body_entity_suffix_offsets: vec![0],
@@ -513,7 +560,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         result_fields: vec![[0; 6]],
     }));
 
-    let mut thread = DesignParameterScope::empty(&format!("{stream}:scope#thread"), "Thread", 70);
+    let mut thread = DesignParameterScope::empty(
+        &format!("{stream}:scope#thread"),
+        crate::records::DesignFeatureKind::Thread,
+        70,
+    );
     thread.set_thread_construction(Some(DesignThreadConstruction {
         form: DesignThreadForm::Compact,
         designation_offset: 0,
@@ -712,7 +763,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
 
     let mut scope = crate::records::DesignParameterScope::empty(
         &format!("f3d:{stream}:scope#201"),
-        "Form",
+        crate::records::DesignFeatureKind::Form,
         201,
     );
     scope.reference_members = vec![205];
@@ -792,7 +843,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
 
     let mut scope = crate::records::DesignParameterScope::empty(
         &format!("f3d:{stream}:scope#201"),
-        "Form",
+        crate::records::DesignFeatureKind::Form,
         201,
     );
     scope.reference_members = vec![205];

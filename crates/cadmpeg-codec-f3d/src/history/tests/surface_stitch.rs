@@ -27,7 +27,11 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#42");
     let history_id = format!("{stream}/BREP.surface:asm-1");
-    let mut scope = DesignParameterScope::empty(&scope_id, "SurfaceStitch", 42);
+    let mut scope = DesignParameterScope::empty(
+        &scope_id,
+        crate::records::DesignFeatureKind::SurfaceStitch,
+        42,
+    );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
     scope.reference_members = vec![100, 200, 110, 210, 300, 301];

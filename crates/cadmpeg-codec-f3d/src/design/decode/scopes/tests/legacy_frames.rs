@@ -67,7 +67,11 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
     bytes.extend_from_slice(b"265");
     bytes.extend_from_slice(&9_000u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("f3d:test:shell-369#42", "Shell", 42);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:shell-369#42",
+        crate::records::DesignFeatureKind::Shell,
+        42,
+    );
     scope.byte_offset = 0;
     scope.class_tag = "369".into();
     scope.paired_class_tag = "261".into();
@@ -114,7 +118,11 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
     bytes.extend_from_slice(b"261");
     bytes.extend_from_slice(&85u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#322", "WorkPlane", 1);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#322",
+        crate::records::DesignFeatureKind::WorkPlane,
+        1,
+    );
     scope.reference_members = vec![85];
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-322/261 WorkPlane frame");
@@ -160,7 +168,11 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
     bytes.extend_from_slice(b"258");
     bytes.extend_from_slice(&76u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#1",
+        crate::records::DesignFeatureKind::WorkPlane,
+        1,
+    );
     scope.reference_members = vec![76];
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-350 WorkPlane frame");
@@ -193,7 +205,11 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
     bytes.extend_from_slice(b"262");
     bytes.extend_from_slice(&72u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#1",
+        crate::records::DesignFeatureKind::WorkPlane,
+        1,
+    );
     scope.reference_members = vec![72];
     let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
         .expect("class-400 WorkPlane frame");
@@ -239,7 +255,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
 
         let mut scope = DesignParameterScope::empty(
             &format!("f3d:test:legacy-move#{record_index}"),
-            "Move",
+            crate::records::DesignFeatureKind::Move,
             1_000 + u32::try_from(ordinal).expect("small test ordinal"),
         );
         scope.reference_members = vec![record_index];
@@ -329,7 +345,11 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         bytes.extend_from_slice(scope_paired_class.as_bytes());
         bytes.extend_from_slice(&support_record_index.to_le_bytes());
 
-        let mut scope = DesignParameterScope::empty("f3d:test:work-axis#1", "WorkAxis", 1);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test:work-axis#1",
+            crate::records::DesignFeatureKind::WorkAxis,
+            1,
+        );
         scope.class_tag = scope_class.into();
         scope.paired_class_tag = scope_paired_class.into();
         scope.frame_length = scope_length as u64;
@@ -425,7 +445,11 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     along_owner.local_ordinal = 1;
     along_owner.parameter_record_index = 83;
 
-    let mut scope = DesignParameterScope::empty("generated:scope#12", "Extrude", 12);
+    let mut scope = DesignParameterScope::empty(
+        "generated:scope#12",
+        crate::records::DesignFeatureKind::Extrude,
+        12,
+    );
     scope.reference_members = vec![80, 82];
     scope.ensure_extrude().extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
         reference: None,

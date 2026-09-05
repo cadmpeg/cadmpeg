@@ -126,14 +126,14 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut scope = crate::records::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        "Revolve",
+        crate::records::DesignFeatureKind::Revolve,
         100,
     );
     scope.history_state_id = Some(9);
     scope.previous_history_state_id = Some(2);
     let next_scope = crate::records::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        "Sketch",
+        crate::records::DesignFeatureKind::Sketch,
         200,
     );
     let binding = DesignBodyBinding {
@@ -243,19 +243,28 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         unique_history_state_pair(&histories, 10, 4).expect("raw reachable state pair");
     assert_eq!(current.state_id, 10);
     assert_eq!(previous.state_id, 4);
-    let mut omitted_predecessor =
-        crate::records::DesignParameterScope::empty("f3d:native:scope#0", "Fillet", 0);
+    let mut omitted_predecessor = crate::records::DesignParameterScope::empty(
+        "f3d:native:scope#0",
+        crate::records::DesignFeatureKind::Fillet,
+        0,
+    );
     omitted_predecessor.history_state_id = Some(10);
     assert_eq!(
         effective_scope_previous_history_state_id(&omitted_predecessor, &histories),
         Some(6)
     );
 
-    let mut root =
-        crate::records::DesignParameterScope::empty("f3d:native:scope#1", "BaseFlange", 1);
+    let mut root = crate::records::DesignParameterScope::empty(
+        "f3d:native:scope#1",
+        crate::records::DesignFeatureKind::BaseFlange,
+        1,
+    );
     root.history_state_id = Some(4);
-    let mut successor =
-        crate::records::DesignParameterScope::empty("f3d:native:scope#2", "EdgeFlange", 2);
+    let mut successor = crate::records::DesignParameterScope::empty(
+        "f3d:native:scope#2",
+        crate::records::DesignFeatureKind::EdgeFlange,
+        2,
+    );
     successor.history_state_id = Some(10);
     successor.previous_history_state_id = Some(6);
     let scopes = vec![root, successor];

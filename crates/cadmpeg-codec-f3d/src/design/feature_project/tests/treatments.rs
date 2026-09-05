@@ -50,7 +50,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         class_tag: "301".into(),
         record_index,
         frame_length: 200,
-        kind: kind.into(),
+        kind: kind.to_owned().into(),
         kind_offset: byte_offset + 100,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -567,7 +567,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     let stream = "f3d:test/Design/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        "Draft",
+        crate::records::DesignFeatureKind::Draft,
         100,
     );
     scope.feature_ordinal = 1;
@@ -882,7 +882,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         class_tag: "301".into(),
         record_index: 12,
         frame_length: 200,
-        kind: "Congé".into(),
+        kind: crate::records::DesignFeatureKind::Conge,
         kind_offset: 210,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -1258,7 +1258,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 
     let mut patch_scope = scope.clone();
-    patch_scope.kind = "SurfacePatch".into();
+    patch_scope.kind = crate::records::DesignFeatureKind::SurfacePatch;
     patch_scope.frame_length = 354;
     patch_scope.reference_members = vec![100, 200, 300, 301];
     let patch_boundary = |scope_reference_ordinal, record_index, model_reference| {
@@ -1443,7 +1443,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 
     let mut fill_scope = scope.clone();
-    fill_scope.kind = "BoundaryFill".into();
+    fill_scope.kind = crate::records::DesignFeatureKind::BoundaryFill;
     fill_scope.reference_members = vec![100, 200, 201, 300, 301, 400];
     let mut tools = group(100, 0, vec![200, 201]);
     tools.role = 0x0000_0004_0000_0000;

@@ -8,7 +8,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     let scope_record_index = 10_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        "Assemble",
+        crate::records::DesignFeatureKind::Assemble,
         scope_record_index,
     );
     scope.class_tag = "283".into();

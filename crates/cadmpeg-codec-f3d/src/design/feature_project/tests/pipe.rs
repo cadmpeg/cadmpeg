@@ -15,7 +15,11 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         FeatureDefinition, GeneratedSweepSection, Length, PathRef, SweepSection,
     };
 
-    let mut scope = DesignParameterScope::empty("f3d:test:pipe-scope#1", "Pipe", 1);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:pipe-scope#1",
+        crate::records::DesignFeatureKind::Pipe,
+        1,
+    );
     scope.class_tag = "405".into();
     scope.paired_class_tag = "259".into();
     scope.reference_members = vec![10, 11, 12, 13, 20, 21, 22];

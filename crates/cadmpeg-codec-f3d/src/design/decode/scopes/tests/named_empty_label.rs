@@ -57,7 +57,10 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
 
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("empty-label named scope");
-    assert_eq!(scope.kind, "CylinderPrimitive");
+    assert_eq!(
+        scope.kind,
+        crate::records::DesignFeatureKind::Native("CylinderPrimitive".into())
+    );
     assert_eq!(scope.frame_length, paired_at as u64);
     assert_eq!(scope.previous_history_state_id, None);
     assert_eq!(scope.previous_history_state_id_offset, None);

@@ -370,7 +370,11 @@ fn reads_class_328_form_envelope() {
     chunks.extend((4000..4019).map(|record| indexed_frame(b"320", record, 15)));
     let bytes = chunks.concat();
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
-    let mut scope = crate::records::DesignParameterScope::empty("scope", "Form", scope_record);
+    let mut scope = crate::records::DesignParameterScope::empty(
+        "scope",
+        crate::records::DesignFeatureKind::Form,
+        scope_record,
+    );
     scope.reference_members = vec![group_record, metadata_record];
     assert!(super::form_class_328_envelope(&bytes, &records, &scope));
 
@@ -562,7 +566,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     };
     let scope = crate::records::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#9",
-        "Unsupported",
+        crate::records::DesignFeatureKind::Native("Unsupported".into()),
         9,
     );
 

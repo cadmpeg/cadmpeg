@@ -2617,7 +2617,13 @@ pub(crate) fn bind_vertex_recipe_history(
         crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)?;
     let input_states = scopes
         .iter()
-        .filter(|scope| matches!(scope.kind.as_str(), "WorkPlane" | "WorkPoint"))
+        .filter(|scope| {
+            matches!(
+                scope.kind,
+                crate::records::DesignFeatureKind::WorkPlane
+                    | crate::records::DesignFeatureKind::WorkPoint
+            )
+        })
         .filter_map(|scope| {
             let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
             let ordinal = *source_ordinals.get(&(stream, scope.record_index))?;
@@ -2641,7 +2647,10 @@ pub(crate) fn bind_vertex_recipe_history(
         })
         .collect::<HashMap<_, _>>();
 
-    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPoint") {
+    for scope in scopes
+        .iter_mut()
+        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::WorkPoint)
+    {
         let scope_id = scope.id.clone();
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
@@ -2679,7 +2688,10 @@ pub(crate) fn bind_vertex_recipe_history(
         }
     }
 
-    for scope in scopes.iter_mut().filter(|scope| scope.kind == "WorkPlane") {
+    for scope in scopes
+        .iter_mut()
+        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::WorkPlane)
+    {
         let transform = scope.work_plane_transform();
         let scope_id = scope.id.clone();
         let Some(crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
@@ -3749,7 +3761,8 @@ pub(crate) fn bind_face_operand_history_candidates(
             (!candidates.is_empty()).then(|| candidates.to_vec())
         })
         .flatten();
-        let nested_split_face_candidates = (scope.kind == "SplitFace")
+        let nested_split_face_candidates = (scope.kind
+            == crate::records::DesignFeatureKind::SplitFace)
             .then(|| {
                 exact_face_selection_group(operand, scope, operand_groups)?;
                 crate::design::face_resolve::nested_bounded_face_history_candidates(operand)
@@ -3856,7 +3869,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     crate::design::face_resolve::resolve_face_operand_history_candidates(operand);
                 if let Some(direct) = direct {
                     vec![direct]
-                } else if scope.kind == "SurfaceDeleteFace" {
+                } else if scope.kind == crate::records::DesignFeatureKind::SurfaceDeleteFace {
                     crate::design::face_resolve::resolve_surface_delete_face_history_set(operand)
                         .unwrap_or_default()
                 } else if preserves_stable_face_set {
@@ -3946,7 +3959,9 @@ pub(crate) fn bind_face_operand_history_candidates(
                 operand.resolved_face_slots = vec![face];
             }
         }
-        if operand.resolved_face_slots.is_empty() && scope.kind == "Draft" {
+        if operand.resolved_face_slots.is_empty()
+            && scope.kind == crate::records::DesignFeatureKind::Draft
+        {
             if let Some(result) = state.topology.as_ref() {
                 if let Some(face) =
                     resolve_draft_face_by_surface_transition(operand, topology, result)
@@ -5622,7 +5637,9 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 ))
             })
             .collect();
-        if scope.kind == "SurfacePatch" && operand.surface_patch_recipe_structure.is_some() {
+        if scope.kind == crate::records::DesignFeatureKind::SurfacePatch
+            && operand.surface_patch_recipe_structure.is_some()
+        {
             operand.resolved_edge_slot = surface_patch_edge_operand_slot(
                 operand.surface_patch_recipe_structure.as_ref(),
                 &operand.recipe_references,
@@ -5754,7 +5771,9 @@ fn bind_active_edge_operand_for_scope(
     terminal_topologies: &[(i64, &AsmHistoricalTopology)],
 ) {
     bind_active_edge_operand_candidates(operand, terminal_topologies);
-    if scope.kind == "SurfacePatch" && operand.surface_patch_recipe_structure.is_some() {
+    if scope.kind == crate::records::DesignFeatureKind::SurfacePatch
+        && operand.surface_patch_recipe_structure.is_some()
+    {
         operand.recipe_state_id = None;
         operand.resolved_edge_slot = None;
         let mut matches = terminal_topologies

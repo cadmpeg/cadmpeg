@@ -454,7 +454,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         class_tag: "301".into(),
         record_index: 12,
         frame_length: 200,
-        kind: "Extrude".into(),
+        kind: crate::records::DesignFeatureKind::Extrude,
         kind_offset: 1100,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,

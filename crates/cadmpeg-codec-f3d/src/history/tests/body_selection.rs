@@ -15,7 +15,7 @@ fn move_body_selection_uses_unique_owning_history() {
 
     let mut scope = crate::records::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        "Move",
+        crate::records::DesignFeatureKind::Move,
         10,
     );
     scope.history_state_id = Some(42);

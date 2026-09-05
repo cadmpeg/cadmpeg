@@ -50,7 +50,11 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
     bytes[scalar_start + 40..scalar_start + 48].copy_from_slice(&(-1.0f64).to_le_bytes());
     put_indexed_header(&mut bytes, *b"261", 74);
 
-    let mut scope = DesignParameterScope::empty("f3d:test:thicken#1", "Thicken", 1);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:thicken#1",
+        crate::records::DesignFeatureKind::Thicken,
+        1,
+    );
     scope.class_tag = "347".into();
     scope.paired_class_tag = "258".into();
     scope.frame_length = 291;

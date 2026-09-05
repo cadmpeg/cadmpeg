@@ -29,124 +29,76 @@ use std::collections::HashSet;
 
 #[test]
 fn feature_family_tokens_are_localized() {
-    assert_eq!(
-        design_feature_family("As-built"),
-        Some(DesignFeatureFamily::Assemble)
-    );
-    assert_eq!(
-        design_feature_family("Esquisse"),
-        Some(DesignFeatureFamily::Sketch)
-    );
-    assert_eq!(
-        design_feature_family("Extrusion"),
-        Some(DesignFeatureFamily::Extrude)
-    );
-    assert_eq!(
-        design_feature_family("Extrusão"),
-        Some(DesignFeatureFamily::Extrude)
-    );
+    use crate::records::DesignFeatureKind;
+    let family = |token: &str| design_feature_family(&DesignFeatureKind::from(token.to_owned()));
+    let treatment =
+        |token: &str| has_typed_edge_treatment_group(&DesignFeatureKind::from(token.to_owned()));
+    let localized =
+        |token: &str| is_localized_edge_treatment_kind(&DesignFeatureKind::from(token.to_owned()));
+    assert_eq!(family("As-built"), Some(DesignFeatureFamily::Assemble));
+    assert_eq!(family("Esquisse"), Some(DesignFeatureFamily::Sketch));
+    assert_eq!(family("Extrusion"), Some(DesignFeatureFamily::Extrude));
+    assert_eq!(family("Extrusão"), Some(DesignFeatureFamily::Extrude));
     for token in ["Skizze", "Esboço"] {
-        assert_eq!(
-            design_feature_family(token),
-            Some(DesignFeatureFamily::Sketch)
-        );
+        assert_eq!(family(token), Some(DesignFeatureFamily::Sketch));
     }
-    assert_eq!(
-        design_feature_family("Congé"),
-        Some(DesignFeatureFamily::Fillet)
-    );
+    assert_eq!(family("Congé"), Some(DesignFeatureFamily::Fillet));
     for token in ["Abrundung", "Arredondamento"] {
-        assert_eq!(
-            design_feature_family(token),
-            Some(DesignFeatureFamily::Fillet)
-        );
-        assert!(has_typed_edge_treatment_group(token));
+        assert_eq!(family(token), Some(DesignFeatureFamily::Fillet));
+        assert!(treatment(token));
     }
-    assert_eq!(
-        design_feature_family("Chanfrein"),
-        Some(DesignFeatureFamily::Chamfer)
-    );
+    assert_eq!(family("Chanfrein"), Some(DesignFeatureFamily::Chamfer));
     for token in ["Congé", "Abrundung", "Arredondamento", "Chanfrein"] {
-        assert!(is_localized_edge_treatment_kind(token));
+        assert!(localized(token));
     }
     for token in ["Fillet", "Chamfer", "Extrusion", "unknown"] {
-        assert!(!is_localized_edge_treatment_kind(token));
+        assert!(!localized(token));
     }
     for token in ["C-Pattern", "Réseau C"] {
-        assert_eq!(
-            design_feature_family(token),
-            Some(DesignFeatureFamily::CircularPattern)
-        );
+        assert_eq!(family(token), Some(DesignFeatureFamily::CircularPattern));
     }
+    assert_eq!(family("Symétrie miroir"), Some(DesignFeatureFamily::Mirror));
     assert_eq!(
-        design_feature_family("Symétrie miroir"),
-        Some(DesignFeatureFamily::Mirror)
-    );
-    assert_eq!(
-        design_feature_family("DécalerLesFaces"),
+        family("DécalerLesFaces"),
         Some(DesignFeatureFamily::OffsetFaces)
     );
     assert_eq!(
-        design_feature_family("ReplaceFace"),
+        family("ReplaceFace"),
         Some(DesignFeatureFamily::ReplaceFace)
     );
-    assert_eq!(
-        design_feature_family("Schale"),
-        Some(DesignFeatureFamily::Shell)
-    );
-    assert_eq!(
-        design_feature_family("SpirePrimitive"),
-        Some(DesignFeatureFamily::Coil)
-    );
-    assert_eq!(
-        design_feature_family("Hem"),
-        Some(DesignFeatureFamily::SheetMetalHem)
-    );
+    assert_eq!(family("Schale"), Some(DesignFeatureFamily::Shell));
+    assert_eq!(family("SpirePrimitive"), Some(DesignFeatureFamily::Coil));
+    assert_eq!(family("Hem"), Some(DesignFeatureFamily::SheetMetalHem));
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
-        "Hem"
+        &DesignFeatureKind::Hem
     ));
     assert_eq!(
-        design_feature_family("SurfacePatch"),
+        family("SurfacePatch"),
         Some(DesignFeatureFamily::SurfacePatch)
     );
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
-        "SurfacePatch"
+        &DesignFeatureKind::SurfacePatch
     ));
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
-        "WorkPoint"
+        &DesignFeatureKind::WorkPoint
     ));
     assert_eq!(
-        design_feature_family("SurfaceRuled"),
+        family("SurfaceRuled"),
         Some(DesignFeatureFamily::SurfaceRuled)
     );
     assert_eq!(
-        design_feature_family("BoundaryFill"),
+        family("BoundaryFill"),
         Some(DesignFeatureFamily::BoundaryFill)
     );
     assert_eq!(
-        design_feature_family("SurfaceTrim"),
+        family("SurfaceTrim"),
         Some(DesignFeatureFamily::SurfaceTrim)
     );
-    assert_eq!(
-        design_feature_family("Hole"),
-        Some(DesignFeatureFamily::Hole)
-    );
-    assert_eq!(
-        design_feature_family("Split"),
-        Some(DesignFeatureFamily::Split)
-    );
-    assert_eq!(
-        design_feature_family("Loft"),
-        Some(DesignFeatureFamily::Loft)
-    );
-    assert_eq!(
-        design_feature_family("Sweep"),
-        Some(DesignFeatureFamily::Sweep)
-    );
-    assert_eq!(
-        design_feature_family("Pipe"),
-        Some(DesignFeatureFamily::Pipe)
-    );
+    assert_eq!(family("Hole"), Some(DesignFeatureFamily::Hole));
+    assert_eq!(family("Split"), Some(DesignFeatureFamily::Split));
+    assert_eq!(family("Loft"), Some(DesignFeatureFamily::Loft));
+    assert_eq!(family("Sweep"), Some(DesignFeatureFamily::Sweep));
+    assert_eq!(family("Pipe"), Some(DesignFeatureFamily::Pipe));
 }
 
 #[test]

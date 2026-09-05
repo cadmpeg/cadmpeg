@@ -108,7 +108,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#425",
-        "DerivedInstance",
+        crate::records::DesignFeatureKind::DerivedInstance,
         385,
     );
     scope.byte_offset = SCOPE_AT as u64;

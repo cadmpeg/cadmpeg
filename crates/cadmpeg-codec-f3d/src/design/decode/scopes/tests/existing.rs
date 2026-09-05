@@ -118,7 +118,11 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         bytes[25..29].copy_from_slice(&1u32.to_le_bytes());
         bytes[30..34].fill(0xff);
 
-        let mut scope = DesignParameterScope::empty("generated:loft#20", "Loft", 20);
+        let mut scope = DesignParameterScope::empty(
+            "generated:loft#20",
+            crate::records::DesignFeatureKind::Loft,
+            20,
+        );
         scope.class_tag = class_tag.into();
         scope.frame_length = 64;
         let construction = exact_path_feature_construction(
@@ -192,7 +196,7 @@ fn compact_coil_placement_fixture(
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        "CoilPrimitive",
+        crate::records::DesignFeatureKind::CoilPrimitive,
         42,
     );
     scope.frame_length = 442;
@@ -444,7 +448,7 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
     let stream = "f3d:Design/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        "CoilPrimitive",
+        crate::records::DesignFeatureKind::CoilPrimitive,
         42,
     );
     scope.frame_length = 432;
@@ -893,7 +897,11 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
     bytes.extend_from_slice(b"259");
     bytes.extend_from_slice(&55u32.to_le_bytes());
 
-    let mut scope = DesignParameterScope::empty("generated:hole#0", "Hole", 12);
+    let mut scope = DesignParameterScope::empty(
+        "generated:hole#0",
+        crate::records::DesignFeatureKind::Hole,
+        12,
+    );
     scope.reference_members.push(55);
     (bytes, scope, position_at, input_reference_at)
 }
@@ -986,7 +994,11 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
     let next_at = bytes.len();
     indexed_header(&mut bytes, *b"311", 104);
 
-    let mut scope = DesignParameterScope::empty("generated:hole#0", "Hole", 12);
+    let mut scope = DesignParameterScope::empty(
+        "generated:hole#0",
+        crate::records::DesignFeatureKind::Hole,
+        12,
+    );
     scope.reference_members.push(100);
     let selection = exact_hole_face_selection(
         &bytes,

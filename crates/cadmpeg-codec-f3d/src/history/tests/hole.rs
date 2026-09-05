@@ -142,7 +142,11 @@ fn hole_scope() -> crate::records::DesignParameterScope {
         input_record_offsets: vec![0],
         face_selection: Some(face_selection),
     };
-    let mut scope = crate::records::DesignParameterScope::empty("f3d:scope#5", "Hole", 5);
+    let mut scope = crate::records::DesignParameterScope::empty(
+        "f3d:scope#5",
+        crate::records::DesignFeatureKind::Hole,
+        5,
+    );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
     scope.set_hole_construction(Some(construction));

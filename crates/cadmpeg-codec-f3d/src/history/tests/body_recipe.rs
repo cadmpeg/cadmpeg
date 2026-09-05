@@ -92,7 +92,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
 
     let scope = crate::records::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#10",
-        "Combine",
+        crate::records::DesignFeatureKind::Combine,
         10,
     );
     let native = "f3d:Design/BulkStream.dat:design-record#1".to_owned();

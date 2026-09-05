@@ -206,7 +206,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         class_tag: "301".into(),
         record_index: 12,
         frame_length: 200,
-        kind: "Extrude".into(),
+        kind: crate::records::DesignFeatureKind::Extrude,
         kind_offset: 210,
         payload: DesignScopePayload::Extrude(crate::records::DesignExtrudeScope {
             extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
@@ -356,7 +356,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         class_tag: "301".into(),
         record_index,
         frame_length: 100,
-        kind: "CustomFeature".into(),
+        kind: crate::records::DesignFeatureKind::CustomFeature,
         kind_offset: 0,
         feature_ordinal: record_index,
         feature_ordinal_offset: 0,
@@ -494,7 +494,7 @@ fn parameter_expressions_project_feature_dependencies() {
         class_tag: "301".into(),
         record_index,
         frame_length: 200,
-        kind: kind.into(),
+        kind: kind.to_owned().into(),
         kind_offset: byte_offset + 100,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,

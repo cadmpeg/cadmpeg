@@ -64,43 +64,71 @@ pub(crate) enum DesignFeatureFamily {
 
 /// Return the canonical operation family while preserving `kind` verbatim on
 /// the native scope. Fusion serializes this field through its UI localization.
-pub(crate) fn design_feature_family(kind: impl AsRef<str>) -> Option<DesignFeatureFamily> {
-    match kind.as_ref() {
-        "Sketch" | "Esquisse" | "Skizze" | "Esboço" => Some(DesignFeatureFamily::Sketch),
-        "Assemble" | "As-built" => Some(DesignFeatureFamily::Assemble),
-        "Extrude" | "Extrusion" | "Extrusão" => Some(DesignFeatureFamily::Extrude),
-        "Fillet" | "Congé" | "Abrundung" | "Arredondamento" => Some(DesignFeatureFamily::Fillet),
-        "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
-        "Combine" => Some(DesignFeatureFamily::Combine),
-        "Draft" => Some(DesignFeatureFamily::Draft),
-        "ReplaceFace" => Some(DesignFeatureFamily::ReplaceFace),
-        "C-Pattern" | "Circular Pattern" | "Réseau C" => {
+pub(crate) fn design_feature_family(
+    kind: &crate::records::DesignFeatureKind,
+) -> Option<DesignFeatureFamily> {
+    use crate::records::DesignFeatureKind as Kind;
+    match kind {
+        Kind::Sketch | Kind::Esquisse | Kind::Skizze | Kind::Esboco => {
+            Some(DesignFeatureFamily::Sketch)
+        }
+        Kind::Assemble | Kind::AsBuilt => Some(DesignFeatureFamily::Assemble),
+        Kind::Extrude | Kind::Extrusion | Kind::Extrusao => Some(DesignFeatureFamily::Extrude),
+        Kind::Fillet | Kind::Conge | Kind::Abrundung | Kind::Arredondamento => {
+            Some(DesignFeatureFamily::Fillet)
+        }
+        Kind::Chamfer | Kind::Chanfrein => Some(DesignFeatureFamily::Chamfer),
+        Kind::Combine => Some(DesignFeatureFamily::Combine),
+        Kind::Draft => Some(DesignFeatureFamily::Draft),
+        Kind::ReplaceFace => Some(DesignFeatureFamily::ReplaceFace),
+        Kind::CPattern | Kind::CircularPattern | Kind::ReseauC => {
             Some(DesignFeatureFamily::CircularPattern)
         }
-        "R-Pattern" | "Rectangular Pattern" => Some(DesignFeatureFamily::RectangularPattern),
-        "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
-        "Move" => Some(DesignFeatureFamily::Move),
-        "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),
-        "Revolve" => Some(DesignFeatureFamily::Revolve),
-        "Shell" | "Schale" => Some(DesignFeatureFamily::Shell),
-        "Thicken" => Some(DesignFeatureFamily::Thicken),
-        "SpirePrimitive" | "CoilPrimitive" => Some(DesignFeatureFamily::Coil),
-        "Loft" => Some(DesignFeatureFamily::Loft),
-        "Sweep" => Some(DesignFeatureFamily::Sweep),
-        "Pipe" => Some(DesignFeatureFamily::Pipe),
-        "SurfacePatch" => Some(DesignFeatureFamily::SurfacePatch),
-        "SurfaceExtend" => Some(DesignFeatureFamily::SurfaceExtend),
-        "SurfaceOffset" => Some(DesignFeatureFamily::SurfaceOffset),
-        "SurfaceRuled" => Some(DesignFeatureFamily::SurfaceRuled),
-        "SurfaceTrim" => Some(DesignFeatureFamily::SurfaceTrim),
-        "BoundaryFill" => Some(DesignFeatureFamily::BoundaryFill),
-        "Hole" => Some(DesignFeatureFamily::Hole),
-        "Split" => Some(DesignFeatureFamily::Split),
-        "Scale" | "Maßstab" => Some(DesignFeatureFamily::Scale),
-        "Thread" => Some(DesignFeatureFamily::Thread),
-        "EdgeFlange" => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
-        "Hem" => Some(DesignFeatureFamily::SheetMetalHem),
-        _ => None,
+        Kind::RPattern | Kind::RectangularPattern => Some(DesignFeatureFamily::RectangularPattern),
+        Kind::Mirror | Kind::SymetrieMiroir => Some(DesignFeatureFamily::Mirror),
+        Kind::Move => Some(DesignFeatureFamily::Move),
+        Kind::OffsetFaces | Kind::DecalerLesFaces => Some(DesignFeatureFamily::OffsetFaces),
+        Kind::Revolve => Some(DesignFeatureFamily::Revolve),
+        Kind::Shell | Kind::Schale => Some(DesignFeatureFamily::Shell),
+        Kind::Thicken => Some(DesignFeatureFamily::Thicken),
+        Kind::SpirePrimitive | Kind::CoilPrimitive => Some(DesignFeatureFamily::Coil),
+        Kind::Loft => Some(DesignFeatureFamily::Loft),
+        Kind::Sweep => Some(DesignFeatureFamily::Sweep),
+        Kind::Pipe => Some(DesignFeatureFamily::Pipe),
+        Kind::SurfacePatch => Some(DesignFeatureFamily::SurfacePatch),
+        Kind::SurfaceExtend => Some(DesignFeatureFamily::SurfaceExtend),
+        Kind::SurfaceOffset => Some(DesignFeatureFamily::SurfaceOffset),
+        Kind::SurfaceRuled => Some(DesignFeatureFamily::SurfaceRuled),
+        Kind::SurfaceTrim => Some(DesignFeatureFamily::SurfaceTrim),
+        Kind::BoundaryFill => Some(DesignFeatureFamily::BoundaryFill),
+        Kind::Hole => Some(DesignFeatureFamily::Hole),
+        Kind::Split => Some(DesignFeatureFamily::Split),
+        Kind::Scale | Kind::Massstab => Some(DesignFeatureFamily::Scale),
+        Kind::Thread => Some(DesignFeatureFamily::Thread),
+        Kind::EdgeFlange => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
+        Kind::Hem => Some(DesignFeatureFamily::SheetMetalHem),
+        Kind::Native(_)
+        | Kind::Canvas
+        | Kind::Decal
+        | Kind::BaseMeshFeature
+        | Kind::WorkPlane
+        | Kind::WorkAxis
+        | Kind::WorkPoint
+        | Kind::DerivedInstance
+        | Kind::CustomFeature
+        | Kind::Form
+        | Kind::SurfaceStitch
+        | Kind::BaseFeature
+        | Kind::CopyPasteBodies
+        | Kind::ComponentInsert
+        | Kind::CopyPaste
+        | Kind::JointOrigin
+        | Kind::BaseFlange
+        | Kind::SplitFace
+        | Kind::DeleteFace
+        | Kind::SurfaceDeleteFace
+        | Kind::RemoveBody
+        | Kind::Face => None,
     }
 }
 
@@ -108,11 +136,12 @@ pub(crate) fn design_feature_family(kind: impl AsRef<str>) -> Option<DesignFeatu
 ///
 /// Canonical Fillet and Chamfer scopes require every selection to use a
 /// counted construction-operand group. Their localized spellings do not.
-pub(crate) fn is_localized_edge_treatment_kind(kind: &str) -> bool {
+pub(crate) fn is_localized_edge_treatment_kind(kind: &crate::records::DesignFeatureKind) -> bool {
+    use crate::records::DesignFeatureKind as Kind;
     matches!(
         design_feature_family(kind),
         Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
-    ) && !matches!(kind, "Fillet" | "Chamfer")
+    ) && !matches!(kind, Kind::Fillet | Kind::Chamfer)
 }
 
 pub(crate) const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[

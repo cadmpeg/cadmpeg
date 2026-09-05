@@ -34,7 +34,8 @@ pub fn decode_canvas_images(
             scopes
                 .iter()
                 .filter(|scope| {
-                    scope.kind == "Canvas" && ids::native_stream(&scope.id) == Some(stream.as_str())
+                    scope.kind == crate::records::DesignFeatureKind::Canvas
+                        && ids::native_stream(&scope.id) == Some(stream.as_str())
                 })
                 .filter_map(|scope| parse_canvas_image(bytes, &entry.name, scope)),
         );
