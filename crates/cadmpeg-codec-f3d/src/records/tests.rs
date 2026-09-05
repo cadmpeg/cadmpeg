@@ -556,6 +556,18 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
             if (form == "compact_one_body" && mask == 3) || (form == "expanded_two_body" && mask == 0) {
                 assert_eq!(serde_json::to_string(&parsed.expect("complete legacy form")).expect("legacy wire"), wire);
                 let value: serde_json::Value = serde_json::from_str(&wire).expect("legacy JSON");
+                if form == "compact_one_body" {
+                    for mode in [1_u8, 2, u8::MAX] {
+                        let mut mode_wire = value.clone();
+                        mode_wire["mode"] = mode.into();
+                        let decoded = serde_json::from_value::<super::DesignBaseFeatureConstruction>(mode_wire.clone());
+                        if mode == 1 {
+                            assert_eq!(serde_json::to_value(decoded.expect("mode one")).unwrap(), mode_wire);
+                        } else {
+                            assert!(decoded.expect_err("unknown compact mode").to_string().contains("mode"));
+                        }
+                    }
+                }
                 for field in ["body_entity_suffixes", "body_entity_suffix_offsets", "body_entity_fields", "body_reference_records", "body_reference_record_offsets", "parameter_body_records", "parameter_body_record_offsets", "auxiliary_records", "auxiliary_record_offsets"] {
                     let mut invalid = value.clone();
                     invalid[field].as_array_mut().expect("body array").pop();
