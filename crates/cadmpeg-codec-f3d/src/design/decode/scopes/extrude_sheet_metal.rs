@@ -981,7 +981,7 @@ fn exact_legacy_distance_extrude_prologue(
     reference_count_at: usize,
 ) -> Option<DesignExtrudePrologue> {
     let marker_offset = start.checked_add(early_absent::ABSENT_PREFIX)?;
-    let (prefix_value, operation_offset, expected_reference_count_delta) =
+    let (prefix_zero_offset, operation_offset, expected_reference_count_delta) =
         match bytes.get(marker_offset)? {
             0 => (None, start.checked_add(early_absent::OPERATION)?, 208),
             1 => {
@@ -991,7 +991,7 @@ fn exact_legacy_distance_extrude_prologue(
                     return None;
                 }
                 (
-                    Some(crate::records::Located { value: prefix_value, offset: u64::try_from(prefix_value_offset).ok()? }),
+                    Some(u64::try_from(prefix_value_offset).ok()?),
                     start.checked_add(early_present::OPERATION)?,
                     212,
                 )
@@ -1020,20 +1020,20 @@ fn exact_legacy_distance_extrude_prologue(
         _ => return None,
     };
     let geometry_kind_offset = direction_reversed_offset.checked_add(1)?;
-    let geometry_kind = View::u32_le_at(bytes, geometry_kind_offset)?;
-    if !matches!(geometry_kind, 0 | 1) {
-        return None;
-    }
+    let solid_operation = match View::u32_le_at(bytes, geometry_kind_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     Some(DesignExtrudePrologue::LegacyDistance {
-        prefix_value,
+        prefix_zero_offset,
         operation,
         operation_offset: operation_offset as u64,
-        extent_kind,
         extent_kind_offset: extent_kind_offset as u64,
         direction_reversed,
         direction_reversed_offset: direction_reversed_offset as u64,
-        geometry_kind,
-        geometry_kind_offset: geometry_kind_offset as u64,
+        solid_operation,
+        solid_operation_offset: geometry_kind_offset as u64,
     })
 }
 

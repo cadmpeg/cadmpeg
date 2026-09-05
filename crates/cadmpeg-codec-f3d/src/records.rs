@@ -1530,26 +1530,23 @@ pub struct DesignExtrudeTargetOrdinal {
 pub enum DesignExtrudePrologue {
     /// Early distance-only layout with a nullable prefix field.
     LegacyDistance {
-        /// Value of the nullable prefix field when its marker is present.
-        prefix_value: Option<Located<u32>>,
+        /// Byte offset of the fixed zero prefix when its marker is present.
+        prefix_zero_offset: Option<u64>,
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.
         operation_offset: u64,
-        /// Raw extent-kind value (`2 = one-sided distance`).
-        #[serde(alias = "extent_discriminator")]
-        extent_kind: u32,
-        /// Byte offset of `extent_kind`.
+        /// Byte offset of the fixed extent-kind value `2`.
         #[serde(alias = "extent_discriminator_offset")]
         extent_kind_offset: u64,
         /// Direction-reversal state.
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
         direction_reversed_offset: u64,
-        /// Raw geometry-kind discriminator (`0 = sheet`, `1 = solid`).
-        geometry_kind: u32,
-        /// Byte offset of `geometry_kind`.
-        geometry_kind_offset: u64,
+        /// Whether the operation creates solid rather than sheet geometry.
+        solid_operation: bool,
+        /// Byte offset of the geometry-kind integer.
+        solid_operation_offset: u64,
     },
     /// Reference-aware layout with an optional indexed-reference prefix.
     ReferenceAware {
@@ -1807,7 +1804,22 @@ impl TryFrom<DesignExtrudePrologueWire> for DesignExtrudePrologue {
     type Error = String;
     fn try_from(wire: DesignExtrudePrologueWire) -> Result<Self, Self::Error> {
         Ok(match wire {
-            DesignExtrudePrologueWire::LegacyDistance { prefix_value, prefix_value_offset, operation, operation_offset, extent_kind, extent_kind_offset, direction_reversed, direction_reversed_offset, geometry_kind, geometry_kind_offset } => Self::LegacyDistance { prefix_value: Located::from_wire(prefix_value, prefix_value_offset, "prefix_value")?, operation, operation_offset, extent_kind, extent_kind_offset, direction_reversed, direction_reversed_offset, geometry_kind, geometry_kind_offset },
+            DesignExtrudePrologueWire::LegacyDistance { prefix_value, prefix_value_offset, operation, operation_offset, extent_kind, extent_kind_offset, direction_reversed, direction_reversed_offset, geometry_kind, geometry_kind_offset } => {
+                let prefix_zero_offset = match (prefix_value, prefix_value_offset) {
+                    (None, None) => None,
+                    (Some(0), Some(offset)) => Some(offset),
+                    _ => return Err("prefix_value must be zero and occur with prefix_value_offset".into()),
+                };
+                if extent_kind != 2 {
+                    return Err("extent_kind must be 2 in a legacy distance prologue".into());
+                }
+                let solid_operation = match geometry_kind {
+                    0 => false,
+                    1 => true,
+                    _ => return Err("geometry_kind must be 0 or 1".into()),
+                };
+                Self::LegacyDistance { prefix_zero_offset, operation, operation_offset, extent_kind_offset, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset: geometry_kind_offset }
+            },
             DesignExtrudePrologueWire::ReferenceAware { reference, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, first_side_target_ordinal, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::ReferenceAware { reference, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, first_side_target_ordinal, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
             DesignExtrudePrologueWire::ShiftedReferenceAware { operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::ShiftedReferenceAware { operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
             DesignExtrudePrologueWire::LegacyShifted { operation_prefix_marker, operation_prefix_marker_offset, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::LegacyShifted { operation_prefix_marker: Located::from_wire(operation_prefix_marker, operation_prefix_marker_offset, "operation_prefix_marker")?, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
@@ -1818,7 +1830,7 @@ impl TryFrom<DesignExtrudePrologueWire> for DesignExtrudePrologue {
 impl From<DesignExtrudePrologue> for DesignExtrudePrologueWire {
     fn from(record: DesignExtrudePrologue) -> Self {
         match record {
-            DesignExtrudePrologue::LegacyDistance { prefix_value, operation, operation_offset, extent_kind, extent_kind_offset, direction_reversed, direction_reversed_offset, geometry_kind, geometry_kind_offset } => Self::LegacyDistance { prefix_value: prefix_value.map(|value| value.value), prefix_value_offset: prefix_value.map(|value| value.offset), operation, operation_offset, extent_kind, extent_kind_offset, direction_reversed, direction_reversed_offset, geometry_kind, geometry_kind_offset },
+            DesignExtrudePrologue::LegacyDistance { prefix_zero_offset, operation, operation_offset, extent_kind_offset, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset } => Self::LegacyDistance { prefix_value: prefix_zero_offset.map(|_| 0), prefix_value_offset: prefix_zero_offset, operation, operation_offset, extent_kind: 2, extent_kind_offset, direction_reversed, direction_reversed_offset, geometry_kind: u32::from(solid_operation), geometry_kind_offset: solid_operation_offset },
             DesignExtrudePrologue::ReferenceAware { reference, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, first_side_target_ordinal, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::ReferenceAware { reference, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, first_side_target_ordinal, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
             DesignExtrudePrologue::ShiftedReferenceAware { operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::ShiftedReferenceAware { operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
             DesignExtrudePrologue::LegacyShifted { operation_prefix_marker, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::LegacyShifted { operation_prefix_marker: operation_prefix_marker.map(|value| value.value), operation_prefix_marker_offset: operation_prefix_marker.map(|value| value.offset), operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
@@ -1840,10 +1852,9 @@ impl DesignExtrudePrologue {
     /// Decoded extent form.
     pub fn extent(self) -> Option<DesignExtrudeExtent> {
         match self {
-            Self::LegacyDistance { extent_kind: 2, .. } => {
+            Self::LegacyDistance { .. } => {
                 Some(DesignExtrudeExtent::OneSidedDistance)
             }
-            Self::LegacyDistance { .. } => None,
             Self::ReferenceAware { extent, .. } => Some(extent),
             Self::ShiftedReferenceAware { extent, .. } => Some(extent),
             Self::LegacyShifted { extent, .. } => extent,
@@ -1871,8 +1882,8 @@ impl DesignExtrudePrologue {
     /// Whether the operation creates solid rather than sheet geometry.
     pub fn solid_operation(self) -> bool {
         match self {
-            Self::LegacyDistance { geometry_kind, .. } => geometry_kind == 1,
-            Self::ReferenceAware {
+            Self::LegacyDistance { solid_operation, .. }
+            | Self::ReferenceAware {
                 solid_operation, ..
             }
             | Self::ShiftedReferenceAware {

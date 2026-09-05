@@ -773,38 +773,30 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
     assert_eq!(
         scope(false, 1, 1).extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyDistance {
-            prefix_value: None,
+            prefix_zero_offset: None,
             operation: DesignExtrudeOperation::Join,
             operation_offset: 21,
-            extent_kind: 2,
             extent_kind_offset: 25,
             direction_reversed: true,
             direction_reversed_offset: 29,
-            geometry_kind: 1,
-            geometry_kind_offset: 30,
+            solid_operation: true,
+            solid_operation_offset: 30,
         })
     );
     assert_eq!(
         scope(true, 4, 0).extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyDistance {
-            prefix_value: Some(crate::records::Located { value: 0, offset: 21 }),
+            prefix_zero_offset: Some(21),
             operation: DesignExtrudeOperation::NewBody,
             operation_offset: 25,
-            extent_kind: 2,
             extent_kind_offset: 29,
             direction_reversed: true,
             direction_reversed_offset: 33,
-            geometry_kind: 0,
-            geometry_kind_offset: 34,
+            solid_operation: false,
+            solid_operation_offset: 34,
         })
     );
 
-    let mut invalid_extent_kind = scope(false, 1, 1).extrude_prologue().unwrap();
-    let DesignExtrudePrologue::LegacyDistance { extent_kind, .. } = &mut invalid_extent_kind else {
-        unreachable!("the fixture constructs the early distance-only layout");
-    };
-    *extent_kind = 1;
-    assert_eq!(invalid_extent_kind.extent(), None);
 }
 
 #[test]
