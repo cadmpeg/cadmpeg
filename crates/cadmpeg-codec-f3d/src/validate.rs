@@ -3078,13 +3078,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .step_by(2)
                     .copied()
                     .collect::<HashSet<_>>();
-                let selections = std::iter::once(&operation.target)
-                    .chain(&operation.tools)
+                let selections = std::iter::once(operation.target_record_index)
+                    .chain(operation.tools.iter().map(|tool| tool.record_index))
                     .collect::<Vec<_>>();
-                let actual_selections = selections
-                    .iter()
-                    .map(|selection| selection.record_index)
-                    .collect::<HashSet<_>>();
+                let actual_selections = selections.iter().copied().collect::<HashSet<_>>();
                 let valid_external = |selection: &records::DesignCombineBodySelection| {
                     selection.external_identity.as_ref().is_none_or(|identity| {
                         let Some(header) =
@@ -3184,12 +3181,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && scope.frame_length == 363;
                 scope.reference_members.len() >= 4
                     && scope.reference_members.len().is_multiple_of(2)
-                    && !operation.tools.is_empty()
-                    && operation.target.external_identity.is_none()
                     && selections.len() == scope.reference_members.len() / 2
                     && actual_selections.len() == selections.len()
                     && actual_selections == expected_selections
-                    && selections.into_iter().all(valid_external)
+                    && operation.tools.iter().all(valid_external)
                     && match operation.form {
                         records::DesignCombineForm::Standard => {
                             !compact_scope
@@ -6254,7 +6249,7 @@ fn validate_body_recipe_operands<'a>(
                 (scope.kind() == crate::records::DesignFeatureKind::Hole
                     || (!scope_reference_ordinal.is_multiple_of(2)
                         && scope.combine_operation().is_some_and(|operation| {
-                            operation.target.record_index == operand.record_index
+                            operation.target_record_index == operand.record_index
                                 || operation
                                     .tools
                                     .iter()

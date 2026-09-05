@@ -1447,7 +1447,7 @@ fn combine_external_local_tools(
                 .map(crate::ids::neutral_combine_external_body_id)
         })
         .collect::<Option<Vec<_>>>()?;
-    if bodies.is_empty() || bodies.iter().collect::<HashSet<_>>().len() != bodies.len() {
+    if bodies.iter().collect::<HashSet<_>>().len() != bodies.len() {
         return None;
     }
     Some(cadmpeg_ir::features::BodySelection::Local {

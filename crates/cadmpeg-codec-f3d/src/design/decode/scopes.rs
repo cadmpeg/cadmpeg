@@ -8364,9 +8364,9 @@ pub(crate) fn exact_combine_operation(
         )
     };
     let operation = match View::u32_le_at(bytes, operation_offset)? {
-        1 => DesignExtrudeOperation::Join,
-        2 => DesignExtrudeOperation::Cut,
-        3 => DesignExtrudeOperation::Intersect,
+        1 => cadmpeg_ir::features::BooleanKind::Join,
+        2 => cadmpeg_ir::features::BooleanKind::Cut,
+        3 => cadmpeg_ir::features::BooleanKind::Intersect,
         _ => return None,
     };
     let keep_tools = match bytes.get(keep_tools_offset)? {
@@ -8391,40 +8391,30 @@ pub(crate) fn exact_combine_operation(
         if !contains_consecutive_guid_pair(bytes.get(*selection_at..*selection_end)?) {
             return None;
         }
-        let selection = DesignCombineBodySelection {
-            record_index: *selection_record_index,
-            external_identity: if matches!(role, CombineOperandRole::Tool) {
-                exact_combine_external_body_identity(
-                    bytes,
-                    *selection_at,
-                    *selection_end,
-                    scope.record_index,
-                    *selection_record_index,
-                )
-            } else {
-                None
-            },
-        };
         match role {
             CombineOperandRole::Target => {
-                if target.replace(selection).is_some() {
+                if target.replace(*selection_record_index).is_some() {
                     return None;
                 }
             }
-            CombineOperandRole::Tool => tools.push(selection),
+            CombineOperandRole::Tool => tools.push(DesignCombineBodySelection {
+                record_index: *selection_record_index,
+                external_identity: exact_combine_external_body_identity(
+                    bytes, *selection_at, *selection_end, scope.record_index, *selection_record_index,
+                ),
+            }),
         }
     }
     let target = target?;
-    if tools.is_empty() {
-        return None;
-    }
+    let mut tools = tools.into_iter();
+    let tools = crate::records::DesignCombineTools { first: tools.next()?, additional: tools.collect() };
     Some(DesignCombineOperation {
         form,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         keep_tools,
         keep_tools_offset: u64::try_from(keep_tools_offset).ok()?,
-        target,
+        target_record_index: target,
         tools,
     })
 }

@@ -3372,7 +3372,7 @@ pub fn decode_body_recipe_operands(
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         let operation = scope.combine_operation();
         let record_indexes = operation.into_iter().flat_map(|operation| {
-            std::iter::once(&operation.target.record_index)
+            std::iter::once(&operation.target_record_index)
                 .chain(operation.tools.iter().map(|tool| &tool.record_index))
         }).chain(scope.reference_members.values().filter(|_| operation.is_none()));
         for record_index in record_indexes {

@@ -1980,3 +1980,37 @@ fn mirror_derives_count_and_requires_one_tolerance_carrier() {
         assert!(error.to_string().contains("stitch_tolerance_scope"));
     }
 }
+
+#[test]
+fn combine_requires_boolean_operation_local_target_and_nonempty_tools() {
+    for operation in ["join", "cut", "intersect"] {
+        for tools in [r#"[{"record_index":2}]"#, r#"[{"record_index":2},{"record_index":3}]"#] {
+            let wire = format!("{{\"form\":\"standard\",\"operation\":\"{operation}\",\"operation_offset\":20,\"keep_tools\":false,\"keep_tools_offset\":25,\"target\":{{\"record_index\":1}},\"tools\":{tools}}}");
+            let combine: super::DesignCombineOperation = serde_json::from_str(&wire).expect("combine operation");
+            assert_eq!(serde_json::to_string(&combine).expect("combine operation wire"), wire);
+        }
+    }
+    let base = serde_json::json!({
+        "form": "standard", "operation": "join", "operation_offset": 20,
+        "keep_tools": false, "keep_tools_offset": 25,
+        "target": {"record_index": 1}, "tools": [{"record_index": 2}]
+    });
+    for (field, value) in [("operation", serde_json::json!("new_body")), ("tools", serde_json::json!([]))] {
+        let mut invalid = base.clone();
+        invalid[field] = value;
+        let error = serde_json::from_value::<super::DesignCombineOperation>(invalid).expect_err("invalid combine form");
+        assert!(error.to_string().contains(field));
+    }
+    let mut external_target = base;
+    external_target["target"]["external_identity"] = serde_json::json!({
+        "selector_asset_id": "asset", "selector_asset_id_offset": 0,
+        "selector_context_id": "context", "selector_context_id_offset": 0,
+        "occurrence_reference": 1, "occurrence_reference_offset": 0,
+        "external_body_reference": 2, "external_body_reference_offset": 0,
+        "external_segment": 1, "external_segment_offset": 0,
+        "external_asset_id": "asset", "external_asset_id_offset": 0,
+        "external_link_name": "link", "external_link_name_offset": 0
+    });
+    let error = serde_json::from_value::<super::DesignCombineOperation>(external_target).expect_err("local combine target");
+    assert!(error.to_string().contains("target.external_identity"));
+}

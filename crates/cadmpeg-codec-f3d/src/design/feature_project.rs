@@ -1984,17 +1984,14 @@ pub(crate) fn project_combine(
     scope: &DesignParameterScope,
     native_scope: &str,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
 
     let operation = scope.combine_operation()?;
-    if operation.tools.is_empty() {
-        return None;
-    }
     let selection = |record_index| format!("{native_scope}:design-record#{record_index}");
     Some(FeatureDefinition::Combine {
-        target: BodySelection::Native(selection(operation.target.record_index)),
-        tools: if let [tool] = operation.tools.as_slice() {
-            BodySelection::Native(selection(tool.record_index))
+        target: BodySelection::Native(selection(operation.target_record_index)),
+        tools: if operation.tools.additional.is_empty() {
+            BodySelection::Native(selection(operation.tools.first.record_index))
         } else {
             BodySelection::NativeSet(
                 operation
@@ -2004,12 +2001,7 @@ pub(crate) fn project_combine(
                     .collect(),
             )
         },
-        op: match operation.operation {
-            DesignExtrudeOperation::Join => BooleanKind::Join,
-            DesignExtrudeOperation::Cut => BooleanKind::Cut,
-            DesignExtrudeOperation::Intersect => BooleanKind::Intersect,
-            DesignExtrudeOperation::NewBody => return None,
-        },
+        op: operation.operation,
         keep_tools: operation.keep_tools,
     })
 }
