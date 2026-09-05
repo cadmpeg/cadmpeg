@@ -58,13 +58,11 @@ pub(crate) struct BodyMemberEdit {
     pub(crate) flags: u16,
 }
 
-pub(crate) type ActGuidEdit = Edit<Vec<u8>>;
 pub(crate) struct SketchCurveEdit {
     pub(crate) offset: u64,
     pub(crate) geometry_offset: u32,
     pub(crate) geometry: SketchCurveGeometry,
 }
-pub(crate) type SketchRelationEdit = Vec<Edit<Vec<u8>>>;
 
 pub(crate) fn validate_creation_timestamp_edits(
     native: PatchNatives<'_>,
@@ -1245,7 +1243,7 @@ pub(crate) fn validate_act_entity_edits(
 
 pub(crate) fn validate_act_guid_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<ActGuidEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<Edit<Vec<u8>>>>, CodecError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -1269,7 +1267,7 @@ pub(crate) fn validate_act_guid_edits(
             "F3D ACT GUID regeneration requires the unchanged GUID-id set".into(),
         ));
     }
-    let mut edits: BTreeMap<String, Vec<ActGuidEdit>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<Edit<Vec<u8>>>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized: ActGuid = after.clone();
@@ -1308,7 +1306,7 @@ pub(crate) fn validate_act_guid_edits(
 
 pub(crate) fn validate_act_registry_channel_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<ActGuidEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<Edit<Vec<u8>>>>, CodecError> {
     let baseline = native
         .baseline
         .map(|native| &native.act_registry_channels[..])
@@ -1330,7 +1328,7 @@ pub(crate) fn validate_act_registry_channel_edits(
             "F3D ACT channel-registry regeneration requires the unchanged entry-id set".into(),
         ));
     }
-    let mut edits: BTreeMap<String, Vec<ActGuidEdit>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<Edit<Vec<u8>>>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized: ActRegistryChannel = after.clone();
@@ -2492,7 +2490,7 @@ pub(crate) fn encode_sketch_relation_state(
 
 pub(crate) fn validate_sketch_relation_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<SketchRelationEdit>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<Vec<Edit<Vec<u8>>>>>, CodecError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
@@ -2516,7 +2514,7 @@ pub(crate) fn validate_sketch_relation_edits(
             "F3D sketch-relation regeneration requires the unchanged relation-id set".into(),
         ));
     }
-    let mut edits: BTreeMap<String, Vec<SketchRelationEdit>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<Vec<Edit<Vec<u8>>>>> = BTreeMap::new();
     for relation in target {
         let before = by_id[relation.id.as_str()];
         let mut normalized = relation.clone();
