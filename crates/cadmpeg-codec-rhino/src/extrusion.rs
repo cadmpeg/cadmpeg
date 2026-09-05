@@ -101,10 +101,10 @@ pub(crate) fn decode(
     mesh_budget: &mut crate::mesh::MeshBudget,
 ) -> Result<DecodedExtrusion, GeometryError> {
     let outer = chunk_at(data, range.start, range.end, archive, false)?;
-    if outer.typecode != ANONYMOUS || outer.short {
+    if outer.typecode != ANONYMOUS || outer.short() {
         return Err(error(range.start, "invalid extrusion anonymous framing"));
     }
-    let mut reader = BoundedReader::new(data, outer.body.start, outer.body.end)?;
+    let mut reader = BoundedReader::new(data, outer.body().start, outer.body().end)?;
     let version_offset = reader.position();
     let major = reader.i32()?;
     let minor = reader.i32()?;
@@ -611,7 +611,7 @@ fn read_mesh_cache(
     warnings: &mut Vec<String>,
 ) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
     let cache = anonymous_chunk(data, reader, archive, "extrusion mesh cache")?;
-    let mut cache_reader = BoundedReader::new(data, cache.body.start, cache.body.end)?;
+    let mut cache_reader = BoundedReader::new(data, cache.body().start, cache.body().end)?;
     require_anonymous_version(&mut cache_reader, 1, 0, "extrusion mesh cache")?;
     let mut meshes = Vec::new();
     let mut cache_children = Vec::new();
@@ -629,14 +629,14 @@ fn read_mesh_cache(
         }
         let item = anonymous_chunk(data, &mut cache_reader, archive, "mesh-cache item")?;
         cache_children.push(item.range());
-        let mut item_reader = BoundedReader::new(data, item.body.start, item.body.end)?;
+        let mut item_reader = BoundedReader::new(data, item.body().start, item.body().end)?;
         require_anonymous_version(&mut item_reader, 1, 0, "mesh-cache item")?;
         item_reader.skip(16)?;
         let wrapper_start = item_reader.position();
         let wrapper = chunk_at(data, wrapper_start, item_reader.end(), archive, false)?;
         let (class, userdata) =
             parse_class_wrapper_with_userdata(data, wrapper.range(), archive, warnings)?;
-        item_reader.skip(wrapper.next_offset - wrapper_start)?;
+        item_reader.skip(wrapper.next_offset() - wrapper_start)?;
         if class.class_uuid != crate::mesh::ON_MESH {
             return Err(error(wrapper_start, "mesh-cache item is not ON_Mesh"));
         }
@@ -728,7 +728,7 @@ fn read_v5_mesh_cache(
                 ));
             }
         }
-        offset = wrapper.next_offset;
+        offset = wrapper.next_offset();
     }
     // `ON_V5ExtrusionDisplayMeshCache::Read` returns after its three
     // `ReadObject` calls. The enclosing anonymous-chunk end operation then
@@ -744,7 +744,7 @@ fn anonymous_chunk(
     name: &str,
 ) -> Result<Chunk, GeometryError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
             &format!("expected anonymous {name} chunk"),
@@ -763,7 +763,7 @@ fn finish_anonymous(
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -773,7 +773,7 @@ fn finish_anonymous(
             chunk.header_start
         ));
     }
-    parent.skip(chunk.next_offset - parent.position())?;
+    parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
 }
 
@@ -785,7 +785,7 @@ fn finish_payload(
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
     reader.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), children)?;
     if matches!(
         crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }

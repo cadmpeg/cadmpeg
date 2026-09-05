@@ -86,7 +86,7 @@ pub(crate) fn decode_at(
 ) -> Result<(Cage, usize), GeometryError> {
     let data = expand.data();
     let chunk = chunk_at(data, offset, end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(GeometryError::malformed(
             offset,
             "invalid NURBS cage framing",
@@ -95,16 +95,16 @@ pub(crate) fn decode_at(
 
     let mut body = expand
         .root()
-        .child(chunk.body.start, chunk.body.end)
+        .child(chunk.body().start, chunk.body().end)
         .ok_or_else(|| {
-            GeometryError::malformed(chunk.body.start, "NURBS cage body out of range")
+            GeometryError::malformed(chunk.body().start, "NURBS cage body out of range")
         })?;
 
     let major = req_i32(&mut body)?;
     let minor = req_i32(&mut body)?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
-            offset: chunk.body.start,
+            offset: chunk.body().start,
             message: format!("unsupported NURBS cage version {major}.{minor}"),
         });
     }
@@ -269,7 +269,7 @@ pub(crate) fn decode_at(
         .map_err(|error| refused(body.position(), &error))?;
     Ok((
         Cage {
-            source_range: offset..chunk.next_offset,
+            source_range: offset..chunk.next_offset(),
             dimension,
             rational,
             orders,
@@ -278,7 +278,7 @@ pub(crate) fn decode_at(
             control_points,
             weights,
         },
-        chunk.next_offset,
+        chunk.next_offset(),
     ))
 }
 

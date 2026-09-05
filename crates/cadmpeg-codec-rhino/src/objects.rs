@@ -464,7 +464,7 @@ fn child(
 }
 
 fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
-    if chunk.typecode != typecode || chunk.short {
+    if chunk.typecode != typecode || chunk.short() {
         return Err(FramingError::structural(
             chunk.header_start,
             format!(
@@ -477,7 +477,7 @@ fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), Frami
 }
 
 fn require_short_zero(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
-    if chunk.typecode != typecode || !chunk.short || chunk.value != 0 {
+    if chunk.typecode != typecode || !chunk.short() || chunk.value() != 0 {
         return Err(FramingError::structural(
             chunk.header_start,
             format!(
@@ -511,7 +511,7 @@ fn checksum_warning_excluding(
     chunk: &crate::chunks::Chunk,
     children: &[Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let direct = direct_checksum_ranges(&chunk.body, children)?;
+    let direct = direct_checksum_ranges(&chunk.body(), children)?;
     match verify_checksum_ranges(bytes, chunk, &direct)? {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
@@ -541,9 +541,15 @@ pub(crate) fn parse_class_wrapper_with_userdata(
 ) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
     let wrapper = child(bytes, body.start, body.end, archive, false)?;
     require_long(&wrapper, OPENNURBS_CLASS)?;
-    let uuid_chunk = child(bytes, wrapper.body.start, wrapper.body.end, archive, true)?;
+    let uuid_chunk = child(
+        bytes,
+        wrapper.body().start,
+        wrapper.body().end,
+        archive,
+        true,
+    )?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end - uuid_chunk.body_start != class_uuid_body::LEN {
+    if uuid_chunk.declared_end() - uuid_chunk.body_start != class_uuid_body::LEN {
         return Err(FramingError::structural(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
@@ -553,29 +559,29 @@ pub(crate) fn parse_class_wrapper_with_userdata(
         warnings.push(note);
     }
     let class_uuid = Uuid::from_wire(
-        bytes[uuid_chunk.body.start..uuid_chunk.body.start + class_uuid_body::CRC32]
+        bytes[uuid_chunk.body().start..uuid_chunk.body().start + class_uuid_body::CRC32]
             .try_into()
             .expect("UUID length checked"),
     );
     if class_uuid == Uuid::nil() {
-        if uuid_chunk.next_offset != wrapper.body.end {
+        if uuid_chunk.next_offset() != wrapper.body().end {
             return Err(FramingError::structural(
-                uuid_chunk.next_offset,
+                uuid_chunk.next_offset(),
                 "null class wrapper has trailing bytes",
             ));
         }
         return Ok((
             ClassDescriptor {
                 class_uuid,
-                class_data_range: uuid_chunk.next_offset..uuid_chunk.next_offset,
+                class_data_range: uuid_chunk.next_offset()..uuid_chunk.next_offset(),
             },
             Vec::new(),
         ));
     }
     let data_chunk = child(
         bytes,
-        uuid_chunk.next_offset,
-        wrapper.body.end,
+        uuid_chunk.next_offset(),
+        wrapper.body().end,
         archive,
         false,
     )?;
@@ -583,23 +589,23 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     // CLASS_DATA checksum coverage is defined by the concrete class grammar.
     // The wrapper scanner cannot distinguish direct bytes from embedded chunks,
     // so it must not report a checksum result for this mixed payload.
-    let mut offset = data_chunk.next_offset;
+    let mut offset = data_chunk.next_offset();
     let mut end_seen = false;
     let mut userdata = Vec::new();
-    while offset < wrapper.body.end {
-        let item = child(bytes, offset, wrapper.body.end, archive, false)?;
+    while offset < wrapper.body().end {
+        let item = child(bytes, offset, wrapper.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
             userdata.push(parse_userdata(bytes, &item, archive, warnings)?);
-            offset = item.next_offset;
+            offset = item.next_offset();
         } else {
             require_short_zero(&item, CLASS_END)?;
-            offset = item.next_offset;
+            offset = item.next_offset();
             end_seen = true;
             break;
         }
     }
-    if !end_seen || offset != wrapper.body.end || wrapper.next_offset != body.end {
+    if !end_seen || offset != wrapper.body().end || wrapper.next_offset() != body.end {
         return Err(FramingError::structural(
             offset,
             "class wrapper has trailing bytes",
@@ -608,7 +614,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     Ok((
         ClassDescriptor {
             class_uuid,
-            class_data_range: data_chunk.body,
+            class_data_range: data_chunk.body(),
         },
         userdata,
     ))
@@ -621,7 +627,7 @@ pub(crate) fn parse_userdata(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<UserdataDescriptor, FramingError> {
-    let mut reader = BoundedReader::new(bytes, wrapper.body.start, wrapper.body.end)?;
+    let mut reader = BoundedReader::new(bytes, wrapper.body().start, wrapper.body().end)?;
     let packed = reader.u8()?;
     let version = (packed >> 4, packed & 0x0f);
     if version.0 == 1 {
@@ -631,7 +637,7 @@ pub(crate) fn parse_userdata(
         let transform_start = reader.position();
         reader.take(16 * 8)?;
         let transform_range = transform_start..reader.position();
-        let payload = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
+        let payload = child(bytes, reader.position(), wrapper.body().end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
         if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
             warnings.push(note);
@@ -647,22 +653,22 @@ pub(crate) fn parse_userdata(
             last_saved_as_goo: None,
             archive_version: None,
             writer_version: None,
-            payload_range: payload.body,
+            payload_range: payload.body(),
         });
     }
     if version.0 != 2 {
         return Ok(UserdataDescriptor::UnknownVersion {
             range: chunk_range(wrapper),
             version,
-            payload_range: wrapper.body.clone(),
+            payload_range: wrapper.body().clone(),
         });
     }
-    let header = child(bytes, reader.position(), wrapper.body.end, archive, false)?;
+    let header = child(bytes, reader.position(), wrapper.body().end, archive, false)?;
     require_long(&header, CLASS_USERDATA_HEADER)?;
     if let Some(note) = checksum_warning(bytes, &header)? {
         warnings.push(note);
     }
-    let mut header_reader = BoundedReader::new(bytes, header.body.start, header.body.end)?;
+    let mut header_reader = BoundedReader::new(bytes, header.body().start, header.body().end)?;
     let class_uuid = uuid(&mut header_reader)?;
     let item_uuid = uuid(&mut header_reader)?;
     let copy_count = header_reader.i32()?;
@@ -687,9 +693,15 @@ pub(crate) fn parse_userdata(
     let archive_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
     let writer_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
     header_reader.skip_remaining()?;
-    let payload = child(bytes, header.next_offset, wrapper.body.end, archive, false)?;
+    let payload = child(
+        bytes,
+        header.next_offset(),
+        wrapper.body().end,
+        archive,
+        false,
+    )?;
     require_long(&payload, ANONYMOUS)?;
-    reader.skip(payload.next_offset - reader.position())?;
+    reader.skip(payload.next_offset() - reader.position())?;
     reader.skip_remaining()?;
     if let Some(note) =
         checksum_warning_excluding(bytes, wrapper, &[header.range(), payload.range()])?
@@ -707,7 +719,7 @@ pub(crate) fn parse_userdata(
         last_saved_as_goo,
         archive_version,
         writer_version,
-        payload_range: payload.body,
+        payload_range: payload.body(),
     })
 }
 
@@ -725,12 +737,12 @@ pub(crate) fn parse_user_string_list(
         false,
     )?;
     require_long(&list, ANONYMOUS)?;
-    let mut reader = BoundedReader::new(bytes, list.body.start, list.body.end)?;
+    let mut reader = BoundedReader::new(bytes, list.body().start, list.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
         return Err(FramingError::structural(
-            list.body.start,
+            list.body().start,
             "user-string list version is unsupported",
         ));
     }
@@ -738,14 +750,14 @@ pub(crate) fn parse_user_string_list(
     let count_bytes = bounded_count(&reader, count, 1)?;
     let mut values = Vec::with_capacity(count_bytes);
     for _ in 0..count_bytes {
-        let entry = child(bytes, reader.position(), list.body.end, archive, false)?;
+        let entry = child(bytes, reader.position(), list.body().end, archive, false)?;
         require_long(&entry, ANONYMOUS)?;
-        let mut entry_reader = BoundedReader::new(bytes, entry.body.start, entry.body.end)?;
+        let mut entry_reader = BoundedReader::new(bytes, entry.body().start, entry.body().end)?;
         let entry_major = entry_reader.i32()?;
         let entry_minor = entry_reader.i32()?;
         if entry_major != 1 || entry_minor < 0 {
             return Err(FramingError::structural(
-                entry.body.start,
+                entry.body().start,
                 "user-string entry version is unsupported",
             ));
         }
@@ -753,7 +765,7 @@ pub(crate) fn parse_user_string_list(
         let value = settings::utf16(&mut entry_reader)?;
         entry_reader.skip_remaining()?;
         values.push((key, value));
-        reader.skip(entry.next_offset - reader.position())?;
+        reader.skip(entry.next_offset() - reader.position())?;
     }
     reader.skip_remaining()?;
     Ok(values)
@@ -765,13 +777,13 @@ fn parse_history(
     archive: ArchiveVersion,
     _warnings: &mut Vec<String>,
 ) -> Result<HistoryDescriptor, FramingError> {
-    let mut reader = BoundedReader::new(bytes, wrapper.body.start, wrapper.body.end)?;
+    let mut reader = BoundedReader::new(bytes, wrapper.body().start, wrapper.body().end)?;
     let packed = reader.u8()?;
     let mut offset = reader.position();
     let mut header_range = None;
     let mut data_range = None;
-    while offset < wrapper.body.end {
-        let item = child(bytes, offset, wrapper.body.end, archive, false)?;
+    while offset < wrapper.body().end {
+        let item = child(bytes, offset, wrapper.body().end, archive, false)?;
         match item.typecode {
             HISTORY_HEADER if header_range.is_none() && data_range.is_none() => {
                 require_long(&item, HISTORY_HEADER)?;
@@ -788,7 +800,7 @@ fn parse_history(
                 ))
             }
         }
-        offset = item.next_offset;
+        offset = item.next_offset();
     }
     Ok(HistoryDescriptor {
         range: chunk_range(wrapper),
@@ -1214,13 +1226,14 @@ pub(crate) fn read_uuid_list(
         archive,
         false,
     )?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             reader.position(),
             "UUID list wrapper is invalid",
         ));
     }
-    let mut payload = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut payload =
+        BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
@@ -1235,7 +1248,7 @@ pub(crate) fn read_uuid_list(
         values.push(uuid_reader(&mut payload)?);
     }
     payload.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(values)
 }
 
@@ -1275,7 +1288,7 @@ pub(crate) fn parse_attribute_userdata(
             }
             break;
         }
-        if item.typecode != CLASS_USERDATA || item.short {
+        if item.typecode != CLASS_USERDATA || item.short() {
             warnings.push(format!(
                 "unknown attribute userdata chunk {:#x} at {}",
                 item.typecode, item.header_start
@@ -1310,7 +1323,7 @@ pub(crate) fn parse_attribute_userdata(
                 )),
             }
         }
-        offset = item.next_offset;
+        offset = item.next_offset();
     }
     result
 }
@@ -1403,30 +1416,30 @@ fn parse_per_object_mesh_userdata(
             false,
         )?;
         require_long(&outer, ANONYMOUS)?;
-        let mut outer_reader = BoundedReader::new(bytes, outer.body.start, outer.body.end)?;
+        let mut outer_reader = BoundedReader::new(bytes, outer.body().start, outer.body().end)?;
         let major = outer_reader.i32()?;
         let _minor = outer_reader.i32()?;
         if major != 1 {
             return Err(FramingError::structural(
-                outer.body.start,
+                outer.body().start,
                 "per-object mesh userdata version is unsupported",
             ));
         }
         let inner = child(
             bytes,
             outer_reader.position(),
-            outer.body.end,
+            outer.body().end,
             archive,
             false,
         )?;
         require_long(&inner, ANONYMOUS)?;
-        if inner.value <= 0 || inner.body.is_empty() {
+        if inner.value() <= 0 || inner.body().is_empty() {
             return Err(FramingError::structural(
                 inner.header_start,
                 "per-object mesh userdata mesh child is empty",
             ));
         }
-        let mut mesh_reader = BoundedReader::new(bytes, inner.body.start, inner.body.end)?;
+        let mut mesh_reader = BoundedReader::new(bytes, inner.body().start, inner.body().end)?;
         let mut mesh = settings::parse_mesh_parameters(bytes, &mut mesh_reader, archive, true)?;
         mesh_reader.skip_remaining()?;
         outer_reader.skip_remaining()?;
@@ -1544,21 +1557,21 @@ pub(crate) fn parse_object_record(
     }
     let mut offset = record.body.start;
     let type_chunk = child(bytes, offset, record.body.end, archive, false)?;
-    if type_chunk.typecode != OBJECT_RECORD_TYPE || !type_chunk.short {
+    if type_chunk.typecode != OBJECT_RECORD_TYPE || !type_chunk.short() {
         return Err(FramingError::structural(
             type_chunk.header_start,
             "object type must be the first short child",
         ));
     }
-    let object_type = u32::try_from(type_chunk.value)
+    let object_type = u32::try_from(type_chunk.value())
         .map_err(|_| FramingError::structural(type_chunk.header_start, "negative object type"))?;
-    offset = type_chunk.next_offset;
+    offset = type_chunk.next_offset();
     let class = child(bytes, offset, record.body.end, archive, false)?;
     require_long(&class, OPENNURBS_CLASS)?;
-    offset = class.body.start;
-    let uuid_chunk = child(bytes, offset, class.body.end, archive, true)?;
+    offset = class.body().start;
+    let uuid_chunk = child(bytes, offset, class.body().end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end - uuid_chunk.body_start != class_uuid_body::LEN {
+    if uuid_chunk.declared_end() - uuid_chunk.body_start != class_uuid_body::LEN {
         return Err(FramingError::structural(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
@@ -1568,35 +1581,35 @@ pub(crate) fn parse_object_record(
         warnings.push(note);
     }
     let class_uuid = Uuid::from_wire(
-        bytes[uuid_chunk.body.clone()]
+        bytes[uuid_chunk.body().clone()]
             .try_into()
             .expect("UUID length checked"),
     );
-    offset = uuid_chunk.next_offset;
-    let data_chunk = child(bytes, offset, class.body.end, archive, false)?;
+    offset = uuid_chunk.next_offset();
+    let data_chunk = child(bytes, offset, class.body().end, archive, false)?;
     require_long(&data_chunk, CLASS_DATA)?;
     // CLASS_DATA is mixed by definition. Its concrete family reader owns
     // checksum validation because only that grammar identifies direct bytes.
-    let class_data_range = data_chunk.body.clone();
-    offset = data_chunk.next_offset;
+    let class_data_range = data_chunk.body().clone();
+    offset = data_chunk.next_offset();
     let mut userdata = Vec::new();
     let mut class_end_seen = false;
-    while offset < class.body.end {
-        let item = child(bytes, offset, class.body.end, archive, false)?;
+    while offset < class.body().end {
+        let item = child(bytes, offset, class.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
             userdata.push(parse_userdata(bytes, &item, archive, &mut warnings)?);
-            offset = item.next_offset;
+            offset = item.next_offset();
         } else {
             require_short_zero(&item, CLASS_END)?;
-            offset = item.next_offset;
+            offset = item.next_offset();
             class_end_seen = true;
             break;
         }
     }
-    if !class_end_seen || offset != class.body.end {
+    if !class_end_seen || offset != class.body().end {
         return Err(FramingError::structural(
-            class.body.end,
+            class.body().end,
             "class wrapper has trailing bytes",
         ));
     }
@@ -1612,13 +1625,13 @@ pub(crate) fn parse_object_record(
         let item = child(bytes, offset, record.body.end, archive, false)?;
         if item.typecode == OBJECT_RECORD_END {
             require_short_zero(&item, OBJECT_RECORD_END)?;
-            if item.next_offset != record.body.end {
+            if item.next_offset() != record.body.end {
                 return Err(FramingError::structural(
                     item.header_start,
                     "object end is not final",
                 ));
             }
-            offset = item.next_offset;
+            offset = item.next_offset();
             object_end_seen = true;
             break;
         }
@@ -1627,12 +1640,12 @@ pub(crate) fn parse_object_record(
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES)?;
                 attributes_chunk = Some(item.clone());
                 attributes_range = Some(item.range());
-                attributes_body_range = Some(item.body.clone());
+                attributes_body_range = Some(item.body().clone());
                 phase = 1;
             }
             OBJECT_RECORD_ATTRIBUTES_USERDATA if phase <= 1 => {
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES_USERDATA)?;
-                attributes_userdata_body_range = Some(item.body.clone());
+                attributes_userdata_body_range = Some(item.body().clone());
                 phase = 2;
             }
             OBJECT_RECORD_HISTORY if phase <= 2 => {
@@ -1650,7 +1663,7 @@ pub(crate) fn parse_object_record(
                 history = Some(descriptor);
                 phase = 3;
             }
-            _ if !item.short => {
+            _ if !item.short() => {
                 unknown_trailer.push(chunk_range(&item));
                 phase = 3;
             }
@@ -1661,7 +1674,7 @@ pub(crate) fn parse_object_record(
                 ))
             }
         }
-        offset = item.next_offset;
+        offset = item.next_offset();
     }
     if !object_end_seen || offset != record.body.end {
         return Err(FramingError::structural(

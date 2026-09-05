@@ -142,22 +142,22 @@ fn anonymous(
     archive: ArchiveVersion,
 ) -> Result<(BoundedReader<'_>, usize, i32), FramingError> {
     let chunk = chunk_at(bytes, offset, end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             offset,
             "expected long anonymous chunk",
         ));
     }
-    let mut reader = BoundedReader::new(bytes, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(bytes, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
         return Err(FramingError::structural(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported anonymous major version",
         ));
     }
-    Ok((reader, chunk.next_offset, minor))
+    Ok((reader, chunk.next_offset(), minor))
 }
 
 fn count(reader: &mut BoundedReader<'_>, element_size: usize) -> Result<usize, FramingError> {
@@ -363,11 +363,11 @@ fn geometries(
         let mut warnings = Vec::new();
         let (class, userdata) = parse_class_wrapper_with_userdata(
             nested.backing_bytes(),
-            start..wrapper.next_offset,
+            start..wrapper.next_offset(),
             archive,
             &mut warnings,
         )?;
-        nested.skip(wrapper.next_offset - start)?;
+        nested.skip(wrapper.next_offset() - start)?;
         values.push(EmbeddedGeometry {
             class_id: class.class_uuid,
             class_data_range: class.class_data_range,

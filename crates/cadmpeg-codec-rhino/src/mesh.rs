@@ -878,7 +878,7 @@ fn read_buffer<'a>(
                 archive,
                 false,
             )?;
-            if chunk.typecode != 0x4000_8000 || chunk.short {
+            if chunk.typecode != 0x4000_8000 || chunk.short() {
                 return Err(error(
                     reader.position(),
                     "compressed buffer is not anonymous",
@@ -886,23 +886,23 @@ fn read_buffer<'a>(
             }
             let source = expand
                 .root
-                .child(chunk.body.start, chunk.body.end)
+                .child(chunk.body().start, chunk.body().end)
                 .ok_or_else(|| {
                     error(
-                        chunk.body.start,
+                        chunk.body().start,
                         "compressed buffer body escapes the root view",
                     )
                 })?;
             debug_assert_eq!(
                 source.window(),
-                &reader.backing_bytes()[chunk.body.start..chunk.body.end],
+                &reader.backing_bytes()[chunk.body().start..chunk.body().end],
                 "expansion source must alias the compressed chunk body"
             );
             let (view, compressed) = inflate(expand, source, declared)?;
             commit_mesh_buffer(expand, document_budget, declared, reader.position() - 4)?;
-            if compressed != chunk.body.len() {
+            if compressed != chunk.body().len() {
                 return Err(error(
-                    chunk.body.start + compressed,
+                    chunk.body().start + compressed,
                     "zlib chunk has trailing bytes",
                 ));
             }
@@ -914,7 +914,7 @@ fn read_buffer<'a>(
             }
             (
                 Cow::Borrowed(view.window()),
-                chunk.next_offset - reader.position(),
+                chunk.next_offset() - reader.position(),
             )
         }
         _ => {
@@ -996,7 +996,8 @@ fn read_ngons(
         false,
     )?;
     push_chunk_checksum_warning(reader.backing_bytes(), &chunk, warnings, "mesh ngon")?;
-    let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut child =
+        BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor < 0 {
@@ -1020,7 +1021,7 @@ fn read_ngons(
         }
     }
     child.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(count)
 }
 
@@ -1037,7 +1038,8 @@ fn read_mapping_tag(
         false,
     )?;
     push_chunk_checksum_warning(reader.backing_bytes(), &chunk, warnings, "mesh mapping tag")?;
-    let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut child =
+        BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor < 0 {
@@ -1061,7 +1063,7 @@ fn read_mapping_tag(
         child.u32()?;
     }
     child.skip_remaining()?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }
 
@@ -1088,7 +1090,8 @@ fn read_double_chunk<'a>(
         archive,
         false,
     )?;
-    let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+    let mut child =
+        BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
     if major != 1 || minor < 0 {
@@ -1107,7 +1110,7 @@ fn read_double_chunk<'a>(
             chunk_at(
                 reader.backing_bytes(),
                 buffer_start + 9,
-                chunk.body.end,
+                chunk.body().end,
                 archive,
                 false,
             )
@@ -1125,7 +1128,7 @@ fn read_double_chunk<'a>(
         archive,
     )?;
     child.skip_remaining()?;
-    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, nested_buffer.as_slice())?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body(), nested_buffer.as_slice())?;
     if matches!(
         crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
@@ -1135,7 +1138,7 @@ fn read_double_chunk<'a>(
             chunk.header_start
         ));
     }
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     if count != vertex_count {
         return Ok((count, None));
     }
@@ -1161,13 +1164,13 @@ fn read_v5_double_vertices(
         archive,
         false,
     )?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
             "V5 mesh double-precision userdata is not anonymous",
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let _minor = reader.i32()?;
     if major != 1 {
@@ -1220,7 +1223,7 @@ fn read_v4v5_ngon_userdata(
         archive,
         false,
     )?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(error(
             chunk.header_start,
             "V4/V5 mesh n-gon userdata is not anonymous",
@@ -1232,7 +1235,7 @@ fn read_v4v5_ngon_userdata(
     ) {
         return Ok(None);
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
@@ -1338,7 +1341,7 @@ fn consume_optional_chunk(
 ) -> Result<(), GeometryError> {
     let bytes = reader.backing_bytes();
     let chunk = chunk_at(bytes, reader.position(), reader.end(), archive, false)?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    reader.skip(chunk.next_offset() - reader.position())?;
     Ok(())
 }
 
@@ -2370,8 +2373,8 @@ mod tests {
         with_expand(&bytes, |expand| {
             let outer =
                 chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false).expect("outer chunk");
-            let mut child =
-                BoundedReader::new(&bytes, outer.body.start, outer.body.end).expect("child reader");
+            let mut child = BoundedReader::new(&bytes, outer.body().start, outer.body().end)
+                .expect("child reader");
             let decoded = read_buffer(
                 expand,
                 &mut child,

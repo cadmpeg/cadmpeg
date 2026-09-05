@@ -71,10 +71,10 @@ pub fn chunks(data: &[u8]) {
             break;
         };
         let _ = chunks::verify_checksum(data, &chunk);
-        if chunk.next_offset <= offset {
+        if chunk.next_offset() <= offset {
             break;
         }
-        offset = chunk.next_offset;
+        offset = chunk.next_offset();
     }
 }
 

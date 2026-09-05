@@ -515,11 +515,11 @@ pub(crate) fn decode_embedded_curve(
     let mut wrapper_warnings = Vec::new();
     let class = parse_class_wrapper(
         data,
-        start..wrapper.next_offset,
+        start..wrapper.next_offset(),
         archive,
         &mut wrapper_warnings,
     )?;
-    reader.skip(wrapper.next_offset - start)?;
+    reader.skip(wrapper.next_offset() - start)?;
     if !matches!(
         class.class_uuid,
         LINE | ARC
@@ -572,11 +572,11 @@ pub(crate) fn decode_embedded_curve_2d(
     let mut wrapper_warnings = Vec::new();
     let class = parse_class_wrapper(
         data,
-        start..wrapper.next_offset,
+        start..wrapper.next_offset(),
         archive,
         &mut wrapper_warnings,
     )?;
-    reader.skip(wrapper.next_offset - start)?;
+    reader.skip(wrapper.next_offset() - start)?;
     if !curve_class(class.class_uuid) || matches!(class.class_uuid, CURVE_PROXY | CURVE_ON_SURFACE)
     {
         return Err(GeometryError::malformed(
@@ -1158,11 +1158,11 @@ fn read_polycurve_2d(
         let mut wrapper_warnings = Vec::new();
         let class = parse_class_wrapper(
             data,
-            start..wrapper.next_offset,
+            start..wrapper.next_offset(),
             archive,
             &mut wrapper_warnings,
         )?;
-        reader.skip(wrapper.next_offset - start)?;
+        reader.skip(wrapper.next_offset() - start)?;
         let child = decode_inner_2d(
             data,
             class.class_uuid,
@@ -1498,11 +1498,11 @@ fn read_polycurve(
         let mut wrapper_warnings = Vec::new();
         let class = parse_class_wrapper(
             data,
-            start..wrapper.next_offset,
+            start..wrapper.next_offset(),
             archive,
             &mut wrapper_warnings,
         )?;
-        reader.skip(wrapper.next_offset - start)?;
+        reader.skip(wrapper.next_offset() - start)?;
         if !supported_class(class.class_uuid) || matches!(class.class_uuid, POINT | POINT_CLOUD) {
             return Err(GeometryError::malformed(
                 start,

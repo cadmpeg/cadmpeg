@@ -194,27 +194,27 @@ fn anonymous(
     archive: ArchiveVersion,
 ) -> Result<(BoundedReader<'_>, usize, i32), FramingError> {
     let chunk = chunk_at(data, offset, end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             offset,
             "expected dimension anonymous chunk",
         ));
     }
-    let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if reader.i32()? != 1 {
         return Err(FramingError::structural(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported dimension chunk major version",
         ));
     }
     let version = reader.i32()?;
     if version < 0 {
         return Err(FramingError::structural(
-            chunk.body.start + 4,
+            chunk.body().start + 4,
             "negative dimension content version",
         ));
     }
-    Ok((reader, chunk.next_offset, version))
+    Ok((reader, chunk.next_offset(), version))
 }
 
 fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
@@ -291,11 +291,11 @@ pub(crate) fn annotation(
             let mut warnings = Vec::new();
             parse_class_wrapper(
                 data,
-                overrides.position()..wrapper.next_offset,
+                overrides.position()..wrapper.next_offset(),
                 archive,
                 &mut warnings,
             )?;
-            overrides.skip(wrapper.next_offset - overrides.position())?;
+            overrides.skip(wrapper.next_offset() - overrides.position())?;
         }
         overrides.skip_remaining()?;
         annotation.skip(override_next - annotation.position())?;

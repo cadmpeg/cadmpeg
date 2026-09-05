@@ -129,20 +129,20 @@ fn segment(
     archive: ArchiveVersion,
 ) -> Result<Segment, FramingError> {
     let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short {
+    if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
             range.start,
             "invalid polyedge-segment framing",
         ));
     }
     let mut body = root
-        .child(chunk.body.start, chunk.body.end)
+        .child(chunk.body().start, chunk.body().end)
         .ok_or_else(|| {
-            FramingError::structural(chunk.body.start, "polyedge segment body out of range")
+            FramingError::structural(chunk.body().start, "polyedge segment body out of range")
         })?;
     if req_i32(&mut body)? != 1 || req_i32(&mut body)? < 0 {
         return Err(FramingError::structural(
-            chunk.body.start,
+            chunk.body().start,
             "unsupported polyedge-segment version",
         ));
     }
@@ -220,7 +220,7 @@ pub(crate) fn decode(
         let start = body.position();
         let wrapper = chunk_at(data, start, range.end, archive, false)?;
         let class =
-            parse_class_wrapper(data, start..wrapper.next_offset, archive, &mut Vec::new())?;
+            parse_class_wrapper(data, start..wrapper.next_offset(), archive, &mut Vec::new())?;
         if class.class_uuid != SEGMENT_CLASS {
             return Err(FramingError::structural(
                 start,
@@ -235,7 +235,7 @@ pub(crate) fn decode(
                 archive,
             )?)
             .map_err(|error| refused(body.position(), &error))?;
-        body.skip(wrapper.next_offset - start).ok_or_else(|| {
+        body.skip(wrapper.next_offset() - start).ok_or_else(|| {
             FramingError::structural(body.position(), "polyedge segment overruns body")
         })?;
     }

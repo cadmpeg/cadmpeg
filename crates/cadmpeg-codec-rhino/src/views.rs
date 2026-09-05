@@ -639,13 +639,13 @@ fn parse_attributes(
     };
     if version[1] >= 2 {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-        if chunk.typecode != 0x4000_8000 || chunk.short {
+        if chunk.typecode != 0x4000_8000 || chunk.short() {
             return Err(FramingError::structural(
                 reader.position(),
                 "page-settings wrapper is invalid",
             ));
         }
-        let mut page = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+        let mut page = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let page_version = (page.i32()?, page.i32()?);
         if page_version.0 != 1 || page_version.1 < 0 {
             return Err(FramingError::structural(
@@ -670,7 +670,7 @@ fn parse_attributes(
         let printer_name = utf16(&mut page)?;
         page.skip_remaining()?;
         checksum_children.push(chunk.range());
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
         result.page_settings = Some(PageSettings {
             page_number,
             width_mm,
@@ -692,13 +692,13 @@ fn parse_attributes(
             })?;
         for _ in 0..count {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-            if chunk.typecode != 0x4000_8000 || chunk.short {
+            if chunk.typecode != 0x4000_8000 || chunk.short() {
                 return Err(FramingError::structural(
                     reader.position(),
                     "clipping-plane wrapper is invalid",
                 ));
             }
-            let mut plane = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+            let mut plane = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
             let (major, minor) = (plane.i32()?, plane.i32()?);
             if major != 1 || minor < 0 {
                 return Err(FramingError::structural(
@@ -747,7 +747,7 @@ fn parse_attributes(
                 depth_enabled,
             });
             checksum_children.push(chunk.range());
-            reader.skip(chunk.next_offset - reader.position())?;
+            reader.skip(chunk.next_offset() - reader.position())?;
         }
     }
     if version[1] >= 5 {
@@ -795,7 +795,7 @@ fn direct_view_child_checksum_warning(
     data: &[u8],
     child: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
-    view_child_checksum_warning(data, child, std::slice::from_ref(&child.body))
+    view_child_checksum_warning(data, child, std::slice::from_ref(&child.body()))
 }
 
 fn view_child_checksum_warning_excluding(
@@ -803,7 +803,7 @@ fn view_child_checksum_warning_excluding(
     child: &crate::chunks::Chunk,
     nested_children: &[std::ops::Range<usize>],
 ) -> Result<Option<String>, FramingError> {
-    let direct = direct_checksum_ranges(&child.body, nested_children)?;
+    let direct = direct_checksum_ranges(&child.body(), nested_children)?;
     view_child_checksum_warning(data, child, &direct)
 }
 
@@ -825,7 +825,7 @@ fn scan_viewport_userdata(
         }
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
-        if child.next_offset <= start {
+        if child.next_offset() <= start {
             return Err(FramingError::structural(
                 start,
                 "view viewport userdata child did not advance",
@@ -838,10 +838,10 @@ fn scan_viewport_userdata(
             });
         }
         children.push(child.range());
-        reader.skip(child.next_offset - start)?;
+        reader.skip(child.next_offset() - start)?;
         match child.typecode {
             CLASS_USERDATA => {
-                if child.short {
+                if child.short() {
                     return Err(FramingError::structural(
                         child.header_start,
                         "view viewport userdata item must be a long chunk",
@@ -853,7 +853,7 @@ fn scan_viewport_userdata(
                 has_untyped_content = true;
             }
             TCODE_CLASS_END => {
-                if !child.short || child.value != 0 {
+                if !child.short() || child.value() != 0 {
                     return Err(FramingError::structural(
                         child.header_start,
                         "view viewport userdata class end must be a short zero chunk",
@@ -884,7 +884,7 @@ fn parse_view(
     list_kind: &'static str,
     list_index: usize,
 ) -> Result<(ViewRecord, Vec<LossNote>), FramingError> {
-    let mut offset = record.body.start;
+    let mut offset = record.body().start;
     let mut name = String::new();
     let mut target = None;
     let mut window_position = None;
@@ -907,8 +907,8 @@ fn parse_view(
     let mut checksum_warnings: Vec<LossNote> = Vec::new();
     let mut parse_warnings = Vec::new();
     let mut terminated = false;
-    while offset < record.body.end {
-        let child = chunk_at(data, offset, record.body.end, archive, false)?;
+    while offset < record.body().end {
+        let child = chunk_at(data, offset, record.body().end, archive, false)?;
         checksum_children.push(child.range());
         if matches!(
             child.typecode,
@@ -922,22 +922,22 @@ fn parse_view(
             typecode: format!("{:#010x}", child.typecode),
             kind: child_kind(child.typecode),
             source_offset: offset as u64,
-            byte_len: (child.next_offset - offset) as u64,
-            sha256: cadmpeg_ir::hash::sha256_hex(&data[offset..child.next_offset]),
+            byte_len: (child.next_offset() - offset) as u64,
+            sha256: cadmpeg_ir::hash::sha256_hex(&data[offset..child.next_offset()]),
         });
         match child.typecode {
-            VIEW_CPLANE if !child.short => {
-                construction_plane = Some(parse_cplane(data, child.body.clone(), scale)?);
+            VIEW_CPLANE if !child.short() => {
+                construction_plane = Some(parse_cplane(data, child.body().clone(), scale)?);
             }
-            VIEW_VIEWPORT if !child.short => {
-                match parse_viewport(data, child.body.clone(), scale) {
+            VIEW_VIEWPORT if !child.short() => {
+                match parse_viewport(data, child.body().clone(), scale) {
                     Ok(value) => viewport = Some(value),
                     Err(error) => parse_warnings.push(format!("viewport retained: {error}")),
                 }
             }
-            VIEW_TRACE_IMAGE if !child.short => {
+            VIEW_TRACE_IMAGE if !child.short() => {
                 let (value, file_reference_range) =
-                    parse_trace_image(data, child.body.clone(), archive, scale)?;
+                    parse_trace_image(data, child.body().clone(), archive, scale)?;
                 let nested_children = file_reference_range.into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
@@ -947,8 +947,8 @@ fn parse_view(
                 }
                 trace_image = Some(value);
             }
-            VIEW_WALLPAPER if !child.short => {
-                let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
+            VIEW_WALLPAPER if !child.short() => {
+                let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
                 let path = utf16(&mut reader)?;
                 reader.skip_remaining()?;
                 wallpaper = Some(Wallpaper {
@@ -958,9 +958,9 @@ fn parse_view(
                     file_reference: None,
                 });
             }
-            VIEW_WALLPAPER_V3 if !child.short => {
+            VIEW_WALLPAPER_V3 if !child.short() => {
                 let (value, file_reference_range) =
-                    parse_wallpaper(data, child.body.clone(), archive)?;
+                    parse_wallpaper(data, child.body().clone(), archive)?;
                 let nested_children = file_reference_range.into_iter().collect::<Vec<_>>();
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
@@ -970,13 +970,13 @@ fn parse_view(
                 }
                 wallpaper = Some(value);
             }
-            VIEW_NAME if !child.short => {
-                let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
+            VIEW_NAME if !child.short() => {
+                let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
                 name = utf16(&mut reader)?;
                 reader.skip_remaining()?;
             }
-            VIEW_TARGET if !child.short => {
-                let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
+            VIEW_TARGET if !child.short() => {
+                let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
                 let mut point = [reader.f64()?, reader.f64()?, reader.f64()?];
                 for value in &mut point {
                     *value = scaled_coordinate(*value, scale).ok_or_else(|| {
@@ -989,16 +989,16 @@ fn parse_view(
                 reader.skip_remaining()?;
                 target = Some(point);
             }
-            VIEW_POSITION if !child.short => {
-                window_position = Some(parse_window_position(data, child.body.clone())?);
+            VIEW_POSITION if !child.short() => {
+                window_position = Some(parse_window_position(data, child.body().clone())?);
             }
-            VIEW_SHOW_GRID if child.short => show_grid = child.value != 0,
-            VIEW_SHOW_AXES if child.short => show_axes = child.value != 0,
-            VIEW_SHOW_WORLD_AXES if child.short => show_world_axes = child.value != 0,
-            VIEW_V3_DISPLAY_MODE if child.short => legacy_display_mode = Some(child.value),
-            VIEW_ATTRIBUTES if !child.short => {
+            VIEW_SHOW_GRID if child.short() => show_grid = child.value() != 0,
+            VIEW_SHOW_AXES if child.short() => show_axes = child.value() != 0,
+            VIEW_SHOW_WORLD_AXES if child.short() => show_world_axes = child.value() != 0,
+            VIEW_V3_DISPLAY_MODE if child.short() => legacy_display_mode = Some(child.value()),
+            VIEW_ATTRIBUTES if !child.short() => {
                 let (attributes, nested_children) =
-                    parse_attributes(data, child.body.clone(), archive, scale)?;
+                    parse_attributes(data, child.body().clone(), archive, scale)?;
                 if let Some(warning) =
                     view_child_checksum_warning_excluding(data, &child, &nested_children)?
                 {
@@ -1013,7 +1013,7 @@ fn parse_view(
                 attributes_detail = Some(attributes);
             }
             VIEW_VIEWPORT_USERDATA => {
-                if child.short {
+                if child.short() {
                     checksum_warnings.push(
                         crate::loss::RhinoLossCode::ViewportUserdataDropped.note(format!(
                             "viewport userdata at offset {} must be a long chunk",
@@ -1021,7 +1021,7 @@ fn parse_view(
                         )),
                     );
                 } else {
-                    match scan_viewport_userdata(data, child.body.clone(), archive) {
+                    match scan_viewport_userdata(data, child.body().clone(), archive) {
                         Ok(scan) => {
                             if let Some(warning) =
                                 view_child_checksum_warning_excluding(data, &child, &scan.children)?
@@ -1056,7 +1056,7 @@ fn parse_view(
                 }
             }
             TCODE_ENDOFTABLE => {
-                if !child.short || child.value != 0 {
+                if !child.short() || child.value() != 0 {
                     return Err(FramingError::structural(
                         offset,
                         "view end marker is invalid",
@@ -1067,15 +1067,15 @@ fn parse_view(
             }
             _ => {}
         }
-        offset = child.next_offset;
+        offset = child.next_offset();
     }
     if !terminated {
         return Err(FramingError::structural(
-            record.body.end,
+            record.body().end,
             "view is missing its end marker",
         ));
     }
-    let direct = direct_checksum_ranges(&record.body, &checksum_children)?;
+    let direct = direct_checksum_ranges(&record.body(), &checksum_children)?;
     let checksum_warning = match verify_checksum_ranges(data, record, &direct)? {
         ChecksumStatus::Mismatch { expected, actual } => Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
@@ -1181,7 +1181,7 @@ fn parse_list(
                 break;
             }
         };
-        if view.typecode != VIEW_RECORD || view.short {
+        if view.typecode != VIEW_RECORD || view.short() {
             losses.push(
                 crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                     "{kind} view list child at offset {child_offset} has unexpected typecode {:#010x}",
@@ -1190,7 +1190,7 @@ fn parse_list(
             );
             break;
         }
-        let next = view.next_offset;
+        let next = view.next_offset();
         match parse_view(data, &view, archive, scale, kind, index) {
             Ok((value, checksum_warnings)) => {
                 losses.extend(checksum_warnings);
@@ -1233,7 +1233,7 @@ fn parse_named_cplanes(
     let mut values = Vec::new();
     for index in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-        if chunk.typecode != VIEW_CPLANE || chunk.short {
+        if chunk.typecode != VIEW_CPLANE || chunk.short() {
             return Err(FramingError::structural(
                 reader.position(),
                 "named construction-plane record is invalid",
@@ -1243,9 +1243,9 @@ fn parse_named_cplanes(
             id: format!("rhino:document:construction_plane#{index:04}"),
             source_offset: chunk.header_start as u64,
             list_index: index,
-            value: parse_cplane(data, chunk.body.clone(), scale)?,
+            value: parse_cplane(data, chunk.body().clone(), scale)?,
         });
-        reader.skip(chunk.next_offset - reader.position())?;
+        reader.skip(chunk.next_offset() - reader.position())?;
     }
     reader.skip_remaining()?;
     Ok(values)
