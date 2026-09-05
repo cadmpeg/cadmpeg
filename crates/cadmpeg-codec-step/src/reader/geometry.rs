@@ -807,7 +807,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             | "UNIFORM_CURVE"
             | "QUASI_UNIFORM_CURVE"
             | "BEZIER_CURVE" => {
-                nurbs_curve(record, &points, &mut warnings).map(CurveGeometry::Nurbs)
+                nurbs_curve(id, record, &points, &mut warnings).map(CurveGeometry::Nurbs)
             }
             _ => unreachable!("curve type was selected from the dispatch list"),
         };
@@ -832,7 +832,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_curve(record, &points, &mut warnings) {
+        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut warnings) {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar"),
                 geometry: CurveGeometry::Nurbs(nurbs),
@@ -1123,7 +1123,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ir.model.curves.push(Curve {
                 id: CurveId::mint(StepIdentity::data("curve", id)).expect("identity grammar"),
                 geometry: CurveGeometry::Unknown {
-                    record: exchange.records.get(&id).map(opaque_record_id),
+                    record: exchange
+                        .records
+                        .get(&id)
+                        .map(|record| opaque_record_id(id, record)),
                 },
                 source_object: None,
             });
@@ -1173,7 +1176,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ir.model.curves.push(Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Unknown {
-                    record: exchange.records.get(&id).map(opaque_record_id),
+                    record: exchange
+                        .records
+                        .get(&id)
+                        .map(|record| opaque_record_id(id, record)),
                 },
                 source_object: None,
             });
@@ -1373,7 +1379,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             | "UNIFORM_SURFACE"
             | "QUASI_UNIFORM_SURFACE"
             | "BEZIER_SURFACE" => {
-                nurbs_surface(record, &points, &mut warnings).map(SurfaceGeometry::Nurbs)
+                nurbs_surface(id, record, &points, &mut warnings).map(SurfaceGeometry::Nurbs)
             }
             _ => unreachable!("surface type was selected from the dispatch list"),
         };
@@ -1394,7 +1400,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_surface(record, &points, &mut warnings) {
+        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut warnings) {
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar"),
                 geometry: SurfaceGeometry::Nurbs(nurbs),
@@ -1744,7 +1750,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::mint(StepIdentity::data("surface", id)).expect("identity grammar"),
                 geometry: SurfaceGeometry::Unknown {
-                    record: exchange.records.get(&id).map(opaque_record_id),
+                    record: exchange
+                        .records
+                        .get(&id)
+                        .map(|record| opaque_record_id(id, record)),
                 },
                 source_object: None,
             });
@@ -1785,7 +1794,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 id: CurveId::mint(StepIdentity::data("curve", curve_step))
                     .expect("identity grammar"),
                 geometry: CurveGeometry::Unknown {
-                    record: exchange.records.get(&curve_step).map(opaque_record_id),
+                    record: exchange
+                        .records
+                        .get(&curve_step)
+                        .map(|record| opaque_record_id(curve_step, record)),
                 },
                 source_object: None,
             });
@@ -1806,7 +1818,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ir.model.surfaces.push(Surface {
                 id: surface,
                 geometry: SurfaceGeometry::Unknown {
-                    record: exchange.records.get(&id).map(opaque_record_id),
+                    record: exchange
+                        .records
+                        .get(&id)
+                        .map(|record| opaque_record_id(id, record)),
                 },
                 source_object: None,
             });
@@ -1833,7 +1848,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 id: SurfaceId::mint(StepIdentity::data("surface", surface_step))
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Unknown {
-                    record: exchange.records.get(&surface_step).map(opaque_record_id),
+                    record: exchange
+                        .records
+                        .get(&surface_step)
+                        .map(|record| opaque_record_id(surface_step, record)),
                 },
                 source_object: None,
             });
@@ -4061,6 +4079,7 @@ struct NurbsCurveDefinition {
 }
 
 fn nurbs_curve_definition(
+    id: u64,
     record: &RawRecord,
     warnings: &mut Vec<String>,
     periodicity_field: &str,
@@ -4086,7 +4105,7 @@ fn nurbs_curve_definition(
     let periodic = periodic_value(
         base.parameters.get(offset + 3),
         periodicity_field,
-        record.id,
+        id,
         warnings,
     )?;
     let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
@@ -4177,11 +4196,12 @@ fn default_nurbs_knots(
 }
 
 fn nurbs_curve(
+    id: u64,
     record: &RawRecord,
     points: &BTreeMap<u64, Point3>,
     warnings: &mut Vec<String>,
 ) -> Option<NurbsCurve> {
-    let definition = nurbs_curve_definition(record, warnings, "B_SPLINE_CURVE")?;
+    let definition = nurbs_curve_definition(id, record, warnings, "B_SPLINE_CURVE")?;
     let control_points = definition
         .control_points
         .into_iter()
@@ -4198,11 +4218,12 @@ fn nurbs_curve(
 }
 
 fn nurbs_pcurve(
+    id: u64,
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
     warnings: &mut Vec<String>,
 ) -> Option<PcurveGeometry> {
-    let definition = nurbs_curve_definition(record, warnings, "B_SPLINE_CURVE pcurve")?;
+    let definition = nurbs_curve_definition(id, record, warnings, "B_SPLINE_CURVE pcurve")?;
     let control_points = definition
         .control_points
         .into_iter()
@@ -4248,7 +4269,7 @@ fn decode_pcurve_geometry(
                     | "BEZIER_CURVE"
             )
         }) {
-            nurbs_pcurve(record, points, warnings)?
+            nurbs_pcurve(id, record, points, warnings)?
         } else {
             let curve_type = entity_type(
                 record,
@@ -5046,6 +5067,7 @@ fn polyline(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsC
 }
 
 fn nurbs_surface(
+    id: u64,
     record: &RawRecord,
     points: &BTreeMap<u64, Point3>,
     warnings: &mut Vec<String>,
@@ -5096,13 +5118,13 @@ fn nurbs_surface(
     let u_periodic = periodic_value(
         base.parameters.get(offset + 4),
         &format!("{surface_name} U direction"),
-        record.id,
+        id,
         warnings,
     )?;
     let v_periodic = periodic_value(
         base.parameters.get(offset + 5),
         &format!("{surface_name} V direction"),
-        record.id,
+        id,
         warnings,
     )?;
     let expected_u = usize::try_from(u_count)

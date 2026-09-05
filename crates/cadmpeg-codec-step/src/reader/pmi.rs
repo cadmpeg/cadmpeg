@@ -839,7 +839,7 @@ fn resolve_geometric_item_usages(
             .insert(relating);
     }
 
-    for record in exchange.records.values() {
+    for (&id, record) in &exchange.records {
         let Some(partial) = record
             .partials
             .iter()
@@ -883,7 +883,7 @@ fn resolve_geometric_item_usages(
                 }
             }
         }
-        typed.insert(record.id);
+        typed.insert(id);
     }
 }
 
@@ -1729,7 +1729,7 @@ fn characteristic_measure_values<'a>(
             let name = exchange
                 .records
                 .get(&id)
-                .and_then(|record| measure_item_name(record, exchange, measurements.losses));
+                .and_then(|record| measure_item_name(id, record, exchange, measurements.losses));
             Some((name, value))
         })
         .collect::<Vec<_>>();
@@ -1792,6 +1792,7 @@ fn collect_measure_ids(
 }
 
 fn measure_item_name(
+    id: u64,
     record: &RawRecord,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
@@ -1813,7 +1814,7 @@ fn measure_item_name(
                 exchange,
                 value,
                 losses,
-                record.id,
+                id,
                 "measure item name",
                 StepLossCode::MetadataStringInvalid,
             )

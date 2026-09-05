@@ -52,7 +52,6 @@ mod tests {
     #[test]
     fn shape_representation_with_parameters_uses_inherited_attributes() {
         let record = RawRecord {
-            id: 1,
             partials: crate::parse::RecordPartials::single(PartialRecord {
                 name: "SHAPE_REPRESENTATION_WITH_PARAMETERS".into(),
                 parameters: vec![
