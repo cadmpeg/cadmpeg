@@ -171,7 +171,7 @@ fn exact_base_feature_legacy_compact(
         start,
         class_452_compact::TAG_BODY_BASED_ON_FACES_MARKER,
     )?;
-    let mode = *bytes.get(start + class_452_compact::MODE)?;
+    let mode = crate::records::DesignBaseFeatureCompactMode::try_from(*bytes.get(start + class_452_compact::MODE)?).ok()?;
     let parameter_body_record = marked_u64_reference(
         bytes,
         start + class_452_compact::PARAMETER_BODY_REFERENCE_MARKER,
@@ -187,8 +187,7 @@ fn exact_base_feature_legacy_compact(
         start + class_452_compact::AUXILIARY_REFERENCE_MARKER,
         class_452_compact::AUXILIARY_REFERENCE_MARKER_VALUE,
     )?;
-    if mode > 1
-        || bytes.get(start + class_452_compact::PARAMETER_BODY_COUNT)
+    if bytes.get(start + class_452_compact::PARAMETER_BODY_COUNT)
             != Some(&class_452_compact::PARAMETER_BODY_COUNT_VALUE)
         || bytes.get(
             start + class_452_compact::PARAMETER_BODY_ZERO_RUN

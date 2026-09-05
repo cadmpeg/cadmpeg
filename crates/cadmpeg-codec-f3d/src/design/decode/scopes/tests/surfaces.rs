@@ -1127,7 +1127,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, body } = form else {
         panic!("compact frame requires one body");
     };
-    assert_eq!(*mode, crate::records::Located { value: 0, offset: compact::MODE as u64 });
+    assert_eq!(crate::records::Located { value: mode.value as u8, offset: mode.offset }, crate::records::Located { value: 0, offset: compact::MODE as u64 });
     let body_entity_suffixes = &[u64::from(body.entity.value)];
     let body_entity_suffix_offsets = &[body.entity.offset];
     let body_entity_fields = &[body.entity.field];
@@ -1176,7 +1176,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         panic!("class-452 compact mode-one frame selected the wrong form");
     };
     let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } = form else { panic!("compact mode-one form"); };
-    assert_eq!(mode, crate::records::Located { value: 1, offset: compact::MODE as u64 });
+    assert_eq!(crate::records::Located { value: mode.value as u8, offset: mode.offset }, crate::records::Located { value: 1, offset: compact::MODE as u64 });
 
     let mut expanded_bytes = vec![0_u8; expanded::LEN];
     expanded_bytes[expanded::BODY_COUNT_MARKER] = expanded::BODY_COUNT_MARKER_VALUE;

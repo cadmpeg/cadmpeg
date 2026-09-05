@@ -9082,12 +9082,33 @@ impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire
     }
 }
 
+/// Encoded compact Base Feature mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[repr(u8)]
+pub enum DesignBaseFeatureCompactMode {
+    Zero = 0,
+    One = 1,
+}
+
+impl TryFrom<u8> for DesignBaseFeatureCompactMode {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Zero),
+            1 => Ok(Self::One),
+            _ => Err("mode must be 0 or 1"),
+        }
+    }
+}
+
 /// Layout of the legacy class-452/class-262 Base Feature envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DesignBaseFeatureBodyReferenceForm {
     /// One output body with an encoded compact mode.
-    CompactOneBody { mode: Located<u8>, body: DesignLegacyBaseFeatureBody },
+    CompactOneBody { mode: Located<DesignBaseFeatureCompactMode>, body: DesignLegacyBaseFeatureBody },
     /// Two output bodies with no mode slot.
     ExpandedTwoBody { bodies: [DesignLegacyBaseFeatureBody; 2] },
 }
@@ -9444,7 +9465,7 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     });
                 }
                 let form = match (form, mode, mode_offset, bodies.as_slice()) {
-                    (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(value), Some(offset), [body]) => DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode: Located { value, offset }, body: *body },
+                    (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(value), Some(offset), [body]) => DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode: Located { value: DesignBaseFeatureCompactMode::try_from(value)?, offset }, body: *body },
                     (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None, [first, second]) => DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { bodies: [*first, *second] },
                     _ => return Err("form requires one body with mode and mode_offset for compact_one_body, or two bodies without mode for expanded_two_body".into()),
                 };
@@ -9496,7 +9517,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                 let auxiliary_records = bodies.iter().map(|body| body.auxiliary.value).collect();
                 let auxiliary_record_offsets = bodies.iter().map(|body| body.auxiliary.offset).collect();
                 let (form, mode, mode_offset) = match form {
-                    DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } => (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(mode.value), Some(mode.offset)),
+                    DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } => (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(mode.value as u8), Some(mode.offset)),
                     DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { .. } => (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None),
                 };
                 Self::LegacyBodyBasedOnFaces { form, mode, mode_offset, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces: true, tag_body_based_on_faces_offset }
