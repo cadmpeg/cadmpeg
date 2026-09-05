@@ -16,16 +16,16 @@ use crate::nurbs::proc_curve::{
     EmbeddedSurfaceOffset,
 };
 use crate::nurbs::proc_surface::{
-    DecodedProceduralSurfaceDefinition, EmbeddedCompoundLoft, EmbeddedCompoundLoftDirection,
-    EmbeddedCompoundLoftScale, EmbeddedCompoundLoftTail, EmbeddedDeformableSurface,
-    EmbeddedDeformableSurfaceData, EmbeddedG2Blend, EmbeddedG2FirstShape, EmbeddedG2Side,
-    EmbeddedLawExpression, EmbeddedLawFormula, EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftPath,
-    EmbeddedLoftProfileData, EmbeddedLoftProfileMember, EmbeddedNetSurface,
-    EmbeddedRevisionCompoundLoft, EmbeddedRevisionG2Blend, EmbeddedRollingBall,
+    ClassicLoftProfileData, DecodedProceduralSurfaceDefinition, EmbeddedCompoundLoft,
+    EmbeddedCompoundLoftDirection, EmbeddedCompoundLoftScale, EmbeddedCompoundLoftTail,
+    EmbeddedDeformableSurface, EmbeddedDeformableSurfaceData, EmbeddedG2Blend,
+    EmbeddedG2FirstShape, EmbeddedG2Side, EmbeddedLawExpression, EmbeddedLawFormula,
+    EmbeddedLawSurface, EmbeddedLoft, EmbeddedLoftPath, EmbeddedLoftProfileMember,
+    EmbeddedNetSurface, EmbeddedRevisionCompoundLoft, EmbeddedRevisionG2Blend, EmbeddedRollingBall,
     EmbeddedScaledCompoundLoft, EmbeddedScaledCompoundLoftBranch, EmbeddedScaledCompoundLoftShape,
     EmbeddedSkinSurface, EmbeddedSkinSurfaceLayout, EmbeddedSweepSurface,
     EmbeddedSweepSurfaceLayout, EmbeddedVariableBlend, EmbeddedVertexBlend,
-    EmbeddedVertexBlendBoundaryGeometry,
+    EmbeddedVertexBlendBoundaryGeometry, LoftProfileData,
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
@@ -533,25 +533,59 @@ fn emit_deformable_surface(
     }
 }
 
+fn emit_classic_loft_data(
+    out: &mut AsmBrep,
+    data: ClassicLoftProfileData,
+    support_id: String,
+) -> (i64, cadmpeg_ir::geometry::ClassicLoftProfileData) {
+    let surface = SurfaceId::mint(support_id).expect("identity grammar");
+    out.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: data.surface,
+        source_object: None,
+    });
+    (
+        data.type_code,
+        cadmpeg_ir::geometry::ClassicLoftProfileData {
+            surface,
+            pcurve: data.pcurve.map(embedded_pcurve_geometry),
+            first_flag: data.first_flag,
+            asm_extension: data.asm_extension,
+            subdata: data.subdata,
+            direction: data.direction,
+        },
+    )
+}
+
 fn emit_loft_member_form(
     out: &mut AsmBrep,
-    type_code: i64,
-    data: EmbeddedLoftProfileData,
+    data: LoftProfileData,
     support_id: String,
 ) -> cadmpeg_ir::geometry::LoftMemberForm {
-    let EmbeddedLoftProfileData {
-        surface,
-        support_bounds,
-        pcurve,
-        secondary_pcurve,
-        first_flag,
-        asm_extension,
-        subdata,
-        direction,
-    } = data;
-    let pcurve = pcurve.map(embedded_pcurve_geometry);
-    match first_flag {
-        Some(first_flag) => {
+    match data {
+        LoftProfileData::Classic(data) => {
+            let (type_code, data) = emit_classic_loft_data(out, data, support_id);
+            cadmpeg_ir::geometry::LoftMemberForm::Support {
+                type_code,
+                surface: Some(data.surface),
+                support_bounds: [None; 4],
+                pcurve: data.pcurve,
+                first_flag: data.first_flag,
+                asm_extension: Some(data.asm_extension),
+                subdata: data.subdata,
+                direction: data.direction,
+            }
+        }
+        LoftProfileData::RevisionSupport {
+            type_code,
+            surface,
+            support_bounds,
+            pcurve,
+            first_flag,
+            asm_extension,
+            subdata,
+            direction,
+        } => {
             let surface = surface.map(|geometry| {
                 let surface = SurfaceId::mint(support_id).expect("identity grammar");
                 out.surfaces.push(Surface {
@@ -562,18 +596,24 @@ fn emit_loft_member_form(
                 surface
             });
             cadmpeg_ir::geometry::LoftMemberForm::Support {
-                type_code,
+                type_code: type_code.get(),
                 surface,
                 support_bounds,
-                pcurve,
+                pcurve: pcurve.map(embedded_pcurve_geometry),
                 first_flag,
                 asm_extension,
                 subdata,
                 direction,
             }
         }
-        None => cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
+        LoftProfileData::RevisionPcurvePair {
             pcurve,
+            secondary_pcurve,
+            asm_extension,
+            subdata,
+            direction,
+        } => cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
+            pcurve: pcurve.map(embedded_pcurve_geometry),
             secondary_pcurve: secondary_pcurve.map(embedded_pcurve_geometry),
             asm_extension,
             subdata,
@@ -609,7 +649,6 @@ fn emit_loft_surface(
                                                         },
                                                         form: emit_loft_member_form(
                                                             out,
-                                                            member.type_code,
                                                             member.data,
                                                             format!(
                                                                 "{format}:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:support:{member_index}"
@@ -690,37 +729,10 @@ fn emit_compound_loft_surface(
                                             geometry: CurveGeometry::Nurbs(member.curve),
                                             source_object: None,
                                         });
-                                        let surface = member.data.surface.map(|geometry| {
-                                                let surface = SurfaceId::mint(format!(
+                                        let (type_code, data) = emit_classic_loft_data(out, member.data, format!(
                                                     "{format}:brep:procedural_surface#{i}:cloft:{name}:member:{member_index}:surface"
-                                                )).expect("identity grammar");
-                                                out.surfaces.push(Surface {
-                                                    id: surface.clone(),
-                                                    geometry,
-                                                    source_object: None,
-                                                });
-                                                surface
-                                            });
-                                        cadmpeg_ir::geometry::CompoundLoftScaleMember {
-                                            type_code: member.type_code,
-                                            curve,
-                                            data: cadmpeg_ir::geometry::LoftProfileData {
-                                                surface,
-                                                support_bounds: member.data.support_bounds,
-                                                pcurve: member
-                                                    .data
-                                                    .pcurve
-                                                    .map(embedded_pcurve_geometry),
-                                                secondary_pcurve: member
-                                                    .data
-                                                    .secondary_pcurve
-                                                    .map(embedded_pcurve_geometry),
-                                                first_flag: member.data.first_flag,
-                                                asm_extension: member.data.asm_extension,
-                                                subdata: member.data.subdata,
-                                                direction: member.data.direction,
-                                            },
-                                        }
+                                                ));
+                    cadmpeg_ir::geometry::CompoundLoftScaleMember { type_code, curve, data }
                                     })
                                     .collect();
         let path = CurveId::mint(format!(
@@ -879,37 +891,10 @@ fn emit_scaled_compound_loft_surface(
                                             geometry: CurveGeometry::Nurbs(member.curve),
                                             source_object: None,
                                         });
-                                        let surface = member.data.surface.map(|geometry| {
-                                                let surface = SurfaceId::mint(format!(
+                                        let (type_code, data) = emit_classic_loft_data(out, member.data, format!(
                                                     "{format}:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:surface"
-                                                )).expect("identity grammar");
-                                                out.surfaces.push(Surface {
-                                                    id: surface.clone(),
-                                                    geometry,
-                                                    source_object: None,
-                                                });
-                                                surface
-                                            });
-                                        cadmpeg_ir::geometry::CompoundLoftScaleMember {
-                                            type_code: member.type_code,
-                                            curve,
-                                            data: cadmpeg_ir::geometry::LoftProfileData {
-                                                surface,
-                                                support_bounds: member.data.support_bounds,
-                                                pcurve: member
-                                                    .data
-                                                    .pcurve
-                                                    .map(embedded_pcurve_geometry),
-                                                secondary_pcurve: member
-                                                    .data
-                                                    .secondary_pcurve
-                                                    .map(embedded_pcurve_geometry),
-                                                first_flag: member.data.first_flag,
-                                                asm_extension: member.data.asm_extension,
-                                                subdata: member.data.subdata,
-                                                direction: member.data.direction,
-                                            },
-                                        }
+                                                ));
+                    cadmpeg_ir::geometry::CompoundLoftScaleMember { type_code, curve, data }
                                     })
                                     .collect();
         let path = CurveId::mint(format!(
@@ -1320,34 +1305,17 @@ fn emit_skin_surface(
                         geometry: CurveGeometry::Nurbs(profile.curve),
                         source_object: None,
                     });
-                    let surface = profile.data.surface.map(|geometry| {
-                        let surface = SurfaceId::mint(format!(
+                    let (type_code, data) = emit_classic_loft_data(
+                        out,
+                        profile.data,
+                        format!(
                             "{format}:brep:procedural_surface#{i}:skin:profile:{index}:surface"
-                        ))
-                        .expect("identity grammar");
-                        out.surfaces.push(Surface {
-                            id: surface.clone(),
-                            geometry,
-                            source_object: None,
-                        });
-                        surface
-                    });
+                        ),
+                    );
                     cadmpeg_ir::geometry::SkinSurfaceProfile {
-                        type_code: profile.type_code,
+                        type_code,
                         curve,
-                        data: cadmpeg_ir::geometry::LoftProfileData {
-                            surface,
-                            support_bounds: profile.data.support_bounds,
-                            pcurve: profile.data.pcurve.map(embedded_pcurve_geometry),
-                            secondary_pcurve: profile
-                                .data
-                                .secondary_pcurve
-                                .map(embedded_pcurve_geometry),
-                            first_flag: profile.data.first_flag,
-                            asm_extension: profile.data.asm_extension,
-                            subdata: profile.data.subdata,
-                            direction: profile.data.direction,
-                        },
+                        data,
                     }
                 })
                 .collect();
@@ -1512,7 +1480,6 @@ fn emit_net_surface(
                                                         },
                                                         form: emit_loft_member_form(
                                                             out,
-                                                            member.type_code,
                                                             member.data,
                                                             format!(
                                                                 "{format}:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:surface"
@@ -2145,7 +2112,6 @@ fn emit_revision_compound_loft_surface(
                     },
                     form: emit_loft_member_form(
                         out,
-                        member.type_code,
                         member.data,
                         format!("{scope}:support:{member_index}"),
                     ),
