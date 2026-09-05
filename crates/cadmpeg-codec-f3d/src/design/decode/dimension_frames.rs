@@ -8,7 +8,7 @@ use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::meta::{decode_types, stream_types_by_entity};
 use crate::design::decode::sketch::{
-    decode_constraint_kinds, indexed_record_offsets, next_indexed_record_offset,
+    indexed_record_offsets, next_indexed_record_offset,
 };
 use crate::ids::{self, native_stream};
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
@@ -1821,7 +1821,7 @@ pub(crate) fn parse_dimension_locus_group(
         return None;
     }
     let mut position = start.checked_add(24)?;
-    let mut loci = Vec::with_capacity(count);
+    let mut geometry = Vec::with_capacity(count);
     for _ in 0..count {
         if bytes.get(position) != Some(&1)
             || bytes.get(position + 5..position + 11) != Some(&[0; 6])
@@ -1832,12 +1832,7 @@ pub(crate) fn parse_dimension_locus_group(
         if !geometry_indices.contains(&geometry_record_index) {
             return None;
         }
-        loci.push(DesignDimensionLocus {
-            geometry_record_index,
-            geometry_reference_offset: (position + 1) as u64,
-            role: View::u32_le_at(bytes, position + 11)?,
-            role_offset: (position + 11) as u64,
-        });
+        geometry.push((geometry_record_index, (position + 1) as u64, View::u32_le_at(bytes, position + 11)?, (position + 11) as u64));
         position = position.checked_add(15)?;
     }
     if bytes.get(position) != Some(&0)
@@ -1861,9 +1856,8 @@ pub(crate) fn parse_dimension_locus_group(
         return None;
     }
     position = position.checked_add(8)?;
-    let mut return_members = Vec::with_capacity(return_count);
-    let mut return_member_offsets = Vec::with_capacity(return_count);
-    for _ in 0..return_count {
+    let mut loci = Vec::with_capacity(return_count);
+    for (geometry_record_index, geometry_reference_offset, role, role_offset) in geometry {
         if bytes.get(position) != Some(&1)
             || bytes.get(position + 5..position + 11) != Some(&[0; 6])
         {
@@ -1873,8 +1867,10 @@ pub(crate) fn parse_dimension_locus_group(
         if !geometry_indices.contains(&record_index) {
             return None;
         }
-        return_members.push(record_index);
-        return_member_offsets.push((position + 1) as u64);
+        loci.push(DesignDimensionLocus {
+            geometry_record_index, geometry_reference_offset, role, role_offset,
+            returned: crate::records::Located { value: record_index, offset: (position + 1) as u64 },
+        });
         position = position.checked_add(11)?;
     }
     if bytes.get(position) != Some(&0) {
@@ -1889,7 +1885,6 @@ pub(crate) fn parse_dimension_locus_group(
     {
         return None;
     }
-    let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(u64::from(state));
     Some(DesignDimensionLocusGroup {
         id: String::new(),
         companion_record_index,
@@ -1904,10 +1899,6 @@ pub(crate) fn parse_dimension_locus_group(
         owner_role_offset,
         state,
         state_offset,
-        constraint_kinds,
-        unknown_constraint_bits: unknown_constraint_bits as u32,
-        return_members,
-        return_member_offsets,
         next_class_tag,
         next_record_index: View::u32_le_at(bytes, next_after_tag)?,
         next_byte_offset: next_byte_offset as u64,

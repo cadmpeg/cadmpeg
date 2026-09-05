@@ -8699,30 +8699,18 @@ fn validate_dimension_locus_groups<'a>(
         });
         let owner_start = loci_start.saturating_add((count as u64).saturating_mul(15));
         let returns_start = owner_start.saturating_add(24);
-        let returns_valid = group.return_members.len() == count
-            && group.return_member_offsets.len() == count
-            && group
-                .return_members
-                .iter()
-                .zip(&group.return_member_offsets)
-                .enumerate()
-                .all(|(ordinal, (record_index, offset))| {
-                    *offset
-                        == returns_start
-                            .saturating_add((ordinal as u64).saturating_mul(11))
-                            .saturating_add(1)
-                        && sketch_geometry_indices.contains(&(native_stream, *record_index))
-                });
+        let returns_valid = group.loci.iter().enumerate().all(|(ordinal, locus)| {
+            locus.returned.offset == returns_start.saturating_add((ordinal as u64).saturating_mul(11)).saturating_add(1)
+                && sketch_geometry_indices.contains(&(native_stream, locus.returned.value))
+        });
         let mut locus_members = group
             .loci
             .iter()
             .map(|locus| locus.geometry_record_index)
             .collect::<Vec<_>>();
-        let mut return_members = group.return_members.clone();
+        let mut return_members = group.loci.iter().map(|locus| locus.returned.value).collect::<Vec<_>>();
         locus_members.sort_unstable();
         return_members.sort_unstable();
-        let (expected_kinds, expected_unknown) =
-            design::decode::sketch::decode_constraint_kinds(u64::from(group.state));
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(group.owner_reference)))
             .is_some_and(|entity| entity.in_sketch_module());
@@ -8750,8 +8738,6 @@ fn validate_dimension_locus_groups<'a>(
             && owner_is_sketch
             && returns_valid
             && locus_members == return_members
-            && group.constraint_kinds == expected_kinds
-            && u64::from(group.unknown_constraint_bits) == expected_unknown
             && group.next_byte_offset
                 == returns_start
                     .saturating_add((count as u64).saturating_mul(11))
@@ -9319,7 +9305,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .loci
             .iter()
             .map(|locus| locus.geometry_record_index)
-            .chain(group.return_members.iter().copied())
+            .chain(group.loci.iter().map(|locus| locus.returned.value))
         {
             if relation_owners
                 .insert((native_stream, member), group.owner_reference)

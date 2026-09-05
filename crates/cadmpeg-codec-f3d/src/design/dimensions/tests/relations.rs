@@ -847,12 +847,14 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         frame_length: 100,
         loci: vec![
             DesignDimensionLocus {
+                returned: crate::records::Located { value: 40, offset: 0 },
                 geometry_record_index: 40,
                 geometry_reference_offset: 0,
                 role: 0,
                 role_offset: 0,
             },
             DesignDimensionLocus {
+                returned: crate::records::Located { value: 41, offset: 0 },
                 geometry_record_index: 41,
                 geometry_reference_offset: 0,
                 role: 0,
@@ -865,10 +867,6 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        constraint_kinds: vec![SketchConstraintKind::Coincident],
-        unknown_constraint_bits: 0,
-        return_members: vec![40, 41],
-        return_member_offsets: vec![0, 0],
         next_class_tag: "273".into(),
         next_record_index: 31,
         next_byte_offset: 100,

@@ -830,7 +830,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     assert_eq!(group.loci[0].role, 2);
     assert_eq!(group.loci[1].geometry_record_index, 217);
     assert_eq!(group.loci[1].role, 1);
-    assert_eq!(group.return_members, [217, 175]);
+    assert_eq!(group.loci.iter().map(|locus| locus.returned.value).collect::<Vec<_>>(), [217, 175]);
     assert_eq!(group.next_class_tag, "314");
     assert_eq!(group.next_record_index, 250);
 
