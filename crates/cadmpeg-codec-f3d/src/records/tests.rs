@@ -1553,11 +1553,8 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
         topology_triplets: std::array::from_fn(|_| super::DesignTopologyRecipeTriplet {
             outer: std::num::NonZeroU32::new(3).unwrap(),
             middle: 2,
-            vertex_ordinal: 2,
-            incident_edge_ordinal: Some(1),
-            incident_side: Some(super::DesignTopologyIncidentSide::Preceding),
+            incident: Some(crate::records::DesignTopologyIncident { ordinal: 1, side: super::DesignTopologyIncidentSide::Preceding }),
         }),
-        common_incident_edge_ordinal: Some(1),
     };
     for edges in [vec![], vec![7], vec![7, 8]] {
         for count in [0, 1, 3] {
@@ -2312,4 +2309,31 @@ fn entity_header_identity_preserves_wire_spelling_and_rejects_a_conflicting_suff
     assert_eq!(serde_json::to_string(&header).unwrap(), wire);
     let mismatched = wire.replace("\"entity_suffix\":1", "\"entity_suffix\":2");
     assert!(serde_json::from_str::<super::DesignEntityHeader>(&mismatched).expect_err("mismatched suffix").to_string().contains("entity_suffix"));
+}
+
+#[test]
+fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
+    for field in ["incident_edge_ordinal", "incident_side"] {
+        let mut wire = serde_json::json!({"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"});
+        wire.as_object_mut().unwrap().remove(field);
+        assert!(serde_json::from_value::<super::DesignTopologyRecipeTriplet>(wire)
+            .unwrap_err().to_string().contains(field));
+    }
+    for (outer, vertex) in [(1_u32, 0_u32), (4, 3), (u32::MAX, u32::MAX - 1)] {
+        let wire = format!(r#"{{"outer":{outer},"middle":-1,"vertex_ordinal":{vertex}}}"#);
+        let triplet: super::DesignTopologyRecipeTriplet = serde_json::from_str(&wire).unwrap();
+        assert_eq!(triplet.vertex_ordinal(), vertex);
+        assert_eq!(serde_json::to_string(&triplet).unwrap(), wire);
+        let mut invalid = serde_json::to_value(&triplet).unwrap();
+        invalid["vertex_ordinal"] = serde_json::json!(outer);
+        assert!(serde_json::from_value::<super::DesignTopologyRecipeTriplet>(invalid)
+            .unwrap_err().to_string().contains("vertex_ordinal"));
+    }
+    let wire = r#"{"selector":0,"boundary_edge_count":4,"topology_triplets":[{"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"},{"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"}],"common_incident_edge_ordinal":1}"#;
+    let entry: super::DesignTopologyRecipeEntry = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&entry).unwrap(), wire);
+    let mut invalid = serde_json::to_value(entry).unwrap();
+    invalid["common_incident_edge_ordinal"] = serde_json::json!(2);
+    assert!(serde_json::from_value::<super::DesignTopologyRecipeEntry>(invalid)
+        .unwrap_err().to_string().contains("common_incident_edge_ordinal"));
 }

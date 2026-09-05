@@ -1257,21 +1257,16 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     let entry = |selector, boundary_edge_count| crate::records::DesignTopologyRecipeEntry {
         selector,
         boundary_edge_count: std::num::NonZeroU32::new(boundary_edge_count).unwrap(),
-        common_incident_edge_ordinal: (boundary_edge_count == 1).then_some(0),
         topology_triplets: [
             crate::records::DesignTopologyRecipeTriplet {
                 outer: std::num::NonZeroU32::new(1).unwrap(),
                 middle: 0,
-                vertex_ordinal: 0,
-                incident_edge_ordinal: Some(boundary_edge_count - 1),
-                incident_side: Some(crate::records::DesignTopologyIncidentSide::Preceding),
+                incident: Some(crate::records::DesignTopologyIncident { ordinal: boundary_edge_count - 1, side: crate::records::DesignTopologyIncidentSide::Preceding }),
             },
             crate::records::DesignTopologyRecipeTriplet {
                 outer: std::num::NonZeroU32::new(1).unwrap(),
                 middle: 1,
-                vertex_ordinal: 0,
-                incident_edge_ordinal: Some(0),
-                incident_side: Some(crate::records::DesignTopologyIncidentSide::Following),
+                incident: Some(crate::records::DesignTopologyIncident { ordinal: 0, side: crate::records::DesignTopologyIncidentSide::Following }),
             },
         ],
     };

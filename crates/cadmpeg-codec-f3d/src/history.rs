@@ -6167,7 +6167,7 @@ fn recipe_selector_candidates(
                                     context.incident_loops.iter().any(|incident| {
                                         incident.boundary_edge_count
                                             == entry.boundary_edge_count.get()
-                                            && triplet.incident_edge_ordinal.is_some_and(
+                                            && triplet.incident.map(|incident| incident.ordinal).is_some_and(
                                                 |ordinal| incident.coedge_ordinal == ordinal,
                                             )
                                     })
@@ -6210,7 +6210,7 @@ fn recipe_selector_candidates(
                             context.incident_loops.iter().any(|incident| {
                                 incident.boundary_edge_count == entry.boundary_edge_count.get()
                                     && triplet
-                                        .incident_edge_ordinal
+                                        .incident.map(|incident| incident.ordinal)
                                         .is_some_and(|ordinal| incident.coedge_ordinal == ordinal)
                             })
                         })
