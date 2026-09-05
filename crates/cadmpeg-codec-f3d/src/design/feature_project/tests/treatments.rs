@@ -1032,8 +1032,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         crate::records::DesignFilletRadiusLaw::Variable {
             start_radius_parameter_record_index: 51,
             end_radius_parameter_record_index: 61,
-            middle_radius_parameter_record_indices: vec![71],
-            middle_parameter_record_indices: vec![81],
+            middle: vec![crate::records::DesignFilletMidpoint { radius_parameter_record_index: 71, parameter_record_index: 81 }],
         }
     );
     assert_eq!(

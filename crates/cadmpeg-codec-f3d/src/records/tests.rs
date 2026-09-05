@@ -1641,3 +1641,18 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     member["compact_layout"] = serde_json::json!(false);
     check::<super::DesignEdgeIdentityOperand>(&member);
 }
+
+#[test]
+fn variable_fillet_midpoints_preserve_wire_and_reject_unpaired_records() {
+    let wire = r#"{"kind":"variable","start_radius_parameter_record_index":51,"end_radius_parameter_record_index":61,"middle_radius_parameter_record_indices":[71],"middle_parameter_record_indices":[81]}"#;
+    let law: super::DesignFilletRadiusLaw = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&law).unwrap(), wire);
+    for invalid in [
+        wire.replace("[71]", "[]"),
+        wire.replace("[81]", "[]"),
+    ] {
+        let error = serde_json::from_str::<super::DesignFilletRadiusLaw>(&invalid).unwrap_err().to_string();
+        assert!(error.contains("middle_radius_parameter_record_indices"));
+        assert!(error.contains("middle_parameter_record_indices"));
+    }
+}

@@ -1840,8 +1840,7 @@ pub fn decode_fillet_radius_groups(
             law: DesignFilletRadiusLaw::Variable {
                 start_radius_parameter_record_index: *start,
                 end_radius_parameter_record_index: *end,
-                middle_radius_parameter_record_indices: middle_radii,
-                middle_parameter_record_indices: middle_parameters,
+                middle: middle_radii.into_iter().zip(middle_parameters).map(|(radius_parameter_record_index, parameter_record_index)| crate::records::DesignFilletMidpoint { radius_parameter_record_index, parameter_record_index }).collect(),
             },
             tangency_weight_parameter_record_index: weights
                 .first()
