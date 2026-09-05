@@ -502,13 +502,13 @@ fn single_curve_annotation_projects_parameterized_offset() {
         frame_length: 100,
         operands: vec![
             DesignDimensionAnnotationOperand {
-                geometry_record_index: 0,
+                geometry_record_index: std::num::NonZeroU32::new(0),
                 geometry_reference_offset: 0,
                 role: 3,
                 role_offset: 0,
             },
             DesignDimensionAnnotationOperand {
-                geometry_record_index: 10,
+                geometry_record_index: std::num::NonZeroU32::new(10),
                 geometry_reference_offset: 0,
                 role: 2,
                 role_offset: 0,
@@ -558,19 +558,19 @@ fn single_curve_annotation_projects_parameterized_offset() {
     let explicit_frame = DesignDimensionAnnotationFrame {
         operands: vec![
             DesignDimensionAnnotationOperand {
-                geometry_record_index: 0,
+                geometry_record_index: std::num::NonZeroU32::new(0),
                 geometry_reference_offset: 0,
                 role: 3,
                 role_offset: 0,
             },
             DesignDimensionAnnotationOperand {
-                geometry_record_index: 11,
+                geometry_record_index: std::num::NonZeroU32::new(11),
                 geometry_reference_offset: 0,
                 role: 1,
                 role_offset: 0,
             },
             DesignDimensionAnnotationOperand {
-                geometry_record_index: 10,
+                geometry_record_index: std::num::NonZeroU32::new(10),
                 geometry_reference_offset: 0,
                 role: 2,
                 role_offset: 0,

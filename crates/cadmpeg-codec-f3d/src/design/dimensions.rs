@@ -807,7 +807,7 @@ fn project_all_dimension_constraints(
                 .operands
                 .iter()
                 .filter_map(|operand| {
-                    (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+                    operand.geometry_record_index.map(std::num::NonZeroU32::get)
                 })
                 .collect::<Vec<_>>();
             let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
@@ -829,21 +829,20 @@ fn project_all_dimension_constraints(
                         .operands
                         .iter()
                         .map(|operand| {
-                            if operand.geometry_record_index == 0 {
-                                SketchNativeOperand {
+                            match operand.geometry_record_index {
+                                None => SketchNativeOperand {
                                     native_kind: "null_locus".into(),
                                     native_field: Some("locus".into()),
                                     native_role: Some(operand.role),
                                     object_index: 0,
                                     native_ref: None,
-                                }
-                            } else {
-                                native_operand(
+                                },
+                                Some(index) => native_operand(
                                     scope,
                                     "locus",
                                     Some(operand.role),
-                                    operand.geometry_record_index,
-                                )
+                                    index.get(),
+                                ),
                             }
                         })
                         .collect();
@@ -1288,7 +1287,7 @@ fn presentation_dimension_definition(
         .iter()
         .map(|operand| {
             projected
-                .get(&(scope, operand.geometry_record_index))
+                .get(&(scope, operand.geometry_record_index.get()))
                 .copied()
         })
         .collect::<Option<Vec<_>>>()?;
@@ -3479,13 +3478,13 @@ pub(crate) fn annotation_offset_dimension_definition(
         .operands
         .iter()
         .filter_map(|operand| {
-            (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+            operand.geometry_record_index.map(std::num::NonZeroU32::get)
         })
         .collect::<Vec<_>>();
     let null_locus_count = frame
         .operands
         .iter()
-        .filter(|operand| operand.geometry_record_index == 0)
+        .filter(|operand| operand.geometry_record_index.is_none())
         .count();
 
     let explicit_pair = match (non_null_indices.as_slice(), frame.return_members.as_slice()) {
@@ -3831,7 +3830,7 @@ pub fn bind_dimension_loci(
             continue;
         };
         for record_index in frame.operands.iter().filter_map(|operand| {
-            (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+            operand.geometry_record_index.map(std::num::NonZeroU32::get)
         }) {
             insert_dimension_binding(&mut bindings, scope, record_index, frame.owner_reference)?;
         }

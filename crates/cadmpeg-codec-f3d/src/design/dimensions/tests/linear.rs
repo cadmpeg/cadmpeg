@@ -347,8 +347,8 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         governing_parameter_record_index: 0,
         governing_companion_record_index: 0,
     };
-    let operand = |record_index| crate::records::DesignDimensionAnnotationOperand {
-        geometry_record_index: record_index,
+    let operand = |record_index| crate::records::DesignDimensionPresentationOperand {
+        geometry_record_index: std::num::NonZeroU32::new(record_index).unwrap(),
         geometry_reference_offset: 0,
         role: 0,
         role_offset: 0,
