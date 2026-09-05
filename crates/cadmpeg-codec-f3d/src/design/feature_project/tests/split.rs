@@ -55,7 +55,7 @@ fn class_277_258_compact_split_face_frame_projects() {
     let scope_record_index = 77;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#77",
-        "SplitFace",
+        crate::records::DesignFeatureKind::SplitFace,
         scope_record_index,
     );
     scope.class_tag = "277".into();
@@ -99,7 +99,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
     let scope_record_index = 77;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#77",
-        "SplitFace",
+        crate::records::DesignFeatureKind::SplitFace,
         scope_record_index,
     );
     scope.class_tag = "277".into();

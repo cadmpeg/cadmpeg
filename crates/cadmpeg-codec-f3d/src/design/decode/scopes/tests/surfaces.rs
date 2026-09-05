@@ -143,7 +143,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         class_tag: "306".into(),
         record_index: 1,
         frame_length: 375,
-        kind: "Base Feature".into(),
+        kind: crate::records::DesignFeatureKind::BaseFeature,
         kind_offset: 273,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -415,8 +415,11 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
     bytes[cursor + 1..cursor + 5].copy_from_slice(&401u32.to_le_bytes());
     assert_eq!(cursor + 11, 103);
 
-    let mut scope =
-        DesignParameterScope::empty("f3d:scope#base-feature-compact", "Base Feature", 70);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-compact",
+        crate::records::DesignFeatureKind::BaseFeature,
+        70,
+    );
     scope.class_tag = "452".into();
     scope.frame_length = 314;
     scope.kind_offset = 213;
@@ -485,8 +488,11 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
             bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
             cursor += 11;
         }
-        let mut scope =
-            DesignParameterScope::empty("f3d:scope#base-feature-409-262", "Base Feature", 70);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:scope#base-feature-409-262",
+            crate::records::DesignFeatureKind::BaseFeature,
+            70,
+        );
         scope.class_tag = "409".into();
         scope.paired_class_tag = "262".into();
         scope.frame_length = frame_length as u64;
@@ -542,8 +548,11 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     zero_body[prefix + 20] = 1;
     zero_body[prefix + 32] = 1;
     zero_body[prefix + 33..prefix + 41].copy_from_slice(&701u64.to_le_bytes());
-    let mut zero_scope =
-        DesignParameterScope::empty("f3d:scope#base-feature-409-262-zero", "Base Feature", 71);
+    let mut zero_scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-409-262-zero",
+        crate::records::DesignFeatureKind::BaseFeature,
+        71,
+    );
     zero_scope.class_tag = "409".into();
     zero_scope.paired_class_tag = "262".into();
     zero_scope.byte_offset = prefix as u64;
@@ -615,8 +624,11 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
         bytes[cursor + 1..cursor + 5].copy_from_slice(&value.to_le_bytes());
         cursor += 11;
     }
-    let mut scope =
-        DesignParameterScope::empty("f3d:scope#base-feature-290-261", "Base Feature", 74);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-290-261",
+        crate::records::DesignFeatureKind::BaseFeature,
+        74,
+    );
     scope.class_tag = "290".into();
     scope.paired_class_tag = "261".into();
     scope.frame_length = frame_length as u64;
@@ -685,8 +697,11 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
             bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
             cursor += 11;
         }
-        let mut scope =
-            DesignParameterScope::empty("f3d:scope#base-feature-444-263", "Base Feature", 72);
+        let mut scope = DesignParameterScope::empty(
+            "f3d:scope#base-feature-444-263",
+            crate::records::DesignFeatureKind::BaseFeature,
+            72,
+        );
         scope.class_tag = "444".into();
         scope.paired_class_tag = "263".into();
         scope.frame_length = frame_length as u64;
@@ -744,8 +759,11 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     }
     zero_body[prefix + 181..prefix + 185].copy_from_slice(&1u32.to_le_bytes());
     zero_body[prefix + 212..prefix + 216].copy_from_slice(&2u32.to_le_bytes());
-    let mut zero_scope =
-        DesignParameterScope::empty("f3d:scope#base-feature-444-263-zero", "Base Feature", 73);
+    let mut zero_scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-444-263-zero",
+        crate::records::DesignFeatureKind::BaseFeature,
+        73,
+    );
     zero_scope.class_tag = "444".into();
     zero_scope.paired_class_tag = "263".into();
     zero_scope.byte_offset = prefix as u64;
@@ -850,7 +868,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#193",
-        "Base Feature",
+        crate::records::DesignFeatureKind::BaseFeature,
         193,
     );
     scope.byte_offset = 0;
@@ -1017,7 +1035,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#452",
-            "Base Feature",
+            crate::records::DesignFeatureKind::BaseFeature,
             452,
         );
         scope.byte_offset = 0;
@@ -1078,7 +1096,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     let mut compact_bytes = compact_frame(0);
     let mut compact_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#452",
-        "Base Feature",
+        crate::records::DesignFeatureKind::BaseFeature,
         452,
     );
     compact_scope.class_tag = "452".into();

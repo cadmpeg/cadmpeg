@@ -52,7 +52,7 @@ fn scope(
 ) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         &format!("f3d:stream:design-parameter-scope#{byte_offset}"),
-        "Chamfer",
+        crate::records::DesignFeatureKind::Chamfer,
         record_index,
     );
     scope.byte_offset = byte_offset;

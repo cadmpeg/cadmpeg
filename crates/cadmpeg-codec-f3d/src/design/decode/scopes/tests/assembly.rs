@@ -16,7 +16,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     let scope_record_index = 10_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-        "Assemble",
+        crate::records::DesignFeatureKind::Assemble,
         scope_record_index,
     );
     scope.class_tag = "273".into();
@@ -435,7 +435,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     let scope_record_index = 10_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-        "Assemble",
+        crate::records::DesignFeatureKind::Assemble,
         scope_record_index,
     );
     scope.class_tag = "383".into();
@@ -537,7 +537,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     let scope_record_index = 700_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#700",
-        "Assemble",
+        crate::records::DesignFeatureKind::Assemble,
         scope_record_index,
     );
     scope.class_tag = "388".into();
@@ -805,7 +805,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     let scope_record_index = 10_u32;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-        "As-built",
+        crate::records::DesignFeatureKind::AsBuilt,
         scope_record_index,
     );
     scope.class_tag = "439".into();
@@ -992,7 +992,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         ];
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-            "As-built",
+            crate::records::DesignFeatureKind::AsBuilt,
             scope_record_index,
         );
         scope.class_tag = class_tag.into();
@@ -1152,8 +1152,11 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         second_role,
         true,
     );
-    let mut assembly =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:assembly#500", "Assemble", 500);
+    let mut assembly = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:assembly#500",
+        crate::records::DesignFeatureKind::Assemble,
+        500,
+    );
     assembly.frame_length = 772;
     assembly.reference_members = first_members
         .into_iter()
@@ -1248,8 +1251,11 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
         role,
         false,
     );
-    let mut assembly =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:assembly#500", "Assemble", 500);
+    let mut assembly = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:assembly#500",
+        crate::records::DesignFeatureKind::Assemble,
+        500,
+    );
     assembly.frame_length = 705;
     assembly.reference_members = members.into_iter().chain([90, 91]).collect();
     assembly.set_assembly_alignment(Some(axial_test_alignment([
@@ -1258,7 +1264,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     ])));
     let mut origin = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:joint-origin#80",
-        "JointOrigin",
+        crate::records::DesignFeatureKind::JointOrigin,
         80,
     );
     origin.with_joint_origin_transform(second_transform);
@@ -1930,7 +1936,7 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
 fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         &format!("f3d:Design/BulkStream.dat:component-insert#{record_index}"),
-        "Component Insert",
+        crate::records::DesignFeatureKind::ComponentInsert,
         record_index,
     );
     scope.set_component_insert_construction(Some(DesignComponentInsertConstruction {

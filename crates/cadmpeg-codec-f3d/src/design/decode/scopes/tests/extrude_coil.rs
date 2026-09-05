@@ -312,7 +312,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
         None,
     );
-    assert_eq!(to_face.kind, "Extrusion");
+    assert_eq!(to_face.kind, crate::records::DesignFeatureKind::Extrusion);
     let Some(prologue) = to_face.extrude_prologue() else {
         panic!("to-face Extrude prologue");
     };
@@ -674,7 +674,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(contradictory_direction_and_sides.extrude_prologue(), None);
 
     let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false, None, None, None);
-    assert_eq!(unrecognized.kind, "Extrude");
+    assert_eq!(
+        unrecognized.kind,
+        crate::records::DesignFeatureKind::Extrude
+    );
     assert_eq!(unrecognized.extrude_prologue(), None);
     assert_eq!(
         scope(
@@ -1410,7 +1413,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("compact Coil new-body scope");
     assert_eq!(scope.frame_length, 442);
-    assert_eq!(scope.kind, "CoilPrimitive");
+    assert_eq!(scope.kind, crate::records::DesignFeatureKind::CoilPrimitive);
     assert_eq!(
         scope.coil_operation(),
         Some(DesignExtrudeOperation::NewBody)

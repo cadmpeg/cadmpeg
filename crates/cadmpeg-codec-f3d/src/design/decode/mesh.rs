@@ -1062,7 +1062,7 @@ fn parse_mesh_scope_record(
             byte_offset: u64::try_from(frame.start).ok()?,
         };
         let scope = parse_parameter_scope(bytes, records, &header)?;
-        (scope.kind == "Base Mesh Feature"
+        (scope.kind == crate::records::DesignFeatureKind::BaseMeshFeature
             && scope.byte_offset == u64::try_from(frame.start).ok()?)
         .then_some(())?;
         let paired_at = usize::try_from(scope.paired_byte_offset).ok()?;

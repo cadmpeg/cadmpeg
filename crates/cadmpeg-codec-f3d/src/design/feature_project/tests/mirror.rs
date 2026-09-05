@@ -55,7 +55,11 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
 }
 
 fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
-    let mut scope = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#10", "Mirror", 10);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#10",
+        crate::records::DesignFeatureKind::Mirror,
+        10,
+    );
     scope.set_mirror_construction(Some(DesignMirrorConstruction {
         count: 2,
         count_record_index: 11,

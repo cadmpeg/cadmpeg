@@ -260,7 +260,7 @@ pub fn decode_parameter_scopes(
                     }));
                 }
             }
-            if scope.kind == "WorkPlane" {
+            if scope.kind == crate::records::DesignFeatureKind::WorkPlane {
                 if let Some(frame) = exact_work_plane_frame(bytes, &records, &scope) {
                     scope.set_work_plane_frame(Some(crate::records::DesignWorkPlaneTransform {
                         work_plane_transform: frame.transform,
@@ -278,7 +278,7 @@ pub fn decode_parameter_scopes(
             if let Some(construction) = exact_work_axis_construction(bytes, &records, &scope) {
                 scope.set_work_axis_construction(Some(construction));
             }
-            if scope.kind == "JointOrigin" {
+            if scope.kind == crate::records::DesignFeatureKind::JointOrigin {
                 if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
                     scope.set_joint_origin_frame(Some(
                         crate::records::DesignJointOriginTransform {
@@ -560,7 +560,7 @@ pub(crate) fn exact_thread_construction(
     scope: &DesignParameterScope,
 ) -> Option<DesignThreadConstruction> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    if scope.kind != "Thread"
+    if scope.kind != crate::records::DesignFeatureKind::Thread
         || scope.reference_members.len() < 2
         || !scope.reference_members.len().is_multiple_of(2)
     {
@@ -753,7 +753,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
     let mut candidates = Vec::new();
     let mut envelopes = Vec::new();
     for scope in scopes.iter() {
-        if scope.kind != "Assemble" {
+        if scope.kind != crate::records::DesignFeatureKind::Assemble {
             continue;
         }
         if let Some(frames) = scope
@@ -779,10 +779,10 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             ));
         }
     }
-    for scope in scopes
-        .iter_mut()
-        .filter(|scope| scope.kind == "JointOrigin" && scope.joint_origin_frame().is_none())
-    {
+    for scope in scopes.iter_mut().filter(|scope| {
+        scope.kind == crate::records::DesignFeatureKind::JointOrigin
+            && scope.joint_origin_frame().is_none()
+    }) {
         let mut matches = candidates
             .iter()
             .filter(|(record_index, ..)| *record_index == scope.record_index);
@@ -809,7 +809,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
     }
     let resolved_origins = scopes
         .iter()
-        .filter(|scope| scope.kind == "JointOrigin")
+        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::JointOrigin)
         .filter_map(|scope| Some((scope.record_index, scope.joint_origin_transform()?)))
         .collect::<HashMap<_, _>>();
     for (assembly_record_index, joint_origin_record_index, transform) in envelopes {
@@ -817,7 +817,8 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             continue;
         }
         let mut assemblies = scopes.iter_mut().filter(|scope| {
-            scope.kind == "Assemble" && scope.record_index == assembly_record_index
+            scope.kind == crate::records::DesignFeatureKind::Assemble
+                && scope.record_index == assembly_record_index
         });
         let Some(assembly) = assemblies.next() else {
             continue;
@@ -899,7 +900,7 @@ fn exact_assembly_axial_operand_target(
         .and_then(|component| {
             let role = &component.selectors[0].occurrence_role;
             let mut matches = scopes.iter().filter(|scope| {
-                scope.kind == "Component Insert"
+                scope.kind == crate::records::DesignFeatureKind::ComponentInsert
                     && scope
                         .component_insert_construction()
                         .is_some_and(|construction| {
@@ -925,7 +926,7 @@ fn exact_assembly_axial_operand_target(
             )
         });
     let mut origins = scopes.iter().filter(|scope| {
-        scope.kind == "JointOrigin"
+        scope.kind == crate::records::DesignFeatureKind::JointOrigin
             && scope.record_index == frame.reference_record_index
             && scope.joint_origin_transform() == Some(frame.transform)
     });
@@ -1253,7 +1254,7 @@ fn exact_single_joint_origin_frame(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<(u32, ScopePlacementFrame)> {
-    if scope.kind != "Assemble"
+    if scope.kind != crate::records::DesignFeatureKind::Assemble
         || scope.class_tag != "276"
         || scope.paired_class_tag != "258"
         || scope.frame_length != 604
@@ -1745,7 +1746,7 @@ pub(crate) fn exact_assembly_alignment(
         .flatten();
     let frames;
     let mut qualifiers = None;
-    if scope.kind == "As-built" {
+    if scope.kind == crate::records::DesignFeatureKind::AsBuilt {
         let paths = exact_assembly_operand_paths(bytes, records, scope);
         frames = paths
             .as_ref()
@@ -1819,7 +1820,7 @@ pub(crate) fn exact_derived_instance_construction(
     scope: &DesignParameterScope,
     occurrences: &[DesignComponentOccurrence],
 ) -> Option<DesignDerivedInstanceConstruction> {
-    if scope.kind != "DerivedInstance"
+    if scope.kind != crate::records::DesignFeatureKind::DerivedInstance
         || scope.class_tag != "279"
         || scope.paired_class_tag != "261"
         || scope.frame_length != derived_instance_279_261::LEN as u64
@@ -1923,7 +1924,9 @@ pub(crate) fn exact_component_insert_construction(
 ) -> Option<DesignComponentInsertConstruction> {
     let start = usize::try_from(scope.byte_offset).ok()?;
     let relation_record_index = *scope.reference_members.first()?;
-    if scope.kind != "Component Insert" || scope.reference_members.len() != 1 {
+    if scope.kind != crate::records::DesignFeatureKind::ComponentInsert
+        || scope.reference_members.len() != 1
+    {
         return None;
     }
     let (transform, transform_at, occurrence_identity) =
@@ -4936,7 +4939,7 @@ pub fn bind_mirror_constructions(
                         scopes.iter().any(|scope| {
                             native_stream(&scope.id) == Some(stream.as_str())
                                 && scope.record_index == *record_index
-                                && scope.kind == "WorkPlane"
+                                && scope.kind == crate::records::DesignFeatureKind::WorkPlane
                                 && scope.work_plane_frame().is_some()
                         })
                     })
@@ -5250,7 +5253,9 @@ pub(crate) fn exact_copy_paste_bodies_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignCopyPasteBodiesOperation> {
-    if scope.kind != "CopyPasteBodies" || scope.reference_members.len() < 2 {
+    if scope.kind != crate::records::DesignFeatureKind::CopyPasteBodies
+        || scope.reference_members.len() < 2
+    {
         return None;
     }
     let start = usize::try_from(scope.byte_offset).ok()?;
@@ -5359,7 +5364,7 @@ pub(crate) fn exact_base_feature_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignBaseFeatureConstruction> {
-    if scope.kind != "Base Feature" {
+    if scope.kind != crate::records::DesignFeatureKind::BaseFeature {
         return None;
     }
     if let Some(snapshot) = exact_base_feature_body_snapshot(bytes, scope) {
@@ -5863,7 +5868,7 @@ fn exact_base_feature_body_snapshot(
         _ => {}
     }
     let (kind, kind_end) = lp_utf16_bounded(bytes, kind_at, 1..=256)?;
-    if kind != scope.kind
+    if kind != scope.kind.as_str()
         || View::u32_le_at(bytes, kind_end)? != scope.feature_ordinal
         || scope.feature_ordinal_offset != u64::try_from(kind_end).ok()?
         || scope.previous_history_state_id.is_some()
@@ -6917,7 +6922,7 @@ pub(crate) fn exact_scale_operation(
                 start + 25,
                 center,
             )
-        } else if scope.kind == "Scale"
+        } else if scope.kind == crate::records::DesignFeatureKind::Scale
             && matches!(scope.reference_members.len(), 5 | 6)
             && scope.frame_length
                 == 307 + u64::try_from(scope.reference_members.len().saturating_sub(5)).ok()? * 11
@@ -7726,7 +7731,7 @@ pub(crate) fn exact_work_axis_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
-    if scope.kind != "WorkAxis" {
+    if scope.kind != crate::records::DesignFeatureKind::WorkAxis {
         return None;
     }
     exact_two_point_work_axis_construction(bytes, records, scope)
@@ -7924,7 +7929,9 @@ pub(crate) fn exact_joint_origin_frame(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
-    if scope.kind != "JointOrigin" || matches!(scope.frame_length, 300 | 322 | 344) {
+    if scope.kind != crate::records::DesignFeatureKind::JointOrigin
+        || matches!(scope.frame_length, 300 | 322 | 344)
+    {
         return None;
     }
     let mut candidates = Vec::new();
@@ -8119,7 +8126,7 @@ pub(crate) fn exact_work_point_construction(
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignWorkPointConstruction> {
-    if scope.kind != "WorkPoint" {
+    if scope.kind != crate::records::DesignFeatureKind::WorkPoint {
         return None;
     }
     exact_point_data_construction(bytes, records, &scope.reference_members, stream_types)
@@ -8220,7 +8227,7 @@ pub(crate) fn exact_hole_construction(
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignHoleConstruction> {
-    if scope.kind != "Hole" {
+    if scope.kind != crate::records::DesignFeatureKind::Hole {
         return None;
     }
     let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
@@ -8987,6 +8994,8 @@ pub(crate) fn parse_parameter_scope(
     let [(kind_at, kind_end, tail_length, kind, named_tail)] = candidates.as_slice() else {
         return None;
     };
+    let kind_text = kind.clone();
+    let kind = crate::records::DesignFeatureKind::from(kind_text.clone());
     let kind_end = *kind_end;
     let reference_table_end = kind_at.checked_sub(4)?;
     let feature_ordinal = View::u32_le_at(bytes, kind_end)?;
@@ -8998,11 +9007,14 @@ pub(crate) fn parse_parameter_scope(
         u32::MAX => None,
         state_id => Some(i64::from(state_id)),
     };
-    let previous_history_state_id_offset =
-        match parameter_scope_previous_history_offset_for_form(kind, *tail_length, *named_tail) {
-            Some(offset) => Some(kind_end.checked_add(offset)?),
-            None => None,
-        };
+    let previous_history_state_id_offset = match parameter_scope_previous_history_offset_for_form(
+        &kind_text,
+        *tail_length,
+        *named_tail,
+    ) {
+        Some(offset) => Some(kind_end.checked_add(offset)?),
+        None => None,
+    };
     let previous_history_state_id =
         previous_history_state_id_offset.and_then(|offset| match View::u32_le_at(bytes, offset)? {
             u32::MAX => None,
@@ -9040,22 +9052,22 @@ pub(crate) fn parse_parameter_scope(
     else {
         return None;
     };
-    let surface_stitch_operation = if kind == "SurfaceStitch" {
+    let surface_stitch_operation = if kind == crate::records::DesignFeatureKind::SurfaceStitch {
         exact_surface_stitch_operation(bytes, records, header.record_index, reference_members)
     } else {
         None
     };
-    let surface_patch_boundaries = if kind == "SurfacePatch" {
+    let surface_patch_boundaries = if kind == crate::records::DesignFeatureKind::SurfacePatch {
         super::patch::surface_patch_boundaries(bytes, records, reference_members)
     } else {
         Vec::new()
     };
-    let base_flange_operation = if kind == "BaseFlange" {
+    let base_flange_operation = if kind == crate::records::DesignFeatureKind::BaseFlange {
         exact_base_flange_operation(bytes, start, paired_at, reference_members)
     } else {
         None
     };
-    let edge_flange_operation = if kind == "EdgeFlange" {
+    let edge_flange_operation = if kind == crate::records::DesignFeatureKind::EdgeFlange {
         exact_edge_flange_operation(
             bytes,
             start,
@@ -9067,7 +9079,7 @@ pub(crate) fn parse_parameter_scope(
     } else {
         None
     };
-    let ruled_surface_operation = if kind == "SurfaceRuled" {
+    let ruled_surface_operation = if kind == crate::records::DesignFeatureKind::SurfaceRuled {
         exact_ruled_surface_operation(
             bytes,
             start,
@@ -9078,7 +9090,7 @@ pub(crate) fn parse_parameter_scope(
     } else {
         None
     };
-    let family = design_feature_family(kind);
+    let family = design_feature_family(&kind);
     // A `Sketch` scope carries either the single entity-suffix reference form
     // or, when the stream's sketch entity headers use the `EntityGenesis`
     // form, the generic ordered reference table. Both parse here; the entity
@@ -9111,7 +9123,7 @@ pub(crate) fn parse_parameter_scope(
         coil_clockwise,
         coil_clockwise_offset,
     ) = if family == Some(DesignFeatureFamily::Coil) {
-        exact_coil_discriminators(bytes, start, paired_at, kind, reference_members).map_or(
+        exact_coil_discriminators(bytes, start, paired_at, &kind, reference_members).map_or(
             (None, None, None, None, None, None, None, None, None, None),
             |fields| {
                 (
@@ -9132,7 +9144,7 @@ pub(crate) fn parse_parameter_scope(
         (None, None, None, None, None, None, None, None, None, None)
     };
     let coil_transform = if family == Some(DesignFeatureFamily::Coil) {
-        exact_long_coil_transform(bytes, start, paired_at, kind, reference_members)
+        exact_long_coil_transform(bytes, start, paired_at, &kind, reference_members)
     } else {
         None
     };
@@ -9295,7 +9307,7 @@ fn exact_coil_placement(
     scope: &DesignParameterScope,
     recipes: &[ConstructionRecipe],
 ) -> Option<DesignCoilPlacement> {
-    if scope.kind != "CoilPrimitive" {
+    if scope.kind != crate::records::DesignFeatureKind::CoilPrimitive {
         return None;
     }
     match (
@@ -9694,7 +9706,7 @@ fn exact_coil_discriminators(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    kind: &str,
+    kind: &crate::records::DesignFeatureKind,
     reference_members: &[u32],
 ) -> Option<CoilDiscriminators> {
     if let Some(fields) =
@@ -9704,10 +9716,13 @@ fn exact_coil_discriminators(
     }
     let operation_offset = start.checked_add(coil_compact::OPERATION)?;
     let operation = match (kind, View::u32_le_at(bytes, operation_offset)?) {
-        ("SpirePrimitive", 1) => DesignExtrudeOperation::Join,
-        ("SpirePrimitive", 2) => DesignExtrudeOperation::Cut,
-        ("SpirePrimitive", 3) => DesignExtrudeOperation::Intersect,
-        ("SpirePrimitive", 4) | ("CoilPrimitive", 1) => DesignExtrudeOperation::NewBody,
+        (&crate::records::DesignFeatureKind::SpirePrimitive, 1) => DesignExtrudeOperation::Join,
+        (&crate::records::DesignFeatureKind::SpirePrimitive, 2) => DesignExtrudeOperation::Cut,
+        (&crate::records::DesignFeatureKind::SpirePrimitive, 3) => {
+            DesignExtrudeOperation::Intersect
+        }
+        (&crate::records::DesignFeatureKind::SpirePrimitive, 4)
+        | (&crate::records::DesignFeatureKind::CoilPrimitive, 1) => DesignExtrudeOperation::NewBody,
         _ => return None,
     };
     let clockwise_offset = start.checked_add(coil_compact::CLOCKWISE)?;
@@ -9717,8 +9732,8 @@ fn exact_coil_discriminators(
         _ => return None,
     };
     let structural_constant = match kind {
-        "SpirePrimitive" => 2,
-        "CoilPrimitive" => 4,
+        crate::records::DesignFeatureKind::SpirePrimitive => 2,
+        crate::records::DesignFeatureKind::CoilPrimitive => 4,
         _ => return None,
     };
     if View::u32_le_at(bytes, start.checked_add(coil_compact::STRUCTURAL_CONSTANT)?)?
@@ -9737,7 +9752,7 @@ fn exact_coil_discriminators(
     let section_offset = start.checked_add(coil_compact::SECTION_PLACEMENT)?;
     let section_placement_offset = start.checked_add(coil_compact::SECTION_SHAPE)?;
     let (section, section_placement) = match kind {
-        "SpirePrimitive" => (
+        crate::records::DesignFeatureKind::SpirePrimitive => (
             match View::u32_le_at(bytes, section_offset)? {
                 0 => DesignCoilSection::Circular,
                 1 => DesignCoilSection::Square,
@@ -9753,7 +9768,7 @@ fn exact_coil_discriminators(
         // The compact Coil dialect stores the two discriminators in the
         // opposite lanes from SpirePrimitive: position at offset 92 and
         // section shape at offset 107.
-        "CoilPrimitive" => (
+        crate::records::DesignFeatureKind::CoilPrimitive => (
             match View::u32_le_at(bytes, section_placement_offset)? {
                 1 => DesignCoilSection::Circular,
                 2 => DesignCoilSection::Square,
@@ -9788,10 +9803,10 @@ fn exact_long_coil_discriminators(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    kind: &str,
+    kind: &crate::records::DesignFeatureKind,
     reference_members: &[u32],
 ) -> Option<CoilDiscriminators> {
-    if kind != "CoilPrimitive" || reference_members.len() != 10 {
+    if *kind != crate::records::DesignFeatureKind::CoilPrimitive || reference_members.len() != 10 {
         return None;
     }
     let frame_length = paired_at.checked_sub(start)?;
@@ -9849,10 +9864,10 @@ fn exact_long_coil_transform(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
-    kind: &str,
+    kind: &crate::records::DesignFeatureKind,
     reference_members: &[u32],
 ) -> Option<crate::records::DesignCoilTransform> {
-    if kind != "CoilPrimitive"
+    if *kind != crate::records::DesignFeatureKind::CoilPrimitive
         || reference_members.len() != 10
         || !matches!(paired_at.checked_sub(start)?, 572 | 578)
     {
@@ -9882,7 +9897,9 @@ fn bind_coil_extent_from_parameters(
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::DesignParameterOwner],
 ) {
-    if scope.kind != "CoilPrimitive" || scope.coil_extent().is_some() {
+    if scope.kind != crate::records::DesignFeatureKind::CoilPrimitive
+        || scope.coil_extent().is_some()
+    {
         return;
     }
     let Some(stream) = native_stream(&scope.id) else {

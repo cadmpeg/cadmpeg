@@ -14,7 +14,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut scope = crate::records::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#10"),
-        "Fillet",
+        crate::records::DesignFeatureKind::Fillet,
         10,
     );
     scope.history_state_id = Some(2);

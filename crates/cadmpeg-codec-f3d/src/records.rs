@@ -3251,21 +3251,6 @@ macro_rules! design_feature_kinds {
             }
         }
 
-        impl AsRef<str> for DesignFeatureKind {
-            fn as_ref(&self) -> &str {
-                self.as_str()
-            }
-        }
-
-        impl From<&str> for DesignFeatureKind {
-            fn from(name: &str) -> Self {
-                match name {
-                    $($lit => Self::$variant,)+
-                    other => Self::Native(other.to_owned()),
-                }
-            }
-        }
-
         impl From<String> for DesignFeatureKind {
             fn from(name: String) -> Self {
                 match name.as_str() {
@@ -3278,30 +3263,6 @@ macro_rules! design_feature_kinds {
         impl From<DesignFeatureKind> for String {
             fn from(kind: DesignFeatureKind) -> Self {
                 kind.as_str().to_owned()
-            }
-        }
-
-        impl PartialEq<str> for DesignFeatureKind {
-            fn eq(&self, other: &str) -> bool {
-                self.as_str() == other
-            }
-        }
-
-        impl PartialEq<&str> for DesignFeatureKind {
-            fn eq(&self, other: &&str) -> bool {
-                self.as_str() == *other
-            }
-        }
-
-        impl PartialEq<DesignFeatureKind> for str {
-            fn eq(&self, other: &DesignFeatureKind) -> bool {
-                self == other.as_str()
-            }
-        }
-
-        impl PartialEq<DesignFeatureKind> for String {
-            fn eq(&self, other: &DesignFeatureKind) -> bool {
-                self.as_str() == other.as_str()
             }
         }
 
@@ -3380,6 +3341,11 @@ design_feature_kinds! {
     SurfaceStitch => "SurfaceStitch",
     BaseFeature => "Base Feature",
     CopyPasteBodies => "CopyPasteBodies",
+    SplitFace => "SplitFace",
+    DeleteFace => "DeleteFace",
+    SurfaceDeleteFace => "SurfaceDeleteFace",
+    RemoveBody => "RemoveBody",
+    Face => "Face",
 }
 
 /// Rejected CADIR payload that names more than one family or disagrees with `kind`.
@@ -6152,14 +6118,14 @@ impl DesignParameterScope {
         });
     }
 
-    pub(crate) fn empty(id: &str, kind: &str, record_index: u32) -> Self {
+    pub(crate) fn empty(id: &str, kind: DesignFeatureKind, record_index: u32) -> Self {
         Self {
             id: id.to_string(),
             byte_offset: 0,
             class_tag: String::new(),
             record_index,
             frame_length: 0,
-            kind: kind.into(),
+            kind,
             kind_offset: 0,
             feature_ordinal: 0,
             feature_ordinal_offset: 0,

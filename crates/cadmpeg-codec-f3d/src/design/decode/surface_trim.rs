@@ -28,7 +28,9 @@ pub(crate) fn exact_surface_trim_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceTrimOperation> {
-    if scope.kind != "SurfaceTrim" || scope.reference_members.len() != 4 {
+    if scope.kind != crate::records::DesignFeatureKind::SurfaceTrim
+        || scope.reference_members.len() != 4
+    {
         return None;
     }
     let selection_record_index = *scope.reference_members.get(3)?;
@@ -148,7 +150,10 @@ pub(crate) fn decode_surface_trim_operations(
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
     let mut record_offsets = HashMap::<String, IndexedRecordOffsets>::new();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| scope.kind == "SurfaceTrim") {
+    for scope in scopes
+        .iter()
+        .filter(|scope| scope.kind == crate::records::DesignFeatureKind::SurfaceTrim)
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };

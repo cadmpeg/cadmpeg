@@ -33,7 +33,7 @@ pub(super) fn continue_fixed_kind_operations(
         bytes.extend_from_slice(&scalar);
     }
     let mut draft_scope = scope.clone();
-    draft_scope.kind = "Draft".into();
+    draft_scope.kind = crate::records::DesignFeatureKind::Draft;
     draft_scope.frame_length = 361;
     draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];
     let expected = Some(DesignDraftOperation {
@@ -113,7 +113,7 @@ pub(super) fn continue_fixed_kind_operations(
         bytes.extend_from_slice(&scalar);
     }
     let mut fillet_scope = scope.clone();
-    fillet_scope.kind = "Fillet".into();
+    fillet_scope.kind = crate::records::DesignFeatureKind::Fillet;
     fillet_scope.reference_members = vec![77, 50, 78, 79, 87, 88];
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
@@ -239,7 +239,7 @@ pub(super) fn continue_fixed_kind_operations(
     chamfer_scalar.extend_from_slice(&86u32.to_le_bytes());
     bytes.extend_from_slice(&chamfer_scalar);
     let mut chamfer_scope = scope.clone();
-    chamfer_scope.kind = "Chamfer".into();
+    chamfer_scope.kind = crate::records::DesignFeatureKind::Chamfer;
     chamfer_scope.reference_members = vec![86];
     assert_eq!(
         exact_fixed_chamfer_parameters(
@@ -335,7 +335,7 @@ pub(super) fn continue_fixed_kind_operations(
     }
     let mut revolve_scope = scope.clone();
     revolve_scope.byte_offset = revolve_start as u64;
-    revolve_scope.kind = "Revolve".into();
+    revolve_scope.kind = crate::records::DesignFeatureKind::Revolve;
     revolve_scope.frame_length = 386;
     revolve_scope.reference_members = vec![200, 201, 202, 203, 1_779, 1_780, 204];
     let revolve_construction = exact_path_feature_construction(
@@ -917,7 +917,7 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&loft);
     let mut loft_scope = scope.clone();
     loft_scope.byte_offset = loft_start as u64;
-    loft_scope.kind = "Loft".into();
+    loft_scope.kind = crate::records::DesignFeatureKind::Loft;
     loft_scope.frame_length = 376;
     assert_eq!(
         exact_path_feature_construction(
@@ -1188,7 +1188,7 @@ pub(super) fn continue_fixed_kind_operations(
     }
     let mut sweep_scope = scope.clone();
     sweep_scope.byte_offset = sweep_start as u64;
-    sweep_scope.kind = "Sweep".into();
+    sweep_scope.kind = crate::records::DesignFeatureKind::Sweep;
     sweep_scope.frame_length = 499;
     sweep_scope.reference_members = (80..86).collect();
     assert_eq!(
@@ -1441,7 +1441,7 @@ pub(super) fn continue_fixed_kind_operations(
     }
     let mut pipe_scope = scope.clone();
     pipe_scope.byte_offset = pipe_start as u64;
-    pipe_scope.kind = "Pipe".into();
+    pipe_scope.kind = crate::records::DesignFeatureKind::Pipe;
     pipe_scope.frame_length = 464;
     pipe_scope.reference_members = (170..174).collect();
     assert_eq!(
@@ -1502,7 +1502,7 @@ pub(super) fn continue_fixed_kind_operations(
     owner_pipe_scope.byte_offset = owner_pipe_start as u64;
     owner_pipe_scope.class_tag = "421".into();
     owner_pipe_scope.paired_class_tag = "257".into();
-    owner_pipe_scope.kind = "Pipe".into();
+    owner_pipe_scope.kind = crate::records::DesignFeatureKind::Pipe;
     owner_pipe_scope.frame_length = 405;
     owner_pipe_scope.reference_members = owner_pipe_record_indexes.into();
     assert_eq!(
@@ -1574,7 +1574,7 @@ pub(super) fn continue_fixed_kind_operations(
         legacy_scope.byte_offset = legacy_pipe_start as u64;
         legacy_scope.class_tag = class_tag.into();
         legacy_scope.paired_class_tag = paired_class_tag.into();
-        legacy_scope.kind = "Pipe".into();
+        legacy_scope.kind = crate::records::DesignFeatureKind::Pipe;
         legacy_scope.frame_length = 383;
         legacy_scope.reference_members = (first_record_index..first_record_index + 4).collect();
         assert_eq!(

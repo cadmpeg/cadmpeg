@@ -318,7 +318,7 @@ mod tests {
         let native_occurrences = [occurrence(100, 700, SOURCE), occurrence(101, 701, COPY)];
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-            "CopyPaste",
+            crate::records::DesignFeatureKind::CopyPaste,
             10,
         );
         scope.set_copy_paste_component_operation(Some(DesignCopyPasteComponentOperation {
@@ -352,7 +352,7 @@ mod tests {
         const OCCURRENCE: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#385",
-            "DerivedInstance",
+            crate::records::DesignFeatureKind::DerivedInstance,
             385,
         );
         scope.set_derived_instance_construction(Some(DesignDerivedInstanceConstruction {

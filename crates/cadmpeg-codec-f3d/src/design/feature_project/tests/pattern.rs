@@ -58,7 +58,7 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
 fn rectangular_scope() -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:parameter-scope#10",
-        "R-Pattern",
+        crate::records::DesignFeatureKind::RPattern,
         10,
     );
     scope.set_rectangular_pattern_construction(Some(DesignRectangularPatternConstruction {

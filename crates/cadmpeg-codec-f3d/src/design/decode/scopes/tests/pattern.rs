@@ -174,7 +174,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         class_tag: "291".into(),
         record_index: scope_record_index,
         frame_length: 329,
-        kind: "C-Pattern".into(),
+        kind: crate::records::DesignFeatureKind::CPattern,
         kind_offset: 0,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -328,7 +328,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.kind = "R-Pattern".into();
+    scope.kind = crate::records::DesignFeatureKind::RPattern;
     let rectangular_owners = [
         owner(50, 0, 3.0, 501),
         owner(51, 1, 1.0, 502),
@@ -411,7 +411,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.kind = "Assemble".into();
+    scope.kind = crate::records::DesignFeatureKind::Assemble;
     scope.frame_length = 627;
     scope.reference_members = vec![50, 51, 52, 53];
     let alignment = exact_assembly_alignment(
@@ -667,7 +667,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(short_axial_frames[1].transform_offset, 178);
 
     let mut first_joint_origin = scope.clone();
-    first_joint_origin.kind = "JointOrigin".into();
+    first_joint_origin.kind = crate::records::DesignFeatureKind::JointOrigin;
     first_joint_origin.record_index = 70;
     first_joint_origin.reference_members.clear();
     let mut second_joint_origin = first_joint_origin.clone();
@@ -712,7 +712,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .collect();
     single_frame_assembly.set_assembly_alignment(Some(datum_envelope_alignment));
     let mut single_frame_joint_origin = scope.clone();
-    single_frame_joint_origin.kind = "JointOrigin".into();
+    single_frame_joint_origin.kind = crate::records::DesignFeatureKind::JointOrigin;
     single_frame_joint_origin.record_index = 91;
     single_frame_joint_origin.reference_members.clear();
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];

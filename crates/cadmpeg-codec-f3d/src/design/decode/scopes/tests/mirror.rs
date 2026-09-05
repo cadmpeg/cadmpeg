@@ -73,7 +73,8 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
 #[test]
 fn class_413_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 89];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
+    let mut scope =
+        DesignParameterScope::empty("scope", crate::records::DesignFeatureKind::Mirror, 10);
     scope.class_tag = "413".into();
     scope.paired_class_tag = "262".into();
     scope.kind_offset = 0;
@@ -98,7 +99,8 @@ fn class_413_mirror_scope_decodes_inline_tolerance() {
 #[test]
 fn class_369_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 89];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
+    let mut scope =
+        DesignParameterScope::empty("scope", crate::records::DesignFeatureKind::Mirror, 10);
     scope.class_tag = "369".into();
     scope.paired_class_tag = "261".into();
     scope.kind_offset = 0;
@@ -128,7 +130,8 @@ fn class_369_mirror_scope_decodes_inline_tolerance() {
 #[test]
 fn class_391_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 88];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
+    let mut scope =
+        DesignParameterScope::empty("scope", crate::records::DesignFeatureKind::Mirror, 10);
     scope.class_tag = "391".into();
     scope.paired_class_tag = "261".into();
     scope.kind_offset = 0;
@@ -158,7 +161,8 @@ fn class_391_mirror_scope_decodes_inline_tolerance() {
 #[test]
 fn class_440_mirror_scope_decodes_inline_tolerance() {
     let mut bytes = vec![0; 89];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
+    let mut scope =
+        DesignParameterScope::empty("scope", crate::records::DesignFeatureKind::Mirror, 10);
     scope.class_tag = "440".into();
     scope.paired_class_tag = "258".into();
     scope.kind_offset = 0;
@@ -184,7 +188,8 @@ fn class_440_mirror_scope_decodes_inline_tolerance() {
 #[test]
 fn class_441_mirror_scope_decodes_the_unrepeated_inline_tolerance() {
     let mut bytes = vec![0; 84];
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", 10);
+    let mut scope =
+        DesignParameterScope::empty("scope", crate::records::DesignFeatureKind::Mirror, 10);
     scope.class_tag = "441".into();
     scope.paired_class_tag = "267".into();
     scope.kind_offset = 0;
@@ -232,7 +237,11 @@ fn class_441_mirror_scope_decodes_the_inline_count_owner() {
     bytes[89..93].copy_from_slice(&scope_record_index.to_le_bytes());
     indexed_header(&mut bytes, *b"267", count_record_index);
 
-    let mut scope = DesignParameterScope::empty("scope", "Mirror", scope_record_index);
+    let mut scope = DesignParameterScope::empty(
+        "scope",
+        crate::records::DesignFeatureKind::Mirror,
+        scope_record_index,
+    );
     scope.class_tag = "441".into();
     scope.paired_class_tag = "267".into();
     scope.reference_members = vec![1, 2, 3, count_record_index];

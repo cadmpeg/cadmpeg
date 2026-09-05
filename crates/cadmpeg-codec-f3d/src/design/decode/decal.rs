@@ -48,7 +48,8 @@ pub fn decode_decal_images(
             scopes
                 .iter()
                 .filter(|scope| {
-                    scope.kind == "Decal" && ids::native_stream(&scope.id) == Some(stream.as_str())
+                    scope.kind == crate::records::DesignFeatureKind::Decal
+                        && ids::native_stream(&scope.id) == Some(stream.as_str())
                 })
                 .filter_map(|scope| parse_decal_image(bytes, &entry.name, scope)),
         );

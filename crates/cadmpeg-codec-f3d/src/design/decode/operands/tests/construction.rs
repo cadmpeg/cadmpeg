@@ -12,12 +12,23 @@ use crate::design::decode::operands::parse_loft_legacy_body_carrier;
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
-    for token in ["Congé", "Abrundung", "Arredondamento", "Chanfrein"] {
-        assert!(!construction_operand_group_is_retained(Some(token), false));
-        assert!(construction_operand_group_is_retained(Some(token), true));
+    use crate::records::DesignFeatureKind as Kind;
+    for kind in [
+        Kind::Conge,
+        Kind::Abrundung,
+        Kind::Arredondamento,
+        Kind::Chanfrein,
+    ] {
+        assert!(!construction_operand_group_is_retained(Some(&kind), false));
+        assert!(construction_operand_group_is_retained(Some(&kind), true));
     }
-    for token in ["Fillet", "Chamfer", "Extrusion", "unknown"] {
-        assert!(construction_operand_group_is_retained(Some(token), false));
+    for kind in [
+        Kind::Fillet,
+        Kind::Chamfer,
+        Kind::Extrusion,
+        Kind::Native("unknown".into()),
+    ] {
+        assert!(construction_operand_group_is_retained(Some(&kind), false));
     }
     assert!(construction_operand_group_is_retained(None, false));
 }
@@ -36,7 +47,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         class_tag: "301".into(),
         record_index: 12,
         frame_length: 200,
-        kind: "Extrude".into(),
+        kind: crate::records::DesignFeatureKind::Extrude,
         kind_offset: 1100,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -294,7 +305,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
 
     let mut split_scope = scope.clone();
-    split_scope.kind = "SplitFace".into();
+    split_scope.kind = crate::records::DesignFeatureKind::SplitFace;
     split_scope.frame_length = 334;
     split_scope.reference_members = vec![100, 200, 201, 400, 500];
     split_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118, 1129];
@@ -348,8 +359,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         FeatureDefinition::SplitFace { .. }
     ));
 
-    let mut first_plane =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#601", "WorkPlane", 601);
+    let mut first_plane = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#601",
+        crate::records::DesignFeatureKind::WorkPlane,
+        601,
+    );
     first_plane.feature_ordinal = 0;
     first_plane.with_work_plane_transform([
         [1.0, 0.0, 0.0, -0.8],
@@ -357,8 +371,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ]);
-    let mut second_plane =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#701", "WorkPlane", 701);
+    let mut second_plane = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#701",
+        crate::records::DesignFeatureKind::WorkPlane,
+        701,
+    );
     second_plane.feature_ordinal = 1;
     second_plane.with_work_plane_transform([
         [1.0, 0.0, 0.0, -1.4],
@@ -470,7 +487,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut split_body_scope = scope.clone();
-    split_body_scope.kind = "Split".into();
+    split_body_scope.kind = crate::records::DesignFeatureKind::Split;
     split_body_scope.frame_length = 325;
     split_body_scope.reference_members = vec![100, 200, 400, 500];
     split_body_scope.reference_member_offsets = vec![1085, 1096, 1107, 1118];
@@ -644,7 +661,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .is_none());
 
     let mut delete_scope = scope.clone();
-    delete_scope.kind = "DeleteFace".into();
+    delete_scope.kind = crate::records::DesignFeatureKind::DeleteFace;
     delete_scope.frame_length = 258;
     delete_scope.kind_offset = 1161;
     delete_scope.reference_members = vec![100, 200];
@@ -738,7 +755,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     let mut surface_scope = delete_scope.clone();
     let reference_bytes = 11 * surface_scope.reference_members.len() as u64;
-    surface_scope.kind = "SurfaceDeleteFace".into();
+    surface_scope.kind = crate::records::DesignFeatureKind::SurfaceDeleteFace;
     surface_scope.frame_length = 250 + reference_bytes;
     surface_scope.kind_offset = surface_scope.byte_offset + 140 + reference_bytes;
     let (features, _) = project_parameter_design(
@@ -867,7 +884,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
-        delete_scope.kind = "DeleteFace".into();
+        delete_scope.kind = crate::records::DesignFeatureKind::DeleteFace;
         delete_scope.class_tag = class_tag.into();
         delete_scope.paired_class_tag = paired_class_tag.into();
         delete_scope.frame_length = 232 + reference_bytes;
@@ -909,7 +926,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut remove_scope = scope.clone();
-    remove_scope.kind = "RemoveBody".into();
+    remove_scope.kind = crate::records::DesignFeatureKind::RemoveBody;
     let mut remove_group = group;
     remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     remove_group.role = 0x0000_0004_0000_0000;
@@ -925,7 +942,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
 
     let mut stitch_scope = scope;
-    stitch_scope.kind = "SurfaceStitch".into();
+    stitch_scope.kind = crate::records::DesignFeatureKind::SurfaceStitch;
     stitch_scope.reference_members = vec![100, 200, 300, 301];
     stitch_scope.set_surface_stitch_operation(Some(DesignSurfaceStitchOperation {
         gap_tolerance: 0.01,
@@ -965,12 +982,12 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
     }
 
     for (ordinal, (class_tag, scope_kind)) in [
-        ("323", "Move"),
-        ("328", "Move"),
-        ("257", "Move"),
-        ("338", "RemoveBody"),
-        ("282", "Move"),
-        ("302", "Move"),
+        ("323", crate::records::DesignFeatureKind::Move),
+        ("328", crate::records::DesignFeatureKind::Move),
+        ("257", crate::records::DesignFeatureKind::Move),
+        ("338", crate::records::DesignFeatureKind::RemoveBody),
+        ("282", crate::records::DesignFeatureKind::Move),
+        ("302", crate::records::DesignFeatureKind::Move),
     ]
     .into_iter()
     .enumerate()
@@ -1050,8 +1067,11 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
 
 #[test]
 fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scope() {
-    let mut scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#296536", "Extrude", 296_536);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#296536",
+        crate::records::DesignFeatureKind::Extrude,
+        296_536,
+    );
     scope.byte_offset = 1000;
     scope.class_tag = "296".into();
     scope.paired_class_tag = "261".into();
@@ -1409,8 +1429,11 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         bytes
     }
 
-    let mut scope =
-        crate::records::DesignParameterScope::empty("f3d:Design/BulkStream.dat", "Loft", 12);
+    let mut scope = crate::records::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat",
+        crate::records::DesignFeatureKind::Loft,
+        12,
+    );
     scope.ensure_path_feature().path_feature_construction =
         Some(crate::records::DesignPathFeatureConstruction::Loft {
             operation: crate::records::DesignExtrudeOperation::Cut,

@@ -150,7 +150,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         class_tag: "301".into(),
         record_index: 12,
         frame_length: 200,
-        kind: "Extrude".into(),
+        kind: crate::records::DesignFeatureKind::Extrude,
         kind_offset: 210,
         payload: DesignScopePayload::Extrude(crate::records::DesignExtrudeScope {
             extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
@@ -486,7 +486,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     sketch_scope.record_index = placement
         .scope_record_index
         .expect("test placement carries a scope record index");
-    sketch_scope.kind = "Sketch".into();
+    sketch_scope.kind = crate::records::DesignFeatureKind::Sketch;
     sketch_scope.ensure_extrude().extrude_prologue = None;
     sketch_scope.ensure_extrude().extrude_profile = None;
     let scopes = vec![sketch_scope, scope.clone()];

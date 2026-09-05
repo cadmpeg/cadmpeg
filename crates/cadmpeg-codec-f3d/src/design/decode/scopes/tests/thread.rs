@@ -63,7 +63,11 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         None
     );
 
-    let mut scope = DesignParameterScope::empty("f3d:scope#standard-thread", "Thread", 987);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#standard-thread",
+        crate::records::DesignFeatureKind::Thread,
+        987,
+    );
     scope.class_tag = "901".into();
     scope.paired_class_tag = "902".into();
     scope.frame_length = 17;
@@ -133,7 +137,11 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         &expected,
     );
 
-    let mut scope = DesignParameterScope::empty("f3d:scope#legacy-thread", "Thread", 987);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#legacy-thread",
+        crate::records::DesignFeatureKind::Thread,
+        987,
+    );
     scope.class_tag = "334".into();
     scope.paired_class_tag = "262".into();
     scope.reference_members = vec![988, 991];
@@ -229,7 +237,11 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         &referenced_expected,
     );
 
-    let mut scope = DesignParameterScope::empty("f3d:scope#compact-thread", "Thread", 987);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#compact-thread",
+        crate::records::DesignFeatureKind::Thread,
+        987,
+    );
     scope.class_tag = "903".into();
     scope.frame_length = 19;
     scope.reference_members = vec![988, 989, 992, 993];
@@ -297,7 +309,11 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         &expected,
     );
 
-    let mut scope = DesignParameterScope::empty("f3d:scope#legacy-compact-thread", "Thread", 987);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#legacy-compact-thread",
+        crate::records::DesignFeatureKind::Thread,
+        987,
+    );
     scope.class_tag = "414".into();
     scope.paired_class_tag = "263".into();
     scope.frame_length = 19;
@@ -340,7 +356,7 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
 
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("localized Sketch scope");
-    assert_eq!(scope.kind, "Esquisse");
+    assert_eq!(scope.kind, crate::records::DesignFeatureKind::Esquisse);
     assert_eq!(scope.reference_members, [55, 56]);
     assert!(scope.sketch_entity().is_none());
 }

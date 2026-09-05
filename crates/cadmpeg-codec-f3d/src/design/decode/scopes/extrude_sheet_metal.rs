@@ -3008,7 +3008,7 @@ pub(super) fn bind_hem_operation_from_parameters(
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
 ) {
-    if scope.kind != "Hem" {
+    if scope.kind != crate::records::DesignFeatureKind::Hem {
         return;
     }
     let Some(stream) = native_stream(&scope.id) else {

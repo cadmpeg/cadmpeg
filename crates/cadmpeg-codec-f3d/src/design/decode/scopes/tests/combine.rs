@@ -38,8 +38,11 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
     bytes[24] = 0;
     bytes[25] = 1;
-    let mut box_scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#12", "BoxPrimitive", 12);
+    let mut box_scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#12",
+        crate::records::DesignFeatureKind::Native("BoxPrimitive".into()),
+        12,
+    );
     box_scope.frame_length = bytes.len() as u64;
     box_scope.reference_members = vec![20, 21, 22, 23, 24];
     let box_owners = vec![
@@ -66,7 +69,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
 
     bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
     let mut cylinder_scope = box_scope;
-    cylinder_scope.kind = "CylinderPrimitive".into();
+    cylinder_scope.kind = crate::records::DesignFeatureKind::Native("CylinderPrimitive".into());
     cylinder_scope.record_index = 13;
     cylinder_scope.reference_members = vec![30, 31];
     let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
@@ -132,7 +135,11 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
     ) -> DesignParameterScope {
         let stream = "Design/BulkStream.dat";
         let id = format!("f3d:{stream}:scope#{record_index}");
-        let mut scope = DesignParameterScope::empty(&id, "CylinderPrimitive", record_index);
+        let mut scope = DesignParameterScope::empty(
+            &id,
+            crate::records::DesignFeatureKind::Native("CylinderPrimitive".into()),
+            record_index,
+        );
         scope.byte_offset = 0;
         scope.class_tag = class_tag.into();
         scope.paired_class_tag = paired_class_tag.into();
@@ -528,7 +535,11 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     target_record(&mut bytes, 93, 94);
     simple_selection_record(&mut bytes, 94);
 
-    let mut scope = DesignParameterScope::empty("scope", "Combine", scope_record_index);
+    let mut scope = DesignParameterScope::empty(
+        "scope",
+        crate::records::DesignFeatureKind::Combine,
+        scope_record_index,
+    );
     scope.byte_offset = 0;
     scope.class_tag = "329".into();
     scope.paired_class_tag = "261".into();

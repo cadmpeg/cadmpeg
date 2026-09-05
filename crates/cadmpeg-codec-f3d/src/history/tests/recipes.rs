@@ -66,7 +66,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let stream = "f3d:Design/BulkStream.dat";
     let mut extrude = crate::records::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        "Extrude",
+        crate::records::DesignFeatureKind::Extrude,
         100,
     );
     extrude.history_state_id = Some(4);
@@ -105,7 +105,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     };
     let mut work_point = crate::records::DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        "WorkPoint",
+        crate::records::DesignFeatureKind::WorkPoint,
         200,
     );
     work_point.set_work_point_construction(Some(DesignWorkPointConstruction {
@@ -289,8 +289,11 @@ fn feature_input_topology_projects_historical_vertices() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
     use cadmpeg_ir::features::{Feature, FeatureDefinition};
 
-    let mut scope =
-        crate::records::DesignParameterScope::empty("f3d:design:scope#work-point", "WorkPoint", 7);
+    let mut scope = crate::records::DesignParameterScope::empty(
+        "f3d:design:scope#work-point",
+        crate::records::DesignFeatureKind::WorkPoint,
+        7,
+    );
     scope.previous_history_state_id = Some(4);
     let feature = Feature {
         id: cadmpeg_ir::features::FeatureId("f3d:model:feature#work-point".into()),
@@ -693,7 +696,7 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
 
     let mut scope = crate::records::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        "Extrude",
+        crate::records::DesignFeatureKind::Extrude,
         10,
     );
     scope.history_state_id = Some(2);
@@ -867,7 +870,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
 
     let scope = crate::records::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        "CoilPrimitive",
+        crate::records::DesignFeatureKind::CoilPrimitive,
         10,
     );
     let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
@@ -1043,7 +1046,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
 
     let mut scale_scope = scope.clone();
-    scale_scope.kind = "Scale".into();
+    scale_scope.kind = crate::records::DesignFeatureKind::Scale;
     scale_scope.previous_history_state_id = Some(7);
     let mut scale_group = group.clone();
     scale_group.role = 0x0000_0004_0000_0000;
@@ -1078,7 +1081,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     ));
 
     let mut move_scope = scope;
-    move_scope.kind = "Move".into();
+    move_scope.kind = crate::records::DesignFeatureKind::Move;
     move_scope.history_state_id = Some(42);
     move_scope.previous_history_state_id = Some(41);
     let move_history = crate::history_records::AsmHistory {
@@ -1186,7 +1189,8 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
     let scope_id = "f3d:Design/BulkStream.dat:scope#42".to_string();
     let group_id = "f3d:Design/BulkStream.dat:operand-group#100".to_string();
     let face_id = FaceId::mint("f3d:brep:entity#7").expect("identity grammar");
-    let mut scope = DesignParameterScope::empty(&scope_id, "SplitFace", 42);
+    let mut scope =
+        DesignParameterScope::empty(&scope_id, crate::records::DesignFeatureKind::SplitFace, 42);
     scope.history_state_id = Some(2);
 
     let group = DesignConstructionOperandGroup {
@@ -1349,7 +1353,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
 
     let face = |slot| FaceId::mint(format!("f3d:brep:entity#{slot}")).expect("identity grammar");
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
-    let mut scope = DesignParameterScope::empty(scope_id, "Thread", 42);
+    let mut scope =
+        DesignParameterScope::empty(scope_id, crate::records::DesignFeatureKind::Thread, 42);
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
 
@@ -1821,7 +1826,8 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
 
     let feature_id = FeatureId("f3d:feature#42".into());
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
-    let mut scope = DesignParameterScope::empty(scope_id, "Hole", 42);
+    let mut scope =
+        DesignParameterScope::empty(scope_id, crate::records::DesignFeatureKind::Hole, 42);
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
     scope.set_hole_construction(Some(DesignHoleConstruction {

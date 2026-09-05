@@ -57,8 +57,11 @@ fn group(
 
 #[test]
 fn replace_face_projects_role_order_and_historical_inputs() {
-    let mut scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#1129", "ReplaceFace", 1129);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#1129",
+        crate::records::DesignFeatureKind::ReplaceFace,
+        1129,
+    );
     scope.class_tag = "301".into();
     scope.paired_class_tag = "258".into();
     scope.frame_length = 290;
@@ -173,8 +176,11 @@ fn replace_face_projects_role_order_and_historical_inputs() {
 
 #[test]
 fn surface_trim_projects_body_target_and_curve_tool() {
-    let mut scope =
-        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#1200", "SurfaceTrim", 1200);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#1200",
+        crate::records::DesignFeatureKind::SurfaceTrim,
+        1200,
+    );
     scope.reference_members = vec![1201, 1202, 1203, 1204];
     let target_group = group(1200, 0, 1201, 1202, 0x0000_0004_0000_0000);
     let tool_group = group(1200, 2, 1203, 1204, 0x0000_0021_0000_0000);
@@ -235,7 +241,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
 fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#1200",
-        "SurfaceTrim",
+        crate::records::DesignFeatureKind::SurfaceTrim,
         1200,
     );
     let mut feature = cadmpeg_ir::features::Feature::new(

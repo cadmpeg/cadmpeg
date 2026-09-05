@@ -82,7 +82,11 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
     let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
-    let mut scope = DesignParameterScope::empty(scope_id, "Base Mesh Feature", 10);
+    let mut scope = DesignParameterScope::empty(
+        scope_id,
+        crate::records::DesignFeatureKind::BaseMeshFeature,
+        10,
+    );
     // The feature's owning entity reference is distinct from its scope index.
     scope.reference_members = vec![221];
     let mut features = vec![Feature {
@@ -1349,7 +1353,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         class_tag: "000".into(),
         record_index: 3,
         frame_length: 1,
-        kind: "Unsupported".into(),
+        kind: crate::records::DesignFeatureKind::Native("Unsupported".into()),
         kind_offset: 0,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
@@ -1510,7 +1514,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         class_tag: "000".into(),
         record_index,
         frame_length: 1,
-        kind: "Unsupported".into(),
+        kind: crate::records::DesignFeatureKind::Native("Unsupported".into()),
         kind_offset: 0,
         feature_ordinal: record_index,
         feature_ordinal_offset: 0,
@@ -1571,20 +1575,20 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     let stream = "f3d:Design/BulkStream.dat";
     let mut predecessor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        "Extrude",
+        crate::records::DesignFeatureKind::Extrude,
         100,
     );
     predecessor.history_state_id = Some(7);
     let mut internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#150"),
-        "Base Feature",
+        crate::records::DesignFeatureKind::BaseFeature,
         150,
     );
     internal.history_state_id = Some(8);
     internal.previous_history_state_id = Some(7);
     let mut successor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        "Fillet",
+        crate::records::DesignFeatureKind::Fillet,
         200,
     );
     successor.history_state_id = Some(9);
