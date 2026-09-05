@@ -2647,7 +2647,7 @@ fn legacy_edge_flange_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        reference_side_code: (),
+
         height_datum,
         bend_position: DesignBendPosition::from_code(View::u32_le_at(
             bytes,
@@ -2765,7 +2765,7 @@ fn edge_flange_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        reference_side_code: (),
+
         height_datum,
         bend_position,
     })
@@ -2930,7 +2930,7 @@ fn edge_flange_to_object_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        reference_side_code: (),
+
         height_datum,
         bend_position,
     })
@@ -3117,10 +3117,6 @@ fn hem_gap_length_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: (),
-        direction_code: (),
-        direction_reversal_byte: (),
-        reference_side_code: (),
     })
 }
 
@@ -3192,10 +3188,6 @@ fn hem_radius_angle_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: (),
-        direction_code: (),
-        direction_reversal_byte: (),
-        reference_side_code: (),
     })
 }
 
@@ -3264,9 +3256,5 @@ fn hem_gap_length_radius_operation_at(
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        form_code: (),
-        direction_code: (),
-        direction_reversal_byte: (),
-        reference_side_code: (),
     })
 }
