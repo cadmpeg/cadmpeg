@@ -489,7 +489,6 @@ pub(crate) fn exact_text_relation(
             text_reference,
             glyph_transforms,
         } if relation.members.len() == 2
-            && relation.member_relation_ordinals().len() == 2
             && relation.members[1].reference.record_index() == *text_reference
             && relation.auxiliary_references.values().copied().eq([*text_reference])
             && relation.return_member_indices() == [relation.members[0].reference.record_index()] =>
@@ -503,24 +502,19 @@ pub(crate) fn exact_text_relation(
                 )
                 || !matches!(text.geometry, SketchGeometry::Text { .. })
                 || glyph_transforms.is_empty()
-                || glyph_transforms
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .any(|value| !value.is_finite())
             {
                 return None;
             }
             let glyph_transforms = glyph_transforms
                 .iter()
                 .map(|source| {
-                    let mut rows = *source;
+                    let mut rows = source.rows();
                     for row in rows.iter_mut().take(3) {
                         row[3] *= 10.0;
                     }
-                    Transform::from_rows(rows).expect("affine transform")
+                    Transform::from_rows(rows)
                 })
-                .collect();
+                .collect::<Option<Vec<_>>>()?;
             Some(Definition::TextPath {
                 text: text.id().clone(),
                 path: path.id().clone(),
@@ -1414,7 +1408,7 @@ mod tests {
             definition: crate::records::SketchRelationDefinition::new(0x200_0000_0000, SketchRelationKind::from_pattern(Some(
                 crate::records::SketchPatternDefinition::TextPath {
                     text_reference: 2,
-                    glyph_transforms: vec![glyph],
+                    glyph_transforms: vec![crate::records::SketchGlyphTransform::try_from(glyph).expect("finite native glyph")],
                 },
             ))).expect("valid relation definition"),
             entity_genesis: Some(2),
@@ -1435,5 +1429,23 @@ mod tests {
                 && path_id == path.id()
                 && glyph_transforms[0].rows()[0][3] == 5.0
         ));
+        let mut relation = relation;
+        let mut overflow = glyph;
+        overflow[0][3] = f64::MAX;
+        let mut non_affine = glyph;
+        non_affine[3][3] = 2.0;
+        for rows in [overflow, non_affine] {
+            relation.definition = crate::records::SketchRelationDefinition::new(
+                0x200_0000_0000,
+                SketchRelationKind::TextPath {
+                    text_reference: 2,
+                    glyph_transforms: vec![
+                        crate::records::SketchGlyphTransform::try_from(glyph).unwrap(),
+                        crate::records::SketchGlyphTransform::try_from(rows).unwrap(),
+                    ],
+                },
+            ).unwrap();
+            assert!(exact_text_relation(&relation, "scope", &projected).is_none());
+        }
     }
 }

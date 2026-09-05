@@ -486,7 +486,7 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
             panic!("expected a text-path pattern definition");
         };
         assert_eq!(text_reference, 2);
-        assert_eq!(glyph_transforms[0][0][3], 5.0);
+        assert_eq!(glyph_transforms[0].rows()[0][3], 5.0);
         // The version-0 layout has no leading byte, so reading one steps
         // into the text reference and the run no longer closes.
         assert!(parse_classed_sketch_relation(
@@ -496,5 +496,15 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
             }
         )
         .is_none_or(|other| other.parsed_end != record.len()));
+    }
+}
+
+#[test]
+fn text_path_glyph_constructor_rejects_non_finite_source_coefficients() {
+    for translation in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut class_members = Vec::new();
+        push_glyph_run(&mut class_members, 2, translation);
+        let record = relation_record(&[(1, 1), (2, 0)], &class_members, 201, 0x200_0000_0000, &[1]);
+        assert!(parse_classed_sketch_relation(&record, SketchRelationClass::TextPath { leading_flag: false }).is_none());
     }
 }

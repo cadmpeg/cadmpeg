@@ -154,7 +154,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
     assert_eq!(parsed.owner_reference, 201);
     assert_eq!(parsed.state, 0x200_0000_0000);
     assert_eq!(parsed.return_members.iter().map(|row| row.value).collect::<Vec<_>>(), [237]);
-    assert_eq!(parsed.text_glyph_transforms.as_deref(), Some(&glyphs[..]));
+    assert_eq!(parsed.text_glyph_transforms.as_ref().map(|transforms| transforms.iter().map(|transform| transform.rows()).collect::<Vec<_>>()).as_deref(), Some(&glyphs[..]));
     assert_eq!(
         crate::records::constraint_kinds_from_state(parsed.state),
         (vec![SketchConstraintKind::TextPath], 0)
@@ -163,7 +163,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         decode_pattern_definition(&record, &parsed),
         Some(crate::records::SketchPatternDefinition::TextPath {
             text_reference: 304,
-            glyph_transforms: glyphs.to_vec(),
+            glyph_transforms: glyphs.into_iter().map(|rows| crate::records::SketchGlyphTransform::try_from(rows).expect("finite native glyph")).collect(),
         })
     );
 }

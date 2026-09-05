@@ -15,7 +15,7 @@ use crate::layout::sketch_container_visibility_member_prefix as visibility_membe
 use crate::records::{
     DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     DesignSketchVisibility, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+    SketchCurveGeometry, SketchCurveIdentity, SketchGlyphTransform, SketchPoint,
     SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
     SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
     DESIGN_MODULE_SKETCH,
@@ -3383,7 +3383,7 @@ pub(crate) struct ParsedSketchRelation {
     pub(crate) state: u64,
     pub(crate) state_offset: usize,
     pub(crate) entity_genesis: Option<u64>,
-    pub(crate) text_glyph_transforms: Option<Vec<[[f64; 4]; 4]>>,
+    pub(crate) text_glyph_transforms: Option<Vec<SketchGlyphTransform>>,
     /// Serialized cardinality of the rectangular class's counted reference
     /// run. `None` for every other relation class.
     pub(crate) rectangular_reference_count: Option<u32>,
@@ -3562,7 +3562,7 @@ fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
 struct RelationClassMembers {
     rectangular_reference_count: Option<u32>,
     rectangular_clause_ordinal: Option<usize>,
-    text_glyph_transforms: Option<Vec<[[f64; 4]; 4]>>,
+    text_glyph_transforms: Option<Vec<SketchGlyphTransform>>,
 }
 
 /// Consume the members `class` writes between the property block and the base
@@ -3756,7 +3756,7 @@ pub(crate) fn parse_classed_sketch_relation(
 /// followed by sixteen finite f64 values forming a row-major 4×4 character
 /// placement transform. Returns the text reference, the transforms in
 /// character order, and the offset directly after the last block.
-type TextGlyphRun = (u32, Vec<[[f64; 4]; 4]>, usize);
+type TextGlyphRun = (u32, Vec<SketchGlyphTransform>, usize);
 
 fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
     let (text_reference, end) = marked_u32(payload, at)?;
@@ -3777,14 +3777,10 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
         let mut transform = [[0.0; 4]; 4];
         for row in &mut transform {
             for cell in row {
-                let value = view.f64_le()?;
-                if !value.is_finite() {
-                    return None;
-                }
-                *cell = value;
+                *cell = view.f64_le()?;
             }
         }
-        transforms.push(transform);
+        transforms.push(SketchGlyphTransform::try_from(transform).ok()?);
     }
     Some((text_reference, transforms, view.position()))
 }

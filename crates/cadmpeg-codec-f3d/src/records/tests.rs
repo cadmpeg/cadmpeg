@@ -3322,3 +3322,23 @@ fn sketch_relation_runs_preserve_wire_and_reject_conflicting_resolved_indices() 
         assert!(serde_json::from_value::<super::SketchRelation>(partial).unwrap_err().to_string().contains(field));
     }
 }
+
+#[test]
+fn glyph_transform_preserves_finite_matrix_wire_without_an_affine_restriction() {
+    for wire in [
+        "[[1.0,0.0,0.0,0.5],[0.0,1.0,0.0,-0.0],[0.0,0.0,1.0,-2.5],[0.0,0.0,0.0,1.0]]",
+        "[[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,1.0]]",
+        "[[1.0,0.0,0.0,0.5],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,-2.5],[0.0,0.0,0.0,2.0]]",
+    ] {
+        let transform: super::SketchGlyphTransform = serde_json::from_str(wire).unwrap();
+        assert_eq!(serde_json::to_string(&transform).unwrap(), wire);
+        assert_eq!(super::SketchGlyphTransform::try_from(transform.rows()).unwrap(), transform);
+    }
+    for ordinal in 0..16 {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut rows = [[0.0; 4]; 4];
+            rows[ordinal / 4][ordinal % 4] = value;
+            assert!(super::SketchGlyphTransform::try_from(rows).unwrap_err().to_string().contains("glyph_transforms"));
+        }
+    }
+}

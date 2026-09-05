@@ -15628,6 +15628,34 @@ impl std::ops::Deref for SketchRelationReturnMembers {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
+/// Finite row-major native glyph placement in centimetres.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "[[f64; 4]; 4]"))]
+#[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
+pub struct SketchGlyphTransform([[f64; 4]; 4]);
+
+impl SketchGlyphTransform {
+    /// Native coefficients, without an affine or invertibility restriction.
+    #[must_use]
+    pub fn rows(self) -> [[f64; 4]; 4] { self.0 }
+}
+
+impl TryFrom<[[f64; 4]; 4]> for SketchGlyphTransform {
+    type Error = SketchRelationPayloadError;
+
+    fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
+        if rows.iter().flatten().any(|value| !value.is_finite()) {
+            return Err(SketchRelationPayloadError("sketch relation glyph_transforms contains a non-finite coefficient".into()));
+        }
+        Ok(Self(rows))
+    }
+}
+
+impl From<SketchGlyphTransform> for [[f64; 4]; 4] {
+    fn from(transform: SketchGlyphTransform) -> Self { transform.0 }
+}
+
 /// Pattern or text payload a sketch relation carries, when the mask names one.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SketchRelationKind {
@@ -15660,7 +15688,7 @@ pub enum SketchRelationKind {
         text_reference: u32,
         /// Row-major 4×4 character placement transforms in character order,
         /// in centimetres.
-        glyph_transforms: Vec<[[f64; 4]; 4]>,
+        glyph_transforms: Vec<SketchGlyphTransform>,
     },
 }
 
@@ -15766,7 +15794,7 @@ impl SketchRelationDefinition {
     pub fn kind(&self) -> &SketchRelationKind { &self.kind }
 }
 
-/// Rejected CADIR sketch relation whose derived fields disagree with `state`.
+/// Rejected sketch-relation payload or inconsistent native wire columns.
 #[derive(Debug)]
 pub struct SketchRelationPayloadError(String);
 
@@ -16236,7 +16264,7 @@ pub enum SketchPatternDefinition {
         text_reference: u32,
         /// Row-major 4×4 character placement transforms in character order,
         /// in centimetres.
-        glyph_transforms: Vec<[[f64; 4]; 4]>,
+        glyph_transforms: Vec<SketchGlyphTransform>,
     },
 }
 
