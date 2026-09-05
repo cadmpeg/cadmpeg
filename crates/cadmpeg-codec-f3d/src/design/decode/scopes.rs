@@ -5488,6 +5488,7 @@ pub(crate) fn exact_base_feature_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignBaseFeatureConstruction> {
+    use crate::records::{DesignBaseFeatureEntry, DesignBaseFeatureResultBody, DesignBaseFeatureResults};
     if scope.kind() != crate::records::DesignFeatureKind::BaseFeature {
         return None;
     }
@@ -5502,19 +5503,10 @@ pub(crate) fn exact_base_feature_construction(
     let start = usize::try_from(scope.byte_offset).ok()?;
     if scope.frame_length == 267 {
         return Some(DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes: Vec::new(),
-            body_entity_suffix_offsets: Vec::new(),
-            body_entity_fields: Vec::new(),
-            body_reference_records: Vec::new(),
-            body_reference_record_offsets: Vec::new(),
-            body_reference_fields: Vec::new(),
-            repeated_reference_fields: Vec::new(),
+            bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
             metadata_record: View::u32_le_at(bytes, usize::try_from(scope.byte_offset).ok()? + 37)?,
             metadata_record_offset: scope.byte_offset + 37,
             metadata_field: bytes.get(start + 45..start + 51)?.to_vec(),
-            result_records: Vec::new(),
-            result_record_offsets: Vec::new(),
-            result_fields: Vec::new(),
         });
     }
     let legacy_290_261 = scope.class_tag == "290" && scope.paired_class_tag == "261";
@@ -5555,13 +5547,7 @@ pub(crate) fn exact_base_feature_construction(
             return None;
         }
         return Some(DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes: Vec::new(),
-            body_entity_suffix_offsets: Vec::new(),
-            body_entity_fields: Vec::new(),
-            body_reference_records: Vec::new(),
-            body_reference_record_offsets: Vec::new(),
-            body_reference_fields: Vec::new(),
-            repeated_reference_fields: Vec::new(),
+            bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
             metadata_record,
             metadata_record_offset: scope.byte_offset
                 + u64::try_from(legacy_zero_body::SHARED_METADATA_RECORD).ok()?,
@@ -5571,9 +5557,6 @@ pub(crate) fn exact_base_feature_construction(
                         ..start + legacy_zero_body::ZERO_PADDING_8,
                 )?
                 .to_vec(),
-            result_records: Vec::new(),
-            result_record_offsets: Vec::new(),
-            result_fields: Vec::new(),
         });
     }
     if legacy_444_263 && scope.frame_length == 258 {
@@ -5640,13 +5623,7 @@ pub(crate) fn exact_base_feature_construction(
             return None;
         }
         return Some(DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes: Vec::new(),
-            body_entity_suffix_offsets: Vec::new(),
-            body_entity_fields: Vec::new(),
-            body_reference_records: Vec::new(),
-            body_reference_record_offsets: Vec::new(),
-            body_reference_fields: Vec::new(),
-            repeated_reference_fields: Vec::new(),
+            bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
             metadata_record,
             metadata_record_offset: scope.byte_offset
                 + u64::try_from(legacy_444_zero_body::SHARED_METADATA_RECORD).ok()?,
@@ -5656,9 +5633,6 @@ pub(crate) fn exact_base_feature_construction(
                         ..start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
                 )?
                 .to_vec(),
-            result_records: Vec::new(),
-            result_record_offsets: Vec::new(),
-            result_fields: Vec::new(),
         });
     }
     if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
@@ -5697,40 +5671,24 @@ pub(crate) fn exact_base_feature_construction(
     }
     let mut cursor = start + result_body::LEN;
     let mut read_u64_run = |count: usize| {
-        let mut values = Vec::with_capacity(count);
-        let mut offsets = Vec::with_capacity(count);
-        let mut fields = Vec::with_capacity(count);
+        let mut entries = Vec::with_capacity(count);
         for _ in 0..count {
             if bytes.get(cursor) != Some(&1) {
                 return None;
             }
-            values.push(View::u64_le_at(
-                bytes,
-                cursor + result_body_entry::REFERENCE_VALUE,
-            )?);
-            offsets.push(u64::try_from(cursor + result_body_entry::REFERENCE_VALUE).ok()?);
-            fields.push(
-                bytes
-                    .get(
-                        cursor + result_body_entry::REFERENCE_FIELD
-                            ..cursor + result_body_entry::LEN,
-                    )?
-                    .try_into()
-                    .ok()?,
-            );
+            entries.push(DesignBaseFeatureEntry {
+                value: View::u64_le_at(bytes, cursor + result_body_entry::REFERENCE_VALUE)?,
+                offset: u64::try_from(cursor + result_body_entry::REFERENCE_VALUE).ok()?,
+                field: bytes.get(cursor + result_body_entry::REFERENCE_FIELD..cursor + result_body_entry::LEN)?.try_into().ok()?,
+            });
             cursor += result_body_entry::LEN;
         }
-        Some((values, offsets, fields))
+        Some(entries)
     };
-    let (body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields) =
-        read_u64_run(body_count)?;
-    let (body_reference_values, body_reference_record_offsets, body_reference_fields) =
-        read_u64_run(body_count)?;
-    let body_reference_records = body_reference_values
-        .into_iter()
-        .map(u32::try_from)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
+    let entities = read_u64_run(body_count)?;
+    let references = read_u64_run(body_count)?.into_iter().map(|entry| {
+        Some(DesignBaseFeatureEntry { value: u32::try_from(entry.value).ok()?, offset: entry.offset, field: entry.field })
+    }).collect::<Option<Vec<_>>>()?;
     if expanded {
         if bytes.get(cursor) != Some(&1)
             || bytes.get(cursor + 1..cursor + 7) != Some(&[0; 6])
@@ -5774,9 +5732,9 @@ pub(crate) fn exact_base_feature_construction(
     let mut repeated_reference_fields = Vec::with_capacity(body_count);
     for ordinal in 0..body_count {
         let expected = if compact {
-            u32::try_from(body_entity_suffixes[ordinal]).ok()?
+            u32::try_from(entities[ordinal].value).ok()?
         } else {
-            body_reference_records[ordinal]
+            references[ordinal].value
         };
         if bytes.get(cursor + compact_entry::BODY_MARKER) != Some(&1)
             || View::u32_le_at(bytes, cursor + compact_entry::BODY_ENTITY_SUFFIX)? != expected
@@ -5813,16 +5771,17 @@ pub(crate) fn exact_base_feature_construction(
         return None;
     }
     cursor += 4;
-    let mut result_records = Vec::with_capacity(body_count);
-    let mut result_record_offsets = Vec::with_capacity(body_count);
-    let mut result_fields = Vec::with_capacity(body_count);
-    for _ in 0..body_count {
+    let mut result_rows = Vec::with_capacity(body_count);
+    for ((entity, reference), field) in entities.into_iter().zip(references).zip(repeated_reference_fields) {
         if bytes.get(cursor) != Some(&1) {
             return None;
         }
-        result_records.push(View::u32_le_at(bytes, cursor + 1)?);
-        result_record_offsets.push(u64::try_from(cursor + 1).ok()?);
-        result_fields.push(bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?);
+        let result = DesignBaseFeatureEntry {
+            value: View::u32_le_at(bytes, cursor + 1)?,
+            offset: u64::try_from(cursor + 1).ok()?,
+            field: bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?,
+        };
+        result_rows.push((DesignBaseFeatureResultBody { entity, reference, result }, field));
         cursor += 11;
     }
     let uuid_offset = usize::try_from(scope.kind_offset).ok()?.checked_sub(102)?;
@@ -5830,20 +5789,13 @@ pub(crate) fn exact_base_feature_construction(
         && bytes
             .get(cursor..uuid_offset)
             .is_some_and(|padding| padding.iter().all(|byte| *byte == 0));
+    let mut result_rows = result_rows.into_iter();
+    let first = result_rows.next()?;
     admitted.then_some(DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        body_entity_suffix_offsets,
-        body_entity_fields,
-        body_reference_records,
-        body_reference_record_offsets,
-        body_reference_fields,
-        repeated_reference_fields,
+        bodies: DesignBaseFeatureResults::WithRepeatedFields { first, rest: result_rows.collect() },
         metadata_record,
         metadata_record_offset,
         metadata_field,
-        result_records,
-        result_record_offsets,
-        result_fields,
     })
 }
 

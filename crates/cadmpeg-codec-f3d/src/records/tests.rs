@@ -622,3 +622,36 @@ fn extrude_selection_group_members_preserve_wire_and_reject_unequal_offsets() {
         assert!(error.contains("member_offsets"));
     }
 }
+
+#[test]
+fn base_feature_result_rows_preserve_complete_and_unrepeated_runs() {
+    for count in 0..=2 {
+        let suffixes = ["[]", "[101]", "[101,102]"][count];
+        let suffix_offsets = ["[]", "[22]", "[22,37]"][count];
+        let references = ["[]", "[201]", "[201,202]"][count];
+        let reference_offsets = ["[]", "[52]", "[52,67]"][count];
+        let results = ["[]", "[301]", "[301,302]"][count];
+        let result_offsets = ["[]", "[82]", "[82,93]"][count];
+        let fields = ["[]", "[[0,0,1,0,0,0]]", "[[0,0,1,0,0,0],[0,0,1,0,0,0]]"][count];
+        for repeated in ["[]", fields] {
+            let wire = format!(r#"{{"body_entity_suffixes":{suffixes},"body_entity_suffix_offsets":{suffix_offsets},"body_entity_fields":{fields},"body_reference_records":{references},"body_reference_record_offsets":{reference_offsets},"body_reference_fields":{fields},"repeated_reference_fields":{repeated},"metadata_record":401,"metadata_record_offset":110,"metadata_field":[0,0],"result_records":{results},"result_record_offsets":{result_offsets},"result_fields":{fields}}}"#);
+            let construction: super::DesignBaseFeatureConstruction = serde_json::from_str(&wire).expect("aligned result rows");
+            assert_eq!(serde_json::to_string(&construction).expect("result wire"), wire);
+            let value: serde_json::Value = serde_json::from_str(&wire).expect("result JSON");
+            for field in ["body_entity_suffixes", "body_entity_suffix_offsets", "body_entity_fields", "body_reference_records", "body_reference_record_offsets", "body_reference_fields", "result_records", "result_record_offsets", "result_fields"] {
+                let mut invalid = value.clone();
+                let array = invalid[field].as_array_mut().expect("result array");
+                if count == 0 {
+                    array.push(if field.ends_with("fields") { serde_json::json!([0, 0, 0, 0, 0, 0]) } else { serde_json::json!(1) });
+                } else {
+                    array.pop();
+                }
+                assert!(serde_json::from_value::<super::DesignBaseFeatureConstruction>(invalid).is_err(), "{field}");
+            }
+            let mut invalid = value;
+            invalid["repeated_reference_fields"] = serde_json::json!(vec![[0; 6]; count + 1]);
+            let error = serde_json::from_value::<super::DesignBaseFeatureConstruction>(invalid).expect_err("partial repeated run").to_string();
+            assert!(error.contains("repeated_reference_fields"));
+        }
+    }
+}
