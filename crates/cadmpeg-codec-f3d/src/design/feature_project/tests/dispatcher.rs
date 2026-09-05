@@ -576,19 +576,14 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     );
     if let crate::records::DesignScopePayload::BaseFeature(slot) = &mut base_feature.payload {
         *slot = Some(DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes: vec![21],
-            body_entity_suffix_offsets: vec![0],
-            body_entity_fields: vec![[0; 6]],
-            body_reference_records: vec![601],
-            body_reference_record_offsets: vec![0],
-            body_reference_fields: vec![[0; 6]],
-            repeated_reference_fields: Vec::new(),
+            bodies: crate::records::DesignBaseFeatureResults::WithoutRepeatedFields(vec![crate::records::DesignBaseFeatureResultBody {
+                entity: crate::records::DesignBaseFeatureEntry { value: 21, offset: 0, field: [0; 6] },
+                reference: crate::records::DesignBaseFeatureEntry { value: 601, offset: 0, field: [0; 6] },
+                result: crate::records::DesignBaseFeatureEntry { value: 603, offset: 0, field: [0; 6] },
+            }]),
             metadata_record: 602,
             metadata_record_offset: 0,
             metadata_field: vec![0, 0],
-            result_records: vec![603],
-            result_record_offsets: vec![0],
-            result_fields: vec![[0; 6]],
         });
     }
 

@@ -161,16 +161,17 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("generated Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        body_reference_records,
+        bodies,
         metadata_record,
-        result_records,
-        body_entity_fields,
         ..
     } = &construction
     else {
         panic!("parallel Base Feature frame selected the wrong form");
     };
+    let body_entity_suffixes = &bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+    let body_entity_fields = &bodies.iter().map(|body| body.entity.field).collect::<Vec<_>>();
+    let body_reference_records = &bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
+    let result_records = &bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, &[101, 202]);
     assert_eq!(body_reference_records, &[301, 302]);
     assert_eq!(*metadata_record, 401);
@@ -202,14 +203,15 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let expanded = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
         .expect("expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        result_records,
+        bodies,
         metadata_field,
         ..
     } = &expanded
     else {
         panic!("expanded Base Feature frame selected the wrong form");
     };
+    let body_entity_suffixes = &bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+    let result_records = &bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, &[101, 202]);
     assert_eq!(result_records, &[501, 502]);
     assert_eq!(metadata_field, &[0, 0]);
@@ -225,15 +227,16 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         exact_base_feature_construction(&legacy_compact_bytes, &legacy_compact_scope)
             .expect("legacy compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        body_reference_records,
-        result_records,
+        bodies,
         metadata_field,
         ..
     } = &legacy_compact
     else {
         panic!("legacy compact Base Feature frame selected the wrong form");
     };
+    let body_entity_suffixes = &bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+    let body_reference_records = &bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
+    let result_records = &bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, &[101, 202]);
     assert_eq!(body_reference_records, &[301, 302]);
     assert_eq!(result_records, &[501, 502]);
@@ -427,15 +430,16 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        body_reference_records,
+        bodies,
         metadata_record,
-        result_records,
         ..
     } = construction
     else {
         panic!("class-452 compact Base Feature frame selected the wrong form");
     };
+    let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+    let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
+    let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, [101]);
     assert_eq!(body_reference_records, [201]);
     assert_eq!(metadata_record, 301);
@@ -506,15 +510,16 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         let construction = exact_base_feature_construction(&bytes, &scope)
             .expect("class-409/class-262 result-body frame is canonical");
         let DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes,
-            body_reference_records,
+            bodies,
             metadata_record,
-            result_records,
             ..
         } = construction
         else {
             panic!("class-409/class-262 frame selected the wrong form");
         };
+        let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+        let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
+        let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
         assert_eq!(body_entity_suffixes.len(), body_count);
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
@@ -526,15 +531,16 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         let construction = exact_base_feature_construction(&bytes, &class_360_scope)
             .expect("class-360/class-258 result-body frame is canonical");
         let DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes,
-            body_reference_records,
+            bodies,
             metadata_record,
-            result_records,
             ..
         } = construction
         else {
             panic!("class-360/class-258 frame selected the wrong form");
         };
+        let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+        let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
+        let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
         assert_eq!(body_entity_suffixes.len(), body_count);
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
@@ -561,7 +567,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-409/class-262 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
+        bodies,
         metadata_record,
         metadata_record_offset,
         metadata_field,
@@ -570,6 +576,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     else {
         panic!("class-409/class-262 zero-body frame selected the wrong form");
     };
+    let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, (prefix + 33) as u64);
@@ -638,16 +645,17 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-290/class-261 result-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
-        body_reference_records,
+        bodies,
         metadata_record,
-        result_records,
         metadata_field,
         ..
     } = construction
     else {
         panic!("class-290/class-261 frame selected the wrong form");
     };
+    let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+    let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
+    let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, [101, 102]);
     assert_eq!(body_reference_records, [201, 202]);
     assert_eq!(metadata_record, 301);
@@ -715,15 +723,16 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         let construction = exact_base_feature_construction(&bytes, &scope)
             .expect("class-444/class-263 result-body frame is canonical");
         let DesignBaseFeatureConstruction::ResultBodies {
-            body_entity_suffixes,
-            body_reference_records,
+            bodies,
             metadata_record,
-            result_records,
             ..
         } = construction
         else {
             panic!("class-444/class-263 frame selected the wrong form");
         };
+        let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+        let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
+        let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
         assert_eq!(body_entity_suffixes.len(), body_count);
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
@@ -774,7 +783,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-444/class-263 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
-        body_entity_suffixes,
+        bodies,
         metadata_record,
         metadata_record_offset,
         metadata_field,
@@ -783,6 +792,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     else {
         panic!("class-444/class-263 zero-body frame selected the wrong form");
     };
+    let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, (prefix + 33) as u64);

@@ -7440,32 +7440,14 @@ impl DesignBaseFeatureBodyReferenceForm {
 pub enum DesignBaseFeatureConstruction {
     /// Counted body, passive-reference, metadata, and result runs.
     ResultBodies {
-        /// Ordered Design body entity suffixes exposed by the Base Feature.
-        body_entity_suffixes: Vec<u64>,
-        /// Byte offsets parallel to `body_entity_suffixes`.
-        body_entity_suffix_offsets: Vec<u64>,
-        /// Six-byte source fields parallel to `body_entity_suffixes`.
-        body_entity_fields: Vec<[u8; 6]>,
-        /// Ordered passive body-reference records parallel to the body suffixes.
-        body_reference_records: Vec<u32>,
-        /// Byte offsets parallel to `body_reference_records`.
-        body_reference_record_offsets: Vec<u64>,
-        /// Six-byte source fields parallel to `body_reference_records`.
-        body_reference_fields: Vec<[u8; 6]>,
-        /// Six-byte source fields in the repeated passive-reference run.
-        repeated_reference_fields: Vec<[u8; 6]>,
+        /// Ordered body, passive-reference, result, and optional repeated-field rows.
+        bodies: DesignBaseFeatureResults,
         /// Shared passive-reference metadata record.
         metadata_record: u32,
-        /// Byte offset of `metadata_record`.
+        /// Byte offset of the shared metadata record.
         metadata_record_offset: u64,
-        /// Variant-width source field following `metadata_record`.
+        /// Variant-width source field following the metadata record.
         metadata_field: Vec<u8>,
-        /// Ordered result-body join records parallel to the body suffixes.
-        result_records: Vec<u32>,
-        /// Byte offsets parallel to `result_records`.
-        result_record_offsets: Vec<u64>,
-        /// Six-byte source fields parallel to `result_records`.
-        result_fields: Vec<[u8; 6]>,
     },
     /// Direct-modeling body-reference envelope used by the class-365/class-262 and
     /// class-377/class-259 forms.
@@ -7519,6 +7501,40 @@ pub enum DesignBaseFeatureConstruction {
         /// Byte offset of `auxiliary_record`.
         auxiliary_record_offset: u64,
     },
+}
+
+/// One aligned body, passive reference, and result record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignBaseFeatureResultBody {
+    pub entity: DesignBaseFeatureEntry<u64>,
+    pub reference: DesignBaseFeatureEntry<u32>,
+    pub result: DesignBaseFeatureEntry<u32>,
+}
+
+/// Result-body runs with either no repeated fields or one field per body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum DesignBaseFeatureResults {
+    WithoutRepeatedFields(Vec<DesignBaseFeatureResultBody>),
+    WithRepeatedFields {
+        first: (DesignBaseFeatureResultBody, [u8; 6]),
+        rest: Vec<(DesignBaseFeatureResultBody, [u8; 6])>,
+    },
+}
+
+impl DesignBaseFeatureResults {
+    pub(crate) fn iter(&self) -> impl ExactSizeIterator<Item = &DesignBaseFeatureResultBody> {
+        let count = match self {
+            Self::WithoutRepeatedFields(bodies) => bodies.len(),
+            Self::WithRepeatedFields { rest, .. } => 1 + rest.len(),
+        };
+        (0..count).map(move |index| match self {
+            Self::WithoutRepeatedFields(bodies) => &bodies[index],
+            Self::WithRepeatedFields { first, .. } if index == 0 => &first.0,
+            Self::WithRepeatedFields { rest, .. } => &rest[index - 1].0,
+        })
+    }
 }
 
 /// One Base Feature reference value, its location, and its six-byte field.
@@ -7674,7 +7690,39 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
     fn try_from(wire: DesignBaseFeatureConstructionWire) -> Result<Self, Self::Error> {
         Ok(match wire {
             DesignBaseFeatureConstructionWire::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields } => {
-                Self::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields }
+                let count = body_entity_suffixes.len();
+                for (field, len) in [
+                    ("body_entity_suffix_offsets", body_entity_suffix_offsets.len()),
+                    ("body_entity_fields", body_entity_fields.len()),
+                    ("body_reference_records", body_reference_records.len()),
+                    ("body_reference_record_offsets", body_reference_record_offsets.len()),
+                    ("body_reference_fields", body_reference_fields.len()),
+                    ("result_records", result_records.len()),
+                    ("result_record_offsets", result_record_offsets.len()),
+                    ("result_fields", result_fields.len()),
+                ] {
+                    if len != count {
+                        return Err(format!("{field} must have the same length as body_entity_suffixes"));
+                    }
+                }
+                if !repeated_reference_fields.is_empty() && repeated_reference_fields.len() != count {
+                    return Err("repeated_reference_fields must be empty or have the same length as body_entity_suffixes".into());
+                }
+                let bodies = (0..count).map(|index| DesignBaseFeatureResultBody {
+                    entity: DesignBaseFeatureEntry { value: body_entity_suffixes[index], offset: body_entity_suffix_offsets[index], field: body_entity_fields[index] },
+                    reference: DesignBaseFeatureEntry { value: body_reference_records[index], offset: body_reference_record_offsets[index], field: body_reference_fields[index] },
+                    result: DesignBaseFeatureEntry { value: result_records[index], offset: result_record_offsets[index], field: result_fields[index] },
+                });
+                let bodies = if repeated_reference_fields.is_empty() {
+                    DesignBaseFeatureResults::WithoutRepeatedFields(bodies.collect())
+                } else {
+                    let mut repeated = bodies.zip(repeated_reference_fields);
+                    match repeated.next() {
+                        Some(first) => DesignBaseFeatureResults::WithRepeatedFields { first, rest: repeated.collect() },
+                        None => return Err("repeated_reference_fields require body_entity_suffixes".into()),
+                    }
+                };
+                Self::ResultBodies { bodies, metadata_record, metadata_record_offset, metadata_field }
             },
             DesignBaseFeatureConstructionWire::BodyBasedOnFaces { body_entity_suffixes, body_entity_suffix_offsets, body_reference_records, body_reference_record_offsets, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset } => {
                 let ([suffix], [offset], [reference], [reference_offset]) = (body_entity_suffixes.as_slice(), body_entity_suffix_offsets.as_slice(), body_reference_records.as_slice(), body_reference_record_offsets.as_slice()) else {
@@ -7740,7 +7788,20 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
 impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
     fn from(value: DesignBaseFeatureConstruction) -> Self {
         match value {
-            DesignBaseFeatureConstruction::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields } => {
+            DesignBaseFeatureConstruction::ResultBodies { bodies, metadata_record, metadata_record_offset, metadata_field } => {
+                let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect();
+                let body_entity_suffix_offsets = bodies.iter().map(|body| body.entity.offset).collect();
+                let body_entity_fields = bodies.iter().map(|body| body.entity.field).collect();
+                let body_reference_records = bodies.iter().map(|body| body.reference.value).collect();
+                let body_reference_record_offsets = bodies.iter().map(|body| body.reference.offset).collect();
+                let body_reference_fields = bodies.iter().map(|body| body.reference.field).collect();
+                let result_records = bodies.iter().map(|body| body.result.value).collect();
+                let result_record_offsets = bodies.iter().map(|body| body.result.offset).collect();
+                let result_fields = bodies.iter().map(|body| body.result.field).collect();
+                let repeated_reference_fields = match bodies {
+                    DesignBaseFeatureResults::WithoutRepeatedFields(_) => Vec::new(),
+                    DesignBaseFeatureResults::WithRepeatedFields { first, rest } => std::iter::once(first.1).chain(rest.into_iter().map(|(_, field)| field)).collect(),
+                };
                 Self::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields }
             },
             DesignBaseFeatureConstruction::BodyBasedOnFaces { body, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset } => {
@@ -7784,26 +7845,31 @@ impl DesignBaseFeatureConstruction {
         let count = match self {
             Self::BodySnapshot { bodies, .. } => bodies.len(),
             Self::BodyBasedOnFaces { .. } => 1,
-            Self::ResultBodies { body_entity_suffixes, .. } => body_entity_suffixes.len(),
+            Self::ResultBodies { bodies, .. } => bodies.iter().len(),
             Self::LegacyBodyBasedOnFaces { form, .. } => form.bodies().len(),
         };
         (0..count).map(move |index| match self {
             Self::BodySnapshot { bodies, .. } => bodies[index].value,
             Self::BodyBasedOnFaces { body, .. } => u64::from(body.value),
-            Self::ResultBodies { body_entity_suffixes, .. } => body_entity_suffixes[index],
+            Self::ResultBodies { bodies, .. } => match bodies {
+                DesignBaseFeatureResults::WithoutRepeatedFields(bodies) => bodies[index].entity.value,
+                DesignBaseFeatureResults::WithRepeatedFields { first, .. } if index == 0 => first.0.entity.value,
+                DesignBaseFeatureResults::WithRepeatedFields { rest, .. } => rest[index - 1].0.entity.value,
+            },
             Self::LegacyBodyBasedOnFaces { form, .. } => u64::from(form.bodies()[index].entity.value),
         })
     }
 
     /// Return passive body-reference records for forms that carry them.
     pub(crate) fn body_reference_records(&self) -> impl Iterator<Item = u32> + '_ {
-        let (records, legacy, single): (&[u32], &[DesignLegacyBaseFeatureBody], Option<u32>) = match self {
-            Self::ResultBodies { body_reference_records, .. } => (body_reference_records, &[], None),
-            Self::LegacyBodyBasedOnFaces { form, .. } => (&[], form.bodies(), None),
-            Self::BodyBasedOnFaces { body, .. } => (&[], &[], Some(body.value)),
-            Self::BodySnapshot { .. } => (&[], &[], None),
+        let (results, legacy, single) = match self {
+            Self::ResultBodies { bodies, .. } => (Some(bodies), &[][..], None),
+            Self::LegacyBodyBasedOnFaces { form, .. } => (None, form.bodies(), None),
+            Self::BodyBasedOnFaces { body, .. } => (None, &[][..], Some(body.value)),
+            Self::BodySnapshot { .. } => (None, &[][..], None),
         };
-        records.iter().copied().chain(legacy.iter().map(|body| body.entity.value)).chain(single)
+        results.into_iter().flat_map(DesignBaseFeatureResults::iter).map(|body| body.reference.value)
+            .chain(legacy.iter().map(|body| body.entity.value)).chain(single)
     }
 
 }
