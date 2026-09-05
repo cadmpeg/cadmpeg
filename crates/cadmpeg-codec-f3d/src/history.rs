@@ -1078,7 +1078,7 @@ pub(crate) fn bind_feature_body_selections(
                         && operand.scope_record_index == scope.record_index
                         && matches!(
                             operand.owner,
-                            crate::records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
+                            crate::records::DesignOperandOwner::ScopeReference { .. }
                         )
                         && operand.record_index == record_index
                 });
@@ -1357,7 +1357,7 @@ fn combine_recipe_family_tool_slots(
                 && operand.scope_record_index == scope_record_index
                 && matches!(
                     operand.owner,
-                    crate::records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
+                    crate::records::DesignOperandOwner::ScopeReference { .. }
                 )
                 && operand.record_index == *record_index
         });
@@ -1752,7 +1752,7 @@ fn bind_direct_body_recipe_body_selection(
                 && operand.scope_record_index == scope.record_index
                 && matches!(
                     operand.owner,
-                    crate::records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
+                    crate::records::DesignOperandOwner::ScopeReference { .. }
                 )
                 && operand.record_index == record_index
         });
@@ -3544,8 +3544,8 @@ fn exact_face_selection_group<'a>(
     if crate::ids::native_stream(&scope.id) != Some(stream) {
         return None;
     }
-    let group_record_index = operand.group_record_index?;
-    let group_member_ordinal = usize::try_from(operand.group_member_ordinal?).ok()?;
+    let group_record_index = operand.group_record_index()?;
+    let group_member_ordinal = usize::try_from(operand.group_member_ordinal()?).ok()?;
     let mut groups = operand_groups.iter().filter(|group| {
         crate::ids::native_stream(&group.id) == Some(stream)
             && group.scope_record_index == scope.record_index
@@ -3768,7 +3768,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         let legacy_face_candidates = (feature_family
             == Some(crate::design::DesignFeatureFamily::Extrude))
         .then(|| {
-            let group_record_index = operand.group_record_index?;
+            let group_record_index = operand.group_record_index()?;
             let mut groups = operand_groups.iter().filter(|group| {
                 crate::ids::native_stream(&group.id) == stream
                     && group.scope_record_index == scope.record_index
@@ -3820,7 +3820,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         let preserves_stable_face_set = feature_family
             == Some(crate::design::DesignFeatureFamily::Shell)
             || operand
-                .group_record_index
+                .group_record_index()
                 .is_some_and(|group_record_index| {
                     let mut groups = operand_groups.iter().filter(|group| {
                         crate::ids::native_stream(&group.id) == stream
@@ -4190,8 +4190,8 @@ fn resolve_split_tool_face(
     operand: &crate::records::DesignFaceOperand,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<i64> {
-    if operand.group_record_index.is_some()
-        || operand.group_member_ordinal.is_some()
+    if operand.group_record_index().is_some()
+        || operand.group_member_ordinal().is_some()
         || operand.scope_reference_ordinal != 1
         || operand.recipe_kind != crate::records::ConstructionRecipeKind::Face
         || operand.recipe_program != [0, -1]
@@ -7359,8 +7359,8 @@ pub(crate) fn bind_mirror_selection_planes(
             .filter(|operand| {
                 crate::ids::native_stream(&operand.id) == stream.as_deref()
                     && operand.scope_record_index == record_index
-                    && operand.group_record_index == Some(group.record_index)
-                    && operand.group_member_ordinal == Some(0)
+                    && operand.group_record_index() == Some(group.record_index)
+                    && operand.group_member_ordinal() == Some(0)
                     && operand.record_index == selection_record_index
             })
             .collect::<Vec<_>>();
@@ -8119,8 +8119,8 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
             .filter(|face| {
                 crate::ids::native_stream(&face.id) == crate::ids::native_stream(&operand.id)
                     && face.scope_record_index == operand.scope_record_index
-                    && face.group_record_index == Some(operand.group_record_index)
-                    && face.group_member_ordinal == Some(operand.group_member_ordinal)
+                    && face.group_record_index() == Some(operand.group_record_index)
+                    && face.group_member_ordinal() == Some(operand.group_member_ordinal)
                     && face.record_index == operand.record_index
                     && face.class_tag == operand.class_tag
                     && face.recipe_kind == ConstructionRecipeKind::BoundedFace

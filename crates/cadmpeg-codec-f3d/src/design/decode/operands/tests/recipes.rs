@@ -109,7 +109,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     assert_eq!(operand.selector_tail_offset, Some(220));
     assert_eq!(
         operand.owner,
-        crate::records::DesignBodyRecipeOperandOwner::Group {
+        crate::records::DesignOperandOwner::Group {
             group_record_index: 90,
             group_member_ordinal: 0,
         }
@@ -1704,15 +1704,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     split_group.role = 0x0000_0010_0000_0000;
     split_group.members = vec![operand.record_index, operand.record_index + 1];
     let mut split_selected = operand.clone();
-    split_selected.group_record_index = Some(split_group.record_index);
-    split_selected.group_member_ordinal = Some(0);
+    split_selected.group = Some(crate::records::DesignOperandGroup {
+        group_record_index: split_group.record_index,
+        group_member_ordinal: 0,
+    });
     split_selected.resolved_face_slots = vec![50];
     for node in &mut split_selected.recipe_nodes {
         node.recipe_structure = Some(split_structure.clone());
     }
     let mut split_context = split_selected.clone();
     split_context.record_index += 1;
-    split_context.group_member_ordinal = Some(1);
+    if let Some(group) = &mut split_context.group {
+        group.group_member_ordinal = 1;
+    }
     split_context.candidate_faces.clear();
     split_context.unreferenced_candidate_faces.clear();
     split_context.alternate_selector_candidate_faces.clear();

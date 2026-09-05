@@ -2378,8 +2378,8 @@ fn project_full_round_fillet(
     let mut operands = face_operands.iter().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
             && operand.scope_record_index == scope.record_index
-            && operand.group_record_index == Some(group.record_index)
-            && operand.group_member_ordinal == Some(0)
+            && operand.group_record_index() == Some(group.record_index)
+            && operand.group_member_ordinal() == Some(0)
             && operand.record_index == *member
     });
     let operand = operands.next()?;
@@ -5681,8 +5681,8 @@ fn revolve_face_axis_operand<'a>(
         .filter(|operand| {
             native_stream(&operand.id) == stream
                 && operand.scope_record_index == scope.record_index
-                && operand.group_record_index == Some(axis_group.record_index)
-                && operand.group_member_ordinal == Some(0)
+                && operand.group_record_index() == Some(axis_group.record_index)
+                && operand.group_member_ordinal() == Some(0)
                 && operand.record_index == axis_member
         })
         .collect::<Vec<_>>();

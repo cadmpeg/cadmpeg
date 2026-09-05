@@ -50,7 +50,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let operand = crate::records::DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1".into(),
         scope_record_index: 10,
-        owner: crate::records::DesignBodyRecipeOperandOwner::ScopeReference {
+        owner: crate::records::DesignOperandOwner::ScopeReference {
             scope_reference_ordinal: 0,
         },
         record_index: 1,

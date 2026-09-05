@@ -273,9 +273,9 @@ fn validation_accepts_carrier_local_component_references() {
 fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
-        DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
-        DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
-        DesignExtrudeOperation, DesignParameterScope, DesignRecordHeader,
+        DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignCombineBodySelection,
+        DesignCombineForm, DesignCombineOperation, DesignExtrudeOperation, DesignOperandOwner,
+        DesignParameterScope, DesignRecordHeader,
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -348,7 +348,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         operands.push(DesignBodyRecipeOperand {
             id: format!("{stream}:design-body-recipe-operand#{operand_record_index}"),
             scope_record_index,
-            owner: DesignBodyRecipeOperandOwner::ScopeReference {
+            owner: DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal: if hole_scope { 6 } else { 5 },
             },
             record_index: operand_record_index,

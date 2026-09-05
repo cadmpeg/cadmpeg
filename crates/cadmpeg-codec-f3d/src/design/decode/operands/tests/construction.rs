@@ -492,8 +492,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
         scope_record_index: split_body_scope.record_index,
         scope_reference_ordinal: 1,
-        group_record_index: Some(100),
-        group_member_ordinal: Some(0),
+        group: Some(crate::records::DesignOperandGroup {
+            group_record_index: 100,
+            group_member_ordinal: 0,
+        }),
         record_index: 200,
         byte_offset: 1200,
         class_tag: "297".into(),
@@ -656,8 +658,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     delete_face_operand.id = "f3d:Design/BulkStream.dat:face-operand#200".into();
     delete_face_operand.scope_record_index = delete_scope.record_index;
     delete_face_operand.scope_reference_ordinal = 1;
-    delete_face_operand.group_record_index = Some(delete_group.record_index);
-    delete_face_operand.group_member_ordinal = Some(0);
+    delete_face_operand.group = Some(crate::records::DesignOperandGroup {
+        group_record_index: delete_group.record_index,
+        group_member_ordinal: 0,
+    });
     delete_face_operand.record_index = 200;
     delete_face_operand.resolved_face_slots = vec![7];
     let (features, _) = project_parameter_design(

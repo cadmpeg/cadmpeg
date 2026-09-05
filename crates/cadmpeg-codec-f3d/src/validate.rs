@@ -70,7 +70,7 @@ fn body_recipe_reference_table_is_admitted(
     !operand.references.is_empty()
         || matches!(
             operand.owner,
-            records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
+            records::DesignOperandOwner::ScopeReference { .. }
         ) && scope.is_some_and(|scope| {
             scope.kind == "Combine"
                 && scope.combine_operation().is_some_and(|operation| {
@@ -816,7 +816,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let decoded_profile_face_groups = native
         .design_face_operands
         .iter()
-        .filter_map(|operand| Some((design_stream(&operand.id), operand.group_record_index?)))
+        .filter_map(|operand| Some((design_stream(&operand.id), operand.group_record_index()?)))
         .collect::<HashSet<_>>();
     let face_group_members = native
         .design_construction_operand_groups
@@ -6253,8 +6253,8 @@ fn validate_fillet_operand_groups<'a>(
                     && native.design_face_operands.iter().any(|operand| {
                         design_stream(&operand.id) == native_stream
                             && operand.scope_record_index == scope.record_index
-                            && operand.group_record_index == Some(group.record_index)
-                            && operand.group_member_ordinal == Some(0)
+                            && operand.group_record_index() == Some(group.record_index)
+                            && operand.group_member_ordinal() == Some(0)
                             && operand.record_index == group.members[0]
                             && operand.recipe_kind == records::ConstructionRecipeKind::BoundedFace
                     })
@@ -6268,8 +6268,8 @@ fn validate_fillet_operand_groups<'a>(
             && native.design_face_operands.iter().any(|operand| {
                 design_stream(&operand.id) == native_stream
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.group_record_index == Some(group.record_index)
-                    && operand.group_member_ordinal == Some(0)
+                    && operand.group_record_index() == Some(group.record_index)
+                    && operand.group_member_ordinal() == Some(0)
                     && operand.record_index == group.members[0]
                     && !operand.resolved_face_slots.is_empty()
             });
@@ -6694,7 +6694,7 @@ fn validate_body_recipe_operands<'a>(
             .saturating_add(26)
             .saturating_add(reference_bytes);
         let valid_owner = scope.is_some_and(|scope| match operand.owner {
-            records::DesignBodyRecipeOperandOwner::Group {
+            records::DesignOperandOwner::Group {
                 group_record_index,
                 group_member_ordinal,
             } => operand_groups_by_index
@@ -6706,7 +6706,7 @@ fn validate_body_recipe_operands<'a>(
                             .and_then(|ordinal| group.members.get(ordinal))
                             == Some(&operand.record_index)
                 }),
-            records::DesignBodyRecipeOperandOwner::ScopeReference {
+            records::DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal,
             } => {
                 (scope.kind == "Hole"
@@ -6870,8 +6870,8 @@ fn validate_operand_group_carriers<'a>(
                         native.design_face_operands.iter().any(|operand| {
                             design_stream(&operand.id) == native_stream
                                 && operand.scope_record_index == group.scope_record_index
-                                && operand.group_record_index == Some(group.record_index)
-                                && operand.group_member_ordinal == Some(ordinal)
+                                && operand.group_record_index() == Some(group.record_index)
+                                && operand.group_member_ordinal() == Some(ordinal)
                                 && operand.record_index == *record_index
                         })
                     })
@@ -7731,7 +7731,7 @@ fn validate_face_operands<'a>(
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
                 let family = design::design_feature_family(&scope.kind);
-                match (operand.group_record_index, operand.group_member_ordinal) {
+                match (operand.group_record_index(), operand.group_member_ordinal()) {
                     (Some(group_record_index), Some(group_member_ordinal)) => {
                         let group = face_groups_by_index
                             .get(&(native_stream, group_record_index))
