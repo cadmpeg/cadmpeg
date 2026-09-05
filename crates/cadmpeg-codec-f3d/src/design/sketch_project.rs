@@ -73,14 +73,14 @@ fn text_frame_curve_records(
     relations
         .iter()
         .filter_map(|relation| {
-            let pattern = relation.pattern()?;
-            let crate::records::SketchPatternDefinition::TextFrame { text_reference } = &pattern
+            let pattern = relation.definition.kind();
+            let crate::records::SketchRelationKind::TextFrame { text_reference } = pattern
             else {
                 return None;
             };
             let scope = native_stream(&relation.id)?.to_owned();
             if relation.unknown_constraint_bits() != 0
-                || relation.constraint_kinds() != [SketchConstraintKind::TextFrame]
+                || relation.constraint_kinds().len() != 1
                 || relation.members.first().map(|member| member.record_index)
                     != Some(*text_reference)
                 || !relation.auxiliary_references.values().copied().eq([*text_reference])

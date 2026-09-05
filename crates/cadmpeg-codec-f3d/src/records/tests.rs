@@ -1051,7 +1051,7 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
 
 #[test]
 fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
-    let base = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":0,"constraint_kinds":[],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":null,"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":""}"#;
+    let base = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":null,"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":""}"#;
     for (values, offsets) in [(vec![], vec![]), (vec![2], vec![]), (vec![2], vec![0]), (vec![2, 3], vec![0, 10])] {
         let expected = base.replace("\"auxiliary_references\":[]", &format!("\"auxiliary_references\":{}", serde_json::to_string(&values).unwrap()))
             .replace("\"auxiliary_reference_offsets\":[]", &format!("\"auxiliary_reference_offsets\":{}", serde_json::to_string(&offsets).unwrap()));
@@ -3227,4 +3227,42 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
     no_successor["name_record_index"] = serde_json::json!(u32::MAX);
     let error = serde_json::from_value::<super::DesignDecalImage>(no_successor).expect_err("Decal record index overflow").to_string();
     assert!(error.contains("name_record_index"));
+}
+
+#[test]
+fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() {
+    use super::{SketchRelationDefinition as Definition, SketchRelationKind as Kind};
+    let patterns = [
+        (0x1000_0000, Kind::Circular { angle_parameter: 2, count_parameter: 3, evaluated_angle: 1.5, evaluated_count: 2 }),
+        (0x2000_0000, Kind::Rectangular { directions: std::array::from_fn(|_| super::SketchPatternDirection {
+            count_parameter: 2, distance_parameter: 3, evaluated_count: 2,
+            direction: [1.0, 0.0, 0.0], evaluated_distance: 1.5,
+        }) }),
+        (0x100_0000_0000, Kind::TextFrame { text_reference: 2 }),
+        (0x200_0000_0000, Kind::TextPath { text_reference: 2, glyph_transforms: Vec::new() }),
+    ];
+    for (mask, kind) in &patterns {
+        for unknown in [0, 0x4000, 1 << 63] {
+            let definition = Definition::new(mask | unknown, kind.clone()).unwrap();
+            assert_eq!(definition.state(), mask | unknown);
+            assert_eq!(definition.kind(), kind);
+        }
+        assert!(Definition::new(*mask, Kind::Unpatterned).is_err());
+        assert!(Definition::new(0, kind.clone()).is_err());
+        assert!(Definition::new(mask | 1, kind.clone()).is_err());
+        for (other_mask, _) in &patterns {
+            if other_mask != mask {
+                assert!(Definition::new(*other_mask, kind.clone()).is_err());
+            }
+        }
+    }
+    for state in [0, 1, 0x11, 0x4000, 0x8000_0000, 0x20_0000_0000, 0x1000_0001] {
+        assert_eq!(Definition::new(state, Kind::Unpatterned).unwrap().state(), state);
+    }
+    let wire = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"rectangular_counted_reference_count":0,"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":1099511627776,"constraint_kinds":["text_frame"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":{"kind":"text_frame","text_reference":2},"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":""}"#;
+    let relation: super::SketchRelation = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
+    let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
+    invalid["pattern"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<super::SketchRelation>(invalid).unwrap_err().to_string().contains("pattern"));
 }

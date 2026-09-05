@@ -1166,9 +1166,9 @@ pub fn decode_sketch_relations(
             }
             let pattern = decode_pattern_definition(payload, &parsed);
             let kind = crate::records::SketchRelationKind::from_pattern(pattern);
-            if !kind.agrees_with_state(parsed.state) {
+            let Ok(definition) = crate::records::SketchRelationDefinition::new(parsed.state, kind) else {
                 continue;
-            }
+            };
             let members = parsed.members.into_iter().map(|member| crate::records::SketchRelationMember {
                 record_index: member.reference.value,
                 offset: member.reference.offset as u32,
@@ -1192,9 +1192,8 @@ pub fn decode_sketch_relations(
                 auxiliary_references: crate::records::ReferenceRun::Located(parsed.auxiliary_references.into_iter().map(|row| crate::records::Located { value: row.value, offset: row.offset as u32 }).collect()),
                 rectangular_counted_reference_count: parsed.rectangular_reference_count,
                 members,
-                state: parsed.state,
+                definition,
                 entity_genesis: parsed.entity_genesis,
-                kind,
                 return_members,
                 raw_bytes: payload.to_vec(),
             });

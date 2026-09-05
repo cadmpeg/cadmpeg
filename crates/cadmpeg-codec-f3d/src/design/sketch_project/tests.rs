@@ -185,11 +185,10 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             SketchRelationMember::from_index(13),
         ],
         owner_reference_offset: 0,
-        state: 0x100_0000_0000,
-        entity_genesis: Some(0),
-        kind: SketchRelationKind::from_pattern(Some(
+        definition: crate::records::SketchRelationDefinition::new(0x100_0000_0000, SketchRelationKind::from_pattern(Some(
             crate::records::SketchPatternDefinition::TextFrame { text_reference: 20 },
-        )),
+        ))).expect("valid relation definition"),
+        entity_genesis: Some(0),
         return_members: vec![
             SketchRelationReturnMember::from_index(10),
             SketchRelationReturnMember::from_index(11),
@@ -466,9 +465,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             .map(SketchRelationMember::from_index)
             .collect(),
         owner_reference_offset: 55,
-        state: 0x40,
+        definition: crate::records::SketchRelationDefinition::new(0x40, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        kind: SketchRelationKind::Unpatterned,
         return_members: vec![member]
             .into_iter()
             .map(SketchRelationReturnMember::from_index)
@@ -496,15 +494,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     curve_point_coincidence
         .return_members
         .push(SketchRelationReturnMember::from_index(175));
-    curve_point_coincidence.state = 1;
+    curve_point_coincidence.definition = crate::records::SketchRelationDefinition::new(1, curve_point_coincidence.definition.kind().clone()).expect("valid relation definition");
     let mut midpoint = curve_point_coincidence.clone();
     midpoint.record_index = 703;
     midpoint.id = "f3d:native:relation#703".into();
-    midpoint.state = 0x10;
+    midpoint.definition = crate::records::SketchRelationDefinition::new(0x10, midpoint.definition.kind().clone()).expect("valid relation definition");
     let mut curvature = curve_point_coincidence.clone();
     curvature.record_index = 704;
     curvature.id = "f3d:native:relation#704".into();
-    curvature.state = 0x200;
+    curvature.definition = crate::records::SketchRelationDefinition::new(0x200, curvature.definition.kind().clone()).expect("valid relation definition");
     let mut spline_group = relation(
         705,
         218,
@@ -518,7 +516,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     // assertion below.
     spline_group.members = [(218, 25), (217, 40)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationMember { record_index, offset, relation_ordinal: 0, resolved: None }).collect();
     spline_group.return_members = [(217, 80), (218, 95)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationReturnMember { record_index, offset, resolved: None }).collect();
-    spline_group.state = 0x8000_0000;
+    spline_group.definition = crate::records::SketchRelationDefinition::new(0x8000_0000, spline_group.definition.kind().clone()).expect("valid relation definition");
     let mut horizontal_point = relation(
         701,
         175,
@@ -532,7 +530,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchRelationReturnMember::from_index(175),
         SketchRelationReturnMember::from_index(175),
     ];
-    horizontal_point.state = 0x8000_0040;
+    horizontal_point.definition = crate::records::SketchRelationDefinition::new(0x8000_0040, horizontal_point.definition.kind().clone()).expect("valid relation definition");
     let constraints = project_sketch_constraints(
         &placements,
         &[],
@@ -797,9 +795,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             SketchRelationMember::from_index(103),
         ],
         owner_reference_offset: 0,
-        state: 0x8000_0000,
+        definition: crate::records::SketchRelationDefinition::new(0x8000_0000, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        kind: SketchRelationKind::Unpatterned,
         return_members: vec![
             SketchRelationReturnMember::from_index(103),
             SketchRelationReturnMember::from_index(104),
@@ -826,7 +823,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut midpoint_relation = relation.clone();
     midpoint_relation.id = "f3d:Design/BulkStream.dat:relation#106".into();
     midpoint_relation.record_index = 106;
-    midpoint_relation.state = 0x1000;
+    midpoint_relation.definition = crate::records::SketchRelationDefinition::new(0x1000, midpoint_relation.definition.kind().clone()).expect("valid relation definition");
     midpoint_relation.members = vec![106, 101]
         .into_iter()
         .map(SketchRelationMember::from_index)
@@ -843,7 +840,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;
-    coincident_relation.state = 1;
+    coincident_relation.definition = crate::records::SketchRelationDefinition::new(1, coincident_relation.definition.kind().clone()).expect("valid relation definition");
     coincident_relation.members = vec![106, 107]
         .into_iter()
         .map(SketchRelationMember::from_index)
@@ -855,7 +852,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut horizontal_relation = relation.clone();
     horizontal_relation.id = "f3d:Design/BulkStream.dat:relation#108".into();
     horizontal_relation.record_index = 108;
-    horizontal_relation.state = 0x40;
+    horizontal_relation.definition = crate::records::SketchRelationDefinition::new(0x40, horizontal_relation.definition.kind().clone()).expect("valid relation definition");
     horizontal_relation.members = vec![SketchRelationMember::from_index(108)];
     horizontal_relation.return_members = vec![SketchRelationReturnMember::from_index(108)];
     let surface = SketchSurface {
@@ -878,7 +875,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut point_on_surface_relation = relation.clone();
     point_on_surface_relation.id = "f3d:Design/BulkStream.dat:relation#109".into();
     point_on_surface_relation.record_index = 109;
-    point_on_surface_relation.state = 1;
+    point_on_surface_relation.definition = crate::records::SketchRelationDefinition::new(1, point_on_surface_relation.definition.kind().clone()).expect("valid relation definition");
     point_on_surface_relation.members = vec![106, 109]
         .into_iter()
         .map(SketchRelationMember::from_index)

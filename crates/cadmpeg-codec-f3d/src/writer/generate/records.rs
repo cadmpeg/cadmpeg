@@ -855,7 +855,7 @@ fn encode_sketch_relation(
     {
         write_reference(&mut record, *reference);
     }
-    record.extend_from_slice(&relation.state.to_le_bytes());
+    record.extend_from_slice(&relation.definition.state().to_le_bytes());
     let return_count = u32::try_from(relation.return_members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many return members".into()))?;
     record.extend_from_slice(&return_count.to_le_bytes());

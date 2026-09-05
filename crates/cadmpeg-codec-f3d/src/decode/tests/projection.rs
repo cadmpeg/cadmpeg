@@ -1303,9 +1303,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         rectangular_counted_reference_count: None,
         members: Vec::new(),
         owner_reference_offset: 0,
-        state: 0,
+        definition: crate::records::SketchRelationDefinition::new(0, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        kind: SketchRelationKind::Unpatterned,
         return_members: Vec::new(),
         raw_bytes: Vec::new(),
     });

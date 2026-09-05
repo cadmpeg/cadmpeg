@@ -91,7 +91,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let expected_references = update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
-        relation.state = 0x40;
+        relation.definition = crate::records::SketchRelationDefinition::new(0x40, relation.definition.kind().clone()).expect("valid relation definition");
         relation.members.reverse();
         for reference in relation.auxiliary_references.values_mut() {
             *reference = reference.saturating_add(1);
@@ -113,7 +113,7 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
         .expect("regenerated F3D decode");
     let native = f3d_native(round_trip.ir());
     let relation = &native.sketch_relations[0];
-    assert_eq!(relation.state, 0x40);
+    assert_eq!(relation.definition.state(), 0x40);
     assert_eq!(
         relation.constraint_kinds(),
         [crate::records::SketchConstraintKind::Horizontal]

@@ -269,9 +269,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         rectangular_counted_reference_count: None,
         members: vec![SketchRelationMember::from_index(20)],
         owner_reference_offset: 0,
-        state: 0,
+        definition: crate::records::SketchRelationDefinition::new(0, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        kind: SketchRelationKind::Unpatterned,
         return_members: vec![SketchRelationReturnMember::from_index(20)],
         raw_bytes: Vec::new(),
     };

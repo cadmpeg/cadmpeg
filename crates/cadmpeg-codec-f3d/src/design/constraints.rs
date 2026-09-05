@@ -194,7 +194,7 @@ pub fn project_sketch_constraints(
         .or_else(|| exact_text_relation(relation, scope, &projected))
         .unwrap_or_else(|| Definition::Native {
             native_kind: relation_kind_name(relation),
-            native_state: Some(relation.state),
+            native_state: Some(relation.definition.state()),
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
             entities: native_entities(),
@@ -258,11 +258,11 @@ pub(crate) fn exact_rectangular_pattern(
     parameters: &[DesignParameter],
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use crate::records::SketchPatternDefinition;
+    use crate::records::SketchRelationKind;
     use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
 
     if relation.unknown_constraint_bits() != 0
-        || relation.constraint_kinds() != [SketchConstraintKind::RectangularPattern]
+        || relation.constraint_kinds().len() != 1
         || entities.len() != relation.return_members.len()
     {
         return None;
@@ -271,8 +271,8 @@ pub(crate) fn exact_rectangular_pattern(
         0 => RectangularPatternDistanceForm::SeedToFinalSpan,
         _ => RectangularPatternDistanceForm::AdjacentSpacing,
     };
-    let pattern = relation.pattern()?;
-    let SketchPatternDefinition::Rectangular { directions } = &pattern else {
+    let pattern = relation.definition.kind();
+    let SketchRelationKind::Rectangular { directions } = pattern else {
         return None;
     };
     let source = directions
@@ -448,18 +448,17 @@ pub(crate) fn exact_text_relation(
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use crate::records::SketchPatternDefinition;
+    use crate::records::SketchRelationKind;
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
     use cadmpeg_ir::transform::Transform;
 
     if relation.unknown_constraint_bits() != 0 || relation.constraint_kinds().len() != 1 {
         return None;
     }
-    let pattern = relation.pattern()?;
-    match &pattern {
-        SketchPatternDefinition::TextFrame { text_reference }
-            if relation.constraint_kinds() == [SketchConstraintKind::TextFrame]
-                && relation.members.first().map(|member| member.record_index)
+    let pattern = relation.definition.kind();
+    match pattern {
+        SketchRelationKind::TextFrame { text_reference }
+            if relation.members.first().map(|member| member.record_index)
                     == Some(*text_reference)
                 && relation.auxiliary_references.values().copied().eq([*text_reference])
                 && relation.return_member_indices() == relation.member_indices()[1..] =>
@@ -486,11 +485,10 @@ pub(crate) fn exact_text_relation(
                     .collect(),
             })
         }
-        SketchPatternDefinition::TextPath {
+        SketchRelationKind::TextPath {
             text_reference,
             glyph_transforms,
-        } if relation.constraint_kinds() == [SketchConstraintKind::TextPath]
-            && relation.members.len() == 2
+        } if relation.members.len() == 2
             && relation.member_relation_ordinals().len() == 2
             && relation.members[1].record_index == *text_reference
             && relation.auxiliary_references.values().copied().eq([*text_reference])
@@ -540,26 +538,26 @@ pub(crate) fn exact_circular_pattern(
     members: &[&cadmpeg_ir::sketches::SketchEntity],
     returned: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
-    use crate::records::SketchPatternDefinition;
+    use crate::records::SketchRelationKind;
     use cadmpeg_ir::sketches::{
         SketchCircularPattern, SketchCircularPatternInstance,
         SketchConstraintDefinition as Definition, SketchGeometry,
     };
 
     if relation.unknown_constraint_bits() != 0
-        || relation.constraint_kinds() != [SketchConstraintKind::CircularPattern]
+        || relation.constraint_kinds().len() != 1
         || members.len() != relation.members.len()
         || returned.len() != relation.return_members.len()
     {
         return None;
     }
-    let pattern = relation.pattern()?;
-    let SketchPatternDefinition::Circular {
+    let pattern = relation.definition.kind();
+    let SketchRelationKind::Circular {
         angle_parameter,
         count_parameter,
         evaluated_angle,
         evaluated_count,
-    } = &pattern
+    } = pattern
     else {
         return None;
     };
@@ -1008,9 +1006,7 @@ mod tests {
                 .map(SketchRelationMember::from_index)
                 .collect(),
             owner_reference_offset: 0,
-            state: 0x2000_0000,
-            entity_genesis: None,
-            kind: SketchRelationKind::from_pattern(Some(
+            definition: crate::records::SketchRelationDefinition::new(0x2000_0000, SketchRelationKind::from_pattern(Some(
                 crate::records::SketchPatternDefinition::Rectangular {
                     directions: [
                         crate::records::SketchPatternDirection {
@@ -1029,7 +1025,8 @@ mod tests {
                         },
                     ],
                 },
-            )),
+            ))).expect("valid relation definition"),
+            entity_genesis: None,
             return_members: members
                 .iter()
                 .copied()
@@ -1230,16 +1227,15 @@ mod tests {
                 SketchRelationMember::from_index(4),
             ],
             owner_reference_offset: 0,
-            state: 0x1000_0000,
-            entity_genesis: None,
-            kind: SketchRelationKind::from_pattern(Some(
+            definition: crate::records::SketchRelationDefinition::new(0x1000_0000, SketchRelationKind::from_pattern(Some(
                 crate::records::SketchPatternDefinition::Circular {
                     angle_parameter: 20,
                     count_parameter: 21,
                     evaluated_angle: angle,
                     evaluated_count: 3,
                 },
-            )),
+            ))).expect("valid relation definition"),
+            entity_genesis: None,
             return_members: vec![
                 SketchRelationReturnMember::from_index(2),
                 SketchRelationReturnMember::from_index(3),
@@ -1336,16 +1332,15 @@ mod tests {
                 SketchRelationMember::from_index(4),
             ],
             owner_reference_offset: 0,
-            state: 0x1000_0000,
-            entity_genesis: None,
-            kind: SketchRelationKind::from_pattern(Some(
+            definition: crate::records::SketchRelationDefinition::new(0x1000_0000, SketchRelationKind::from_pattern(Some(
                 crate::records::SketchPatternDefinition::Circular {
                     angle_parameter: 20,
                     count_parameter: 21,
                     evaluated_angle: std::f64::consts::TAU,
                     evaluated_count: 3,
                 },
-            )),
+            ))).expect("valid relation definition"),
+            entity_genesis: None,
             return_members: vec![
                 SketchRelationReturnMember::from_index(2),
                 SketchRelationReturnMember::from_index(3),
@@ -1416,14 +1411,13 @@ mod tests {
                 SketchRelationMember::from_index(2),
             ],
             owner_reference_offset: 0,
-            state: 0x200_0000_0000,
-            entity_genesis: Some(2),
-            kind: SketchRelationKind::from_pattern(Some(
+            definition: crate::records::SketchRelationDefinition::new(0x200_0000_0000, SketchRelationKind::from_pattern(Some(
                 crate::records::SketchPatternDefinition::TextPath {
                     text_reference: 2,
                     glyph_transforms: vec![glyph],
                 },
-            )),
+            ))).expect("valid relation definition"),
+            entity_genesis: Some(2),
             return_members: vec![SketchRelationReturnMember::from_index(1)],
             raw_bytes: Vec::new(),
         };

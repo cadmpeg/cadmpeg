@@ -387,9 +387,8 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         rectangular_counted_reference_count: None,
         members: [(1, 25, 3), (2, 40, 5), (3, 55, 1), (4, 70, 1)].into_iter().map(|(record_index, offset, relation_ordinal)| crate::records::SketchRelationMember { record_index, offset, relation_ordinal, resolved: None }).collect(),
         owner_reference_offset: 90,
-        state: 0x20_0000_0000,
+        definition: crate::records::SketchRelationDefinition::new(0x20_0000_0000, crate::records::SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        kind: crate::records::SketchRelationKind::Unpatterned,
         return_members: [(1, 120, curve(1, 10)), (3, 131, curve(3, 30)), (2, 142, curve(2, 20)), (4, 153, curve(4, 40))].into_iter().map(|(record_index, offset, resolved)| crate::records::SketchRelationReturnMember { record_index, offset, resolved: Some(resolved) }).collect(),
         raw_bytes: Vec::new(),
     };

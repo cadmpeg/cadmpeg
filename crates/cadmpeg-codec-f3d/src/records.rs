@@ -15428,12 +15428,7 @@ pub struct DesignRecordHeader {
     pub byte_offset: u64,
 }
 
-pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = 0x0320_b000_3fff;
-
-/// Decode the constraint kinds and unknown bits selected by a sketch-relation mask.
-#[must_use]
-pub(crate) fn constraint_kinds_from_state(state: u64) -> (Vec<SketchConstraintKind>, u64) {
-    let definitions = [
+const SKETCH_CONSTRAINT_DEFINITIONS: [(u64, SketchConstraintKind); 20] = [
         (0x0000_0001, SketchConstraintKind::Coincident),
         (0x0000_0002, SketchConstraintKind::Colinear),
         (0x0000_0004, SketchConstraintKind::Concentric),
@@ -15455,19 +15450,30 @@ pub(crate) fn constraint_kinds_from_state(state: u64) -> (Vec<SketchConstraintKi
         (0x100_0000_0000, SketchConstraintKind::TextFrame),
         (0x200_0000_0000, SketchConstraintKind::TextPath),
     ];
+
+pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = {
+    let mut mask = 0;
+    let mut index = 0;
+    while index < SKETCH_CONSTRAINT_DEFINITIONS.len() {
+        mask |= SKETCH_CONSTRAINT_DEFINITIONS[index].0;
+        index += 1;
+    }
+    mask
+};
+
+/// Decode the constraint kinds and unknown bits selected by a sketch-relation mask.
+#[must_use]
+pub(crate) fn constraint_kinds_from_state(state: u64) -> (Vec<SketchConstraintKind>, u64) {
     let mut kinds = if state == 0 {
         vec![SketchConstraintKind::Coincident]
     } else {
         Vec::new()
     };
-    let mut recognized = 0u64;
-    for (bit, kind) in definitions {
+    for (bit, kind) in SKETCH_CONSTRAINT_DEFINITIONS {
         if state & bit != 0 {
             kinds.push(kind);
-            recognized |= bit;
         }
     }
-    debug_assert_eq!(recognized, state & SKETCH_CONSTRAINT_MASK);
     (kinds, state & !SKETCH_CONSTRAINT_MASK)
 }
 
@@ -15537,11 +15543,9 @@ impl From<u32> for SketchRelationReturnMember {
 }
 
 /// Pattern or text payload a sketch relation carries, when the mask names one.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SketchRelationKind {
     /// No class-specific pattern or text payload.
-    #[default]
     Unpatterned,
     /// A circular-pattern relation's auxiliary operands.
     Circular {
@@ -15605,7 +15609,7 @@ impl SketchRelationKind {
         }
     }
 
-    pub(crate) fn to_pattern(&self) -> Option<SketchPatternDefinition> {
+    fn into_pattern(self) -> Option<SketchPatternDefinition> {
         match self {
             Self::Unpatterned => None,
             Self::Circular {
@@ -15614,53 +15618,66 @@ impl SketchRelationKind {
                 evaluated_angle,
                 evaluated_count,
             } => Some(SketchPatternDefinition::Circular {
-                angle_parameter: *angle_parameter,
-                count_parameter: *count_parameter,
-                evaluated_angle: *evaluated_angle,
-                evaluated_count: *evaluated_count,
+                angle_parameter,
+                count_parameter,
+                evaluated_angle,
+                evaluated_count,
             }),
             Self::Rectangular { directions } => Some(SketchPatternDefinition::Rectangular {
-                directions: directions.clone(),
+                directions,
             }),
             Self::TextFrame { text_reference } => Some(SketchPatternDefinition::TextFrame {
-                text_reference: *text_reference,
+                text_reference,
             }),
             Self::TextPath {
                 text_reference,
                 glyph_transforms,
             } => Some(SketchPatternDefinition::TextPath {
-                text_reference: *text_reference,
-                glyph_transforms: glyph_transforms.clone(),
+                text_reference,
+                glyph_transforms,
             }),
         }
     }
 
-    fn expected_constraint_kind(&self) -> Option<SketchConstraintKind> {
-        match self {
-            Self::Unpatterned => None,
-            Self::Circular { .. } => Some(SketchConstraintKind::CircularPattern),
-            Self::Rectangular { .. } => Some(SketchConstraintKind::RectangularPattern),
-            Self::TextFrame { .. } => Some(SketchConstraintKind::TextFrame),
-            Self::TextPath { .. } => Some(SketchConstraintKind::TextPath),
-        }
-    }
+}
 
-    pub(crate) fn agrees_with_state(&self, state: u64) -> bool {
+/// Constraint mask and its matching pattern or text payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchRelationDefinition {
+    state: u64,
+    kind: SketchRelationKind,
+}
+
+impl SketchRelationDefinition {
+    /// Reject a payload that does not match the mask's first constraint kind.
+    pub(crate) fn new(state: u64, kind: SketchRelationKind) -> Result<Self, SketchRelationPayloadError> {
         let (kinds, _) = constraint_kinds_from_state(state);
         let first = kinds.first().copied();
-        match self.expected_constraint_kind() {
-            None => !matches!(
-                first,
-                Some(
-                    SketchConstraintKind::CircularPattern
-                        | SketchConstraintKind::RectangularPattern
-                        | SketchConstraintKind::TextFrame
-                        | SketchConstraintKind::TextPath
-                )
-            ),
-            Some(expected) => first == Some(expected),
+        let agrees = match &kind {
+            SketchRelationKind::Unpatterned => !matches!(first, Some(
+                SketchConstraintKind::CircularPattern | SketchConstraintKind::RectangularPattern
+                | SketchConstraintKind::TextFrame | SketchConstraintKind::TextPath
+            )),
+            SketchRelationKind::Circular { .. } => first == Some(SketchConstraintKind::CircularPattern),
+            SketchRelationKind::Rectangular { .. } => first == Some(SketchConstraintKind::RectangularPattern),
+            SketchRelationKind::TextFrame { .. } => first == Some(SketchConstraintKind::TextFrame),
+            SketchRelationKind::TextPath { .. } => first == Some(SketchConstraintKind::TextPath),
+        };
+        if !agrees {
+            return Err(SketchRelationPayloadError(
+                "sketch relation pattern disagrees with the first constraint kind".into(),
+            ));
         }
+        Ok(Self { state, kind })
     }
+
+    /// Source sketch-constraint bitmask.
+    #[must_use]
+    pub fn state(&self) -> u64 { self.state }
+
+    /// Pattern or text payload selected by the mask.
+    #[must_use]
+    pub fn kind(&self) -> &SketchRelationKind { &self.kind }
 }
 
 /// Rejected CADIR sketch relation whose derived fields disagree with `state`.
@@ -15707,12 +15724,10 @@ pub struct SketchRelation {
     pub members: Vec<SketchRelationMember>,
     /// Payload offset of `owner_reference`, relative to the record.
     pub owner_reference_offset: u32,
-    /// Source sketch-constraint bitmask.
-    pub state: u64,
+    /// Constraint mask and the payload it selects.
+    pub definition: SketchRelationDefinition,
     /// `EntityGenesis` origin bitfield stored by the relation record, when present.
     pub entity_genesis: Option<u64>,
-    /// Pattern or text payload named by the constraint mask.
-    pub kind: SketchRelationKind,
     /// Second reference run in semantic member order.
     pub return_members: Vec<SketchRelationReturnMember>,
     /// Complete variable-width source record for native replay/write.
@@ -15723,19 +15738,13 @@ impl SketchRelation {
     /// Constraint kinds selected by `state`.
     #[must_use]
     pub fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
-        constraint_kinds_from_state(self.state).0
+        constraint_kinds_from_state(self.definition.state()).0
     }
 
     /// Bits in `state` outside the defined constraint mask.
     #[must_use]
     pub fn unknown_constraint_bits(&self) -> u64 {
-        constraint_kinds_from_state(self.state).1
-    }
-
-    /// Class-specific pattern or text payload, when the kind carries one.
-    #[must_use]
-    pub fn pattern(&self) -> Option<SketchPatternDefinition> {
-        self.kind.to_pattern()
+        constraint_kinds_from_state(self.definition.state()).1
     }
 
     /// Record indices of the first reference run.
@@ -15962,12 +15971,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
                 "sketch relation unknown_constraint_bits disagrees with state".into(),
             ));
         }
-        let kind = SketchRelationKind::from_pattern(wire.pattern);
-        if !kind.agrees_with_state(wire.state) {
-            return Err(SketchRelationPayloadError(
-                "sketch relation pattern disagrees with the first constraint kind".into(),
-            ));
-        }
+        let definition = SketchRelationDefinition::new(wire.state, SketchRelationKind::from_pattern(wire.pattern))?;
         Ok(Self {
             id: wire.id,
             record_index: wire.record_index,
@@ -15985,9 +15989,8 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
                 wire.resolved_members,
             )?,
             owner_reference_offset: wire.owner_reference_offset,
-            state: wire.state,
+            definition,
             entity_genesis: wire.entity_genesis,
-            kind,
             return_members: zip_return_members(
                 wire.return_members,
                 wire.return_member_offsets,
@@ -16001,7 +16004,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
 impl From<SketchRelation> for SketchRelationSerde {
     fn from(relation: SketchRelation) -> Self {
         let (constraint_kinds, unknown_constraint_bits) =
-            constraint_kinds_from_state(relation.state);
+            constraint_kinds_from_state(relation.definition.state());
         let emit_resolved = relation
             .members
             .iter()
@@ -16046,7 +16049,7 @@ impl From<SketchRelation> for SketchRelationSerde {
                 .map(|member| member.offset)
                 .collect(),
             owner_reference_offset: relation.owner_reference_offset,
-            state: relation.state,
+            state: relation.definition.state(),
             constraint_kinds,
             unknown_constraint_bits,
             member_relation_ordinals: if emit_ordinals {
@@ -16059,7 +16062,7 @@ impl From<SketchRelation> for SketchRelationSerde {
                 Vec::new()
             },
             entity_genesis: relation.entity_genesis,
-            pattern: relation.kind.to_pattern(),
+            pattern: relation.definition.kind.into_pattern(),
             return_members: relation
                 .return_members
                 .iter()

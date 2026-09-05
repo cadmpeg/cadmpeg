@@ -588,9 +588,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             SketchRelationMember::from_index(100),
             SketchRelationMember::from_index(600),
         ],
-        state: 0x11,
+        definition: crate::records::SketchRelationDefinition::new(0x11, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        kind: SketchRelationKind::Unpatterned,
         return_members: vec![
             SketchRelationReturnMember::from_index(600),
             SketchRelationReturnMember::from_index(100),
@@ -766,7 +765,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert!(native.sketch_relations[0].auxiliary_references.is_empty());
     assert_eq!(native.sketch_relations[0].owner_reference, 277);
     assert_eq!(native.sketch_relations[0].owner_entity_id, "0_277");
-    assert_eq!(native.sketch_relations[0].state, 0x11);
+    assert_eq!(native.sketch_relations[0].definition.state(), 0x11);
     assert_eq!(
         native.sketch_relations[0].return_member_indices(),
         vec![600, 100]

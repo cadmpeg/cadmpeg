@@ -2532,8 +2532,7 @@ pub(crate) fn validate_sketch_relation_edits(
             .auxiliary_references
             .clone_from(&before.auxiliary_references);
         normalized.members.clone_from(&before.members);
-        normalized.state = before.state;
-        normalized.kind.clone_from(&before.kind);
+        normalized.definition.clone_from(&before.definition);
         normalized.return_members.clone_from(&before.return_members);
         if &normalized != before || relation.auxiliary_references.offsets().ne(before.auxiliary_references.offsets()) {
             return Err(CodecError::NotImplemented(format!(
@@ -2541,7 +2540,7 @@ pub(crate) fn validate_sketch_relation_edits(
                 relation.id
             )));
         }
-        if relation.state == before.state
+        if relation.definition.state() == before.definition.state()
             && relation.owner_reference == before.owner_reference
             && relation.auxiliary_references == before.auxiliary_references
             && relation.members == before.members
@@ -2591,9 +2590,9 @@ pub(crate) fn validate_sketch_relation_edits(
             relation.return_members.iter().map(|row| (row.record_index, row.offset)),
             &mut values,
         )?;
-        if relation.state != before.state {
+        if relation.definition.state() != before.definition.state() {
             let encoded =
-                encode_sketch_relation_state(&relation.id, &before.raw_bytes, relation.state)?;
+                encode_sketch_relation_state(&relation.id, &before.raw_bytes, relation.definition.state())?;
             values.push(Edit {
                 offset: relation.byte_offset + u64::from(relation.state_offset),
                 value: encoded,

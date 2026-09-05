@@ -846,9 +846,8 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         rectangular_counted_reference_count: None,
         members: [(175, 25), (217, 40)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationMember { record_index, offset, relation_ordinal: 0, resolved: None }).collect(),
         owner_reference_offset: 56,
-        state: 0,
+        definition: crate::records::SketchRelationDefinition::new(0, SketchRelationKind::Unpatterned).expect("valid relation definition"),
         entity_genesis: None,
-        kind: SketchRelationKind::Unpatterned,
         return_members: [(217, 79), (175, 90)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationReturnMember { record_index, offset, resolved: None }).collect(),
         raw_bytes: bytes[..101].to_vec(),
     };
