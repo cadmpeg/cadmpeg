@@ -149,10 +149,8 @@ fn exact_class_363_operand_path(
         record_index: terminal_record_index,
         class_tag: "386".into(),
         byte_offset: u64::try_from(terminal_at).ok()?,
-        occurrence_guids: vec![occurrence_guid],
-        occurrence_guid_offsets: vec![occurrence_guid_offset],
-        identity_guids: vec![identity_guid],
-        identity_guid_offsets: vec![identity_guid_offset],
+        occurrence_guids: vec![crate::records::Located { value: occurrence_guid, offset: occurrence_guid_offset }],
+        identity_guids: vec![crate::records::Located { value: identity_guid, offset: identity_guid_offset }],
     })
 }
 

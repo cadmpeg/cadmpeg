@@ -157,7 +157,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .expect("identity-qualified assembly occurrence paths");
     assert_eq!(identity_paths[0].class_tag, "390");
     assert_eq!(identity_paths[0].occurrence_guids.len(), 2);
-    assert_eq!(identity_paths[0].identity_guids, identities);
+    assert_eq!(identity_paths[0].identity_guids.iter().map(|guid| &guid.value).collect::<Vec<_>>(), identities.iter().collect::<Vec<_>>());
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"386");
     }
@@ -186,10 +186,10 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assert!(extended_class_329_paths.iter().all(|path| {
         path.class_tag == "329"
             && !path.occurrence_guids.is_empty()
-            && path.identity_guids == identities
+            && path.identity_guids.iter().map(|guid| guid.value.as_str()).eq(identities.iter().copied())
     }));
     let first_identity_length_at = usize::try_from(
-        extended_class_329_paths[0].identity_guid_offsets[0]
+        extended_class_329_paths[0].identity_guids[0].offset
             .checked_sub(4)
             .expect("identity length precedes text"),
     )
@@ -243,7 +243,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assert_eq!(
         paths
             .each_ref()
-            .map(|path| { (path.record_index, path.occurrence_guids.clone()) }),
+            .map(|path| { (path.record_index, path.occurrence_guids.iter().map(|guid| guid.value.clone()).collect::<Vec<_>>()) }),
         [
             (
                 65,
@@ -376,7 +376,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             && path
                 .identity_guids
                 .iter()
-                .map(String::as_str)
+                .map(|guid| guid.value.as_str())
                 .eq(class_294_identities.iter().copied())
     }));
     for path_at in [first_class_294_path_at, second_class_294_path_at] {
@@ -396,7 +396,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             && path
                 .identity_guids
                 .iter()
-                .map(String::as_str)
+                .map(|guid| guid.value.as_str())
                 .eq(class_294_identities.iter().copied())
     }));
 
@@ -504,7 +504,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     assert_eq!(
         paths
             .each_ref()
-            .map(|path| path.occurrence_guids[0].as_str()),
+            .map(|path| path.occurrence_guids[0].value.as_str()),
         [
             "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             "cccccccc-cccc-cccc-cccc-cccccccccccc",
@@ -757,7 +757,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     assert_eq!(paths[0].class_tag, "412");
     assert_eq!(paths[0].byte_offset, (first_path_at + 425) as u64);
     assert_eq!(
-        paths[0].occurrence_guids,
+        paths[0].occurrence_guids.iter().map(|guid| guid.value.clone()).collect::<Vec<_>>(),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),
             "22222222-2222-2222-2222-222222222222".to_owned(),
@@ -902,7 +902,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     assert_eq!(
         paths.each_ref().map(|path| (
             path.link.locator_record_index,
-            path.occurrence_guids[0].as_str()
+            path.occurrence_guids[0].value.as_str()
         )),
         [
             (64, "11111111-1111-1111-1111-111111111111"),

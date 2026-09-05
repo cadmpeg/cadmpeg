@@ -38,7 +38,7 @@ pub(crate) fn project_local_components(
                 let Some(root) = path
                     .occurrence_guids
                     .first()
-                    .and_then(|guid| native_by_guid.get(&guid.to_ascii_lowercase()))
+                    .and_then(|guid| native_by_guid.get(&guid.value.to_ascii_lowercase()))
                     .copied()
                     .flatten()
                 else {
