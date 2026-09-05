@@ -340,45 +340,43 @@ impl<'a> Container<'a> {
 
     /// Locate independently size-framed NX object-model sections.
     pub fn om_sections(&self) -> Vec<(&DirEntry, crate::om::Section<'_>)> {
-        let framed_cache = self.om_section_cache.get_or_init(|| {
-            let (sections, layouts, operation_label_layouts) = match &self.data {
-                Cow::Borrowed(bytes) => {
-                    let bytes: &'a [u8] = bytes;
-                    let (sections, layouts, operation_label_layouts) =
-                        parse_framed_section_cache(bytes, &self.entries, false);
-                    (Some(sections), layouts, operation_label_layouts)
-                }
-                Cow::Owned(bytes) => {
-                    let (sections, layouts, operation_label_layouts) =
-                        parse_framed_section_cache(bytes, &self.entries, true);
-                    drop(sections);
-                    (None, layouts, operation_label_layouts)
-                }
-            };
-            let _ = self.om_operation_label_layouts.set(operation_label_layouts);
-            FramedSectionCache { sections, layouts }
+        let framed_cache = self.om_section_cache.get_or_init(|| match &self.data {
+            Cow::Borrowed(bytes) => {
+                let bytes: &'a [u8] = bytes;
+                let (sections, _, operation_label_layouts) =
+                    parse_framed_section_cache(bytes, &self.entries, false);
+                let _ = self.om_operation_label_layouts.set(operation_label_layouts);
+                FramedSectionCache::Borrowed { sections }
+            }
+            Cow::Owned(bytes) => {
+                let (sections, layouts, operation_label_layouts) =
+                    parse_framed_section_cache(bytes, &self.entries, true);
+                drop(sections);
+                let _ = self.om_operation_label_layouts.set(operation_label_layouts);
+                FramedSectionCache::Owned { layouts }
+            }
         });
-        if let Some(sections) = framed_cache.sections.as_ref() {
-            return sections
+        match framed_cache {
+            FramedSectionCache::Borrowed { sections } => sections
                 .iter()
                 .filter_map(|(entry_index, section)| {
                     self.entries
                         .get(*entry_index)
                         .map(|entry| (entry, section.clone()))
                 })
-                .collect();
+                .collect(),
+            FramedSectionCache::Owned { layouts } => layouts
+                .iter()
+                .filter_map(|(entry_index, layout)| {
+                    let entry = self.entries.get(*entry_index)?;
+                    let (offset, size) = entry.file_span?;
+                    let (offset, size) =
+                        (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                    let payload = self.data.get(offset..offset.saturating_add(size))?;
+                    Some((entry, layout.materialize(payload)))
+                })
+                .collect(),
         }
-        framed_cache
-            .layouts
-            .iter()
-            .filter_map(|(entry_index, layout)| {
-                let entry = self.entries.get(*entry_index)?;
-                let (offset, size) = entry.file_span?;
-                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-                let payload = self.data.get(offset..offset.saturating_add(size))?;
-                Some((entry, layout.materialize(payload)))
-            })
-            .collect()
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
@@ -403,79 +401,70 @@ impl<'a> Container<'a> {
                     }
                 }
             }
-            let materialized: Option<Vec<(usize, crate::om::IndexedSection<'a>)>> =
-                if let Cow::Borrowed(bytes) = &self.data {
+            match &self.data {
+                Cow::Borrowed(bytes) => {
                     let bytes: &'a [u8] = bytes;
-                    Some(
-                        layouts
-                            .iter()
-                            .filter_map(|(entry_index, layout)| {
-                                let entry = self.entries.get(*entry_index)?;
-                                let (offset, size) = entry.file_span?;
-                                let (offset, size) =
-                                    (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-                                let payload = bytes.get(offset..offset.saturating_add(size))?;
-                                Some((*entry_index, layout.materialize(payload)))
-                            })
-                            .collect(),
-                    )
-                } else {
-                    None
-                };
-            let offset_data_block_bytes = materialized.as_ref().map(|sections| {
-                let mut blocks = BTreeMap::new();
-                for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
-                    let Some((control, _, records)) = section.as_offset_only() else {
-                        continue;
-                    };
-                    let entry_offset = self
-                        .entries
-                        .get(*entry_index)
-                        .and_then(|entry| entry.file_span)
-                        .map_or(0, |(offset, _)| offset);
-                    blocks.insert(
-                        format!("nx:om-data-blocks-{section_ordinal}:block#0"),
-                        (control.bytes, entry_offset + control.offset as u64),
-                    );
-                    for (record_ordinal, block) in records.iter().enumerate() {
+                    let sections: Vec<(usize, crate::om::IndexedSection<'a>)> = layouts
+                        .iter()
+                        .filter_map(|(entry_index, layout)| {
+                            let entry = self.entries.get(*entry_index)?;
+                            let (offset, size) = entry.file_span?;
+                            let (offset, size) =
+                                (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                            let payload = bytes.get(offset..offset.saturating_add(size))?;
+                            Some((*entry_index, layout.materialize(payload)))
+                        })
+                        .collect();
+                    let mut blocks = BTreeMap::new();
+                    for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
+                        let Some((control, _, records)) = section.as_offset_only() else {
+                            continue;
+                        };
+                        let entry_offset = self
+                            .entries
+                            .get(*entry_index)
+                            .and_then(|entry| entry.file_span)
+                            .map_or(0, |(offset, _)| offset);
                         blocks.insert(
-                            format!(
-                                "nx:om-data-blocks-{section_ordinal}:block#{}",
-                                record_ordinal + 1
-                            ),
-                            (block.bytes, entry_offset + block.offset as u64),
+                            format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+                            (control.bytes, entry_offset + control.offset as u64),
                         );
+                        for (record_ordinal, block) in records.iter().enumerate() {
+                            blocks.insert(
+                                format!(
+                                    "nx:om-data-blocks-{section_ordinal}:block#{}",
+                                    record_ordinal + 1
+                                ),
+                                (block.bytes, entry_offset + block.offset as u64),
+                            );
+                        }
                     }
+                    IndexedSectionCache::Borrowed { sections, blocks }
                 }
-                blocks
-            });
-            IndexedSectionCache {
-                layouts,
-                materialized,
-                offset_data_block_bytes,
+                Cow::Owned(_) => IndexedSectionCache::Owned { layouts },
             }
         });
-        if let Some(materialized) = cache.materialized.as_ref() {
-            return materialized
+        match cache {
+            IndexedSectionCache::Borrowed { sections, .. } => sections
                 .iter()
                 .filter_map(|(entry_index, section)| {
                     self.entries
                         .get(*entry_index)
                         .map(|entry| (entry, section.clone()))
                 })
-                .collect();
+                .collect(),
+            IndexedSectionCache::Owned { layouts } => layouts
+                .iter()
+                .filter_map(|(entry_index, layout)| {
+                    let entry = self.entries.get(*entry_index)?;
+                    let (offset, size) = entry.file_span?;
+                    let (offset, size) =
+                        (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                    let payload = self.data.get(offset..offset.saturating_add(size))?;
+                    Some((entry, layout.materialize(payload)))
+                })
+                .collect(),
         }
-        cache
-            .layouts
-            .iter()
-            .filter_map(|(entry_index, layout)| {
-                let entry = self.entries.get(*entry_index)?;
-                let (offset, size) = entry.file_span?;
-                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-                let payload = self.data.get(offset..offset.saturating_add(size))?;
-                Some((entry, layout.materialize(payload)))
-            })
-            .collect()
     }
 
     /// Return the cached bytes and source offsets of every borrowed offset-store block.
@@ -487,7 +476,10 @@ impl<'a> Container<'a> {
     ) -> Option<&BTreeMap<String, (&'a [u8], u64)>> {
         self.indexed_section_layouts
             .get()
-            .and_then(|cache| cache.offset_data_block_bytes.as_ref())
+            .and_then(|cache| match cache {
+                IndexedSectionCache::Borrowed { blocks, .. } => Some(blocks),
+                IndexedSectionCache::Owned { .. } => None,
+            })
     }
 
     /// Extract child-part paths from catalogued external-reference payloads.
@@ -852,19 +844,27 @@ pub struct Container<'a> {
 /// the container input. Owned test inputs use the layout fallback because
 /// their bytes do not have the container's input lifetime.
 #[derive(Debug, Clone)]
-pub(crate) struct IndexedSectionCache<'a> {
-    layouts: Vec<(usize, crate::om::IndexedSectionLayout)>,
-    materialized: Option<Vec<(usize, crate::om::IndexedSection<'a>)>>,
-    offset_data_block_bytes: Option<BTreeMap<String, (&'a [u8], u64)>>,
+pub(crate) enum IndexedSectionCache<'a> {
+    Borrowed {
+        sections: Vec<(usize, crate::om::IndexedSection<'a>)>,
+        blocks: BTreeMap<String, (&'a [u8], u64)>,
+    },
+    Owned {
+        layouts: Vec<(usize, crate::om::IndexedSectionLayout)>,
+    },
 }
 
 /// Parsed size-framed sections retained when their source bytes are borrowed
 /// from the container input, or their ownership-independent layouts when the
 /// container owns its input bytes.
 #[derive(Debug, Clone)]
-pub(crate) struct FramedSectionCache<'a> {
-    sections: Option<Vec<(usize, crate::om::Section<'a>)>>,
-    layouts: Vec<(usize, crate::om::SectionLayout)>,
+pub(crate) enum FramedSectionCache<'a> {
+    Borrowed {
+        sections: Vec<(usize, crate::om::Section<'a>)>,
+    },
+    Owned {
+        layouts: Vec<(usize, crate::om::SectionLayout)>,
+    },
 }
 
 type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
