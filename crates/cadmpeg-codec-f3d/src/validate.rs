@@ -364,19 +364,13 @@ fn valid_axial_selector_identity(
     let Some(external_link_len) = utf16_len(&selector.external_link_name) else {
         return false;
     };
-    let external_end = match (
-        selector.external_property_key.as_deref(),
-        selector.external_property_key_offset,
-        selector.external_version_urn.as_deref(),
-        selector.external_version_urn_offset,
-    ) {
-        (None, None, None, None) => external_link_end.checked_add(1),
-        (
-            Some(property_key),
-            Some(property_key_offset),
-            Some(version_urn),
-            Some(version_urn_offset),
-        ) => {
+    let external_end = match &selector.external_version {
+        None => external_link_end.checked_add(1),
+        Some(version) => {
+            let property_key = version.property_key.value.as_str();
+            let property_key_offset = version.property_key.offset;
+            let version_urn = version.version_urn.value.as_str();
+            let version_urn_offset = version.version_urn.offset;
             let version_len = utf16_len(version_urn);
             if external_link_end.checked_add(5) != Some(property_key_offset)
                 || !crate::bytes::is_guid_relaxed(property_key)
@@ -389,7 +383,6 @@ fn valid_axial_selector_identity(
                 utf16_end(version_urn_offset, version_urn)
             }
         }
-        _ => None,
     };
     let Some(external_end) = external_end else {
         return false;
@@ -3413,22 +3406,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         ) else {
                             return false;
                         };
-                        let optional_tail_is_valid = match (
-                            identity.external_property_key.as_deref(),
-                            identity.external_property_key_offset,
-                            identity.external_version_urn.as_deref(),
-                            identity.external_version_urn_offset,
-                        ) {
-                            (None, None, None, None) => {
+                        let optional_tail_is_valid = match &identity.external_version {
+                            None => {
                                 external_link_name_end.checked_add(7)
                                     == Some(identity.tail_value_offsets[0])
                             }
-                            (
-                                Some(property_key),
-                                Some(property_key_offset),
-                                Some(version_urn),
-                                Some(version_urn_offset),
-                            ) => {
+                            Some(version) => {
+                                let property_key = version.property_key.value.as_str();
+                                let property_key_offset = version.property_key.offset;
+                                let version_urn = version.version_urn.value.as_str();
+                                let version_urn_offset = version.version_urn.offset;
                                 let property_key_offset_is_valid = external_link_name_end
                                     .checked_add(5)
                                     == Some(property_key_offset);
@@ -3446,7 +3433,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     && version_urn_offset_is_valid
                                     && tail_offset_is_valid
                             }
-                            _ => false,
                         };
                         crate::bytes::is_guid_relaxed(&identity.selector_asset_id)
                             && crate::bytes::is_guid_relaxed(&identity.selector_context_id)

@@ -1205,7 +1205,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     assert_eq!(selectors[0].occurrence_reference, 10_001);
     assert_eq!(selectors[1].occurrence_reference, 10_002);
     assert_eq!(selectors[0].external_object_reference, 7_001);
-    assert!(selectors[0].external_version_urn.is_none());
+    assert!(selectors[0].external_version.is_none());
     let DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
         component_insert_scope_record_index,
         selectors: versioned_selectors,
@@ -1215,9 +1215,9 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         panic!("second operand must select a component insertion");
     };
     assert_eq!(component_insert_scope_record_index, 300);
-    assert!(versioned_selectors[0].external_property_key.is_some());
+    assert!(versioned_selectors[0].external_version.is_some());
     assert_eq!(
-        versioned_selectors[0].external_version_urn.as_deref(),
+        versioned_selectors[0].external_version.as_ref().map(|version| version.version_urn.value.as_str()),
         Some("urn:test:version:2")
     );
 

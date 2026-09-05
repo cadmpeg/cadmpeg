@@ -1315,10 +1315,7 @@ fn exact_assembly_axial_selector(
         external_asset_id_offset: external.asset_id_offset,
         external_link_name: external.link_name,
         external_link_name_offset: external.link_name_offset,
-        external_property_key: external.property_key,
-        external_property_key_offset: external.property_key_offset,
-        external_version_urn: external.version_urn,
-        external_version_urn_offset: external.version_urn_offset,
+        external_version: external.version,
         role_record_index,
         role_class_tag,
         role_byte_offset: u64::try_from(role_at).ok()?,
@@ -8700,10 +8697,7 @@ struct ExternalReferenceIdentity {
     asset_id_offset: u64,
     link_name: String,
     link_name_offset: u64,
-    property_key: Option<String>,
-    property_key_offset: Option<u64>,
-    version_urn: Option<String>,
-    version_urn_offset: Option<u64>,
+    version: Option<crate::records::DesignExternalVersion>,
 }
 
 fn take_external_reference_identity(
@@ -8727,9 +8721,9 @@ fn take_external_reference_identity(
     }
     let link_name_at = after_asset_id.checked_add(1)?;
     let (link_name, after_link_name) = lp_utf16_bounded(bytes, link_name_at, 1..=256)?;
-    let (property_key, property_key_offset, version_urn, version_urn_offset, end) =
+    let (version, end) =
         match bytes.get(after_link_name)? {
-            0 => (None, None, None, None, after_link_name.checked_add(1)?),
+            0 => (None, after_link_name.checked_add(1)?),
             1 => {
                 let property_key_at = after_link_name.checked_add(1)?;
                 let (property_key, after_property_key) =
@@ -8740,10 +8734,10 @@ fn take_external_reference_identity(
                     return None;
                 }
                 (
-                    Some(property_key),
-                    Some(u64::try_from(property_key_at.checked_add(4)?).ok()?),
-                    Some(version_urn),
-                    Some(u64::try_from(version_urn_at.checked_add(4)?).ok()?),
+                    Some(crate::records::DesignExternalVersion {
+                        property_key: crate::records::Located { value: property_key, offset: u64::try_from(property_key_at.checked_add(4)?).ok()? },
+                        version_urn: crate::records::Located { value: version_urn, offset: u64::try_from(version_urn_at.checked_add(4)?).ok()? },
+                    }),
                     end,
                 )
             }
@@ -8759,10 +8753,7 @@ fn take_external_reference_identity(
         asset_id_offset: u64::try_from(asset_at.checked_add(4)?).ok()?,
         link_name,
         link_name_offset: u64::try_from(link_name_at.checked_add(4)?).ok()?,
-        property_key,
-        property_key_offset,
-        version_urn,
-        version_urn_offset,
+        version,
     })
 }
 
@@ -8869,10 +8860,7 @@ fn exact_combine_external_body_identity(
         external_asset_id_offset: external.asset_id_offset,
         external_link_name: external.link_name,
         external_link_name_offset: external.link_name_offset,
-        external_property_key: external.property_key,
-        external_property_key_offset: external.property_key_offset,
-        external_version_urn: external.version_urn,
-        external_version_urn_offset: external.version_urn_offset,
+        external_version: external.version,
         tail_values: [first_tail_value, second_tail_value],
         tail_value_offsets: [
             u64::try_from(first_tail_value_at).ok()?,
