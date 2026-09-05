@@ -1090,7 +1090,7 @@ fn decode_transfers_generated_protein_appearance() {
     let point_500 = f3d_native(result.ir())
         .sketch_points
         .iter()
-        .find(|point| point.persistent_id == Some(500))
+        .find(|point| point.persistent_id() == Some(500))
         .cloned()
         .expect("point 500");
     assert_eq!(point_500.coordinates.u, 12.5);
@@ -1098,7 +1098,7 @@ fn decode_transfers_generated_protein_appearance() {
     let point_600 = f3d_native(result.ir())
         .sketch_points
         .iter()
-        .find(|point| point.persistent_id == Some(600))
+        .find(|point| point.persistent_id() == Some(600))
         .cloned()
         .expect("point 600");
     assert_eq!(point_600.coordinates.u, -40.0);

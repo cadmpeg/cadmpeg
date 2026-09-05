@@ -87,52 +87,29 @@ fn tagged_point_payload(
 #[test]
 fn point_record_parser_closes_every_versioned_three_coordinate_form() {
     let cases = [
-        (8, false, 0, 0, false, SketchPointRecordForm::Version8),
-        (10, false, 0, 1, false, SketchPointRecordForm::Version10),
-        (
-            10,
-            true,
-            0,
-            1,
-            false,
-            SketchPointRecordForm::Version10InlineTyped {
-                trailing_reference: OWNER,
-            },
-        ),
-        (
-            10,
-            true,
-            2,
-            1,
-            false,
-            SketchPointRecordForm::Version10InlineTyped {
-                trailing_reference: OWNER,
-            },
-        ),
-        (
-            11,
-            true,
-            0,
-            0,
-            false,
-            SketchPointRecordForm::Version11InlineTyped {
-                trailing_reference: OWNER,
-            },
-        ),
+        (8, false, 0, 0, false),
+        (10, false, 0, 1, false),
+        (10, true, 0, 1, false),
+        (10, true, 2, 1, false),
+        (11, true, 0, 0, false),
     ];
-    for (version, inline_typed, selector, state, padded, expected_form) in cases {
+    for (version, inline_typed, selector, state, padded) in cases {
         let decoded = decode_sketch_point_record(
             &tagged_point_payload(version, inline_typed, selector, state, padded),
             version,
         )
         .expect("synthetic point form");
-        assert_eq!(decoded.record_form, expected_form);
-        assert_eq!(decoded.persistent_id, Some(500));
+        assert_eq!(decoded.record_form.class_version(), version);
+        assert_eq!(
+            decoded.record_form.uses_inline_typed_references(),
+            inline_typed
+        );
+        assert_eq!(decoded.record_form.persistent_id(), Some(500));
         assert_eq!(decoded.paired_reference, COMPANION);
         assert_eq!(decoded.coordinates, [1.25, -2.5, 0.25]);
         assert_eq!(
-            decoded.closure,
-            Some(SketchPointClosure { selector, state })
+            decoded.record_form.closure(),
+            SketchPointClosure::from_pair(selector, state)
         );
     }
     assert!(
@@ -149,11 +126,14 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
                 decoded.record_form,
                 SketchPointRecordForm::Version11 {
                     padded_paired_reference,
+                    persistent_id: 500,
+                    flags: [0; 8],
+                    closure: SketchPointClosure::from_pair(selector, state).unwrap(),
                 }
             );
             assert_eq!(
-                decoded.closure,
-                Some(SketchPointClosure { selector, state })
+                decoded.record_form.closure(),
+                SketchPointClosure::from_pair(selector, state)
             );
         }
     }
@@ -184,11 +164,14 @@ fn version_zero_point_retains_its_one_flag_and_source_local_identity() {
     push_reference(&mut payload, COMPANION, None);
     push_reference(&mut payload, OWNER, None);
     let decoded = decode_sketch_point_record(&payload, 0).expect("version-0 point");
-    assert_eq!(decoded.record_form, SketchPointRecordForm::Version0);
-    assert_eq!(decoded.persistent_id, None);
-    assert_eq!(decoded.flags, [1, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(
+        decoded.record_form,
+        SketchPointRecordForm::Version0 { flag: 1 }
+    );
+    assert_eq!(decoded.record_form.persistent_id(), None);
+    assert_eq!(decoded.record_form.flags(), [1, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(decoded.coordinates, [1.25, -2.5, 0.0]);
-    assert_eq!(decoded.closure, None);
+    assert_eq!(decoded.record_form.closure(), None);
 }
 
 #[test]

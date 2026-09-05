@@ -7,8 +7,8 @@ use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_ge
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
 use crate::records::{
     DesignSketchPlacement, DesignSketchVisibility, SketchCurveIdentity, SketchPoint,
-    SketchPointClosure, SketchRelation, SketchRelationKind, SketchRelationMember,
-    SketchRelationOperand, SketchRelationReturnMember, SketchText,
+    SketchRelation, SketchRelationKind, SketchRelationMember, SketchRelationOperand,
+    SketchRelationReturnMember, SketchText,
 };
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -146,18 +146,13 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         byte_offset: 14,
         coordinate_offset: 0,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::Version11 {
-            padded_paired_reference: false,
-        },
-        persistent_id: Some(14),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            14,
+            crate::records::SketchPointClosure::Selector4State0,
+        ),
         paired_reference: 15,
-        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
         depth: 0.0,
-        closure: Some(SketchPointClosure {
-            selector: 4,
-            state: 0,
-        }),
         companion: None,
     };
     let text = SketchText {
@@ -279,18 +274,13 @@ fn point_closure_does_not_mark_construction_geometry() {
         byte_offset: 10,
         coordinate_offset: 0,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::Version11 {
-            padded_paired_reference: false,
-        },
-        persistent_id: Some(10),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            10,
+            crate::records::SketchPointClosure::Selector4State0,
+        ),
         paired_reference: 11,
-        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
         depth: 0.0,
-        closure: Some(SketchPointClosure {
-            selector: 4,
-            state: 0,
-        }),
         companion: None,
     };
     let standalone_point = SketchPoint {
@@ -301,18 +291,13 @@ fn point_closure_does_not_mark_construction_geometry() {
         byte_offset: 11,
         coordinate_offset: 0,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::Version11 {
-            padded_paired_reference: false,
-        },
-        persistent_id: Some(11),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            11,
+            crate::records::SketchPointClosure::Selector2State1,
+        ),
         paired_reference: 12,
-        flags: [0; 8],
         coordinates: Point2::new(2.0, 0.0),
         depth: 0.0,
-        closure: Some(SketchPointClosure {
-            selector: 2,
-            state: 1,
-        }),
         companion: None,
     };
     let curve = SketchCurveIdentity {
@@ -378,13 +363,13 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         byte_offset: 400,
         coordinate_offset: 89,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(10),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            10,
+            crate::records::SketchPointClosure::Selector0State0,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(2.5, 4.0),
         depth: 0.0,
-        closure: None,
         companion: None,
     };
     let line = SketchCurveIdentity {
@@ -861,13 +846,13 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: 106,
         coordinate_offset: 0,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(5),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            5,
+            crate::records::SketchPointClosure::Selector0State0,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(2.5, 3.5),
         depth: 4.5,
-        closure: None,
         companion: None,
     };
     let mut midpoint_relation = relation.clone();
@@ -886,7 +871,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
     coincident_point.record_index = 107;
     coincident_point.byte_offset = 107;
-    coincident_point.persistent_id = Some(6);
+    coincident_point.set_persistent_id(Some(6));
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;

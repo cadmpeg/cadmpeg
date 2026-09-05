@@ -8868,47 +8868,176 @@ pub struct SketchText {
 }
 
 /// Selector and state following a three-coordinate sketch point payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SketchPointClosure {
+    Selector0State0,
+    Selector0State1,
+    Selector1State0,
+    Selector2State1,
+    Selector4State0,
+}
+
+impl SketchPointClosure {
+    pub(crate) fn selector(self) -> u64 {
+        match self {
+            Self::Selector0State0 | Self::Selector0State1 => 0,
+            Self::Selector1State0 => 1,
+            Self::Selector2State1 => 2,
+            Self::Selector4State0 => 4,
+        }
+    }
+
+    pub(crate) fn state(self) -> u8 {
+        match self {
+            Self::Selector0State0 | Self::Selector1State0 | Self::Selector4State0 => 0,
+            Self::Selector0State1 | Self::Selector2State1 => 1,
+        }
+    }
+
+    pub(crate) fn from_pair(selector: u64, state: u8) -> Option<Self> {
+        match (selector, state) {
+            (0, 0) => Some(Self::Selector0State0),
+            (0, 1) => Some(Self::Selector0State1),
+            (1, 0) => Some(Self::Selector1State0),
+            (2, 1) => Some(Self::Selector2State1),
+            (4, 0) => Some(Self::Selector4State0),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct SketchPointClosure {
-    /// Native selector. Its defined values are `0`, `1`, `2`, and `4`.
-    pub selector: u64,
-    /// Native point state. Its defined values are zero and one.
-    pub state: u8,
+struct SketchPointClosureSerde {
+    selector: u64,
+    state: u8,
+}
+
+impl TryFrom<SketchPointClosureSerde> for SketchPointClosure {
+    type Error = String;
+
+    fn try_from(wire: SketchPointClosureSerde) -> Result<Self, Self::Error> {
+        Self::from_pair(wire.selector, wire.state).ok_or_else(|| {
+            format!(
+                "sketch point closure selector {} state {} is not an admitted pair",
+                wire.selector, wire.state
+            )
+        })
+    }
+}
+
+impl From<SketchPointClosure> for SketchPointClosureSerde {
+    fn from(closure: SketchPointClosure) -> Self {
+        Self {
+            selector: closure.selector(),
+            state: closure.state(),
+        }
+    }
+}
+
+/// Version-10 same-segment closure: selector `0` and state `0` or `1`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SketchPointClosure10 {
+    State0,
+    State1,
+}
+
+impl SketchPointClosure10 {
+    pub(crate) fn from_closure(closure: SketchPointClosure) -> Option<Self> {
+        match closure {
+            SketchPointClosure::Selector0State0 => Some(Self::State0),
+            SketchPointClosure::Selector0State1 => Some(Self::State1),
+            _ => None,
+        }
+    }
+
+    fn to_closure(self) -> SketchPointClosure {
+        match self {
+            Self::State0 => SketchPointClosure::Selector0State0,
+            Self::State1 => SketchPointClosure::Selector0State1,
+        }
+    }
+}
+
+/// Version-10 inline-typed closure: `(0, 0)`, `(0, 1)`, or `(2, 1)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SketchPointClosure10Inline {
+    Selector0State0,
+    Selector0State1,
+    Selector2State1,
+}
+
+impl SketchPointClosure10Inline {
+    pub(crate) fn from_closure(closure: SketchPointClosure) -> Option<Self> {
+        match closure {
+            SketchPointClosure::Selector0State0 => Some(Self::Selector0State0),
+            SketchPointClosure::Selector0State1 => Some(Self::Selector0State1),
+            SketchPointClosure::Selector2State1 => Some(Self::Selector2State1),
+            _ => None,
+        }
+    }
+
+    fn to_closure(self) -> SketchPointClosure {
+        match self {
+            Self::Selector0State0 => SketchPointClosure::Selector0State0,
+            Self::Selector0State1 => SketchPointClosure::Selector0State1,
+            Self::Selector2State1 => SketchPointClosure::Selector2State1,
+        }
+    }
 }
 
 /// Serialized member sequence of one sketch-point record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SketchPointRecordForm {
     /// Class version 0: one flag, two coordinates, and no persistent identity.
-    Version0,
+    Version0 { flag: u8 },
     /// Class version 8: seven flags and an eight-zero closure lane.
-    Version8,
+    Version8 { persistent_id: u64, flags: [u8; 7] },
     /// Class version 10 with same-segment references and seven flags.
-    Version10,
+    Version10 {
+        persistent_id: u64,
+        flags: [u8; 7],
+        closure: SketchPointClosure10,
+    },
     /// Class version 10 with inline target-type GUIDs on its references.
     Version10InlineTyped {
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
+        persistent_id: u64,
+        flags: [u8; 7],
+        closure: SketchPointClosure10Inline,
     },
     /// Class version 11 with same-segment references and eight flags.
     Version11 {
         /// Whether four fixed zero bytes follow the repeated companion reference.
         padded_paired_reference: bool,
+        persistent_id: u64,
+        flags: [u8; 8],
+        closure: SketchPointClosure,
     },
     /// Class version 11 with inline target-type GUIDs on its references and eight flags.
     Version11InlineTyped {
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
+        persistent_id: u64,
+        flags: [u8; 8],
+        closure: SketchPointClosure,
     },
 }
 
 impl Default for SketchPointRecordForm {
     fn default() -> Self {
+        Self::version11(0, SketchPointClosure::Selector0State0)
+    }
+}
+
+impl SketchPointRecordForm {
+    pub(crate) fn version11(persistent_id: u64, closure: SketchPointClosure) -> Self {
         Self::Version11 {
             padded_paired_reference: false,
+            persistent_id,
+            flags: [0; 8],
+            closure,
         }
     }
 }
@@ -8916,18 +9045,10 @@ impl Default for SketchPointRecordForm {
 impl SketchPointRecordForm {
     pub(crate) fn class_version(&self) -> u32 {
         match self {
-            Self::Version0 => 0,
-            Self::Version8 => 8,
-            Self::Version10 | Self::Version10InlineTyped { .. } => 10,
+            Self::Version0 { .. } => 0,
+            Self::Version8 { .. } => 8,
+            Self::Version10 { .. } | Self::Version10InlineTyped { .. } => 10,
             Self::Version11 { .. } | Self::Version11InlineTyped { .. } => 11,
-        }
-    }
-
-    pub(crate) fn flag_count(&self) -> usize {
-        match self {
-            Self::Version0 => 1,
-            Self::Version8 | Self::Version10 | Self::Version10InlineTyped { .. } => 7,
-            Self::Version11 { .. } | Self::Version11InlineTyped { .. } => 8,
         }
     }
 
@@ -8938,24 +9059,66 @@ impl SketchPointRecordForm {
         )
     }
 
-    pub(crate) fn closure_is_valid(&self, closure: Option<&SketchPointClosure>) -> bool {
-        matches!(
-            (
-                self,
-                closure.map(|closure| (closure.selector, closure.state)),
-            ),
-            (Self::Version0, None)
-                | (Self::Version8, Some((0, 0)))
-                | (
-                    Self::Version10 | Self::Version10InlineTyped { .. },
-                    Some((0, 0 | 1))
-                )
-                | (Self::Version10InlineTyped { .. }, Some((2, 1)))
-                | (
-                    Self::Version11 { .. } | Self::Version11InlineTyped { .. },
-                    Some((0 | 1 | 4, 0) | (0 | 2, 1)),
-                )
-        )
+    pub(crate) fn persistent_id(&self) -> Option<u64> {
+        match *self {
+            Self::Version0 { .. } => None,
+            Self::Version8 { persistent_id, .. }
+            | Self::Version10 { persistent_id, .. }
+            | Self::Version10InlineTyped { persistent_id, .. }
+            | Self::Version11 { persistent_id, .. }
+            | Self::Version11InlineTyped { persistent_id, .. } => Some(persistent_id),
+        }
+    }
+
+    pub(crate) fn set_persistent_id(&mut self, id: u64) {
+        match self {
+            Self::Version0 { .. } => {}
+            Self::Version8 { persistent_id, .. }
+            | Self::Version10 { persistent_id, .. }
+            | Self::Version10InlineTyped { persistent_id, .. }
+            | Self::Version11 { persistent_id, .. }
+            | Self::Version11InlineTyped { persistent_id, .. } => *persistent_id = id,
+        }
+    }
+
+    pub(crate) fn flags(&self) -> [u8; 8] {
+        let mut flags = [0; 8];
+        match self {
+            Self::Version0 { flag } => flags[0] = *flag,
+            Self::Version8 { flags: source, .. }
+            | Self::Version10 { flags: source, .. }
+            | Self::Version10InlineTyped { flags: source, .. } => {
+                flags[..7].copy_from_slice(source);
+            }
+            Self::Version11 { flags: source, .. }
+            | Self::Version11InlineTyped { flags: source, .. } => flags = *source,
+        }
+        flags
+    }
+
+    pub(crate) fn set_flags(&mut self, flags: [u8; 8]) {
+        match self {
+            Self::Version0 { flag } => *flag = flags[0],
+            Self::Version8 { flags: dest, .. }
+            | Self::Version10 { flags: dest, .. }
+            | Self::Version10InlineTyped { flags: dest, .. } => {
+                dest.copy_from_slice(&flags[..7]);
+            }
+            Self::Version11 { flags: dest, .. }
+            | Self::Version11InlineTyped { flags: dest, .. } => *dest = flags,
+        }
+    }
+
+    pub(crate) fn closure(&self) -> Option<SketchPointClosure> {
+        match *self {
+            Self::Version0 { .. } => None,
+            Self::Version8 { .. } => Some(SketchPointClosure::Selector0State0),
+            Self::Version10 { closure, .. } => Some(closure.to_closure()),
+            Self::Version10InlineTyped { closure, .. } => Some(closure.to_closure()),
+            Self::Version11 { closure, .. } | Self::Version11InlineTyped { closure, .. } => {
+                Some(closure)
+            }
+        }
     }
 }
 
@@ -8994,6 +9157,8 @@ fn sketch_point_flags_are_zero(flags: &[u8; 8]) -> bool {
 /// One point in a Fusion sketch coordinate system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "SketchPointSerde"))]
+#[serde(try_from = "SketchPointSerde", into = "SketchPointSerde")]
 pub struct SketchPoint {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -9001,7 +9166,6 @@ pub struct SketchPoint {
     pub record_index: u32,
     /// Resolved owning-sketch reference from a direct backlink, typed relation,
     /// or sketch-container member run.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
     pub class_tag: String,
@@ -9010,31 +9174,233 @@ pub struct SketchPoint {
     /// Byte offset of the first coordinate relative to the record start.
     pub coordinate_offset: u32,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the point identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_genesis: Option<u64>,
-    /// Serialized point-record member sequence and class version.
-    #[serde(default)]
+    /// Serialized point-record member sequence, identity, flags, and closure.
     pub record_form: SketchPointRecordForm,
-    /// Persistent Fusion identifier, absent from the class-version-0 form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub persistent_id: Option<u64>,
     /// Record index of the paired reverse curve-incidence companion.
     pub paired_reference: u32,
-    /// Native flags between the first companion reference and coordinates.
-    /// `record_form` selects whether one, seven, or eight entries are serialized.
-    #[serde(default, skip_serializing_if = "sketch_point_flags_are_zero")]
-    pub flags: [u8; 8],
     /// First two sketch coordinates in millimetres.
     pub coordinates: Point2,
     /// Third sketch coordinate in millimetres.
-    #[serde(default)]
     pub depth: f64,
-    /// Selector and state closure, absent only from the class-version-0 form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub closure: Option<SketchPointClosure>,
     /// Typed reverse curve-incidence record named by `paired_reference`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub companion: Option<SketchPointCompanion>,
+}
+
+impl SketchPoint {
+    pub(crate) fn persistent_id(&self) -> Option<u64> {
+        self.record_form.persistent_id()
+    }
+
+    pub(crate) fn set_persistent_id(&mut self, id: Option<u64>) {
+        if let Some(id) = id {
+            self.record_form.set_persistent_id(id);
+        }
+    }
+
+    pub(crate) fn flags(&self) -> [u8; 8] {
+        self.record_form.flags()
+    }
+
+    pub(crate) fn set_flags(&mut self, flags: [u8; 8]) {
+        self.record_form.set_flags(flags);
+    }
+
+    pub(crate) fn closure(&self) -> Option<SketchPointClosure> {
+        self.record_form.closure()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SketchPointRecordFormSerde {
+    Version0,
+    Version8,
+    Version10,
+    Version10InlineTyped { trailing_reference: u32 },
+    Version11 { padded_paired_reference: bool },
+    Version11InlineTyped { trailing_reference: u32 },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SketchPointSerde {
+    id: String,
+    record_index: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner_reference: Option<u32>,
+    class_tag: String,
+    byte_offset: u64,
+    coordinate_offset: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    entity_genesis: Option<u64>,
+    #[serde(default)]
+    record_form: SketchPointRecordFormSerde,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    persistent_id: Option<u64>,
+    paired_reference: u32,
+    #[serde(default, skip_serializing_if = "sketch_point_flags_are_zero")]
+    flags: [u8; 8],
+    coordinates: Point2,
+    #[serde(default)]
+    depth: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    closure: Option<SketchPointClosureSerde>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    companion: Option<SketchPointCompanion>,
+}
+
+impl Default for SketchPointRecordFormSerde {
+    fn default() -> Self {
+        Self::Version11 {
+            padded_paired_reference: false,
+        }
+    }
+}
+
+fn seven_flags(flags: [u8; 8]) -> Result<[u8; 7], String> {
+    if flags[7] != 0 {
+        return Err("sketch point flags beyond the form width must be zero".into());
+    }
+    let mut dest = [0; 7];
+    dest.copy_from_slice(&flags[..7]);
+    Ok(dest)
+}
+
+impl TryFrom<SketchPointSerde> for SketchPoint {
+    type Error = String;
+
+    fn try_from(wire: SketchPointSerde) -> Result<Self, Self::Error> {
+        if wire.flags.iter().any(|flag| *flag > 1) {
+            return Err("sketch point flags must be zero or one".into());
+        }
+        let closure = wire.closure.map(SketchPointClosure::try_from).transpose()?;
+        let record_form = match (wire.record_form, wire.persistent_id, closure) {
+            (SketchPointRecordFormSerde::Version0, None, None) => SketchPointRecordForm::Version0 {
+                flag: wire.flags[0],
+            },
+            (
+                SketchPointRecordFormSerde::Version8,
+                Some(persistent_id),
+                Some(SketchPointClosure::Selector0State0),
+            ) => SketchPointRecordForm::Version8 {
+                persistent_id,
+                flags: seven_flags(wire.flags)?,
+            },
+            (SketchPointRecordFormSerde::Version10, Some(persistent_id), Some(closure)) => {
+                SketchPointRecordForm::Version10 {
+                    persistent_id,
+                    flags: seven_flags(wire.flags)?,
+                    closure: SketchPointClosure10::from_closure(closure).ok_or_else(|| {
+                        "sketch point version-10 closure must be selector 0 with state 0 or 1"
+                            .to_string()
+                    })?,
+                }
+            }
+            (
+                SketchPointRecordFormSerde::Version10InlineTyped { trailing_reference },
+                Some(persistent_id),
+                Some(closure),
+            ) => SketchPointRecordForm::Version10InlineTyped {
+                trailing_reference,
+                persistent_id,
+                flags: seven_flags(wire.flags)?,
+                closure: SketchPointClosure10Inline::from_closure(closure).ok_or_else(|| {
+                    "sketch point version-10 inline closure must be (0,0), (0,1), or (2,1)"
+                        .to_string()
+                })?,
+            },
+            (
+                SketchPointRecordFormSerde::Version11 {
+                    padded_paired_reference,
+                },
+                Some(persistent_id),
+                Some(closure),
+            ) => SketchPointRecordForm::Version11 {
+                padded_paired_reference,
+                persistent_id,
+                flags: wire.flags,
+                closure,
+            },
+            (
+                SketchPointRecordFormSerde::Version11InlineTyped { trailing_reference },
+                Some(persistent_id),
+                Some(closure),
+            ) => SketchPointRecordForm::Version11InlineTyped {
+                trailing_reference,
+                persistent_id,
+                flags: wire.flags,
+                closure,
+            },
+            _ => {
+                return Err(
+                    "sketch point record_form disagrees with persistent_id or closure".into(),
+                );
+            }
+        };
+        if matches!(record_form, SketchPointRecordForm::Version0 { .. })
+            && wire.flags[1..].iter().any(|flag| *flag != 0)
+        {
+            return Err("sketch point flags beyond the form width must be zero".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            record_index: wire.record_index,
+            owner_reference: wire.owner_reference,
+            class_tag: wire.class_tag,
+            byte_offset: wire.byte_offset,
+            coordinate_offset: wire.coordinate_offset,
+            entity_genesis: wire.entity_genesis,
+            record_form,
+            paired_reference: wire.paired_reference,
+            coordinates: wire.coordinates,
+            depth: wire.depth,
+            companion: wire.companion,
+        })
+    }
+}
+
+impl From<SketchPoint> for SketchPointSerde {
+    fn from(point: SketchPoint) -> Self {
+        let persistent_id = point.persistent_id();
+        let flags = point.flags();
+        let closure = point.closure().map(SketchPointClosureSerde::from);
+        let record_form = match point.record_form {
+            SketchPointRecordForm::Version0 { .. } => SketchPointRecordFormSerde::Version0,
+            SketchPointRecordForm::Version8 { .. } => SketchPointRecordFormSerde::Version8,
+            SketchPointRecordForm::Version10 { .. } => SketchPointRecordFormSerde::Version10,
+            SketchPointRecordForm::Version10InlineTyped {
+                trailing_reference, ..
+            } => SketchPointRecordFormSerde::Version10InlineTyped { trailing_reference },
+            SketchPointRecordForm::Version11 {
+                padded_paired_reference,
+                ..
+            } => SketchPointRecordFormSerde::Version11 {
+                padded_paired_reference,
+            },
+            SketchPointRecordForm::Version11InlineTyped {
+                trailing_reference, ..
+            } => SketchPointRecordFormSerde::Version11InlineTyped { trailing_reference },
+        };
+        Self {
+            id: point.id,
+            record_index: point.record_index,
+            owner_reference: point.owner_reference,
+            class_tag: point.class_tag,
+            byte_offset: point.byte_offset,
+            coordinate_offset: point.coordinate_offset,
+            entity_genesis: point.entity_genesis,
+            record_form,
+            persistent_id,
+            paired_reference: point.paired_reference,
+            flags,
+            coordinates: point.coordinates,
+            depth: point.depth,
+            closure,
+            companion: point.companion,
+        }
+    }
 }
 
 /// Persistent identity pair attached to one source sketch-curve record.

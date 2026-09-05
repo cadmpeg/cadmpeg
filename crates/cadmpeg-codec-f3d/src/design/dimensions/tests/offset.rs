@@ -778,13 +778,13 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         byte_offset: 0,
         coordinate_offset: 89,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(u64::from(record_index)),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            u64::from(record_index),
+            crate::records::SketchPointClosure::Selector0State0,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
         depth: 0.0,
-        closure: None,
         companion: None,
     };
     let mut points = vec![

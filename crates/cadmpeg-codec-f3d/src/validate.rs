@@ -4659,7 +4659,7 @@ fn valid_work_point_construction(
                             point.id == selection.point_native_id
                                 && design_stream(&point.id) == native_stream
                                 && point.owner_reference == Some(selection.sketch_record_index)
-                                && point.persistent_id == Some(selection.point_persistent_id)
+                                && point.persistent_id() == Some(selection.point_persistent_id)
                         })
                 }
             }
@@ -7037,10 +7037,10 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             (selected_sketch.is_some()
                 && design_stream(&point.id) == native_stream
                 && point.owner_reference == selected_sketch
-                && point.persistent_id == Some(member.local_id))
+                && point.persistent_id() == Some(member.local_id))
             .then_some(records::SketchRelationOperand::Point {
                 record_index: point.record_index,
-                persistent_id: point.persistent_id,
+                persistent_id: point.persistent_id(),
             })
         });
         let curve_targets = native.sketch_curve_identities.iter().filter_map(|curve| {
@@ -9170,10 +9170,7 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 entity: Some(point.id.clone()),
             });
         }
-        let closure_valid = point.record_form.closure_is_valid(point.closure.as_ref());
-        let flag_count = point.record_form.flag_count();
-        let flags_valid = point.flags[..flag_count].iter().all(|flag| *flag <= 1)
-            && point.flags[flag_count..].iter().all(|flag| *flag == 0);
+        let flags_valid = point.flags().iter().all(|flag| *flag <= 1);
         let companion_curves_unique = point.companion.as_ref().is_none_or(|companion| {
             companion
                 .incident_curves
@@ -9197,29 +9194,20 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ))
         });
         let identity_form_valid = match point.record_form {
-            crate::records::SketchPointRecordForm::Version0 => {
-                point.persistent_id.is_none()
-                    && point.entity_genesis.is_none()
-                    && point.depth == 0.0
+            crate::records::SketchPointRecordForm::Version0 { .. } => {
+                point.entity_genesis.is_none() && point.depth == 0.0
             }
-            crate::records::SketchPointRecordForm::Version8
-            | crate::records::SketchPointRecordForm::Version10
-            | crate::records::SketchPointRecordForm::Version10InlineTyped { .. } => {
-                point
-                    .persistent_id
-                    .is_some_and(|persistent_id| persistent_id != 0)
-                    && point.entity_genesis.is_none()
-            }
-            crate::records::SketchPointRecordForm::Version11 { .. }
-            | crate::records::SketchPointRecordForm::Version11InlineTyped { .. } => point
-                .persistent_id
-                .is_some_and(|persistent_id| persistent_id != 0),
+            crate::records::SketchPointRecordForm::Version8 { persistent_id, .. }
+            | crate::records::SketchPointRecordForm::Version10 { persistent_id, .. }
+            | crate::records::SketchPointRecordForm::Version10InlineTyped {
+                persistent_id, ..
+            } => persistent_id != 0 && point.entity_genesis.is_none(),
+            crate::records::SketchPointRecordForm::Version11 { persistent_id, .. }
+            | crate::records::SketchPointRecordForm::Version11InlineTyped {
+                persistent_id, ..
+            } => persistent_id != 0,
         };
-        if !flags_valid
-            || !closure_valid
-            || !companion_curves_unique
-            || !companion_form_valid
-            || !identity_form_valid
+        if !flags_valid || !companion_curves_unique || !companion_form_valid || !identity_form_valid
         {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -9228,7 +9216,7 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 entity: Some(point.id.clone()),
             });
         }
-        let duplicate = point.persistent_id.is_some_and(|persistent_id| {
+        let duplicate = point.persistent_id().is_some_and(|persistent_id| {
             point.owner_reference.is_some_and(|owner_reference| {
                 !sketch_point_identities.insert((
                     design_stream(&point.id),
@@ -9341,7 +9329,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (design_stream(&point.id), point.record_index),
                 records::SketchRelationOperand::Point {
                     record_index: point.record_index,
-                    persistent_id: point.persistent_id,
+                    persistent_id: point.persistent_id(),
                 },
             )
         })

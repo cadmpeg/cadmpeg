@@ -208,13 +208,13 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         byte_offset: 0,
         coordinate_offset: 141,
         entity_genesis: Some(2),
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(20),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            20,
+            crate::records::SketchPointClosure::Selector0State0,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(120.0, 30.0),
         depth: 0.0,
-        closure: None,
         companion: None,
     };
     let mut identityless_point = point.clone();
@@ -222,8 +222,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     identityless_point.record_index = 21;
     identityless_point.coordinate_offset = 33;
     identityless_point.entity_genesis = None;
-    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0;
-    identityless_point.persistent_id = None;
+    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 { flag: 0 };
 
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
     // while the sketch records carry ten-times-centimetre values; the
@@ -775,13 +774,13 @@ fn sketch_member_run_backfills_relation_free_owners() {
         byte_offset: u64::from(record_index),
         coordinate_offset: 141,
         entity_genesis: Some(2),
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(u64::from(record_index)),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            u64::from(record_index),
+            crate::records::SketchPointClosure::Selector0State0,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
         depth: 0.0,
-        closure: None,
         companion: None,
     };
 

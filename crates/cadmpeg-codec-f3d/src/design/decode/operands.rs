@@ -335,7 +335,7 @@ pub fn bind_work_point_input_carriers(
                     .filter(|point| {
                         native_stream(&point.id) == Some(stream.as_str())
                             && point.owner_reference == Some(selection.sketch_record_index)
-                            && point.persistent_id == Some(selection.point_persistent_id)
+                            && point.persistent_id() == Some(selection.point_persistent_id)
                     })
                     .collect::<Vec<_>>();
                 if let [point] = point_matches.as_slice() {
@@ -3751,10 +3751,10 @@ pub fn bind_extrude_selection_geometry(
         let point_operands = points.iter().filter_map(|point| {
             (native_stream(&point.id) == Some(stream)
                 && point.owner_reference == Some(entity_suffix)
-                && point.persistent_id == Some(member.local_id))
+                && point.persistent_id() == Some(member.local_id))
             .then_some(SketchRelationOperand::Point {
                 record_index: point.record_index,
-                persistent_id: point.persistent_id,
+                persistent_id: point.persistent_id(),
             })
         });
         let curve_operands = curves.iter().filter_map(|curve| {

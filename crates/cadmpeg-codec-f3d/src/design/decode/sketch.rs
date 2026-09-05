@@ -1563,12 +1563,9 @@ pub(crate) fn decode_sketch_points_from_stream(
             coordinate_offset: decoded.coordinate_offset,
             entity_genesis: decoded.entity_genesis,
             record_form: decoded.record_form,
-            persistent_id: decoded.persistent_id,
             paired_reference: decoded.paired_reference,
-            flags: decoded.flags,
             coordinates: Point2::new(u, v),
             depth,
-            closure: decoded.closure,
             companion: Some(companion),
         });
     }
@@ -2319,20 +2316,19 @@ struct DecodedSketchPoint {
     coordinate_offset: u32,
     entity_genesis: Option<u64>,
     record_form: SketchPointRecordForm,
-    persistent_id: Option<u64>,
     paired_reference: u32,
-    flags: [u8; 8],
     coordinates: [f64; 3],
-    closure: Option<SketchPointClosure>,
 }
 
 impl DecodedSketchPoint {
     fn trailing_reference(&self) -> Option<u32> {
         match self.record_form {
-            SketchPointRecordForm::Version10InlineTyped { trailing_reference }
-            | SketchPointRecordForm::Version11InlineTyped { trailing_reference } => {
-                Some(trailing_reference)
+            SketchPointRecordForm::Version10InlineTyped {
+                trailing_reference, ..
             }
+            | SketchPointRecordForm::Version11InlineTyped {
+                trailing_reference, ..
+            } => Some(trailing_reference),
             _ => self.owner_reference,
         }
     }
@@ -2394,18 +2390,13 @@ fn decode_version_zero_sketch_point(
     if cursor != payload.len() {
         return None;
     }
-    let mut flags = [0; 8];
-    flags[0] = flag;
     Some(DecodedSketchPoint {
         owner_reference: Some(owner_reference),
         coordinate_offset,
         entity_genesis: None,
-        record_form: SketchPointRecordForm::Version0,
-        persistent_id: None,
+        record_form: SketchPointRecordForm::Version0 { flag },
         paired_reference,
-        flags,
         coordinates: [x, y, 0.0],
-        closure: None,
     })
 }
 
@@ -2483,16 +2474,34 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     if repeated_reference != paired_reference || !repeated_encoding_matches {
         return None;
     }
-    let closure = SketchPointClosure { selector, state };
+    let closure = SketchPointClosure::from_pair(selector, state)?;
+    let mut seven = [0; 7];
+    seven.copy_from_slice(&flags[..7]);
     let (record_form, owner_reference) =
         match (class_version, inline_typed) {
             (8, false) => {
+                if closure != SketchPointClosure::Selector0State0 {
+                    return None;
+                }
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
-                (SketchPointRecordForm::Version8, Some(owner))
+                (
+                    SketchPointRecordForm::Version8 {
+                        persistent_id,
+                        flags: seven,
+                    },
+                    Some(owner),
+                )
             }
             (10, false) => {
                 let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
-                (SketchPointRecordForm::Version10, Some(owner))
+                (
+                    SketchPointRecordForm::Version10 {
+                        persistent_id,
+                        flags: seven,
+                        closure: crate::records::SketchPointClosure10::from_closure(closure)?,
+                    },
+                    Some(owner),
+                )
             }
             (10, true) => {
                 let (trailing_reference, type_guid) =
@@ -2503,7 +2512,12 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                     return None;
                 }
                 (
-                    SketchPointRecordForm::Version10InlineTyped { trailing_reference },
+                    SketchPointRecordForm::Version10InlineTyped {
+                        trailing_reference,
+                        persistent_id,
+                        flags: seven,
+                        closure: crate::records::SketchPointClosure10Inline::from_closure(closure)?,
+                    },
                     None,
                 )
             }
@@ -2516,7 +2530,12 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                     return None;
                 }
                 (
-                    SketchPointRecordForm::Version11InlineTyped { trailing_reference },
+                    SketchPointRecordForm::Version11InlineTyped {
+                        trailing_reference,
+                        persistent_id,
+                        flags,
+                        closure,
+                    },
                     None,
                 )
             }
@@ -2533,13 +2552,16 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
                 (
                     SketchPointRecordForm::Version11 {
                         padded_paired_reference,
+                        persistent_id,
+                        flags,
+                        closure,
                     },
                     Some(owner),
                 )
             }
             _ => return None,
         };
-    if cursor != payload.len() || !record_form.closure_is_valid(Some(&closure)) {
+    if cursor != payload.len() {
         return None;
     }
     Some(DecodedSketchPoint {
@@ -2547,11 +2569,8 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         coordinate_offset,
         entity_genesis,
         record_form,
-        persistent_id: Some(persistent_id),
         paired_reference,
-        flags,
         coordinates,
-        closure: Some(closure),
     })
 }
 
@@ -3032,7 +3051,7 @@ pub(crate) fn bind_sketch_graph(
                 (native_stream(&point.id)?, point.record_index),
                 SketchRelationOperand::Point {
                     record_index: point.record_index,
-                    persistent_id: point.persistent_id,
+                    persistent_id: point.persistent_id(),
                 },
             ))
         })

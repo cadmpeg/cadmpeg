@@ -1267,13 +1267,13 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         byte_offset: 0,
         coordinate_offset: 0,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(1),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            1,
+            crate::records::SketchPointClosure::Selector0State0,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
         depth: 0.0,
-        closure: None,
         companion: None,
     });
     native.sketch_curve_identities.push(SketchCurveIdentity {

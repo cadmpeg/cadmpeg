@@ -469,8 +469,11 @@ fn encode_sketch_point(
         ))
     })?;
     let shift = usize::from(point.entity_genesis.is_some()) * 52;
-    let &SketchPointRecordForm::Version11 {
+    let SketchPointRecordForm::Version11 {
         padded_paired_reference,
+        persistent_id,
+        flags,
+        closure,
     } = &point.record_form
     else {
         return Err(CodecError::NotImplemented(format!(
@@ -478,12 +481,6 @@ fn encode_sketch_point(
             point.id
         )));
     };
-    let persistent_id = point.persistent_id.ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "source-less sketch point {} has no persistent identity",
-            point.id
-        ))
-    })?;
     let mut record = std::iter::repeat_n(0u8, 105 + shift).collect::<Vec<_>>();
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
@@ -498,38 +495,26 @@ fn encode_sketch_point(
     record[62 + shift..70 + shift].copy_from_slice(&persistent_id.to_le_bytes());
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
-    if point.flags.iter().any(|flag| *flag > 1) {
+    if flags.iter().any(|flag| *flag > 1) {
         return Err(CodecError::malformed(format_args!(
             "source-less sketch point {} has a flag outside zero or one",
             point.id
         )));
     }
-    record[81 + shift..89 + shift].copy_from_slice(&point.flags);
+    record[81 + shift..89 + shift].copy_from_slice(flags);
     record[89 + shift..97 + shift]
         .copy_from_slice(&(point.coordinates.u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
         .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
-    let closure = point.closure.as_ref().ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "source-less sketch point {} has no version-11 closure",
-            point.id
-        ))
-    })?;
-    if !point.record_form.closure_is_valid(Some(closure)) {
-        return Err(CodecError::malformed(format_args!(
-            "source-less sketch point {} has an invalid closure selector or state",
-            point.id
-        )));
-    }
     record.extend_from_slice(&(point.depth / LEN_TO_MM).to_le_bytes());
-    record.extend_from_slice(&closure.selector.to_le_bytes());
-    record.push(closure.state);
+    record.extend_from_slice(&closure.selector().to_le_bytes());
+    record.push(closure.state());
     record.extend_from_slice(&[0; 12]);
     record.extend_from_slice(&1.0f32.to_le_bytes());
     record.extend_from_slice(&1.0f32.to_le_bytes());
     record.extend_from_slice(&[0, 1, 0, 0, 0]);
     write_reference(&mut record, point.paired_reference);
-    if padded_paired_reference {
+    if *padded_paired_reference {
         record.extend_from_slice(&[0; 4]);
     }
     write_reference(&mut record, owner_reference);
