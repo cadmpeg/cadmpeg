@@ -119,7 +119,7 @@ pub fn decode_body_bounds(
             .filter_map(|candidate| usize::try_from(candidate.byte_offset).ok())
             .min()
             .unwrap_or(bytes.len());
-        let Ok(record_index) = u32::try_from(entity.entity_suffix) else {
+        let Ok(record_index) = u32::try_from(entity.entity_id.suffix()) else {
             continue;
         };
         let Some(record_indices) = record_index
@@ -179,7 +179,7 @@ pub fn decode_body_bounds(
         };
         out.push(DesignBodyBounds {
             id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
-            entity_suffix: entity.entity_suffix,
+            entity_suffix: entity.entity_id.suffix(),
             entity_byte_offset: entity.byte_offset,
             record_indices,
             record_byte_offsets: [*first as u64, *second as u64, *third as u64],

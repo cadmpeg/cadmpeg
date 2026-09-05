@@ -291,8 +291,8 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:design-entity-header#0".into(),
         byte_offset: 0,
-        entity_suffix: 100,
-        entity_id: "0_100".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
         class_tag: "281".into(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -747,8 +747,8 @@ fn sketch_member_run_backfills_relation_free_owners() {
     let header = |suffix: u64, members: Vec<u32>| DesignEntityHeader {
         id: format!("f3d:native:design-entity-header#{suffix}"),
         byte_offset: suffix,
-        entity_suffix: suffix,
-        entity_id: format!("0_{suffix}"),
+
+        entity_id: crate::records::DesignEntityId::try_from(format!("0_{suffix}")).expect("valid entity ID"),
         class_tag: "281".into(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),

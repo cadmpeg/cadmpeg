@@ -118,7 +118,7 @@ impl GeneratedDesignRegistry {
             native
                 .design_entity_headers
                 .iter()
-                .filter_map(|header| u32::try_from(header.entity_suffix).ok()),
+                .filter_map(|header| u32::try_from(header.entity_id.suffix()).ok()),
         );
         used_record_indices.extend(
             body_map

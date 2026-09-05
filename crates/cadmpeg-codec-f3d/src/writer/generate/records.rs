@@ -255,16 +255,16 @@ pub(crate) fn encode_design_bulkstream(
     }
     for header in &native.design_entity_headers {
         validate_dynamic_class_tag(&header.class_tag, "Design entity header")?;
-        primary_records.push(primary_record_u64(header.entity_suffix, out.len())?);
+        primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
         out.extend_from_slice(&3u32.to_le_bytes());
         out.extend_from_slice(header.class_tag.as_bytes());
-        out.extend_from_slice(&header.entity_suffix.to_le_bytes());
+        out.extend_from_slice(&header.entity_id.suffix().to_le_bytes());
         out.extend_from_slice(&[0; 5]);
         out.push(u8::from(header.optional_slot_present));
         if header.optional_slot_present {
             out.extend_from_slice(&[0; 4]);
         }
-        native_lp_utf16(&mut out, &header.entity_id)?;
+        native_lp_utf16(&mut out, header.entity_id.as_str())?;
         if header.in_sketch_module() {
             let count = u32::try_from(header.references.len()).map_err(|_| {
                 CodecError::Malformed("Design sketch header exceeds u32::MAX references".into())

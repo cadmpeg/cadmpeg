@@ -198,7 +198,7 @@ pub fn decode_sketch_placements(
         let Some(stream) = native_stream(&entity.id) else {
             continue;
         };
-        if placed.contains(&(stream.to_owned(), entity.entity_suffix)) {
+        if placed.contains(&(stream.to_owned(), entity.entity_id.suffix())) {
             continue;
         }
         let Some(entry_name) = stream.strip_prefix(ids::SCHEME_PREFIX) else {
@@ -280,7 +280,7 @@ fn decode_sketch_visibilities_in_stream(
                 frame.entity_id
             )));
         }
-        let Some((entity_suffix, _, _, header_end)) =
+        let Some((entity_id, _, header_end)) =
             parse_settled_entity_header(&bytes[..frame.end], frame.start)
                 .or_else(|| parse_genesis_entity_header(&bytes[..frame.end], frame.start))
         else {
@@ -289,6 +289,7 @@ fn decode_sketch_visibilities_in_stream(
                 frame.entity_id
             )));
         };
+        let entity_suffix = entity_id.suffix();
         if entity_suffix != frame.entity_id {
             return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {} disagrees with its entity header {entity_suffix}",
@@ -401,7 +402,7 @@ pub(crate) fn parse_member_run_head_placement(
 ) -> Option<DesignSketchPlacement> {
     let start = usize::try_from(entity.byte_offset).ok()?;
     // Locate the paired same-index record after the entity header.
-    let entity_index = u32::try_from(entity.entity_suffix).ok()?;
+    let entity_index = u32::try_from(entity.entity_id.suffix()).ok()?;
     let paired_at = records.first_at_or_after(start.checked_add(1)?, entity_index)?;
     let (paired_class_tag, paired_after_tag) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
@@ -456,7 +457,7 @@ pub(crate) fn parse_member_run_head_placement(
     Some(DesignSketchPlacement {
         id: String::new(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from(entity.entity_id.clone()).ok()?,
+        entity_id: entity.entity_id.clone(),
 
         visibility: None,
         byte_offset: head_at as u64,
@@ -773,7 +774,7 @@ pub fn decode_lost_edge_references(
 pub(crate) fn parse_settled_entity_header(
     bytes: &[u8],
     start: usize,
-) -> Option<(u64, String, bool, usize)> {
+) -> Option<(crate::records::DesignEntityId, bool, usize)> {
     let entity_suffix = View::u64_le_at(bytes, start + 7)?;
     if entity_suffix == 0 || bytes.get(start + 15..start + 20) != Some(&[0u8; 5]) {
         return None;
@@ -784,9 +785,8 @@ pub(crate) fn parse_settled_entity_header(
         _ => return None,
     };
     let (entity_id, end) = lp_utf16_bounded(bytes, string_offset, 1..=256)?;
-    let (_, suffix) = entity_id.rsplit_once('_')?;
-    (suffix.parse::<u64>().ok() == Some(entity_suffix)).then_some((
-        entity_suffix,
+    let entity_id = crate::records::DesignEntityId::try_from(entity_id).ok()?;
+    (entity_id.suffix() == entity_suffix).then_some((
         entity_id,
         optional_slot_present,
         end,
@@ -801,7 +801,7 @@ pub(crate) fn parse_settled_entity_header(
 pub(crate) fn parse_genesis_entity_header(
     bytes: &[u8],
     start: usize,
-) -> Option<(u64, String, bool, usize)> {
+) -> Option<(crate::records::DesignEntityId, bool, usize)> {
     let entity_suffix = u64::from(View::u32_le_at(bytes, start + 7)?);
     if entity_suffix == 0 {
         return None;
@@ -826,9 +826,8 @@ pub(crate) fn parse_genesis_entity_header(
         return None;
     }
     let (entity_id, end) = lp_utf16_bounded(bytes, after_type + 8, 1..=256)?;
-    let (_, suffix) = entity_id.rsplit_once('_')?;
-    (suffix.parse::<u64>().ok() == Some(entity_suffix)).then_some((
-        entity_suffix,
+    let entity_id = crate::records::DesignEntityId::try_from(entity_id).ok()?;
+    (entity_id.suffix() == entity_suffix).then_some((
         entity_id,
         false,
         end,
@@ -946,8 +945,8 @@ pub(crate) fn parse_legacy_sketch_container_members(
     let entity = DesignEntityHeader {
         id: String::new(),
         byte_offset: primary_at as u64,
-        entity_suffix: u64::from(entity_suffix),
-        entity_id: format!("Sketch_{entity_suffix}"),
+
+        entity_id: crate::records::DesignEntityId::from_parts("Sketch", u64::from(entity_suffix)),
         class_tag: String::new(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -1021,11 +1020,12 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             };
             let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
-            let Some((entity_suffix, entity_id, optional_slot_present, end)) =
+            let Some((entity_id, optional_slot_present, end)) =
                 settled.or_else(|| parse_genesis_entity_header(bytes, start))
             else {
                 continue;
             };
+            let entity_suffix = entity_id.suffix();
             let module = stream_modules
                 .and_then(|modules| modules.get(&entity_suffix))
                 .cloned();
@@ -1046,7 +1046,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             out.push(DesignEntityHeader {
                 id: ids::native_design_entity_header_id(&entry.name, start),
                 byte_offset: start as u64,
-                entity_suffix,
+
                 entity_id,
                 class_tag: String::from_utf8_lossy(class_tag).into_owned(),
                 optional_slot_present,
@@ -1076,7 +1076,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
         let mut existing = out
             .iter()
             .filter(|entity| native_stream(&entity.id) == Some(scope.as_str()))
-            .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
+            .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
             .collect::<std::collections::HashSet<_>>();
         for &start in &indexed_offsets {
             let Some(entity_suffix) = View::u32_le_at(bytes, start + 7) else {
@@ -1105,8 +1105,8 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             out.push(DesignEntityHeader {
                 id: ids::native_design_entity_header_id(&entry.name, start),
                 byte_offset: start as u64,
-                entity_suffix: u64::from(entity_suffix),
-                entity_id: format!("Sketch_{entity_suffix}"),
+
+                entity_id: crate::records::DesignEntityId::from_parts("Sketch", u64::from(entity_suffix)),
                 class_tag,
                 optional_slot_present: false,
                 module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -2875,7 +2875,7 @@ pub(crate) fn bind_sketch_graph(
             Some((
                 (
                     native_stream(&entity.id)?,
-                    u32::try_from(entity.entity_suffix).ok()?,
+                    u32::try_from(entity.entity_id.suffix()).ok()?,
                 ),
                 entity.entity_id.as_str(),
             ))
@@ -2965,7 +2965,7 @@ pub(crate) fn bind_sketch_graph(
     for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
         let (Some(scope), Ok(suffix)) = (
             native_stream(&entity.id),
-            u32::try_from(entity.entity_suffix),
+            u32::try_from(entity.entity_id.suffix()),
         ) else {
             continue;
         };

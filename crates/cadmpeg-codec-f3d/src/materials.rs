@@ -994,7 +994,7 @@ pub(crate) fn decode_design_assignments(
                 asm_body_key_offset: body_binding.asm_key_offset as u64,
 
                 entity_suffix_offset: body_binding.entity_suffix_offset as u64,
-                entity_id: crate::records::DesignEntityId::try_from(entity_id).map_err(crate::error::malformed)?,
+                entity_id,
                 entity_id_offset,
                 visual_guid: material.visual_guid,
                 visual_guid_offset: material.visual_guid_offset,

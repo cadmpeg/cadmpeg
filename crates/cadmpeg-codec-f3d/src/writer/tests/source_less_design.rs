@@ -335,8 +335,8 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "generated:entity-header#0".into(),
         byte_offset: 0,
-        entity_suffix: 277,
-        entity_id: "0_277".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned()).expect("valid entity ID"),
         class_tag: "256".into(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
@@ -386,7 +386,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     assert_eq!(native.design_body_members[0].entity_suffix, 985);
     assert_eq!(native.design_body_members[1].flags, 3);
     assert_eq!(native.design_entity_headers.len(), 1);
-    assert_eq!(native.design_entity_headers[0].entity_id, "0_277");
+    assert_eq!(native.design_entity_headers[0].entity_id.as_str(), "0_277");
     assert_eq!(native.design_entity_headers[0].declared_reference_count(), Some(2));
     assert_eq!(native.design_entity_headers[0].record_reference, Some(584));
     assert_eq!(native.design_entity_headers[0].references.values().copied().collect::<Vec<_>>(), [33, 44]);
@@ -489,8 +489,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "generated:sketch-header#0".into(),
         byte_offset: 0,
-        entity_suffix: 277,
-        entity_id: "0_277".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned()).expect("valid entity ID"),
         class_tag: "256".into(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
@@ -891,8 +891,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .expect("generated entity identity has a stream")
         .0;
     second_owner.id = format!("{entity_scope}:sketch-header-conflict#1");
-    second_owner.entity_suffix = 278;
-    second_owner.entity_id = "0_278".into();
+    second_owner.entity_id = crate::records::DesignEntityId::from_parts("0", 278);
     entities.push(second_owner);
     let error = crate::design::decode::sketch::bind_sketch_graph(
         &entities,

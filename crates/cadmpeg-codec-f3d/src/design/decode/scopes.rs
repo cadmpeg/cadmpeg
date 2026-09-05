@@ -243,11 +243,11 @@ pub fn decode_parameter_scopes(
                     for entity in entities {
                         if native_stream(&entity.id) != Some(stream.as_str())
                             || !entity.in_sketch_module()
-                            || entity.entity_suffix > u64::from(u32::MAX)
+                            || entity.entity_id.suffix() > u64::from(u32::MAX)
                         {
                             continue;
                         }
-                        if let Some(at) = first_at.get(&(entity.entity_suffix as u32)) {
+                        if let Some(at) = first_at.get(&(entity.entity_id.suffix() as u32)) {
                             matches.push((entity, at + 1));
                         }
                     }
@@ -259,7 +259,7 @@ pub fn decode_parameter_scopes(
                     | crate::records::DesignScopePayload::Esboco(slot) = &mut scope.payload
                     {
                         *slot = Some(crate::records::DesignSketchEntityBinding {
-                            entity_id: crate::records::DesignEntityId::try_from(entity.entity_id.clone()).map_err(crate::error::malformed)?,
+                            entity_id: entity.entity_id.clone(),
                             entity_reference_offset: scope
                                 .byte_offset
                                 .saturating_add(*relative_offset as u64),

@@ -230,8 +230,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let header = |stream: &str| DesignEntityHeader {
         id: format!("f3d:{stream}:design-entity-header#0"),
         byte_offset: 0,
-        entity_suffix: 100,
-        entity_id: format!("{stream}_100"),
+
+        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100")).expect("valid entity ID"),
         class_tag: "300".into(),
         optional_slot_present: true,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -292,8 +292,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     assert_eq!(relations[1].owner_entity_id, "B_100");
 
     let mut overflowing_header = header("A");
-    overflowing_header.entity_suffix = u64::from(u32::MAX) + 101;
-    overflowing_header.entity_id = "A_overflow".into();
+    overflowing_header.entity_id = crate::records::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
     assert!(bind_sketch_graph(
         &[overflowing_header],
         &mut [point("A")],

@@ -662,7 +662,7 @@ impl<'a> Ctx<'a> {
         let entities_by_suffix = native
             .design_entity_headers
             .iter()
-            .map(|entity| ((design_stream(&entity.id), entity.entity_suffix), entity))
+            .map(|entity| ((design_stream(&entity.id), entity.entity_id.suffix()), entity))
             .collect::<std::collections::HashMap<_, _>>();
         let sketch_geometry_indices = native
             .sketch_points
@@ -716,7 +716,7 @@ impl<'a> Ctx<'a> {
             .filter_map(|header| {
                 Some((
                     design_stream(&header.id),
-                    u32::try_from(header.entity_suffix).ok()?,
+                    u32::try_from(header.entity_id.suffix()).ok()?,
                 ))
             })
             .collect::<HashSet<_>>();
@@ -728,7 +728,7 @@ impl<'a> Ctx<'a> {
                 Some((
                     (
                         design_stream(&header.id),
-                        u32::try_from(header.entity_suffix).ok()?,
+                        u32::try_from(header.entity_id.suffix()).ok()?,
                     ),
                     header.entity_id.as_str(),
                 ))
@@ -2125,7 +2125,7 @@ fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let entity_headers_by_suffix = native
         .design_entity_headers
         .iter()
-        .map(|entity| ((design_stream(&entity.id), entity.entity_suffix), entity))
+        .map(|entity| ((design_stream(&entity.id), entity.entity_id.suffix()), entity))
         .collect::<std::collections::HashMap<_, _>>();
     let mut bounded_bodies = HashSet::new();
     for bounds in &native.design_body_bounds {
@@ -2211,7 +2211,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             entities_by_suffix
                 .get(&(native_stream, binding.entity_id.suffix()))
                 .is_some_and(|entity| {
-                    entity.entity_id == binding.entity_id.as_str()
+                    entity.entity_id == binding.entity_id
                         && binding.entity_reference_offset > scope.byte_offset
                         && binding.entity_reference_offset < scope.paired_byte_offset
                 })
@@ -2228,7 +2228,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && header.class_tag == profile.class_tag
                 })
                 && entity.is_some_and(|entity| {
-                    entity.in_sketch_module() && entity.entity_id == profile.entity_id.as_str()
+                    entity.in_sketch_module() && entity.entity_id == profile.entity_id
                 })
                 && valid_design_guid(&profile.asset_id)
                 && profile.asset_id_offset > profile.byte_offset
@@ -8500,15 +8500,15 @@ fn validate_entity_headers(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 check: Check::ReferentialIntegrity,
                 severity: Severity::Error,
                 message: "Fusion design entity has an invalid reference run".into(),
-                entity: Some(header.entity_id.clone()),
+                entity: Some(header.entity_id.as_str().to_owned()),
             });
         }
-        if !entity_suffixes.insert((native_stream, header.entity_suffix)) {
+        if !entity_suffixes.insert((native_stream, header.entity_id.suffix())) {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion Design entity suffix is duplicated within its stream".into(),
-                entity: Some(header.entity_id.clone()),
+                entity: Some(header.entity_id.as_str().to_owned()),
             });
         }
     }
@@ -8831,7 +8831,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .filter(|entity| entity.in_sketch_module())
     {
         let native_stream = design_stream(&entity.id);
-        let Ok(owner) = u32::try_from(entity.entity_suffix) else {
+        let Ok(owner) = u32::try_from(entity.entity_id.suffix()) else {
             continue;
         };
         for member in entity.members.values() {

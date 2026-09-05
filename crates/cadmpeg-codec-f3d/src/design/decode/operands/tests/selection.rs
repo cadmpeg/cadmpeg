@@ -37,8 +37,8 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity#172".into(),
         byte_offset: 1000,
-        entity_suffix: 172,
-        entity_id: "0_172".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity ID"),
         class_tag: "269".into(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -144,8 +144,8 @@ fn generated_base_flange_profile_frame_resolves() {
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity#800".into(),
         byte_offset: 0,
-        entity_suffix: 800,
-        entity_id: "Sketch_800".into(),
+
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_800".to_owned()).expect("valid entity ID"),
         class_tag: "365".into(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
