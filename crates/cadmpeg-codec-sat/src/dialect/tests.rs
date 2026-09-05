@@ -22,8 +22,16 @@ use std::io::Cursor;
 fn enum_and_registry_rows_are_closed_bidirectionally() {
     let kernel = header(None);
     let reportable = [
-        StreamEvidence::AsmBinary(&kernel),
-        StreamEvidence::AcisBinary(&kernel),
+        StreamEvidence::Binary {
+            family: Family::Asm,
+            header: &kernel,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &kernel,
+            framed: true,
+        },
         StreamEvidence::Text(None),
     ]
     .map(|evidence| evidence.dialect());
@@ -62,7 +70,11 @@ fn only_the_acis_kernel_branches_are_banded() {
         };
 
         for asm in [
-            StreamEvidence::AsmBinary(&kernel),
+            StreamEvidence::Binary {
+                family: Family::Asm,
+                header: &kernel,
+                framed: true,
+            },
             StreamEvidence::Text(Some(TextEvidence {
                 branch: sat::Terminator::Asm,
                 header: &kernel,
@@ -73,7 +85,11 @@ fn only_the_acis_kernel_branches_are_banded() {
             assert_eq!(kernel.admission(), &Admission::Admitted, "{version:?}");
         }
 
-        let (host, matched) = layers(&StreamEvidence::AcisBinary(&kernel));
+        let (host, matched) = layers(&StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &kernel,
+            framed: true,
+        });
         assert_eq!(host.admission(), &Admission::Admitted, "{version:?}");
         if verified {
             assert_eq!(matched.admission(), &Admission::Admitted, "{version:?}");
@@ -122,9 +138,20 @@ fn a_stream_that_stops_at_its_own_discriminant_is_refused() {
     let kernel = header(None);
     // The three identified rows are shared by inspect and decode refusal.
     for (evidence, id) in [
-        (StreamEvidence::UnframedAsmBinary(&kernel), "sat:asm-binary"),
         (
-            StreamEvidence::UnframedAcisBinary(&kernel),
+            StreamEvidence::Binary {
+                family: Family::Asm,
+                header: &kernel,
+                framed: false,
+            },
+            "sat:asm-binary",
+        ),
+        (
+            StreamEvidence::Binary {
+                family: Family::Acis,
+                header: &kernel,
+                framed: false,
+            },
             "sat:acis-binary",
         ),
         (StreamEvidence::Text(None), "sat:text"),
@@ -144,12 +171,36 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
     let verified = header(Some(21_800));
     let unverified = header(Some(UNVERIFIED_SAVE_FORMAT));
     for evidence in [
-        StreamEvidence::AsmBinary(&verified),
-        StreamEvidence::AsmBinary(&unverified),
-        StreamEvidence::UnframedAsmBinary(&verified),
-        StreamEvidence::AcisBinary(&verified),
-        StreamEvidence::AcisBinary(&unverified),
-        StreamEvidence::UnframedAcisBinary(&verified),
+        StreamEvidence::Binary {
+            family: Family::Asm,
+            header: &verified,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Asm,
+            header: &unverified,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Asm,
+            header: &verified,
+            framed: false,
+        },
+        StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &verified,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &unverified,
+            framed: true,
+        },
+        StreamEvidence::Binary {
+            family: Family::Acis,
+            header: &verified,
+            framed: false,
+        },
         StreamEvidence::Text(Some(TextEvidence {
             branch: sat::Terminator::Asm,
             header: &unverified,
@@ -177,9 +228,13 @@ fn the_recovery_loss_is_charged_exactly_on_the_unverified_admission() {
 fn the_declared_keys_are_pinned() {
     let kernel = header(Some(21_804));
 
-    let binary = classify(&StreamEvidence::AcisBinary(&kernel))
-        .declared()
-        .clone();
+    let binary = classify(&StreamEvidence::Binary {
+        family: Family::Acis,
+        header: &kernel,
+        framed: true,
+    })
+    .declared()
+    .clone();
     assert_eq!(binary[DECLARED_ENCODING], "binary");
     assert!(!binary.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
     assert!(!binary.contains_key(DECLARED_SAVE_FORMAT_MINOR));
@@ -206,9 +261,13 @@ fn the_declared_keys_are_pinned() {
 
     // An absent save-format word declares no band, which is a different
     // statement from a declaration of zero.
-    let silent = classify(&StreamEvidence::AsmBinary(&header(None)))
-        .declared()
-        .clone();
+    let silent = classify(&StreamEvidence::Binary {
+        family: Family::Asm,
+        header: &header(None),
+        framed: true,
+    })
+    .declared()
+    .clone();
     assert!(!silent.contains_key(DECLARED_SAVE_FORMAT_MAJOR));
     assert!(!silent.contains_key(DECLARED_SAVE_FORMAT_MINOR));
 }

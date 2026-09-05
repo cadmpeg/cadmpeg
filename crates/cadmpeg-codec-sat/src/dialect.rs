@@ -64,20 +64,38 @@ pub(crate) struct TextEvidence<'a> {
     pub(crate) header: &'a KernelHeader,
 }
 
-/// What one stream's own bytes said, as the reading path read them.
-///
-/// One variant per reportable [`StreamKind`]. Inspection reports what it could
-/// read, and decode refuses with the same primary match.
+/// Kernel family selected by binary magic or a text terminator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Family {
+    Asm,
+    Acis,
+}
+
+impl Family {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Asm => "asm",
+            Self::Acis => "acis",
+        }
+    }
+}
+
+impl From<sat::Terminator> for Family {
+    fn from(value: sat::Terminator) -> Self {
+        match value {
+            sat::Terminator::Asm => Self::Asm,
+            sat::Terminator::Acis => Self::Acis,
+        }
+    }
+}
+
+/// Stream family, parsed header, and framing admission from the source bytes.
 pub(crate) enum StreamEvidence<'a> {
-    /// Parsed `ASM BinaryFile4`/`8` header and record-stream frame.
-    AsmBinary(&'a KernelHeader),
-    /// Parsed ASM header from a stream with no record-stream frame.
-    UnframedAsmBinary(&'a KernelHeader),
-    /// Parsed `ACIS BinaryFile` header and record-stream frame.
-    AcisBinary(&'a KernelHeader),
-    /// Parsed ACIS header from a stream with no record-stream frame.
-    UnframedAcisBinary(&'a KernelHeader),
-    /// Text header lines; `None` when the stream did not parse past them.
+    Binary {
+        family: Family,
+        header: &'a KernelHeader,
+        framed: bool,
+    },
     Text(Option<TextEvidence<'a>>),
 }
 
@@ -86,8 +104,14 @@ impl StreamEvidence<'_> {
     /// kind, so the id is total: unclassified streams never reach here.
     const fn dialect(&self) -> DialectId {
         match self {
-            Self::AsmBinary(_) | Self::UnframedAsmBinary(_) => SAT_ASM_BINARY,
-            Self::AcisBinary(_) | Self::UnframedAcisBinary(_) => SAT_ACIS_BINARY,
+            Self::Binary {
+                family: Family::Asm,
+                ..
+            } => SAT_ASM_BINARY,
+            Self::Binary {
+                family: Family::Acis,
+                ..
+            } => SAT_ACIS_BINARY,
             Self::Text(_) => SAT_TEXT,
         }
     }
@@ -101,12 +125,12 @@ impl StreamEvidence<'_> {
 fn host(evidence: &StreamEvidence<'_>) -> DialectMatch {
     let dialect = evidence.dialect();
     match evidence {
-        StreamEvidence::AsmBinary(_)
-        | StreamEvidence::AcisBinary(_)
-        | StreamEvidence::Text(Some(_)) => DialectMatch::admitted(dialect),
-        StreamEvidence::UnframedAsmBinary(_)
-        | StreamEvidence::UnframedAcisBinary(_)
-        | StreamEvidence::Text(None) => DialectMatch::refused(dialect),
+        StreamEvidence::Binary { framed: true, .. } | StreamEvidence::Text(Some(_)) => {
+            DialectMatch::admitted(dialect)
+        }
+        StreamEvidence::Binary { framed: false, .. } | StreamEvidence::Text(None) => {
+            DialectMatch::refused(dialect)
+        }
     }
 }
 
@@ -127,10 +151,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 fn declared(evidence: &StreamEvidence<'_>) -> BTreeMap<String, String> {
     let mut declared = BTreeMap::new();
     match evidence {
-        StreamEvidence::AsmBinary(_)
-        | StreamEvidence::UnframedAsmBinary(_)
-        | StreamEvidence::AcisBinary(_)
-        | StreamEvidence::UnframedAcisBinary(_) => {
+        StreamEvidence::Binary { .. } => {
             declared.insert(DECLARED_ENCODING.into(), "binary".into());
         }
         StreamEvidence::Text(text) => {
@@ -166,14 +187,10 @@ fn classify(evidence: &StreamEvidence<'_>) -> DialectMatch {
 /// Classify the same evidence as the shared non-primary kernel layer.
 fn kernel_layer(evidence: &StreamEvidence<'_>) -> DialectMatch {
     let header = match evidence {
-        StreamEvidence::AsmBinary(header) => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
-        StreamEvidence::UnframedAsmBinary(header) => {
-            cadmpeg_asm::dialect::KernelHeaderRef::Asm(header)
-        }
-        StreamEvidence::AcisBinary(header) => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
-        StreamEvidence::UnframedAcisBinary(header) => {
-            cadmpeg_asm::dialect::KernelHeaderRef::Acis(header)
-        }
+        StreamEvidence::Binary { family, header, .. } => match family {
+            Family::Asm => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
+            Family::Acis => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
+        },
         StreamEvidence::Text(Some(text)) => match text.branch {
             sat::Terminator::Asm => cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(text.header),
             sat::Terminator::Acis => cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(text.header),

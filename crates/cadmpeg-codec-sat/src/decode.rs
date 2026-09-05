@@ -13,11 +13,10 @@ use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::units::Tolerances;
 use std::collections::BTreeMap;
 
 use crate::detect::{classify, header_attributes, StreamKind};
-use crate::dialect::{dialect_loss, layers, terminator_line, StreamEvidence, TextEvidence};
+use crate::dialect::{dialect_loss, layers, terminator_line, Family, StreamEvidence, TextEvidence};
 use crate::loss::SatLossCode;
 use crate::FORMAT;
 
@@ -44,7 +43,11 @@ pub(crate) fn decode_asm_binary(
     let width = usize::from(header.width);
     let start = asm_header::record_stream_start_with_header(bytes, &header).ok_or_else(|| {
         unsupported_unframed(
-            &StreamEvidence::UnframedAsmBinary(&header),
+            &StreamEvidence::Binary {
+                family: Family::Asm,
+                header: &header,
+                framed: false,
+            },
             "ASM binary header has no record stream",
         )
     })?;
@@ -65,8 +68,12 @@ pub(crate) fn decode_asm_binary(
         DecodePurpose::Model,
     );
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, "asm", &mut attributes);
-    let evidence = StreamEvidence::AsmBinary(&header);
+    header_attributes(&header, Family::Asm, &mut attributes);
+    let evidence = StreamEvidence::Binary {
+        family: Family::Asm,
+        header: &header,
+        framed: true,
+    };
     let (matched, kernel) = layers(&evidence);
     build_result(ctx, brep, attributes, &header, None, matched, &kernel)
 }
@@ -82,7 +89,11 @@ pub(crate) fn decode_acis_binary(
     }
     let start = acis_header::record_stream_start_with_header(bytes, &header).ok_or_else(|| {
         unsupported_unframed(
-            &StreamEvidence::UnframedAcisBinary(&header),
+            &StreamEvidence::Binary {
+                family: Family::Acis,
+                header: &header,
+                framed: false,
+            },
             "ACIS binary header has no record stream",
         )
     })?;
@@ -101,11 +112,15 @@ pub(crate) fn decode_acis_binary(
         DecodePurpose::Model,
     );
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, "acis", &mut attributes);
+    header_attributes(&header, Family::Acis, &mut attributes);
     // Every band frames and decodes the same way. Classification states
     // whether the grammar applied is the one the framed stream declares; it
     // gates nothing. Build the admitted evidence only after framing succeeds.
-    let evidence = StreamEvidence::AcisBinary(&header);
+    let evidence = StreamEvidence::Binary {
+        family: Family::Acis,
+        header: &header,
+        framed: true,
+    };
     let (matched, kernel) = layers(&evidence);
     build_result(ctx, brep, attributes, &header, None, matched, &kernel)
 }
@@ -118,13 +133,8 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         )
     })?;
     let header = stream.header.as_kernel_header();
-    let family = match stream.terminator {
-        sat::Terminator::Asm => "asm",
-        sat::Terminator::Acis => "acis",
-    };
-    let dialect = terminator_line(stream.terminator);
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, family, &mut attributes);
+    header_attributes(&header, stream.terminator.into(), &mut attributes);
     attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
     // The ACIS branch carries the same save-format band as the ACIS binary
     // stream, so it takes the same admission — literally the same code path,
@@ -147,7 +157,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         brep,
         attributes,
         &header,
-        Some(dialect),
+        Some(stream.terminator),
         matched,
         &kernel,
     )
@@ -168,7 +178,7 @@ fn build_result(
     brep: AsmBrep,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
-    text_dialect: Option<&str>,
+    text_dialect: Option<sat::Terminator>,
     matched: DialectMatch,
     kernel: &DialectMatch,
 ) -> Result<Decoded, CodecError> {
@@ -176,8 +186,11 @@ fn build_result(
         DialectLayers::of(matched).with(kernel.clone()),
         attributes,
     ));
-    if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
-        ir.tolerances = Tolerances { linear, angular };
+    if let Some(linear) = header.linear {
+        ir.tolerances.linear = linear;
+    }
+    if let Some(angular) = header.angular {
+        ir.tolerances.angular = angular;
     }
 
     let AsmTransferRemainder {
@@ -194,7 +207,7 @@ fn build_result(
     losses.extend(dialect_loss(kernel));
     if !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
-            format!(" The stream ends with `{dialect}`.")
+            format!(" The stream ends with `{}`.", terminator_line(dialect))
         });
         losses.push(SatLossCode::GeometryFramedWithoutCarriers.note(format!(
             "the stream framed but its records decoded no surfaces, points, or faces; its \
