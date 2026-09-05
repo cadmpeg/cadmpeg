@@ -18,22 +18,19 @@ pub(crate) fn plan(
         // Off-catalog same-format source: only a verbatim replay can honor it.
         ResolvedTarget::Preserved { .. } => match replay_bytes(input.ir, input.fidelity)? {
             Replay::Replayed { bytes } => Ok(replayed_body(input.ir, bytes)),
-            Replay::Declined { reason } => Err(resolved.unavailable(match reason {
-                Some(reason) => format!(
+            Replay::Declined(reason) => Err(resolved.unavailable(match reason {
+                DeclineReason::Rejected(reason) => format!(
                     "{reason}; the semantic writer cannot synthesize the inherited dialect"
                 ),
-                None => "its retained source image is unavailable for byte replay and the semantic writer cannot synthesize it".to_owned(),
+                DeclineReason::SourceImageUnavailable => "its retained source image is unavailable for byte replay and the semantic writer cannot synthesize it".to_owned(),
             })),
         },
-        ResolvedTarget::Explicit { .. }
-        | ResolvedTarget::Inherited { .. }
-        | ResolvedTarget::Default { .. } => {
-            let index = resolved
-                .index()
-                .expect("catalog-backed resolutions carry an index");
-            let version = crate::IgesVersion::ALL[index];
+        ResolvedTarget::Explicit { index, .. }
+        | ResolvedTarget::Inherited { index, .. }
+        | ResolvedTarget::Default { index, .. } => {
+            let version = crate::IgesVersion::ALL[*index];
             if resolved.preserves_source() {
-                replay_or_synthesize(input, resolved, version)
+                replay_or_synthesize(input, version)
             } else {
                 synthesized_body(
                     input,
@@ -49,14 +46,12 @@ pub(crate) fn plan(
 /// it is intact, otherwise regenerate and report why replay was declined.
 fn replay_or_synthesize(
     input: EncodeInput<'_>,
-    resolved: &ResolvedWrite<'_>,
     version: crate::IgesVersion,
 ) -> Result<ExportBody, CodecError> {
     let replay_failure = match replay_bytes(input.ir, input.fidelity)? {
         Replay::Replayed { bytes } => return Ok(replayed_body(input.ir, bytes)),
-        Replay::Declined { reason } => reason,
+        Replay::Declined(reason) => reason,
     };
-    debug_assert!(resolved.source_preservation_eligible());
     synthesized_body(
         input,
         version,
@@ -95,7 +90,7 @@ fn synthesized_body(
 enum SynthesisCause {
     Fresh,
     Displaced(String),
-    ReplayDeclined(Option<String>),
+    ReplayDeclined(DeclineReason),
 }
 
 impl SynthesisCause {
@@ -105,7 +100,7 @@ impl SynthesisCause {
         } else if resolved.source_preservation_eligible()
             && !source_record_available(input.fidelity)
         {
-            Self::ReplayDeclined(None)
+            Self::ReplayDeclined(DeclineReason::SourceImageUnavailable)
         } else {
             Self::Fresh
         }
@@ -118,7 +113,7 @@ impl SynthesisCause {
                 Consumption::NotConsumed,
                 Some(IgesLossCode::SourceDialectDisplaced.note(message)),
             ),
-            Self::ReplayDeclined(None) => (
+            Self::ReplayDeclined(DeclineReason::SourceImageUnavailable) => (
                 Consumption::Degraded {
                     reason: "preserved IGES source image is unavailable".into(),
                 },
@@ -126,7 +121,9 @@ impl SynthesisCause {
                     "preserved IGES source image is unavailable; semantic regeneration is required",
                 )),
             ),
-            Self::ReplayDeclined(Some(reason)) => (Consumption::Degraded { reason }, None),
+            Self::ReplayDeclined(DeclineReason::Rejected(reason)) => {
+                (Consumption::Degraded { reason }, None)
+            }
         }
     }
 }
@@ -139,28 +136,23 @@ fn source_record_available(fidelity: Option<&SourceFidelity>) -> bool {
 
 enum Replay {
     Replayed { bytes: Vec<u8> },
-    Declined { reason: Option<String> },
+    Declined(DeclineReason),
+}
+
+enum DeclineReason {
+    SourceImageUnavailable,
+    Rejected(String),
 }
 
 impl Replay {
-    fn declined() -> Self {
-        Self::Declined { reason: None }
-    }
-
-    fn declined_because(reason: impl Into<String>) -> Self {
-        Self::Declined {
-            reason: Some(reason.into()),
-        }
-    }
-
     fn declined_for_record(
         record: Option<&cadmpeg_ir::RetainedSourceRecord>,
         reason: impl Into<String>,
     ) -> Self {
         if record.is_some() {
-            Self::declined_because(reason)
+            Self::Declined(DeclineReason::Rejected(reason.into()))
         } else {
-            Self::declined()
+            Self::Declined(DeclineReason::SourceImageUnavailable)
         }
     }
 }
@@ -171,7 +163,7 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
         .as_ref()
         .filter(|source| source.format() == crate::dialect::FORMAT)
     else {
-        return Ok(Replay::declined());
+        return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
     };
     let record = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID));
     let Some(expected) = source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE) else {
@@ -189,7 +181,7 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
         ));
     }
     let Some(record) = record else {
-        return Ok(Replay::declined());
+        return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
     };
     let Some(data) = record.data() else {
         return Err(CodecError::Malformed(
