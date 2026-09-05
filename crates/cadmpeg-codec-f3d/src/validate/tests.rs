@@ -82,7 +82,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
     scope.reference_members = crate::records::ReferenceRun::from_columns(vec![167], vec![234], "reference_members").unwrap();
     scope.paired_class_tag = "261".into();
     scope.paired_byte_offset = 361;
-    scope.feature_ordinal = 1;
+    scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     scope.feature_ordinal_offset = 284;
     scope.history_state_id_offset = 244;
     scope.previous_history_state_id_offset = Some(315);
@@ -970,7 +970,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             extrude_profile: Some(profile),
             ..crate::records::DesignExtrudeScope::default()
         })),
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 220,
         history_state_id: None,
         history_state_id_offset: 224,

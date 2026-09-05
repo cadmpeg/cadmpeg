@@ -77,7 +77,7 @@ fn retains_the_unique_history_bound_scope_envelope() {
 #[test]
 fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
     let mut scopes = vec![scope(42, 100, 7, 6), scope(42, 200, 9, 8)];
-    scopes[1].feature_ordinal = 2;
+    scopes[1].feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     let histories = [history(vec![
         history_state(7, Some(6)),
         history_state(9, Some(8)),
@@ -91,7 +91,7 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     let mut older = scope(42, 100, 7, 6);
     older.class_tag = "392".into();
     older.frame_length = 260;
-    older.feature_ordinal = 1;
+    older.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     older.reference_members = crate::records::ReferenceRun::from_columns(vec![101, 102, 103], vec![110, 120, 130], "reference_members").unwrap();
     older.paired_class_tag = "262".into();
     let mut newer = older.clone();

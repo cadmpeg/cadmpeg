@@ -26,7 +26,7 @@ fn localized_edge_treatment_group_retention_is_language_independent() {
         Kind::Fillet,
         Kind::Chamfer,
         Kind::Extrusion,
-        Kind::Native("unknown".into()),
+        Kind::try_from("unknown".to_owned()).expect("native family name"),
     ] {
         assert!(construction_operand_group_is_retained(Some(&kind), false));
     }
@@ -48,7 +48,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         record_index: 12,
         frame_length: 200,
         kind_offset: 1100,
-        feature_ordinal: 1,
+        feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
         history_state_id: None,
         history_state_id_offset: 0,
@@ -371,7 +371,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         crate::records::DesignFeatureKind::WorkPlane,
         601,
     );
-    first_plane.feature_ordinal = 0;
+    first_plane.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     first_plane.with_work_plane_transform([
         [1.0, 0.0, 0.0, -0.8],
         [0.0, 1.0, 0.0, 0.0],
@@ -383,14 +383,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         crate::records::DesignFeatureKind::WorkPlane,
         701,
     );
-    second_plane.feature_ordinal = 1;
+    second_plane.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     second_plane.with_work_plane_transform([
         [1.0, 0.0, 0.0, -1.4],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ]);
-    compact_split_scope.feature_ordinal = 2;
+    compact_split_scope.feature_ordinal = std::num::NonZeroU32::new(3).expect("nonzero ordinal");
     let plane_selection = |record_index, group_member_ordinal, primary_identity| {
         crate::records::DesignEntitySelectionOperand {
             id: format!("f3d:Design/BulkStream.dat:design-entity-selection-operand#{record_index}"),

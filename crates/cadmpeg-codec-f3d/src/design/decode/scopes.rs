@@ -3083,7 +3083,7 @@ fn exact_legacy_class_388_scope(bytes: &[u8], scope: &DesignParameterScope) -> O
     if kind != "Assemble"
         || kind_end != start + class_388_assemble::FEATURE_ORDINAL
         || View::u32_le_at(bytes, start + class_388_assemble::FEATURE_ORDINAL)?
-            != scope.feature_ordinal
+            != scope.feature_ordinal.get()
     {
         return None;
     }
@@ -5789,7 +5789,7 @@ fn exact_base_feature_body_snapshot(
     }
     let (kind, kind_end) = lp_utf16_bounded(bytes, kind_at, 1..=256)?;
     if kind != scope.kind_name()
-        || View::u32_le_at(bytes, kind_end)? != scope.feature_ordinal
+        || View::u32_le_at(bytes, kind_end)? != scope.feature_ordinal.get()
         || scope.feature_ordinal_offset != u64::try_from(kind_end).ok()?
         || scope.previous_history_state_id.is_some()
         || scope.previous_history_state_id_offset.is_some()
@@ -8823,13 +8823,10 @@ pub(crate) fn parse_parameter_scope(
         return None;
     };
     let kind_text = kind.clone();
-    let kind = crate::records::DesignFeatureKind::from(kind_text.clone());
+    let kind = crate::records::DesignFeatureKind::try_from(kind_text.clone()).ok()?;
     let kind_end = *kind_end;
     let reference_table_end = kind_at.checked_sub(4)?;
-    let feature_ordinal = View::u32_le_at(bytes, kind_end)?;
-    if feature_ordinal == 0 {
-        return None;
-    }
+    let feature_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, kind_end)?)?;
     let history_state_id_offset = reference_table_end;
     let history_state_id = match View::u32_le_at(bytes, history_state_id_offset)? {
         u32::MAX => None,

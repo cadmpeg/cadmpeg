@@ -30,11 +30,11 @@ use std::collections::HashSet;
 #[test]
 fn feature_family_tokens_are_localized() {
     use crate::records::DesignFeatureKind;
-    let family = |token: &str| design_feature_family(&DesignFeatureKind::from(token.to_owned()));
+    let family = |token: &str| design_feature_family(&DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"));
     let treatment =
-        |token: &str| has_typed_edge_treatment_group(&DesignFeatureKind::from(token.to_owned()));
+        |token: &str| has_typed_edge_treatment_group(&DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"));
     let localized =
-        |token: &str| is_localized_edge_treatment_kind(&DesignFeatureKind::from(token.to_owned()));
+        |token: &str| is_localized_edge_treatment_kind(&DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"));
     assert_eq!(family("As-built"), Some(DesignFeatureFamily::Assemble));
     assert_eq!(family("Esquisse"), Some(DesignFeatureFamily::Sketch));
     assert_eq!(family("Extrusion"), Some(DesignFeatureFamily::Extrude));
