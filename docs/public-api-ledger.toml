@@ -5069,3 +5069,45 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::nurbs::proc_surface::SweepProfile"
 reason = "ASM-07: share the explicit sweep profile and path and retain only form-specific fields in SweepTail"
+
+[[change]]
+commit = "e0c038aacb4ad272473e88970219a65323717b47"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::edit::NurbsPcurveEdit"
+reason = "ASM-18: select inline-cache and reference-wrapper edits by payload and remove the incompatible reference metadata guard"
+
+[[change]]
+commit = "e0c038aacb4ad272473e88970219a65323717b47"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::edit::InlinePcurveEdit"
+reason = "ASM-18: select inline-cache and reference-wrapper edits by payload and remove the incompatible reference metadata guard"
+
+[[change]]
+commit = "e0c038aacb4ad272473e88970219a65323717b47"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::edit::PcurveEdit"
+reason = "ASM-18: select inline-cache and reference-wrapper edits by payload and remove the incompatible reference metadata guard"
+
+[[change]]
+commit = "e0c038aacb4ad272473e88970219a65323717b47"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::edit::AsmEditSet::patch_nurbs_pcurve"
+reason = "ASM-18: select inline-cache and reference-wrapper edits by payload and remove the incompatible reference metadata guard"
+
+[[change]]
+commit = "e0c038aacb4ad272473e88970219a65323717b47"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::edit::AsmEditSet::patch_ref_pcurve"
+reason = "ASM-18: select inline-cache and reference-wrapper edits by payload and remove the incompatible reference metadata guard"
+
+[[change]]
+commit = "e0c038aacb4ad272473e88970219a65323717b47"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::edit::AsmEditSet::patch_pcurve"
+reason = "ASM-18: select inline-cache and reference-wrapper edits by payload and remove the incompatible reference metadata guard"

@@ -12,13 +12,13 @@ use cadmpeg_ir::topology::{Color, Sense};
 use cadmpeg_ir::transform::Transform;
 
 use super::edits::{
-    NurbsCurveEdit, NurbsPcurveEdit, NurbsSurfaceEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
+    NurbsCurveEdit, NurbsSurfaceEdit, PcurveEdit, ProceduralCurveEdit, ProceduralSurfaceEdit,
 };
 use crate::writer::primitives::{finite_vector, unique_knot_count};
 use cadmpeg_asm::brep::attributes::{attribute_chain_color_carrier, DirectColorCarrier};
 use cadmpeg_asm::edit::{
-    AsmEditSet, NurbsCurveEdit as AsmNurbsCurveEdit, NurbsPcurveEdit as AsmNurbsPcurveEdit,
-    NurbsSurfaceEdit as AsmNurbsSurfaceEdit,
+    AsmEditSet, InlinePcurveEdit, NurbsCurveEdit as AsmNurbsCurveEdit,
+    NurbsSurfaceEdit as AsmNurbsSurfaceEdit, PcurveEdit as AsmPcurveEdit,
 };
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab;
@@ -85,7 +85,7 @@ pub(crate) struct GeometryEdits<'a> {
     pub(crate) procedural_surface_edits: &'a BTreeMap<String, ProceduralSurfaceEdit>,
     pub(crate) nurbs_surfaces: &'a BTreeMap<String, NurbsSurfaceEdit>,
     pub(crate) nurbs_curves: &'a BTreeMap<String, NurbsCurveEdit>,
-    pub(crate) pcurves: &'a BTreeMap<String, NurbsPcurveEdit>,
+    pub(crate) pcurves: &'a BTreeMap<String, PcurveEdit>,
     pub(crate) procedural_curve_edits: &'a BTreeMap<String, ProceduralCurveEdit>,
     pub(crate) procedural_surface_fits: &'a BTreeMap<String, f64>,
     pub(crate) creation_timestamps: &'a BTreeMap<usize, f64>,
@@ -110,14 +110,28 @@ fn asm_nurbs_curve_edit(edit: &NurbsCurveEdit) -> AsmNurbsCurveEdit<'_> {
     }
 }
 
-fn asm_nurbs_pcurve_edit(edit: &NurbsPcurveEdit) -> AsmNurbsPcurveEdit<'_> {
-    AsmNurbsPcurveEdit {
-        native_geometry: &edit.native_geometry,
-        periodic: edit.periodic,
-        wrapper_reversed: edit.wrapper_reversed,
-        native_tail_flags: edit.native_tail_flags,
-        parameter_range: edit.parameter_range,
-        fit_tolerance: edit.fit_tolerance,
+fn asm_pcurve_edit(edit: &PcurveEdit) -> AsmPcurveEdit<'_> {
+    match edit {
+        PcurveEdit::Inline {
+            native_geometry,
+            periodic,
+            wrapper_reversed,
+            native_tail_flags,
+            parameter_range,
+            fit_tolerance,
+        } => AsmPcurveEdit::Inline(InlinePcurveEdit {
+            native_geometry,
+            periodic: *periodic,
+            wrapper_reversed: *wrapper_reversed,
+            native_tail_flags: *native_tail_flags,
+            parameter_range: *parameter_range,
+            fit_tolerance: *fit_tolerance,
+        }),
+        PcurveEdit::Ref {
+            parameter_range, ..
+        } => AsmPcurveEdit::Ref {
+            parameter_range: *parameter_range,
+        },
     }
 }
 
@@ -192,14 +206,26 @@ fn patch_asm_geometry(
         .iter()
         .filter(|record| record.head() == "pcurve")
         .filter_map(|record| {
-            let edit = pcurves.get(&crate::ids::brep_entity_id(record.index))?;
+            let PcurveEdit::Ref {
+                native_geometry,
+                periodic,
+                ..
+            } = pcurves.get(&crate::ids::brep_entity_id(record.index))?
+            else {
+                return None;
+            };
             let target = usize::try_from(record.ref_at(4)?).ok()?;
-            let mut geometry = edit.clone();
-            geometry.wrapper_reversed = None;
-            geometry.native_tail_flags = None;
-            geometry.parameter_range = None;
-            geometry.fit_tolerance = None;
-            Some((target, geometry))
+            Some((
+                target,
+                AsmPcurveEdit::Inline(InlinePcurveEdit {
+                    native_geometry,
+                    periodic: *periodic,
+                    wrapper_reversed: None,
+                    native_tail_flags: None,
+                    parameter_range: None,
+                    fit_tolerance: None,
+                }),
+            ))
         })
         .collect::<BTreeMap<_, _>>();
     let mut color_records = BTreeMap::new();
@@ -358,14 +384,10 @@ fn patch_asm_geometry(
         }
         let id = crate::ids::brep_entity_id(record.index);
         if let Some(edit) = ref_pcurve_geometry.get(&record.index) {
-            asm_edits.patch_nurbs_pcurve(bytes, record, asm_nurbs_pcurve_edit(edit))?;
+            asm_edits.patch_pcurve(bytes, record, *edit)?;
         }
         if let Some(edit) = pcurves.get(&id) {
-            if record.ref_at(4).is_some() {
-                asm_edits.patch_ref_pcurve(bytes, record, asm_nurbs_pcurve_edit(edit))?;
-            } else {
-                asm_edits.patch_nurbs_pcurve(bytes, record, asm_nurbs_pcurve_edit(edit))?;
-            }
+            asm_edits.patch_pcurve(bytes, record, asm_pcurve_edit(edit))?;
         }
         if let Some(edit) = nurbs_curves.get(&id) {
             asm_edits.patch_nurbs_curve(bytes, record, asm_nurbs_curve_edit(edit), false)?;

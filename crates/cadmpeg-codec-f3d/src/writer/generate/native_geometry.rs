@@ -6696,9 +6696,12 @@ mod revision_surface_tail_tests {
         let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&mut cur)
             .expect("decoded parameterized tail");
         assert_eq!(cur.pos(), toks.len());
-        assert_eq!(tail.enumeration, 2);
-        assert_eq!(tail.fit_tolerance, None);
-        assert_eq!(tail.parameterization, Some(parameterization));
+        let cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache::Parameterized(actual) =
+            tail.cache
+        else {
+            panic!("parameterized tail cache")
+        };
+        assert_eq!(actual, parameterization);
         assert_eq!(tail.discontinuities, discontinuities);
         assert!(!tail.tail_flag);
     }
