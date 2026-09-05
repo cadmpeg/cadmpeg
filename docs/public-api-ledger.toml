@@ -4999,3 +4999,24 @@ crate = "cadmpeg-asm"
 kind = "variant"
 item = "cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache"
 reason = "ASM-04: make solved and parameterized cache payloads exclusive and remove revision_cache_form admission"
+
+[[change]]
+commit = "3076c5e8da4db0892a600a906af33353fae1d9d3"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::support_present"
+reason = "ASM-08: replace independent support-presence flags and geometry options with exclusive native support slots"
+
+[[change]]
+commit = "3076c5e8da4db0892a600a906af33353fae1d9d3"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_curve::EmbeddedIntersection::surfaces"
+reason = "ASM-08: replace independent support-presence flags and geometry options with exclusive native support slots"
+
+[[change]]
+commit = "3076c5e8da4db0892a600a906af33353fae1d9d3"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::nurbs::proc_curve::SupportSlot"
+reason = "ASM-08: replace independent support-presence flags and geometry options with exclusive native support slots"
