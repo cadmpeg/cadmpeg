@@ -4362,3 +4362,10 @@ crate = "cadmpeg-container"
 kind = "variant"
 item = "cadmpeg_container::SpanRole"
 reason = "CTR-05: replace duplicate entry-owned and unowned padding variants with optional owners"
+
+[[change]]
+commit = "89a9a19604a38fb55f94a3f783ccd25567636d99"
+crate = "cadmpeg-container"
+kind = "signature"
+item = "cadmpeg_container::ArchiveSnapshot::open"
+reason = "CTR-04: resolve an entry name inside the snapshot instead of accepting detached EntryRecord metadata"

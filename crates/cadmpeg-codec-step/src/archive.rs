@@ -58,7 +58,7 @@ pub(crate) fn open_root<'a>(
     let root_entry = archive.entry(ROOT_NAME).ok_or_else(|| {
         CodecError::WrongFormat(format!("STEP ZIP has no required root {ROOT_NAME}"))
     })?;
-    let root_view = archive.open(ctx, root_entry)?;
+    let root_view = archive.open(ctx, &root_entry.name)?;
     Ok((archive, root_view))
 }
 

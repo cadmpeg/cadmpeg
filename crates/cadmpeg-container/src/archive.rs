@@ -3,13 +3,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use zip::{CompressionMethod, HasZipMetadata};
-
-static NEXT_ARCHIVE_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +61,6 @@ pub struct EntryRecord {
     /// Physical start of the central-directory record.
     pub central_start: u64,
     utf8_name: bool,
-    snapshot_id: u64,
 }
 
 impl EntryRecord {
@@ -87,7 +83,6 @@ impl EntryRecord {
 #[derive(Debug)]
 pub struct ArchiveSnapshot<'a> {
     root: View<'a>,
-    snapshot_id: u64,
     entries: Vec<EntryRecord>,
     by_name: BTreeMap<String, usize>,
 }
@@ -104,7 +99,6 @@ impl<'a> ArchiveSnapshot<'a> {
                 "ZIP central directory contains duplicate entry names".into(),
             ));
         }
-        let snapshot_id = NEXT_ARCHIVE_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
         let mut names = BTreeSet::new();
         let mut entries = Vec::with_capacity(archive.len());
         for index in 0..archive.len() {
@@ -136,7 +130,6 @@ impl<'a> ArchiveSnapshot<'a> {
                 data_start,
                 central_start: file.central_header_start(),
                 utf8_name: file.get_metadata().is_utf8,
-                snapshot_id,
             };
             for offset in [
                 record.header_start,
@@ -161,7 +154,6 @@ impl<'a> ArchiveSnapshot<'a> {
             .collect();
         Ok(Self {
             root,
-            snapshot_id,
             entries,
             by_name,
         })
@@ -177,17 +169,11 @@ impl<'a> ArchiveSnapshot<'a> {
         self.by_name.get(name).map(|index| &self.entries[*index])
     }
 
-    /// Opens one entry as a borrowed stored slice or budgeted expanded view.
-    pub fn open(
-        &self,
-        ctx: &DecodeContext<'a>,
-        entry: &EntryRecord,
-    ) -> Result<View<'a>, CodecError> {
-        if entry.snapshot_id != self.snapshot_id {
-            return Err(CodecError::Malformed(
-                "ZIP entry handle does not belong to this snapshot".into(),
-            ));
-        }
+    /// Opens an exact entry name as a borrowed stored slice or budgeted expanded view.
+    pub fn open(&self, ctx: &DecodeContext<'a>, name: &str) -> Result<View<'a>, CodecError> {
+        let entry = self
+            .entry(name)
+            .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
         let end = entry.data_end()?;
         let archive_start = u64::try_from(self.root.start())
             .map_err(|_| CodecError::Malformed("ZIP root offset does not fit u64".into()))?;
@@ -877,19 +863,22 @@ mod tests {
         let deflated = snapshot.entry("deflated.bin").expect("deflated record");
         let zstd = snapshot.entry("zstd.bin").expect("Zstandard record");
         assert_eq!(
-            snapshot.open(&ctx, stored).expect("stored opens").window(),
+            snapshot
+                .open(&ctx, &stored.name)
+                .expect("stored opens")
+                .window(),
             b"stored"
         );
         assert_eq!(
             snapshot
-                .open(&ctx, deflated)
+                .open(&ctx, &deflated.name)
                 .expect("deflated opens")
                 .window(),
             b"deflated payload"
         );
         assert_eq!(
             snapshot
-                .open(&ctx, zstd)
+                .open(&ctx, &zstd.name)
                 .expect("Zstandard entry opens")
                 .window(),
             b"Zstandard payload"
@@ -897,27 +886,24 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_rejects_entry_handles_from_another_snapshot() {
+    fn snapshot_opens_names_using_its_own_metadata() {
         let bytes = archive_bytes();
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("archive fits root policy");
         let first = ArchiveSnapshot::new(root).expect("first archive snapshot");
         let second = ArchiveSnapshot::new(root).expect("second archive snapshot");
-        let foreign = second.entry("stored.bin").expect("foreign entry exists");
-        assert!(first.open(&ctx, foreign).is_err());
-
-        let owned = first
-            .entry("stored.bin")
-            .expect("owned entry exists")
-            .clone();
+        let mut detached = second.entry("stored.bin").expect("entry exists").clone();
+        detached.data_start = u64::MAX;
+        detached.crc32 = 0;
         assert_eq!(
             first
-                .open(&ctx, &owned)
-                .expect("owned clone opens")
+                .open(&ctx, &detached.name)
+                .expect("name opens own metadata")
                 .window(),
             b"stored"
         );
+        assert!(first.open(&ctx, "missing.bin").is_err());
     }
 
     #[test]
@@ -942,7 +928,7 @@ mod tests {
             let entry = snapshot.entry(name).expect("entry exists");
             assert_eq!(
                 snapshot
-                    .open(&ctx, entry)
+                    .open(&ctx, &entry.name)
                     .expect("nested entry opens")
                     .window(),
                 expected
@@ -970,7 +956,9 @@ mod tests {
                 .expect("archive fits root policy");
         let archive = ArchiveSnapshot::new(root).expect("archive snapshots");
         let entry = archive.entry("GuiDocument.xml").expect("member present");
-        let view = archive.open(&ctx, entry).expect("GuiDocument member opens");
+        let view = archive
+            .open(&ctx, &entry.name)
+            .expect("GuiDocument member opens");
         let address = ctx.resolve_location(view.location_at(5));
         assert!(
             address.path().ends_with("GuiDocument.xml@5"),

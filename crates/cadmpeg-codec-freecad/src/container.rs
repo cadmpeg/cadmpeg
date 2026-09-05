@@ -76,7 +76,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'a>, Cod
     for file in archive.entries() {
         let name = file.name.clone();
         validate_name(&name)?;
-        let view = archive.open(ctx, file)?;
+        let view = archive.open(ctx, &file.name)?;
         data.insert(name, view);
     }
 

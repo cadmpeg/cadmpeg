@@ -1954,7 +1954,7 @@ pub(crate) fn nested_entry<'a>(
     };
     for entry in archive.entries() {
         if entry.name.ends_with(suffix) {
-            return Ok(Some(archive.open(ctx, entry)?));
+            return Ok(Some(archive.open(ctx, &entry.name)?));
         }
     }
     Ok(None)

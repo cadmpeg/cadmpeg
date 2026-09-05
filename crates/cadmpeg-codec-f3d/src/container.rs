@@ -399,7 +399,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         let mut attributes = BTreeMap::new();
 
         let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
-        let view = archive.open(ctx, file)?;
+        let view = archive.open(ctx, &file.name)?;
         let buf = view.window();
         if is_brep {
             let kernel = if asm_header::has_asm_magic(buf) {
