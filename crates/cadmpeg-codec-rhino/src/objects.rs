@@ -319,10 +319,8 @@ pub(crate) struct SourceIdentity {
     pub(crate) name: String,
     /// Raw layer archive index.
     pub(crate) layer_index: i32,
-    /// Resolved layer UUID.
-    pub(crate) layer_id: Option<Uuid>,
-    /// Resolved layer name.
-    pub(crate) layer_name: Option<String>,
+    /// Resolved layer from the document layer table.
+    pub(crate) layer: Option<LayerRef>,
     /// Effective display color.
     pub(crate) effective_color: Option<[u8; 4]>,
     /// Effective visibility after layer combination.
@@ -335,6 +333,15 @@ pub(crate) struct SourceIdentity {
     pub(crate) object_frame: Option<Xform>,
     /// Complete source range.
     pub(crate) source: SourceRange,
+}
+
+/// Resolved layer identity from one document lookup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LayerRef {
+    /// Layer UUID, when the layer record carries one.
+    pub(crate) id: Option<Uuid>,
+    /// Layer name.
+    pub(crate) name: String,
 }
 
 /// Builds a stable source ID without minting a `CadIr` entity ID.
@@ -1527,8 +1534,10 @@ fn resolve_identity(
         class_uuid: descriptor.class_uuid,
         name,
         layer_index,
-        layer_id: layer.and_then(|value| value.id),
-        layer_name: layer.map(|value| value.name.clone()),
+        layer: layer.map(|value| LayerRef {
+            id: value.id,
+            name: value.name.clone(),
+        }),
         effective_color: color,
         effective_visible: visible,
         object_mode,
