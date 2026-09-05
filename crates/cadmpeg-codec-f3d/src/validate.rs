@@ -4680,7 +4680,7 @@ fn valid_work_plane_construction(
     let Some(records::DesignWorkPlaneConstruction::ThreePoint {
         placement_record_index,
         inputs,
-    }) = &scope.work_plane_construction
+    }) = scope.work_plane_construction()
     else {
         return true;
     };

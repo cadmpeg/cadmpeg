@@ -116,7 +116,6 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_frame: None,
-        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,
         work_point_construction: None,

@@ -226,7 +226,6 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_frame: None,
-        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,
         work_point_construction: None,

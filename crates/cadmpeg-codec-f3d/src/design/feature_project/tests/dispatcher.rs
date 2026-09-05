@@ -147,10 +147,12 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
     };
     let mut plane = DesignParameterScope::empty("f3d:native:parameter-scope#20", "WorkPlane", 20);
     plane.with_work_plane_transform(identity_matrix());
-    plane.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
-        placement_record_index: 21,
-        inputs: Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
-    });
+    if let Some(frame) = &mut plane.work_plane_frame {
+        frame.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
+            placement_record_index: 21,
+            inputs: Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
+        });
+    }
 
     let (features, _) = project_parameter_design(&[], &[], &[plane], &[], &[], &[], &[], &[]);
     let FeatureDefinition::DatumThreePointPlane { points, .. } = &features[0].definition else {

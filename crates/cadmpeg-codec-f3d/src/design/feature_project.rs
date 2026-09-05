@@ -1818,7 +1818,7 @@ pub(crate) fn work_point_recipe_state_id(
 
 pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option<i64> {
     let crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. } =
-        scope.work_plane_construction.as_ref()?;
+        scope.work_plane_construction()?;
     let state = inputs[0].recipe_state_id?;
     inputs
         .iter()
@@ -1950,7 +1950,7 @@ fn project_work_plane(
     let normal = Vector3::new(transform[0][2], transform[1][2], transform[2][2]);
     let u_axis = Vector3::new(transform[0][0], transform[1][0], transform[2][0]);
     let Some(DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
-        &scope.work_plane_construction
+        scope.work_plane_construction()
     else {
         return FeatureDefinition::DatumPlane {
             origin,

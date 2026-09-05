@@ -271,6 +271,7 @@ pub fn decode_parameter_scopes(
                                 work_plane_reference_offset: offset,
                             }
                         }),
+                        work_plane_construction: None,
                     });
                 }
             }
@@ -9122,7 +9123,6 @@ pub(crate) fn parse_parameter_scope(
         copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_frame: None,
-        work_plane_construction: None,
         work_axis_construction: None,
         joint_origin_frame: None,
         work_point_construction: None,
