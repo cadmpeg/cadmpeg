@@ -13807,7 +13807,7 @@ pub struct DesignMeshBody {
     /// Finite bound carried by the Scene-node footer; absent for its unset sentinel.
     pub scene_node_bounds: Option<DesignMeshSceneBounds>,
     /// Optional row-major affine transform carried by the placed Scene-node form.
-    pub scene_node_transform: Option<Located<[[f64; 4]; 4]>>,
+    pub scene_node_transform: Option<Located<MeshAffineTransform>>,
     /// Separately typed Scene auxiliary cache reached through the Scene node.
     pub scene_auxiliary_record: DesignMeshRecordIdentity,
     /// Typed Design body-owner record referenced by `body_record`.
@@ -13825,7 +13825,7 @@ pub struct DesignMeshBody {
     /// Byte offset of the ASCII `fusion_uuid` payload.
     pub fusion_uuid_offset: u64,
     /// Equal row-major container-to-model-centimetre affine transform.
-    pub transform: [[f64; 4]; 4],
+    pub transform: MeshAffineTransform,
     /// Byte offsets of the two equal serialized transform blocks.
     pub transform_offsets: [u64; 2],
     /// Byte offset of the body-to-feature-scope reference.
@@ -13877,7 +13877,7 @@ struct DesignMeshBodyWire {
     scene_node_bounds: Option<DesignMeshSceneBounds>,
     /// Optional row-major affine transform carried by the placed Scene-node form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    scene_node_transform: Option<[[f64; 4]; 4]>,
+    scene_node_transform: Option<MeshAffineTransform>,
     /// Byte offset of `scene_node_transform` when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     scene_node_transform_offset: Option<u64>,
@@ -13899,7 +13899,7 @@ struct DesignMeshBodyWire {
     /// Byte offset of the ASCII `fusion_uuid` payload.
     fusion_uuid_offset: u64,
     /// Equal row-major container-to-model-centimetre affine transform.
-    transform: [[f64; 4]; 4],
+    transform: MeshAffineTransform,
     /// Byte offsets of the two equal serialized transform blocks.
     transform_offsets: [u64; 2],
     /// Byte offset of the body-to-feature-scope reference.
@@ -14006,6 +14006,62 @@ impl DesignMeshBody {
     }
 }
 
+
+/// A finite, nonsingular row-major affine map.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "[[f64; 4]; 4]"))]
+#[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
+pub struct MeshAffineTransform([f64; 16]);
+
+impl MeshAffineTransform {
+    /// Check finite coefficients, an affine last row, and a nonzero finite determinant.
+    pub fn new(cells: [f64; 16]) -> Result<Self, String> {
+        let value = Self(cells);
+        let rows = value.rows();
+        if !cells.iter().all(|cell| cell.is_finite()) || rows[3] != [0.0, 0.0, 0.0, 1.0] {
+            return Err("transform must be finite and affine".into());
+        }
+        let determinant = rows[0][0]
+            * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
+            - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
+            + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0]);
+        if !determinant.is_finite() || determinant == 0.0 {
+            return Err("transform must have a nonzero finite determinant".into());
+        }
+        Ok(value)
+    }
+
+    /// Row-major coefficients.
+    pub fn cells(self) -> [f64; 16] {
+        self.0
+    }
+
+    /// Four row-major rows.
+    pub fn rows(self) -> [[f64; 4]; 4] {
+        let cells = self.0;
+        [
+            [cells[0], cells[1], cells[2], cells[3]],
+            [cells[4], cells[5], cells[6], cells[7]],
+            [cells[8], cells[9], cells[10], cells[11]],
+            [cells[12], cells[13], cells[14], cells[15]],
+        ]
+    }
+
+}
+
+impl TryFrom<[[f64; 4]; 4]> for MeshAffineTransform {
+    type Error = String;
+    fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
+        Self::new(std::array::from_fn(|i| rows[i / 4][i % 4]))
+    }
+}
+
+impl From<MeshAffineTransform> for [[f64; 4]; 4] {
+    fn from(value: MeshAffineTransform) -> Self {
+        value.rows()
+    }
+}
 
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
