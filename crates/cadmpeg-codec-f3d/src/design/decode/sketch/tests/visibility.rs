@@ -37,14 +37,14 @@ fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
 fn sketch_visibility_member_decodes_both_boolean_values() {
     let hidden =
         decode_sketch_visibility_member(&member(1, 0), 0, ENTITY_SUFFIX).expect("hidden member");
-    assert_eq!(hidden.stream_ordinal, 1);
-    assert_eq!(hidden.stream_ordinal_offset, 30);
-    assert_eq!(hidden.visible_offset, 35);
+    assert_eq!(hidden.stream_ordinal.get(), 1);
+    assert_eq!(hidden.stream_ordinal_offset(), 30);
+    assert_eq!(hidden.visible_offset(), 35);
     assert!(!hidden.visible);
 
     let visible =
         decode_sketch_visibility_member(&member(513, 1), 0, ENTITY_SUFFIX).expect("visible member");
-    assert_eq!(visible.stream_ordinal, 513);
+    assert_eq!(visible.stream_ordinal.get(), 513);
     assert!(visible.visible);
 }
 
