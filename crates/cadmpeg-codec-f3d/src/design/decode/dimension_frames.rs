@@ -1274,11 +1274,11 @@ pub(crate) fn parse_dimension_annotation_frame(
                 valid = false;
                 break;
             }
-            let Some(reference) = View::u32_le_at(bytes, cursor + 1) else {
+            let Some(reference) = View::u32_le_at(bytes, cursor + 1).and_then(std::num::NonZeroU32::new) else {
                 valid = false;
                 break;
             };
-            if !geometry_indices.contains(&reference) {
+            if !geometry_indices.contains(&reference.get()) {
                 valid = false;
                 break;
             }
@@ -1299,7 +1299,7 @@ pub(crate) fn parse_dimension_annotation_frame(
                 operand.geometry_record_index.map(std::num::NonZeroU32::get)
             })
             .collect::<Vec<_>>();
-        let mut returned = return_members.iter().map(|member| member.value).collect::<Vec<_>>();
+        let mut returned = return_members.iter().map(|member| member.value.get()).collect::<Vec<_>>();
         operand_members.sort_unstable();
         returned.sort_unstable();
         if operand_members != returned {

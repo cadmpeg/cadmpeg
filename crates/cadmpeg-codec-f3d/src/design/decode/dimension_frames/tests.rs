@@ -931,7 +931,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     assert_eq!(frame.annotation_byte_offset, annotation_byte_offset as u64);
     assert_eq!(frame.annotation_bytes, [0xaa, 0xbb, 0xcc]);
     assert_eq!(frame.operands[0].geometry_record_index, None);
-    assert_eq!(frame.return_members.iter().map(|member| member.value).collect::<Vec<_>>(), [376, 354]);
+    assert_eq!(frame.return_members.iter().map(|member| member.value.get()).collect::<Vec<_>>(), [376, 354]);
     assert_eq!(frame.paired_byte_offset, paired_byte_offset as u64);
     assert_eq!(frame.owner_reference, 201);
 

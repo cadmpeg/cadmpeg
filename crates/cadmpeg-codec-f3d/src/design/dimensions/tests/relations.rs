@@ -519,7 +519,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         annotation_byte_offset: 0,
         governing_owner_record_index: 13,
         governing_owner_reference_offset: 0,
-        return_members: vec![crate::records::Located { value: 10, offset: 0 }],
+        return_members: vec![crate::records::Located { value: std::num::NonZeroU32::new(10).unwrap(), offset: 0 }],
         paired_class_tag: "256".into(),
         paired_byte_offset: 0,
         owner_reference: 100,
@@ -576,7 +576,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
                 role_offset: 0,
             },
         ],
-        return_members: vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }],
+        return_members: vec![crate::records::Located { value: std::num::NonZeroU32::new(10).unwrap(), offset: 0 }, crate::records::Located { value: std::num::NonZeroU32::new(11).unwrap(), offset: 0 }],
         ..frame.clone()
     };
     let explicit_definition = crate::design::dimensions::annotation_offset_dimension_definition(
