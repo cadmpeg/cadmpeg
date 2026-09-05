@@ -363,7 +363,10 @@ mod tests {
         let native = crate::native::F3dNative {
             body_native_keys: vec![
                 cadmpeg_asm::brep::records::BodyNativeKey {
-                    id: "generated:body-key#a".into(),
+                    source_namespace:
+                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                            cadmpeg_asm::ids::IdFormat("generated"),
+                        ),
                     body: first.id.clone(),
                     record_index: 1,
                     body_ordinal: 0,
@@ -371,7 +374,10 @@ mod tests {
                     asm_body_key: Some(11),
                 },
                 cadmpeg_asm::brep::records::BodyNativeKey {
-                    id: "generated:body-key#b".into(),
+                    source_namespace:
+                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                            cadmpeg_asm::ids::IdFormat("generated"),
+                        ),
                     body: second.id.clone(),
                     record_index: 2,
                     body_ordinal: 1,

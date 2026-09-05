@@ -1112,9 +1112,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
     );
     unique(
         findings,
-        data.face_native_keys
-            .iter()
-            .map(|record| record.id.as_str()),
+        data.face_native_keys.iter().map(|record| record.id()),
         "ASM face-native-key id",
     );
     unique(
@@ -1135,7 +1133,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor ASM face-native-key record does not resolve to a neutral face".into(),
-                Some(record.id.clone()),
+                Some(record.id()),
             ));
         }
     }

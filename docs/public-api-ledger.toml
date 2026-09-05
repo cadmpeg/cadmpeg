@@ -5328,3 +5328,269 @@ crate = "cadmpeg-asm"
 kind = "signature"
 item = "cadmpeg_asm::nurbs::proc_curve::cacheless_procedural_curve_resolving_refs"
 reason = "ASM-03: replace mutually exclusive cached curve fields with one construction payload and remove tuple transport"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::EdgeContinuity::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::EdgeContinuity::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::EdgeContinuity::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::EdgeOwnership::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::EdgeOwnership::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::EdgeOwnership::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::VertexOwnership::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::VertexOwnership::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::VertexOwnership::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::FaceSidedness::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::FaceSidedness::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::FaceSidedness::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::FaceNativeKey::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::FaceNativeKey::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::FaceNativeKey::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::TolerantVertexTail::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::TolerantVertexTail::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::TolerantVertexTail::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::TolerantEdgeTail::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::TolerantEdgeTail::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::TolerantEdgeTail::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::TolerantCoedgeParameters::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::TolerantCoedgeParameters::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::TolerantCoedgeParameters::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::MeshSurfaceSentinel::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::MeshSurfaceSentinel::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::MeshSurfaceSentinel::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::WireTopology::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::WireTopology::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::WireTopology::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::BodyNativeKey::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::BodyNativeKey::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::BodyNativeKey::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::records::TransformHints::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::TransformHints::id"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::TransformHints::source_namespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::identity::NativeRecordNamespace"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"
+
+[[change]]
+commit = "2e15869ed454ce7ea128c74e8bcc9da91d25e79f"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new"
+reason = "ASM-13: derive native record ids from source namespace, record kind, and record_index instead of storing a duplicate id"

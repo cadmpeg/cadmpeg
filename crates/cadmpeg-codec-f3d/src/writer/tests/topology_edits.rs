@@ -59,7 +59,9 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
     baseline
         .body_native_keys
         .push(cadmpeg_asm::brep::records::BodyNativeKey {
-            id: "f3d:asm:body-native-key#1".into(),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             body: body.clone(),
             record_index: 1,
             body_ordinal: 0,

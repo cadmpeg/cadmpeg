@@ -339,7 +339,9 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             Some(cadmpeg_asm::brep::records::FaceContainment::In);
         native.edge_ownerships[0].owner_coedge = Some(owner_coedge);
         native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
-            id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],
@@ -347,7 +349,9 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             evaluated_unset: false,
         }];
         native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
-            id: "f3d:asm:tolerant-edge-tail#generated".into(),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             edge: tolerant_edge,
             record_index: 0,
             entity_revision: 22800,
@@ -355,7 +359,9 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         }];
         native.tolerant_coedge_parameters =
             vec![cadmpeg_asm::brep::records::TolerantCoedgeParameters {
-                id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
+                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                    crate::ids::ID_FORMAT,
+                ),
                 coedge: tolerant_coedge,
                 record_index: 0,
                 parameter_range: [0.25, 0.75],
@@ -597,7 +603,9 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
         {
             let mut native = f3d_native_mut(&mut source_less);
             native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
-                id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                    crate::ids::ID_FORMAT,
+                ),
                 vertex: tolerant_vertex,
                 record_index: 0,
                 leading_tolerances: [-1.0, -1.0],
@@ -605,7 +613,9 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
                 evaluated_unset: false,
             }];
             native.tolerant_edge_tails = vec![cadmpeg_asm::brep::records::TolerantEdgeTail {
-                id: "f3d:asm:tolerant-edge-tail#generated".into(),
+                source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                    crate::ids::ID_FORMAT,
+                ),
                 edge: tolerant_edge,
                 record_index: 0,
                 entity_revision: 22800,
@@ -651,7 +661,9 @@ fn an_unset_tolerant_vertex_sentinel_round_trips_without_a_neutral_tolerance() {
     {
         let mut native = f3d_native_mut(&mut source_less);
         native.tolerant_vertex_tails = vec![cadmpeg_asm::brep::records::TolerantVertexTail {
-            id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+                crate::ids::ID_FORMAT,
+            ),
             vertex: tolerant_vertex,
             record_index: 0,
             leading_tolerances: [-1.0, -1.0],

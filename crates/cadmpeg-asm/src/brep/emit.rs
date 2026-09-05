@@ -3558,7 +3558,10 @@ pub(crate) fn emit_vertices(
                             (r.chunk(6), r.chunk(7))
                         {
                             out.tolerant_vertex_tails.push(TolerantVertexTail {
-                                id: format!("{format}:asm:tolerant-vertex-tail#{i}"),
+                                source_namespace:
+                                    crate::brep::records::identity::NativeRecordNamespace::new(
+                                        format,
+                                    ),
                                 vertex: VertexId::mint(id(format, i)).expect("identity grammar"),
                                 record_index: r.index as u32,
                                 leading_tolerances: [*first, *second],
@@ -3582,7 +3585,8 @@ pub(crate) fn emit_vertices(
                         r.chunk(4),
                     ) {
                         out.vertex_ownerships.push(VertexOwnership {
-                            id: format!("{format}:asm:vertex-ownership#{i}"),
+                            source_namespace:
+                                crate::brep::records::identity::NativeRecordNamespace::new(format),
                             vertex: VertexId::mint(id(format, i)).expect("identity grammar"),
                             record_index: r.index as u32,
                             owning_edge: EdgeId::mint(id(format, owning_edge))
@@ -3703,7 +3707,9 @@ pub(crate) fn emit_edges(
             });
             if let Some((_, entity_revision, trailing_field)) = tolerant_tail {
                 out.tolerant_edge_tails.push(TolerantEdgeTail {
-                    id: format!("{format}:asm:tolerant-edge-tail#{i}"),
+                    source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
+                        format,
+                    ),
                     edge: EdgeId::mint(id(format, i)).expect("identity grammar"),
                     record_index: r.index as u32,
                     entity_revision,
@@ -3711,7 +3717,9 @@ pub(crate) fn emit_edges(
                 });
             }
             out.edge_ownerships.push(EdgeOwnership {
-                id: format!("{format}:asm:edge-ownership#{i}"),
+                source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
+                    format,
+                ),
                 edge: EdgeId::mint(id(format, i)).expect("identity grammar"),
                 record_index: r.index as u32,
                 owner_coedge: r
@@ -3720,7 +3728,9 @@ pub(crate) fn emit_edges(
             });
             if let Some(Token::Str(continuity)) = r.chunk(10) {
                 out.edge_continuities.push(EdgeContinuity {
-                    id: format!("{format}:asm:edge-continuity#{i}"),
+                    source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
+                        format,
+                    ),
                     edge: EdgeId::mint(id(format, i)).expect("identity grammar"),
                     record_index: r.index as u32,
                     sense: sense_at(r, 9),
@@ -3842,7 +3852,8 @@ pub(crate) fn emit_coedges(
             if let Some((parameter_range, extension)) = tolerant {
                 out.tolerant_coedge_parameters
                     .push(TolerantCoedgeParameters {
-                        id: format!("{format}:asm:tolerant-coedge-parameters#{i}"),
+                        source_namespace:
+                            crate::brep::records::identity::NativeRecordNamespace::new(format),
                         coedge: CoedgeId::mint(id(format, i)).expect("identity grammar"),
                         record_index: r.index as u32,
                         parameter_range,
@@ -3941,7 +3952,9 @@ pub(crate) fn emit_faces(
                 _ => None,
             };
             out.face_sidedness.push(FaceSidedness {
-                id: format!("{format}:asm:face-sidedness#{i}"),
+                source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
+                    format,
+                ),
                 face: FaceId::mint(id(format, i)).expect("identity grammar"),
                 record_index: r.index as u32,
                 native_sense,
@@ -3951,7 +3964,9 @@ pub(crate) fn emit_faces(
             if let Some(Token::Long(key)) = r.chunk(1) {
                 let face_id = FaceId::mint(id(format, i)).expect("identity grammar");
                 out.face_native_keys.push(FaceNativeKey {
-                    id: format!("{format}:asm:face-native-key#{i}"),
+                    source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
+                        format,
+                    ),
                     face: face_id,
                     record_index: r.index as u32,
                     asm_face_key: (*key >= 0).then_some(*key as u64),
@@ -4026,7 +4041,8 @@ pub(crate) fn emit_containers(
                 let body_id = BodyId::mint(id(format, i)).expect("identity grammar");
                 if let Some(Token::Long(key)) = r.chunk(1) {
                     out.body_native_keys.push(BodyNativeKey {
-                        id: format!("{format}:asm:body-native-key#{i}"),
+                        source_namespace:
+                            crate::brep::records::identity::NativeRecordNamespace::new(format),
                         body: body_id.clone(),
                         record_index: r.index as u32,
                         body_ordinal: out.body_native_keys.len() as u32,
@@ -4047,7 +4063,8 @@ pub(crate) fn emit_containers(
                         .collect::<Vec<_>>();
                     if let [rotation, reflection, shear] = flags.as_slice() {
                         out.transform_hints.push(TransformHints {
-                            id: format!("{format}:asm:transform-hints#{}", transform.index),
+                            source_namespace:
+                                crate::brep::records::identity::NativeRecordNamespace::new(format),
                             body: body_id.clone(),
                             record_index: transform.index as u32,
                             rotation: *rotation,
