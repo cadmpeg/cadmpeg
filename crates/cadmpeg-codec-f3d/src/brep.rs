@@ -168,10 +168,6 @@ impl Brep {
                 "retained BREP graph is invalid: {error}"
             ))
         })?;
-        retained
-            .asm
-            .body_keys
-            .retain(|body, _| reachable.contains(&body.0));
         retained.asm.annotation_records = annotations
             .into_iter()
             .filter(|annotation| reachable.contains(&annotation.id))
@@ -774,7 +770,7 @@ mod tests {
                     body: body.clone(),
                     shells: Vec::new(),
                 }],
-                body_keys: HashMap::from([(body.clone(), 7)]),
+
                 body_native_keys: vec![BodyNativeKey {
                     id: "f3d:asm:body-native-key#1".into(),
                     body,
@@ -802,7 +798,14 @@ mod tests {
         assert_eq!(brep.asm.bodies[0].id, qualified);
         assert_eq!(brep.asm.regions[0].body, qualified);
         assert_eq!(brep.asm.body_native_keys[0].body, qualified);
-        assert_eq!(brep.asm.body_keys.get(&qualified), Some(&7));
+        assert_eq!(
+            brep.asm
+                .body_native_keys
+                .iter()
+                .find(|record| record.body == qualified)
+                .and_then(|record| record.asm_body_key.as_ref()),
+            Some(&7)
+        );
         assert_eq!(brep.asm.annotation_records[0].id, qualified.0);
         assert_eq!(
             brep.asm.body_native_keys[0].source_brep.as_deref(),
@@ -846,16 +849,7 @@ mod tests {
                         shells: Vec::new(),
                     },
                 ],
-                body_keys: HashMap::from([
-                    (
-                        BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-                        10,
-                    ),
-                    (
-                        BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
-                        20,
-                    ),
-                ]),
+
                 body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
                 ..AsmBrep::default()
             },
@@ -870,7 +864,14 @@ mod tests {
         assert_eq!(brep.asm.regions.len(), 1);
         assert_eq!(brep.asm.regions[0].id.as_str(), "f3d:brep:entity#4");
         assert_eq!(brep.asm.body_native_keys.len(), 1);
-        assert_eq!(brep.asm.body_keys.len(), 1);
+        assert_eq!(
+            brep.asm
+                .body_native_keys
+                .iter()
+                .filter(|record| record.asm_body_key.is_some())
+                .count(),
+            1
+        );
     }
 
     #[test]
@@ -900,16 +901,7 @@ mod tests {
         let mut brep = Brep {
             asm: AsmBrep {
                 bodies: vec![body(1), body(3)],
-                body_keys: HashMap::from([
-                    (
-                        BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-                        10,
-                    ),
-                    (
-                        BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
-                        20,
-                    ),
-                ]),
+
                 body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
                 ..AsmBrep::default()
             },
@@ -1023,7 +1015,7 @@ mod tests {
                         visible: None,
                     },
                 ],
-                body_keys: HashMap::from([(native_body.clone(), 10)]),
+
                 body_native_keys: vec![BodyNativeKey {
                     id: "f3d:asm:body-native-key#1".into(),
                     body: native_body,

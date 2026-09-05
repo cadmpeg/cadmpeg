@@ -2209,8 +2209,6 @@ impl<'a> F3dDecodeSession<'a> {
         // sync so a later admit_entities call cannot double-count those bodies.
         admitted_entities = admitted_entities.max(ir.model.entity_count() as u64);
         let AsmTransferRemainder {
-            body_keys: _,
-            face_keys: _,
             unknowns,
             stats: _,
             annotation_records,

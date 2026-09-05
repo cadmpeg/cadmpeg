@@ -20,6 +20,7 @@
 pub mod attributes;
 mod emit;
 pub mod geometry;
+mod key_maps;
 pub mod records;
 pub mod stats;
 use stats::Stats;
@@ -42,7 +43,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
     SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{BodyId, CurveId, FaceId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::{Deserialize, Serialize};
@@ -109,9 +110,8 @@ pub struct AsmBrep {
     pub vertex_ownerships: Vec<VertexOwnership>,
     /// Native sidedness fields stored on solved faces.
     pub face_sidedness: Vec<FaceSidedness>,
-    /// Native ASM face key by emitted face id, used by Design-side joins.
-    pub face_keys: HashMap<FaceId, u64>,
     /// Native Design-join key field for every emitted face, including null keys.
+    #[serde(flatten, with = "key_maps::faces")]
     pub face_native_keys: Vec<FaceNativeKey>,
     /// Native parameter intervals stored on tolerant coedges.
     pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
@@ -123,9 +123,8 @@ pub struct AsmBrep {
     pub mesh_surface_sentinels: Vec<MeshSurfaceSentinel>,
     /// Native rotation/reflection/shear classifications stored on transforms.
     pub transform_hints: Vec<TransformHints>,
-    /// Native ASM body key by emitted body id, used by Design-side joins.
-    pub body_keys: HashMap<BodyId, u64>,
     /// Native Design-join key field for every emitted body, including null keys.
+    #[serde(flatten, with = "key_maps::bodies")]
     pub body_native_keys: Vec<BodyNativeKey>,
     /// Native wire records projected onto solved shells.
     pub wire_topologies: Vec<WireTopology>,
@@ -193,8 +192,6 @@ impl AsmBrep {
             unknowns,
             annotation_records,
         );
-        self.body_keys.extend(other.body_keys);
-        self.face_keys.extend(other.face_keys);
         self.stats.merge(other.stats);
     }
 }
@@ -308,11 +305,17 @@ pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
     let Value::Map(fields) = value else {
         return;
     };
-    for value in fields.values_mut() {
-        let Value::Seq(items) = value else {
-            continue;
-        };
-        items.retain(|item| entity_id(item).is_none_or(|id| reachable.contains(id)));
+    for (name, value) in fields {
+        match value {
+            Value::Seq(items) => {
+                items.retain(|item| entity_id(item).is_none_or(|id| reachable.contains(id)));
+            }
+            Value::Map(keys) if matches!(name, Value::String(name) if matches!(name.as_str(), "body_keys" | "face_keys")) =>
+            {
+                keys.retain(|key, _| matches!(key, Value::String(id) if reachable.contains(id)));
+            }
+            _ => {}
+        }
     }
 }
 

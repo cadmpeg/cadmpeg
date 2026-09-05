@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exhaustive transfer from an ASM graph into neutral and native IR arenas.
 
-use std::collections::HashMap;
 use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use super::stats::Stats;
@@ -30,10 +28,6 @@ const ASM_NATIVE_ARENAS: [&str; 12] = [
 
 /// ASM facts that remain owned by the embedding codec after IR transfer.
 pub struct AsmTransferRemainder {
-    /// Native body join keys used by an embedding format's semantic tables.
-    pub body_keys: HashMap<BodyId, u64>,
-    /// Native face join keys used by an embedding format's semantic tables.
-    pub face_keys: HashMap<FaceId, u64>,
     /// Undecoded ASM records for source-fidelity retention.
     pub unknowns: Vec<UnknownRecord>,
     /// ASM loss statistics used to build the embedding format's report.
@@ -85,14 +79,12 @@ pub fn transfer_into_ir(
         edge_ownerships,
         vertex_ownerships,
         face_sidedness,
-        face_keys,
         face_native_keys,
         tolerant_coedge_parameters,
         tolerant_edge_tails,
         tolerant_vertex_tails,
         mesh_surface_sentinels,
         transform_hints,
-        body_keys,
         body_native_keys,
         wire_topologies,
         attributes,
@@ -148,8 +140,6 @@ pub fn transfer_into_ir(
     namespace.set_arena("body_native_keys", &body_native_keys)?;
 
     Ok(AsmTransferRemainder {
-        body_keys,
-        face_keys,
         unknowns,
         stats,
         annotation_records,
@@ -177,8 +167,6 @@ mod tests {
             AsmBrep::default(),
         )
         .expect("empty ASM transfer succeeds");
-        assert!(remainder.body_keys.is_empty());
-        assert!(remainder.face_keys.is_empty());
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
         let namespace = ir.native.namespace("test").expect("namespace exists");

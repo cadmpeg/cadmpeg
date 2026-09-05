@@ -4873,3 +4873,31 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::brep::stats::Stats::other_records"
 reason = "ASM-16: replace the stored total with a method; preserve its JSON field through serialization"
+
+[[change]]
+commit = "98099170287972576740d382a74d1809b021ffcc"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::AsmBrep::body_keys"
+reason = "ASM-14: derive join maps from native key records only at serialization and the Inventor presentation consumer"
+
+[[change]]
+commit = "98099170287972576740d382a74d1809b021ffcc"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::AsmBrep::face_keys"
+reason = "ASM-14: derive join maps from native key records only at serialization and the Inventor presentation consumer"
+
+[[change]]
+commit = "98099170287972576740d382a74d1809b021ffcc"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::transfer::AsmTransferRemainder::body_keys"
+reason = "ASM-14: derive join maps from native key records only at serialization and the Inventor presentation consumer"
+
+[[change]]
+commit = "98099170287972576740d382a74d1809b021ffcc"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::brep::transfer::AsmTransferRemainder::face_keys"
+reason = "ASM-14: derive join maps from native key records only at serialization and the Inventor presentation consumer"

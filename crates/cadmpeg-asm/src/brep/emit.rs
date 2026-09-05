@@ -3990,13 +3990,10 @@ pub(crate) fn emit_faces(
                 let face_id = FaceId::mint(id(format, i)).expect("identity grammar");
                 out.face_native_keys.push(FaceNativeKey {
                     id: format!("{format}:asm:face-native-key#{i}"),
-                    face: face_id.clone(),
+                    face: face_id,
                     record_index: r.index as u32,
                     asm_face_key: (*key >= 0).then_some(*key as u64),
                 });
-                if *key >= 0 {
-                    out.face_keys.insert(face_id, *key as u64);
-                }
             }
         }
     }
@@ -4074,9 +4071,6 @@ pub(crate) fn emit_containers(
                         source_brep: stream.rsplit('/').next().map(str::to_owned),
                         asm_body_key: (*key >= 0).then_some(*key as u64),
                     });
-                    if *key >= 0 {
-                        out.body_keys.insert(body_id.clone(), *key as u64);
-                    }
                 }
                 let transform_record = r.ref_at(5).and_then(|reference| by_index.get(&reference));
                 if let Some(transform) = transform_record {
