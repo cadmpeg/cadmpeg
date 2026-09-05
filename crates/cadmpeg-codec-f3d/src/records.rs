@@ -2291,15 +2291,6 @@ pub enum DesignWorkAxisSource {
     },
 }
 
-impl Default for DesignWorkAxisSource {
-    fn default() -> Self {
-        Self::TwoPoint {
-            point_record_indices: [0; 2],
-            point_offsets: [0; 2],
-        }
-    }
-}
-
 /// Exact solved construction carried by a `WorkAxis` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2313,8 +2304,8 @@ pub struct DesignWorkAxisConstruction {
     /// Byte offset of the first displacement component.
     pub displacement_offset: u64,
     /// Native record form that supplied or corroborated the axis geometry.
-    #[serde(default)]
-    pub source: DesignWorkAxisSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<DesignWorkAxisSource>,
 }
 
 /// One source-record reference used by a `WorkPoint` construction rule.
