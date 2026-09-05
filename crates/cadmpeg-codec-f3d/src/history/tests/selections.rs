@@ -570,10 +570,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         external_asset_id_offset: 0,
         external_link_name: "component-body-link".into(),
         external_link_name_offset: 0,
-        external_property_key: None,
-        external_property_key_offset: None,
-        external_version_urn: None,
-        external_version_urn_offset: None,
+        external_version: None,
         tail_values: [0, 0],
         tail_value_offsets: [0, 12],
     };

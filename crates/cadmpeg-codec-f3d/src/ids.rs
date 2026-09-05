@@ -246,13 +246,13 @@ pub(crate) fn neutral_combine_external_body_id(
     let external_asset = identity_key_component(&identity.external_asset_id);
     let link_name = identity_key_component(&identity.external_link_name);
     let property_key = identity
-        .external_property_key
-        .as_deref()
+        .external_version
+        .as_ref().map(|version| version.property_key.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     let version_urn = identity
-        .external_version_urn
-        .as_deref()
+        .external_version
+        .as_ref().map(|version| version.version_urn.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     format!(
@@ -268,10 +268,10 @@ pub(crate) fn neutral_combine_external_body_id(
         external_asset,
         link_name.len(),
         link_name,
-        u8::from(identity.external_property_key.is_some()),
+        u8::from(identity.external_version.is_some()),
         property_key.len(),
         property_key,
-        u8::from(identity.external_version_urn.is_some()),
+        u8::from(identity.external_version.is_some()),
         version_urn.len(),
         version_urn,
     )
@@ -287,13 +287,13 @@ pub(crate) fn neutral_assembly_axial_object_id(
     let external_asset = identity_key_component(&identity.external_asset_id.to_ascii_lowercase());
     let link_name = identity_key_component(&identity.external_link_name);
     let property_key = identity
-        .external_property_key
-        .as_deref()
+        .external_version
+        .as_ref().map(|version| version.property_key.value.as_str())
         .map(|value| identity_key_component(&value.to_ascii_lowercase()))
         .unwrap_or_default();
     let version_urn = identity
-        .external_version_urn
-        .as_deref()
+        .external_version
+        .as_ref().map(|version| version.version_urn.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     format!(
@@ -308,10 +308,10 @@ pub(crate) fn neutral_assembly_axial_object_id(
         external_asset,
         link_name.len(),
         link_name,
-        u8::from(identity.external_property_key.is_some()),
+        u8::from(identity.external_version.is_some()),
         property_key.len(),
         property_key,
-        u8::from(identity.external_version_urn.is_some()),
+        u8::from(identity.external_version.is_some()),
         version_urn.len(),
         version_urn,
     )

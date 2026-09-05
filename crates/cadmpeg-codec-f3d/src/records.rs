@@ -2402,6 +2402,7 @@ pub enum DesignAssemblyAxialOperandTarget {
 /// Persistent connector identity carried by one axial assembly selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignAssemblyAxialSelectorIdentityWire", into = "DesignAssemblyAxialSelectorIdentityWire")]
 pub struct DesignAssemblyAxialSelectorIdentity {
     /// Axis record named by the operand construction carrier.
     pub axis_record_index: u32,
@@ -2455,18 +2456,8 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     pub external_link_name: String,
     /// Byte offset of `external_link_name`.
     pub external_link_name_offset: u64,
-    /// Optional property key preceding the version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_property_key: Option<String>,
-    /// Byte offset of `external_property_key` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_property_key_offset: Option<u64>,
-    /// Optional referenced-document version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_version_urn: Option<String>,
-    /// Byte offset of `external_version_urn` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_version_urn_offset: Option<u64>,
+    /// Located property key and referenced-document version identity.
+    pub external_version: Option<DesignExternalVersion>,
     /// Embedded record that carries the selected occurrence role.
     pub role_record_index: u32,
     /// Dynamic class of the occurrence-role record.
@@ -2479,16 +2470,174 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     pub occurrence_role_offset: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignAssemblyAxialSelectorIdentityWire {
+    /// Axis record named by the operand construction carrier.
+    axis_record_index: u32,
+    /// Dynamic class of the axis record's primary indexed header.
+    axis_class_tag: String,
+    /// Byte offset of the axis record's primary indexed header.
+    axis_byte_offset: u64,
+    /// Dynamic class of the axis record's paired indexed header.
+    axis_paired_class_tag: String,
+    /// Byte offset of the axis record's paired indexed header.
+    axis_paired_byte_offset: u64,
+    /// Selector record three indices after the axis record.
+    selector_record_index: u32,
+    /// Dynamic class of the selector record's primary indexed header.
+    selector_class_tag: String,
+    /// Byte offset of the selector record's primary indexed header.
+    selector_byte_offset: u64,
+    /// Dynamic class of the selector record's paired indexed header.
+    selector_paired_class_tag: String,
+    /// Byte offset of the selector record's paired indexed header.
+    selector_paired_byte_offset: u64,
+    /// Nested record named by the selector prefix.
+    nested_record_index: u32,
+    /// Byte offset of `nested_record_index`.
+    nested_record_index_offset: u64,
+    /// Asset GUID of the enclosing selector.
+    selector_asset_id: String,
+    /// Byte offset of `selector_asset_id`.
+    selector_asset_id_offset: u64,
+    /// Context GUID of the enclosing selector.
+    selector_context_id: String,
+    /// Byte offset of `selector_context_id`.
+    selector_context_id_offset: u64,
+    /// Axis-specific same-segment occurrence reference.
+    occurrence_reference: u64,
+    /// Byte offset of `occurrence_reference`.
+    occurrence_reference_offset: u64,
+    /// Entity reference of the selected object in the referenced document.
+    external_object_reference: u64,
+    /// Byte offset of `external_object_reference`.
+    external_object_reference_offset: u64,
+    /// Segment carried by the cross-document object reference.
+    external_segment: u32,
+    /// Byte offset of `external_segment`.
+    external_segment_offset: u64,
+    /// Asset GUID carried by the cross-document object reference.
+    external_asset_id: String,
+    /// Byte offset of `external_asset_id`.
+    external_asset_id_offset: u64,
+    /// Link name carried by the cross-document object reference.
+    external_link_name: String,
+    /// Byte offset of `external_link_name`.
+    external_link_name_offset: u64,
+    /// Optional property key preceding the version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_property_key: Option<String>,
+    /// Byte offset of `external_property_key` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_property_key_offset: Option<u64>,
+    /// Optional referenced-document version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_version_urn: Option<String>,
+    /// Byte offset of `external_version_urn` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_version_urn_offset: Option<u64>,
+    /// Embedded record that carries the selected occurrence role.
+    role_record_index: u32,
+    /// Dynamic class of the occurrence-role record.
+    role_class_tag: String,
+    /// Byte offset of the occurrence-role record's indexed header.
+    role_byte_offset: u64,
+    /// Occurrence-role GUID joining this selector to a component insertion.
+    occurrence_role: String,
+    /// Byte offset of `occurrence_role`.
+    occurrence_role_offset: u64,
+}
+
+impl TryFrom<DesignAssemblyAxialSelectorIdentityWire> for DesignAssemblyAxialSelectorIdentity {
+    type Error = String;
+    fn try_from(wire: DesignAssemblyAxialSelectorIdentityWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            axis_record_index: wire.axis_record_index,
+            axis_class_tag: wire.axis_class_tag,
+            axis_byte_offset: wire.axis_byte_offset,
+            axis_paired_class_tag: wire.axis_paired_class_tag,
+            axis_paired_byte_offset: wire.axis_paired_byte_offset,
+            selector_record_index: wire.selector_record_index,
+            selector_class_tag: wire.selector_class_tag,
+            selector_byte_offset: wire.selector_byte_offset,
+            selector_paired_class_tag: wire.selector_paired_class_tag,
+            selector_paired_byte_offset: wire.selector_paired_byte_offset,
+            nested_record_index: wire.nested_record_index,
+            nested_record_index_offset: wire.nested_record_index_offset,
+            selector_asset_id: wire.selector_asset_id,
+            selector_asset_id_offset: wire.selector_asset_id_offset,
+            selector_context_id: wire.selector_context_id,
+            selector_context_id_offset: wire.selector_context_id_offset,
+            occurrence_reference: wire.occurrence_reference,
+            occurrence_reference_offset: wire.occurrence_reference_offset,
+            external_object_reference: wire.external_object_reference,
+            external_object_reference_offset: wire.external_object_reference_offset,
+            external_segment: wire.external_segment,
+            external_segment_offset: wire.external_segment_offset,
+            external_asset_id: wire.external_asset_id,
+            external_asset_id_offset: wire.external_asset_id_offset,
+            external_link_name: wire.external_link_name,
+            external_link_name_offset: wire.external_link_name_offset,
+            external_version: match (wire.external_property_key, wire.external_property_key_offset, wire.external_version_urn, wire.external_version_urn_offset) {
+                (None, None, None, None) => None,
+                (Some(key), Some(key_offset), Some(urn), Some(urn_offset)) => Some(DesignExternalVersion { property_key: Located { value: key, offset: key_offset }, version_urn: Located { value: urn, offset: urn_offset } }),
+                _ => return Err("external_property_key, external_property_key_offset, external_version_urn and external_version_urn_offset must occur together".into()),
+            },
+            role_record_index: wire.role_record_index,
+            role_class_tag: wire.role_class_tag,
+            role_byte_offset: wire.role_byte_offset,
+            occurrence_role: wire.occurrence_role,
+            occurrence_role_offset: wire.occurrence_role_offset,
+        })
+    }
+}
+
+impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorIdentityWire {
+    fn from(record: DesignAssemblyAxialSelectorIdentity) -> Self {
+        Self {
+            axis_record_index: record.axis_record_index,
+            axis_class_tag: record.axis_class_tag,
+            axis_byte_offset: record.axis_byte_offset,
+            axis_paired_class_tag: record.axis_paired_class_tag,
+            axis_paired_byte_offset: record.axis_paired_byte_offset,
+            selector_record_index: record.selector_record_index,
+            selector_class_tag: record.selector_class_tag,
+            selector_byte_offset: record.selector_byte_offset,
+            selector_paired_class_tag: record.selector_paired_class_tag,
+            selector_paired_byte_offset: record.selector_paired_byte_offset,
+            nested_record_index: record.nested_record_index,
+            nested_record_index_offset: record.nested_record_index_offset,
+            selector_asset_id: record.selector_asset_id,
+            selector_asset_id_offset: record.selector_asset_id_offset,
+            selector_context_id: record.selector_context_id,
+            selector_context_id_offset: record.selector_context_id_offset,
+            occurrence_reference: record.occurrence_reference,
+            occurrence_reference_offset: record.occurrence_reference_offset,
+            external_object_reference: record.external_object_reference,
+            external_object_reference_offset: record.external_object_reference_offset,
+            external_segment: record.external_segment,
+            external_segment_offset: record.external_segment_offset,
+            external_asset_id: record.external_asset_id,
+            external_asset_id_offset: record.external_asset_id_offset,
+            external_link_name: record.external_link_name,
+            external_link_name_offset: record.external_link_name_offset,
+            external_property_key: record.external_version.as_ref().map(|version| version.property_key.value.clone()),
+            external_property_key_offset: record.external_version.as_ref().map(|version| version.property_key.offset),
+            external_version_urn: record.external_version.as_ref().map(|version| version.version_urn.value.clone()),
+            external_version_urn_offset: record.external_version.as_ref().map(|version| version.version_urn.offset),
+            role_record_index: record.role_record_index,
+            role_class_tag: record.role_class_tag,
+            role_byte_offset: record.role_byte_offset,
+            occurrence_role: record.occurrence_role,
+            occurrence_role_offset: record.occurrence_role_offset,
+        }
+    }
+}
+
 impl DesignAssemblyAxialSelectorIdentity {
     /// Report whether two axis selectors carry the same persistent connector identity.
     pub(crate) fn selects_same_object(&self, other: &Self) -> bool {
-        fn same_optional_guid(first: Option<&str>, second: Option<&str>) -> bool {
-            match (first, second) {
-                (Some(first), Some(second)) => first.eq_ignore_ascii_case(second),
-                (None, None) => true,
-                _ => false,
-            }
-        }
 
         self.selector_asset_id
             .eq_ignore_ascii_case(&other.selector_asset_id)
@@ -2501,11 +2650,14 @@ impl DesignAssemblyAxialSelectorIdentity {
                 .external_asset_id
                 .eq_ignore_ascii_case(&other.external_asset_id)
             && self.external_link_name == other.external_link_name
-            && same_optional_guid(
-                self.external_property_key.as_deref(),
-                other.external_property_key.as_deref(),
-            )
-            && self.external_version_urn == other.external_version_urn
+            && match (&self.external_version, &other.external_version) {
+                (None, None) => true,
+                (Some(first), Some(second)) => {
+                    first.property_key.value.eq_ignore_ascii_case(&second.property_key.value)
+                        && first.version_urn.value == second.version_urn.value
+                }
+                _ => false,
+            }
     }
 }
 
@@ -3086,9 +3238,18 @@ pub enum DesignCombineForm {
     ExtendedReference,
 }
 
+/// Version identity carried by a cross-document reference.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignExternalVersion {
+    pub property_key: Located<String>,
+    pub version_urn: Located<String>,
+}
+
 /// Cross-document persistent body identity carried by a `Combine` tool selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignCombineExternalBodyIdentityWire", into = "DesignCombineExternalBodyIdentityWire")]
 pub struct DesignCombineExternalBodyIdentity {
     /// Asset GUID of the enclosing body selector.
     pub selector_asset_id: String,
@@ -3118,24 +3279,121 @@ pub struct DesignCombineExternalBodyIdentity {
     pub external_link_name: String,
     /// Byte offset of `external_link_name`.
     pub external_link_name_offset: u64,
-    /// Optional property key preceding the version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_property_key: Option<String>,
-    /// Byte offset of `external_property_key` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_property_key_offset: Option<u64>,
-    /// Optional referenced-document version identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_version_urn: Option<String>,
-    /// Byte offset of `external_version_urn` when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_version_urn_offset: Option<u64>,
+    /// Located property key and referenced-document version identity.
+    pub external_version: Option<DesignExternalVersion>,
     /// Retained u64 values around the fixed `u32 48` member in the selector tail.
     #[serde(default)]
     pub tail_values: [u64; 2],
     /// Byte offsets of `tail_values` in source order.
     #[serde(default)]
     pub tail_value_offsets: [u64; 2],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignCombineExternalBodyIdentityWire {
+    /// Asset GUID of the enclosing body selector.
+    selector_asset_id: String,
+    /// Byte offset of `selector_asset_id`.
+    selector_asset_id_offset: u64,
+    /// Context GUID of the enclosing body selector.
+    selector_context_id: String,
+    /// Byte offset of `selector_context_id`.
+    selector_context_id_offset: u64,
+    /// Same-segment occurrence reference preceding the external body reference.
+    occurrence_reference: u64,
+    /// Byte offset of `occurrence_reference`.
+    occurrence_reference_offset: u64,
+    /// Entity reference of the body in the referenced document.
+    external_body_reference: u64,
+    /// Byte offset of `external_body_reference`.
+    external_body_reference_offset: u64,
+    /// Segment carried by the cross-document body reference.
+    external_segment: u32,
+    /// Byte offset of `external_segment`.
+    external_segment_offset: u64,
+    /// Asset GUID carried by the cross-document body reference.
+    external_asset_id: String,
+    /// Byte offset of `external_asset_id`.
+    external_asset_id_offset: u64,
+    /// Link name carried by the cross-document body reference.
+    external_link_name: String,
+    /// Byte offset of `external_link_name`.
+    external_link_name_offset: u64,
+    /// Optional property key preceding the version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_property_key: Option<String>,
+    /// Byte offset of `external_property_key` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_property_key_offset: Option<u64>,
+    /// Optional referenced-document version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_version_urn: Option<String>,
+    /// Byte offset of `external_version_urn` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_version_urn_offset: Option<u64>,
+    /// Retained u64 values around the fixed `u32 48` member in the selector tail.
+    #[serde(default)]
+    tail_values: [u64; 2],
+    /// Byte offsets of `tail_values` in source order.
+    #[serde(default)]
+    tail_value_offsets: [u64; 2],
+}
+
+impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBodyIdentity {
+    type Error = String;
+    fn try_from(wire: DesignCombineExternalBodyIdentityWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            selector_asset_id: wire.selector_asset_id,
+            selector_asset_id_offset: wire.selector_asset_id_offset,
+            selector_context_id: wire.selector_context_id,
+            selector_context_id_offset: wire.selector_context_id_offset,
+            occurrence_reference: wire.occurrence_reference,
+            occurrence_reference_offset: wire.occurrence_reference_offset,
+            external_body_reference: wire.external_body_reference,
+            external_body_reference_offset: wire.external_body_reference_offset,
+            external_segment: wire.external_segment,
+            external_segment_offset: wire.external_segment_offset,
+            external_asset_id: wire.external_asset_id,
+            external_asset_id_offset: wire.external_asset_id_offset,
+            external_link_name: wire.external_link_name,
+            external_link_name_offset: wire.external_link_name_offset,
+            external_version: match (wire.external_property_key, wire.external_property_key_offset, wire.external_version_urn, wire.external_version_urn_offset) {
+                (None, None, None, None) => None,
+                (Some(key), Some(key_offset), Some(urn), Some(urn_offset)) => Some(DesignExternalVersion { property_key: Located { value: key, offset: key_offset }, version_urn: Located { value: urn, offset: urn_offset } }),
+                _ => return Err("external_property_key, external_property_key_offset, external_version_urn and external_version_urn_offset must occur together".into()),
+            },
+            tail_values: wire.tail_values,
+            tail_value_offsets: wire.tail_value_offsets,
+        })
+    }
+}
+
+impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdentityWire {
+    fn from(record: DesignCombineExternalBodyIdentity) -> Self {
+        Self {
+            selector_asset_id: record.selector_asset_id,
+            selector_asset_id_offset: record.selector_asset_id_offset,
+            selector_context_id: record.selector_context_id,
+            selector_context_id_offset: record.selector_context_id_offset,
+            occurrence_reference: record.occurrence_reference,
+            occurrence_reference_offset: record.occurrence_reference_offset,
+            external_body_reference: record.external_body_reference,
+            external_body_reference_offset: record.external_body_reference_offset,
+            external_segment: record.external_segment,
+            external_segment_offset: record.external_segment_offset,
+            external_asset_id: record.external_asset_id,
+            external_asset_id_offset: record.external_asset_id_offset,
+            external_link_name: record.external_link_name,
+            external_link_name_offset: record.external_link_name_offset,
+            external_property_key: record.external_version.as_ref().map(|version| version.property_key.value.clone()),
+            external_property_key_offset: record.external_version.as_ref().map(|version| version.property_key.offset),
+            external_version_urn: record.external_version.as_ref().map(|version| version.version_urn.value.clone()),
+            external_version_urn_offset: record.external_version.as_ref().map(|version| version.version_urn.offset),
+            tail_values: record.tail_values,
+            tail_value_offsets: record.tail_value_offsets,
+        }
+    }
 }
 
 /// One target or tool body selector owned by a `Combine` operation.

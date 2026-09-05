@@ -246,3 +246,63 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
         assert!(error.to_string().contains(field));
     }
 }
+
+#[test]
+fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
+    {
+        let prefix = r#"{"axis_record_index":0,"axis_class_tag":"identity","axis_byte_offset":0,"axis_paired_class_tag":"identity","axis_paired_byte_offset":0,"selector_record_index":0,"selector_class_tag":"identity","selector_byte_offset":0,"selector_paired_class_tag":"identity","selector_paired_byte_offset":0,"nested_record_index":0,"nested_record_index_offset":0,"selector_asset_id":"identity","selector_asset_id_offset":0,"selector_context_id":"identity","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_object_reference":0,"external_object_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"identity","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
+        let suffix = r#","role_record_index":0,"role_class_tag":"identity","role_byte_offset":0,"occurrence_role":"identity","occurrence_role_offset":0}"#;
+        let fields = [
+            ("external_property_key", "\"key\""),
+            ("external_property_key_offset", "100"),
+            ("external_version_urn", "\"urn\""),
+            ("external_version_urn_offset", "110"),
+        ];
+        for mask in 0..16 {
+            let mut wire = prefix.to_owned();
+            for (index, (field, value)) in fields.iter().enumerate() {
+                if mask & (1 << index) != 0 {
+                    wire.push_str(&format!(",\"{field}\":{value}"));
+                }
+            }
+            wire.push_str(suffix);
+            let result = serde_json::from_str::<super::DesignAssemblyAxialSelectorIdentity>(&wire);
+            if mask == 0 || mask == 15 {
+                assert_eq!(serde_json::to_string(&result.expect("complete version form")).expect("version wire"), wire);
+            } else {
+                let error = result.expect_err("partial version identity").to_string();
+                for (field, _) in fields {
+                    assert!(error.contains(field));
+                }
+            }
+        }
+    }
+    {
+        let prefix = r#"{"selector_asset_id":"identity","selector_asset_id_offset":0,"selector_context_id":"identity","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_body_reference":0,"external_body_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"identity","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
+        let suffix = r#","tail_values":[0,0],"tail_value_offsets":[0,0]}"#;
+        let fields = [
+            ("external_property_key", "\"key\""),
+            ("external_property_key_offset", "100"),
+            ("external_version_urn", "\"urn\""),
+            ("external_version_urn_offset", "110"),
+        ];
+        for mask in 0..16 {
+            let mut wire = prefix.to_owned();
+            for (index, (field, value)) in fields.iter().enumerate() {
+                if mask & (1 << index) != 0 {
+                    wire.push_str(&format!(",\"{field}\":{value}"));
+                }
+            }
+            wire.push_str(suffix);
+            let result = serde_json::from_str::<super::DesignCombineExternalBodyIdentity>(&wire);
+            if mask == 0 || mask == 15 {
+                assert_eq!(serde_json::to_string(&result.expect("complete version form")).expect("version wire"), wire);
+            } else {
+                let error = result.expect_err("partial version identity").to_string();
+                for (field, _) in fields {
+                    assert!(error.contains(field));
+                }
+            }
+        }
+    }
+}

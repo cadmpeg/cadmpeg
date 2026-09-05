@@ -566,11 +566,11 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     assert_eq!(identity.external_segment, 7);
     assert_eq!(identity.external_link_name, "component-body-link");
     assert_eq!(
-        identity.external_property_key.as_deref(),
+        identity.external_version.as_ref().map(|version| version.property_key.value.as_str()),
         Some("33333333-3333-4333-8333-333333333333")
     );
     assert_eq!(
-        identity.external_version_urn.as_deref(),
+        identity.external_version.as_ref().map(|version| version.version_urn.value.as_str()),
         Some("urn:example:version:4")
     );
     assert_eq!(identity.tail_values, [11, 12]);
