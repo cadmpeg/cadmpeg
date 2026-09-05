@@ -361,14 +361,8 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 point.id
             )));
         }
-        if !point.record_form.closure_is_valid(point.closure.as_ref()) {
-            return Err(CodecError::InvalidInput(format!(
-                "source-less F3D sketch point {} has an invalid versioned closure",
-                point.id
-            )));
-        }
         if point
-            .persistent_id
+            .persistent_id()
             .is_none_or(|persistent_id| persistent_id == 0)
         {
             return Err(CodecError::InvalidInput(format!(

@@ -196,7 +196,7 @@ pub fn project_sketch_design(
             let sketch = neutral_sketch_id(placement);
             Some(
                 SketchEntity::new(
-                    point.persistent_id.map_or_else(
+                    point.persistent_id().map_or_else(
                         || neutral_sketch_record_id(&sketch, point.record_index),
                         |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
                     ),
@@ -577,7 +577,7 @@ pub fn project_spatial_sketch_design(
         let depth = sketch_point_depth(point)?;
         Some(
             SpatialSketchEntity::new(
-                point.persistent_id.map_or_else(
+                point.persistent_id().map_or_else(
                     || neutral_spatial_sketch_record_id(&sketch, point.record_index),
                     |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
                 ),

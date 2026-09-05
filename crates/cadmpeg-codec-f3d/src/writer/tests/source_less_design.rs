@@ -549,18 +549,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         byte_offset: 0,
         coordinate_offset: 89,
         entity_genesis: Some(900),
-        record_form: crate::records::SketchPointRecordForm::Version11 {
-            padded_paired_reference: false,
-        },
-        persistent_id: Some(500),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            500,
+            crate::records::SketchPointClosure::Selector0State1,
+        ),
         paired_reference: 101,
-        flags: [0; 8],
         coordinates: Point2::new(12.5, -25.0),
         depth: 0.0,
-        closure: Some(crate::records::SketchPointClosure {
-            selector: 0,
-            state: 1,
-        }),
         companion: Some(crate::records::SketchPointCompanion {
             prefix_present_zero: false,
             reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
@@ -782,17 +777,14 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .expect("source-less sketch BulkStream round trip");
     let native = f3d_native(round_trip.ir());
     assert_eq!(native.sketch_points.len(), 1);
-    assert_eq!(native.sketch_points[0].persistent_id, Some(500));
+    assert_eq!(native.sketch_points[0].persistent_id(), Some(500));
     assert_eq!(native.sketch_points[0].entity_genesis, Some(900));
     assert_eq!(native.sketch_points[0].coordinate_offset, 141);
     assert_eq!(native.sketch_points[0].owner_reference, Some(277));
     assert_eq!(native.sketch_points[0].depth, 0.0);
     assert_eq!(
-        native.sketch_points[0].closure,
-        Some(crate::records::SketchPointClosure {
-            selector: 0,
-            state: 1,
-        })
+        native.sketch_points[0].closure(),
+        Some(crate::records::SketchPointClosure::Selector0State1)
     );
     assert_eq!(
         native.sketch_points[0].companion,
@@ -868,14 +860,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     {
         let point = &mut f3d_native_mut(&mut extended_source_less).sketch_points[0];
         point.depth = 7.5;
-        point.flags = [1, 0, 0, 1, 0, 1, 0, 1];
+        let persistent_id = point.persistent_id().unwrap_or(0);
         point.record_form = crate::records::SketchPointRecordForm::Version11 {
             padded_paired_reference: true,
+            persistent_id,
+            flags: [1, 0, 0, 1, 0, 1, 0, 1],
+            closure: crate::records::SketchPointClosure::Selector4State0,
         };
-        point.closure = Some(crate::records::SketchPointClosure {
-            selector: 4,
-            state: 0,
-        });
         point.companion = Some(crate::records::SketchPointCompanion {
             prefix_present_zero: true,
             reference_encoding: crate::records::SketchPointCompanionReferenceEncoding::SameSegment,
@@ -899,13 +890,10 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let extended_native = f3d_native(extended_round_trip.ir());
     let extended_point = &extended_native.sketch_points[0];
     assert_eq!(extended_point.depth, 7.5);
-    assert_eq!(extended_point.flags, [1, 0, 0, 1, 0, 1, 0, 1]);
+    assert_eq!(extended_point.flags(), [1, 0, 0, 1, 0, 1, 0, 1]);
     assert_eq!(
-        extended_point.closure,
-        Some(crate::records::SketchPointClosure {
-            selector: 4,
-            state: 0,
-        })
+        extended_point.closure(),
+        Some(crate::records::SketchPointClosure::Selector4State0)
     );
     assert_eq!(
         extended_point.companion,

@@ -343,13 +343,13 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         byte_offset,
         coordinate_offset: 0,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(u64::from(record_index)),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            u64::from(record_index),
+            crate::records::SketchPointClosure::Selector0State0,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(0.0, 0.0),
         depth: 0.0,
-        closure: None,
         companion: Some(crate::records::SketchPointCompanion {
             prefix_present_zero: false,
             reference_encoding: Default::default(),

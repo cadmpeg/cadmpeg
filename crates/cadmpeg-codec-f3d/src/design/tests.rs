@@ -299,13 +299,13 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         byte_offset: 0,
         coordinate_offset: 89,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(20),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            20,
+            crate::records::SketchPointClosure::Selector0State0,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(1.0, 2.0),
         depth: 0.0,
-        closure: None,
         companion: None,
     };
     let relation = |stream: &str| SketchRelation {

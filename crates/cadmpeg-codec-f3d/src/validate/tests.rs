@@ -643,7 +643,8 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
         let mut native = f3d_native_mut(&mut ir);
         assert!(native.sketch_points.len() >= 2);
         assert!(native.sketch_curve_identities.len() >= 2);
-        native.sketch_points[1].persistent_id = native.sketch_points[0].persistent_id;
+        let persistent_id = native.sketch_points[0].persistent_id();
+        native.sketch_points[1].set_persistent_id(persistent_id);
         native.sketch_points[0].owner_reference = Some(100);
         native.sketch_points[1].owner_reference = Some(100);
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
@@ -681,7 +682,8 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
         let mut native = f3d_native_mut(&mut ir);
         assert!(native.sketch_points.len() >= 2);
         assert!(native.sketch_curve_identities.len() >= 2);
-        native.sketch_points[1].persistent_id = native.sketch_points[0].persistent_id;
+        let persistent_id = native.sketch_points[0].persistent_id();
+        native.sketch_points[1].set_persistent_id(persistent_id);
         native.sketch_points[0].owner_reference = Some(100);
         native.sketch_points[1].owner_reference = Some(101);
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
@@ -716,7 +718,8 @@ fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
         let mut native = f3d_native_mut(&mut ir);
         assert!(native.sketch_points.len() >= 2);
         assert!(native.sketch_curve_identities.len() >= 2);
-        native.sketch_points[1].persistent_id = native.sketch_points[0].persistent_id;
+        let persistent_id = native.sketch_points[0].persistent_id();
+        native.sketch_points[1].set_persistent_id(persistent_id);
         native.sketch_points[0].owner_reference = None;
         native.sketch_points[1].owner_reference = None;
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;

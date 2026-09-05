@@ -208,13 +208,13 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         byte_offset: 0,
         coordinate_offset: 0,
         entity_genesis: None,
-        record_form: crate::records::SketchPointRecordForm::default(),
-        persistent_id: Some(50),
+        record_form: crate::records::SketchPointRecordForm::version11(
+            50,
+            crate::records::SketchPointClosure::Selector0State0,
+        ),
         paired_reference: 0,
-        flags: [0; 8],
         coordinates: Point2::new(4.5, 0.0),
         depth: 0.0,
-        closure: None,
         companion: None,
     };
     let annotation_curve = SketchCurveIdentity {
