@@ -1942,7 +1942,7 @@ pub(crate) fn exact_derived_instance_construction(
                 && occurrence.class_tag == "380"
                 && occurrence.record_index == carrier_record_index
                 && occurrence.byte_offset < relation_at as u64
-                && occurrence.transform.map(|frame| frame.value) == Some(transform)
+                && occurrence.transform().map(|frame| frame.value) == Some(transform)
         })
         .collect::<Vec<_>>();
     let [carrier] = candidates.as_slice() else {
@@ -2740,7 +2740,7 @@ fn exact_copy_paste_component_operation(
             native_stream(&occurrence.id) == Some(stream)
                 && occurrence.record_index == copied_occurrence_record_index
                 && occurrence.byte_offset < relation_at as u64
-                && occurrence.transform.map(|frame| frame.value) == Some(copied_transform)
+                && occurrence.transform().map(|frame| frame.value) == Some(copied_transform)
         })
         .collect::<Vec<_>>();
     let [copied] = copied_candidates.as_slice() else {
@@ -2754,7 +2754,7 @@ fn exact_copy_paste_component_operation(
                 && occurrence
                     .component_guid
                     .eq_ignore_ascii_case(&copied.component_guid)
-                && occurrence.transform.is_none()
+                && occurrence.transform().is_none()
         })
         .collect::<Vec<_>>();
     let [source] = source_candidates.as_slice() else {
@@ -2794,8 +2794,8 @@ fn bind_component_pattern_occurrences(
             .iter()
             .filter(|occurrence| {
                 native_stream(&occurrence.id) == Some(stream.as_str())
-                    && occurrence.transform.map(|frame| frame.offset) == Some(frame.transform.offset)
-                    && occurrence.occurrence_ordinal == ordinal as u32 + 1
+                    && occurrence.transform().map(|frame| frame.offset) == Some(frame.transform.offset)
+                    && occurrence.occurrence_ordinal() == ordinal as u32 + 1
             })
             .collect::<Vec<_>>();
         let [candidate] = candidates.as_slice() else {
@@ -2824,8 +2824,7 @@ fn bind_component_pattern_occurrences(
                 && occurrence
                     .component_guid
                     .eq_ignore_ascii_case(component_guid)
-                && occurrence.occurrence_ordinal == 1
-                && occurrence.transform.is_none()
+                && matches!(occurrence.placement, crate::records::DesignComponentOccurrencePlacement::Base)
         })
         .collect::<Vec<_>>();
     let [seed] = seed_candidates.as_slice() else {

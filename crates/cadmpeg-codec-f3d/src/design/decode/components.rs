@@ -68,10 +68,7 @@ pub(crate) fn exact_component_occurrence(
     if View::u64_le_at(bytes, start + 198)? != component_record_index {
         return None;
     }
-    let occurrence_ordinal = View::u32_le_at(bytes, start + 40)?;
-    if occurrence_ordinal == 0 {
-        return None;
-    }
+    let occurrence_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, start + 40)?)?;
     let (component_guid, after_component) = lp_utf16_bounded(bytes, start + 44, 36..=36)?;
     let (occurrence_guid, after_occurrence) = lp_utf16_bounded(bytes, start + 120, 36..=36)?;
     if after_component != start + 120
@@ -81,19 +78,19 @@ pub(crate) fn exact_component_occurrence(
     {
         return None;
     }
-    let transform = match frame_length {
+    let placement = match frame_length {
         BASE_FRAME_LENGTH => {
-            if occurrence_ordinal != 1
+            if occurrence_ordinal.get() != 1
                 || bytes.get(start + 206..start + 218)? != [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                 || bytes.get(start + 218) != Some(&1)
                 || bytes.get(start + 227..start + 229)? != [0; 2]
             {
                 return None;
             }
-            None
+            crate::records::DesignComponentOccurrencePlacement::Base
         }
         PLACED_FRAME_LENGTH => {
-            if (class_tag == "256" && occurrence_ordinal < 2)
+            if (class_tag == "256" && occurrence_ordinal.get() < 2)
                 || bytes.get(start + 206..start + 209)? != [0; 3]
                 || bytes.get(start + 337..start + 346)? != [0; 9]
                 || bytes.get(start + 346) != Some(&1)
@@ -102,7 +99,10 @@ pub(crate) fn exact_component_occurrence(
                 return None;
             }
             let transform = super::scopes::rigid_transform_at(bytes, start + 209)?;
-            Some(crate::records::Located { value: transform, offset: u64::try_from(start.checked_add(209)?).ok()? })
+            crate::records::DesignComponentOccurrencePlacement::Explicit {
+                ordinal: occurrence_ordinal,
+                transform: crate::records::Located { value: transform, offset: u64::try_from(start.checked_add(209)?).ok()? },
+            }
         }
         _ => return None,
     };
@@ -116,8 +116,7 @@ pub(crate) fn exact_component_occurrence(
         component_guid_offset: u64::try_from(start + 48).ok()?,
         occurrence_guid,
         occurrence_guid_offset: u64::try_from(start + 124).ok()?,
-        occurrence_ordinal,
-        transform,
+        placement,
     })
 }
 
@@ -169,8 +168,8 @@ mod tests {
             .expect("seed occurrence");
         assert_eq!(seed.component_guid, COMPONENT);
         assert_eq!(seed.occurrence_guid, OCCURRENCE);
-        assert_eq!(seed.occurrence_ordinal, 1);
-        assert_eq!(seed.transform, None);
+        assert_eq!(seed.occurrence_ordinal(), 1);
+        assert_eq!(seed.transform(), None);
 
         let mut generated = common(357, 2);
         let transform: [[f64; 4]; 4] = [
@@ -186,9 +185,9 @@ mod tests {
         header(&mut generated, b"325", 21);
         let generated = exact_component_occurrence(&generated, 0, "f3d:Design/BulkStream.dat")
             .expect("generated occurrence");
-        assert_eq!(generated.occurrence_ordinal, 2);
-        assert_eq!(generated.transform.map(|frame| frame.value), Some(transform));
-        assert_eq!(generated.transform.map(|frame| frame.offset), Some(209));
+        assert_eq!(generated.occurrence_ordinal(), 2);
+        assert_eq!(generated.transform().map(|frame| frame.value), Some(transform));
+        assert_eq!(generated.transform().map(|frame| frame.offset), Some(209));
 
         let mut legacy = common(229, 1);
         legacy[4..7].copy_from_slice(b"327");
@@ -211,8 +210,8 @@ mod tests {
         let legacy_placed =
             exact_component_occurrence(&legacy_placed, 0, "f3d:Design/BulkStream.dat")
                 .expect("legacy placed occurrence");
-        assert_eq!(legacy_placed.occurrence_ordinal, 1);
-        assert_eq!(legacy_placed.transform.map(|frame| frame.value), Some(transform));
+        assert_eq!(legacy_placed.occurrence_ordinal(), 1);
+        assert_eq!(legacy_placed.transform().map(|frame| frame.value), Some(transform));
 
         // The carrier class tag is a per-file dynamic value, so the fixed frame
         // alone identifies the carrier and a third tag reads the same members.
@@ -226,8 +225,8 @@ mod tests {
         let dynamic_tag = exact_component_occurrence(&dynamic_tag, 0, "f3d:Design/BulkStream.dat")
             .expect("dynamic-tag placed occurrence");
         assert_eq!(dynamic_tag.class_tag, "336");
-        assert_eq!(dynamic_tag.occurrence_ordinal, 1);
-        assert_eq!(dynamic_tag.transform.map(|frame| frame.value), Some(transform));
+        assert_eq!(dynamic_tag.occurrence_ordinal(), 1);
+        assert_eq!(dynamic_tag.transform().map(|frame| frame.value), Some(transform));
 
         // A class-256 carrier still cannot use a placed frame for ordinal one.
         let mut placed_seed = common(357, 1);
