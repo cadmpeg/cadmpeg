@@ -122,8 +122,10 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         id: "f3d:Design/BulkStream.dat:design-face-operand#10".into(),
         scope_record_index: 1,
         scope_reference_ordinal: 0,
-        group_record_index: Some(2),
-        group_member_ordinal: Some(0),
+        group: Some(crate::records::DesignOperandGroup {
+            group_record_index: 2,
+            group_member_ordinal: 0,
+        }),
         record_index: 10,
         byte_offset: 100,
         class_tag: "297".into(),

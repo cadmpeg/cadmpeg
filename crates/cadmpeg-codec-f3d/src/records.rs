@@ -6859,7 +6859,7 @@ pub struct DesignBodyRecipeOperand {
     pub scope_record_index: u32,
     /// Exact feature-scope ownership form.
     #[serde(flatten)]
-    pub owner: DesignBodyRecipeOperandOwner,
+    pub owner: DesignOperandOwner,
     /// Primary indexed-record identity.
     pub record_index: u32,
     /// Primary indexed-header byte offset.
@@ -6909,11 +6909,21 @@ pub struct DesignBodyRecipeOperand {
     pub next_byte_offset: u64,
 }
 
-/// Exact owner of a whole-body construction operand.
+/// Construction-operand group record and member position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignOperandGroup {
+    /// Owning construction-operand group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+}
+
+/// Exact owner of a construction operand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(untagged)]
-pub enum DesignBodyRecipeOperandOwner {
+pub enum DesignOperandOwner {
     /// Operand named by a counted construction-operand group.
     Group {
         /// Owning construction-operand group record.
@@ -6928,7 +6938,7 @@ pub enum DesignBodyRecipeOperandOwner {
     },
 }
 
-impl DesignBodyRecipeOperandOwner {
+impl DesignOperandOwner {
     /// Return the construction-group record and member position, when grouped.
     pub const fn group(self) -> Option<(u32, u32)> {
         match self {
@@ -7449,10 +7459,8 @@ pub struct DesignFaceOperand {
     pub scope_reference_ordinal: u32,
     /// Owning construction-operand group, absent for a direct scope operand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_record_index: Option<u32>,
-    /// Zero-based position in the owning group's ordered member table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_member_ordinal: Option<u32>,
+    #[serde(flatten)]
+    pub group: Option<DesignOperandGroup>,
     /// Primary indexed-record identity named by a face operand group.
     pub record_index: u32,
     /// Byte offset of the primary indexed-record header.
@@ -7522,6 +7530,16 @@ pub struct DesignFaceOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     pub next_byte_offset: u64,
+}
+
+impl DesignFaceOperand {
+    pub(crate) fn group_record_index(&self) -> Option<u32> {
+        self.group.map(|group| group.group_record_index)
+    }
+
+    pub(crate) fn group_member_ordinal(&self) -> Option<u32> {
+        self.group.map(|group| group.group_member_ordinal)
+    }
 }
 
 /// Native source-shape carrier owned by a `Face` parameter scope.

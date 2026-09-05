@@ -129,8 +129,8 @@ pub(crate) fn resolved_direct_face_selection(
         .filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == scope.record_index
-                && operand.group_record_index.is_none()
-                && operand.group_member_ordinal.is_none()
+                && operand.group_record_index().is_none()
+                && operand.group_member_ordinal().is_none()
                 && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
                 && usize::try_from(operand.scope_reference_ordinal)
                     .ok()
@@ -424,8 +424,8 @@ fn collect_extrude_profile_group_operands(
             .filter(|(_, operand)| {
                 native_stream(&operand.id) == Some(stream)
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.group_record_index == Some(group.record_index)
-                    && operand.group_member_ordinal == Some(ordinal)
+                    && operand.group_record_index() == Some(group.record_index)
+                    && operand.group_member_ordinal() == Some(ordinal)
                     && operand.record_index == *record_index
             })
             .map(|(index, _)| index)
@@ -488,8 +488,8 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
             let mut leaves = operands.iter().filter(|operand| {
                 native_stream(&operand.id) == Some(stream)
                     && operand.scope_record_index == root.scope_record_index
-                    && operand.group_record_index == Some(child.record_index)
-                    && operand.group_member_ordinal == Some(0)
+                    && operand.group_record_index() == Some(child.record_index)
+                    && operand.group_member_ordinal() == Some(0)
                     && operand.record_index == *operand_record_index
                     && operand.recipe_kind == ConstructionRecipeKind::BoundedFace
                     && crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(
@@ -927,8 +927,8 @@ fn split_face_updated_target_slots(
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
-                && operand.group_record_index == Some(group.record_index)
-                && operand.group_member_ordinal == Some(ordinal)
+                && operand.group_record_index() == Some(group.record_index)
+                && operand.group_member_ordinal() == Some(ordinal)
                 && operand.record_index == *record_index
                 && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
         });
@@ -962,8 +962,8 @@ fn historical_face_group_slots(
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == group.scope_record_index
-                && operand.group_record_index == Some(group.record_index)
-                && operand.group_member_ordinal == Some(ordinal)
+                && operand.group_record_index() == Some(group.record_index)
+                && operand.group_member_ordinal() == Some(ordinal)
                 && operand.record_index == *record_index
         });
         let operand = matches.next()?;

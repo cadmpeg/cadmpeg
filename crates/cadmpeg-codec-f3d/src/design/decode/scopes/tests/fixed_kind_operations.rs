@@ -768,8 +768,10 @@ pub(super) fn continue_fixed_kind_operations(
         id: "stream:indexed-face-axis".into(),
         scope_record_index: indexed_revolve_scope.record_index,
         scope_reference_ordinal: 2,
-        group_record_index: Some(indexed_axis.record_index),
-        group_member_ordinal: Some(0),
+        group: Some(crate::records::DesignOperandGroup {
+            group_record_index: indexed_axis.record_index,
+            group_member_ordinal: 0,
+        }),
         record_index: 900,
         byte_offset: 0,
         class_tag: "256".into(),

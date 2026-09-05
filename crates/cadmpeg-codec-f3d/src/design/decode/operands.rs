@@ -28,21 +28,20 @@ use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand,
-    DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignConstructionOperandGroup,
-    DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignConstructionTrackingPath,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEdgeTreatmentVertexOperand,
-    DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudePrologue, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFaceSourceGroup,
-    DesignFaceSourceMember, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
-    DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignRecordHeader, DesignSketchProfileOperand,
-    DesignSketchProfileRegion, DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
-    DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPlaneConstruction,
-    DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
+    ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand, DesignBodyRecipeReference,
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+    DesignConstructionTrackingPath, DesignEdgeIdentityOperand, DesignEdgeOperand,
+    DesignEdgeTreatmentVertexOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudePrologue,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
+    DesignFaceOperand, DesignFaceSourceGroup, DesignFaceSourceMember, DesignFilletRadiusGroup,
+    DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier, DesignOperandOwner, DesignParameter,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
+    DesignSketchProfileRegionSelection, DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry,
+    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, DesignVertexRecipe,
+    DesignWorkPlaneConstruction, DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
     DesignWorkPointSketchPointSelection, LostEdgeReference, PersistentSubentityTag,
     SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
@@ -3402,7 +3401,7 @@ pub fn decode_body_recipe_operands(
             ) else {
                 continue;
             };
-            let owner = DesignBodyRecipeOperandOwner::ScopeReference {
+            let owner = DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal,
             };
             if let Some(mut operand) = parse_body_recipe_operand_frame_with_index(
@@ -3546,7 +3545,7 @@ fn parse_body_recipe_operand_with_index(
         bytes,
         records,
         group.scope_record_index,
-        DesignBodyRecipeOperandOwner::Group {
+        DesignOperandOwner::Group {
             group_record_index: group.record_index,
             group_member_ordinal,
         },
@@ -3559,7 +3558,7 @@ fn parse_body_recipe_operand_frame_with_index(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
-    owner: DesignBodyRecipeOperandOwner,
+    owner: DesignOperandOwner,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
 ) -> Option<DesignBodyRecipeOperand> {
@@ -5031,8 +5030,12 @@ pub(crate) fn parse_face_operand(
         ),
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
-        group_record_index: group_ownership.map(|ownership| ownership.0),
-        group_member_ordinal: group_ownership.map(|ownership| ownership.1),
+        group: group_ownership.map(|(group_record_index, group_member_ordinal)| {
+            crate::records::DesignOperandGroup {
+                group_record_index,
+                group_member_ordinal,
+            }
+        }),
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),

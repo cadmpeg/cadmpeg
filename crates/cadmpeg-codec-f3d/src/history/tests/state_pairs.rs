@@ -83,8 +83,7 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
 #[test]
 fn ambiguous_scope_histories_use_exact_result_body_sources() {
     use crate::records::{
-        DesignBodyBinding, DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner,
-        DesignBodyRecipeReference,
+        DesignBodyBinding, DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner,
     };
     use cadmpeg_ir::ids::FaceId;
 
@@ -165,7 +164,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     let operand = DesignBodyRecipeOperand {
         id: format!("{stream}:design-body-recipe-operand#120"),
         scope_record_index: scope.record_index,
-        owner: DesignBodyRecipeOperandOwner::ScopeReference {
+        owner: DesignOperandOwner::ScopeReference {
             scope_reference_ordinal: 0,
         },
         record_index: 120,

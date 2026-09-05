@@ -9,8 +9,8 @@
 use super::prelude::*;
 
 use crate::records::{
-    ConstructionRecipeKind, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
-    DesignConstructionOperandGroupFrame, DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation,
+    ConstructionRecipeKind, DesignBodyRecipeReference, DesignConstructionOperandGroupFrame,
+    DesignOperandOwner, DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation,
 };
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
@@ -71,7 +71,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
     let replacement = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1133".into(),
         scope_record_index: 1129,
-        owner: DesignBodyRecipeOperandOwner::Group {
+        owner: DesignOperandOwner::Group {
             group_record_index: 1130,
             group_member_ordinal: 0,
         },
@@ -107,8 +107,10 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         id: "f3d:Design/BulkStream.dat:face-operand#1140".into(),
         scope_record_index: 1129,
         scope_reference_ordinal: 3,
-        group_record_index: Some(1137),
-        group_member_ordinal: Some(0),
+        group: Some(crate::records::DesignOperandGroup {
+            group_record_index: 1137,
+            group_member_ordinal: 0,
+        }),
         record_index: 1140,
         byte_offset: 0,
         class_tag: "272".into(),
@@ -180,7 +182,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
     let body = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1202".into(),
         scope_record_index: 1200,
-        owner: DesignBodyRecipeOperandOwner::Group {
+        owner: DesignOperandOwner::Group {
             group_record_index: 1201,
             group_member_ordinal: 0,
         },

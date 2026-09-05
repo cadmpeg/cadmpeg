@@ -585,7 +585,7 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     let mut operand = crate::records::DesignBodyRecipeOperand {
         id: "operand".into(),
         scope_record_index: 1,
-        owner: crate::records::DesignBodyRecipeOperandOwner::ScopeReference {
+        owner: crate::records::DesignOperandOwner::ScopeReference {
             scope_reference_ordinal: 0,
         },
         record_index: 2,
@@ -703,7 +703,7 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     let mut operands = vec![crate::records::DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
         scope_record_index: 10,
-        owner: crate::records::DesignBodyRecipeOperandOwner::Group {
+        owner: crate::records::DesignOperandOwner::Group {
             group_record_index: 20,
             group_member_ordinal: 0,
         },
@@ -910,7 +910,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let operand = crate::records::DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
         scope_record_index: 10,
-        owner: crate::records::DesignBodyRecipeOperandOwner::Group {
+        owner: crate::records::DesignOperandOwner::Group {
             group_record_index: 20,
             group_member_ordinal: 0,
         },
@@ -1018,7 +1018,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     );
 
     let mut direct_operand = operand.clone();
-    direct_operand.owner = crate::records::DesignBodyRecipeOperandOwner::ScopeReference {
+    direct_operand.owner = crate::records::DesignOperandOwner::ScopeReference {
         scope_reference_ordinal: 0,
     };
     let direct_inputs = super::super::FeatureBodySelectionInputs {
@@ -1231,8 +1231,10 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
         scope_record_index: 42,
         scope_reference_ordinal: 3,
-        group_record_index: Some(100),
-        group_member_ordinal: Some(0),
+        group: Some(crate::records::DesignOperandGroup {
+            group_record_index: 100,
+            group_member_ordinal: 0,
+        }),
         record_index: 200,
         byte_offset: 1200,
         class_tag: "297".into(),
@@ -1407,8 +1409,10 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
         scope_record_index: 42,
         scope_reference_ordinal: 1,
-        group_record_index: Some(100),
-        group_member_ordinal: Some(0),
+        group: Some(crate::records::DesignOperandGroup {
+            group_record_index: 100,
+            group_member_ordinal: 0,
+        }),
         record_index: 200,
         byte_offset: 1_200,
         class_tag: "297".into(),

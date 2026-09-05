@@ -708,7 +708,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut target_shape_operand = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
         scope_record_index: scope.record_index,
-        owner: DesignBodyRecipeOperandOwner::Group {
+        owner: DesignOperandOwner::Group {
             group_record_index: target_shape_group.record_index,
             group_member_ordinal: 0,
         },
@@ -823,7 +823,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     multi_target_group.member_offsets.push(1030);
     let mut second_target_operand = target_shape_operand.clone();
     second_target_operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#202".into();
-    second_target_operand.owner = DesignBodyRecipeOperandOwner::Group {
+    second_target_operand.owner = DesignOperandOwner::Group {
         group_record_index: multi_target_group.record_index,
         group_member_ordinal: 1,
     };

@@ -441,7 +441,7 @@ fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
 fn combine_recipe_family_proves_unordered_generated_tools() {
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
-        DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
+        DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner,
     };
 
     let stream = "f3d:Design/BulkStream.dat";
@@ -470,7 +470,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
             DesignBodyRecipeOperand {
                 id: format!("{stream}:design-body-recipe-operand#{record_index}"),
                 scope_record_index: 10,
-                owner: DesignBodyRecipeOperandOwner::ScopeReference {
+                owner: DesignOperandOwner::ScopeReference {
                     scope_reference_ordinal: record_index,
                 },
                 record_index,
