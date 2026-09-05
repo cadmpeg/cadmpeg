@@ -5874,25 +5874,16 @@ fn exact_base_feature_body_snapshot(
         return None;
     }
     let mut cursor = start + snapshot::LEN;
-    let mut body_entity_suffixes = Vec::with_capacity(body_count);
-    let mut body_entity_suffix_offsets = Vec::with_capacity(body_count);
-    let mut body_entity_fields = Vec::with_capacity(body_count);
+    let mut bodies = Vec::with_capacity(body_count);
     for _ in 0..body_count {
         if bytes.get(cursor) != Some(&1) {
             return None;
         }
-        body_entity_suffixes.push(View::u64_le_at(
-            bytes,
-            cursor + snapshot_entry::BODY_ENTITY_SUFFIX,
-        )?);
-        body_entity_suffix_offsets
-            .push(u64::try_from(cursor + snapshot_entry::BODY_ENTITY_SUFFIX).ok()?);
-        body_entity_fields.push(
-            bytes
-                .get(cursor + snapshot_entry::BODY_ENTITY_FIELD..cursor + snapshot_entry::LEN)?
-                .try_into()
-                .ok()?,
-        );
+        bodies.push(crate::records::DesignBaseFeatureEntry {
+            value: View::u64_le_at(bytes, cursor + snapshot_entry::BODY_ENTITY_SUFFIX)?,
+            offset: u64::try_from(cursor + snapshot_entry::BODY_ENTITY_SUFFIX).ok()?,
+            field: bytes.get(cursor + snapshot_entry::BODY_ENTITY_FIELD..cursor + snapshot_entry::LEN)?.try_into().ok()?,
+        });
         cursor += snapshot_entry::LEN;
     }
     let preamble = bytes.get(cursor..cursor + snapshot_expanded_preamble::LEN)?;
@@ -5926,7 +5917,7 @@ fn exact_base_feature_body_snapshot(
         != [0, 0, 1, 1, 0, 0, 0]
         || bytes.get(after_guids + snapshot_tail::FIRST_BODY_MARKER) != Some(&1)
         || View::u64_le_at(bytes, after_guids + snapshot_tail::FIRST_BODY_ENTITY_SUFFIX)?
-            != *body_entity_suffixes.first()?
+            != bodies.first()?.value
         || bytes.get(
             after_guids + snapshot_tail::ZERO_RUN_3..after_guids + snapshot_tail::LINKAGE_MARKER,
         )? != [0; 3]
@@ -6006,9 +5997,7 @@ fn exact_base_feature_body_snapshot(
         return None;
     }
     Some(DesignBaseFeatureConstruction::BodySnapshot {
-        body_entity_suffixes,
-        body_entity_suffix_offsets,
-        body_entity_fields,
+        bodies,
         related_guids: [first_guid, second_guid, third_guid],
         related_guid_offsets: [
             u64::try_from(first_guid_offset).ok()?,

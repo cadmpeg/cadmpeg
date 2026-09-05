@@ -1285,7 +1285,7 @@ pub fn project_parameter_design_with_edge_identities(
                             |operation| FeatureDefinition::InsertBodies {
                                 bodies: design_body_selection(
                                     scope,
-                                    &operation.copied_body_entity_suffixes,
+                                    operation.copied_body_entity_suffixes.iter().copied().map(u64::from),
                                     body_bindings,
                                 ),
                             },
@@ -2416,21 +2416,17 @@ fn project_full_round_fillet(
     })
 }
 
-fn design_body_selection<T>(
+fn design_body_selection(
     scope: &DesignParameterScope,
-    entity_suffixes: &[T],
+    entity_suffixes: impl ExactSizeIterator<Item = u64>,
     body_bindings: &[DesignBodyBinding],
-) -> cadmpeg_ir::features::BodySelection
-where
-    T: Copy + Into<u64>,
-{
+) -> cadmpeg_ir::features::BodySelection {
     use cadmpeg_ir::features::BodySelection;
 
     let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+    let expected_count = entity_suffixes.len();
     let bodies = entity_suffixes
-        .iter()
         .filter_map(|suffix| {
-            let suffix = (*suffix).into();
             let matches = body_bindings
                 .iter()
                 .filter(|binding| {
@@ -2443,7 +2439,7 @@ where
                 .flatten()
         })
         .collect::<Vec<_>>();
-    if bodies.len() == entity_suffixes.len() {
+    if bodies.len() == expected_count {
         BodySelection::Resolved {
             bodies,
             native: scope.id.clone(),
