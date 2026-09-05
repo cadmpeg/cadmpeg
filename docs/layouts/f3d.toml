@@ -15916,3 +15916,46 @@ anchor = "the third names the DerivedInstance scope"
 offset = 51
 size = 6
 note = "Six zero bytes follow the scope back-reference."
+
+[[record]]
+name = "canvas_geometry_payload"
+kind = "byte"
+section = "3.1"
+anchor = "A 77-byte fixed payload occupies offsets 69 through 145."
+size = 77
+note = "Offsets are relative to the Canvas geometry payload at geometry-record offset 69."
+
+[[record.field]]
+name = "opacity"
+offset = 0
+type = "f32"
+source = "spec"
+anchor = "Its first four bytes are a normalized finite f32 opacity followed by one zero byte."
+
+[[record.field]]
+name = "reserved_zero"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "Its first four bytes are a normalized finite f32 opacity followed by one zero byte."
+
+[[record.field]]
+name = "origin_centimetres"
+offset = 5
+type = "f64[3]"
+source = "spec"
+anchor = "Three consecutive f64 triples begin at payload offsets 5, 29, and 53."
+
+[[record.field]]
+name = "u_axis"
+offset = 29
+type = "f64[3]"
+source = "spec"
+anchor = "Three consecutive f64 triples begin at payload offsets 5, 29, and 53."
+
+[[record.field]]
+name = "v_axis"
+offset = 53
+type = "f64[3]"
+source = "spec"
+anchor = "Three consecutive f64 triples begin at payload offsets 5, 29, and 53."

@@ -8,14 +8,12 @@ use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
-use crate::records::{DesignCanvasImage, DesignCanvasPrologue, DesignParameterScope};
+use crate::records::{DesignCanvasImage, DesignCanvasGeometryPayload, DesignCanvasPrologue, DesignParameterScope};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-
-const EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9: f64 = 1.0e-9;
+use cadmpeg_ir::math::Point2;
 
 const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 
@@ -104,19 +102,20 @@ pub fn project_canvas_images(
         {
             assets.push(asset);
         }
+        let (opacity, origin, u_axis, v_axis) = image.geometry_payload.decoded();
         feature.definition = FeatureDefinition::ReferenceImage {
             asset: asset_id,
             visible: image.geometry_prologue.visible(),
             mirror_u,
             mirror_v,
-            origin: image.origin,
-            u_axis: image.u_axis,
-            v_axis: image.v_axis,
+            origin,
+            u_axis,
+            v_axis,
             bounds: [
                 Point2::new(u_min * DESIGN_LENGTH_TO_MM, v_min * DESIGN_LENGTH_TO_MM),
                 Point2::new(u_max * DESIGN_LENGTH_TO_MM, v_max * DESIGN_LENGTH_TO_MM),
             ],
-            opacity: Some(f64::from(image.opacity)),
+            opacity: Some(f64::from(opacity)),
         };
     }
     assets.sort_by(|a, b| a.id.cmp(&b.id));
@@ -215,7 +214,7 @@ fn parse_canvas_image(
         return None;
     }
     let geometry_payload = bytes.get(geometry_at + 69..geometry_at + 146)?;
-    let (opacity, origin, u_axis, v_axis) = decode_geometry_payload(geometry_payload)?;
+    let geometry_payload = DesignCanvasGeometryPayload::try_from(geometry_payload).ok()?;
 
     let (label, after_label) = lp_utf16_bounded(bytes, geometry_at + 213, 1..=256)?;
     if after_label != paired_at {
@@ -263,48 +262,8 @@ fn parse_canvas_image(
         asset_name_offset: u64::try_from(asset_record_at + 25).ok()?,
         label,
         label_offset: u64::try_from(geometry_at + 217).ok()?,
-        opacity,
-        origin,
-        u_axis,
-        v_axis,
-        geometry_payload: geometry_payload.to_vec(),
+        geometry_payload,
     })
-}
-
-fn decode_geometry_payload(payload: &[u8]) -> Option<(f32, Point3, Vector3, Vector3)> {
-    let opacity = View::f32_le_at(payload, 0)?;
-    if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) || payload.get(4) != Some(&0) {
-        return None;
-    }
-    let vector = |offset| {
-        Some([
-            View::f64_le_at(payload, offset)?,
-            View::f64_le_at(payload, offset + 8)?,
-            View::f64_le_at(payload, offset + 16)?,
-        ])
-    };
-    let origin = vector(5)?;
-    let u = vector(29)?;
-    let v = vector(53)?;
-    let u_axis = Vector3::new(u[0], u[1], u[2]);
-    let v_axis = Vector3::new(v[0], v[1], v[2]);
-    if !origin.into_iter().all(f64::is_finite)
-        || (u_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
-        || (v_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
-        || u_axis.dot(v_axis).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
-    {
-        return None;
-    }
-    Some((
-        opacity,
-        Point3::new(
-            origin[0] * DESIGN_LENGTH_TO_MM,
-            origin[1] * DESIGN_LENGTH_TO_MM,
-            origin[2] * DESIGN_LENGTH_TO_MM,
-        ),
-        u_axis,
-        v_axis,
-    ))
 }
 
 fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
@@ -338,7 +297,7 @@ pub(crate) fn canvas_mirroring(segments: [[Point2; 2]; 2]) -> Option<(bool, bool
 #[cfg(test)]
 mod tests {
     use super::{
-        canvas_mirroring, decode_geometry_payload,
+        canvas_mirroring, DesignCanvasGeometryPayload,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -361,7 +320,7 @@ mod tests {
         }
 
         assert_eq!(
-            decode_geometry_payload(&payload),
+            DesignCanvasGeometryPayload::try_from(payload.as_slice()).ok().map(|payload| payload.decoded()),
             Some((
                 0.75,
                 Point3::new(10.0, 20.0, 30.0),
@@ -371,10 +330,10 @@ mod tests {
         );
 
         payload[4] = 1;
-        assert!(decode_geometry_payload(&payload).is_none());
+        assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
         payload[4] = 0;
         payload[53..61].copy_from_slice(&1.0f64.to_le_bytes());
-        assert!(decode_geometry_payload(&payload).is_none());
+        assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
     }
 
     #[test]

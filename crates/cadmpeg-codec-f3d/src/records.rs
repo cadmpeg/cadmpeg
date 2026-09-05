@@ -14762,6 +14762,68 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
     }
 }
 
+const EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9: f64 = 1.0e-9;
+const DESIGN_CANVAS_LENGTH_TO_MM: f64 = 10.0;
+
+/// Canvas opacity and source-space frame; the fixed payload is emitted from these values.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignCanvasGeometryPayload {
+    opacity: f32,
+    origin_centimetres: [f64; 3],
+    u_axis: Vector3,
+    v_axis: Vector3,
+}
+impl TryFrom<&[u8]> for DesignCanvasGeometryPayload {
+    type Error = String;
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        if bytes.len() != 77 { return Err("geometry_payload must contain 77 bytes".into()); }
+        let mut view = cadmpeg_core::decode::View::over_retained(bytes);
+        let opacity = view.req_f32_le().map_err(|error| format!("geometry_payload: {error:?}"))?;
+        let reserved = view.req_u8().map_err(|error| format!("geometry_payload: {error:?}"))?;
+        if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) || reserved != 0 {
+            return Err("geometry_payload must contain normalized finite opacity and a zero reserved byte".into());
+        }
+        let mut vector = || -> Result<[f64; 3], String> {
+            Ok([view.req_f64_le().map_err(|error| format!("geometry_payload: {error:?}"))?,
+                view.req_f64_le().map_err(|error| format!("geometry_payload: {error:?}"))?,
+                view.req_f64_le().map_err(|error| format!("geometry_payload: {error:?}"))?])
+        };
+        let origin_centimetres = vector()?;
+        let u = vector()?;
+        let v = vector()?;
+        let u_axis = Vector3::new(u[0], u[1], u[2]);
+        let v_axis = Vector3::new(v[0], v[1], v[2]);
+        if !origin_centimetres.into_iter().all(f64::is_finite)
+            || (u_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
+            || (v_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
+            || u_axis.dot(v_axis).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9 {
+            return Err("geometry_payload must contain a finite origin and an admitted orthonormal frame".into());
+        }
+        Ok(Self { opacity, origin_centimetres, u_axis, v_axis })
+    }
+}
+impl DesignCanvasGeometryPayload {
+    pub fn decoded(&self) -> (f32, Point3, Vector3, Vector3) {
+        (self.opacity, Point3::new(
+            self.origin_centimetres[0] * DESIGN_CANVAS_LENGTH_TO_MM,
+            self.origin_centimetres[1] * DESIGN_CANVAS_LENGTH_TO_MM,
+            self.origin_centimetres[2] * DESIGN_CANVAS_LENGTH_TO_MM,
+        ), self.u_axis, self.v_axis)
+    }
+    pub fn bytes(&self) -> [u8; 77] {
+        let mut bytes = [0; 77];
+        bytes[..4].copy_from_slice(&self.opacity.to_le_bytes());
+        let mut at = 5;
+        for value in self.origin_centimetres.into_iter()
+            .chain([self.u_axis.x, self.u_axis.y, self.u_axis.z])
+            .chain([self.v_axis.x, self.v_axis.y, self.v_axis.z]) {
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+            at += 8;
+        }
+        bytes
+    }
+}
+
 /// Canvas geometry flags; all other prologue bytes are fixed zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DesignCanvasPrologue {
@@ -14850,16 +14912,8 @@ pub struct DesignCanvasImage {
     pub label: String,
     /// Byte offset of the label's UTF-16LE code units.
     pub label_offset: u64,
-    /// Normalized raster opacity.
-    pub opacity: f32,
-    /// Image-plane origin in model-space millimeters.
-    pub origin: Point3,
-    /// Unit direction of increasing image u coordinate.
-    pub u_axis: Vector3,
-    /// Unit direction of increasing image v coordinate.
-    pub v_axis: Vector3,
-    /// Uninterpreted fixed geometry payload between the plane reference and scope link.
-    pub geometry_payload: Vec<u8>,
+    /// Decoded opacity and frame with exact fixed-payload serialization.
+    pub geometry_payload: DesignCanvasGeometryPayload,
 }
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.
@@ -14943,6 +14997,20 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
         if geometry_prologue.visible() != wire.visible {
             return Err("visible must match geometry_prologue".into());
         }
+        let geometry_payload = DesignCanvasGeometryPayload::try_from(wire.geometry_payload.as_slice())?;
+        let (opacity, origin, u_axis, v_axis) = geometry_payload.decoded();
+        if wire.opacity.to_bits() != opacity.to_bits() {
+            return Err("opacity must match geometry_payload".into());
+        }
+        for (name, declared, decoded) in [
+            ("origin", [wire.origin.x, wire.origin.y, wire.origin.z], [origin.x, origin.y, origin.z]),
+            ("u_axis", [wire.u_axis.x, wire.u_axis.y, wire.u_axis.z], [u_axis.x, u_axis.y, u_axis.z]),
+            ("v_axis", [wire.v_axis.x, wire.v_axis.y, wire.v_axis.z], [v_axis.x, v_axis.y, v_axis.z]),
+        ] {
+            if declared.into_iter().zip(decoded).any(|(left, right)| left.to_bits() != right.to_bits()) {
+                return Err(format!("{name} must match geometry_payload"));
+            }
+        }
         Ok(Self {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
@@ -14972,17 +15040,14 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
             asset_name_offset: wire.asset_name_offset,
             label: wire.label,
             label_offset: wire.label_offset,
-            opacity: wire.opacity,
-            origin: wire.origin,
-            u_axis: wire.u_axis,
-            v_axis: wire.v_axis,
-            geometry_payload: wire.geometry_payload,
+            geometry_payload,
         })
     }
 }
 
 impl From<DesignCanvasImage> for DesignCanvasImageWire {
     fn from(value: DesignCanvasImage) -> Self {
+        let (opacity, origin, u_axis, v_axis) = value.geometry_payload.decoded();
         Self {
             id: value.id,
             scope_record_index: value.scope_record_index,
@@ -15013,11 +15078,11 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
             asset_name_offset: value.asset_name_offset,
             label: value.label,
             label_offset: value.label_offset,
-            opacity: value.opacity,
-            origin: value.origin,
-            u_axis: value.u_axis,
-            v_axis: value.v_axis,
-            geometry_payload: value.geometry_payload,
+            opacity,
+            origin,
+            u_axis,
+            v_axis,
+            geometry_payload: value.geometry_payload.bytes().to_vec(),
         }
     }
 }
