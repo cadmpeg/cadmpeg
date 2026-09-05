@@ -1417,11 +1417,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         face_slot: 4,
         loops: vec![crate::records::DesignHistoricalFaceLoopContext {
             loop_slot: 5,
-            coedge_slots: vec![6],
-            edge_slots: vec![7],
-            vertex_slots: Vec::new(),
-            point_slots: Vec::new(),
-            positions: Vec::new(),
+            boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(vec![crate::records::DesignHistoricalLoopCoedge { coedge_slot: 6, edge_slot: 7 }]),
         }],
     };
     assert_eq!(context.result_face_boundaries, [boundary.clone()]);
@@ -1487,8 +1483,17 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ],
         ..AsmHistoricalTopology::default()
     };
+    let ordered_vertices = |edges: &[i64], topology: &AsmHistoricalTopology| {
+        let coedges = edges.iter().enumerate().map(|(ordinal, edge_slot)| crate::records::DesignHistoricalLoopCoedge {
+            coedge_slot: ordinal as i64, edge_slot: *edge_slot,
+        }).collect();
+        match historical_loop_boundary(coedges, topology) {
+            crate::records::DesignHistoricalLoopBoundary::Vertices(rows) => Some(rows.into_iter().map(|row| row.vertex_slot).collect::<Vec<_>>()),
+            _ => None,
+        }
+    };
     assert_eq!(
-        ordered_loop_vertices(&[7, 8, 9], &cyclic),
+        ordered_vertices(&[7, 8, 9], &cyclic),
         Some(vec![1, 2, 3])
     );
     let disconnected = AsmHistoricalTopology {
@@ -1506,7 +1511,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ],
         ..AsmHistoricalTopology::default()
     };
-    assert_eq!(ordered_loop_vertices(&[7, 8], &disconnected), None);
+    assert_eq!(ordered_vertices(&[7, 8], &disconnected), None);
 }
 
 #[test]

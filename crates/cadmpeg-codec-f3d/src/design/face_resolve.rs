@@ -1550,8 +1550,9 @@ fn boundary_edge_count(
 ) -> Option<usize> {
     boundaries.iter().try_fold(0usize, |total, boundary| {
         boundary.loops.iter().try_fold(total, |total, loop_| {
-            (!loop_.edge_slots.is_empty() && loop_.edge_slots.len() == loop_.coedge_slots.len())
-                .then(|| total.checked_add(loop_.edge_slots.len()))
+            let count = loop_.boundary.coedges().count();
+            (count != 0)
+                .then(|| total.checked_add(count))
                 .flatten()
         })
     })
@@ -2463,15 +2464,10 @@ mod tests {
             face_slot: slot,
             loops: vec![DesignHistoricalFaceLoopContext {
                 loop_slot: slot + 1_000,
-                coedge_slots: (0..edge_count)
-                    .map(|ordinal| i64::try_from(ordinal).expect("test ordinal"))
-                    .collect(),
-                edge_slots: (0..edge_count)
-                    .map(|ordinal| i64::try_from(ordinal).expect("test ordinal") + 2_000)
-                    .collect(),
-                vertex_slots: Vec::new(),
-                point_slots: Vec::new(),
-                positions: Vec::new(),
+                boundary: crate::records::DesignHistoricalLoopBoundary::Coedges((0..edge_count).map(|ordinal| {
+                            let coedge_slot = i64::try_from(ordinal).expect("test ordinal");
+                            crate::records::DesignHistoricalLoopCoedge { coedge_slot, edge_slot: coedge_slot + 2_000 }
+                        }).collect()),
             }],
         }
     }
@@ -2498,7 +2494,7 @@ mod tests {
     ) -> DesignEdgeRecipeReferenceContext {
         let face = face(slot);
         let boundary = boundary(slot, edge_count);
-        let edges = boundary.loops[0].edge_slots.clone();
+        let edges = boundary.loops[0].boundary.coedges().map(|row| row.edge_slot).collect::<Vec<_>>();
         DesignEdgeRecipeReferenceContext {
             reference_ordinal: ordinal,
             result_faces: vec![face.clone()],
@@ -2658,15 +2654,10 @@ mod tests {
                     face_slot: *face,
                     loops: vec![DesignHistoricalFaceLoopContext {
                         loop_slot: face + 2_000,
-                        coedge_slots: (0..*edge_count)
-                            .map(|ordinal| i64::try_from(ordinal).expect("test ordinal"))
-                            .collect(),
-                        edge_slots: (0..*edge_count)
-                            .map(|ordinal| i64::try_from(ordinal).expect("test ordinal") + 10_000)
-                            .collect(),
-                        vertex_slots: Vec::new(),
-                        point_slots: Vec::new(),
-                        positions: Vec::new(),
+                        boundary: crate::records::DesignHistoricalLoopBoundary::Coedges((0..*edge_count).map(|ordinal| {
+                            let coedge_slot = i64::try_from(ordinal).expect("test ordinal");
+                            crate::records::DesignHistoricalLoopCoedge { coedge_slot, edge_slot: coedge_slot + 10_000 }
+                        }).collect()),
                     }],
                 })
                 .collect(),
