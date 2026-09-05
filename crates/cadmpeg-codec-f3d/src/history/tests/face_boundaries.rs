@@ -138,7 +138,7 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         recipe_kind: ConstructionRecipeKind::BoundedFace,
         recipe_program_offset: 0,
         recipe_program: vec![0],
-        recipe_node_offsets: Vec::new(),
+
         recipe_nodes: Vec::new(),
         candidate_faces: Vec::new(),
         unreferenced_candidate_faces: Vec::new(),

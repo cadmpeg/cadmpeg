@@ -1248,7 +1248,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         recipe_kind: ConstructionRecipeKind::Face,
         recipe_program_offset: 1420,
         recipe_program: Vec::new(),
-        recipe_node_offsets: Vec::new(),
+
         recipe_nodes: Vec::new(),
         candidate_faces: vec![face_id.clone()],
         unreferenced_candidate_faces: Vec::new(),
@@ -1422,7 +1422,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         recipe_kind: ConstructionRecipeKind::BoundedFace,
         recipe_program_offset: 1_430,
         recipe_program: vec![0, -1, 2],
-        recipe_node_offsets: Vec::new(),
+
         recipe_nodes: Vec::new(),
         candidate_faces: [7, 8, 9, 10].into_iter().map(face).collect(),
         unreferenced_candidate_faces: [9, 10].into_iter().map(face).collect(),

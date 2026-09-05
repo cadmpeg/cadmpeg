@@ -5003,10 +5003,6 @@ pub(crate) fn parse_face_operand(
     if program_kind == FaceRecipeProgramKind::Terminal && !recipe_node_indices.is_empty() {
         return None;
     }
-    let recipe_node_offsets = recipe_node_indices
-        .iter()
-        .map(|index| u64::try_from(recipe_program_at.checked_add(index.checked_mul(4)?)?).ok())
-        .collect::<Option<Vec<_>>>()?;
     let recipe_nodes = recipe_node_indices
         .iter()
         .copied()
@@ -5057,7 +5053,6 @@ pub(crate) fn parse_face_operand(
         recipe_kind: recipe.kind,
         recipe_program_offset,
         recipe_program,
-        recipe_node_offsets,
         recipe_nodes,
         candidate_faces: Vec::new(),
         unreferenced_candidate_faces: Vec::new(),

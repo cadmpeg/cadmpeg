@@ -1415,3 +1415,51 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
         assert!(serde_json::from_value::<super::DesignFixedFilletGroup>(wire).unwrap_err().to_string().contains("intermediate_parameters"));
     }
 }
+
+#[test]
+fn face_operand_wire_derives_node_offsets() {
+    for count in [0_u32, 1, 3] {
+        let offsets: Vec<_> = (0..count).map(|index| 100 + index * 16).collect();
+        let nodes: Vec<_> = offsets.iter().map(|offset| serde_json::json!({
+            "byte_offset": offset, "end_byte_offset": offset + 16,
+            "program": [-1, -1, 2, 7], "recipe_structure": null
+        })).collect();
+        let base = serde_json::json!({
+            "id": "face", "scope_record_index": 1, "scope_reference_ordinal": 0,
+            "record_index": 2, "byte_offset": 10, "class_tag": "346",
+            "paired_byte_offset": 20, "paired_class_tag": "262",
+            "recipe_record_index": 3, "recipe_record_byte_offset": 30,
+            "recipe_id": "recipe", "recipe_prefix_offset": 40, "recipe_prefix_bytes": "",
+            "recipe_references": [], "recipe_kind": "bounded_face",
+            "recipe_program_offset": 50, "recipe_program": [0, -1, 1],
+            "recipe_node_offsets": offsets, "recipe_nodes": nodes,
+            "next_record_index": 4, "next_byte_offset": 200
+        });
+        for grouped in [false, true] {
+            let mut wire = base.clone();
+            if grouped {
+                wire["group_record_index"] = serde_json::json!(5);
+                wire["group_member_ordinal"] = serde_json::json!(0);
+            }
+            for field in ["group_record_index", "group_member_ordinal"] {
+                let mut invalid = wire.clone();
+                invalid.as_object_mut().unwrap().remove("group_record_index");
+                invalid.as_object_mut().unwrap().remove("group_member_ordinal");
+                invalid[field] = serde_json::json!(5);
+                let error = serde_json::from_value::<super::DesignFaceOperand>(invalid).unwrap_err().to_string();
+                assert!(error.contains("group_record_index"));
+                assert!(error.contains("group_member_ordinal"));
+            }
+            let operand: super::DesignFaceOperand = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&operand).unwrap(), wire);
+            let mut invalid = wire.clone();
+            invalid["recipe_node_offsets"].as_array_mut().unwrap().push(serde_json::json!(999));
+            assert!(serde_json::from_value::<super::DesignFaceOperand>(invalid).unwrap_err().to_string().contains("recipe_node_offsets"));
+            if count != 0 {
+                let mut invalid = wire;
+                invalid["recipe_node_offsets"][0] = serde_json::json!(999);
+                assert!(serde_json::from_value::<super::DesignFaceOperand>(invalid).unwrap_err().to_string().contains("recipe_node_offsets"));
+            }
+        }
+    }
+}

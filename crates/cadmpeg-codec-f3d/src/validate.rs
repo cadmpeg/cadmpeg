@@ -7282,11 +7282,10 @@ fn validate_face_operands<'a>(
         let valid_program =
             match design::decode::operands::face_recipe_program_kind(&operand.recipe_program) {
                 Some(design::decode::operands::FaceRecipeProgramKind::Terminal) => {
-                    operand.recipe_node_offsets.is_empty() && operand.recipe_nodes.is_empty()
+                    operand.recipe_nodes.is_empty()
                 }
                 Some(design::decode::operands::FaceRecipeProgramKind::Counted { .. }) => {
-                    operand.recipe_node_offsets == expected_node_offsets
-                        && operand.recipe_nodes.len() == expected_nodes.len()
+                    operand.recipe_nodes.len() == expected_nodes.len()
                         && operand.recipe_nodes.iter().zip(expected_nodes).all(
                             |(node, (start, end))| {
                                 node.byte_offset == start
@@ -7301,27 +7300,13 @@ fn validate_face_operands<'a>(
                                     })
                             },
                         )
-                        && (if operand.recipe_nodes.is_empty() {
-                            operand.recipe_node_offsets.is_empty()
-                        } else {
-                            let first_node_index = operand
-                                .recipe_node_offsets
-                                .first()
-                                .and_then(|offset| {
-                                    offset.checked_sub(operand.recipe_program_offset)
+                        && operand.recipe_nodes.first().is_none_or(|first_node| {
+                            first_node.byte_offset.checked_sub(operand.recipe_program_offset)
+                                .and_then(|byte_offset| usize::try_from(byte_offset / 4).ok())
+                                .is_some_and(|first_node_index| {
+                                    operand.recipe_nodes.iter().flat_map(|node| node.program.iter().copied())
+                                        .eq(operand.recipe_program.iter().copied().skip(first_node_index))
                                 })
-                                .and_then(|byte_offset| usize::try_from(byte_offset / 4).ok());
-                            operand
-                                .recipe_nodes
-                                .iter()
-                                .flat_map(|node| node.program.iter().copied())
-                                .eq(operand
-                                    .recipe_program
-                                    .iter()
-                                    .copied()
-                                    .skip(first_node_index.unwrap_or(usize::MAX)))
-                                && operand.recipe_node_offsets.first()
-                                    == expected_node_offsets.first()
                         })
                 }
                 None => false,

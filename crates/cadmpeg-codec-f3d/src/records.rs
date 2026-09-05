@@ -11079,6 +11079,8 @@ pub enum DesignTopologyIncidentSide {
 /// Face-selection operand owned by a parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "DesignFaceOperandWire"))]
+#[serde(try_from = "DesignFaceOperandWire", into = "DesignFaceOperandWire")]
 pub struct DesignFaceOperand {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
@@ -11087,8 +11089,6 @@ pub struct DesignFaceOperand {
     /// Zero-based position in the scope's ordered reference table.
     pub scope_reference_ordinal: u32,
     /// Owning construction-operand group, absent for a direct scope operand.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(flatten)]
     pub group: Option<DesignOperandGroup>,
     /// Primary indexed-record identity named by a face operand group.
     pub record_index: u32,
@@ -11109,8 +11109,6 @@ pub struct DesignFaceOperand {
     /// Byte offset of the recipe-specific prefix after the indexed header.
     pub recipe_prefix_offset: u64,
     /// Complete recipe-specific prefix before the length-prefixed family name.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub recipe_prefix_bytes: Vec<u8>,
     /// Persistent Design selector/reference entries decoded from the prefix.
     pub recipe_references: Vec<DesignRecipeReference>,
@@ -11120,45 +11118,205 @@ pub struct DesignFaceOperand {
     pub recipe_program_offset: u64,
     /// Complete post-name i32 program ending at the next indexed record.
     pub recipe_program: Vec<i32>,
-    /// Byte offsets of the `[-1, -1, 2]` node openers declared by the program.
-    pub recipe_node_offsets: Vec<u64>,
     /// Ordered nodes partitioning the program after its three-word header.
     pub recipe_nodes: Vec<DesignFaceRecipeNode>,
     /// Active solved faces carrying the recipe's persistent Design reference.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,
     /// Candidate faces not explicitly named as topology context by a prefix
     /// selector carrying the recipe's own Design reference.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unreferenced_candidate_faces: Vec<FaceId>,
     /// Faces named by a prefix operand carrying the recipe's own token and
     /// Design reference under a different native selector.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alternate_selector_candidate_faces: Vec<FaceId>,
     /// Candidate faces present in the ASM topology immediately preceding the
     /// owning feature.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preceding_candidate_faces: Vec<FaceId>,
     /// Preceding candidate faces deleted or updated by the owning feature's
     /// exact ASM state transition.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_candidate_faces: Vec<FaceId>,
     /// Active candidates mapped through an invariant surface carrier to face
     /// owners in the immediately preceding historical topology.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
     /// Ordered stable historical face slots proven by the preceding topology
     /// or exact feature transition.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub resolved_face_slots: Vec<i64>,
     /// Current active-BREP face identity proven by a legacy Extrude recipe
     /// when no preceding historical slot exists.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_active_face: Option<FaceId>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     pub next_byte_offset: u64,
+}
+
+/// Face-selection operand owned by a parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignFaceOperandWire {
+    /// Globally unique deterministic identifier for this native operand.
+    id: String,
+    /// Owning parameter-scope record.
+    scope_record_index: u32,
+    /// Zero-based position in the scope's ordered reference table.
+    scope_reference_ordinal: u32,
+    /// Owning construction-operand group, absent for a direct scope operand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    group_record_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    group_member_ordinal: Option<u32>,
+    /// Primary indexed-record identity named by a face operand group.
+    record_index: u32,
+    /// Byte offset of the primary indexed-record header.
+    byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    class_tag: String,
+    /// Byte offset of the same-index paired header.
+    paired_byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    paired_class_tag: String,
+    /// Indexed record containing the face regeneration recipe.
+    recipe_record_index: u32,
+    /// Byte offset of the recipe record's indexed header.
+    recipe_record_byte_offset: u64,
+    /// Native construction-recipe arena id.
+    recipe_id: String,
+    /// Byte offset of the recipe-specific prefix after the indexed header.
+    recipe_prefix_offset: u64,
+    /// Complete recipe-specific prefix before the length-prefixed family name.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    recipe_prefix_bytes: Vec<u8>,
+    /// Persistent Design selector/reference entries decoded from the prefix.
+    recipe_references: Vec<DesignRecipeReference>,
+    /// Exact face-recipe family.
+    recipe_kind: ConstructionRecipeKind,
+    /// Byte offset of the first i32 after the framed recipe-family name.
+    recipe_program_offset: u64,
+    /// Complete post-name i32 program ending at the next indexed record.
+    recipe_program: Vec<i32>,
+    /// Byte offsets of the `[-1, -1, 2]` node openers declared by the program.
+    recipe_node_offsets: Vec<u64>,
+    /// Ordered nodes partitioning the program after its three-word header.
+    recipe_nodes: Vec<DesignFaceRecipeNode>,
+    /// Active solved faces carrying the recipe's persistent Design reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    candidate_faces: Vec<FaceId>,
+    /// Candidate faces not explicitly named as topology context by a prefix
+    /// selector carrying the recipe's own Design reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    unreferenced_candidate_faces: Vec<FaceId>,
+    /// Faces named by a prefix operand carrying the recipe's own token and
+    /// Design reference under a different native selector.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    alternate_selector_candidate_faces: Vec<FaceId>,
+    /// Candidate faces present in the ASM topology immediately preceding the
+    /// owning feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    preceding_candidate_faces: Vec<FaceId>,
+    /// Preceding candidate faces deleted or updated by the owning feature's
+    /// exact ASM state transition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    changed_candidate_faces: Vec<FaceId>,
+    /// Active candidates mapped through an invariant surface carrier to face
+    /// owners in the immediately preceding historical topology.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
+    /// Ordered stable historical face slots proven by the preceding topology
+    /// or exact feature transition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    resolved_face_slots: Vec<i64>,
+    /// Current active-BREP face identity proven by a legacy Extrude recipe
+    /// when no preceding historical slot exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_active_face: Option<FaceId>,
+    /// Identity of the indexed record following the operand frame.
+    next_record_index: u32,
+    /// Byte offset of the indexed record following the operand frame.
+    next_byte_offset: u64,
+}
+
+impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
+    type Error = String;
+    fn try_from(wire: DesignFaceOperandWire) -> Result<Self, Self::Error> {
+        if !wire.recipe_node_offsets.iter().copied().eq(wire.recipe_nodes.iter().map(|node| node.byte_offset)) {
+            return Err("recipe_node_offsets must match recipe_nodes byte_offset values".into());
+        }
+        let group = match (wire.group_record_index, wire.group_member_ordinal) {
+            (None, None) => None,
+            (Some(group_record_index), Some(group_member_ordinal)) => Some(DesignOperandGroup { group_record_index, group_member_ordinal }),
+            _ => return Err("group_record_index and group_member_ordinal must occur together".into()),
+        };
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            scope_reference_ordinal: wire.scope_reference_ordinal,
+            group,
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            paired_byte_offset: wire.paired_byte_offset,
+            paired_class_tag: wire.paired_class_tag,
+            recipe_record_index: wire.recipe_record_index,
+            recipe_record_byte_offset: wire.recipe_record_byte_offset,
+            recipe_id: wire.recipe_id,
+            recipe_prefix_offset: wire.recipe_prefix_offset,
+            recipe_prefix_bytes: wire.recipe_prefix_bytes,
+            recipe_references: wire.recipe_references,
+            recipe_kind: wire.recipe_kind,
+            recipe_program_offset: wire.recipe_program_offset,
+            recipe_program: wire.recipe_program,
+            recipe_nodes: wire.recipe_nodes,
+            candidate_faces: wire.candidate_faces,
+            unreferenced_candidate_faces: wire.unreferenced_candidate_faces,
+            alternate_selector_candidate_faces: wire.alternate_selector_candidate_faces,
+            preceding_candidate_faces: wire.preceding_candidate_faces,
+            changed_candidate_faces: wire.changed_candidate_faces,
+            historical_support_contexts: wire.historical_support_contexts,
+            resolved_face_slots: wire.resolved_face_slots,
+            resolved_active_face: wire.resolved_active_face,
+            next_record_index: wire.next_record_index,
+            next_byte_offset: wire.next_byte_offset,
+        })
+    }
+}
+
+impl From<DesignFaceOperand> for DesignFaceOperandWire {
+    fn from(operand: DesignFaceOperand) -> Self {
+        let recipe_node_offsets = operand.recipe_nodes.iter().map(|node| node.byte_offset).collect();
+        Self {
+            id: operand.id,
+            scope_record_index: operand.scope_record_index,
+            scope_reference_ordinal: operand.scope_reference_ordinal,
+            group_record_index: operand.group.map(|group| group.group_record_index),
+            group_member_ordinal: operand.group.map(|group| group.group_member_ordinal),
+            record_index: operand.record_index,
+            byte_offset: operand.byte_offset,
+            class_tag: operand.class_tag,
+            paired_byte_offset: operand.paired_byte_offset,
+            paired_class_tag: operand.paired_class_tag,
+            recipe_record_index: operand.recipe_record_index,
+            recipe_record_byte_offset: operand.recipe_record_byte_offset,
+            recipe_id: operand.recipe_id,
+            recipe_prefix_offset: operand.recipe_prefix_offset,
+            recipe_prefix_bytes: operand.recipe_prefix_bytes,
+            recipe_references: operand.recipe_references,
+            recipe_kind: operand.recipe_kind,
+            recipe_program_offset: operand.recipe_program_offset,
+            recipe_program: operand.recipe_program,
+            recipe_node_offsets,
+            recipe_nodes: operand.recipe_nodes,
+            candidate_faces: operand.candidate_faces,
+            unreferenced_candidate_faces: operand.unreferenced_candidate_faces,
+            alternate_selector_candidate_faces: operand.alternate_selector_candidate_faces,
+            preceding_candidate_faces: operand.preceding_candidate_faces,
+            changed_candidate_faces: operand.changed_candidate_faces,
+            historical_support_contexts: operand.historical_support_contexts,
+            resolved_face_slots: operand.resolved_face_slots,
+            resolved_active_face: operand.resolved_active_face,
+            next_record_index: operand.next_record_index,
+            next_byte_offset: operand.next_byte_offset,
+        }
+    }
 }
 
 impl DesignFaceOperand {

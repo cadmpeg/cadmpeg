@@ -570,7 +570,6 @@ fn resolved_extrude_profile_active_faces(
             return None;
         };
         if operand.recipe_nodes.len() != header_value
-            || operand.recipe_node_offsets.len() != operand.recipe_nodes.len()
         {
             return None;
         }
@@ -1195,7 +1194,6 @@ pub(crate) fn legacy_face_recipe_reference_candidates(
             Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { .. })
         )
         || operand.recipe_nodes.is_empty()
-        || operand.recipe_node_offsets.len() != operand.recipe_nodes.len()
         || !operand.unreferenced_candidate_faces.is_empty()
         || !operand.alternate_selector_candidate_faces.is_empty()
     {

@@ -525,7 +525,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         recipe_kind: ConstructionRecipeKind::Face,
         recipe_program_offset: 1350,
         recipe_program: vec![0, -1],
-        recipe_node_offsets: Vec::new(),
+
         recipe_nodes: Vec::new(),
         candidate_faces: Vec::new(),
         unreferenced_candidate_faces: Vec::new(),
