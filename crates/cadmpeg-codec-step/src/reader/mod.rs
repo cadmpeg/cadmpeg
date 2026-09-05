@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -93,6 +94,8 @@ impl<T> std::ops::DerefMut for StageOutcome<T> {
 
 struct StepDecodeSession<'ctx, 'arena> {
     ir: CadIr,
+    matched: DialectMatch,
+    source_attributes: BTreeMap<String, String>,
     body: DecodeBody,
     typed_records: HashSet<u64>,
     admitted_ir_entities: u64,
@@ -119,10 +122,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
-        let ir = CadIr::decoded(SourceMeta::classified(
-            cadmpeg_core::dialect::DialectLayers::of(primary),
-            attributes,
-        ));
+        let ir = CadIr::empty();
 
         let mut body = DecodeBody::new(false);
         body.notes = exchange
@@ -159,6 +159,8 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
 
         Self {
             ir,
+            matched: primary,
+            source_attributes: attributes,
             body,
             typed_records: HashSet::new(),
             admitted_ir_entities: 0,
@@ -196,13 +198,31 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         );
     }
 
-    fn into_result(self, source_fidelity: SourceFidelity) -> Decoded {
-        Decoded {
-            ir: self.ir,
-            body: self.body,
-            source_fidelity,
+    fn into_result(
+        mut self,
+        source_fidelity: SourceFidelity,
+        opaque_offsets: BTreeSet<usize>,
+    ) -> AnalyzedExchange {
+        self.ir.source = Some(SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(self.matched.clone()),
+            self.source_attributes,
+        ));
+        AnalyzedExchange {
+            decoded: Decoded {
+                ir: self.ir,
+                body: self.body,
+                source_fidelity,
+            },
+            matched: self.matched,
+            opaque_offsets,
         }
     }
+}
+
+pub(super) struct AnalyzedExchange {
+    pub decoded: Decoded,
+    pub matched: DialectMatch,
+    pub opaque_offsets: BTreeSet<usize>,
 }
 
 struct OpaqueSourceRecord {
@@ -230,7 +250,7 @@ pub(super) fn decode_exchange(
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     decode_exchange_mode(input, &mut exchange, diagnostics, true, ctx, packaging)
-        .map(|(result, _)| result)
+        .map(|result| result.decoded)
 }
 
 /// Deep semantic analysis used by STEP `inspect`.
@@ -243,7 +263,7 @@ pub(super) fn analyze_exchange(
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
     ctx: &DecodeContext<'_>,
-) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
+) -> Result<AnalyzedExchange, CodecError> {
     decode_exchange_mode(input, exchange, diagnostics, false, ctx, Packaging::Bare)
 }
 
@@ -254,13 +274,10 @@ fn decode_exchange_mode(
     retain_opaque: bool,
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
-) -> Result<(Decoded, BTreeSet<usize>), CodecError> {
+) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, packaging);
     if ctx.container_only() {
-        return Ok((
-            session.into_result(SourceFidelity::default()),
-            BTreeSet::new(),
-        ));
+        return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
     }
 
     session.semantic_input_work = semantic_input_work(exchange);
@@ -527,21 +544,19 @@ fn decode_exchange_mode(
         }
         source_fidelity.attach_native_unknown_records(&mut session.ir, "step", opaque)?;
     }
-    if let Some(source) = &mut session.ir.source {
-        source
-            .attributes
-            .insert("bytes_structural".into(), accounting.structural.to_string());
-        source
-            .attributes
-            .insert("bytes_typed".into(), accounting.typed.to_string());
-        source
-            .attributes
-            .insert("bytes_named_opaque".into(), accounting.opaque.to_string());
-        source.attributes.insert(
-            "bytes_unclassified".into(),
-            accounting.unclassified.to_string(),
-        );
-    }
+    session
+        .source_attributes
+        .insert("bytes_structural".into(), accounting.structural.to_string());
+    session
+        .source_attributes
+        .insert("bytes_typed".into(), accounting.typed.to_string());
+    session
+        .source_attributes
+        .insert("bytes_named_opaque".into(), accounting.opaque.to_string());
+    session.source_attributes.insert(
+        "bytes_unclassified".into(),
+        accounting.unclassified.to_string(),
+    );
     if accounting.unclassified > 0 {
         session
             .body
@@ -564,7 +579,7 @@ fn decode_exchange_mode(
             ))
         }));
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
-    Ok((session.into_result(source_fidelity), opaque_offsets))
+    Ok(session.into_result(source_fidelity, opaque_offsets))
 }
 
 /// Count the source graph nodes that each semantic pass may inspect.

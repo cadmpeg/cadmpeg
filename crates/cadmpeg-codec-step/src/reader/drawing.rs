@@ -970,8 +970,8 @@ fn value_text(
         ),
         Value::Binary(value) => Some(format!(
             "binary:{}:{}",
-            value.bit_len,
-            value.data.iter().fold(String::new(), |mut output, byte| {
+            value.bit_len(),
+            value.data().iter().fold(String::new(), |mut output, byte| {
                 write!(&mut output, "{byte:02X}").expect("writing binary value to String");
                 output
             })
