@@ -30,17 +30,20 @@ const SEGMENT_CLASS: Uuid = Uuid::from_canonical([
 pub(crate) struct Segment {
     pub(crate) object_id: Uuid,
     pub(crate) component: [i32; 2],
-    pub(crate) edge_domain: [f64; 2],
-    pub(crate) trim_domain: [f64; 2],
+    pub(crate) edge_domain: Option<[f64; 2]>,
+    pub(crate) trim_domain: Option<[f64; 2]>,
     pub(crate) reversed: bool,
     pub(crate) domain: [f64; 2],
     pub(crate) proxy_domain: [f64; 2],
+    pub(crate) sub_domain: Option<[f64; 2]>,
+    pub(crate) reference: Option<crate::history::ObjectReference>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PolyEdge {
     pub(crate) parameters: Vec<f64>,
     pub(crate) segments: Vec<Segment>,
+    pub(crate) evaluation_mode: Option<i32>,
 }
 
 fn refused(offset: usize, error: &CodecError) -> FramingError {
@@ -160,11 +163,13 @@ fn segment(
     Ok(Segment {
         object_id,
         component,
-        edge_domain,
-        trim_domain,
+        edge_domain: Some(edge_domain),
+        trim_domain: Some(trim_domain),
         reversed,
         domain,
         proxy_domain,
+        sub_domain: None,
+        reference: None,
     })
 }
 
@@ -249,6 +254,7 @@ pub(crate) fn decode(
     Ok(PolyEdge {
         parameters,
         segments,
+        evaluation_mode: None,
     })
 }
 

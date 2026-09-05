@@ -7,6 +7,7 @@ use std::ops::Range;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
+use crate::polyedge::{PolyEdge, Segment};
 use crate::settings::{point, utf16, vector, xform, Point3, Vector3, Xform};
 use crate::wire::Uuid;
 
@@ -53,24 +54,6 @@ pub(crate) struct EmbeddedGeometry {
     pub(crate) class_id: Uuid,
     pub(crate) class_data_range: Range<usize>,
     pub(crate) userdata: Vec<UserdataDescriptor>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PolyEdge {
-    pub(crate) segments: Vec<CurveProxy>,
-    pub(crate) parameters: Vec<f64>,
-    pub(crate) evaluation_mode: i32,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct CurveProxy {
-    pub(crate) curve: ObjectReference,
-    pub(crate) reversed: bool,
-    pub(crate) full_domain: [f64; 2],
-    pub(crate) sub_domain: [f64; 2],
-    pub(crate) proxy_domain: [f64; 2],
-    pub(crate) edge_domain: Option<[f64; 2]>,
-    pub(crate) trim_domain: Option<[f64; 2]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -384,7 +367,7 @@ fn curve_proxy(
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-) -> Result<(CurveProxy, usize), FramingError> {
+) -> Result<(Segment, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
     if minor < 0 {
         return Err(FramingError::structural(
@@ -405,14 +388,16 @@ fn curve_proxy(
     };
     reader.skip_remaining()?;
     Ok((
-        CurveProxy {
-            curve,
-            reversed,
-            full_domain,
-            sub_domain,
-            proxy_domain,
+        Segment {
+            object_id: curve.object_id,
+            component: curve.component,
             edge_domain,
             trim_domain,
+            reversed,
+            domain: full_domain,
+            proxy_domain,
+            sub_domain: Some(sub_domain),
+            reference: Some(curve),
         },
         next,
     ))
@@ -445,7 +430,7 @@ fn poly_edge(
         PolyEdge {
             segments,
             parameters,
-            evaluation_mode,
+            evaluation_mode: Some(evaluation_mode),
         },
         next,
     ))
@@ -1222,7 +1207,7 @@ fn structured_value_properties(
                 properties.insert(format!("{edge_key}.parameters"), list(&edge.parameters));
                 properties.insert(
                     format!("{edge_key}.evaluation_mode"),
-                    edge.evaluation_mode.to_string(),
+                    edge.evaluation_mode.unwrap_or(0).to_string(),
                 );
                 properties.insert(
                     format!("{edge_key}.segment_count"),
@@ -1230,23 +1215,21 @@ fn structured_value_properties(
                 );
                 for (segment_index, segment) in edge.segments.iter().enumerate() {
                     let segment_key = format!("{edge_key}.segment_{segment_index}");
-                    object_reference_properties(
-                        &format!("{segment_key}.curve"),
-                        &segment.curve,
-                        properties,
-                    );
+                    if let Some(curve) = &segment.reference {
+                        object_reference_properties(
+                            &format!("{segment_key}.curve"),
+                            curve,
+                            properties,
+                        );
+                    }
                     properties.insert(
                         format!("{segment_key}.reversed"),
                         segment.reversed.to_string(),
                     );
-                    properties.insert(
-                        format!("{segment_key}.full_domain"),
-                        list(&segment.full_domain),
-                    );
-                    properties.insert(
-                        format!("{segment_key}.sub_domain"),
-                        list(&segment.sub_domain),
-                    );
+                    properties.insert(format!("{segment_key}.full_domain"), list(&segment.domain));
+                    if let Some(sub_domain) = segment.sub_domain {
+                        properties.insert(format!("{segment_key}.sub_domain"), list(&sub_domain));
+                    }
                     properties.insert(
                         format!("{segment_key}.proxy_domain"),
                         list(&segment.proxy_domain),

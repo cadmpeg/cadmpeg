@@ -61,8 +61,8 @@ fn decodes_persistent_polyedge_segment_construction() {
         Uuid::from_wire(POLYEDGE_SEGMENT_TARGET)
     );
     assert_eq!(decoded.segments[0].component, [2, 17]);
-    assert_eq!(decoded.segments[0].edge_domain, [0.0, 4.0]);
-    assert_eq!(decoded.segments[0].trim_domain, [1.0, 3.0]);
+    assert_eq!(decoded.segments[0].edge_domain, Some([0.0, 4.0]));
+    assert_eq!(decoded.segments[0].trim_domain, Some([1.0, 3.0]));
     assert!(decoded.segments[0].reversed);
     assert_eq!(decoded.segments[0].domain, [10.0, 20.0]);
     assert_eq!(decoded.segments[0].proxy_domain, [2.0, 6.0]);
@@ -76,8 +76,14 @@ fn accepts_empty_edge_and_trim_domains_for_a_source_curve_segment() {
         decode(expand, 0..payload.len(), ArchiveVersion::V8)
     })
     .expect("required invariant");
-    assert_eq!(decoded.segments[0].edge_domain, [OPENNURBS_UNSET_VALUE; 2]);
-    assert_eq!(decoded.segments[0].trim_domain, [OPENNURBS_UNSET_VALUE; 2]);
+    assert_eq!(
+        decoded.segments[0].edge_domain,
+        Some([OPENNURBS_UNSET_VALUE; 2])
+    );
+    assert_eq!(
+        decoded.segments[0].trim_domain,
+        Some([OPENNURBS_UNSET_VALUE; 2])
+    );
 }
 
 #[test]
