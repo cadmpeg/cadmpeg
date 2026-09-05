@@ -91,7 +91,7 @@ pub(crate) enum ParseMode {
 fn parameter_tokens(records: &[parameter::ParameterRecord]) -> u64 {
     records
         .iter()
-        .map(|record| record.tokens.len() as u64)
+        .map(|record| record.tokens().len() as u64)
         .sum()
 }
 

@@ -53,13 +53,13 @@ pub(crate) struct ParameterRecord {
     pub(crate) directory_sequence: u32,
     pub(crate) line_range: Range<u32>,
     pub(crate) bytes: Vec<u8>,
-    pub(crate) tokens: Vec<Token>,
+    tokens: Vec<Token>,
     /// Exclusive end of the entity-specific Parameter Data sequence.
     ///
     /// `tokens` retains the complete record so native preservation and
     /// relationship analysis can inspect trailing pointer groups. Entity
     /// accessors stop at this boundary.
-    pub(crate) parameter_end: usize,
+    parameter_end: usize,
     pub(crate) comment: Vec<u8>,
 }
 
@@ -154,8 +154,35 @@ pub(crate) enum DefaultTailCount {
 }
 
 impl ParameterRecord {
+    pub(crate) fn tokens(&self) -> &[Token] {
+        &self.tokens
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_tokens(
+        directory_sequence: u32,
+        line_range: Range<u32>,
+        bytes: Vec<u8>,
+        parameter_end: usize,
+        tokens: Vec<Token>,
+        comment: Vec<u8>,
+    ) -> Self {
+        assert!(
+            parameter_end <= tokens.len(),
+            "parameter_end exceeds tokens"
+        );
+        Self {
+            directory_sequence,
+            line_range,
+            bytes,
+            parameter_end,
+            tokens,
+            comment,
+        }
+    }
+
     pub(crate) fn parameter_end(&self) -> usize {
-        self.parameter_end.min(self.tokens.len())
+        self.parameter_end
     }
 
     pub(crate) fn token(&self, index: usize) -> Option<&Token> {

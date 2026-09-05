@@ -1655,7 +1655,7 @@ pub(crate) fn store(
                 form: entry.form,
                 macro_definition,
                 macro_library,
-                parameters: record.tokens.iter().skip(1).cloned().collect(),
+                parameters: record.tokens().iter().skip(1).cloned().collect(),
             })
         })
         .collect::<Vec<_>>();
@@ -1813,7 +1813,7 @@ pub(crate) fn store(
                     .unwrap_or_default(),
                 parameters: parameters
                     .into_iter()
-                    .flat_map(|record| record.tokens.iter().cloned())
+                    .flat_map(|record| record.tokens().iter().cloned())
                     .collect(),
                 association_links,
                 property_links,
@@ -3738,7 +3738,7 @@ pub(crate) fn store(
                         for offset in 0..value_count {
                             let value_index = value_start + offset * stride;
                             let value = record
-                                .tokens
+                                .tokens()
                                 .get(value_index)
                                 .cloned()
                                 .map_or(TokenValue::Omitted, |token| token.value);
@@ -3854,7 +3854,7 @@ pub(crate) fn store(
                             record
                                 .and_then(|record| {
                                     record
-                                        .tokens
+                                        .tokens()
                                         .get(value_start + row * values_per_row + column)
                                 })
                                 .cloned()
@@ -4142,7 +4142,7 @@ pub(crate) fn store(
                                 NativeGenericPropertyValue {
                                     data_type: record.integer(index),
                                     value: record
-                                        .tokens
+                                        .tokens()
                                         .get(index + 1)
                                         .cloned()
                                         .map_or(TokenValue::Omitted, |token| token.value),

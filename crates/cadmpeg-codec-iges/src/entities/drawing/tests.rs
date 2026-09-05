@@ -164,11 +164,12 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
 
 #[test]
 fn drawing_size_accepts_finite_zero_extents() {
-    let record = ParameterRecord {
-        directory_sequence: 1,
-        line_range: 1..2,
-        bytes: Vec::new(),
-        tokens: vec![
+    let record = ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        4,
+        vec![
             Token {
                 value: TokenValue::Integer(406),
                 span: 0..0,
@@ -186,9 +187,8 @@ fn drawing_size_accepts_finite_zero_extents() {
                 span: 0..0,
             },
         ],
-        parameter_end: 4,
-        comment: Vec::new(),
-    };
+        Vec::new(),
+    );
 
     assert_eq!(
         drawing_property_value(16, &record),

@@ -263,11 +263,11 @@ fn general_note_suffix_structurally_valid(record: &ParameterRecord, primary_end:
     // fields, but arbitrary tokens after that primary span are not a suffix.
     // Check the two counted group shapes without requiring their targets to
     // resolve; reference validation owns that separate decision.
-    if record.tokens.len() == primary_end || record.parameter_end() == primary_end {
+    if record.tokens().len() == primary_end || record.parameter_end() == primary_end {
         return true;
     }
     let Some(first_count) = record
-        .tokens
+        .tokens()
         .get(primary_end)
         .and_then(|token| match &token.value {
             crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
@@ -284,14 +284,14 @@ fn general_note_suffix_structurally_valid(record: &ParameterRecord, primary_end:
     else {
         return false;
     };
-    if first_end > record.tokens.len() {
+    if first_end > record.tokens().len() {
         return false;
     }
-    if first_end == record.tokens.len() {
+    if first_end == record.tokens().len() {
         return true;
     }
     let Some(second_count) = record
-        .tokens
+        .tokens()
         .get(first_end)
         .and_then(|token| match &token.value {
             crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
@@ -305,7 +305,7 @@ fn general_note_suffix_structurally_valid(record: &ParameterRecord, primary_end:
     first_end
         .checked_add(1)
         .and_then(|end| end.checked_add(second_count))
-        .is_some_and(|second_end| second_end == record.tokens.len())
+        .is_some_and(|second_end| second_end == record.tokens().len())
 }
 
 fn general_note_string_count_valid(form: i64, count: usize) -> bool {
