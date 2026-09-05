@@ -13,7 +13,7 @@ use crate::design::decode::sketch::{
 use crate::ids::{self, native_stream};
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{
-    ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand,
+    ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionPresentationOperand,
     DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignDimensionPresentationFrame, DesignDimensionRecipeRecord,
     DesignEdgeOperand, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
@@ -1212,8 +1212,8 @@ pub(crate) fn parse_dimension_annotation_frame(
         {
             return None;
         }
-        let geometry_record_index = View::u32_le_at(bytes, position + 1)?;
-        if geometry_record_index != 0 && !geometry_indices.contains(&geometry_record_index) {
+        let geometry_record_index = std::num::NonZeroU32::new(View::u32_le_at(bytes, position + 1)?);
+        if geometry_record_index.is_some_and(|index| !geometry_indices.contains(&index.get())) {
             return None;
         }
         operands.push(DesignDimensionAnnotationOperand {
@@ -1296,7 +1296,7 @@ pub(crate) fn parse_dimension_annotation_frame(
         let mut operand_members = operands
             .iter()
             .filter_map(|operand| {
-                (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+                operand.geometry_record_index.map(std::num::NonZeroU32::get)
             })
             .collect::<Vec<_>>();
         let mut returned = return_members.iter().map(|member| member.value).collect::<Vec<_>>();
@@ -1543,11 +1543,11 @@ pub(crate) fn parse_dimension_presentation_frame(
         {
             return None;
         }
-        let geometry_record_index = View::u32_le_at(bytes, position + 1)?;
-        if geometry_record_index == 0 || !geometry_indices.contains(&geometry_record_index) {
+        let geometry_record_index = std::num::NonZeroU32::new(View::u32_le_at(bytes, position + 1)?)?;
+        if !geometry_indices.contains(&geometry_record_index.get()) {
             return None;
         }
-        operands.push(DesignDimensionAnnotationOperand {
+        operands.push(DesignDimensionPresentationOperand {
             geometry_record_index,
             geometry_reference_offset: u64::try_from(position + 1).ok()?,
             role: View::u32_le_at(bytes, position + 11)?,

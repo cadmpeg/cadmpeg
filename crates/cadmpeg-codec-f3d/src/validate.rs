@@ -8190,9 +8190,8 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 let start = operand_start.saturating_add((ordinal as u64).saturating_mul(15));
                 operand.geometry_reference_offset == start.saturating_add(1)
                     && operand.role_offset == start.saturating_add(11)
-                    && (operand.geometry_record_index == 0
-                        || sketch_geometry_indices
-                            .contains(&(native_stream, operand.geometry_record_index)))
+                    && operand.geometry_record_index.is_none_or(|index|
+                        sketch_geometry_indices.contains(&(native_stream, index.get())))
             });
         let returns_start = frame.governing_owner_reference_offset.saturating_add(15);
         let returns_valid = frame.return_members.iter().enumerate().all(|(ordinal, member)| {
@@ -8203,7 +8202,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
             .operands
             .iter()
             .filter_map(|operand| {
-                (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+                operand.geometry_record_index.map(std::num::NonZeroU32::get)
             })
             .collect::<Vec<_>>();
         let mut return_members = frame.return_members.iter().map(|member| member.value).collect::<Vec<_>>();
@@ -8312,7 +8311,7 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
                 operand.geometry_reference_offset == start.saturating_add(1)
                     && operand.role_offset == start.saturating_add(11)
                     && sketch_geometry_indices
-                        .contains(&(native_stream, operand.geometry_record_index))
+                        .contains(&(native_stream, operand.geometry_record_index.get()))
             });
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(frame.owner_reference)))

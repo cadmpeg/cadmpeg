@@ -1782,3 +1782,21 @@ fn companion_timestamp_preserves_wire_and_rejects_zero() {
         assert!(error.contains("timestamp_micros"));
     }
 }
+
+#[test]
+fn dimension_operands_preserve_null_and_required_index_wires() {
+    for index in [0, 7, u32::MAX] {
+        let wire = format!(r#"{{"geometry_record_index":{index},"geometry_reference_offset":25,"role":3,"role_offset":35}}"#);
+        let operand: super::DesignDimensionAnnotationOperand = serde_json::from_str(&wire).unwrap();
+        assert_eq!(operand.geometry_record_index, std::num::NonZeroU32::new(index));
+        assert_eq!(serde_json::to_string(&operand).unwrap(), wire);
+        if index == 0 {
+            let error = serde_json::from_str::<super::DesignDimensionPresentationOperand>(&wire).unwrap_err().to_string();
+            assert!(error.contains("geometry_record_index"));
+        } else {
+            let operand: super::DesignDimensionPresentationOperand = serde_json::from_str(&wire).unwrap();
+            assert_eq!(operand.geometry_record_index.get(), index);
+            assert_eq!(serde_json::to_string(&operand).unwrap(), wire);
+        }
+    }
+}

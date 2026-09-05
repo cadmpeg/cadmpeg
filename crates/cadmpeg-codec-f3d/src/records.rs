@@ -968,14 +968,52 @@ pub struct DesignDimensionNullLocusPair {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDimensionAnnotationOperand {
-    /// Indexed sketch geometry record, or zero for the null locus.
-    pub geometry_record_index: u32,
+    /// Indexed sketch geometry record, absent for the null locus.
+    #[serde(with = "annotation_geometry_index")]
+    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
+    pub geometry_record_index: Option<NonZeroU32>,
     /// Byte offset of `geometry_record_index`.
     pub geometry_reference_offset: u64,
     /// Source dimension-role code.
     pub role: u32,
     /// Byte offset of `role`.
     pub role_offset: u64,
+}
+
+mod annotation_geometry_index {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::num::NonZeroU32;
+
+    pub fn serialize<S: Serializer>(index: &Option<NonZeroU32>, serializer: S) -> Result<S::Ok, S::Error> {
+        match index {
+            Some(index) => index.get(),
+            None => 0,
+        }.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<NonZeroU32>, D::Error> {
+        Ok(NonZeroU32::new(u32::deserialize(deserializer)?))
+    }
+}
+
+/// One required geometry operand in a dimension presentation frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignDimensionPresentationOperand {
+    /// Indexed sketch geometry record.
+    #[serde(deserialize_with = "deserialize_presentation_geometry_index")]
+    pub geometry_record_index: NonZeroU32,
+    /// Byte offset of `geometry_record_index`.
+    pub geometry_reference_offset: u64,
+    /// Source dimension-role code.
+    pub role: u32,
+    /// Byte offset of `role`.
+    pub role_offset: u64,
+}
+
+fn deserialize_presentation_geometry_index<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NonZeroU32, D::Error> {
+    NonZeroU32::new(u32::deserialize(deserializer)?)
+        .ok_or_else(|| serde::de::Error::custom("geometry_record_index must be nonzero"))
 }
 
 /// Paired `EntityGenesis` dimension frame carrying annotation geometry.
@@ -1137,7 +1175,7 @@ pub struct DesignDimensionPresentationFrame {
     /// Byte length from the primary through the paired-header boundary.
     pub frame_length: u64,
     /// Ordered typed sketch-geometry operands.
-    pub operands: Vec<DesignDimensionAnnotationOperand>,
+    pub operands: Vec<DesignDimensionPresentationOperand>,
     /// Opaque presentation bytes between the operand run and the paired
     /// `EntityTracking` header.
     pub presentation_bytes: Vec<u8>,
