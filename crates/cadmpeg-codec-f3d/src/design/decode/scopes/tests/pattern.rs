@@ -366,12 +366,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     )
     .expect("rectangular-pattern placement run");
     let instances = rectangular.instances.expect("exact placement run");
-    assert_eq!(instances.record_indices, [100, 120, 130]);
+    assert_eq!(instances.frames().map(|frame| frame.record_index).collect::<Vec<_>>(), [100, 120, 130]);
     assert_eq!(
-        instances
-            .transforms
-            .iter()
-            .map(|transform| transform[2][3])
+        instances.frames().map(|frame| frame.transform.value[2][3])
             .collect::<Vec<_>>(),
         [4.0, 9.0, 14.0]
     );

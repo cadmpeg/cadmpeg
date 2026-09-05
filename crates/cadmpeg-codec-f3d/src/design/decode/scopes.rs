@@ -153,7 +153,7 @@ use crate::records::{
     DesignCoilExtent, DesignCoilPlacement, DesignCoilSection, DesignCoilSectionPlacement,
     DesignCoilSelection, DesignCombineBodySelection, DesignCombineExternalBodyIdentity,
     DesignCombineForm, DesignCombineOperation, DesignComponentInsertConstruction,
-    DesignComponentOccurrence, DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
+    DesignComponentOccurrence,  DesignCopyPasteBodiesOperation,
     DesignCopyPasteComponentOperation, DesignDerivedInstanceConstruction,
     DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeFlangeHeightExtent,
     DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource, DesignEdgeWidthMode,
@@ -2861,27 +2861,27 @@ fn bind_component_pattern_occurrences(
         return;
     };
     let mut generated = Vec::new();
-    for (ordinal, transform_offset) in instances.transform_offsets.iter().enumerate().skip(1) {
+    for (ordinal, frame) in instances.frames().enumerate().skip(1) {
         let candidates = occurrences
             .iter()
             .filter(|occurrence| {
                 native_stream(&occurrence.id) == Some(stream.as_str())
-                    && occurrence.transform.map(|frame| frame.offset) == Some(*transform_offset)
+                    && occurrence.transform.map(|frame| frame.offset) == Some(frame.transform.offset)
                     && occurrence.occurrence_ordinal == ordinal as u32 + 1
             })
             .collect::<Vec<_>>();
         let [candidate] = candidates.as_slice() else {
             return;
         };
-        generated.push(*candidate);
+        generated.push((*candidate, *frame));
     }
     let Some(component_guid) = generated
         .first()
-        .map(|occurrence| &occurrence.component_guid)
+        .map(|(occurrence, _)| &occurrence.component_guid)
     else {
         return;
     };
-    if generated.iter().any(|occurrence| {
+    if generated.iter().any(|(occurrence, _)| {
         !occurrence
             .component_guid
             .eq_ignore_ascii_case(component_guid)
@@ -2903,14 +2903,14 @@ fn bind_component_pattern_occurrences(
     let [seed] = seed_candidates.as_slice() else {
         return;
     };
-    instances.component_occurrences = Some(DesignComponentPatternOccurrences {
+    let Some(seed_frame) = instances.frames().next().copied() else {
+        return;
+    };
+    *instances = DesignRectangularPatternInstances::Components {
         component_guid: component_guid.clone(),
-        seed_occurrence_guid: seed.occurrence_guid.clone(),
-        generated_occurrence_guids: generated
-            .iter()
-            .map(|occurrence| occurrence.occurrence_guid.clone())
-            .collect(),
-    });
+        seed: crate::records::DesignPatternComponentInstance { instance: seed_frame, occurrence_guid: seed.occurrence_guid.clone() },
+        generated: generated.into_iter().map(|(occurrence, instance)| crate::records::DesignPatternComponentInstance { instance, occurrence_guid: occurrence.occurrence_guid.clone() }).collect(),
+    };
 }
 
 fn unique_indexed_record_before(
@@ -4341,9 +4341,6 @@ fn exact_rectangular_pattern_instances(
     let mut record_indices = Vec::with_capacity(count);
     record_indices.push(*scope.reference_members.first()?);
     record_indices.extend_from_slice(scope.reference_members.get(6..count.checked_add(5)?)?);
-    if record_indices.len() != count {
-        return None;
-    }
     let reference_starts = scope
         .reference_members
         .iter()
@@ -4421,12 +4418,10 @@ fn exact_rectangular_pattern_instances(
     let [run] = runs.as_slice() else {
         return None;
     };
-    Some(DesignRectangularPatternInstances {
-        record_indices,
-        transforms: run.iter().map(|(transform, _)| *transform).collect(),
-        transform_offsets: run.iter().map(|(_, offset)| *offset).collect(),
-        component_occurrences: None,
-    })
+    Some(DesignRectangularPatternInstances::Bodies(record_indices.into_iter().zip(run).map(|(record_index, (value, offset))| crate::records::DesignPatternInstance {
+        record_index,
+        transform: crate::records::Located { value: *value, offset: *offset },
+    }).collect()))
 }
 
 type TransformCandidate = ([[f64; 4]; 4], u64);
