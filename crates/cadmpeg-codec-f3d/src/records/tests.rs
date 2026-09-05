@@ -258,6 +258,10 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
         let value: super::DesignLoftLegacyBodyCarrier = serde_json::from_str(&wire).expect("loft carrier");
         assert_eq!(serde_json::to_string(&value).expect("loft carrier wire"), wire);
     }
+    let error = serde_json::from_str::<super::DesignLoftLegacyBodyCarrier>(
+        &format!("{prefix},\"trailing_scope_record_index\":13,\"trailing_scope_reference_offset\":88{suffix}"),
+    ).expect_err("conflicting owning scope");
+    assert!(error.to_string().contains("trailing_scope_record_index"));
     for field in ["trailing_scope_record_index", "trailing_scope_reference_offset"] {
         let error = serde_json::from_str::<super::DesignLoftLegacyBodyCarrier>(&format!("{prefix},\"{field}\":12{suffix}"))
             .expect_err("partial loft scope reference");

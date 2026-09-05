@@ -11032,8 +11032,8 @@ pub struct DesignLoftLegacyBodyCarrier {
     pub next_record_index: u32,
     /// Byte offset of the marked `N+1` reference.
     pub next_reference_offset: u64,
-    /// Additional owning-scope reference and its source location, when present.
-    pub trailing_scope_record_index: Option<Located<u32>>,
+    /// Source location of the additional owning-scope reference, when present.
+    pub trailing_scope_reference_offset: Option<u64>,
     /// Per-file dynamic paired class tag (`262` or `266`).
     pub paired_class_tag: String,
     /// Same-index paired-header byte offset.
@@ -11098,6 +11098,15 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
         if wire.flags != [0, 0] {
             return Err("flags must be zero".into());
         }
+        let trailing_scope_reference_offset = match (
+            wire.trailing_scope_record_index,
+            wire.trailing_scope_reference_offset,
+        ) {
+            (None, None) => None,
+            (Some(index), Some(offset)) if index == wire.scope_record_index => Some(offset),
+            (Some(_), Some(_)) => return Err("trailing_scope_record_index disagrees with scope_record_index".into()),
+            _ => return Err("trailing_scope_record_index and trailing_scope_reference_offset must occur together".into()),
+        };
         let opaque_index = u8::try_from(wire.opaque_index).ok()
             .and_then(std::num::NonZeroU8::new).ok_or("opaque_index must be in 1..=255")?;
         Ok(Self {
@@ -11120,8 +11129,7 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
             flags_offset: wire.flags_offset,
             next_record_index: wire.next_record_index,
             next_reference_offset: wire.next_reference_offset,
-            trailing_scope_record_index: Located::from_wire(wire.trailing_scope_record_index, wire.trailing_scope_reference_offset, "trailing_scope_record_index")
-                .map_err(|_| "trailing_scope_record_index and trailing_scope_reference_offset must occur together")?,
+            trailing_scope_reference_offset,
             paired_class_tag: wire.paired_class_tag,
             paired_byte_offset: wire.paired_byte_offset,
         })
@@ -11155,8 +11163,8 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
             flags_offset: carrier.flags_offset,
             next_record_index: carrier.next_record_index,
             next_reference_offset: carrier.next_reference_offset,
-            trailing_scope_record_index: carrier.trailing_scope_record_index.map(|reference| reference.value),
-            trailing_scope_reference_offset: carrier.trailing_scope_record_index.map(|reference| reference.offset),
+            trailing_scope_record_index: carrier.trailing_scope_reference_offset.map(|_| carrier.scope_record_index),
+            trailing_scope_reference_offset: carrier.trailing_scope_reference_offset,
             paired_class_tag: carrier.paired_class_tag,
             paired_byte_offset: carrier.paired_byte_offset,
         }

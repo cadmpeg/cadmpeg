@@ -1461,7 +1461,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     assert_eq!(parsed_322.opaque_scalar, 1.25);
     assert_eq!(parsed_322.next_next_record_index, 102);
     assert_eq!(parsed_322.next_record_index, 101);
-    assert_eq!(parsed_322.trailing_scope_record_index.map(|reference| reference.value), None);
+    assert_eq!(parsed_322.trailing_scope_reference_offset.map(|_| parsed_322.scope_record_index), None);
 
     let class_322_tail = carrier(b"322", b"262", 12, 200, true);
     let parsed_322_tail = parse_loft_legacy_body_carrier(
@@ -1477,8 +1477,8 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     .expect("class-322 legacy Loft carrier with scope tail");
     assert_eq!(parsed_322_tail.paired_class_tag, "262");
     assert_eq!(parsed_322_tail.paired_byte_offset, 99);
-    assert_eq!(parsed_322_tail.trailing_scope_record_index.map(|reference| reference.value), Some(12));
-    assert_eq!(parsed_322_tail.trailing_scope_record_index.map(|reference| reference.offset), Some(88));
+    assert_eq!(parsed_322_tail.trailing_scope_reference_offset.map(|_| parsed_322_tail.scope_record_index), Some(12));
+    assert_eq!(parsed_322_tail.trailing_scope_reference_offset, Some(88));
 
     let class_411 = carrier(b"411", b"266", 12, 300, true);
     let parsed_411 = parse_loft_legacy_body_carrier(
@@ -1494,8 +1494,8 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     .expect("class-411 legacy Loft carrier");
     assert_eq!(parsed_411.paired_class_tag, "266");
     assert_eq!(parsed_411.paired_byte_offset, 99);
-    assert_eq!(parsed_411.trailing_scope_record_index.map(|reference| reference.value), Some(12));
-    assert_eq!(parsed_411.trailing_scope_record_index.map(|reference| reference.offset), Some(88));
+    assert_eq!(parsed_411.trailing_scope_reference_offset.map(|_| parsed_411.scope_record_index), Some(12));
+    assert_eq!(parsed_411.trailing_scope_reference_offset, Some(88));
 
     let mut wrong_presence = class_322.clone();
     wrong_presence[21] = 0;
