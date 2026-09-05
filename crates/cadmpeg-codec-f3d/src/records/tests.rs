@@ -995,3 +995,43 @@ fn sketch_nurbs_poles_preserve_wire_and_reject_partial_weights() {
     let wire = serde_json::to_string(&empty).unwrap();
     assert_eq!(serde_json::from_str::<super::SketchCurveGeometry>(&wire).unwrap(), empty);
 }
+
+#[test]
+fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
+    let transform = serde_json::json!([[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]);
+    for count in [0, 1, 3] {
+        let value = serde_json::json!({
+            "record_indices": (0..count).collect::<Vec<u32>>(),
+            "transforms": (0..count).map(|_| transform.clone()).collect::<Vec<_>>(),
+            "transform_offsets": (0..count).map(|index| u64::from(index) * 100).collect::<Vec<_>>()
+        });
+        let wire: super::DesignRectangularPatternInstancesWire = serde_json::from_value(value.clone()).unwrap();
+        let expected = serde_json::to_string(&wire).unwrap();
+        let native: super::DesignRectangularPatternInstances = serde_json::from_str(&expected).unwrap();
+        assert_eq!(native.instance_count(), count as usize);
+        assert_eq!(serde_json::to_string(&native).unwrap(), expected);
+        if count != 0 {
+            let mut component = value.clone();
+            component["component_occurrences"] = serde_json::json!({
+                "component_guid": "component", "seed_occurrence_guid": "seed",
+                "generated_occurrence_guids": (1..count).map(|index| format!("generated-{index}")).collect::<Vec<_>>()
+            });
+            let wire: super::DesignRectangularPatternInstancesWire = serde_json::from_value(component.clone()).unwrap();
+            let expected = serde_json::to_string(&wire).unwrap();
+            let native: super::DesignRectangularPatternInstances = serde_json::from_str(&expected).unwrap();
+            assert_eq!(serde_json::to_string(&native).unwrap(), expected);
+            component["component_occurrences"]["generated_occurrence_guids"] = serde_json::json!(["extra", "extra", "extra"]);
+            assert!(serde_json::from_value::<super::DesignRectangularPatternInstances>(component).unwrap_err().to_string().contains("generated_occurrence_guids"));
+        }
+        for field in ["record_indices", "transforms", "transform_offsets"] {
+            let mut invalid = value.clone();
+            invalid[field].as_array_mut().unwrap().push(if field == "transforms" { transform.clone() } else { serde_json::json!(0) });
+            assert!(serde_json::from_value::<super::DesignRectangularPatternInstances>(invalid).unwrap_err().to_string().contains(field));
+        }
+    }
+    let empty_component = serde_json::json!({
+        "record_indices": [], "transforms": [], "transform_offsets": [],
+        "component_occurrences": { "component_guid": "component", "seed_occurrence_guid": "seed", "generated_occurrence_guids": [] }
+    });
+    assert!(serde_json::from_value::<super::DesignRectangularPatternInstances>(empty_component).unwrap_err().to_string().contains("seed"));
+}

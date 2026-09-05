@@ -2372,28 +2372,112 @@ pub struct DesignRectangularPatternConstruction {
 /// Serialized placements of one linearized rectangular-pattern instance run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignRectangularPatternInstances {
+#[cfg_attr(feature = "schema", schemars(with = "DesignRectangularPatternInstancesWire"))]
+#[serde(try_from = "DesignRectangularPatternInstancesWire", into = "DesignRectangularPatternInstancesWire")]
+pub enum DesignRectangularPatternInstances {
+    Bodies(Vec<DesignPatternInstance>),
+    Components {
+        component_guid: String,
+        seed: DesignPatternComponentInstance,
+        generated: Vec<DesignPatternComponentInstance>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DesignPatternInstance {
+    pub record_index: u32,
+    pub transform: Located<[[f64; 4]; 4]>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignPatternComponentInstance {
+    pub instance: DesignPatternInstance,
+    pub occurrence_guid: String,
+}
+
+impl DesignRectangularPatternInstances {
+    pub fn instance_count(&self) -> usize {
+        match self {
+            Self::Bodies(instances) => instances.len(),
+            Self::Components { generated, .. } => generated.len() + 1,
+        }
+    }
+
+    pub fn frames(&self) -> impl DoubleEndedIterator<Item = &DesignPatternInstance> {
+        let (bodies, seed, generated): (&[DesignPatternInstance], Option<&DesignPatternInstance>, &[DesignPatternComponentInstance]) = match self {
+            Self::Bodies(instances) => (instances, None, &[]),
+            Self::Components { seed, generated, .. } => (&[], Some(&seed.instance), generated),
+        };
+        bodies.iter().chain(seed).chain(generated.iter().map(|row| &row.instance))
+    }
+}
+
+/// Serialized placements of one linearized rectangular-pattern instance run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignRectangularPatternInstancesWire {
     /// Seed record followed by the generated-instance records in pattern order.
-    pub record_indices: Vec<u32>,
+    record_indices: Vec<u32>,
     /// Row-major local-to-model placements parallel to `record_indices`.
-    pub transforms: Vec<[[f64; 4]; 4]>,
+    transforms: Vec<[[f64; 4]; 4]>,
     /// Byte offsets of the first transform scalar parallel to `record_indices`.
-    pub transform_offsets: Vec<u64>,
+    transform_offsets: Vec<u64>,
     /// Component occurrences carried by this run when the pattern repeats a component.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub component_occurrences: Option<DesignComponentPatternOccurrences>,
+    component_occurrences: Option<DesignComponentPatternOccurrencesWire>,
 }
 
 /// Component seed and generated occurrences carried by a rectangular pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignComponentPatternOccurrences {
+struct DesignComponentPatternOccurrencesWire {
     /// Reusable local component definition shared by every occurrence.
-    pub component_guid: String,
+    component_guid: String,
     /// Existing seed occurrence.
-    pub seed_occurrence_guid: String,
+    seed_occurrence_guid: String,
     /// Newly generated occurrences in pattern order after the seed.
-    pub generated_occurrence_guids: Vec<String>,
+    generated_occurrence_guids: Vec<String>,
+}
+
+impl TryFrom<DesignRectangularPatternInstancesWire> for DesignRectangularPatternInstances {
+    type Error = String;
+    fn try_from(wire: DesignRectangularPatternInstancesWire) -> Result<Self, Self::Error> {
+        if wire.record_indices.len() != wire.transforms.len() || wire.record_indices.len() != wire.transform_offsets.len() {
+            return Err("record_indices, transforms, and transform_offsets must have equal lengths".into());
+        }
+        let frames = wire.record_indices.into_iter().zip(wire.transforms).zip(wire.transform_offsets)
+            .map(|((record_index, value), offset)| DesignPatternInstance { record_index, transform: Located { value, offset } });
+        let Some(component) = wire.component_occurrences else {
+            return Ok(Self::Bodies(frames.collect()));
+        };
+        let mut frames = frames;
+        let seed = frames.next().ok_or("component_occurrences requires a seed frame")?;
+        if frames.len() != component.generated_occurrence_guids.len() {
+            return Err("generated_occurrence_guids must match the generated instance frames".into());
+        }
+        Ok(Self::Components {
+            component_guid: component.component_guid,
+            seed: DesignPatternComponentInstance { instance: seed, occurrence_guid: component.seed_occurrence_guid },
+            generated: frames.zip(component.generated_occurrence_guids).map(|(instance, occurrence_guid)| DesignPatternComponentInstance { instance, occurrence_guid }).collect(),
+        })
+    }
+}
+
+impl From<DesignRectangularPatternInstances> for DesignRectangularPatternInstancesWire {
+    fn from(instances: DesignRectangularPatternInstances) -> Self {
+        let record_indices = instances.frames().map(|row| row.record_index).collect();
+        let transforms = instances.frames().map(|row| row.transform.value).collect();
+        let transform_offsets = instances.frames().map(|row| row.transform.offset).collect();
+        let component_occurrences = match instances {
+            DesignRectangularPatternInstances::Bodies(_) => None,
+            DesignRectangularPatternInstances::Components { component_guid, seed, generated } => Some(DesignComponentPatternOccurrencesWire {
+                component_guid,
+                seed_occurrence_guid: seed.occurrence_guid,
+                generated_occurrence_guids: generated.into_iter().map(|row| row.occurrence_guid).collect(),
+            }),
+        };
+        Self { record_indices, transforms, transform_offsets, component_occurrences }
+    }
 }
 
 /// Domain of the two scalar limits carried by a legacy As-built scope.

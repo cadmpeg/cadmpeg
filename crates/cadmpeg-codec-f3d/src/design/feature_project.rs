@@ -6348,11 +6348,11 @@ fn project_rectangular_pattern_scalars(
         return None;
     }
     let direction = construction.instances.as_ref().and_then(|instances| {
-        if instances.transforms.len() != usize::try_from(*count).ok()? {
+        if instances.instance_count() != usize::try_from(*count).ok()? {
             return None;
         }
-        let first = instances.transforms.first()?;
-        let last = instances.transforms.last()?;
+        let first = &instances.frames().next()?.transform.value;
+        let last = &instances.frames().next_back()?.transform.value;
         let delta = Vector3::new(
             last[0][3] - first[0][3],
             last[1][3] - first[1][3],
@@ -6364,11 +6364,11 @@ fn project_rectangular_pattern_scalars(
     let component_seed = construction
         .instances
         .as_ref()
-        .and_then(|instances| instances.component_occurrences.as_ref())
-        .map(|occurrences| {
-            PatternSeed::Occurrences(vec![crate::ids::neutral_component_occurrence_id(
-                &occurrences.seed_occurrence_guid,
-            )])
+        .and_then(|instances| match instances {
+            crate::records::DesignRectangularPatternInstances::Bodies(_) => None,
+            crate::records::DesignRectangularPatternInstances::Components { seed, .. } => Some(
+                PatternSeed::Occurrences(vec![crate::ids::neutral_component_occurrence_id(&seed.occurrence_guid)])
+            ),
         });
     let group_seed = native_stream(&scope.id).and_then(|stream| {
         let matching_groups = groups

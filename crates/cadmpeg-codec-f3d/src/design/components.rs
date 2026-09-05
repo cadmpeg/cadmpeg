@@ -87,41 +87,20 @@ pub(crate) fn project_local_components(
                 construction.transform,
             );
         }
-        let Some((instances, component_occurrences)) = scope
+        let Some(crate::records::DesignRectangularPatternInstances::Components { component_guid, seed, generated }) = scope
             .rectangular_pattern_construction()
             .and_then(|construction| construction.instances.as_ref())
-            .and_then(|instances| Some((instances, instances.component_occurrences.as_ref()?)))
         else {
             continue;
         };
-        if instances.transforms.len()
-            != component_occurrences
-                .generated_occurrence_guids
-                .len()
-                .saturating_add(1)
-        {
-            continue;
-        }
-        project_occurrence(
-            &mut components,
-            &mut occurrences,
-            &native_by_guid,
-            &component_occurrences.component_guid,
-            &component_occurrences.seed_occurrence_guid,
-            instances.transforms[0],
-        );
-        for (occurrence_guid, transform) in component_occurrences
-            .generated_occurrence_guids
-            .iter()
-            .zip(&instances.transforms[1..])
-        {
+        for occurrence in std::iter::once(seed).chain(generated) {
             project_occurrence(
                 &mut components,
                 &mut occurrences,
                 &native_by_guid,
-                &component_occurrences.component_guid,
-                occurrence_guid,
-                *transform,
+                component_guid,
+                &occurrence.occurrence_guid,
+                occurrence.instance.transform.value,
             );
         }
     }

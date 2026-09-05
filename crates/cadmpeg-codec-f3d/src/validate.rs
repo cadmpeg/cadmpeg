@@ -2519,12 +2519,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 .into_iter()
                                 .flatten(),
                         )
-                        .copied()
-                        .collect::<Vec<_>>();
-                    let Some(first) = instances.transforms.first() else {
+                        .copied();
+                    let Some(first) = instances.frames().next().map(|frame| &frame.transform.value) else {
                         return false;
                     };
-                    let Some(last) = instances.transforms.last() else {
+                    let Some(last) = instances.frames().next_back().map(|frame| &frame.transform.value) else {
                         return false;
                     };
                     let delta = [
@@ -2537,13 +2536,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         native,
                         native_stream,
                         instances,
-                        count,
                     );
-                    instances.record_indices == expected_records
-                        && instances.record_indices.len() == count
-                        && instances.transforms.len() == count
-                        && instances.transform_offsets.len() == count
-                        && instances.transforms.iter().all(|transform| {
+                    instances.frames().map(|frame| frame.record_index).eq(expected_records)
+                        && instances.instance_count() == count
+                        && instances.frames().all(|frame| {
+                            let transform = &frame.transform.value;
                             design::decode::sketch::valid_sketch_transform(transform)
                                 && (0..3).all(|row| {
                                     (0..3).all(|column| {
@@ -2554,11 +2551,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
                         && (distance - extent.abs()).abs()
                             <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8
-                        && instances
-                            .transforms
-                            .iter()
+                        && instances.frames()
                             .enumerate()
-                            .all(|(ordinal, transform)| {
+                            .all(|(ordinal, frame)| {
+                                let transform = &frame.transform.value;
                                 let fraction = ordinal as f64 / (count - 1) as f64;
                                 (0..3).all(|axis| {
                                     (transform[axis][3] - first[axis][3] - delta[axis] * fraction)
@@ -2566,14 +2562,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8
                                 })
                             })
-                        && instances
-                            .record_indices
-                            .iter()
-                            .zip(&instances.transform_offsets)
-                            .all(|(record_index, offset)| {
+                        && instances.frames().all(|frame| {
                                 records_by_index
-                                    .get(&(native_stream, *record_index))
-                                    .is_some_and(|header| *offset > header.byte_offset)
+                                    .get(&(native_stream, frame.record_index))
+                                    .is_some_and(|header| frame.transform.offset > header.byte_offset)
                             })
                         && component_link
                 });
@@ -4744,58 +4736,28 @@ fn valid_component_pattern_occurrences(
     native: &native::F3dNative,
     stream: &str,
     instances: &records::DesignRectangularPatternInstances,
-    count: usize,
 ) -> bool {
-    instances
-        .component_occurrences
-        .as_ref()
-        .is_none_or(|component| {
-            component.generated_occurrence_guids.len() + 1 == count
-                && crate::bytes::is_guid_relaxed(&component.component_guid)
-                && crate::bytes::is_guid_relaxed(&component.seed_occurrence_guid)
-                && component
-                    .generated_occurrence_guids
-                    .iter()
-                    .all(|guid| crate::bytes::is_guid_relaxed(guid))
-                && native
-                    .design_component_occurrences
-                    .iter()
-                    .any(|occurrence| {
-                        design_stream(&occurrence.id) == stream
-                            && occurrence
-                                .component_guid
-                                .eq_ignore_ascii_case(&component.component_guid)
-                            && occurrence
-                                .occurrence_guid
-                                .eq_ignore_ascii_case(&component.seed_occurrence_guid)
-                            && occurrence.occurrence_ordinal == 1
-                            && occurrence.transform.is_none()
-                    })
-                && component
-                    .generated_occurrence_guids
-                    .iter()
-                    .zip(instances.transforms.iter().skip(1))
-                    .zip(instances.transform_offsets.iter().skip(1))
-                    .enumerate()
-                    .all(
-                        |(ordinal, ((occurrence_guid, transform), transform_offset))| {
-                            native
-                                .design_component_occurrences
-                                .iter()
-                                .any(|occurrence| {
-                                    design_stream(&occurrence.id) == stream
-                                        && occurrence
-                                            .component_guid
-                                            .eq_ignore_ascii_case(&component.component_guid)
-                                        && occurrence
-                                            .occurrence_guid
-                                            .eq_ignore_ascii_case(occurrence_guid)
-                                        && occurrence.occurrence_ordinal == ordinal as u32 + 2
-                                        && occurrence.transform.map(|frame| frame.value) == Some(*transform)
-                                        && occurrence.transform.map(|frame| frame.offset) == Some(*transform_offset)
-                                })
-                        },
-                    )
+    let records::DesignRectangularPatternInstances::Components { component_guid, seed, generated } = instances else {
+        return true;
+    };
+    crate::bytes::is_guid_relaxed(component_guid)
+        && crate::bytes::is_guid_relaxed(&seed.occurrence_guid)
+        && generated.iter().all(|row| crate::bytes::is_guid_relaxed(&row.occurrence_guid))
+        && native.design_component_occurrences.iter().any(|occurrence| {
+            design_stream(&occurrence.id) == stream
+                && occurrence.component_guid.eq_ignore_ascii_case(component_guid)
+                && occurrence.occurrence_guid.eq_ignore_ascii_case(&seed.occurrence_guid)
+                && occurrence.occurrence_ordinal == 1
+                && occurrence.transform.is_none()
+        })
+        && generated.iter().enumerate().all(|(ordinal, row)| {
+            native.design_component_occurrences.iter().any(|occurrence| {
+                design_stream(&occurrence.id) == stream
+                    && occurrence.component_guid.eq_ignore_ascii_case(component_guid)
+                    && occurrence.occurrence_guid.eq_ignore_ascii_case(&row.occurrence_guid)
+                    && occurrence.occurrence_ordinal == ordinal as u32 + 2
+                    && occurrence.transform == Some(row.instance.transform)
+            })
         })
 }
 
