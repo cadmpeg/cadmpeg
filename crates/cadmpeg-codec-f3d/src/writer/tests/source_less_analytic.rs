@@ -788,8 +788,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             source_kind: "User Parameter".into(),
             source_kind_offset: 70,
 
-            unit: Some("mm".into()),
-            unit_offset: Some(110),
+            unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(110) }),
             name: "HalfWidth".into(),
             name_offset: 120,
             evaluated_value: 3.0,
@@ -813,8 +812,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             source_kind: "User Parameter".into(),
             source_kind_offset: 70,
 
-            unit: Some("mm".into()),
-            unit_offset: Some(110),
+            unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(110) }),
             name: "Width".into(),
             name_offset: 120,
             evaluated_value: 6.0,

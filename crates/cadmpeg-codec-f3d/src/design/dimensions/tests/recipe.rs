@@ -44,8 +44,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         source_kind: "Linear Dimension-4".into(),
         source_kind_offset: 0,
 
-        unit: Some("mm".into()),
-        unit_offset: Some(0),
+        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
         name: "d4".into(),
         name_offset: 0,
         evaluated_value: 0.2,
@@ -449,7 +448,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     )));
 
     let mut incompatible_unit = parameter.clone();
-    incompatible_unit.unit = Some("deg".into());
+    incompatible_unit.unit.as_mut().expect("parameter unit").value = "deg".into();
     let constraints = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -776,8 +775,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 0,
 
-        unit: Some("mm".into()),
-        unit_offset: Some(0),
+        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
         name: "d1".into(),
         name_offset: 0,
         evaluated_value: 0.2,
@@ -969,8 +967,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 0,
 
-        unit: Some("mm".into()),
-        unit_offset: Some(0),
+        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
         name: "d1".into(),
         name_offset: 0,
         evaluated_value: 0.2,

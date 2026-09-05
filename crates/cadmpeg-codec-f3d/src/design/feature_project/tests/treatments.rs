@@ -179,7 +179,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             25.0_f64.to_radians(),
         ),
     ];
-    distance_angle_parameters[1].unit = Some("deg".into());
+    distance_angle_parameters[1].unit.as_mut().expect("parameter unit").value = "deg".into();
     let (features, _) = project_parameter_design(
         &distance_angle_parameters,
         &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
@@ -225,7 +225,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         parameter(104, 105, "HoleDiameter", "d5", "4 mm", 0.4),
         parameter(114, 115, "TipAngle", "d6", "180 deg", std::f64::consts::PI),
     ];
-    hole_parameters[2].unit = Some("deg".into());
+    hole_parameters[2].unit.as_mut().expect("parameter unit").value = "deg".into();
     let (features, _) = project_parameter_design(
         &hole_parameters,
         &[

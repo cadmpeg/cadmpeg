@@ -93,8 +93,8 @@ fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
     assert_eq!(parameter.expression, "0.4375 in");
     assert_eq!(parameter.expression_offset, 45);
     assert_eq!(parameter.source_kind, "HoleDepth");
-    assert_eq!(parameter.unit.as_deref(), Some("in"));
-    assert_eq!(parameter.unit_offset, Some(94));
+    assert_eq!(parameter.unit.as_ref().map(|field| field.value.as_str()), Some("in"));
+    assert_eq!(parameter.unit.as_ref().and_then(|field| field.offset), Some(94));
     assert_eq!(parameter.name, "d20");
     assert_eq!(parameter.evaluated_value_offset, 108);
 
@@ -145,7 +145,7 @@ fn compact_owned_design_parameter_has_no_family_discriminator() {
     assert_eq!(parameter.family_discriminator.map(|value| value.offset), None);
     assert_eq!(parameter.expression, "82.00 mm");
     assert_eq!(parameter.source_kind, "Diameter");
-    assert_eq!(parameter.unit.as_deref(), Some("mm"));
+    assert_eq!(parameter.unit.as_ref().map(|field| field.value.as_str()), Some("mm"));
     assert_eq!(parameter.name, "d99");
     assert_eq!(parameter.evaluated_value, 8.2);
 }
@@ -174,7 +174,7 @@ fn legacy_owned_design_parameter_uses_the_compact_identity_prefix() {
     assert_eq!(parameter.owner_record_index(), Some(437));
     assert_eq!(parameter.source_ordinal, 5);
     assert_eq!(parameter.source_kind, "OffsetX");
-    assert_eq!(parameter.unit.as_deref(), Some("mm"));
+    assert_eq!(parameter.unit.as_ref().map(|field| field.value.as_str()), Some("mm"));
     assert_eq!(parameter.name, "d5");
     assert_eq!(parameter.evaluated_value, 0.0);
 }
@@ -192,7 +192,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     .unwrap();
     assert_eq!(user.kind(), DesignParameterKind::User);
     assert_eq!(user.owner_record_index(), None);
-    assert_eq!(user.unit.as_deref(), Some("mm"));
+    assert_eq!(user.unit.as_ref().map(|field| field.value.as_str()), Some("mm"));
     assert_eq!(user.evaluated_value, 6.0);
 
     let feature = parse_design_parameter(&parameter_record(
@@ -836,8 +836,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         source_kind: "Distance".into(),
         source_kind_offset: 260,
 
-        unit: Some("cm".into()),
-        unit_offset: Some(280),
+        unit: Some(crate::records::RecordedValue { value: "cm".into(), offset: Some(280) }),
         name: "distance".into(),
         name_offset: 300,
         evaluated_value: 6.0,
@@ -909,8 +908,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
         source_kind: "Linear Dimension-1".into(),
         source_kind_offset: 0,
 
-        unit: Some("mm".into()),
-        unit_offset: Some(0),
+        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
         name: "d1".into(),
         name_offset: 0,
         evaluated_value: 2.0,

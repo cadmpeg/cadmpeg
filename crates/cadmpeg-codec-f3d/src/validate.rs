@@ -5979,8 +5979,7 @@ fn validate_fillet_radius_groups<'a>(
                     assignment_parameter(*radius_parameter_record_index).is_some_and(|parameter| {
                         parameter.source_kind == "Radius"
                             && parameter
-                                .unit
-                                .as_deref()
+                                .unit.as_ref().map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
                             && parameter.evaluated_value > 0.0
                             && parameter.evaluated_value.is_finite()
@@ -5992,8 +5991,7 @@ fn validate_fillet_radius_groups<'a>(
                     |parameter| {
                         parameter.source_kind == "ChordLen"
                             && parameter
-                                .unit
-                                .as_deref()
+                                .unit.as_ref().map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
                             && parameter.evaluated_value > 0.0
                             && parameter.evaluated_value.is_finite()
@@ -6011,8 +6009,7 @@ fn validate_fillet_radius_groups<'a>(
                     assignment_parameter(record_index).is_some_and(|parameter| {
                         parameter.source_kind == kind
                             && parameter
-                                .unit
-                                .as_deref()
+                                .unit.as_ref().map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
                             && parameter.evaluated_value > 0.0
                             && parameter.evaluated_value.is_finite()
@@ -6029,8 +6026,7 @@ fn validate_fillet_radius_groups<'a>(
                             .filter(|parameter| {
                                 parameter.source_kind == kind
                                     && parameter
-                                        .unit
-                                        .as_deref()
+                                        .unit.as_ref().map(|field| field.value.as_str())
                                         .is_some_and(design::feature_project::design_length_unit)
                                     && parameter.evaluated_value.is_finite()
                                     && parameter.evaluated_value >= 0.0
@@ -8922,11 +8918,12 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && offset < parameter.expression_offset
             })
             && parameter.expression_offset < parameter.source_kind_offset
-            && parameter.source_kind_offset
-                < parameter.unit_offset.unwrap_or(parameter.name_offset)
-            && parameter
-                .unit_offset
-                .is_none_or(|offset| offset < parameter.name_offset)
+            && match &parameter.unit {
+                None => parameter.source_kind_offset < parameter.name_offset,
+                Some(unit) => unit.offset.is_some_and(|offset| {
+                    parameter.source_kind_offset < offset && offset < parameter.name_offset
+                }),
+            }
             && parameter.name_offset < parameter.evaluated_value_offset;
         let valid = parameter.class_tag.len() == 3
             && parameter
@@ -8936,8 +8933,7 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && !parameter.expression.is_empty()
             && !parameter.source_kind.is_empty()
             && !parameter.name.is_empty()
-            && parameter.unit.as_ref().is_none_or(|unit| !unit.is_empty())
-            && parameter.unit.is_some() == parameter.unit_offset.is_some()
+            && parameter.unit.as_ref().is_none_or(|unit| !unit.value.is_empty())
             && parameter.evaluated_value.is_finite()
             && (parameter.family_discriminator.is_some()
                 || parameter.owner_record_index().is_some())

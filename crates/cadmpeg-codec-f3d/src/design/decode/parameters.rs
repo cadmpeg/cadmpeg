@@ -68,7 +68,9 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
                 if let Some(discriminator) = &mut parameter.family_discriminator { discriminator.offset += at as u64; }
                 parameter.expression_offset += at as u64;
                 parameter.source_kind_offset += at as u64;
-                parameter.unit_offset = parameter.unit_offset.map(|offset| offset + at as u64);
+                if let Some(unit) = &mut parameter.unit {
+                    unit.offset = unit.offset.map(|offset| offset + at as u64);
+                }
                 parameter.name_offset += at as u64;
                 parameter.evaluated_value_offset += at as u64;
                 out.push(parameter);
@@ -157,23 +159,22 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
     if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
         return None;
     }
-    let (unit, unit_offset, name, name_at, name_end) =
+    let (unit, name, name_at, name_end) =
         if View::u32_le_at(payload, first_at) == Some(0) {
             let name_at = first_at + 4;
             let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
-            (None, None, name, name_at, name_end)
+            (None, name, name_at, name_end)
         } else {
             let (first, first_end) = lp_utf16_bounded(payload, first_at, 1..=256)?;
             if let Some((second, second_end)) = lp_utf16_bounded(payload, first_end, 1..=256) {
                 (
-                    Some(first),
-                    Some(first_at + 4),
+                    Some(crate::records::RecordedValue { value: first, offset: Some((first_at + 4) as u64) }),
                     second,
                     first_end,
                     second_end,
                 )
             } else {
-                (None, None, first, first_at, first_end)
+                (None, first, first_at, first_end)
             }
         };
     let evaluated_value = View::f64_le_at(payload, name_end)?;
@@ -209,7 +210,6 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         source_kind,
         source_kind_offset: (source_kind_at + 4) as u64,
         unit,
-        unit_offset: unit_offset.map(|offset| offset as u64),
         name,
         name_offset: (name_at + 4) as u64,
         evaluated_value,
@@ -243,18 +243,17 @@ fn parse_legacy_287_design_parameter(
     }
     let source_kind_at = expression_trailer_end;
     let (source_kind, source_kind_end) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
-    let (unit, unit_offset, name, name_at, name_end) =
+    let (unit, name, name_at, name_end) =
         if View::u32_le_at(payload, source_kind_end) == Some(0) {
             let name_at = source_kind_end.checked_add(4)?;
             let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
-            (None, None, name, name_at, name_end)
+            (None, name, name_at, name_end)
         } else {
             let (unit, unit_end) = lp_utf16_bounded(payload, source_kind_end, 1..=64)?;
             let (name, name_end) = lp_utf16_bounded(payload, unit_end, 1..=256)?;
             let unit_offset = source_kind_end.checked_add(4)?;
             (
-                Some(unit),
-                Some(u64::try_from(unit_offset).ok()?),
+                Some(crate::records::RecordedValue { value: unit, offset: Some(u64::try_from(unit_offset).ok()?) }),
                 name,
                 unit_end,
                 name_end,
@@ -290,7 +289,6 @@ fn parse_legacy_287_design_parameter(
         source_kind,
         source_kind_offset: u64::try_from(source_kind_at.checked_add(4)?).ok()?,
         unit,
-        unit_offset,
         name,
         name_offset: u64::try_from(name_at.checked_add(4)?).ok()?,
         evaluated_value,
@@ -348,8 +346,7 @@ fn parse_legacy_design_parameter(
         expression_offset: (expression_at + 4) as u64,
         source_kind,
         source_kind_offset: (source_kind_at + 4) as u64,
-        unit: Some(unit),
-        unit_offset: Some((unit_at + 4) as u64),
+        unit: Some(crate::records::RecordedValue { value: unit, offset: Some((unit_at + 4) as u64) }),
         name,
         name_offset: (name_at + 4) as u64,
         evaluated_value,

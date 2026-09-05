@@ -2078,7 +2078,7 @@ fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
 }
 
 pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
-    (parameter.unit.as_deref().is_some_and(design_angle_unit)
+    (parameter.unit.as_ref().map(|field| field.value.as_str()).is_some_and(design_angle_unit)
         && parameter.evaluated_value.is_finite())
     .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value))
 }

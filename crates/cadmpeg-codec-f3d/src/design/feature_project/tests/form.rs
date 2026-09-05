@@ -556,8 +556,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
         source_kind: "AlongDistance".into(),
         source_kind_offset: 0,
 
-        unit: Some("mm".into()),
-        unit_offset: Some(0),
+        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
         name: "distance".into(),
         name_offset: 0,
         evaluated_value: 1.25,

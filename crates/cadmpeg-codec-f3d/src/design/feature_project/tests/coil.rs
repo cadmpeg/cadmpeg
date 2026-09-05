@@ -38,8 +38,7 @@ fn parameter(
         source_kind: source_kind.into(),
         source_kind_offset: 0,
 
-        unit: unit.map(str::to_owned),
-        unit_offset: None,
+        unit: unit.map(|value| crate::records::RecordedValue { value: value.to_owned(), offset: None }),
         name: source_kind.into(),
         name_offset: 0,
         evaluated_value: value,

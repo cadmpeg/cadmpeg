@@ -503,8 +503,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 0,
 
-        unit: Some("mm".into()),
-        unit_offset: Some(0),
+        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
         name: "d1".into(),
         name_offset: 0,
         evaluated_value: 0.2,
@@ -808,8 +807,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         source_kind: "Angular Dimension-4".into(),
         source_kind_offset: 0,
 
-        unit: Some("rad".into()),
-        unit_offset: Some(0),
+        unit: Some(crate::records::RecordedValue { value: "rad".into(), offset: Some(0) }),
         name: "d4".into(),
         name_offset: 0,
         evaluated_value: std::f64::consts::FRAC_PI_3,

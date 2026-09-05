@@ -729,8 +729,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         source_kind: "Linear Dimension-4".into(),
         source_kind_offset: 0,
 
-        unit: Some("mm".into()),
-        unit_offset: Some(0),
+        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
         name: "d4".into(),
         name_offset: 0,
         evaluated_value: 0.2,

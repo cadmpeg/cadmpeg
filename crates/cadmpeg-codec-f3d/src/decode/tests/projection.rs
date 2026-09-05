@@ -1338,8 +1338,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 0,
 
-        unit: Some("native-unit".into()),
-        unit_offset: Some(0),
+        unit: Some(crate::records::RecordedValue { value: "native-unit".into(), offset: Some(0) }),
         name: "d2".into(),
         name_offset: 0,
         evaluated_value: 0.1,
@@ -1660,8 +1659,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         source_kind: "Linear Dimension-2".into(),
         source_kind_offset: 60,
 
-        unit: Some("mm".into()),
-        unit_offset: Some(90),
+        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(90) }),
         name: "d1".into(),
         name_offset: 100,
         evaluated_value: 0.5,
