@@ -7076,14 +7076,19 @@ pub struct DesignEntitySelectionFaceCandidate {
 /// scalar lanes do not use the counted-group grammar.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "DesignLoftLegacyBodyCarrierSerde")
+)]
+#[serde(
+    try_from = "DesignLoftLegacyBodyCarrierSerde",
+    into = "DesignLoftLegacyBodyCarrierSerde"
+)]
 pub struct DesignLoftLegacyBodyCarrier {
     /// Globally unique deterministic identifier.
     pub id: String,
     /// Owning Loft feature scope record.
     pub scope_record_index: u32,
-    /// Position in the scope reference table. This is always zero for the
-    /// admitted legacy forms.
-    pub scope_reference_ordinal: u32,
     /// Primary indexed-record identity.
     pub record_index: u32,
     /// Primary indexed-header byte offset.
@@ -7094,13 +7099,11 @@ pub struct DesignLoftLegacyBodyCarrier {
     pub owner_scope_record_index: u32,
     /// Byte offset of `owner_scope_record_index`.
     pub owner_scope_record_index_offset: u64,
-    /// One member reference carried by this fixed legacy frame.
-    pub members: Vec<u32>,
-    /// Byte offsets parallel to `members`.
-    pub member_offsets: Vec<u64>,
-    /// Fixed member count. The admitted forms require one.
-    pub member_count: u32,
-    /// Byte offset of `member_count`.
+    /// The one member reference carried by this fixed legacy frame.
+    pub member: u32,
+    /// Byte offset of `member`.
+    pub member_offset: u64,
+    /// Byte offset of the on-wire member count (always 1).
     pub member_count_offset: u64,
     /// Opaque nonzero ordinal in the legacy scalar lane.
     pub opaque_index: u32,
@@ -7127,15 +7130,128 @@ pub struct DesignLoftLegacyBodyCarrier {
     /// Byte offset of the marked `N+1` reference.
     pub next_reference_offset: u64,
     /// Additional owning-scope reference in the class-`411` form.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trailing_scope_record_index: Option<u32>,
     /// Byte offset of the additional owning-scope reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trailing_scope_reference_offset: Option<u64>,
     /// Per-file dynamic paired class tag (`262` or `266`).
     pub paired_class_tag: String,
     /// Same-index paired-header byte offset.
     pub paired_byte_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignLoftLegacyBodyCarrierSerde {
+    id: String,
+    scope_record_index: u32,
+    scope_reference_ordinal: u32,
+    record_index: u32,
+    byte_offset: u64,
+    class_tag: String,
+    owner_scope_record_index: u32,
+    owner_scope_record_index_offset: u64,
+    members: Vec<u32>,
+    member_offsets: Vec<u64>,
+    member_count: u32,
+    member_count_offset: u64,
+    opaque_index: u32,
+    opaque_index_offset: u64,
+    opaque_scalar: f64,
+    opaque_scalar_offset: u64,
+    repeated_opaque_index: u32,
+    repeated_opaque_index_offset: u64,
+    next_next_record_index: u32,
+    next_next_reference_offset: u64,
+    flags: [u8; 2],
+    flags_offset: u64,
+    next_record_index: u32,
+    next_reference_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trailing_scope_record_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trailing_scope_reference_offset: Option<u64>,
+    paired_class_tag: String,
+    paired_byte_offset: u64,
+}
+
+impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
+    type Error = String;
+
+    fn try_from(wire: DesignLoftLegacyBodyCarrierSerde) -> Result<Self, Self::Error> {
+        if wire.scope_reference_ordinal != 0
+            || wire.member_count != 1
+            || wire.members.len() != 1
+            || wire.member_offsets.len() != 1
+        {
+            return Err(
+                "legacy loft body carrier must have one member at scope-reference ordinal zero"
+                    .into(),
+            );
+        }
+        Ok(Self {
+            id: wire.id,
+            scope_record_index: wire.scope_record_index,
+            record_index: wire.record_index,
+            byte_offset: wire.byte_offset,
+            class_tag: wire.class_tag,
+            owner_scope_record_index: wire.owner_scope_record_index,
+            owner_scope_record_index_offset: wire.owner_scope_record_index_offset,
+            member: wire.members[0],
+            member_offset: wire.member_offsets[0],
+            member_count_offset: wire.member_count_offset,
+            opaque_index: wire.opaque_index,
+            opaque_index_offset: wire.opaque_index_offset,
+            opaque_scalar: wire.opaque_scalar,
+            opaque_scalar_offset: wire.opaque_scalar_offset,
+            repeated_opaque_index: wire.repeated_opaque_index,
+            repeated_opaque_index_offset: wire.repeated_opaque_index_offset,
+            next_next_record_index: wire.next_next_record_index,
+            next_next_reference_offset: wire.next_next_reference_offset,
+            flags: wire.flags,
+            flags_offset: wire.flags_offset,
+            next_record_index: wire.next_record_index,
+            next_reference_offset: wire.next_reference_offset,
+            trailing_scope_record_index: wire.trailing_scope_record_index,
+            trailing_scope_reference_offset: wire.trailing_scope_reference_offset,
+            paired_class_tag: wire.paired_class_tag,
+            paired_byte_offset: wire.paired_byte_offset,
+        })
+    }
+}
+
+impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
+    fn from(carrier: DesignLoftLegacyBodyCarrier) -> Self {
+        Self {
+            id: carrier.id,
+            scope_record_index: carrier.scope_record_index,
+            scope_reference_ordinal: 0,
+            record_index: carrier.record_index,
+            byte_offset: carrier.byte_offset,
+            class_tag: carrier.class_tag,
+            owner_scope_record_index: carrier.owner_scope_record_index,
+            owner_scope_record_index_offset: carrier.owner_scope_record_index_offset,
+            members: vec![carrier.member],
+            member_offsets: vec![carrier.member_offset],
+            member_count: 1,
+            member_count_offset: carrier.member_count_offset,
+            opaque_index: carrier.opaque_index,
+            opaque_index_offset: carrier.opaque_index_offset,
+            opaque_scalar: carrier.opaque_scalar,
+            opaque_scalar_offset: carrier.opaque_scalar_offset,
+            repeated_opaque_index: carrier.repeated_opaque_index,
+            repeated_opaque_index_offset: carrier.repeated_opaque_index_offset,
+            next_next_record_index: carrier.next_next_record_index,
+            next_next_reference_offset: carrier.next_next_reference_offset,
+            flags: carrier.flags,
+            flags_offset: carrier.flags_offset,
+            next_record_index: carrier.next_record_index,
+            next_reference_offset: carrier.next_reference_offset,
+            trailing_scope_record_index: carrier.trailing_scope_record_index,
+            trailing_scope_reference_offset: carrier.trailing_scope_reference_offset,
+            paired_class_tag: carrier.paired_class_tag,
+            paired_byte_offset: carrier.paired_byte_offset,
+        }
+    }
 }
 
 /// Historical edge proof carried by one nested entity-selection identity.
