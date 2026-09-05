@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::ReferenceOrigin;
+use crate::graph::expectation::ReferenceExpectation;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -50,19 +52,43 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
     let resolver = ParameterResolver::new(&directory);
 
     assert_eq!(
-        resolver.resolve(1, 0, i64::from(maximum), "test", |_| true),
+        resolver.resolve(
+            1,
+            0,
+            i64::from(maximum),
+            ReferenceExpectation::ExistingDirectoryEntry,
+            |_| true
+        ),
         Some(maximum)
     );
     assert_eq!(
-        resolver.resolve(1, 1, i64::from(maximum) + 1, "test", |_| true),
+        resolver.resolve(
+            1,
+            1,
+            i64::from(maximum) + 1,
+            ReferenceExpectation::ExistingDirectoryEntry,
+            |_| true
+        ),
         None
     );
     assert_eq!(
-        resolver.resolve_negative(2, 0, -i64::from(maximum), "test", |_| true),
+        resolver.resolve_negative(
+            2,
+            0,
+            -i64::from(maximum),
+            ReferenceExpectation::ExistingDirectoryEntry,
+            |_| true
+        ),
         Some(maximum)
     );
     assert_eq!(
-        resolver.resolve_negative(2, 1, -i64::from(maximum) - 1, "test", |_| true),
+        resolver.resolve_negative(
+            2,
+            1,
+            -i64::from(maximum) - 1,
+            ReferenceExpectation::ExistingDirectoryEntry,
+            |_| true
+        ),
         None
     );
 
@@ -92,7 +118,7 @@ fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
     let graph = build(&[source, directory_entry(maximum, 124)]);
     let edge = graph[&1]
         .iter()
-        .find(|edge| edge.kind == ReferenceKind::Transform)
+        .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         .unwrap();
     assert_eq!(edge.resolution, Resolution::Resolved);
 
@@ -101,7 +127,7 @@ fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
     let graph = build(&[source]);
     let edge = graph[&1]
         .iter()
-        .find(|edge| edge.kind == ReferenceKind::Transform)
+        .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         .unwrap();
     assert_eq!(edge.resolution, Resolution::OutOfRange);
     assert!(edge.target.is_none());
@@ -116,12 +142,11 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
             (
                 source,
                 vec![ReferenceEdge {
-                    kind: ReferenceKind::Transform,
+                    origin: ReferenceOrigin::Directory(ReferenceKind::Transform),
                     raw_pointer: i64::from(target),
                     target: Some(format!("iges:entity:directory#{target}")),
                     resolution: Resolution::Resolved,
-                    expected: "type-124".into(),
-                    parameter_index: None,
+                    expected: ReferenceExpectation::Type124,
                 }],
             )
         })

@@ -10,6 +10,7 @@ use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
 use crate::global::GlobalTable;
+use crate::graph::expectation::ReferenceExpectation;
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
 use serde::Serialize;
@@ -260,7 +261,7 @@ impl Subject<'_> {
                         self.sequence,
                         start + 3,
                         value,
-                        "type-310-form-0",
+                        ReferenceExpectation::Type310Form0,
                         |target| target.entity_type == 310 && target.form == 0,
                     )
                 })
@@ -295,7 +296,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "type-214-form-1-through-12",
+                    ReferenceExpectation::Type214Form1Through12,
                     |target| target.entity_type == 214 && matches!(target.form, 1..=12),
                 )
             })
@@ -331,7 +332,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "parameterized-curve",
+                    ReferenceExpectation::ParameterizedCurve,
                     |target| {
                         parameterized_curve_type(target)
                             && target.status.is_physically_dependent()
@@ -350,7 +351,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "type-106-form-40-or-leader",
+                    ReferenceExpectation::Type106Form40OrLeader,
                     |target| {
                         (target.entity_type == 106 && target.form == 40)
                             || (target.entity_type == 214 && matches!(target.form, 1..=12))
@@ -376,7 +377,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "point-dimension-enclosure",
+                    ReferenceExpectation::PointDimensionEnclosure,
                     |target| {
                         matches!(
                             (target.entity_type, target.form),
@@ -397,7 +398,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "subordinate-annotation-geometry",
+                    ReferenceExpectation::SubordinateAnnotationGeometry,
                     |target| target.status.is_physically_dependent() && target.status.use_flag == 1,
                 )
             })
@@ -412,7 +413,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    "section-boundary-entity",
+                    ReferenceExpectation::SectionBoundaryEntity,
                     section_boundary_type,
                 )
             })

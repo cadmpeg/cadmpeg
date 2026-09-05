@@ -11,6 +11,7 @@ use crate::entities::structure::{
     array_base_type, flow_join_target_valid, signal_string_geometry_target,
 };
 use crate::global::{RealPrecision, ResolvedGlobal};
+use crate::graph::expectation::ReferenceExpectation;
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount,
@@ -2037,7 +2038,7 @@ pub(crate) fn store(
                         entry.sequence,
                         pointer.token_index,
                         pointer.raw_pointer,
-                        "type-212-or-type-312-or-type-402",
+                        ReferenceExpectation::Type212OrType312OrType402,
                         |target| matches!(target.entity_type, 212 | 312 | 402),
                     )
                 })
@@ -2052,7 +2053,7 @@ pub(crate) fn store(
                         entry.sequence,
                         pointer.token_index,
                         pointer.raw_pointer,
-                        "type-316-or-type-322-or-type-406-or-type-422",
+                        ReferenceExpectation::Type316OrType322OrType406OrType422,
                         |target| matches!(target.entity_type, 316 | 322 | 406 | 422),
                     )
                 })
@@ -2338,7 +2339,7 @@ pub(crate) fn store(
                             entry.sequence,
                             3,
                             value,
-                            "type-310-form-0",
+                            ReferenceExpectation::Type310Form0,
                             |target| target.entity_type == 310 && target.form == 0,
                         )
                     })
@@ -2434,7 +2435,7 @@ pub(crate) fn store(
                             entry.sequence,
                             3,
                             value,
-                            "type-310-form-0",
+                            ReferenceExpectation::Type310Form0,
                             |target| target.entity_type == 310 && target.form == 0,
                         )
                     })
@@ -2558,7 +2559,7 @@ pub(crate) fn store(
                             entry.sequence,
                             1,
                             sequence,
-                            "curve-entity",
+                            ReferenceExpectation::CurveEntity,
                             |target| {
                                 matches!(
                                     target.entity_type,
@@ -2598,9 +2599,9 @@ pub(crate) fn store(
                                     2 + index,
                                     value,
                                     if entry.form == 1 {
-                                        "constructive-solid-or-type-186"
+                                        ReferenceExpectation::ConstructiveSolidOrType186
                                     } else {
-                                        "constructive-solid"
+                                        ReferenceExpectation::ConstructiveSolid
                                     },
                                     |target| {
                                         matches!(
@@ -2652,7 +2653,7 @@ pub(crate) fn store(
                             entry.sequence,
                             1,
                             sequence,
-                            "type-180-form-0-or-1",
+                            ReferenceExpectation::Type180Form0Or1,
                             |target| target.entity_type == 180 && matches!(target.form, 0 | 1),
                         )
                     })
@@ -2689,9 +2690,9 @@ pub(crate) fn store(
                                     2 + index,
                                     sequence,
                                     if entry.form == 1 {
-                                        "constructive-solid-or-type-186"
+                                        ReferenceExpectation::ConstructiveSolidOrType186
                                     } else {
-                                        "constructive-solid"
+                                        ReferenceExpectation::ConstructiveSolid
                                     },
                                     |target| {
                                         matches!(
@@ -2790,9 +2791,9 @@ pub(crate) fn store(
                             1,
                             sequence,
                             if entry.form == 1 {
-                                "type-186"
+                                ReferenceExpectation::Type186
                             } else {
-                                "constructive-solid"
+                                ReferenceExpectation::ConstructiveSolid
                             },
                             |target| {
                                 if entry.form == 1 {
@@ -3114,7 +3115,7 @@ pub(crate) fn store(
                             entry.sequence,
                             14,
                             sequence,
-                            "type-320-or-type-420",
+                            ReferenceExpectation::Type320OrType420,
                             |target| matches!(target.entity_type, 320 | 420),
                         )
                     })
@@ -3141,7 +3142,7 @@ pub(crate) fn store(
                             entry.sequence,
                             1,
                             sequence,
-                            "array-base-entity",
+                            ReferenceExpectation::ArrayBaseEntity,
                             |target| array_base_type(target.entity_type, target.form),
                         )
                     })
@@ -3183,7 +3184,7 @@ pub(crate) fn store(
                             entry.sequence,
                             1,
                             sequence,
-                            "array-base-entity",
+                            ReferenceExpectation::ArrayBaseEntity,
                             |target| array_base_type(target.entity_type, target.form),
                         )
                     })
@@ -3533,7 +3534,7 @@ pub(crate) fn store(
                                                 entry.sequence,
                                                 index,
                                                 sequence,
-                                                "signal-string-geometry",
+                                                ReferenceExpectation::SignalStringGeometry,
                                                 |target| {
                                                     signal_string_geometry_target(
                                                         target.entity_type,
@@ -3583,7 +3584,7 @@ pub(crate) fn store(
                                     entry.sequence,
                                     index + 2,
                                     value,
-                                    "type-310-form-0-font-definition",
+                                    ReferenceExpectation::Type310Form0FontDefinition,
                                     |target| target.entity_type == 310 && target.form == 0,
                                 )
                             })
@@ -3694,7 +3695,7 @@ pub(crate) fn store(
                                         entry.sequence,
                                         3,
                                         sequence,
-                                        "dimension-entity",
+                                        ReferenceExpectation::DimensionEntity,
                                         |target| {
                                             matches!(
                                                 target.entity_type,
@@ -3774,7 +3775,7 @@ pub(crate) fn store(
                                                 entry.sequence,
                                                 index,
                                                 sequence,
-                                                "matching-flow-associativity",
+                                                ReferenceExpectation::MatchingFlowAssociativity,
                                                 |target| {
                                                     target.entity_type == 402
                                                         && target.form == entry.form
@@ -3799,9 +3800,9 @@ pub(crate) fn store(
                                             index,
                                             sequence,
                                             if entry.form == 18 {
-                                                "type-132-or-group"
+                                                ReferenceExpectation::Type132OrGroup
                                             } else {
-                                                "type-132"
+                                                ReferenceExpectation::Type132
                                             },
                                             |target| {
                                                 target.entity_type == 132
@@ -3825,7 +3826,7 @@ pub(crate) fn store(
                                             entry.sequence,
                                             index,
                                             sequence,
-                                            "non-associativity-or-type-402-form-7",
+                                            ReferenceExpectation::NonAssociativityOrType402Form7,
                                             flow_join_target_valid,
                                         )
                                     })
@@ -3852,9 +3853,9 @@ pub(crate) fn store(
                                             index,
                                             sequence,
                                             if entry.form == 18 {
-                                                "type-312-or-type-212"
+                                                ReferenceExpectation::Type312OrType212
                                             } else {
-                                                "type-312"
+                                                ReferenceExpectation::Type312
                                             },
                                             |target| {
                                                 target.entity_type == 312
@@ -3879,9 +3880,9 @@ pub(crate) fn store(
                                             index,
                                             sequence,
                                             if entry.form == 18 {
-                                                "type-402-form-11-or-18"
+                                                ReferenceExpectation::Type402Form11Or18
                                             } else {
-                                                "type-402-form-20"
+                                                ReferenceExpectation::Type402Form20
                                             },
                                             |target| {
                                                 target.entity_type == 402
@@ -3943,7 +3944,7 @@ pub(crate) fn store(
                                         entry.sequence,
                                         3,
                                         sequence,
-                                        "dimension-entity",
+                                        ReferenceExpectation::DimensionEntity,
                                         |target| {
                                             matches!(
                                                 target.entity_type,
@@ -4723,7 +4724,7 @@ pub(crate) fn store(
                                 entry.sequence,
                                 start + 3,
                                 color,
-                                "type-314-form-0",
+                                ReferenceExpectation::Type314Form0,
                                 |target| target.entity_type == 314 && target.form == 0,
                             );
                         }
@@ -4814,7 +4815,7 @@ pub(crate) fn store(
                                 entry.sequence,
                                 start + 3,
                                 color,
-                                "type-314-form-0",
+                                ReferenceExpectation::Type314Form0,
                                 |target| target.entity_type == 314 && target.form == 0,
                             );
                         }
@@ -4826,7 +4827,7 @@ pub(crate) fn store(
                                 entry.sequence,
                                 start + 4,
                                 line_font,
-                                "type-304-form-1-or-2",
+                                ReferenceExpectation::Type304Form1Or2,
                                 |target| target.entity_type == 304 && matches!(target.form, 1 | 2),
                             );
                         }
@@ -4951,7 +4952,7 @@ pub(crate) fn store(
                                     entry.sequence,
                                     annotation_count_index + 1 + index,
                                     sequence,
-                                    "drawing-space-annotation",
+                                    ReferenceExpectation::DrawingSpaceAnnotation,
                                     |target| {
                                         target.status.use_flag == 1
                                             && target.status.is_physically_dependent()

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity index, Directory Entry references, cycles, and validation states.
 
+pub(crate) mod expectation;
+use expectation::ReferenceExpectation;
+
 use crate::card::{CardScan, Section};
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
@@ -24,7 +27,6 @@ pub(crate) enum ReferenceKind {
     Transform,
     LabelDisplay,
     Color,
-    Parameter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -39,15 +41,66 @@ pub(crate) enum Resolution {
     Cyclic,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReferenceOrigin {
+    Directory(ReferenceKind),
+    Parameter { index: usize },
+}
+impl ReferenceOrigin {
+    fn parameter_index(self) -> Option<usize> {
+        match self {
+            Self::Directory(_) => None,
+            Self::Parameter { index } => Some(index),
+        }
+    }
+}
+impl std::fmt::Debug for ReferenceOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Directory(kind) => kind.fmt(f),
+            Self::Parameter { .. } => f.write_str("Parameter"),
+        }
+    }
+}
+impl Serialize for ReferenceOrigin {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Directory(kind) => kind.serialize(serializer),
+            Self::Parameter { .. } => serializer.serialize_str("parameter"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReferenceEdge {
-    kind: ReferenceKind,
+    origin: ReferenceOrigin,
     raw_pointer: i64,
     target: Option<String>,
     resolution: Resolution,
-    expected: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    parameter_index: Option<usize>,
+    expected: ReferenceExpectation,
+}
+impl Serialize for ReferenceEdge {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            kind: ReferenceOrigin,
+            raw_pointer: i64,
+            target: &'a Option<String>,
+            resolution: Resolution,
+            expected: &'a ReferenceExpectation,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            parameter_index: Option<usize>,
+        }
+        Wire {
+            kind: self.origin,
+            raw_pointer: self.raw_pointer,
+            target: &self.target,
+            resolution: self.resolution,
+            expected: &self.expected,
+            parameter_index: self.origin.parameter_index(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl ReferenceEdge {
@@ -56,7 +109,7 @@ impl ReferenceEdge {
     }
 
     pub(crate) fn resolved_target_sequence_for(&self, kind: ReferenceKind) -> Option<u32> {
-        (self.kind == kind && self.resolution == Resolution::Resolved)
+        (self.origin == ReferenceOrigin::Directory(kind) && self.resolution == Resolution::Resolved)
             .then(|| self.raw_pointer.checked_abs())
             .flatten()
             .and_then(|value| u32::try_from(value).ok())
@@ -95,7 +148,7 @@ impl<'a> ParameterResolver<'a> {
         source: u32,
         parameter_index: usize,
         raw_pointer: i64,
-        expected: impl Into<String>,
+        expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Option<u32> {
         if raw_pointer == 0 {
@@ -117,7 +170,7 @@ impl<'a> ParameterResolver<'a> {
         source: u32,
         parameter_index: usize,
         raw_pointer: i64,
-        expected: impl Into<String>,
+        expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Option<u32> {
         if raw_pointer == 0 {
@@ -140,7 +193,7 @@ impl<'a> ParameterResolver<'a> {
         parameter_index: usize,
         raw_pointer: i64,
         target_sequence: Option<u32>,
-        expected: impl Into<String>,
+        expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Option<u32> {
         let target = target_sequence.and_then(|sequence| self.directory.get(&sequence).copied());
@@ -160,12 +213,13 @@ impl<'a> ParameterResolver<'a> {
             .entry(source)
             .or_default()
             .push(ReferenceEdge {
-                kind: ReferenceKind::Parameter,
+                origin: ReferenceOrigin::Parameter {
+                    index: parameter_index,
+                },
                 raw_pointer,
                 target: target.map(|entry| format!("iges:entity:directory#{}", entry.sequence)),
                 resolution,
-                expected: expected.into(),
-                parameter_index: Some(parameter_index),
+                expected,
             });
         if resolution == Resolution::Resolved {
             target_sequence
@@ -182,15 +236,9 @@ impl<'a> ParameterResolver<'a> {
         entity_type: i64,
         forms: &[i64],
     ) -> Option<u32> {
-        let expected = if forms.is_empty() {
-            format!("type-{entity_type}")
-        } else {
-            let forms = forms
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join("-or-");
-            format!("type-{entity_type}-form-{forms}")
+        let expected = ReferenceExpectation::Type {
+            entity_type,
+            forms: forms.to_vec(),
         };
         self.resolve(source, parameter_index, raw_pointer, expected, |target| {
             target.entity_type == entity_type && (forms.is_empty() || forms.contains(&target.form))
@@ -207,7 +255,7 @@ impl<'a> ParameterResolver<'a> {
             source,
             parameter_index,
             raw_pointer,
-            "existing-directory-entry",
+            ReferenceExpectation::ExistingDirectoryEntry,
             |_| true,
         )
     }
@@ -282,23 +330,22 @@ fn candidates(entry: &DirectoryEntry) -> Vec<Candidate> {
     values
 }
 
-fn expected(kind: ReferenceKind, source: &DirectoryEntry) -> &'static str {
+fn expected(kind: ReferenceKind, source: &DirectoryEntry) -> ReferenceExpectation {
     match kind {
         ReferenceKind::Structure => match source.entity_type {
-            422 if matches!(source.form, 0..=1) => "type-322-form-0",
-            402 if matches!(source.form, 5001..=9999) => "type-302-matching-form",
+            422 if matches!(source.form, 0..=1) => ReferenceExpectation::Type322Form0,
+            402 if matches!(source.form, 5001..=9999) => ReferenceExpectation::Type302MatchingForm,
             entity_type if crate::profile::macro_instance_type(entity_type) => {
-                "type-306-or-type-416"
+                ReferenceExpectation::Type306OrType416
             }
-            _ => "structure-not-permitted",
+            _ => ReferenceExpectation::StructureNotPermitted,
         },
-        ReferenceKind::LineFont => "type-304",
-        ReferenceKind::Level => "type-406-form-1",
-        ReferenceKind::View => "type-410-or-type-402-form-3-4-19",
-        ReferenceKind::Transform => "type-124",
-        ReferenceKind::LabelDisplay => "type-402-form-5",
-        ReferenceKind::Color => "type-314",
-        ReferenceKind::Parameter => unreachable!("parameter edges carry their field contract"),
+        ReferenceKind::LineFont => ReferenceExpectation::Type304,
+        ReferenceKind::Level => ReferenceExpectation::Type406Form1,
+        ReferenceKind::View => ReferenceExpectation::Type410OrType402Form3419,
+        ReferenceKind::Transform => ReferenceExpectation::Type124,
+        ReferenceKind::LabelDisplay => ReferenceExpectation::Type402Form5,
+        ReferenceKind::Color => ReferenceExpectation::Type314,
     }
 }
 
@@ -323,7 +370,6 @@ fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry
         ReferenceKind::Transform => target.entity_type == 124,
         ReferenceKind::LabelDisplay => target.entity_type == 402 && target.form == 5,
         ReferenceKind::Color => target.entity_type == 314 && target.form == 0,
-        ReferenceKind::Parameter => unreachable!("parameter edges use their field contract"),
     }
 }
 
@@ -334,7 +380,8 @@ fn cyclic_transform_nodes(edges: &BTreeMap<u32, Vec<ReferenceEdge>>) -> BTreeSet
             values
                 .iter()
                 .find(|edge| {
-                    edge.kind == ReferenceKind::Transform && edge.resolution == Resolution::Resolved
+                    edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform)
+                        && edge.resolution == Resolution::Resolved
                 })
                 .and_then(|edge| edge.target.as_deref())
                 .and_then(|id| id.rsplit_once('#'))
@@ -402,13 +449,12 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                         Resolution::Resolved
                     };
                     ReferenceEdge {
-                        kind: candidate.kind,
+                        origin: ReferenceOrigin::Directory(candidate.kind),
                         raw_pointer: candidate.raw_pointer,
                         target: target
                             .map(|value| format!("iges:entity:directory#{}", value.sequence)),
                         resolution,
-                        expected: expected(candidate.kind, entry).into(),
-                        parameter_index: None,
+                        expected: expected(candidate.kind, entry),
                     }
                 })
                 .collect();
@@ -420,7 +466,7 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
         if let Some(edge) = graph.get_mut(&source).and_then(|edges| {
             edges
                 .iter_mut()
-                .find(|edge| edge.kind == ReferenceKind::Transform)
+                .find(|edge| edge.origin == ReferenceOrigin::Directory(ReferenceKind::Transform))
         }) {
             edge.resolution = Resolution::Cyclic;
         }
@@ -433,7 +479,8 @@ pub(crate) fn resolved_structure_sequence(
     source: u32,
 ) -> Option<u32> {
     graph.get(&source)?.iter().find_map(|edge| {
-        (edge.kind == ReferenceKind::Structure && edge.resolution == Resolution::Resolved)
+        (edge.origin == ReferenceOrigin::Directory(ReferenceKind::Structure)
+            && edge.resolution == Resolution::Resolved)
             .then(|| edge.raw_pointer.checked_abs())
             .flatten()
             .and_then(|value| u32::try_from(value).ok())
@@ -482,7 +529,7 @@ pub(crate) fn losses(
                     !matches!(edge.resolution, Resolution::Resolved | Resolution::Null)
                 })
                 .map(move |edge| {
-                    let parameter_location = edge.parameter_index.and_then(|index| {
+                    let parameter_location = edge.origin.parameter_index().and_then(|index| {
                         let record = records.get(source)?;
                         let span = record.tokens().get(index)?.span.start;
                         let card = u32::try_from(span / 64).ok()?;
@@ -500,7 +547,7 @@ pub(crate) fn losses(
                     });
                     let mut note = IgesLossCode::PointerUnresolved.note(format!(
                         "IGES Directory Entry D{source} {:?} pointer {} has {:?} resolution; expected {}",
-                        edge.kind, edge.raw_pointer, edge.resolution, edge.expected
+                        edge.origin, edge.raw_pointer, edge.resolution, edge.expected
                     ));
                     if let Some((offset, tag)) = location {
         note = note.with_provenance(
