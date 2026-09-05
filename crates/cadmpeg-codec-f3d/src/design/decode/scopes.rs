@@ -6755,10 +6755,9 @@ pub(crate) fn exact_move_operation(
             if bytes.get(start + 47) != Some(&0) {
                 continue;
             }
-            let form = View::u32_le_at(bytes, start + form_offset)?;
-            if !matches!(form, 1 | 5) {
+            let Ok(form) = crate::records::DesignMoveForm::try_from(View::u32_le_at(bytes, start + form_offset)?) else {
                 continue;
-            }
+            };
             let transform: [[f64; 4]; 4] = f64s_at(bytes, start + transform_offset, 16)?
                 .chunks_exact(4)
                 .map(|row| row.try_into().expect("four-value matrix row"))

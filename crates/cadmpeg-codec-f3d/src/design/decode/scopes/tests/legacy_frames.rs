@@ -268,7 +268,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
 
         assert_eq!(decoded.transform, transform);
         assert_eq!(decoded.transform_record_index, record_index);
-        assert_eq!(decoded.form, form);
+        assert_eq!(u32::from(decoded.form), form);
         assert_eq!(decoded.form_offset, (frame_at + 43) as u64);
         assert_eq!(decoded.transform_offset, (frame_at + 48) as u64);
 

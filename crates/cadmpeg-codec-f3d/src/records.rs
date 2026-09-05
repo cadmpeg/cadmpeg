@@ -2456,9 +2456,40 @@ pub struct DesignMoveOperation {
     /// Indexed class-349 record carrying `transform`.
     pub transform_record_index: u32,
     /// Source transform-form discriminator.
-    pub form: u32,
+    pub form: DesignMoveForm,
     /// Byte offset of `form`.
     pub form_offset: u64,
+}
+
+/// Source Move transform-form code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u32", into = "u32")]
+pub enum DesignMoveForm {
+    /// Source form 1.
+    Form1,
+    /// Source form 5.
+    Form5,
+}
+
+impl TryFrom<u32> for DesignMoveForm {
+    type Error = String;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Form1),
+            5 => Ok(Self::Form5),
+            _ => Err(format!("form must be 1 or 5, not {value}")),
+        }
+    }
+}
+
+impl From<DesignMoveForm> for u32 {
+    fn from(form: DesignMoveForm) -> Self {
+        match form {
+            DesignMoveForm::Form1 => 1,
+            DesignMoveForm::Form5 => 5,
+        }
+    }
 }
 
 /// One exact scalar carrier used by an Extrude scope.

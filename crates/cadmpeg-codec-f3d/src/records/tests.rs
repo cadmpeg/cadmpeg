@@ -1850,3 +1850,16 @@ fn coil_placement_derives_only_the_encoded_identity_matrix() {
     assert!(error.to_string().contains("transform"));
     assert!(error.to_string().contains("transform_offset"));
 }
+
+#[test]
+fn move_form_preserves_its_closed_integer_wire_domain() {
+    for code in [1, 5] {
+        let wire = code.to_string();
+        let form: super::DesignMoveForm = serde_json::from_str(&wire).expect("move form");
+        assert_eq!(serde_json::to_string(&form).expect("move form wire"), wire);
+    }
+    for code in [0, 2, 3, 4, 6, u32::MAX] {
+        let error = serde_json::from_str::<super::DesignMoveForm>(&code.to_string()).expect_err("invalid move form");
+        assert!(error.to_string().contains("form"));
+    }
+}
