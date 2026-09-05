@@ -837,11 +837,7 @@ fn apply_vector_payload(bytes: &mut [u8], base_at: usize, components: [f64; 3]) 
 }
 
 const fn native_bool(value: bool) -> u8 {
-    if value {
-        0x0a
-    } else {
-        0x0b
-    }
+    if value { 0x0a } else { 0x0b }
 }
 
 fn finite_vector(vector: Vector3) -> bool {
@@ -1305,7 +1301,7 @@ fn patch_projection_definition(
         _ => {
             return Err(CodecError::NotImplemented(
                 "projection edit cannot change native tail form".into(),
-            ))
+            ));
         }
     }
     apply_f64_patches(
@@ -1581,7 +1577,7 @@ fn patch_nurbs_surface_record(
         .map_err(|_| CodecError::Malformed("NURBS v pole count exceeds address space".into()))?;
     if usize::try_from(layout.surface.u_count()).ok() != Some(u_count)
         || usize::try_from(layout.surface.v_count()).ok() != Some(v_count)
-        || layout.rational != surface.weights().is_some()
+        || layout.surface.weights().is_some() != surface.weights().is_some()
     {
         return Err(CodecError::NotImplemented(format!(
             "spline record {} changed NURBS cache structure",
@@ -1617,7 +1613,11 @@ fn patch_nurbs_surface_record(
             AsmEditSet::patch_layout_integer(bytes, at, layout.int_width, value)?;
         }
     }
-    let components = if layout.rational { 4 } else { 3 };
+    let components = if layout.surface.weights().is_some() {
+        4
+    } else {
+        3
+    };
     if layout.control_value_offsets.len() != u_count * v_count * components {
         return Err(CodecError::malformed(format_args!(
             "spline record {} has an inconsistent NURBS control layout",
@@ -1668,7 +1668,7 @@ fn patch_nurbs_curve_record(
         ))
     })?;
     if layout.curve.control_points().len() != curve.control_points().len()
-        || layout.rational != curve.weights().is_some()
+        || layout.curve.weights().is_some() != curve.weights().is_some()
     {
         return Err(CodecError::NotImplemented(format!(
             "spline record {} changed NURBS curve structure",
@@ -1694,7 +1694,11 @@ fn patch_nurbs_curve_record(
         let periodic_at = record.offset + layout.periodic_value_offset;
         AsmEditSet::patch_layout_integer(bytes, periodic_at, layout.int_width, periodic)?;
     }
-    let components = if layout.rational { 4 } else { 3 };
+    let components = if layout.curve.weights().is_some() {
+        4
+    } else {
+        3
+    };
     if layout.control_value_offsets.len() != curve.control_points().len() * components {
         return Err(CodecError::malformed(format_args!(
             "spline record {} has an inconsistent NURBS curve layout",

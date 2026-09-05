@@ -4922,3 +4922,17 @@ crate = "cadmpeg-asm"
 kind = "variant"
 item = "cadmpeg_asm::brep::annotations::AnnotationTag"
 reason = "ASM-17: distinguish source Record names from four closed synthetic annotation tags"
+
+[[change]]
+commit = "9c0144b5582de79267fbd97f0590d3b38c1a8008"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::core::SurfacePatchLayout::rational"
+reason = "ASM-02: derive rational component presence from the owned geometry weights"
+
+[[change]]
+commit = "9c0144b5582de79267fbd97f0590d3b38c1a8008"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::core::CurvePatchLayout::rational"
+reason = "ASM-02: derive rational component presence from the owned geometry weights"

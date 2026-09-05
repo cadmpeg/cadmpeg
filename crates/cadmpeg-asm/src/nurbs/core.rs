@@ -9,11 +9,10 @@
 
 use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
-    construction_marker_positions, is_periodic, marker_at, marker_positions,
-    owned_marker_positions, read_control_points, read_knots, take_tagged_int, KnotLayout,
-    INT_WIDTHS, LEN_TO_MM,
+    INT_WIDTHS, KnotLayout, LEN_TO_MM, construction_marker_positions, is_periodic, marker_at,
+    marker_positions, owned_marker_positions, read_control_points, read_knots, take_tagged_int,
 };
-use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
+use crate::nurbs::subtypes::{SubtypeTables, decode_cache_resolving_refs};
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
 use crate::sab::Token;
@@ -260,8 +259,6 @@ pub struct SurfacePatchLayout {
     pub end: usize,
     /// Native v-major tagged-double payload offsets, excluding each tag byte.
     pub control_value_offsets: Vec<usize>,
-    /// Whether every pole includes a fourth rational weight component.
-    pub rational: bool,
     /// Native payload offsets for U knots.
     pub u_knots: KnotLayout,
     /// Native payload offsets for V knots.
@@ -279,7 +276,7 @@ pub(crate) fn decode_surface_block(
     marker_pos: usize,
     int_width: RefWidth,
 ) -> Option<SurfacePatchLayout> {
-    let (cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
+    let (cp_dims, marker_len, _) = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker_len;
 
     let degree_u_offset = pos + 1;
@@ -358,7 +355,6 @@ pub(crate) fn decode_surface_block(
         surface,
         end: pos,
         control_value_offsets,
-        rational,
         u_knots: u_knot_layout,
         v_knots: v_knot_layout,
         periodic_value_offsets: [enum_value_offsets[0], enum_value_offsets[1]],
@@ -401,8 +397,6 @@ pub struct CurvePatchLayout {
     pub end: usize,
     /// Tagged-double payload offsets in pole/component order.
     pub control_value_offsets: Vec<usize>,
-    /// Whether every pole includes a fourth rational weight component.
-    pub rational: bool,
     /// Native unique-knot payloads.
     pub knots: KnotLayout,
     /// Payload offset for the closure enum.
@@ -418,7 +412,7 @@ pub(crate) fn decode_curve_block(
     marker_pos: usize,
     int_width: RefWidth,
 ) -> Option<CurvePatchLayout> {
-    let (cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
+    let (cp_dims, marker_len, _) = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker_len;
 
     let degree_value_offset = pos + 1;
@@ -452,7 +446,6 @@ pub(crate) fn decode_curve_block(
         curve,
         end: pos,
         control_value_offsets,
-        rational,
         knots: knot_layout,
         periodic_value_offset,
         degree_value_offset,
