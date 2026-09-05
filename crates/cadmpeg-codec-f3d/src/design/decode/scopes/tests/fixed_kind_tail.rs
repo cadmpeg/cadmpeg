@@ -426,10 +426,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(construction.displacement_offset, 49);
     assert!(matches!(
         construction.source,
-        crate::records::DesignWorkAxisSource::TwoPoint {
+        Some(crate::records::DesignWorkAxisSource::TwoPoint {
             point_record_indices: [102, 104],
             ..
-        }
+        })
     ));
     axis_scope.work_axis_construction = Some(construction);
     let (axis_features, _) = project_parameter_design(

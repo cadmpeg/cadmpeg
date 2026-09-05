@@ -341,10 +341,10 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         assert_eq!(construction.displacement_offset, 49);
         assert!(matches!(
             construction.source,
-            crate::records::DesignWorkAxisSource::DirectCarrier {
+            Some(crate::records::DesignWorkAxisSource::DirectCarrier {
                 carrier_record_index: 100,
                 support_record_index: 200,
-            }
+            })
         ));
         scope.work_axis_construction = Some(construction);
         let (features, _) = project_parameter_design(

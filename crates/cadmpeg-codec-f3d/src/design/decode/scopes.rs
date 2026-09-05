@@ -7720,10 +7720,10 @@ fn exact_two_point_work_axis_construction(
         displacement,
         origin_offset: u64::try_from(axis_start + 25).ok()?,
         displacement_offset: u64::try_from(axis_start + 49).ok()?,
-        source: DesignWorkAxisSource::TwoPoint {
+        source: Some(DesignWorkAxisSource::TwoPoint {
             point_record_indices,
             point_offsets,
-        },
+        }),
     })
 }
 
@@ -7829,10 +7829,10 @@ fn exact_direct_work_axis_construction(
             (*carrier_start).checked_add(axis_values_offset + 3 * 8)?,
         )
         .ok()?,
-        source: DesignWorkAxisSource::DirectCarrier {
+        source: Some(DesignWorkAxisSource::DirectCarrier {
             carrier_record_index: *carrier_record_index,
             support_record_index: *support_record_index,
-        },
+        }),
     })
 }
 
