@@ -5113,9 +5113,28 @@ pub enum DesignWorkPointInputCarrier {
     },
 }
 
+/// Historical state and a nonnegative stable vertex slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DesignVertexResolution {
+    /// Historical topology state against which the vertex recipe was evaluated.
+    pub state_id: i64,
+    vertex_slot: i64,
+}
+
+impl DesignVertexResolution {
+    pub fn new(state_id: i64, vertex_slot: i64) -> Option<Self> {
+        (vertex_slot >= 0).then_some(Self { state_id, vertex_slot })
+    }
+
+    pub fn vertex_slot(self) -> i64 {
+        self.vertex_slot
+    }
+}
+
 /// Exact persistent `vertex_recipe_data` envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "DesignVertexRecipeWire", into = "DesignVertexRecipeWire")]
 pub struct DesignVertexRecipe {
     /// Indexed record that owns the vertex-recipe envelope.
     pub record_index: u32,
@@ -5136,8 +5155,6 @@ pub struct DesignVertexRecipe {
     /// Byte offset of the recipe-specific prefix after the indexed header.
     pub recipe_prefix_offset: u64,
     /// Complete prefix before the length-prefixed recipe-family name.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub recipe_prefix_bytes: Vec<u8>,
     /// Persistent selector/reference entries decoded from the prefix.
     pub recipe_references: Vec<DesignRecipeReference>,
@@ -5145,16 +5162,112 @@ pub struct DesignVertexRecipe {
     pub recipe_program_offset: u64,
     /// Complete post-name i32 program.
     pub recipe_program: Vec<i32>,
-    /// Historical topology state against which the vertex recipe was evaluated.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recipe_state_id: Option<i64>,
-    /// Stable vertex slot proven by the persistent face references and solved point.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_vertex_slot: Option<i64>,
+    /// Historical state and proven stable vertex slot.
+    pub resolution: Option<DesignVertexResolution>,
     /// Identity of the indexed record closing the envelope.
     pub next_record_index: u32,
     /// Byte offset of the indexed record closing the envelope.
     pub next_byte_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct DesignVertexRecipeWire {
+    /// Indexed record that owns the vertex-recipe envelope.
+    record_index: u32,
+    /// Byte offset of the owning indexed-record header.
+    byte_offset: u64,
+    /// Source per-file dynamic primary class tag.
+    class_tag: String,
+    /// Byte offset of the same-index paired header.
+    paired_byte_offset: u64,
+    /// Source per-file dynamic paired class tag.
+    paired_class_tag: String,
+    /// Indexed record containing the vertex recipe.
+    recipe_record_index: u32,
+    /// Byte offset of the vertex-recipe record header.
+    recipe_record_byte_offset: u64,
+    /// Native construction-recipe arena id.
+    recipe_id: String,
+    /// Byte offset of the recipe-specific prefix after the indexed header.
+    recipe_prefix_offset: u64,
+    /// Complete prefix before the length-prefixed recipe-family name.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    recipe_prefix_bytes: Vec<u8>,
+    /// Persistent selector/reference entries decoded from the prefix.
+    recipe_references: Vec<DesignRecipeReference>,
+    /// Byte offset of the first post-name i32.
+    recipe_program_offset: u64,
+    /// Complete post-name i32 program.
+    recipe_program: Vec<i32>,
+    /// Historical topology state against which the vertex recipe was evaluated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    recipe_state_id: Option<i64>,
+    /// Stable vertex slot proven by the persistent face references and solved point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolved_vertex_slot: Option<i64>,
+    /// Identity of the indexed record closing the envelope.
+    next_record_index: u32,
+    /// Byte offset of the indexed record closing the envelope.
+    next_byte_offset: u64,
+}
+
+impl From<DesignVertexRecipe> for DesignVertexRecipeWire {
+    fn from(value: DesignVertexRecipe) -> Self {
+        Self {
+            record_index: value.record_index,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            paired_byte_offset: value.paired_byte_offset,
+            paired_class_tag: value.paired_class_tag,
+            recipe_record_index: value.recipe_record_index,
+            recipe_record_byte_offset: value.recipe_record_byte_offset,
+            recipe_id: value.recipe_id,
+            recipe_prefix_offset: value.recipe_prefix_offset,
+            recipe_prefix_bytes: value.recipe_prefix_bytes,
+            recipe_references: value.recipe_references,
+            recipe_program_offset: value.recipe_program_offset,
+            recipe_program: value.recipe_program,
+            next_record_index: value.next_record_index,
+            next_byte_offset: value.next_byte_offset,
+            recipe_state_id: value.resolution.map(|resolution| resolution.state_id),
+            resolved_vertex_slot: value.resolution.map(DesignVertexResolution::vertex_slot),
+        }
+    }
+}
+
+impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
+    type Error = String;
+
+    fn try_from(value: DesignVertexRecipeWire) -> Result<Self, Self::Error> {
+        let resolution = match (value.recipe_state_id, value.resolved_vertex_slot) {
+            (None, None) => None,
+            (Some(state_id), Some(vertex_slot)) => Some(
+                DesignVertexResolution::new(state_id, vertex_slot)
+                    .ok_or("resolved_vertex_slot must be nonnegative")?,
+            ),
+            _ => return Err("recipe_state_id and resolved_vertex_slot must be present together".into()),
+        };
+        Ok(Self {
+            record_index: value.record_index,
+            byte_offset: value.byte_offset,
+            class_tag: value.class_tag,
+            paired_byte_offset: value.paired_byte_offset,
+            paired_class_tag: value.paired_class_tag,
+            recipe_record_index: value.recipe_record_index,
+            recipe_record_byte_offset: value.recipe_record_byte_offset,
+            recipe_id: value.recipe_id,
+            recipe_prefix_offset: value.recipe_prefix_offset,
+            recipe_prefix_bytes: value.recipe_prefix_bytes,
+            recipe_references: value.recipe_references,
+            recipe_program_offset: value.recipe_program_offset,
+            recipe_program: value.recipe_program,
+            next_record_index: value.next_record_index,
+            next_byte_offset: value.next_byte_offset,
+            resolution,
+        })
+    }
 }
 
 /// Corner-vertex recipe carried as one member of an edge-treatment group.
@@ -5175,18 +5288,41 @@ pub struct DesignEdgeTreatmentVertexOperand {
     pub recipe: DesignVertexRecipe,
 }
 
-/// Exact construction rule carried by a `WorkPlane` scope.
+/// Plane through three persistent B-rep vertices.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(from = "DesignWorkPlaneConstructionWire", into = "DesignWorkPlaneConstructionWire")]
+pub struct DesignWorkPlaneConstruction {
+    /// Solved placement-frame record named by the scope.
+    pub placement_record_index: u32,
+    /// Persistent vertex inputs in source order.
+    pub inputs: Box<[DesignVertexRecipe; 3]>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DesignWorkPlaneConstruction {
-    /// Plane through three persistent B-rep vertices.
+enum DesignWorkPlaneConstructionWire {
     ThreePoint {
-        /// Solved placement-frame record named by the scope.
         placement_record_index: u32,
-        /// Persistent vertex inputs in source order.
         inputs: Box<[DesignVertexRecipe; 3]>,
     },
+}
+
+impl From<DesignWorkPlaneConstruction> for DesignWorkPlaneConstructionWire {
+    fn from(value: DesignWorkPlaneConstruction) -> Self {
+        Self::ThreePoint {
+            placement_record_index: value.placement_record_index,
+            inputs: value.inputs,
+        }
+    }
+}
+
+impl From<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
+    fn from(value: DesignWorkPlaneConstructionWire) -> Self {
+        let DesignWorkPlaneConstructionWire::ThreePoint { placement_record_index, inputs } = value;
+        Self { placement_record_index, inputs }
+    }
 }
 
 /// Exact persistent entity selection naming one `WorkPlane` scope.

@@ -4263,7 +4263,7 @@ fn valid_work_plane_construction(
     let Some(frame) = scope.work_plane_frame() else {
         return true;
     };
-    let Some(records::DesignWorkPlaneConstruction::ThreePoint {
+    let Some(records::DesignWorkPlaneConstruction {
         placement_record_index,
         inputs,
     }) = &frame.work_plane_construction
@@ -4321,15 +4321,15 @@ fn valid_work_plane_construction(
 fn valid_three_point_recipe_resolution(inputs: &[records::DesignVertexRecipe; 3]) -> bool {
     let resolved = inputs
         .each_ref()
-        .map(|input| (input.recipe_state_id, input.resolved_vertex_slot));
+        .map(|input| input.resolution);
     match resolved {
-        [(None, None), (None, None), (None, None)] => true,
-        [(Some(first_state), Some(first_vertex)), (Some(second_state), Some(second_vertex)), (Some(third_state), Some(third_vertex))] => {
-            first_state == second_state
-                && first_state == third_state
-                && first_vertex != second_vertex
-                && first_vertex != third_vertex
-                && second_vertex != third_vertex
+        [None, None, None] => true,
+        [Some(first), Some(second), Some(third)] => {
+            first.state_id == second.state_id
+                && first.state_id == third.state_id
+                && first.vertex_slot() != second.vertex_slot()
+                && first.vertex_slot() != third.vertex_slot()
+                && second.vertex_slot() != third.vertex_slot()
         }
         _ => false,
     }
@@ -4364,9 +4364,11 @@ fn valid_vertex_recipe(
     let program_byte_length = u64::try_from(vertex.recipe_program.len())
         .ok()
         .and_then(|length| length.checked_mul(4));
-    let resolution_is_valid = match (vertex.recipe_state_id, vertex.resolved_vertex_slot) {
-        (None, None) => true,
-        (Some(state_id), Some(vertex_slot)) if vertex_slot >= 0 => {
+    let resolution_is_valid = match vertex.resolution {
+        None => true,
+        Some(resolution) => {
+            let state_id = resolution.state_id;
+            let vertex_slot = resolution.vertex_slot();
             let mut states = native
                 .asm_histories
                 .iter()
@@ -4380,7 +4382,6 @@ fn valid_vertex_recipe(
                     )
             })
         }
-        _ => false,
     };
     vertex.record_index == record_index
         && vertex.class_tag.len() == 3

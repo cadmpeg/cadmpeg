@@ -2041,3 +2041,46 @@ fn thread_nominal_size_preserves_spelling_and_derives_numeric_wire_value() {
     let error = serde_json::from_str::<super::DesignThreadConstruction>(&invalid).expect_err("nonzero compact trailer reference");
     assert!(error.to_string().contains("trailing_reference_record_index"));
 }
+
+#[test]
+fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
+    use super::{DesignVertexRecipe, DesignVertexResolution, DesignWorkPlaneConstruction};
+
+    let base = serde_json::json!({
+        "record_index": 2, "byte_offset": 10, "class_tag": "369",
+        "paired_byte_offset": 20, "paired_class_tag": "261",
+        "recipe_record_index": 5, "recipe_record_byte_offset": 30,
+        "recipe_id": "vertex", "recipe_prefix_offset": 41,
+        "recipe_prefix_bytes": "AP8=", "recipe_references": [],
+        "recipe_program_offset": 43, "recipe_program": [0],
+        "next_record_index": 7, "next_byte_offset": 50
+    });
+    for resolution in [None, Some((i64::MIN, 0)), Some((i64::MAX, i64::MAX))] {
+        let mut wire = base.clone();
+        if let Some((state, slot)) = resolution {
+            wire["recipe_state_id"] = state.into();
+            wire["resolved_vertex_slot"] = slot.into();
+        }
+        let decoded: DesignVertexRecipe = serde_json::from_value(wire.clone()).expect("valid recipe");
+        assert_eq!(serde_json::to_value(&decoded).expect("serialize recipe"), wire);
+        assert_eq!(decoded.resolution.map(|value| (value.state_id, value.vertex_slot())), resolution);
+        let plane_wire = serde_json::json!({
+            "kind": "three_point", "placement_record_index": 9,
+            "inputs": [wire.clone(), wire.clone(), wire]
+        });
+        let plane: DesignWorkPlaneConstruction = serde_json::from_value(plane_wire.clone()).expect("three-point plane");
+        assert_eq!(serde_json::to_value(plane).expect("serialize plane"), plane_wire);
+    }
+    for (state, slot) in [(Some(4), None), (None, Some(0)), (Some(4), Some(-1))] {
+        let mut wire = base.clone();
+        if let Some(state) = state {
+            wire["recipe_state_id"] = state.into();
+        }
+        if let Some(slot) = slot {
+            wire["resolved_vertex_slot"] = slot.into();
+        }
+        let error = serde_json::from_value::<DesignVertexRecipe>(wire).expect_err("invalid resolution");
+        assert!(error.to_string().contains("resolved_vertex_slot"));
+    }
+    assert!(DesignVertexResolution::new(4, -1).is_none());
+}

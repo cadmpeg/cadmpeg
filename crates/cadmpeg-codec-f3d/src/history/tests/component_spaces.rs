@@ -295,8 +295,7 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
         recipe_references: vec![reference("rim", &[10, 11]), reference("end", &[12])],
         recipe_program_offset: 66,
         recipe_program: vec![0, -1],
-        recipe_state_id: None,
-        resolved_vertex_slot: None,
+        resolution: None,
         next_record_index: 6,
         next_byte_offset: 77,
     };

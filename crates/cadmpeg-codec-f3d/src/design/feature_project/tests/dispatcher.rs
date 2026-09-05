@@ -161,8 +161,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         recipe_references: Vec::new(),
         recipe_program_offset: 4,
         recipe_program: vec![0],
-        recipe_state_id: Some(4),
-        resolved_vertex_slot: Some(vertex),
+        resolution: Some(crate::records::DesignVertexResolution::new(4, vertex).expect("valid vertex slot")),
         next_record_index: record_index + 5,
         next_byte_offset: 5,
     };
@@ -173,7 +172,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
     );
     plane.with_work_plane_transform(identity_matrix());
     if let Some(frame) = plane.work_plane_frame_mut() {
-        frame.work_plane_construction = Some(DesignWorkPlaneConstruction::ThreePoint {
+        frame.work_plane_construction = Some(DesignWorkPlaneConstruction {
             placement_record_index: 21,
             inputs: Box::new([recipe(22, 43), recipe(27, 64), recipe(32, 84)]),
         });
@@ -307,8 +306,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         recipe_references: Vec::new(),
         recipe_program_offset: 4,
         recipe_program: vec![0],
-        recipe_state_id: Some(4),
-        resolved_vertex_slot: Some(43),
+        resolution: Some(crate::records::DesignVertexResolution::new(4, 43).expect("valid vertex slot")),
         next_record_index: 25,
         next_byte_offset: 5,
     };

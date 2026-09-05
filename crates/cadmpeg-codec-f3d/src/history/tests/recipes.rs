@@ -98,8 +98,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         recipe_references: vec![reference(10), reference(11), reference(12)],
         recipe_program_offset: 4,
         recipe_program: vec![0],
-        recipe_state_id: None,
-        resolved_vertex_slot: None,
+        resolution: None,
         next_record_index: 205,
         next_byte_offset: 5,
     };
@@ -247,8 +246,8 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     else {
         unreachable!("test input carries a vertex recipe")
     };
-    assert_eq!(recipe.recipe_state_id, Some(4));
-    assert_eq!(recipe.resolved_vertex_slot, Some(40));
+    assert_eq!(recipe.resolution.map(|resolution| resolution.state_id), Some(4));
+    assert_eq!(recipe.resolution.map(|resolution| resolution.vertex_slot()), Some(40));
 
     let mut ambiguous = scopes;
     let construction = ambiguous[1]
@@ -280,8 +279,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     else {
         unreachable!("test input carries a vertex recipe")
     };
-    assert_eq!(recipe.recipe_state_id, None);
-    assert_eq!(recipe.resolved_vertex_slot, None);
+    assert_eq!(recipe.resolution, None);
 }
 
 #[test]

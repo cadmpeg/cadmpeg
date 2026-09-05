@@ -2671,8 +2671,7 @@ pub(crate) fn bind_vertex_recipe_history(
             else {
                 continue;
             };
-            recipe.recipe_state_id = None;
-            recipe.resolved_vertex_slot = None;
+            recipe.resolution = None;
             let Some(state_id) = input_states.get(&scope_id).copied() else {
                 continue;
             };
@@ -2688,8 +2687,7 @@ pub(crate) fn bind_vertex_recipe_history(
             if !point_matches(position, solved_position) {
                 continue;
             }
-            recipe.recipe_state_id = Some(state_id);
-            recipe.resolved_vertex_slot = Some(vertex);
+            recipe.resolution = crate::records::DesignVertexResolution::new(state_id, vertex);
         }
     }
 
@@ -2699,14 +2697,13 @@ pub(crate) fn bind_vertex_recipe_history(
     {
         let transform = scope.work_plane_transform();
         let scope_id = scope.id.clone();
-        let Some(crate::records::DesignWorkPlaneConstruction::ThreePoint { inputs, .. }) =
+        let Some(crate::records::DesignWorkPlaneConstruction { inputs, .. }) =
             scope.work_plane_construction_mut()
         else {
             continue;
         };
         for recipe in inputs.iter_mut() {
-            recipe.recipe_state_id = None;
-            recipe.resolved_vertex_slot = None;
+            recipe.resolution = None;
         }
         let Some(state_id) = input_states.get(&scope_id).copied() else {
             continue;
@@ -2737,8 +2734,7 @@ pub(crate) fn bind_vertex_recipe_history(
             continue;
         }
         for (recipe, (vertex, _)) in inputs.iter_mut().zip(candidates) {
-            recipe.recipe_state_id = Some(state_id);
-            recipe.resolved_vertex_slot = Some(vertex);
+            recipe.resolution = crate::records::DesignVertexResolution::new(state_id, vertex);
         }
     }
     Ok(())
@@ -2752,8 +2748,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
     scope_histories: &HashMap<String, String>,
 ) {
     for operand in operands {
-        operand.recipe.recipe_state_id = None;
-        operand.recipe.resolved_vertex_slot = None;
+        operand.recipe.resolution = None;
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -2789,8 +2784,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
         let Some(vertex) = recipe_reference_common_vertex(&operand.recipe, topology) else {
             continue;
         };
-        operand.recipe.recipe_state_id = Some(previous_state_id);
-        operand.recipe.resolved_vertex_slot = Some(vertex);
+        operand.recipe.resolution = crate::records::DesignVertexResolution::new(previous_state_id, vertex);
     }
 }
 
