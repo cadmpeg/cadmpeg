@@ -362,7 +362,7 @@ pub(crate) struct BodyMapRecord {
 fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid: &str) -> bool {
     meta.types.iter().any(|design_type| {
         design_type.type_guid.eq_ignore_ascii_case(type_guid)
-            && design_type.entity_ids.contains(&entity)
+            && design_type.entities.values().any(|registered| *registered == entity)
     })
 }
 
@@ -483,7 +483,7 @@ pub(crate) fn snapshot_body_map_records(
                 )
             })?
             .to_string();
-        for &entity in &design_type.entity_ids {
+        for &entity in design_type.entities.values() {
             let Some(&frame_ordinal) = primary_by_entity.get(&entity) else {
                 return Err(crate::error::malformed(format!(
                     "F3D Design snapshot body-map entity {entity} has no primary record"
@@ -689,7 +689,7 @@ fn body_map_records(
             })?;
         let class_tag = class_tag.to_string();
 
-        for &entity_id in &design_type.entity_ids {
+        for &entity_id in design_type.entities.values() {
             if !typed_entities.insert(entity_id) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design body-map carrier entity {entity_id} is registered more than once"
@@ -1245,8 +1245,7 @@ mod tests {
             version,
             version_offset: 0,
             module: module.into(),
-            entity_ids,
-            entity_id_offsets: Vec::new(),
+            entities: crate::records::ReferenceRun::Unlocated(entity_ids),
         }
     }
 
@@ -1308,8 +1307,7 @@ mod tests {
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
                     version_offset: 0,
                     module: DESIGN_MODULE_BODY.into(),
-                    entity_ids: vec![900],
-                    entity_id_offsets: vec![0],
+                    entities: crate::records::ReferenceRun::Located(vec![crate::records::Located { value: 900, offset: 0 }]),
                 },
                 presentation_type(
                     crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
@@ -1473,7 +1471,7 @@ mod tests {
     #[test]
     fn snapshot_body_map_requires_typed_pair_targets() {
         let mut metadata = snapshot_body_map_metadata();
-        metadata.types[2].entity_ids.clear();
+        metadata.types[2].entities = crate::records::ReferenceRun::Unlocated(Vec::new());
         assert!(
             snapshot_body_map_records(&snapshot_body_map_bytes(0), &metadata)
                 .expect("mixed carrier family")

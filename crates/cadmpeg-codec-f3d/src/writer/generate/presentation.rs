@@ -34,7 +34,7 @@ impl From<&SegmentType> for GeneratedDesignType {
             base_type_guid: value.base_type_guid.as_ref().map(|field| field.value.clone()),
             version: value.version,
             module: value.module.clone(),
-            entity_ids: value.entity_ids.clone(),
+            entity_ids: value.entities.values().copied().collect(),
         }
     }
 }
@@ -105,7 +105,7 @@ impl GeneratedDesignRegistry {
         let mut used_record_indices = native
             .design_types
             .iter()
-            .flat_map(|design_type| design_type.entity_ids.iter().copied())
+            .flat_map(|design_type| design_type.entities.values().copied())
             .filter_map(|entity| u32::try_from(entity).ok())
             .collect::<BTreeSet<_>>();
         used_record_indices.extend(
@@ -322,8 +322,7 @@ mod tests {
             version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_BODY.into(),
-            entity_id_offsets: vec![0; entity_ids.len()],
-            entity_ids,
+            entities: crate::records::ReferenceRun::Located(entity_ids.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
         }
     }
 
@@ -337,8 +336,7 @@ mod tests {
             version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_FUSION.into(),
-            entity_id_offsets: vec![0; entity_ids.len()],
-            entity_ids,
+            entities: crate::records::ReferenceRun::Located(entity_ids.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
         }
     }
 

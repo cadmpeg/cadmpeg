@@ -113,7 +113,7 @@ fn decode_record_frames(
             if !meta
                 .types
                 .get(class_index)
-                .is_some_and(|record_type| record_type.entity_ids.contains(&record.entity_id))
+                .is_some_and(|record_type| record_type.entities.values().any(|registered| *registered == record.entity_id))
             {
                 return Err(CodecError::malformed(format_args!(
                     "F3D ACT class tag conflicts with its MetaStream type: {stream}@{start}"

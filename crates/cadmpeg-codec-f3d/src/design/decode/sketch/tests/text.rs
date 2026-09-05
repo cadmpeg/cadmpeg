@@ -152,8 +152,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
             version,
             version_offset: 0,
             module: module.into(),
-            entity_id_offsets: vec![0; entity_ids.len()],
-            entity_ids,
+            entities: crate::records::ReferenceRun::Located(entity_ids.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
         };
 
     let mut bytes = record_prefix(256, PARENT);

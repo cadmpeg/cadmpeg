@@ -1466,7 +1466,7 @@ pub(crate) fn validate_design_type_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.entity_ids.clone_from(&before.entity_ids);
+        normalized.entities.clone_from(&before.entities);
         normalized.type_guid.clone_from(&before.type_guid);
         normalized.base_type_guid = before.base_type_guid.as_ref().map(|field| crate::records::RecordedValue {
             value: field.value.clone(),
@@ -1478,20 +1478,28 @@ pub(crate) fn validate_design_type_edits(
                 "F3D design-type edit changes fields outside its fixed type payload: {id}"
             )));
         }
-        if after.entity_ids.len() != before.entity_ids.len()
-            || after.entity_ids.len() != after.entity_id_offsets.len()
-        {
+        let (before_entities, after_entities): (&[crate::records::Located<u64>], &[crate::records::Located<u64>]) = match (&before.entities, &after.entities) {
+            (crate::records::ReferenceRun::Located(before), crate::records::ReferenceRun::Located(after)) => (before, after),
+            (before, after) if before.is_empty() && after.is_empty() => (&[], &[]),
+            _ => return Err(CodecError::NotImplemented(format!(
+                "F3D design type {id} must retain its entity-id cardinality"
+            ))),
+        };
+        if after_entities.len() != before_entities.len() {
             return Err(CodecError::NotImplemented(format!(
                 "F3D design type {id} must retain its entity-id cardinality"
             )));
         }
-        let mut integers = after
-            .entity_ids
+        if before_entities.iter().map(|row| row.offset).ne(after_entities.iter().map(|row| row.offset)) {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D design-type edit changes fields outside its fixed type payload: {id}"
+            )));
+        }
+        let mut integers = after_entities
             .iter()
-            .zip(&before.entity_ids)
-            .zip(&after.entity_id_offsets)
-            .filter(|((value, before), _)| value != before)
-            .map(|((&value, _), &offset)| (offset, value.to_le_bytes().to_vec()))
+            .zip(before_entities)
+            .filter(|(after, before)| after.value != before.value)
+            .map(|(after, _)| (after.offset, after.value.to_le_bytes().to_vec()))
             .collect::<Vec<_>>();
         if after.version != before.version {
             integers.push((after.version_offset, after.version.to_le_bytes().to_vec()));

@@ -768,3 +768,17 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
         assert!(error.contains("member_offsets"));
     }
 }
+
+#[test]
+fn segment_entity_runs_preserve_authored_and_located_wire() {
+    for (ids, offsets) in [("[]", "[]"), ("[10,11]", "[]"), ("[10,11]", "[0,0]"), ("[10,11]", "[80,88]")] {
+        let wire = format!(r#"{{"id":"type","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"version":1,"version_offset":44,"module":"Fusion","entity_ids":{ids},"entity_id_offsets":{offsets}}}"#);
+        let entry: super::SegmentType = serde_json::from_str(&wire).expect("type entity run");
+        assert_eq!(serde_json::to_string(&entry).expect("type wire"), wire);
+    }
+    for (ids, offsets) in [("[]", "[80]"), ("[10,11]", "[80]"), ("[10]", "[80,88]")] {
+        let wire = format!(r#"{{"id":"type","byte_offset":0,"type_guid":"11111111-2222-3333-4444-555555555555","type_guid_offset":4,"version":1,"version_offset":44,"module":"Fusion","entity_ids":{ids},"entity_id_offsets":{offsets}}}"#);
+        let error = serde_json::from_str::<super::SegmentType>(&wire).expect_err("partial entity locations").to_string();
+        assert!(error.contains("entity_ids/entity_id_offsets"));
+    }
+}

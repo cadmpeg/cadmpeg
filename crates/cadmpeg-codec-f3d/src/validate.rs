@@ -1271,7 +1271,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let type_ordinal = type_ordinals.entry(meta_stream).or_default();
         let class_tag = type_ordinal.checked_add(256).map(|tag| tag.to_string());
         *type_ordinal = type_ordinal.saturating_add(1);
-        for entity_id in &design_type.entity_ids {
+        for entity_id in design_type.entities.values() {
             *entity_type_counts.entry((segment, *entity_id)).or_default() += 1;
         }
         if !design_type
@@ -1281,7 +1281,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
             continue;
         }
         let source_ordinal = timeline_ordinals.entry(segment).or_default();
-        for entity_id in &design_type.entity_ids {
+        for entity_id in design_type.entities.values() {
             let valid_type =
                 crate::design::decode::meta::is_supported_feature_timeline_type(design_type)
                     && class_tag.as_deref().is_some_and(valid_dynamic_class_tag);
@@ -1825,8 +1825,7 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .flat_map(|design_type| {
             let design_segment = ids::design_segment(&design_type.id);
             design_type
-                .entity_ids
-                .iter()
+                .entities.values()
                 .map(move |suffix| (design_segment, *suffix))
         })
         .collect::<HashSet<_>>();
@@ -1842,8 +1841,7 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .flat_map(|design_type| {
             let design_segment = ids::design_segment(&design_type.id);
             design_type
-                .entity_ids
-                .iter()
+                .entities.values()
                 .map(move |suffix| (design_segment, *suffix))
         })
         .collect::<HashSet<_>>();
@@ -1948,8 +1946,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .flat_map(|design_type| {
             let segment = ids::design_segment(&design_type.id);
             design_type
-                .entity_ids
-                .iter()
+                .entities.values()
                 .map(move |suffix| (segment, *suffix))
         })
         .collect::<HashSet<_>>();

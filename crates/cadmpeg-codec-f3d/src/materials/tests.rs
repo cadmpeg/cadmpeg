@@ -1044,10 +1044,10 @@ fn decode_transfers_generated_protein_appearance() {
     let sketch = f3d_native(result.ir())
         .design_types
         .iter()
-        .find(|design_type| design_type.entity_ids.contains(&277))
+        .find(|design_type| design_type.entities.values().any(|registered| *registered == 277))
         .cloned()
         .unwrap();
-    assert_eq!(sketch.entity_ids, vec![277]);
+    assert_eq!(sketch.entities.values().copied().collect::<Vec<_>>(), vec![277]);
     assert_eq!(sketch.version, 4);
     assert_eq!(f3d_native(result.ir()).design_entity_headers.len(), 2);
     let sketch_header = f3d_native(result.ir())

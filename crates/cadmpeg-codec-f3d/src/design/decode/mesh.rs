@@ -1893,8 +1893,7 @@ mod tests {
             version,
             version_offset: 0,
             module: module.into(),
-            entity_ids,
-            entity_id_offsets: Vec::new(),
+            entities: crate::records::ReferenceRun::Unlocated(entity_ids),
         }
     }
 
@@ -2514,11 +2513,12 @@ mod tests {
                     .eq_ignore_ascii_case(MESH_COLLECTION_TYPE_GUID)
             })
             .expect("mesh-collection type");
-        let [collection_entity] = collection_type.entity_ids.as_slice() else {
+        let entities = collection_type.entities.values().copied().collect::<Vec<_>>();
+        let [collection_entity] = entities.as_slice() else {
             panic!("one mesh-collection entity");
         };
         let collection_entity = *collection_entity;
-        collection_type.entity_ids.clear();
+        collection_type.entities = crate::records::ReferenceRun::Unlocated(Vec::new());
         graph
             .meta
             .records

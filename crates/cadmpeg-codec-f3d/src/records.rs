@@ -26,6 +26,47 @@ impl<T> Located<T> {
     }
 }
 
+/// An ordered run whose encoding locations are either complete or absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReferenceRun<T> {
+    Unlocated(Vec<T>),
+    Located(Vec<Located<T>>),
+}
+
+impl<T> ReferenceRun<T> {
+    pub fn values(&self) -> impl DoubleEndedIterator<Item = &T> {
+        let (unlocated, located): (&[T], &[Located<T>]) = match self {
+            Self::Unlocated(values) => (values, &[]),
+            Self::Located(values) => (&[], values),
+        };
+        unlocated.iter().chain(located.iter().map(|row| &row.value))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Unlocated(values) => values.is_empty(),
+            Self::Located(values) => values.is_empty(),
+        }
+    }
+
+    fn from_wire(values: Vec<T>, offsets: Vec<u64>, field: &str) -> Result<Self, String> {
+        if offsets.is_empty() {
+            return Ok(Self::Unlocated(values));
+        }
+        if values.len() != offsets.len() {
+            return Err(format!("{field} offsets must be absent or match every value"));
+        }
+        Ok(Self::Located(values.into_iter().zip(offsets).map(|(value, offset)| Located { value, offset }).collect()))
+    }
+
+    fn into_wire(self) -> (Vec<T>, Vec<u64>) {
+        match self {
+            Self::Unlocated(values) => (values, Vec::new()),
+            Self::Located(values) => values.into_iter().map(|row| (row.value, row.offset)).unzip(),
+        }
+    }
+}
+
 /// A value with an optional source encoding location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -10850,6 +10891,7 @@ pub enum DesignConfigurationKind {
 /// carry it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "SegmentTypeWire"))]
 #[serde(try_from = "SegmentTypeWire", into = "SegmentTypeWire")]
 pub struct SegmentType {
     /// Globally unique deterministic identifier for this native record.
@@ -10875,9 +10917,7 @@ pub struct SegmentType {
     pub module: String,
     /// Entity ids whose records carry this type, in source `MetaStream` order;
     /// a count rather than a fixed-arity list, so length varies per entry.
-    pub entity_ids: Vec<u64>,
-    /// Byte offsets parallel to `entity_ids`.
-    pub entity_id_offsets: Vec<u64>,
+    pub entities: ReferenceRun<u64>,
 }
 
 /// One type-table entry from a `MetaStream` segment header. The entry registers
@@ -10928,8 +10968,7 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
             version: wire.version,
             version_offset: wire.version_offset,
             module: wire.module,
-            entity_ids: wire.entity_ids,
-            entity_id_offsets: wire.entity_id_offsets,
+            entities: ReferenceRun::from_wire(wire.entity_ids, wire.entity_id_offsets, "entity_ids/entity_id_offsets")?,
             base_type_guid: RecordedValue::from_wire(wire.base_type_guid, wire.base_type_guid_offset, "base_type_guid")?,
         })
     }
@@ -10937,6 +10976,7 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
 
 impl From<SegmentType> for SegmentTypeWire {
     fn from(value: SegmentType) -> Self {
+        let (entity_ids, entity_id_offsets) = value.entities.into_wire();
         Self {
             id: value.id,
             byte_offset: value.byte_offset,
@@ -10945,8 +10985,8 @@ impl From<SegmentType> for SegmentTypeWire {
             version: value.version,
             version_offset: value.version_offset,
             module: value.module,
-            entity_ids: value.entity_ids,
-            entity_id_offsets: value.entity_id_offsets,
+            entity_ids,
+            entity_id_offsets,
             base_type_guid_offset: value.base_type_guid.as_ref().and_then(|field| field.offset),
             base_type_guid: value.base_type_guid.map(|field| field.value),
         }
