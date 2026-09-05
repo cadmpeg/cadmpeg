@@ -331,8 +331,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         construction
     );
     let DesignBaseFeatureConstruction::BodySnapshot {
-        body_entity_suffixes,
-        body_entity_fields,
+        bodies,
         related_guids: decoded_guids,
         related_guid_offsets,
         linkage_record,
@@ -344,8 +343,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     else {
         panic!("body-snapshot Base Feature frame selected the wrong form");
     };
-    assert_eq!(body_entity_suffixes, [101, 202]);
-    assert_eq!(body_entity_fields[0], [1, 2, 3, 4, 5, 6]);
+    assert_eq!(bodies.iter().map(|body| body.value).collect::<Vec<_>>(), [101, 202]);
+    assert_eq!(bodies[0].field, [1, 2, 3, 4, 5, 6]);
     assert_eq!(
         decoded_guids,
         [

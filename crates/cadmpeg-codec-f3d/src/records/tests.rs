@@ -546,3 +546,26 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
         }
     }
 }
+
+#[test]
+fn snapshot_body_rows_preserve_wire_and_reject_unequal_arrays() {
+    for values in 0..=2 {
+        for offsets in 0..=2 {
+            for fields in 0..=2 {
+                let values_wire = ["[]", "[101]", "[101,202]"][values];
+                let offsets_wire = ["[]", "[22]", "[22,37]"][offsets];
+                let fields_wire = ["[]", "[[1,2,3,4,5,6]]", "[[1,2,3,4,5,6],[6,5,4,3,2,1]]"][fields];
+                let wire = format!(r#"{{"body_entity_suffixes":{values_wire},"body_entity_suffix_offsets":{offsets_wire},"body_entity_fields":{fields_wire},"related_guids":["a","b","c"],"related_guid_offsets":[66,142,275],"linkage_record":301,"linkage_record_offset":234,"auxiliary_record":401,"auxiliary_record_offset":253}}"#);
+                let parsed = serde_json::from_str::<super::DesignBaseFeatureConstruction>(&wire);
+                if values == offsets && values == fields {
+                    assert_eq!(serde_json::to_string(&parsed.expect("complete snapshot rows")).expect("snapshot wire"), wire);
+                } else {
+                    let error = parsed.expect_err("unequal snapshot arrays").to_string();
+                    assert!(error.contains("body_entity_suffixes"));
+                    assert!(error.contains("body_entity_suffix_offsets"));
+                    assert!(error.contains("body_entity_fields"));
+                }
+            }
+        }
+    }
+}
